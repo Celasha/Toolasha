@@ -315,8 +315,8 @@ class TooltipPrices {
         html += '<div style="font-weight: bold; margin-bottom: 4px;">PROFIT ANALYSIS</div>';
         html += '<div style="font-size: 0.9em; margin-left: 8px;">';
 
-        // Check if we can calculate profit (need valid bid price)
-        if (profitData.itemPrice.bid > 0) {
+        // Check if we can calculate profit (need BOTH valid ask and bid prices)
+        if (profitData.itemPrice.bid > 0 && profitData.itemPrice.ask > 0) {
             // Net profit line (color-coded)
             const profitColor = profitData.profitPerItem >= 0 ? 'lime' : 'red';
             html += `<div style="color: ${profitColor}; font-weight: bold;">Net: ${numberFormatter(profitData.profitPerItem)}/item (${numberFormatter(profitData.profitPerHour)}/hr)</div>`;
@@ -324,7 +324,7 @@ class TooltipPrices {
             // Sell vs Cost line
             html += `<div>Sell: ${numberFormatter(profitData.bidAfterTax)} | Cost: ${numberFormatter(profitData.costPerItem)}</div>`;
         } else {
-            html += `<div style="color: gray; font-style: italic;">No bid price available</div>`;
+            html += `<div style="color: gray; font-style: italic;">Incomplete market data</div>`;
         }
 
         // Time line (always show - doesn't depend on prices)
