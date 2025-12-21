@@ -192,33 +192,50 @@ class ProfitCalculator {
      * @returns {Array} Array of material cost objects
      */
     calculateMaterialCosts(actionDetails) {
-        if (!actionDetails.inputItems || actionDetails.inputItems.length === 0) {
-            return [];
-        }
-
         const costs = [];
 
-        for (const input of actionDetails.inputItems) {
-            const itemDetails = dataManager.getItemDetails(input.itemHrid);
-            const price = marketAPI.getPrice(input.itemHrid, 0);
+        // Check for upgrade item (e.g., Crimson Bulwark → Rainbow Bulwark)
+        if (actionDetails.upgradeItemHrid) {
+            const itemDetails = dataManager.getItemDetails(actionDetails.upgradeItemHrid);
+            const price = marketAPI.getPrice(actionDetails.upgradeItemHrid, 0);
 
-            if (!itemDetails) {
-                continue;
+            if (itemDetails) {
+                const askPrice = (price?.ask && price.ask > 0) ? price.ask : 0;
+
+                costs.push({
+                    itemHrid: actionDetails.upgradeItemHrid,
+                    itemName: itemDetails.name,
+                    amount: 1,
+                    askPrice: askPrice,
+                    totalCost: askPrice
+                });
             }
+        }
 
-            // Use 'count' field (not 'amount')
-            const amount = input.count || input.amount || 1;
+        // Process regular input items
+        if (actionDetails.inputItems && actionDetails.inputItems.length > 0) {
+            for (const input of actionDetails.inputItems) {
+                const itemDetails = dataManager.getItemDetails(input.itemHrid);
+                const price = marketAPI.getPrice(input.itemHrid, 0);
 
-            // Validate that the price is positive (ignore invalid market data)
-            const askPrice = (price?.ask && price.ask > 0) ? price.ask : 0;
+                if (!itemDetails) {
+                    continue;
+                }
 
-            costs.push({
-                itemHrid: input.itemHrid,
-                itemName: itemDetails.name,
-                amount: amount,
-                askPrice: askPrice,
-                totalCost: askPrice * amount
-            });
+                // Use 'count' field (not 'amount')
+                const amount = input.count || input.amount || 1;
+
+                // Validate that the price is positive (ignore invalid market data)
+                const askPrice = (price?.ask && price.ask > 0) ? price.ask : 0;
+
+                costs.push({
+                    itemHrid: input.itemHrid,
+                    itemName: itemDetails.name,
+                    amount: amount,
+                    askPrice: askPrice,
+                    totalCost: askPrice * amount
+                });
+            }
         }
 
         return costs;

@@ -297,22 +297,25 @@ class TooltipPrices {
 
         // Material costs section
         if (profitData.materialCosts.length > 0) {
-            html += '<div style="font-weight: bold; margin-bottom: 4px;">PRODUCTION COST</div>';
-            html += '<div style="font-size: 0.9em; margin-left: 8px;">';
+            html += '<div style="display: flex; justify-content: space-between; font-weight: bold; margin-bottom: 4px;">';
+            html += '<span>PRODUCTION COST</span>';
 
+            // Show total cost at top right (if all materials have prices)
             const hasAnyValidPrices = profitData.materialCosts.some(mat => mat.askPrice > 0);
+            if (hasAnyValidPrices && profitData.materialCosts.every(mat => mat.askPrice > 0)) {
+                html += `<span>${numberFormatter(profitData.totalMaterialCost)}</span>`;
+            }
+            html += '</div>';
+
+            html += '<div style="font-size: 0.9em; margin-left: 8px;">';
 
             if (hasAnyValidPrices) {
                 for (const material of profitData.materialCosts) {
                     // Format: • ItemName ×quantity @ unit_price → total_cost
+                    const amountDisplay = numberFormatter(material.amount);
                     const priceDisplay = material.askPrice > 0 ? numberFormatter(material.askPrice) : '-';
                     const totalDisplay = material.askPrice > 0 ? numberFormatter(material.totalCost) : '-';
-                    html += `<div>• ${material.itemName} ×${material.amount} @ ${priceDisplay} → ${totalDisplay}</div>`;
-                }
-
-                // Only show Total if multiple materials and all have prices
-                if (profitData.materialCosts.length > 1 && profitData.materialCosts.every(mat => mat.askPrice > 0)) {
-                    html += `<div style="margin-top: 4px; font-weight: bold;">Total: ${numberFormatter(profitData.totalMaterialCost)}</div>`;
+                    html += `<div>• ${material.itemName} ×${amountDisplay} @ ${priceDisplay} → ${totalDisplay}</div>`;
                 }
             } else {
                 html += `<div style="color: gray; font-style: italic;">Material prices unavailable</div>`;
@@ -340,26 +343,26 @@ class TooltipPrices {
             html += `<div style="color: gray; font-style: italic;">Incomplete market data</div>`;
         }
 
+        // Separator before Action Time
+        html += '<div style="border-top: 1px solid rgba(255,255,255,0.2); margin: 8px 0;"></div>';
+
         // Time breakdown section (always show)
         const breakdown = profitData.timeBreakdown;
 
-        // Show final action time FIRST (what matters most to player)
-        html += `<div style="margin-top: 4px; font-weight: bold;">Action Time: ${breakdown.finalTime.toFixed(2)}s (${numberFormatter(breakdown.actionsPerHour)}/hr)</div>`;
+        // Show final action time at top
+        html += `<div>Action Time: ${breakdown.finalTime.toFixed(2)}s (${numberFormatter(breakdown.actionsPerHour)}/hr)</div>`;
 
-        // Visual separator
-        html += `<div style="border-top: 1px solid rgba(255,255,255,0.3); margin: 2px 0;"></div>`;
-
-        // Show base time
+        // Show breakdown with indentation (similar to Efficiency structure)
+        html += `<div style="margin-left: 8px;">`;
         html += `<div>Base Time: ${breakdown.baseTime.toFixed(2)}s</div>`;
 
-        // Show each speed modifier step (working backwards from base)
+        // Show each speed modifier step
         if (breakdown.steps.length > 0) {
             for (const step of breakdown.steps) {
-                html += `<div style="margin-left: 8px;">`;
-                html += `  - ${step.name} (+${step.bonus.toFixed(1)}%): -${step.reduction.toFixed(2)}s`;
-                html += `</div>`;
+                html += `<div>  - ${step.name} (+${step.bonus.toFixed(1)}%): -${step.reduction.toFixed(2)}s</div>`;
             }
         }
+        html += '</div>'; // Close indented section
 
         // Efficiency section (if > 0) - shows output multiplier
         if (profitData.efficiencyBonus > 0) {
