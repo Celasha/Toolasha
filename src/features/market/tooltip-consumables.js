@@ -234,6 +234,8 @@ class TooltipConsumables {
         // Cost efficiency line
         if (stats.costPerPoint > 0) {
             html += `<div>Cost: ${numberFormatter(stats.costPerPoint, 1)} per ${stats.restoreType}</div>`;
+        } else if (stats.askPrice === 0) {
+            html += `<div style="color: gray; font-style: italic;">Cost: No market data</div>`;
         }
 
         // Daily maximum line

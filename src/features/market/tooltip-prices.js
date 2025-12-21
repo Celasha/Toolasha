@@ -221,21 +221,23 @@ class TooltipPrices {
             return;
         }
 
-        // Don't show prices if invalid (zero, negative, or both missing)
-        if (price.ask <= 0 || price.bid <= 0) {
-            return;
-        }
-
-        // Calculate total prices for the amount
-        const totalAsk = price.ask * amount;
-        const totalBid = price.bid * amount;
-
         // Create price display
         const priceDiv = dom.createStyledDiv(
             { color: config.SCRIPT_COLOR_TOOLTIP },
             '',
             'market-price-injected'
         );
+
+        // Show message if invalid market data
+        if (price.ask <= 0 || price.bid <= 0) {
+            priceDiv.innerHTML = `Price: <span style="color: gray; font-style: italic;">No market data</span>`;
+            tooltipText.appendChild(priceDiv);
+            return;
+        }
+
+        // Calculate total prices for the amount
+        const totalAsk = price.ask * amount;
+        const totalBid = price.bid * amount;
 
         // Format: "Price: 1.2k / 950 (12k / 9.5k)"
         priceDiv.innerHTML = `
@@ -265,23 +267,41 @@ class TooltipPrices {
             return;
         }
 
-        // Don't show profit if item has invalid market price
-        if (profitData.itemPrice.bid <= 0 || profitData.itemPrice.ask <= 0) {
-            return;
-        }
-
-        // Don't show profit if all material costs are zero (no market data)
-        const hasValidCosts = profitData.materialCosts.some(mat => mat.askPrice > 0);
-        if (profitData.materialCosts.length > 0 && !hasValidCosts) {
-            return;
-        }
-
         // Create profit display container
         const profitDiv = dom.createStyledDiv(
             { color: config.SCRIPT_COLOR_TOOLTIP, marginTop: '8px' },
             '',
             'market-profit-injected'
         );
+
+        // Check for invalid market data
+        if (profitData.itemPrice.bid <= 0 || profitData.itemPrice.ask <= 0) {
+            profitDiv.innerHTML = `
+                <div style="border-top: 1px solid rgba(255,255,255,0.2); padding-top: 8px;">
+                    <div style="font-weight: bold; margin-bottom: 4px;">PROFIT ANALYSIS</div>
+                    <div style="font-size: 0.9em; margin-left: 8px; color: gray; font-style: italic;">
+                        No market data available
+                    </div>
+                </div>
+            `;
+            tooltipText.appendChild(profitDiv);
+            return;
+        }
+
+        // Check if all material costs are invalid
+        const hasValidCosts = profitData.materialCosts.some(mat => mat.askPrice > 0);
+        if (profitData.materialCosts.length > 0 && !hasValidCosts) {
+            profitDiv.innerHTML = `
+                <div style="border-top: 1px solid rgba(255,255,255,0.2); padding-top: 8px;">
+                    <div style="font-weight: bold; margin-bottom: 4px;">PROFIT ANALYSIS</div>
+                    <div style="font-size: 0.9em; margin-left: 8px; color: gray; font-style: italic;">
+                        Material prices unavailable
+                    </div>
+                </div>
+            `;
+            tooltipText.appendChild(profitDiv);
+            return;
+        }
 
         // Build profit display - Option 1 Enhanced
         let html = '<div style="border-top: 1px solid rgba(255,255,255,0.2); padding-top: 8px;">';
