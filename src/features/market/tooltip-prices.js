@@ -309,7 +309,7 @@ class TooltipPrices {
 
             // Show artisan reduction if active
             if (profitData.artisanBonus > 0) {
-                html += `<div style="font-size: 0.9em; color: #90EE90; margin-bottom: 4px;">Artisan: -${(profitData.artisanBonus * 100).toFixed(1)}% material cost</div>`;
+                html += `<div style="font-size: 0.9em; color: #90EE90; margin-bottom: 4px;">Artisan: -${(profitData.artisanBonus * 100).toFixed(1)}% material requirement</div>`;
             }
 
             html += '<div style="font-size: 0.9em; margin-left: 8px;">';
@@ -319,14 +319,32 @@ class TooltipPrices {
                     // Show base amount if artisan is reducing it
                     let amountDisplay;
                     if (profitData.artisanBonus > 0 && material.baseAmount) {
-                        amountDisplay = `${numberFormatter(material.amount)} (${numberFormatter(material.baseAmount)} base)`;
+                        // Calculate Artisan savings using floor + modulo
+                        const totalSavings = material.baseAmount * profitData.artisanBonus;
+                        const guaranteedSavings = Math.floor(totalSavings);
+                        const chanceForMore = (totalSavings % 1) * 100;
+
+                        amountDisplay = `${numberFormatter(material.amount, 2)} (${numberFormatter(material.baseAmount)} base, -${totalSavings.toFixed(2)} avg)`;
+
+                        const priceDisplay = material.askPrice > 0 ? numberFormatter(material.askPrice) : '-';
+                        const totalDisplay = material.askPrice > 0 ? numberFormatter(material.totalCost) : '-';
+                        html += `<div>• ${material.itemName} ×${amountDisplay} @ ${priceDisplay} → ${totalDisplay}</div>`;
+
+                        // Show Artisan breakdown
+                        if (guaranteedSavings > 0) {
+                            html += `<div style="margin-left: 12px; font-size: 0.85em; color: #aaa;">- Guaranteed savings: ${guaranteedSavings} ${material.itemName}</div>`;
+                        }
+                        if (chanceForMore > 0) {
+                            const extraSavings = guaranteedSavings + 1;
+                            html += `<div style="margin-left: 12px; font-size: 0.85em; color: #aaa;">- ${chanceForMore.toFixed(1)}% chance to save ${extraSavings} total</div>`;
+                        }
                     } else {
                         amountDisplay = numberFormatter(material.amount);
-                    }
 
-                    const priceDisplay = material.askPrice > 0 ? numberFormatter(material.askPrice) : '-';
-                    const totalDisplay = material.askPrice > 0 ? numberFormatter(material.totalCost) : '-';
-                    html += `<div>• ${material.itemName} ×${amountDisplay} @ ${priceDisplay} → ${totalDisplay}</div>`;
+                        const priceDisplay = material.askPrice > 0 ? numberFormatter(material.askPrice) : '-';
+                        const totalDisplay = material.askPrice > 0 ? numberFormatter(material.totalCost) : '-';
+                        html += `<div>• ${material.itemName} ×${amountDisplay} @ ${priceDisplay} → ${totalDisplay}</div>`;
+                    }
                 }
             } else {
                 html += `<div style="color: gray; font-style: italic;">Material prices unavailable</div>`;
