@@ -259,7 +259,7 @@ class ProfitCalculator {
                 let askPrice = (price?.ask && price.ask > 0) ? price.ask : 0;
 
                 // Special case: Coins have no market price but have face value of 1
-                if (actionDetails.upgradeItemHrid === '/items/gold_coin' && askPrice === 0) {
+                if (actionDetails.upgradeItemHrid === '/items/coin' && askPrice === 0) {
                     askPrice = 1;
                 }
 
@@ -297,7 +297,7 @@ class ProfitCalculator {
                 let askPrice = (price?.ask && price.ask > 0) ? price.ask : 0;
 
                 // Special case: Coins have no market price but have face value of 1
-                if (input.itemHrid === '/items/gold_coin' && askPrice === 0) {
+                if (input.itemHrid === '/items/coin' && askPrice === 0) {
                     askPrice = 1; // 1 coin = 1 gold value
                 }
 
