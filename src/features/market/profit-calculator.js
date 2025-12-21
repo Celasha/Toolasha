@@ -8,7 +8,7 @@ import dataManager from '../../core/data-manager.js';
 import * as efficiency from '../../utils/efficiency.js';
 import { parseEquipmentSpeedBonuses, parseEquipmentEfficiencyBonuses } from '../../utils/equipment-parser.js';
 import { calculateHouseEfficiency } from '../../utils/house-efficiency.js';
-import { parseTeaEfficiency, getDrinkConcentration, parseArtisanBonus, parseGourmetBonus, parseProcessingBonus } from '../../utils/tea-parser.js';
+import { parseTeaEfficiency, getDrinkConcentration, parseArtisanBonus, parseGourmetBonus, parseProcessingBonus, parseActionLevelBonus } from '../../utils/tea-parser.js';
 
 /**
  * ProfitCalculator class handles profit calculations for production actions
@@ -55,22 +55,11 @@ class ProfitCalculator {
         const baseTime = actionDetails.baseTimeCost / 1e9; // Convert nanoseconds to seconds
 
         // Get character level for the action's skill
-        const skillLevel = this.getSkillLevel(skills, actionDetails.type);
-
-        // Calculate efficiency components
-        const levelEfficiency = Math.max(0, skillLevel - (actionDetails.levelRequirement?.level || 1));
-        const houseEfficiency = calculateHouseEfficiency(actionDetails.type);
+        const baseSkillLevel = this.getSkillLevel(skills, actionDetails.type);
 
         // Get equipped items for efficiency bonus calculation
         const characterEquipment = dataManager.getEquipment();
         const initData = dataManager.getInitClientData();
-
-        // Calculate equipment efficiency bonus
-        const equipmentEfficiency = parseEquipmentEfficiencyBonuses(
-            characterEquipment,
-            actionDetails.type,
-            initData?.itemDetailMap || {}
-        );
 
         // Get Drink Concentration from equipment
         const drinkConcentration = getDrinkConcentration(
@@ -80,6 +69,27 @@ class ProfitCalculator {
 
         // Get active drinks for this action type
         const activeDrinks = dataManager.getActionDrinkSlots(actionDetails.type);
+
+        // Calculate Action Level bonus from teas (e.g., Artisan Tea: +5 Action Level)
+        const actionLevelBonus = parseActionLevelBonus(
+            activeDrinks,
+            initData?.itemDetailMap || {},
+            drinkConcentration
+        );
+
+        // Apply Action Level bonus to skill level for efficiency calculation
+        const skillLevel = baseSkillLevel + actionLevelBonus;
+
+        // Calculate efficiency components
+        const levelEfficiency = Math.max(0, skillLevel - (actionDetails.levelRequirement?.level || 1));
+        const houseEfficiency = calculateHouseEfficiency(actionDetails.type);
+
+        // Calculate equipment efficiency bonus
+        const equipmentEfficiency = parseEquipmentEfficiencyBonuses(
+            characterEquipment,
+            actionDetails.type,
+            initData?.itemDetailMap || {}
+        );
 
         // Calculate tea efficiency bonus
         const teaEfficiency = parseTeaEfficiency(
@@ -200,6 +210,7 @@ class ProfitCalculator {
             houseEfficiency,          // House room efficiency
             equipmentEfficiency,      // Equipment efficiency
             teaEfficiency,            // Tea buff efficiency
+            actionLevelBonus,         // Action Level bonus from teas (e.g., Artisan Tea)
             artisanBonus,             // Artisan material cost reduction
             gourmetBonus,             // Gourmet bonus item chance
             processingBonus,          // Processing conversion chance

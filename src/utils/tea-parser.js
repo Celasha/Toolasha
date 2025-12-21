@@ -271,10 +271,59 @@ export function parseProcessingBonus(activeDrinks, itemDetailMap, drinkConcentra
     return processingBonus;
 }
 
+/**
+ * Parse Action Level bonus from active tea buffs
+ * @param {Array} activeDrinks - Array of active drink items from actionTypeDrinkSlotsMap
+ * @param {Object} itemDetailMap - Item details from init_client_data
+ * @param {number} drinkConcentration - Drink Concentration stat (as decimal, e.g., 0.12 for 12%)
+ * @returns {number} Action Level bonus as flat number (e.g., 5.6 for +5.6 levels)
+ *
+ * @example
+ * // With Artisan Tea (+5 Action Level base) and 12% Drink Concentration:
+ * parseActionLevelBonus(activeDrinks, items, 0.12)
+ * // Returns: 5.6 (+5 × 1.12 = 5.6 levels)
+ */
+export function parseActionLevelBonus(activeDrinks, itemDetailMap, drinkConcentration = 0) {
+    if (!activeDrinks || activeDrinks.length === 0) {
+        return 0; // No active teas
+    }
+
+    if (!itemDetailMap) {
+        return 0; // Missing required data
+    }
+
+    let actionLevelBonus = 0;
+
+    // Process each active tea/drink
+    for (const drink of activeDrinks) {
+        if (!drink || !drink.itemHrid) {
+            continue; // Empty slot
+        }
+
+        const itemDetails = itemDetailMap[drink.itemHrid];
+        if (!itemDetails || !itemDetails.consumableDetail || !itemDetails.consumableDetail.buffs) {
+            continue; // Not a consumable or has no buffs
+        }
+
+        // Check each buff on this tea
+        for (const buff of itemDetails.consumableDetail.buffs) {
+            // Action Level buff (e.g., Artisan Tea: +5 Action Level)
+            if (buff.typeHrid === '/buff_types/action_level') {
+                const baseLevelBonus = buff.flatBoost; // 5 for +5 levels
+                const scaledLevelBonus = baseLevelBonus * (1 + drinkConcentration);
+                actionLevelBonus += scaledLevelBonus;
+            }
+        }
+    }
+
+    return actionLevelBonus;
+}
+
 export default {
     parseTeaEfficiency,
     getDrinkConcentration,
     parseArtisanBonus,
     parseGourmetBonus,
-    parseProcessingBonus
+    parseProcessingBonus,
+    parseActionLevelBonus
 };
