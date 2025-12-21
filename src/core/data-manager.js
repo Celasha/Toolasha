@@ -136,6 +136,18 @@ class DataManager {
             // Buffs updated - next hover will show updated values
             this.emit('buffs_updated', data);
         });
+
+        // Handle house_rooms_updated (when user upgrades house rooms)
+        this.webSocketHook.on('house_rooms_updated', (data) => {
+            console.log('[Data Manager] House rooms updated');
+
+            // Update house room map with new levels
+            if (data.characterHouseRoomMap) {
+                this.updateHouseRoomMap(data.characterHouseRoomMap);
+            }
+
+            this.emit('house_rooms_updated', data);
+        });
     }
 
     /**
