@@ -26,6 +26,21 @@ All notable changes to the MWI Tools refactoring project.
 - Efficiency shown separately as output multiplier
 - Format: "Efficiency: +10.0% → Output: ×1.10 (66/hr)"
 
+### Changed - December 21, 2024
+
+#### **UX: Time Breakdown Display Order**
+- **CHANGED:** Profit tooltip now shows final action time first, then works backwards
+- **Previous:** Base Time → Modifiers → Final Time (forces mental calculation)
+- **Current:** Action Time (final) → Separator → Base Time → Modifiers (shows result first)
+- **Format Example:**
+  ```
+  Action Time: 54.5s (66/hr)
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Base Time: 60.0s
+    - Equipment Speed (+15.0%): -6.5s
+  ```
+- **Rationale:** Players care about "How fast is this?" not base time - show what matters most first
+
 ### Added - December 21, 2024
 
 #### Action Time Calculation Breakdown
