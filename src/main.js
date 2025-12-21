@@ -7,11 +7,20 @@ import { numberFormatter, timeReadable } from './utils/formatters.js';
 import storage from './core/storage.js';
 import config from './core/config.js';
 import webSocketHook from './core/websocket.js';
+import DataManager from './core/data-manager.js';
 
 console.log('MWI Tools (Refactored) - Initializing...');
 
 // CRITICAL: Install WebSocket hook FIRST, before game connects
 webSocketHook.install();
+
+// Create Data Manager (connects to WebSocket hook)
+const dataManager = new DataManager(webSocketHook);
+
+// Initialize Data Manager after a delay (let game load localStorageUtil)
+setTimeout(() => {
+    dataManager.initialize();
+}, 1000);
 
 // Test the formatters
 console.log('\n=== Testing Formatters ===');
@@ -66,10 +75,33 @@ webSocketHook.on('*', (data) => {
 console.log('  Hook installed, waiting for game messages...');
 console.log('  (Will log first 5 message types)');
 
+// Test the Data Manager
+console.log('\n=== Testing Data Manager ===');
+console.log('  Data Manager created, waiting for game data...');
+
+dataManager.on('character_initialized', (data) => {
+    console.log('  ✅ Character data loaded!');
+    console.log('  Character name:', data.characterName);
+    console.log('  Skills loaded:', dataManager.getSkills()?.length || 0);
+    console.log('  Inventory items:', dataManager.getInventory()?.length || 0);
+    console.log('  Equipment slots:', dataManager.getEquipment().size);
+
+    // Test accessing static game data
+    const initData = dataManager.getInitClientData();
+    if (initData) {
+        const itemCount = Object.keys(initData.itemDetailMap || {}).length;
+        const actionCount = Object.keys(initData.actionDetailMap || {}).length;
+        console.log(`  Static data: ${itemCount} items, ${actionCount} actions`);
+    }
+});
+
+dataManager.on('actions_updated', () => {
+    const actions = dataManager.getCurrentActions();
+    console.log(`  ⚡ Actions updated: ${actions.length} in queue`);
+});
+
 // TODO: Initialize other modules here as we extract them
-// const dataManager = new DataManager(storage);
-// hookWebSocket(dataManager);
 // ... etc
 
 console.log('\n🎉 MWI Tools (Refactored) - Ready!');
-console.log('📊 Modules loaded: Formatters, Storage, Config, WebSocket Hook');
+console.log('📊 Modules loaded: Formatters, Storage, Config, WebSocket Hook, Data Manager');
