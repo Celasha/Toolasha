@@ -358,7 +358,7 @@ class TooltipPrices {
             html += `<div style="color: ${profitColor}; font-weight: bold;">${profitText}</div>`;
 
             // Sell vs Cost line
-            html += `<div>Sell: ${numberFormatter(profitData.bidAfterTax)} | Cost: ${numberFormatter(profitData.costPerItem)}</div>`;
+            html += `<div>Sell: ${numberFormatter(profitData.priceAfterTax)} | Cost: ${numberFormatter(profitData.costPerItem)}</div>`;
         } else {
             html += `<div style="color: gray; font-style: italic;">Incomplete market data</div>`;
         }

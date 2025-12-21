@@ -84,6 +84,11 @@ class Config {
                 desc: "Item tooltip: Production cost and profit. [Depends on the previous selection]",
                 isTrue: true,
             },
+            profitCalc_optimisticPricing: {
+                id: "profitCalc_optimisticPricing",
+                desc: "Profit calculations: Use optimistic pricing (Bid for materials, Ask for output). When disabled, uses conservative pricing (Ask for materials, Bid for output).",
+                isTrue: false,
+            },
             showConsumTips: {
                 id: "showConsumTips",
                 desc: "Item tooltip: HP/MP consumables restore speed, cost performance, max cost per day.",

@@ -3,6 +3,7 @@
  * Calculates production costs and profit for crafted items
  */
 
+import config from '../../core/config.js';
 import marketAPI from '../../api/marketplace.js';
 import dataManager from '../../core/data-manager.js';
 import * as efficiency from '../../utils/efficiency.js';
@@ -180,15 +181,28 @@ class ProfitCalculator {
             return null; // No market data
         }
 
-        // Bid price after 2% tax
-        const bidAfterTax = itemPrice.bid * (1 - this.MARKET_TAX);
+        // Check pricing mode setting
+        const useOptimistic = config.getSetting('profitCalc_optimisticPricing');
+
+        // Get output price based on pricing mode
+        // Conservative (default): Bid price (you receive when selling instantly)
+        // Optimistic: Ask price (best case if you post sell orders and wait)
+        let outputPrice = 0;
+        if (useOptimistic) {
+            outputPrice = itemPrice.ask;
+        } else {
+            outputPrice = itemPrice.bid;
+        }
+
+        // Apply market tax (2% tax on sales)
+        const priceAfterTax = outputPrice * (1 - this.MARKET_TAX);
 
         // Profit per item
-        const profitPerItem = bidAfterTax - costPerItem;
+        const profitPerItem = priceAfterTax - costPerItem;
 
         // Profit per hour (includes Gourmet bonus items)
         // Base items at (sell - cost), Gourmet bonus items at full sell price
-        const profitPerHour = (profitPerItem * itemsPerHour) + (gourmetBonusItems * bidAfterTax);
+        const profitPerHour = (profitPerItem * itemsPerHour) + (gourmetBonusItems * priceAfterTax);
 
         return {
             itemName: itemDetails.name,
@@ -203,7 +217,7 @@ class ProfitCalculator {
             totalMaterialCost,
             costPerItem,
             itemPrice,
-            bidAfterTax,
+            priceAfterTax,            // Output price after 2% tax (bid or ask based on mode)
             profitPerItem,
             profitPerHour,
             efficiencyBonus,         // Total efficiency
@@ -263,18 +277,28 @@ class ProfitCalculator {
     calculateMaterialCosts(actionDetails, artisanBonus = 0) {
         const costs = [];
 
+        // Check pricing mode setting
+        const useOptimistic = config.getSetting('profitCalc_optimisticPricing');
+
         // Check for upgrade item (e.g., Crimson Bulwark → Rainbow Bulwark)
         if (actionDetails.upgradeItemHrid) {
             const itemDetails = dataManager.getItemDetails(actionDetails.upgradeItemHrid);
             const price = marketAPI.getPrice(actionDetails.upgradeItemHrid, 0);
 
             if (itemDetails) {
-                // Get market price, or use face value for currency items
-                let askPrice = (price?.ask && price.ask > 0) ? price.ask : 0;
+                // Get market price based on pricing mode
+                // Conservative (default): Ask price (you pay when buying instantly)
+                // Optimistic: Bid price (best case if you post buy orders and wait)
+                let materialPrice = 0;
+                if (useOptimistic) {
+                    materialPrice = (price?.bid && price.bid > 0) ? price.bid : 0;
+                } else {
+                    materialPrice = (price?.ask && price.ask > 0) ? price.ask : 0;
+                }
 
                 // Special case: Coins have no market price but have face value of 1
-                if (actionDetails.upgradeItemHrid === '/items/coin' && askPrice === 0) {
-                    askPrice = 1;
+                if (actionDetails.upgradeItemHrid === '/items/coin' && materialPrice === 0) {
+                    materialPrice = 1;
                 }
 
                 // Apply artisan reduction (upgrade items count as 1 item)
@@ -285,8 +309,8 @@ class ProfitCalculator {
                     itemName: itemDetails.name,
                     baseAmount: 1,
                     amount: reducedAmount,
-                    askPrice: askPrice,
-                    totalCost: askPrice * reducedAmount
+                    askPrice: materialPrice,
+                    totalCost: materialPrice * reducedAmount
                 });
             }
         }
@@ -307,12 +331,19 @@ class ProfitCalculator {
                 // Apply artisan reduction
                 const reducedAmount = baseAmount * (1 - artisanBonus);
 
-                // Get market price, or use face value for currency items
-                let askPrice = (price?.ask && price.ask > 0) ? price.ask : 0;
+                // Get market price based on pricing mode
+                // Conservative (default): Ask price (you pay when buying instantly)
+                // Optimistic: Bid price (best case if you post buy orders and wait)
+                let materialPrice = 0;
+                if (useOptimistic) {
+                    materialPrice = (price?.bid && price.bid > 0) ? price.bid : 0;
+                } else {
+                    materialPrice = (price?.ask && price.ask > 0) ? price.ask : 0;
+                }
 
                 // Special case: Coins have no market price but have face value of 1
-                if (input.itemHrid === '/items/coin' && askPrice === 0) {
-                    askPrice = 1; // 1 coin = 1 gold value
+                if (input.itemHrid === '/items/coin' && materialPrice === 0) {
+                    materialPrice = 1; // 1 coin = 1 gold value
                 }
 
                 costs.push({
@@ -320,8 +351,8 @@ class ProfitCalculator {
                     itemName: itemDetails.name,
                     baseAmount: baseAmount,
                     amount: reducedAmount,
-                    askPrice: askPrice,
-                    totalCost: askPrice * reducedAmount
+                    askPrice: materialPrice,
+                    totalCost: materialPrice * reducedAmount
                 });
             }
         }
