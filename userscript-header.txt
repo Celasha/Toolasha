@@ -1,0 +1,25 @@
+// ==UserScript==
+// @name         MWITools - Refactored
+// @namespace    http://tampermonkey.net/
+// @version      25.1-refactor
+// @description  Tools for MilkyWayIdle. Shows total action time. Shows market prices. Shows action number quick inputs. Shows how many actions are needed to reach certain skill level. Shows skill exp percentages. Shows total networth. Shows combat summary. Shows combat maps index. Shows item level on item icons. Shows how many ability books are needed to reach certain level. Shows market equipment filters.
+// @author       Original: bot7420, updated by: Celasha and Claude
+// @license      CC-BY-NC-SA-4.0
+// @match        https://www.milkywayidle.com/*
+// @match        https://test.milkywayidle.com/*
+// @match        https://amvoidguy.github.io/MWICombatSimulatorTest/*
+// @match        https://shykai.github.io/MWICombatSimulatorTest/dist/*
+// @match        https://mooneycalc.netlify.app/*
+// @grant        GM_addStyle
+// @grant        GM.xmlHttpRequest
+// @grant        GM_xmlhttpRequest
+// @grant        GM_notification
+// @grant        GM_getValue
+// @grant        GM_setValue
+// @require      https://cdnjs.cloudflare.com/ajax/libs/mathjs/12.4.2/math.js
+// @require      https://cdn.jsdelivr.net/npm/chart.js@3.7.0/dist/chart.min.js
+// @require      https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0/dist/chartjs-plugin-datalabels.min.js
+// @require      https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js
+// @downloadURL https://update.greasyfork.org/scripts/494467/MWITools.user.js
+// @updateURL https://update.greasyfork.org/scripts/494467/MWITools.meta.js
+// ==/UserScript==
