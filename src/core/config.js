@@ -87,7 +87,7 @@ class Config {
             profitCalc_pricingMode: {
                 id: "profitCalc_pricingMode",
                 desc: "Profit calculation pricing mode: 'conservative' = instant trading (Ask/Bid), 'hybrid' = instant buy + sell orders (Ask/Ask), 'optimistic' = patient trading (Bid/Ask).",
-                value: "conservative",
+                value: "hybrid",
             },
             showConsumTips: {
                 id: "showConsumTips",
