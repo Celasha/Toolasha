@@ -12,6 +12,7 @@ import dom from './utils/dom.js';
 import * as efficiency from './utils/efficiency.js';
 import marketAPI from './api/marketplace.js';
 import tooltipPrices from './features/market/tooltip-prices.js';
+import tooltipConsumables from './features/market/tooltip-consumables.js';
 
 console.log('MWI Tools (Refactored) - Initializing...');
 
@@ -114,6 +115,7 @@ dataManager.on('character_initialized', (data) => {
     setTimeout(() => {
         console.log('\n=== Initializing Market Features ===');
         tooltipPrices.initialize();
+        tooltipConsumables.initialize();
     }, 1000);
 });
 
