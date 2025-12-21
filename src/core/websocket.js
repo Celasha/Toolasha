@@ -28,46 +28,46 @@ class WebSocketHook {
         const dataProperty = Object.getOwnPropertyDescriptor(MessageEvent.prototype, "data");
         this.originalGet = dataProperty.get;
 
+        // Capture hook instance in closure (so hookedGet can access it)
+        const hookInstance = this;
+
         // Replace with our hooked version
-        dataProperty.get = this.hookedGet.bind(this);
+        // IMPORTANT: Don't use arrow function or bind() - 'this' must be MessageEvent
+        dataProperty.get = function hookedGet() {
+            // 'this' is the MessageEvent instance
+            const socket = this.currentTarget;
+
+            // Only hook WebSocket messages
+            if (!(socket instanceof WebSocket)) {
+                return hookInstance.originalGet.call(this);
+            }
+
+            // Only hook MWI game server WebSocket
+            const isMWIWebSocket =
+                socket.url.indexOf("api.milkywayidle.com/ws") > -1 ||
+                socket.url.indexOf("api-test.milkywayidle.com/ws") > -1;
+
+            if (!isMWIWebSocket) {
+                return hookInstance.originalGet.call(this);
+            }
+
+            // Get the original message
+            const message = hookInstance.originalGet.call(this);
+
+            // Anti-loop: Define data property so we don't hook it again
+            Object.defineProperty(this, "data", { value: message });
+
+            // Process the message (doesn't modify it)
+            hookInstance.processMessage(message);
+
+            // Return original message (game continues normally)
+            return message;
+        };
+
         Object.defineProperty(MessageEvent.prototype, "data", dataProperty);
 
         this.isHooked = true;
         console.log('[WebSocket Hook] ✅ Installed successfully');
-    }
-
-    /**
-     * Hooked getter for MessageEvent.data
-     * Intercepts messages and calls handlers
-     */
-    hookedGet() {
-        const socket = this.currentTarget;
-
-        // Only hook WebSocket messages
-        if (!(socket instanceof WebSocket)) {
-            return webSocketHook.originalGet.call(this);
-        }
-
-        // Only hook MWI game server WebSocket
-        const isMWIWebSocket =
-            socket.url.indexOf("api.milkywayidle.com/ws") > -1 ||
-            socket.url.indexOf("api-test.milkywayidle.com/ws") > -1;
-
-        if (!isMWIWebSocket) {
-            return webSocketHook.originalGet.call(this);
-        }
-
-        // Get the original message
-        const message = webSocketHook.originalGet.call(this);
-
-        // Anti-loop: Define data property so we don't hook it again
-        Object.defineProperty(this, "data", { value: message });
-
-        // Process the message (doesn't modify it)
-        webSocketHook.processMessage(message);
-
-        // Return original message (game continues normally)
-        return message;
     }
 
     /**
