@@ -92,9 +92,9 @@ class ProfitCalculator {
         const outputAmount = action.count || action.baseAmount || 1;
 
         // Calculate efficiency multiplier
-        // Efficiency: floor(eff/100) guaranteed + (eff % 100)/100 chance for one more
-        // Example: 150% = 1 base + 1 guaranteed + 50% chance = average 2.5 actions
-        const efficiencyMultiplier = 1 + Math.floor(efficiencyBonus / 100) + ((efficiencyBonus % 100) / 100);
+        // Formula matches original MWI Tools: 1 + efficiency%
+        // Example: 150% efficiency → 1 + 1.5 = 2.5x multiplier
+        const efficiencyMultiplier = 1 + (efficiencyBonus / 100);
 
         // Items produced per hour (with efficiency multiplier)
         const itemsPerHour = actionsPerHour * outputAmount * efficiencyMultiplier;

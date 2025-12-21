@@ -16,10 +16,10 @@ All notable changes to the MWI Tools refactoring project.
 - **Efficiency now applied correctly:** `itemsPerHour = actionsPerHour × outputAmount × efficiencyMultiplier`
 
 **Efficiency Calculation:**
-- Guaranteed actions: `1 + floor(efficiency / 100)`
-- Chance for +1 more: `efficiency % 100`
-- Example: 150% efficiency = 2 guaranteed + 50% chance for 3rd = average 2.5 actions
-- Multiplier: `1 + floor(eff/100) + (eff % 100)/100`
+- Simple linear multiplier: `1 + efficiency / 100`
+- Example: 150% efficiency → `1 + 150/100 = 2.5×` multiplier
+- Example: 10% efficiency → `1 + 10/100 = 1.1×` multiplier
+- Formula matches original MWI Tools implementation
 
 **Updated Display:**
 - Time breakdown now only shows speed modifiers

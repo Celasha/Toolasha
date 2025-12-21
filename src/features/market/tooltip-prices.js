@@ -378,19 +378,19 @@ class TooltipPrices {
         const breakdown = profitData.timeBreakdown;
 
         // Show final action time FIRST (what matters most to player)
-        html += `<div style="margin-top: 4px; font-weight: bold;">Action Time: ${breakdown.finalTime.toFixed(1)}s (${numberFormatter(breakdown.actionsPerHour)}/hr)</div>`;
+        html += `<div style="margin-top: 4px; font-weight: bold;">Action Time: ${breakdown.finalTime.toFixed(2)}s (${numberFormatter(breakdown.actionsPerHour)}/hr)</div>`;
 
         // Visual separator
         html += `<div style="border-top: 1px solid rgba(255,255,255,0.3); margin: 2px 0;"></div>`;
 
         // Show base time
-        html += `<div>Base Time: ${breakdown.baseTime.toFixed(1)}s</div>`;
+        html += `<div>Base Time: ${breakdown.baseTime.toFixed(2)}s</div>`;
 
         // Show each speed modifier step (working backwards from base)
         if (breakdown.steps.length > 0) {
             for (const step of breakdown.steps) {
                 html += `<div style="margin-left: 8px;">`;
-                html += `  - ${step.name} (+${step.bonus.toFixed(1)}%): -${step.reduction.toFixed(1)}s`;
+                html += `  - ${step.name} (+${step.bonus.toFixed(1)}%): -${step.reduction.toFixed(2)}s`;
                 html += `</div>`;
             }
         }
