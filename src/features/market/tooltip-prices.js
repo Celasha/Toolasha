@@ -228,22 +228,27 @@ class TooltipPrices {
             'market-price-injected'
         );
 
-        // Show message if invalid market data
-        if (price.ask <= 0 || price.bid <= 0) {
+        // Show message if no market data at all
+        if (price.ask <= 0 && price.bid <= 0) {
             priceDiv.innerHTML = `Price: <span style="color: gray; font-style: italic;">No market data</span>`;
             tooltipText.appendChild(priceDiv);
             return;
         }
 
-        // Calculate total prices for the amount
-        const totalAsk = price.ask * amount;
-        const totalBid = price.bid * amount;
+        // Format prices, using "-" for missing values
+        const askDisplay = price.ask > 0 ? numberFormatter(price.ask) : '-';
+        const bidDisplay = price.bid > 0 ? numberFormatter(price.bid) : '-';
 
-        // Format: "Price: 1.2k / 950 (12k / 9.5k)"
-        priceDiv.innerHTML = `
-            Price: ${numberFormatter(price.ask)} / ${numberFormatter(price.bid)}
-            ${amount > 1 ? ` (${numberFormatter(totalAsk)} / ${numberFormatter(totalBid)})` : ''}
-        `;
+        // Calculate totals (only if both prices valid and amount > 1)
+        let totalDisplay = '';
+        if (amount > 1 && price.ask > 0 && price.bid > 0) {
+            const totalAsk = price.ask * amount;
+            const totalBid = price.bid * amount;
+            totalDisplay = ` (${numberFormatter(totalAsk)} / ${numberFormatter(totalBid)})`;
+        }
+
+        // Format: "Price: 1,200 / 950" or "Price: 1,200 / -" or "Price: - / 950"
+        priceDiv.innerHTML = `Price: ${askDisplay} / ${bidDisplay}${totalDisplay}`;
 
         // Insert at the end of the tooltip
         tooltipText.appendChild(priceDiv);
@@ -274,35 +279,6 @@ class TooltipPrices {
             'market-profit-injected'
         );
 
-        // Check for invalid market data
-        if (profitData.itemPrice.bid <= 0 || profitData.itemPrice.ask <= 0) {
-            profitDiv.innerHTML = `
-                <div style="border-top: 1px solid rgba(255,255,255,0.2); padding-top: 8px;">
-                    <div style="font-weight: bold; margin-bottom: 4px;">PROFIT ANALYSIS</div>
-                    <div style="font-size: 0.9em; margin-left: 8px; color: gray; font-style: italic;">
-                        No market data available
-                    </div>
-                </div>
-            `;
-            tooltipText.appendChild(profitDiv);
-            return;
-        }
-
-        // Check if all material costs are invalid
-        const hasValidCosts = profitData.materialCosts.some(mat => mat.askPrice > 0);
-        if (profitData.materialCosts.length > 0 && !hasValidCosts) {
-            profitDiv.innerHTML = `
-                <div style="border-top: 1px solid rgba(255,255,255,0.2); padding-top: 8px;">
-                    <div style="font-weight: bold; margin-bottom: 4px;">PROFIT ANALYSIS</div>
-                    <div style="font-size: 0.9em; margin-left: 8px; color: gray; font-style: italic;">
-                        Material prices unavailable
-                    </div>
-                </div>
-            `;
-            tooltipText.appendChild(profitDiv);
-            return;
-        }
-
         // Build profit display - Option 1 Enhanced
         let html = '<div style="border-top: 1px solid rgba(255,255,255,0.2); padding-top: 8px;">';
 
@@ -311,14 +287,22 @@ class TooltipPrices {
             html += '<div style="font-weight: bold; margin-bottom: 4px;">PRODUCTION COST</div>';
             html += '<div style="font-size: 0.9em; margin-left: 8px;">';
 
-            for (const material of profitData.materialCosts) {
-                // Format: • ItemName ×quantity @ unit_price → total_cost
-                html += `<div>• ${material.itemName} ×${material.amount} @ ${numberFormatter(material.askPrice)} → ${numberFormatter(material.totalCost)}</div>`;
-            }
+            const hasAnyValidPrices = profitData.materialCosts.some(mat => mat.askPrice > 0);
 
-            // Only show Total if multiple materials
-            if (profitData.materialCosts.length > 1) {
-                html += `<div style="margin-top: 4px; font-weight: bold;">Total: ${numberFormatter(profitData.totalMaterialCost)}</div>`;
+            if (hasAnyValidPrices) {
+                for (const material of profitData.materialCosts) {
+                    // Format: • ItemName ×quantity @ unit_price → total_cost
+                    const priceDisplay = material.askPrice > 0 ? numberFormatter(material.askPrice) : '-';
+                    const totalDisplay = material.askPrice > 0 ? numberFormatter(material.totalCost) : '-';
+                    html += `<div>• ${material.itemName} ×${material.amount} @ ${priceDisplay} → ${totalDisplay}</div>`;
+                }
+
+                // Only show Total if multiple materials and all have prices
+                if (profitData.materialCosts.length > 1 && profitData.materialCosts.every(mat => mat.askPrice > 0)) {
+                    html += `<div style="margin-top: 4px; font-weight: bold;">Total: ${numberFormatter(profitData.totalMaterialCost)}</div>`;
+                }
+            } else {
+                html += `<div style="color: gray; font-style: italic;">Material prices unavailable</div>`;
             }
 
             html += '</div>';
@@ -331,17 +315,22 @@ class TooltipPrices {
         html += '<div style="font-weight: bold; margin-bottom: 4px;">PROFIT ANALYSIS</div>';
         html += '<div style="font-size: 0.9em; margin-left: 8px;">';
 
-        // Net profit line (color-coded)
-        const profitColor = profitData.profitPerItem >= 0 ? 'lime' : 'red';
-        html += `<div style="color: ${profitColor}; font-weight: bold;">Net: ${numberFormatter(profitData.profitPerItem)}/item (${numberFormatter(profitData.profitPerHour)}/hr)</div>`;
+        // Check if we can calculate profit (need valid bid price)
+        if (profitData.itemPrice.bid > 0) {
+            // Net profit line (color-coded)
+            const profitColor = profitData.profitPerItem >= 0 ? 'lime' : 'red';
+            html += `<div style="color: ${profitColor}; font-weight: bold;">Net: ${numberFormatter(profitData.profitPerItem)}/item (${numberFormatter(profitData.profitPerHour)}/hr)</div>`;
 
-        // Sell vs Cost line
-        html += `<div>Sell: ${numberFormatter(profitData.bidAfterTax)} | Cost: ${numberFormatter(profitData.costPerItem)}</div>`;
+            // Sell vs Cost line
+            html += `<div>Sell: ${numberFormatter(profitData.bidAfterTax)} | Cost: ${numberFormatter(profitData.costPerItem)}</div>`;
+        } else {
+            html += `<div style="color: gray; font-style: italic;">No bid price available</div>`;
+        }
 
-        // Time line (combines time and output)
+        // Time line (always show - doesn't depend on prices)
         html += `<div>Time: ${profitData.actionTime.toFixed(1)}s (${numberFormatter(profitData.actionsPerHour)}/hr)</div>`;
 
-        // Efficiency line (shortened)
+        // Efficiency line (always show if > 0)
         if (profitData.efficiencyBonus > 0) {
             html += `<div>Efficiency: +${profitData.efficiencyBonus.toFixed(1)}%</div>`;
         }
