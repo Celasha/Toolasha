@@ -7,17 +7,16 @@ import { numberFormatter, timeReadable } from './utils/formatters.js';
 import storage from './core/storage.js';
 import config from './core/config.js';
 import webSocketHook from './core/websocket.js';
-import DataManager from './core/data-manager.js';
+import dataManager from './core/data-manager.js';
 import dom from './utils/dom.js';
-import efficiency from './utils/efficiency.js';
+import * as efficiency from './utils/efficiency.js';
+import marketAPI from './api/marketplace.js';
+import tooltipPrices from './features/market/tooltip-prices.js';
 
 console.log('MWI Tools (Refactored) - Initializing...');
 
 // CRITICAL: Install WebSocket hook FIRST, before game connects
 webSocketHook.install();
-
-// Create Data Manager (connects to WebSocket hook)
-const dataManager = new DataManager(webSocketHook);
 
 // Initialize Data Manager after a delay (let game load localStorageUtil)
 setTimeout(() => {
@@ -110,6 +109,12 @@ dataManager.on('character_initialized', (data) => {
             console.log(`    - ${skillName}: Level ${skill.level}`);
         });
     }
+
+    // Initialize market features after character data loads
+    setTimeout(() => {
+        console.log('\n=== Initializing Market Features ===');
+        tooltipPrices.initialize();
+    }, 1000);
 });
 
 dataManager.on('actions_updated', () => {

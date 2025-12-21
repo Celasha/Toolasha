@@ -6,8 +6,10 @@
  * Listens to WebSocket messages for player data updates
  */
 
+import webSocketHook from './websocket.js';
+
 class DataManager {
-    constructor(webSocketHook) {
+    constructor() {
         this.webSocketHook = webSocketHook;
 
         // Static game data (items, actions, monsters, abilities, etc.)
@@ -226,5 +228,7 @@ class DataManager {
     }
 }
 
-export default DataManager;
-export { DataManager };
+// Create and export singleton instance
+const dataManager = new DataManager();
+
+export default dataManager;
