@@ -116,6 +116,26 @@ class DataManager {
 
             this.emit('items_updated', data);
         });
+
+        // Handle action_type_consumable_slots_updated (when user changes tea assignments)
+        this.webSocketHook.on('action_type_consumable_slots_updated', (data) => {
+            console.log('[Data Manager] Consumable slots updated');
+
+            // Update drink slots map with new consumables
+            if (data.actionTypeDrinkSlotsMap) {
+                this.updateDrinkSlotsMap(data.actionTypeDrinkSlotsMap);
+            }
+
+            this.emit('consumables_updated', data);
+        });
+
+        // Handle consumable_buffs_updated (when buffs expire/refresh)
+        this.webSocketHook.on('consumable_buffs_updated', (data) => {
+            console.log('[Data Manager] Consumable buffs updated');
+
+            // Buffs updated - next hover will show updated values
+            this.emit('buffs_updated', data);
+        });
     }
 
     /**
