@@ -20,6 +20,16 @@ const dataManager = new DataManager(webSocketHook);
 // Initialize Data Manager after a delay (let game load localStorageUtil)
 setTimeout(() => {
     dataManager.initialize();
+
+    // Check static data after initialization
+    setTimeout(() => {
+        const initData = dataManager.getInitClientData();
+        if (initData) {
+            const itemCount = Object.keys(initData.itemDetailMap || {}).length;
+            const actionCount = Object.keys(initData.actionDetailMap || {}).length;
+            console.log(`[Data Manager] Static data loaded: ${itemCount} items, ${actionCount} actions`);
+        }
+    }, 500);
 }, 1000);
 
 // Test the formatters
@@ -81,18 +91,9 @@ console.log('  Data Manager created, waiting for game data...');
 
 dataManager.on('character_initialized', (data) => {
     console.log('  ✅ Character data loaded!');
-    console.log('  Character name:', data.characterName);
     console.log('  Skills loaded:', dataManager.getSkills()?.length || 0);
     console.log('  Inventory items:', dataManager.getInventory()?.length || 0);
     console.log('  Equipment slots:', dataManager.getEquipment().size);
-
-    // Test accessing static game data
-    const initData = dataManager.getInitClientData();
-    if (initData) {
-        const itemCount = Object.keys(initData.itemDetailMap || {}).length;
-        const actionCount = Object.keys(initData.actionDetailMap || {}).length;
-        console.log(`  Static data: ${itemCount} items, ${actionCount} actions`);
-    }
 });
 
 dataManager.on('actions_updated', () => {
