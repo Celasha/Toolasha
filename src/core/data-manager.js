@@ -22,6 +22,7 @@ class DataManager {
         this.characterActions = [];
         this.characterEquipment = new Map();
         this.characterHouseRooms = new Map();  // House room HRID -> {houseRoomHrid, level}
+        this.actionTypeDrinkSlotsMap = new Map();  // Action type HRID -> array of drink items
 
         // Event listeners
         this.eventListeners = new Map();
@@ -68,6 +69,9 @@ class DataManager {
 
             // Build house room map
             this.updateHouseRoomMap(data.characterHouseRoomMap);
+
+            // Build drink slots map (tea buffs)
+            this.updateDrinkSlotsMap(data.actionTypeDrinkSlotsMap);
 
             this.emit('character_initialized', data);
         });
@@ -148,6 +152,23 @@ class DataManager {
     }
 
     /**
+     * Update drink slots map from character data
+     * @param {Object} drinkSlotsMap - Action type drink slots map
+     */
+    updateDrinkSlotsMap(drinkSlotsMap) {
+        if (!drinkSlotsMap) {
+            return;
+        }
+
+        this.actionTypeDrinkSlotsMap.clear();
+        for (const [actionTypeHrid, drinks] of Object.entries(drinkSlotsMap)) {
+            this.actionTypeDrinkSlotsMap.set(actionTypeHrid, drinks || []);
+        }
+
+        console.log(`[Data Manager] Drink slots loaded: ${this.actionTypeDrinkSlotsMap.size} action types`);
+    }
+
+    /**
      * Get static game data
      * @returns {Object} Init client data (items, actions, monsters, etc.)
      */
@@ -205,6 +226,15 @@ class DataManager {
     getHouseRoomLevel(houseRoomHrid) {
         const room = this.characterHouseRooms.get(houseRoomHrid);
         return room?.level || 0;
+    }
+
+    /**
+     * Get active drink items for an action type
+     * @param {string} actionTypeHrid - Action type HRID (e.g., "/action_types/brewing")
+     * @returns {Array} Array of drink items (empty if none)
+     */
+    getActionDrinkSlots(actionTypeHrid) {
+        return this.actionTypeDrinkSlotsMap.get(actionTypeHrid) || [];
     }
 
     /**

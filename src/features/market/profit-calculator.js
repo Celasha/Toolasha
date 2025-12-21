@@ -8,6 +8,7 @@ import dataManager from '../../core/data-manager.js';
 import * as efficiency from '../../utils/efficiency.js';
 import { parseEquipmentSpeedBonuses, parseEquipmentEfficiencyBonuses } from '../../utils/equipment-parser.js';
 import { calculateHouseEfficiency } from '../../utils/house-efficiency.js';
+import { parseTeaEfficiency, getDrinkConcentration, parseArtisanBonus, parseGourmetBonus, parseProcessingBonus } from '../../utils/tea-parser.js';
 
 /**
  * ProfitCalculator class handles profit calculations for production actions
@@ -71,8 +72,46 @@ class ProfitCalculator {
             initData?.itemDetailMap || {}
         );
 
+        // Get Drink Concentration from equipment
+        const drinkConcentration = getDrinkConcentration(
+            characterEquipment,
+            initData?.itemDetailMap || {}
+        );
+
+        // Get active drinks for this action type
+        const activeDrinks = dataManager.getActionDrinkSlots(actionDetails.type);
+
+        // Calculate tea efficiency bonus
+        const teaEfficiency = parseTeaEfficiency(
+            actionDetails.type,
+            activeDrinks,
+            initData?.itemDetailMap || {},
+            drinkConcentration
+        );
+
+        // Calculate artisan material cost reduction
+        const artisanBonus = parseArtisanBonus(
+            activeDrinks,
+            initData?.itemDetailMap || {},
+            drinkConcentration
+        );
+
+        // Calculate gourmet bonus (Brewing/Cooking extra items)
+        const gourmetBonus = parseGourmetBonus(
+            activeDrinks,
+            initData?.itemDetailMap || {},
+            drinkConcentration
+        );
+
+        // Calculate processing bonus (Milking/Foraging/Woodcutting conversions)
+        const processingBonus = parseProcessingBonus(
+            activeDrinks,
+            initData?.itemDetailMap || {},
+            drinkConcentration
+        );
+
         // Total efficiency bonus (all sources additive)
-        const efficiencyBonus = levelEfficiency + houseEfficiency + equipmentEfficiency;
+        const efficiencyBonus = levelEfficiency + houseEfficiency + equipmentEfficiency + teaEfficiency;
 
         // Calculate equipment speed bonus
         const equipmentSpeedBonus = parseEquipmentSpeedBonuses(
@@ -108,8 +147,15 @@ class ProfitCalculator {
         // Items produced per hour (with efficiency multiplier)
         const itemsPerHour = actionsPerHour * outputAmount * efficiencyMultiplier;
 
-        // Calculate material costs
-        const materialCosts = this.calculateMaterialCosts(actionDetails);
+        // Extra items from Gourmet (Brewing/Cooking bonus)
+        // Statistical average: itemsPerHour × gourmetChance
+        const gourmetBonusItems = itemsPerHour * gourmetBonus;
+
+        // Total items per hour (base + gourmet bonus)
+        const totalItemsPerHour = itemsPerHour + gourmetBonusItems;
+
+        // Calculate material costs (with artisan reduction if applicable)
+        const materialCosts = this.calculateMaterialCosts(actionDetails, artisanBonus);
 
         // Total material cost per action
         const totalMaterialCost = materialCosts.reduce((sum, mat) => sum + mat.totalCost, 0);
@@ -129,8 +175,9 @@ class ProfitCalculator {
         // Profit per item
         const profitPerItem = bidAfterTax - costPerItem;
 
-        // Profit per hour
-        const profitPerHour = profitPerItem * itemsPerHour;
+        // Profit per hour (includes Gourmet bonus items)
+        // Base items at (sell - cost), Gourmet bonus items at full sell price
+        const profitPerHour = (profitPerItem * itemsPerHour) + (gourmetBonusItems * bidAfterTax);
 
         return {
             itemName: itemDetails.name,
@@ -138,6 +185,8 @@ class ProfitCalculator {
             actionTime,
             actionsPerHour,
             itemsPerHour,
+            totalItemsPerHour,        // Items/hour including Gourmet bonus
+            gourmetBonusItems,        // Extra items from Gourmet
             outputAmount,
             materialCosts,
             totalMaterialCost,
@@ -150,6 +199,11 @@ class ProfitCalculator {
             levelEfficiency,          // Level advantage efficiency
             houseEfficiency,          // House room efficiency
             equipmentEfficiency,      // Equipment efficiency
+            teaEfficiency,            // Tea buff efficiency
+            artisanBonus,             // Artisan material cost reduction
+            gourmetBonus,             // Gourmet bonus item chance
+            processingBonus,          // Processing conversion chance
+            drinkConcentration,       // Drink Concentration stat
             efficiencyMultiplier,
             equipmentSpeedBonus,
             skillLevel,
@@ -189,9 +243,10 @@ class ProfitCalculator {
     /**
      * Calculate material costs for an action
      * @param {Object} actionDetails - Action details from game data
+     * @param {number} artisanBonus - Artisan material reduction (0 to 1, e.g., 0.112 for 11.2% reduction)
      * @returns {Array} Array of material cost objects
      */
-    calculateMaterialCosts(actionDetails) {
+    calculateMaterialCosts(actionDetails, artisanBonus = 0) {
         const costs = [];
 
         // Check for upgrade item (e.g., Crimson Bulwark → Rainbow Bulwark)
@@ -202,12 +257,16 @@ class ProfitCalculator {
             if (itemDetails) {
                 const askPrice = (price?.ask && price.ask > 0) ? price.ask : 0;
 
+                // Apply artisan reduction (upgrade items count as 1 item)
+                const reducedAmount = 1 * (1 - artisanBonus);
+
                 costs.push({
                     itemHrid: actionDetails.upgradeItemHrid,
                     itemName: itemDetails.name,
-                    amount: 1,
+                    baseAmount: 1,
+                    amount: reducedAmount,
                     askPrice: askPrice,
-                    totalCost: askPrice
+                    totalCost: askPrice * reducedAmount
                 });
             }
         }
@@ -223,7 +282,10 @@ class ProfitCalculator {
                 }
 
                 // Use 'count' field (not 'amount')
-                const amount = input.count || input.amount || 1;
+                const baseAmount = input.count || input.amount || 1;
+
+                // Apply artisan reduction
+                const reducedAmount = baseAmount * (1 - artisanBonus);
 
                 // Validate that the price is positive (ignore invalid market data)
                 const askPrice = (price?.ask && price.ask > 0) ? price.ask : 0;
@@ -231,9 +293,10 @@ class ProfitCalculator {
                 costs.push({
                     itemHrid: input.itemHrid,
                     itemName: itemDetails.name,
-                    amount: amount,
+                    baseAmount: baseAmount,
+                    amount: reducedAmount,
                     askPrice: askPrice,
-                    totalCost: askPrice * amount
+                    totalCost: askPrice * reducedAmount
                 });
             }
         }

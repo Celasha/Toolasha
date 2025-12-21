@@ -307,12 +307,23 @@ class TooltipPrices {
             }
             html += '</div>';
 
+            // Show artisan reduction if active
+            if (profitData.artisanBonus > 0) {
+                html += `<div style="font-size: 0.9em; color: #90EE90; margin-bottom: 4px;">Artisan: -${(profitData.artisanBonus * 100).toFixed(1)}% material cost</div>`;
+            }
+
             html += '<div style="font-size: 0.9em; margin-left: 8px;">';
 
             if (hasAnyValidPrices) {
                 for (const material of profitData.materialCosts) {
-                    // Format: • ItemName ×quantity @ unit_price → total_cost
-                    const amountDisplay = numberFormatter(material.amount);
+                    // Show base amount if artisan is reducing it
+                    let amountDisplay;
+                    if (profitData.artisanBonus > 0 && material.baseAmount) {
+                        amountDisplay = `${numberFormatter(material.amount)} (${numberFormatter(material.baseAmount)} base)`;
+                    } else {
+                        amountDisplay = numberFormatter(material.amount);
+                    }
+
                     const priceDisplay = material.askPrice > 0 ? numberFormatter(material.askPrice) : '-';
                     const totalDisplay = material.askPrice > 0 ? numberFormatter(material.totalCost) : '-';
                     html += `<div>• ${material.itemName} ×${amountDisplay} @ ${priceDisplay} → ${totalDisplay}</div>`;
@@ -370,8 +381,8 @@ class TooltipPrices {
             html += `<div style="border-top: 1px solid rgba(255,255,255,0.2); margin: 8px 0;"></div>`;
             html += `<div>Efficiency: +${profitData.efficiencyBonus.toFixed(1)}%</div>`;
 
-            // Show efficiency breakdown (level + house + equipment)
-            if (profitData.levelEfficiency > 0 || profitData.houseEfficiency > 0 || profitData.equipmentEfficiency > 0) {
+            // Show efficiency breakdown (level + house + equipment + tea)
+            if (profitData.levelEfficiency > 0 || profitData.houseEfficiency > 0 || profitData.equipmentEfficiency > 0 || profitData.teaEfficiency > 0) {
                 if (profitData.levelEfficiency > 0) {
                     html += `<div style="margin-left: 8px;">  - Level Advantage: +${profitData.levelEfficiency.toFixed(1)}%</div>`;
                 }
@@ -381,9 +392,27 @@ class TooltipPrices {
                 if (profitData.equipmentEfficiency > 0) {
                     html += `<div style="margin-left: 8px;">  - Equipment: +${profitData.equipmentEfficiency.toFixed(1)}%</div>`;
                 }
+                if (profitData.teaEfficiency > 0) {
+                    html += `<div style="margin-left: 8px;">  - Tea Buffs: +${profitData.teaEfficiency.toFixed(1)}%</div>`;
+                }
             }
 
             html += `<div style="margin-left: 8px;">Output: ×${profitData.efficiencyMultiplier.toFixed(2)} (${numberFormatter(profitData.itemsPerHour)}/hr)</div>`;
+        }
+
+        // Gourmet bonus section (if > 0)
+        if (profitData.gourmetBonus > 0) {
+            html += `<div style="border-top: 1px solid rgba(255,255,255,0.2); margin: 8px 0;"></div>`;
+            html += `<div>Gourmet: +${(profitData.gourmetBonus * 100).toFixed(1)}% bonus items</div>`;
+            html += `<div style="margin-left: 8px;">Extra: +${numberFormatter(profitData.gourmetBonusItems)}/hr</div>`;
+            html += `<div style="margin-left: 8px;">Total: ${numberFormatter(profitData.totalItemsPerHour)}/hr</div>`;
+        }
+
+        // Processing bonus section (if > 0)
+        if (profitData.processingBonus > 0) {
+            html += `<div style="border-top: 1px solid rgba(255,255,255,0.2); margin: 8px 0;"></div>`;
+            html += `<div>Processing: ${(profitData.processingBonus * 100).toFixed(1)}% conversion chance</div>`;
+            html += `<div style="margin-left: 8px; font-size: 0.85em; color: #aaa;">Converts raw → processed materials</div>`;
         }
 
         html += '</div>';
