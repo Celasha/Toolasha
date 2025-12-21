@@ -43,19 +43,24 @@ All notable changes to the MWI Tools refactoring project.
 
 ### Added - December 21, 2024
 
-#### **House Room Efficiency (Phase 2 Efficiency System)**
+#### **House Room Efficiency (Phase 2 Efficiency System) - WebSocket Integration**
 - **NEW MODULE:** `src/utils/house-efficiency.js`
   - Calculates efficiency bonuses from house room levels
   - Maps action types to house rooms (Brewery, Forge, Kitchen, etc.)
   - Formula: `houseLevel × 1.5%` efficiency per level (0-8 levels)
+  - Uses `dataManager` for automatic WebSocket data detection
   - Provides room name helpers for display
 
+- **UPDATED:** `src/core/data-manager.js`
+  - Added `characterHouseRooms` Map to track house room data from WebSocket
+  - Added `updateHouseRoomMap()` method to parse `characterHouseRoomMap` from WebSocket
+  - Added `getHouseRooms()` and `getHouseRoomLevel()` accessor methods
+  - Listens to `init_character_data` message for automatic house room detection
+
 - **UPDATED:** `src/core/config.js`
-  - Added `houseRooms` configuration object (9 rooms)
-  - Auto-saves house room levels to storage
-  - API: `getHouseRoomLevel()`, `setHouseRoomLevel()`, `getAllHouseRooms()`
-  - Validates levels (0-8) on set
-  - Resets to 0 on `resetToDefaults()`
+  - **REMOVED:** Manual house room configuration (no longer needed)
+  - House rooms now automatically detected from WebSocket instead of user input
+  - Provides much better UX - no manual configuration required
 
 - **UPDATED:** `src/features/market/profit-calculator.js`
   - Integrates house efficiency into total efficiency calculation
@@ -66,6 +71,15 @@ All notable changes to the MWI Tools refactoring project.
   - Shows efficiency breakdown in profit tooltips
   - Format: "Efficiency: +18.0% → Level Advantage: +10.0% → House Room: +12.0%"
   - Only shows components that are > 0
+
+**Data Source:** WebSocket message `init_character_data` → `characterHouseRoomMap`
+```javascript
+characterHouseRoomMap = {
+  '/house_rooms/brewery': { houseRoomHrid: '/house_rooms/brewery', level: 5 },
+  '/house_rooms/forge': { houseRoomHrid: '/house_rooms/forge', level: 8 },
+  ...
+}
+```
 
 **Example Display:**
 ```
