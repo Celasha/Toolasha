@@ -400,6 +400,17 @@ class TooltipPrices {
             // Separator between time calculation and efficiency
             html += `<div style="border-top: 1px solid rgba(255,255,255,0.2); margin: 8px 0;"></div>`;
             html += `<div>Efficiency: +${profitData.efficiencyBonus.toFixed(1)}%</div>`;
+
+            // Show efficiency breakdown (level + house)
+            if (profitData.levelEfficiency > 0 || profitData.houseEfficiency > 0) {
+                if (profitData.levelEfficiency > 0) {
+                    html += `<div style="margin-left: 8px;">  - Level Advantage: +${profitData.levelEfficiency.toFixed(1)}%</div>`;
+                }
+                if (profitData.houseEfficiency > 0) {
+                    html += `<div style="margin-left: 8px;">  - House Room: +${profitData.houseEfficiency.toFixed(1)}%</div>`;
+                }
+            }
+
             html += `<div style="margin-left: 8px;">Output: ×${profitData.efficiencyMultiplier.toFixed(2)} (${numberFormatter(profitData.itemsPerHour)}/hr)</div>`;
         }
 

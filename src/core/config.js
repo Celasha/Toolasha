@@ -181,6 +181,21 @@ class Config {
             },
         };
 
+        // === HOUSE ROOM LEVELS ===
+        // User configuration for house room levels (0-8)
+        // Each room provides +1.5% efficiency per level to matching actions
+        this.houseRooms = {
+            '/house_rooms/brewery': 0,         // Brewing
+            '/house_rooms/forge': 0,           // Cheesesmithing
+            '/house_rooms/kitchen': 0,         // Cooking
+            '/house_rooms/workshop': 0,        // Crafting
+            '/house_rooms/garden': 0,          // Foraging
+            '/house_rooms/dairy_barn': 0,      // Milking
+            '/house_rooms/sewing_parlor': 0,   // Tailoring
+            '/house_rooms/log_shed': 0,        // Woodcutting
+            '/house_rooms/laboratory': 0       // Alchemy
+        };
+
         // Load settings from storage
         this.loadSettings();
 
@@ -202,6 +217,16 @@ class Config {
                 }
             }
         }
+
+        // Load house room levels
+        const savedHouseRooms = storage.getJSON('script_houseRooms', null);
+        if (savedHouseRooms) {
+            for (const [roomHrid, level] of Object.entries(savedHouseRooms)) {
+                if (this.houseRooms.hasOwnProperty(roomHrid)) {
+                    this.houseRooms[roomHrid] = level;
+                }
+            }
+        }
     }
 
     /**
@@ -209,6 +234,7 @@ class Config {
      */
     saveSettings() {
         storage.setJSON('script_settingsMap', this.settingsMap);
+        storage.setJSON('script_houseRooms', this.houseRooms);
     }
 
     /**
@@ -259,6 +285,38 @@ class Config {
     }
 
     /**
+     * Get house room level
+     * @param {string} roomHrid - House room HRID (e.g., "/house_rooms/brewery")
+     * @returns {number} Room level (0-8)
+     */
+    getHouseRoomLevel(roomHrid) {
+        return this.houseRooms[roomHrid] ?? 0;
+    }
+
+    /**
+     * Set house room level (auto-saves)
+     * @param {string} roomHrid - House room HRID
+     * @param {number} level - Room level (0-8)
+     */
+    setHouseRoomLevel(roomHrid, level) {
+        // Validate level (0-8)
+        const validLevel = Math.max(0, Math.min(8, Math.floor(level)));
+
+        if (this.houseRooms.hasOwnProperty(roomHrid)) {
+            this.houseRooms[roomHrid] = validLevel;
+            this.saveSettings();
+        }
+    }
+
+    /**
+     * Get all house rooms with their levels
+     * @returns {Object} Map of room HRID -> level
+     */
+    getAllHouseRooms() {
+        return { ...this.houseRooms };
+    }
+
+    /**
      * Get all settings as an array (useful for UI)
      * @returns {Array} Array of setting objects
      */
@@ -274,6 +332,12 @@ class Config {
         for (const key in this.settingsMap) {
             this.settingsMap[key].isTrue = (key === 'notifiEmptyAction') ? false : true;
         }
+
+        // Reset house room levels to 0
+        for (const roomHrid in this.houseRooms) {
+            this.houseRooms[roomHrid] = 0;
+        }
+
         this.saveSettings();
         this.applyColorSettings();
     }

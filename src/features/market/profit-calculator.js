@@ -7,6 +7,7 @@ import marketAPI from '../../api/marketplace.js';
 import dataManager from '../../core/data-manager.js';
 import * as efficiency from '../../utils/efficiency.js';
 import { parseEquipmentSpeedBonuses } from '../../utils/equipment-parser.js';
+import { calculateHouseEfficiency } from '../../utils/house-efficiency.js';
 
 /**
  * ProfitCalculator class handles profit calculations for production actions
@@ -55,11 +56,12 @@ class ProfitCalculator {
         // Get character level for the action's skill
         const skillLevel = this.getSkillLevel(skills, actionDetails.type);
 
-        // Calculate efficiency bonus from level advantage
-        const efficiencyBonus = this.calculateEfficiencyBonus(
-            skillLevel,
-            actionDetails.levelRequirement?.level || 1
-        );
+        // Calculate efficiency components
+        const levelEfficiency = Math.max(0, skillLevel - (actionDetails.levelRequirement?.level || 1));
+        const houseEfficiency = calculateHouseEfficiency(actionDetails.type);
+
+        // Total efficiency bonus
+        const efficiencyBonus = levelEfficiency + houseEfficiency;
 
         // Get equipped items for speed bonus calculation
         const characterEquipment = dataManager.getEquipment();
@@ -137,7 +139,9 @@ class ProfitCalculator {
             bidAfterTax,
             profitPerItem,
             profitPerHour,
-            efficiencyBonus,
+            efficiencyBonus,         // Total efficiency
+            levelEfficiency,          // Level advantage efficiency
+            houseEfficiency,          // House room efficiency
             efficiencyMultiplier,
             equipmentSpeedBonus,
             skillLevel,
@@ -228,18 +232,25 @@ class ProfitCalculator {
     }
 
     /**
-     * Calculate efficiency bonus from level advantage
+     * Calculate efficiency bonus from multiple sources
      * @param {number} characterLevel - Character's skill level
      * @param {number} requiredLevel - Action's required level
-     * @returns {number} Efficiency bonus percentage
+     * @param {string} actionTypeHrid - Action type HRID for house room matching
+     * @returns {number} Total efficiency bonus percentage
      */
-    calculateEfficiencyBonus(characterLevel, requiredLevel) {
-        // +1% efficiency per level above requirement
-        const levelAdvantage = Math.max(0, characterLevel - requiredLevel);
-        return levelAdvantage * 1.0;
+    calculateEfficiencyBonus(characterLevel, requiredLevel, actionTypeHrid) {
+        // Level efficiency: +1% per level above requirement
+        const levelEfficiency = Math.max(0, characterLevel - requiredLevel);
 
-        // TODO: Add house room efficiency bonus
-        // TODO: Add tea efficiency bonus
+        // House room efficiency: houseLevel × 1.5%
+        const houseEfficiency = calculateHouseEfficiency(actionTypeHrid);
+
+        // Total efficiency (sum of all sources)
+        const totalEfficiency = levelEfficiency + houseEfficiency;
+
+        return totalEfficiency;
+
+        // TODO: Add tea efficiency bonus (Phase 3)
         // TODO: Add equipment efficiency bonus
     }
 
