@@ -6,8 +6,12 @@
 import { numberFormatter, timeReadable } from './utils/formatters.js';
 import storage from './core/storage.js';
 import config from './core/config.js';
+import webSocketHook from './core/websocket.js';
 
 console.log('MWI Tools (Refactored) - Initializing...');
+
+// CRITICAL: Install WebSocket hook FIRST, before game connects
+webSocketHook.install();
 
 // Test the formatters
 console.log('\n=== Testing Formatters ===');
@@ -47,10 +51,25 @@ console.log(`\n  Total settings loaded: ${allSettings.length}`);
 
 console.log('✅ Config working correctly!');
 
+// Test the WebSocket hook
+console.log('\n=== Testing WebSocket Hook ===');
+let messageCount = 0;
+webSocketHook.on('*', (data) => {
+    messageCount++;
+    if (messageCount <= 5) {
+        console.log(`  [${messageCount}] Message type:`, data.type);
+    }
+    if (messageCount === 6) {
+        console.log('  ... (suppressing further messages)');
+    }
+});
+console.log('  Hook installed, waiting for game messages...');
+console.log('  (Will log first 5 message types)');
+
 // TODO: Initialize other modules here as we extract them
 // const dataManager = new DataManager(storage);
 // hookWebSocket(dataManager);
 // ... etc
 
 console.log('\n🎉 MWI Tools (Refactored) - Ready!');
-console.log('📊 Modules loaded: Formatters, Storage, Config');
+console.log('📊 Modules loaded: Formatters, Storage, Config, WebSocket Hook');
