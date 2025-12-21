@@ -4,37 +4,26 @@
  */
 
 /**
- * Format large numbers with K/M/B suffixes
+ * Format numbers with thousand separators
  * @param {number} num - The number to format
- * @param {number} digits - Number of decimal places (default: 1)
- * @returns {string} Formatted number (e.g., "1.2M", "500k")
+ * @param {number} digits - Number of decimal places (default: 0 for whole numbers)
+ * @returns {string} Formatted number (e.g., "1,500", "1,500,000")
  *
  * @example
- * numberFormatter(1500) // "1.5k"
- * numberFormatter(1500000) // "1.5M"
- * numberFormatter(1500000000) // "1.5B"
+ * numberFormatter(1500) // "1,500"
+ * numberFormatter(1500000) // "1,500,000"
+ * numberFormatter(1500.5, 1) // "1,500.5"
  */
-export function numberFormatter(num, digits = 1) {
+export function numberFormatter(num, digits = 0) {
     if (num === null || num === undefined) {
         return null;
     }
-    if (num < 0) {
-        return "-" + numberFormatter(-num, digits);
-    }
-    const lookup = [
-        { value: 1, symbol: "" },
-        { value: 1e3, symbol: "k" },
-        { value: 1e6, symbol: "M" },
-        { value: 1e9, symbol: "B" },
-    ];
-    const rx = /\.0+$|(\.[0-9]*[1-9])0+$/;
-    var item = lookup
-        .slice()
-        .reverse()
-        .find(function (item) {
-            return num >= item.value;
-        });
-    return item ? (num / item.value).toFixed(digits).replace(rx, "$1") + item.symbol : "0";
+
+    // Round to specified decimal places
+    const rounded = digits > 0 ? num.toFixed(digits) : Math.round(num);
+
+    // Format with thousand separators
+    return new Intl.NumberFormat().format(rounded);
 }
 
 /**
