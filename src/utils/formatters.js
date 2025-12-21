@@ -61,3 +61,33 @@ export function timeReadable(sec) {
 export function formatWithSeparator(num) {
     return new Intl.NumberFormat().format(num);
 }
+
+/**
+ * Format large numbers in K/M/B notation
+ * @param {number} num - The number to format
+ * @param {number} decimals - Number of decimal places (default: 1)
+ * @returns {string} Formatted number (e.g., "1.5K", "2.3M", "1.2B")
+ *
+ * @example
+ * formatKMB(1500) // "1.5K"
+ * formatKMB(2300000) // "2.3M"
+ * formatKMB(1234567890) // "1.2B"
+ */
+export function formatKMB(num, decimals = 1) {
+    if (num === null || num === undefined) {
+        return null;
+    }
+
+    const absNum = Math.abs(num);
+    const sign = num < 0 ? '-' : '';
+
+    if (absNum >= 1e9) {
+        return sign + (absNum / 1e9).toFixed(decimals) + 'B';
+    } else if (absNum >= 1e6) {
+        return sign + (absNum / 1e6).toFixed(decimals) + 'M';
+    } else if (absNum >= 1e3) {
+        return sign + (absNum / 1e3).toFixed(decimals) + 'K';
+    } else {
+        return sign + absNum.toFixed(0);
+    }
+}

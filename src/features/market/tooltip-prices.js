@@ -7,7 +7,7 @@ import config from '../../core/config.js';
 import marketAPI from '../../api/marketplace.js';
 import dataManager from '../../core/data-manager.js';
 import profitCalculator from './profit-calculator.js';
-import { numberFormatter } from '../../utils/formatters.js';
+import { numberFormatter, formatKMB } from '../../utils/formatters.js';
 import dom from '../../utils/dom.js';
 
 /**
@@ -346,7 +346,16 @@ class TooltipPrices {
         if (profitData.itemPrice.bid > 0 && profitData.itemPrice.ask > 0) {
             // Net profit line (color-coded)
             const profitColor = profitData.profitPerItem >= 0 ? 'lime' : 'red';
-            html += `<div style="color: ${profitColor}; font-weight: bold;">Net: ${numberFormatter(profitData.profitPerItem)}/item (${numberFormatter(profitData.profitPerHour)}/hr)</div>`;
+            const profitPerDay = profitData.profitPerHour * 24;
+
+            // Add per-day profit in K/M/B format if profitable
+            let profitText = `Net: ${numberFormatter(profitData.profitPerItem)}/item (${numberFormatter(profitData.profitPerHour)}/hr`;
+            if (profitData.profitPerItem >= 0) {
+                profitText += `, ${formatKMB(profitPerDay)}/day`;
+            }
+            profitText += ')';
+
+            html += `<div style="color: ${profitColor}; font-weight: bold;">${profitText}</div>`;
 
             // Sell vs Cost line
             html += `<div>Sell: ${numberFormatter(profitData.bidAfterTax)} | Cost: ${numberFormatter(profitData.costPerItem)}</div>`;
