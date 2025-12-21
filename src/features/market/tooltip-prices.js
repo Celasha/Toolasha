@@ -377,23 +377,23 @@ class TooltipPrices {
         // Time breakdown section (always show)
         const breakdown = profitData.timeBreakdown;
 
-        // Show base time
-        html += `<div style="margin-top: 4px;">Base Time: ${breakdown.baseTime.toFixed(1)}s</div>`;
+        // Show final action time FIRST (what matters most to player)
+        html += `<div style="margin-top: 4px; font-weight: bold;">Action Time: ${breakdown.finalTime.toFixed(1)}s (${numberFormatter(breakdown.actionsPerHour)}/hr)</div>`;
 
-        // Show each speed modifier step
+        // Visual separator
+        html += `<div style="border-top: 1px solid rgba(255,255,255,0.3); margin: 2px 0;"></div>`;
+
+        // Show base time
+        html += `<div>Base Time: ${breakdown.baseTime.toFixed(1)}s</div>`;
+
+        // Show each speed modifier step (working backwards from base)
         if (breakdown.steps.length > 0) {
             for (const step of breakdown.steps) {
                 html += `<div style="margin-left: 8px;">`;
-                html += `  - ${step.name} (+${step.bonus.toFixed(1)}%): -${step.reduction.toFixed(1)}s → ${step.timeAfter.toFixed(1)}s`;
+                html += `  - ${step.name} (+${step.bonus.toFixed(1)}%): -${step.reduction.toFixed(1)}s`;
                 html += `</div>`;
             }
-
-            // Visual separator before final time
-            html += `<div style="border-top: 1px solid rgba(255,255,255,0.3); margin: 2px 0;"></div>`;
         }
-
-        // Final time
-        html += `<div style="font-weight: bold;">Final Time: ${breakdown.finalTime.toFixed(1)}s (${numberFormatter(breakdown.actionsPerHour)}/hr)</div>`;
 
         // Efficiency section (if > 0) - shows output multiplier
         if (profitData.efficiencyBonus > 0) {
