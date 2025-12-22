@@ -155,7 +155,7 @@ export async function calculateGatheringProfit(actionHrid) {
 
         // Get Community Buff level for gathering quantity
         const communityBuffLevel = dataManager.getCommunityBuffLevel('/community_buff_types/gathering_quantity');
-        communityGathering = communityBuffLevel ? 0.2 + (communityBuffLevel * 0.005) : 0;
+        communityGathering = communityBuffLevel ? 0.2 + ((communityBuffLevel - 1) * 0.005) : 0;
 
         // TODO: Add achievement tier bonus when available
         // const achievementGathering = ...
