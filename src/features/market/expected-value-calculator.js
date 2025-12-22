@@ -33,15 +33,16 @@ class ExpectedValueCalculator {
      * Initialize the calculator
      * Pre-calculates all openable containers with nested convergence
      */
-    initialize() {
+    async initialize() {
         if (!dataManager.getInitClientData()) {
             console.warn('[ExpectedValueCalculator] Init data not available');
             return false;
         }
 
+        // Wait for market data to load
         if (!marketAPI.isLoaded()) {
-            console.warn('[ExpectedValueCalculator] Market data not loaded');
-            return false;
+            console.log('[ExpectedValueCalculator] Waiting for market data...');
+            await marketAPI.fetch(true); // Force fresh fetch on init
         }
 
         // Calculate all containers with 4-iteration convergence for nesting

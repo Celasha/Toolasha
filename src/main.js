@@ -114,11 +114,11 @@ dataManager.on('character_initialized', (data) => {
     }
 
     // Initialize market features after character data loads
-    setTimeout(() => {
+    setTimeout(async () => {
         console.log('\n=== Initializing Market Features ===');
-        tooltipPrices.initialize();
-        expectedValueCalculator.initialize();
-        tooltipConsumables.initialize();
+        await tooltipPrices.initialize();
+        await expectedValueCalculator.initialize();
+        await tooltipConsumables.initialize();
     }, 1000);
 });
 
