@@ -220,6 +220,7 @@ node tests/MODULE_NAME.test.js
 
 - **README.md** - This file (project overview and quick start)
 - **CHANGELOG.md** - Version history and release notes
+- **CONTRIBUTING.md** - Contributor guide with version management and workflow
 - **PROJECT_DOCS.md** - Complete project overview and refactoring plan
 - **TABLE_OF_CONTENTS.md** - Detailed function index of original code
 - **EXCLUDED_FEATURES.md** - Features intentionally excluded (Chinese language support)
