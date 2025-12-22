@@ -10,6 +10,56 @@
  */
 
 /**
+ * Generic tea buff parser - handles all tea buff types with consistent logic
+ * @param {Array} activeDrinks - Array of active drink items from actionTypeDrinkSlotsMap
+ * @param {Object} itemDetailMap - Item details from init_client_data
+ * @param {number} drinkConcentration - Drink Concentration stat (as decimal, e.g., 0.12 for 12%)
+ * @param {Object} config - Parser configuration
+ * @param {Array<string>} config.buffTypeHrids - Buff type HRIDs to check (e.g., ['/buff_types/artisan'])
+ * @returns {number} Total buff bonus
+ *
+ * @example
+ * // Parse artisan bonus
+ * parseTeaBuff(drinks, items, 0.12, { buffTypeHrids: ['/buff_types/artisan'] })
+ */
+function parseTeaBuff(activeDrinks, itemDetailMap, drinkConcentration, config) {
+    if (!activeDrinks || activeDrinks.length === 0) {
+        return 0; // No active teas
+    }
+
+    if (!itemDetailMap) {
+        return 0; // Missing required data
+    }
+
+    const { buffTypeHrids } = config;
+    let totalBonus = 0;
+
+    // Process each active tea/drink
+    for (const drink of activeDrinks) {
+        if (!drink || !drink.itemHrid) {
+            continue; // Empty slot
+        }
+
+        const itemDetails = itemDetailMap[drink.itemHrid];
+        if (!itemDetails || !itemDetails.consumableDetail || !itemDetails.consumableDetail.buffs) {
+            continue; // Not a consumable or has no buffs
+        }
+
+        // Check each buff on this tea
+        for (const buff of itemDetails.consumableDetail.buffs) {
+            // Check if this buff matches any of the target types
+            if (buffTypeHrids.includes(buff.typeHrid)) {
+                const baseValue = buff.flatBoost;
+                const scaledValue = baseValue * (1 + drinkConcentration);
+                totalBonus += scaledValue;
+            }
+        }
+    }
+
+    return totalBonus;
+}
+
+/**
  * Parse tea efficiency bonuses for a specific action type
  * @param {string} actionTypeHrid - Action type HRID (e.g., "/action_types/brewing")
  * @param {Array} activeDrinks - Array of active drink items from actionTypeDrinkSlotsMap
@@ -140,39 +190,9 @@ export function getDrinkConcentration(characterEquipment, itemDetailMap) {
  * // Returns: 0.112 (10% × 1.12 = 11.2% reduction)
  */
 export function parseArtisanBonus(activeDrinks, itemDetailMap, drinkConcentration = 0) {
-    if (!activeDrinks || activeDrinks.length === 0) {
-        return 0; // No active teas
-    }
-
-    if (!itemDetailMap) {
-        return 0; // Missing required data
-    }
-
-    let artisanBonus = 0;
-
-    // Process each active tea/drink
-    for (const drink of activeDrinks) {
-        if (!drink || !drink.itemHrid) {
-            continue; // Empty slot
-        }
-
-        const itemDetails = itemDetailMap[drink.itemHrid];
-        if (!itemDetails || !itemDetails.consumableDetail || !itemDetails.consumableDetail.buffs) {
-            continue; // Not a consumable or has no buffs
-        }
-
-        // Check each buff on this tea
-        for (const buff of itemDetails.consumableDetail.buffs) {
-            // Artisan buff (reduces material cost)
-            if (buff.typeHrid === '/buff_types/artisan') {
-                const baseReduction = buff.flatBoost; // 0.10 for 10%
-                const scaledReduction = baseReduction * (1 + drinkConcentration);
-                artisanBonus += scaledReduction;
-            }
-        }
-    }
-
-    return artisanBonus;
+    return parseTeaBuff(activeDrinks, itemDetailMap, drinkConcentration, {
+        buffTypeHrids: ['/buff_types/artisan']
+    });
 }
 
 /**
@@ -188,39 +208,9 @@ export function parseArtisanBonus(activeDrinks, itemDetailMap, drinkConcentratio
  * // Returns: 0.1344 (12% × 1.12 = 13.44% bonus items)
  */
 export function parseGourmetBonus(activeDrinks, itemDetailMap, drinkConcentration = 0) {
-    if (!activeDrinks || activeDrinks.length === 0) {
-        return 0; // No active teas
-    }
-
-    if (!itemDetailMap) {
-        return 0; // Missing required data
-    }
-
-    let gourmetBonus = 0;
-
-    // Process each active tea/drink
-    for (const drink of activeDrinks) {
-        if (!drink || !drink.itemHrid) {
-            continue; // Empty slot
-        }
-
-        const itemDetails = itemDetailMap[drink.itemHrid];
-        if (!itemDetails || !itemDetails.consumableDetail || !itemDetails.consumableDetail.buffs) {
-            continue; // Not a consumable or has no buffs
-        }
-
-        // Check each buff on this tea
-        for (const buff of itemDetails.consumableDetail.buffs) {
-            // Gourmet buff (bonus items for Brewing/Cooking)
-            if (buff.typeHrid === '/buff_types/gourmet') {
-                const baseChance = buff.flatBoost; // 0.12 for 12%
-                const scaledChance = baseChance * (1 + drinkConcentration);
-                gourmetBonus += scaledChance;
-            }
-        }
-    }
-
-    return gourmetBonus;
+    return parseTeaBuff(activeDrinks, itemDetailMap, drinkConcentration, {
+        buffTypeHrids: ['/buff_types/gourmet']
+    });
 }
 
 /**
@@ -236,39 +226,9 @@ export function parseGourmetBonus(activeDrinks, itemDetailMap, drinkConcentratio
  * // Returns: 0.168 (15% × 1.12 = 16.8% conversion chance)
  */
 export function parseProcessingBonus(activeDrinks, itemDetailMap, drinkConcentration = 0) {
-    if (!activeDrinks || activeDrinks.length === 0) {
-        return 0; // No active teas
-    }
-
-    if (!itemDetailMap) {
-        return 0; // Missing required data
-    }
-
-    let processingBonus = 0;
-
-    // Process each active tea/drink
-    for (const drink of activeDrinks) {
-        if (!drink || !drink.itemHrid) {
-            continue; // Empty slot
-        }
-
-        const itemDetails = itemDetailMap[drink.itemHrid];
-        if (!itemDetails || !itemDetails.consumableDetail || !itemDetails.consumableDetail.buffs) {
-            continue; // Not a consumable or has no buffs
-        }
-
-        // Check each buff on this tea
-        for (const buff of itemDetails.consumableDetail.buffs) {
-            // Processing buff (converts raw materials to processed)
-            if (buff.typeHrid === '/buff_types/processing') {
-                const baseChance = buff.flatBoost; // 0.15 for 15%
-                const scaledChance = baseChance * (1 + drinkConcentration);
-                processingBonus += scaledChance;
-            }
-        }
-    }
-
-    return processingBonus;
+    return parseTeaBuff(activeDrinks, itemDetailMap, drinkConcentration, {
+        buffTypeHrids: ['/buff_types/processing']
+    });
 }
 
 /**
@@ -284,39 +244,9 @@ export function parseProcessingBonus(activeDrinks, itemDetailMap, drinkConcentra
  * // Returns: 5.6 (+5 × 1.12 = 5.6 levels)
  */
 export function parseActionLevelBonus(activeDrinks, itemDetailMap, drinkConcentration = 0) {
-    if (!activeDrinks || activeDrinks.length === 0) {
-        return 0; // No active teas
-    }
-
-    if (!itemDetailMap) {
-        return 0; // Missing required data
-    }
-
-    let actionLevelBonus = 0;
-
-    // Process each active tea/drink
-    for (const drink of activeDrinks) {
-        if (!drink || !drink.itemHrid) {
-            continue; // Empty slot
-        }
-
-        const itemDetails = itemDetailMap[drink.itemHrid];
-        if (!itemDetails || !itemDetails.consumableDetail || !itemDetails.consumableDetail.buffs) {
-            continue; // Not a consumable or has no buffs
-        }
-
-        // Check each buff on this tea
-        for (const buff of itemDetails.consumableDetail.buffs) {
-            // Action Level buff (e.g., Artisan Tea: +5 Action Level)
-            if (buff.typeHrid === '/buff_types/action_level') {
-                const baseLevelBonus = buff.flatBoost; // 5 for +5 levels
-                const scaledLevelBonus = baseLevelBonus * (1 + drinkConcentration);
-                actionLevelBonus += scaledLevelBonus;
-            }
-        }
-    }
-
-    return actionLevelBonus;
+    return parseTeaBuff(activeDrinks, itemDetailMap, drinkConcentration, {
+        buffTypeHrids: ['/buff_types/action_level']
+    });
 }
 
 export default {
