@@ -1,8 +1,21 @@
 # Changelog
 
-All notable changes to the MWI Tools refactoring project.
+All notable changes to MWI Tools will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.1.0] - 2024-12-21
+
+### Overview
+
+First pre-release version of the refactored MWI Tools codebase. The entire script has been refactored from a 6,706-line monolith into a modular architecture with proper separation of concerns.
+
+**Status:** Development/Testing (Version < 1.0.0 = pre-release)
+
+### Major Refactoring Completed
 
 ### Added - December 21, 2024
 
@@ -555,5 +568,13 @@ const actionTime = baseTime / (1 + totalEfficiency + speedBonus);
 
 ---
 
-**Version:** 25.1-refactor
+## Version History
+
+- **0.1.0** (2024-12-21) - First pre-release of refactored codebase
+- **25.1** (2024) - Last version of original monolithic codebase
+
+---
+
+**Current Version:** 0.1.0
 **Build Date:** December 21, 2024
+**Status:** Pre-release (Testing)

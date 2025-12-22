@@ -51,7 +51,7 @@ console.log('  Stored "test_value" with key "test_key"');
 const retrieved = storage.get('test_key');
 console.log('  Retrieved:', retrieved);
 
-storage.setJSON('test_json', { name: 'MWI Tools', version: '25.1' });
+storage.setJSON('test_json', { name: 'MWI Tools', version: '0.1.0' });
 console.log('  Stored JSON object');
 const retrievedJSON = storage.getJSON('test_json');
 console.log('  Retrieved JSON:', retrievedJSON);
@@ -165,7 +165,7 @@ targetWindow.MWITools = {
     marketAPI,
     config,
     storage,
-    version: '25.1-refactor'
+    version: '0.1.0'
 };
 
 console.log('🔧 Debug: Access modules via MWITools (exposed to page context)');
