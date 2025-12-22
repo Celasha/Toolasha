@@ -176,9 +176,6 @@ class ProfitCalculator {
         // Total material cost per action
         const totalMaterialCost = materialCosts.reduce((sum, mat) => sum + mat.totalCost, 0);
 
-        // Cost per item
-        const costPerItem = totalMaterialCost / outputAmount;
-
         // Get market price for the item
         const itemPrice = marketAPI.getPrice(itemHrid, 0);
         if (!itemPrice) {
@@ -202,12 +199,28 @@ class ProfitCalculator {
         // Apply market tax (2% tax on sales)
         const priceAfterTax = outputPrice * (1 - this.MARKET_TAX);
 
-        // Profit per item
-        const profitPerItem = priceAfterTax - costPerItem;
+        // Cost per item (without efficiency scaling)
+        const costPerItem = totalMaterialCost / outputAmount;
 
-        // Profit per hour (includes Gourmet bonus items)
-        // Base items at (sell - cost), Gourmet bonus items at full sell price
-        const profitPerHour = (profitPerItem * itemsPerHour) + (gourmetBonusItems * priceAfterTax);
+        // Material costs per hour (accounting for efficiency multiplier)
+        // Efficiency repeats the action, consuming materials each time
+        const materialCostPerHour = actionsPerHour * totalMaterialCost * efficiencyMultiplier;
+
+        // Revenue per hour (already accounts for efficiency in itemsPerHour calculation)
+        const revenuePerHour = (itemsPerHour * priceAfterTax) + (gourmetBonusItems * priceAfterTax);
+
+        // Calculate tea consumption costs (drinks consumed per hour)
+        const teaCosts = this.calculateTeaCosts(actionDetails.type, actionsPerHour);
+        const totalTeaCostPerHour = teaCosts.reduce((sum, tea) => sum + tea.totalCost, 0);
+
+        // Total costs per hour (materials + teas)
+        const totalCostPerHour = materialCostPerHour + totalTeaCostPerHour;
+
+        // Profit per hour (revenue - total costs)
+        const profitPerHour = revenuePerHour - totalCostPerHour;
+
+        // Profit per item (for display)
+        const profitPerItem = profitPerHour / totalItemsPerHour;
 
         return {
             itemName: itemDetails.name,
@@ -220,6 +233,9 @@ class ProfitCalculator {
             outputAmount,
             materialCosts,
             totalMaterialCost,
+            materialCostPerHour,      // Material costs per hour (with efficiency)
+            teaCosts,                 // Tea consumption costs breakdown
+            totalTeaCostPerHour,      // Total tea costs per hour
             costPerItem,
             itemPrice,
             priceAfterTax,            // Output price after 2% tax (bid or ask based on mode)
@@ -468,6 +484,56 @@ class ProfitCalculator {
         const levelBonus = (buffLevel - 1) * buffDef.buff.flatBoostLevelBonus * 100; // 0.3% per level
 
         return baseBonus + levelBonus;
+    }
+
+    /**
+     * Calculate tea consumption costs
+     * @param {string} actionTypeHrid - Action type HRID
+     * @param {number} actionsPerHour - Actions per hour (not used, but kept for consistency)
+     * @returns {Array} Array of tea cost objects
+     */
+    calculateTeaCosts(actionTypeHrid, actionsPerHour) {
+        const activeDrinks = dataManager.getActionDrinkSlots(actionTypeHrid);
+        if (!activeDrinks || activeDrinks.length === 0) {
+            return [];
+        }
+
+        // Check pricing mode for tea costs
+        const pricingMode = config.getSettingValue('profitCalc_pricingMode', 'conservative');
+
+        const costs = [];
+
+        for (const drink of activeDrinks) {
+            if (!drink || !drink.itemHrid) continue;
+
+            const itemDetails = dataManager.getItemDetails(drink.itemHrid);
+            if (!itemDetails) continue;
+
+            // Get market price for the tea
+            const price = marketAPI.getPrice(drink.itemHrid, 0);
+
+            // Use same pricing mode logic as materials
+            let teaPrice = 0;
+            if (pricingMode === 'optimistic') {
+                teaPrice = (price?.bid && price.bid > 0) ? price.bid : 0;
+            } else {
+                // conservative or hybrid both use Ask for costs
+                teaPrice = (price?.ask && price.ask > 0) ? price.ask : 0;
+            }
+
+            // Tea consumption: 12 drinks per hour (constant)
+            const drinksPerHour = this.DRINKS_PER_HOUR;
+
+            costs.push({
+                itemHrid: drink.itemHrid,
+                itemName: itemDetails.name,
+                pricePerDrink: teaPrice,
+                drinksPerHour: drinksPerHour,
+                totalCost: teaPrice * drinksPerHour
+            });
+        }
+
+        return costs;
     }
 }
 

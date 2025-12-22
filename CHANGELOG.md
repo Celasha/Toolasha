@@ -6,6 +6,50 @@ All notable changes to the MWI Tools refactoring project.
 
 ### Added - December 21, 2024
 
+#### **Phase 4: Material Costs & Tea Consumption**
+
+##### **Phase 4a: Material Cost Efficiency Scaling**
+- **FEATURE:** Material costs now scale with efficiency multiplier
+- **Previous Behavior:** Material costs calculated per action without efficiency scaling
+- **Current Behavior:** `materialCostPerHour = actionsPerHour × totalMaterialCost × efficiencyMultiplier`
+- **Rationale:** Efficiency "repeats the action and consumes inputs" (per game wiki)
+- **Impact:** More accurate profit calculations matching external calculators
+- **Example:** 130% efficiency (2.3× multiplier) → material costs increase by 2.3×
+
+##### **Phase 4b: Tea Consumption Costs**
+- **NEW FEATURE:** Tea consumption costs now included in profit calculations
+- **Formula:** `teaCostPerHour = teaPrice × 12 drinks/hour × number of active teas`
+- **New Method:** `profitCalculator.calculateTeaCosts(actionTypeHrid, actionsPerHour)`
+- **Display:** New "Tea Consumption" section in profit tooltips
+- **Format:** "Tea Consumption: 165,600/hr" with breakdown per tea
+- **Example Display:**
+  ```
+  Tea Consumption: 165,600/hr
+    • Efficiency Tea ×12/hr @ 1,950 → 23,400
+    • Artisan Tea ×12/hr @ 2,050 → 24,600
+    • Ultra Cheesesmithing Tea ×12/hr @ 9,800 → 117,600
+  ```
+
+**Updated Profit Formula:**
+```javascript
+// Revenue (unchanged)
+revenuePerHour = (itemsPerHour × priceAfterTax) + (gourmetBonusItems × priceAfterTax)
+
+// Costs (now includes efficiency and tea consumption)
+materialCostPerHour = actionsPerHour × totalMaterialCost × efficiencyMultiplier
+totalTeaCostPerHour = teaCosts.reduce((sum, tea) => sum + tea.totalCost, 0)
+totalCostPerHour = materialCostPerHour + totalTeaCostPerHour
+
+// Final profit
+profitPerHour = revenuePerHour - totalCostPerHour
+```
+
+**Result:** Profit calculations now match external calculators within ~9% (560K/hr vs 617K/hr for Verdant Cheese test case)
+
+**Files Modified:**
+- `src/features/market/profit-calculator.js` (lines 205-223, 489-537)
+- `src/features/market/tooltip-prices.js` (lines 358-370)
+
 #### **Phase 3: Community Buffs & Pricing Modes**
 - **NEW FEATURE:** Community Buff Detection
   - Detects Production Efficiency community buff level (0-20)

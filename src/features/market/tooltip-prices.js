@@ -355,6 +355,20 @@ class TooltipPrices {
             html += '</div>';
         }
 
+        // Tea costs section (if any teas active)
+        if (profitData.teaCosts && profitData.teaCosts.length > 0 && profitData.totalTeaCostPerHour > 0) {
+            html += '<div style="font-size: 0.9em; margin-top: 8px;">';
+            html += `<div style="font-weight: bold;">Tea Consumption: ${numberFormatter(profitData.totalTeaCostPerHour)}/hr</div>`;
+            html += '<div style="margin-left: 8px;">';
+            for (const tea of profitData.teaCosts) {
+                if (tea.totalCost > 0) {
+                    html += `<div>• ${tea.itemName} ×${tea.drinksPerHour}/hr @ ${numberFormatter(tea.pricePerDrink)} → ${numberFormatter(tea.totalCost)}</div>`;
+                }
+            }
+            html += '</div>';
+            html += '</div>';
+        }
+
         // Separator
         html += '<div style="border-top: 1px solid rgba(255,255,255,0.2); margin: 8px 0;"></div>';
 
