@@ -68,105 +68,33 @@ function setupMutationObserver() {
 }
 
 /**
- * DEBUG: Log panel structure to help diagnose selector issues
- * @param {HTMLElement} panel - Action panel element
- */
-function logPanelStructure(panel) {
-    console.log('[DEBUG] ===== PANEL STRUCTURE =====');
-
-    // Log all direct children of panel
-    console.log('[DEBUG] Panel has', panel.children.length, 'direct children');
-
-    // Log all divs with their classes
-    const allDivs = panel.querySelectorAll('div');
-    console.log('[DEBUG] Found', allDivs.length, 'divs in panel');
-
-    // Log unique class names found
-    const classNames = new Set();
-    allDivs.forEach(div => {
-        if (div.className && typeof div.className === 'string') {
-            div.className.split(' ').forEach(cls => {
-                if (cls.trim()) classNames.add(cls.trim());
-            });
-        }
-    });
-
-    console.log('[DEBUG] Unique classes found:', Array.from(classNames).sort());
-
-    // Check our specific selectors
-    console.log('[DEBUG] Selector check:');
-    console.log('  - EXP_GAIN:', !!panel.querySelector(SELECTORS.EXP_GAIN));
-    console.log('  - ACTION_NAME:', !!panel.querySelector(SELECTORS.ACTION_NAME));
-    console.log('  - DROP_TABLE:', !!panel.querySelector(SELECTORS.DROP_TABLE));
-
-    console.log('[DEBUG] =============================');
-}
-
-/**
  * Handle action panel appearance
  * @param {HTMLElement} panel - Action panel element
  */
 async function handleActionPanel(panel) {
-    if (!panel) {
-        console.log('[Action Panel] Panel is null');
-        return;
-    }
-
-    console.log('[Action Panel] Panel detected');
-
-    // DEBUG: Log panel structure to identify selector issues
-    logPanelStructure(panel);
+    if (!panel) return;
 
     // Filter out combat action panels (they don't have XP gain display)
     const expGainElement = panel.querySelector(SELECTORS.EXP_GAIN);
-    if (!expGainElement) {
-        // This is a combat action panel, skip it
-        console.log('[Action Panel] No XP gain element - skipping combat panel');
-        return;
-    }
-
-    console.log('[Action Panel] XP gain element found - this is a skilling panel');
+    if (!expGainElement) return; // Combat panel, skip
 
     // Check if this is a gathering action (Foraging/Woodcutting/Milking) with drop table
     const dropTableElement = panel.querySelector(SELECTORS.DROP_TABLE);
-    console.log('[Action Panel] Drop table element:', dropTableElement);
-
-    if (!dropTableElement) {
-        // No drop table - skip (nothing to calculate profit for)
-        console.log('[Action Panel] No drop table - skipping');
-        return;
-    }
+    if (!dropTableElement) return; // No drop table, skip
 
     // Get action name
     const actionNameElement = panel.querySelector(SELECTORS.ACTION_NAME);
-    if (!actionNameElement) {
-        console.log('[Action Panel] No action name element');
-        return;
-    }
+    if (!actionNameElement) return;
 
     const actionName = getOriginalText(actionNameElement);
-    console.log('[Action Panel] Action name:', actionName);
-
-    // Convert action name to HRID
     const actionHrid = getActionHridFromName(actionName);
-    console.log('[Action Panel] Action HRID:', actionHrid);
-
-    if (!actionHrid) {
-        console.log('[Action Panel] Could not find action HRID');
-        return;
-    }
+    if (!actionHrid) return;
 
     // Check if action is a gathering skill (Foraging, Woodcutting, Milking)
     const gameData = dataManager.getInitClientData();
     const actionDetail = gameData.actionDetailMap[actionHrid];
-    console.log('[Action Panel] Action type:', actionDetail?.type);
 
-    if (!actionDetail || !GATHERING_TYPES.includes(actionDetail.type)) {
-        console.log('[Action Panel] Not a gathering action - skipping');
-        return;
-    }
-
-    console.log('[Action Panel] All checks passed - calculating profit');
+    if (!actionDetail || !GATHERING_TYPES.includes(actionDetail.type)) return; // Not gathering, skip
 
     // Calculate and display profit
     await displayGatheringProfit(panel, actionHrid);
@@ -178,37 +106,27 @@ async function handleActionPanel(panel) {
  * @param {string} actionHrid - Action HRID
  */
 async function displayGatheringProfit(panel, actionHrid) {
-    console.log('[Display Profit] Starting profit calculation for:', actionHrid);
-
     // Calculate profit
     const profitData = await calculateGatheringProfit(actionHrid);
-    console.log('[Display Profit] Profit data:', profitData);
-
     if (!profitData) {
-        console.log('[Display Profit] No profit data returned');
+        console.error('❌ Gathering profit calculation failed for:', actionHrid);
         return;
     }
 
     // Format and inject HTML
     const profitHTML = formatProfitDisplay(profitData);
-    console.log('[Display Profit] Generated HTML length:', profitHTML?.length);
-
     if (!profitHTML) {
-        console.log('[Display Profit] No HTML generated');
+        console.error('❌ Profit display generation failed');
         return;
     }
 
     // Find insertion point (after drop table)
     const dropTableElement = panel.querySelector(SELECTORS.DROP_TABLE);
-    if (!dropTableElement) {
-        console.log('[Display Profit] Could not find drop table for insertion');
-        return;
-    }
+    if (!dropTableElement) return;
 
     // Check if we already added profit display
     const existingProfit = panel.querySelector('#mwi-foraging-profit');
     if (existingProfit) {
-        console.log('[Display Profit] Removing existing profit display');
         existingProfit.remove();
     }
 
@@ -222,8 +140,6 @@ async function displayGatheringProfit(panel, actionHrid) {
         profitContainer,
         dropTableElement.nextSibling
     );
-
-    console.log('[Display Profit] ✅ Profit display inserted successfully');
 }
 
 /**

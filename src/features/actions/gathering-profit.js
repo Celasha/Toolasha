@@ -289,12 +289,16 @@ export async function calculateGatheringProfit(actionHrid) {
             // Store conversion details for display
             const rawItemName = gameData.itemDetailMap[drop.itemHrid]?.name || 'Unknown';
             const processedItemName = gameData.itemDetailMap[processedItemHrid]?.name || 'Unknown';
-            const valueGainPerProc = processedPriceAfterTax - rawPriceAfterTax;
+            const valueGainPerConversion = processedPriceAfterTax - rawPriceAfterTax;
+            const conversionsPerHour = itemsPerHour * processingBonus;
+            const revenueFromConversion = conversionsPerHour * valueGainPerConversion;
 
             processingConversions.push({
                 rawItem: rawItemName,
                 processedItem: processedItemName,
-                valueGain: valueGainPerProc
+                valueGain: valueGainPerConversion,
+                conversionsPerHour: conversionsPerHour,
+                revenuePerHour: revenueFromConversion
             });
         }
 
@@ -540,7 +544,7 @@ export function formatProfitDisplay(profitData) {
         if (profitData.bonusRevenue.bonusDrops && profitData.bonusRevenue.bonusDrops.length > 0) {
             for (const drop of profitData.bonusRevenue.bonusDrops) {
                 lines.push(`<br><span style="font-size: 0.85em; opacity: 0.7; margin-left: 10px;">`);
-                lines.push(`• ${drop.itemName}: ${(drop.dropRate * 100).toFixed(drop.dropRate < 0.01 ? 3 : 2)}% drop, ~${drop.dropsPerHour.toFixed(1)}/hour`);
+                lines.push(`• ${drop.itemName}: ${(drop.dropRate * 100).toFixed(drop.dropRate < 0.01 ? 3 : 2)}% drop, ~${drop.dropsPerHour.toFixed(1)}/hour → ${formatWithSeparator(Math.round(drop.revenuePerHour))}/hour`);
                 lines.push(`</span>`);
             }
         }
@@ -555,7 +559,7 @@ export function formatProfitDisplay(profitData) {
         if (profitData.processingConversions && profitData.processingConversions.length > 0) {
             for (const conversion of profitData.processingConversions) {
                 lines.push(`<br><span style="font-size: 0.85em; opacity: 0.7; margin-left: 10px;">`);
-                lines.push(`• ${conversion.rawItem} → ${conversion.processedItem}: +${formatWithSeparator(Math.round(conversion.valueGain))} value per proc`);
+                lines.push(`• ${conversion.rawItem} → ${conversion.processedItem}: ~${conversion.conversionsPerHour.toFixed(1)} converted/hour, +${formatWithSeparator(Math.round(conversion.valueGain))} per conversion → ${formatWithSeparator(Math.round(conversion.revenuePerHour))}/hour`);
                 lines.push(`</span>`);
             }
         }
