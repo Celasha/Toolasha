@@ -304,24 +304,31 @@ class TooltipPrices {
             'market-profit-injected'
         );
 
-        // Build profit display - Option 1 Enhanced
+        // Build profit display with two-column layout
         let html = '<div style="border-top: 1px solid rgba(255,255,255,0.2); padding-top: 8px;">';
+
+        // Two-column flex container
+        html += '<div style="display: flex; gap: 16px; margin-bottom: 8px;">';
+
+        // ===== LEFT COLUMN: COSTS =====
+        html += '<div style="flex: 1; min-width: 0;">';
 
         // Material costs section
         if (profitData.materialCosts.length > 0) {
             html += '<div style="display: flex; justify-content: space-between; font-weight: bold; margin-bottom: 4px;">';
-            html += '<span>PRODUCTION COST</span>';
+            html += '<span>COSTS</span>';
 
             // Show total cost at top right (if all materials have prices)
             const hasAnyValidPrices = profitData.materialCosts.some(mat => mat.askPrice > 0);
             if (hasAnyValidPrices && profitData.materialCosts.every(mat => mat.askPrice > 0)) {
-                html += `<span>${numberFormatter(profitData.totalMaterialCost)}</span>`;
+                const totalCost = profitData.totalMaterialCost + (profitData.totalTeaCostPerHour || 0);
+                html += `<span>${numberFormatter(totalCost)}/hr</span>`;
             }
             html += '</div>';
 
             // Show artisan reduction if active
             if (profitData.artisanBonus > 0) {
-                let artisanDisplay = `Artisan: -${(profitData.artisanBonus * 100).toFixed(1)}% material requirement`;
+                let artisanDisplay = `Artisan: -${(profitData.artisanBonus * 100).toFixed(1)}%`;
                 if (profitData.drinkConcentration > 0) {
                     const dcContribution = profitData.artisanBonus * (profitData.drinkConcentration / (1 + profitData.drinkConcentration));
                     artisanDisplay += ` (-${(dcContribution * 100).toFixed(1)}% DC)`;
@@ -333,35 +340,10 @@ class TooltipPrices {
 
             if (hasAnyValidPrices) {
                 for (const material of profitData.materialCosts) {
-                    // Show base amount if artisan is reducing it
-                    let amountDisplay;
-                    if (profitData.artisanBonus > 0 && material.baseAmount) {
-                        // Calculate Artisan savings using floor + modulo
-                        const totalSavings = material.baseAmount * profitData.artisanBonus;
-                        const guaranteedSavings = Math.floor(totalSavings);
-                        const chanceForMore = (totalSavings % 1) * 100;
-
-                        amountDisplay = `${numberFormatter(material.amount, 2)} (${numberFormatter(material.baseAmount)} base, -${totalSavings.toFixed(2)} avg)`;
-
-                        const priceDisplay = material.askPrice > 0 ? numberFormatter(material.askPrice) : '-';
-                        const totalDisplay = material.askPrice > 0 ? numberFormatter(material.totalCost) : '-';
-                        html += `<div>• ${material.itemName} ×${amountDisplay} @ ${priceDisplay} → ${totalDisplay}</div>`;
-
-                        // Show Artisan breakdown
-                        if (guaranteedSavings > 0) {
-                            html += `<div style="margin-left: 12px; font-size: 0.85em; color: #aaa;">- Guaranteed savings: ${guaranteedSavings} ${material.itemName}</div>`;
-                        }
-                        if (chanceForMore > 0) {
-                            const extraSavings = guaranteedSavings + 1;
-                            html += `<div style="margin-left: 12px; font-size: 0.85em; color: #aaa;">- ${chanceForMore.toFixed(1)}% chance to save ${extraSavings} total</div>`;
-                        }
-                    } else {
-                        amountDisplay = numberFormatter(material.amount);
-
-                        const priceDisplay = material.askPrice > 0 ? numberFormatter(material.askPrice) : '-';
-                        const totalDisplay = material.askPrice > 0 ? numberFormatter(material.totalCost) : '-';
-                        html += `<div>• ${material.itemName} ×${amountDisplay} @ ${priceDisplay} → ${totalDisplay}</div>`;
-                    }
+                    const amountDisplay = numberFormatter(material.amount);
+                    const priceDisplay = material.askPrice > 0 ? numberFormatter(material.askPrice) : '-';
+                    const totalDisplay = material.askPrice > 0 ? numberFormatter(material.totalCost) : '-';
+                    html += `<div>• ${material.itemName} ×${amountDisplay} @ ${priceDisplay} → ${totalDisplay}</div>`;
                 }
             } else {
                 html += `<div style="color: gray; font-style: italic;">Material prices unavailable</div>`;
@@ -373,36 +355,34 @@ class TooltipPrices {
         // Tea costs section (if any teas active)
         if (profitData.teaCosts && profitData.teaCosts.length > 0 && profitData.totalTeaCostPerHour > 0) {
             html += '<div style="font-size: 0.9em; margin-top: 8px;">';
-            html += `<div style="font-weight: bold;">Tea Consumption: ${numberFormatter(profitData.totalTeaCostPerHour)}/hr</div>`;
+            html += `<div style="font-weight: bold;">Teas: ${numberFormatter(profitData.totalTeaCostPerHour)}/hr</div>`;
             html += '<div style="margin-left: 8px;">';
             for (const tea of profitData.teaCosts) {
                 if (tea.totalCost > 0) {
-                    html += `<div>• ${tea.itemName} ×${tea.drinksPerHour}/hr @ ${numberFormatter(tea.pricePerDrink)} → ${numberFormatter(tea.totalCost)}</div>`;
+                    html += `<div>• ${tea.itemName} ×${tea.drinksPerHour}/hr @ ${numberFormatter(tea.pricePerDrink)}</div>`;
                 }
             }
             html += '</div>';
             html += '</div>';
         }
 
-        // Separator
-        html += '<div style="border-top: 1px solid rgba(255,255,255,0.2); margin: 8px 0;"></div>';
+        html += '</div>'; // Close left column
+
+        // ===== RIGHT COLUMN: REVENUE & PROFIT =====
+        html += '<div style="flex: 1; min-width: 0;">';
 
         // Profit Analysis section
-        html += '<div style="font-weight: bold; margin-bottom: 4px;">PROFIT ANALYSIS</div>';
+        html += '<div style="font-weight: bold; margin-bottom: 4px;">PROFIT</div>';
         html += '<div style="font-size: 0.9em; margin-left: 8px;">';
 
         // Check if we can calculate profit (need BOTH valid ask and bid prices)
         if (profitData.itemPrice.bid > 0 && profitData.itemPrice.ask > 0) {
-            // Net profit line (standard color - no highlighting)
+            // Net profit line
             const profitPerDay = profitData.profitPerHour * 24;
-
-            // Add per-day profit in K/M/B format if profitable
-            let profitText = `Net: ${numberFormatter(profitData.profitPerItem)}/item (${numberFormatter(profitData.profitPerHour)}/hr`;
+            let profitText = `${numberFormatter(profitData.profitPerHour)}/hr`;
             if (profitData.profitPerItem >= 0) {
-                profitText += `, ${formatKMB(profitPerDay)}/day`;
+                profitText += ` (${formatKMB(profitPerDay)}/day)`;
             }
-            profitText += ')';
-
             html += `<div style="font-weight: bold;">${profitText}</div>`;
 
             // Sell vs Cost line
@@ -415,138 +395,88 @@ class TooltipPrices {
 
         // Bonus Revenue section (essences and rare finds)
         if (profitData.bonusRevenue && profitData.bonusRevenue.bonusDrops.length > 0) {
-            html += '<div style="border-top: 1px solid rgba(255,255,255,0.2); margin: 8px 0;"></div>';
-            html += '<div style="font-weight: bold; margin-bottom: 4px;">BONUS REVENUE</div>';
+            html += '<div style="margin-top: 8px;">';
+            html += '<div style="font-weight: bold; margin-bottom: 4px;">BONUS</div>';
             html += '<div style="font-size: 0.9em; margin-left: 8px;">';
 
             // Show Essence Find and Rare Find bonuses if > 0
             if (profitData.bonusRevenue.essenceFindBonus > 0 || profitData.bonusRevenue.rareFindBonus > 0) {
                 const bonusParts = [];
                 if (profitData.bonusRevenue.essenceFindBonus > 0) {
-                    bonusParts.push(`Essence Find: +${profitData.bonusRevenue.essenceFindBonus.toFixed(1)}%`);
+                    bonusParts.push(`EF: +${profitData.bonusRevenue.essenceFindBonus.toFixed(1)}%`);
                 }
                 if (profitData.bonusRevenue.rareFindBonus > 0) {
-                    bonusParts.push(`Rare Find: +${profitData.bonusRevenue.rareFindBonus.toFixed(1)}%`);
+                    bonusParts.push(`RF: +${profitData.bonusRevenue.rareFindBonus.toFixed(1)}%`);
                 }
                 html += `<div style="font-size: 0.85em; color: #aaa; margin-bottom: 4px;">${bonusParts.join(' | ')}</div>`;
             }
 
-            // Show each bonus drop
+            // Show each bonus drop (condensed)
             for (const drop of profitData.bonusRevenue.bonusDrops) {
                 const dropRatePercent = (drop.dropRate * 100).toFixed(drop.dropRate < 0.001 ? 4 : 2);
-                html += `<div>• ${drop.itemName}: ${drop.dropsPerHour.toFixed(3)}/hr (${dropRatePercent}%) @ ${numberFormatter(drop.priceEach)} → ${numberFormatter(drop.revenuePerHour)}/hr</div>`;
+                html += `<div>• ${drop.itemName}: ${numberFormatter(drop.revenuePerHour)}/hr (${dropRatePercent}%)</div>`;
             }
 
             // Show total bonus revenue
             html += '<div style="border-top: 1px solid rgba(255,255,255,0.2); margin: 4px 0;"></div>';
-            html += `<div style="font-weight: bold;">Total Bonus: ${numberFormatter(profitData.bonusRevenue.totalBonusRevenue)}/hr</div>`;
+            html += `<div style="font-weight: bold;">+${numberFormatter(profitData.bonusRevenue.totalBonusRevenue)}/hr</div>`;
 
             // Show adjusted profit (if we have profit data)
             if (profitData.itemPrice.bid > 0 && profitData.itemPrice.ask > 0) {
                 const adjustedProfit = profitData.profitPerHour + profitData.bonusRevenue.totalBonusRevenue;
                 const adjustedProfitColor = adjustedProfit >= 0 ? 'lime' : 'red';
-                html += `<div style="color: ${adjustedProfitColor}; margin-top: 4px;">Adjusted Profit: ${numberFormatter(adjustedProfit)}/hr (${formatKMB(adjustedProfit * 24)}/day)</div>`;
+                html += `<div style="color: ${adjustedProfitColor}; margin-top: 4px; font-weight: bold;">Total: ${numberFormatter(adjustedProfit)}/hr (${formatKMB(adjustedProfit * 24)}/day)</div>`;
             }
 
             html += '</div>'; // Close bonus revenue indented section
+            html += '</div>';
         }
 
-        // Separator before Action Time
-        html += '<div style="border-top: 1px solid rgba(255,255,255,0.2); margin: 8px 0;"></div>';
+        html += '</div>'; // Close right column
+
+        html += '</div>'; // Close two-column flex container
+
+        // ===== FULL-WIDTH BOTTOM SECTION: STATS & BONUSES =====
+        html += '<div style="border-top: 1px solid rgba(255,255,255,0.2); padding-top: 8px; font-size: 0.9em;">';
 
         // Time breakdown section (always show)
         const breakdown = profitData.timeBreakdown;
-
-        // Show final action time at top
-        html += `<div>Action Time: ${breakdown.finalTime.toFixed(2)}s (${numberFormatter(breakdown.actionsPerHour)}/hr)</div>`;
-
-        // Show breakdown with indentation (similar to Efficiency structure)
-        html += `<div style="margin-left: 8px;">`;
-        html += `<div>Base Time: ${breakdown.baseTime.toFixed(2)}s</div>`;
-
-        // Show each speed modifier step
+        html += `<div>Time: ${breakdown.finalTime.toFixed(2)}s (${numberFormatter(breakdown.actionsPerHour)}/hr)`;
         if (breakdown.steps.length > 0) {
-            for (const step of breakdown.steps) {
-                html += `<div>  - ${step.name} (+${step.bonus.toFixed(1)}%): -${step.reduction.toFixed(2)}s</div>`;
-            }
+            const speedBonus = breakdown.steps.reduce((sum, step) => sum + step.bonus, 0);
+            html += ` | Speed: +${speedBonus.toFixed(1)}%`;
         }
-        html += '</div>'; // Close indented section
+        html += '</div>';
 
-        // Efficiency section (if > 0) - shows output multiplier
+        // Efficiency section (if > 0)
         if (profitData.efficiencyBonus > 0) {
-            // Separator between time calculation and efficiency
-            html += `<div style="border-top: 1px solid rgba(255,255,255,0.2); margin: 8px 0;"></div>`;
-            html += `<div>Efficiency: +${profitData.efficiencyBonus.toFixed(1)}%</div>`;
+            html += `<div>Efficiency: +${profitData.efficiencyBonus.toFixed(1)}% → ×${profitData.efficiencyMultiplier.toFixed(2)} (${numberFormatter(profitData.itemsPerHour)}/hr)`;
 
-            // Show efficiency breakdown (level + house + equipment + tea + community)
-            if (profitData.levelEfficiency > 0 || profitData.houseEfficiency > 0 || profitData.equipmentEfficiency > 0 || profitData.teaEfficiency > 0 || profitData.communityEfficiency > 0) {
-                if (profitData.levelEfficiency > 0) {
-                    html += `<div style="margin-left: 8px;">  - Level Advantage: +${profitData.levelEfficiency.toFixed(1)}%</div>`;
-                    // Show Action Level bonus if active (e.g., Artisan Tea)
-                    if (profitData.actionLevelBonus > 0) {
-                        let actionLevelDisplay = `Effective Requirement: ${profitData.effectiveRequirement.toFixed(1)} (base ${profitData.baseRequirement}`;
-                        if (profitData.drinkConcentration > 0) {
-                            const dcContribution = profitData.actionLevelBonus * (profitData.drinkConcentration / (1 + profitData.drinkConcentration));
-                            actionLevelDisplay += ` + ${profitData.actionLevelBonus.toFixed(1)} from tea, +${dcContribution.toFixed(1)} DC)`;
-                        } else {
-                            actionLevelDisplay += ` + ${profitData.actionLevelBonus.toFixed(1)} from tea)`;
-                        }
-                        html += `<div style="margin-left: 16px; font-size: 0.9em; color: #aaa;">${actionLevelDisplay}</div>`;
-                    }
-                }
-                if (profitData.houseEfficiency > 0) {
-                    html += `<div style="margin-left: 8px;">  - House Room: +${profitData.houseEfficiency.toFixed(1)}%</div>`;
-                }
-                if (profitData.equipmentEfficiency > 0) {
-                    html += `<div style="margin-left: 8px;">  - Equipment: +${profitData.equipmentEfficiency.toFixed(1)}%</div>`;
-                }
-                if (profitData.teaEfficiency > 0) {
-                    // Calculate DC contribution to tea efficiency
-                    // DC amplifies base tea effects: finalTea = baseTea × (1 + DC)
-                    // So DC contribution = finalTea - baseTea = baseTea × DC
-                    // Or: DC contribution = finalTea × (DC / (1 + DC))
-                    let teaDisplay = `  - Tea Buffs: +${profitData.teaEfficiency.toFixed(1)}%`;
-                    if (profitData.drinkConcentration > 0) {
-                        const dcContribution = profitData.teaEfficiency * (profitData.drinkConcentration / (1 + profitData.drinkConcentration));
-                        teaDisplay += ` (+${dcContribution.toFixed(1)}% DC)`;
-                    }
-                    html += `<div style="margin-left: 8px;">${teaDisplay}</div>`;
-                }
-                if (profitData.communityEfficiency > 0) {
-                    html += `<div style="margin-left: 8px;">  - Community Buff: +${profitData.communityEfficiency.toFixed(1)}%</div>`;
-                }
+            // Show main efficiency sources inline
+            const effParts = [];
+            if (profitData.levelEfficiency > 0) effParts.push(`Lvl: +${profitData.levelEfficiency.toFixed(1)}%`);
+            if (profitData.houseEfficiency > 0) effParts.push(`House: +${profitData.houseEfficiency.toFixed(1)}%`);
+            if (profitData.equipmentEfficiency > 0) effParts.push(`Equip: +${profitData.equipmentEfficiency.toFixed(1)}%`);
+            if (profitData.teaEfficiency > 0) effParts.push(`Tea: +${profitData.teaEfficiency.toFixed(1)}%`);
+            if (effParts.length > 0) {
+                html += ` | ${effParts.join(', ')}`;
             }
-
-            html += `<div style="margin-left: 8px;">Output: ×${profitData.efficiencyMultiplier.toFixed(2)} (${numberFormatter(profitData.itemsPerHour)}/hr)</div>`;
+            html += '</div>';
         }
 
-        // Gourmet bonus section (if > 0)
+        // Gourmet bonus (if > 0)
         if (profitData.gourmetBonus > 0) {
-            html += `<div style="border-top: 1px solid rgba(255,255,255,0.2); margin: 8px 0;"></div>`;
-            let gourmetDisplay = `Gourmet: +${(profitData.gourmetBonus * 100).toFixed(1)}% bonus items`;
-            if (profitData.drinkConcentration > 0) {
-                const dcContribution = profitData.gourmetBonus * (profitData.drinkConcentration / (1 + profitData.drinkConcentration));
-                gourmetDisplay += ` (+${(dcContribution * 100).toFixed(1)}% DC)`;
-            }
-            html += `<div>${gourmetDisplay}</div>`;
-            html += `<div style="margin-left: 8px;">Extra: +${numberFormatter(profitData.gourmetBonusItems)}/hr</div>`;
-            html += `<div style="margin-left: 8px;">Total: ${numberFormatter(profitData.totalItemsPerHour)}/hr</div>`;
+            html += `<div>Gourmet: +${(profitData.gourmetBonus * 100).toFixed(1)}% → +${numberFormatter(profitData.gourmetBonusItems)}/hr (${numberFormatter(profitData.totalItemsPerHour)}/hr total)</div>`;
         }
 
-        // Processing bonus section (if > 0)
+        // Processing bonus (if > 0)
         if (profitData.processingBonus > 0) {
-            html += `<div style="border-top: 1px solid rgba(255,255,255,0.2); margin: 8px 0;"></div>`;
-            let processingDisplay = `Processing: ${(profitData.processingBonus * 100).toFixed(1)}% conversion chance`;
-            if (profitData.drinkConcentration > 0) {
-                const dcContribution = profitData.processingBonus * (profitData.drinkConcentration / (1 + profitData.drinkConcentration));
-                processingDisplay += ` (+${(dcContribution * 100).toFixed(1)}% DC)`;
-            }
-            html += `<div>${processingDisplay}</div>`;
-            html += `<div style="margin-left: 8px; font-size: 0.85em; color: #aaa;">Converts raw → processed materials</div>`;
+            html += `<div>Processing: ${(profitData.processingBonus * 100).toFixed(1)}% conversion chance</div>`;
         }
 
-        html += '</div>';
-        html += '</div>';
+        html += '</div>'; // Close stats section
+
+        html += '</div>'; // Close main container
 
         profitDiv.innerHTML = html;
 

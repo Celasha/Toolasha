@@ -7,7 +7,7 @@ import config from '../../core/config.js';
 import marketAPI from '../../api/marketplace.js';
 import dataManager from '../../core/data-manager.js';
 import * as efficiency from '../../utils/efficiency.js';
-import { parseEquipmentSpeedBonuses, parseEquipmentEfficiencyBonuses, parseEssenceFindBonus } from '../../utils/equipment-parser.js';
+import { parseEquipmentSpeedBonuses, parseEquipmentEfficiencyBonuses, parseEssenceFindBonus, parseRareFindBonus } from '../../utils/equipment-parser.js';
 import { calculateHouseEfficiency, calculateHouseRareFind } from '../../utils/house-efficiency.js';
 import { parseTeaEfficiency, getDrinkConcentration, parseArtisanBonus, parseGourmetBonus, parseProcessingBonus, parseActionLevelBonus } from '../../utils/tea-parser.js';
 import expectedValueCalculator from './expected-value-calculator.js';
@@ -558,8 +558,10 @@ class ProfitCalculator {
         // Get Essence Find bonus from equipment
         const essenceFindBonus = parseEssenceFindBonus(characterEquipment, itemDetailMap);
 
-        // Get Rare Find bonus from house rooms
-        const rareFindBonus = calculateHouseRareFind();
+        // Get Rare Find bonus from BOTH equipment and house rooms
+        const equipmentRareFindBonus = parseRareFindBonus(characterEquipment, actionDetails.type, itemDetailMap);
+        const houseRareFindBonus = calculateHouseRareFind();
+        const rareFindBonus = equipmentRareFindBonus + houseRareFindBonus;
 
         const bonusDrops = [];
         let totalBonusRevenue = 0;
@@ -652,7 +654,7 @@ class ProfitCalculator {
 
         return {
             essenceFindBonus,       // Essence Find % from equipment
-            rareFindBonus,          // Rare Find % from house rooms
+            rareFindBonus,          // Rare Find % from equipment + house rooms (combined)
             bonusDrops,             // Array of all bonus drops with details
             totalBonusRevenue       // Total revenue/hour from all bonus drops
         };

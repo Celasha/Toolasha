@@ -345,3 +345,105 @@ export function parseEssenceFindBonus(characterEquipment, itemDetailMap) {
     // Convert to percentage (0.15 -> 15%)
     return totalEssenceFindBonus * 100;
 }
+
+/**
+ * Map action type HRID to equipment rare find field name
+ * @param {string} actionTypeHrid - Action type HRID (e.g., "/action_types/brewing")
+ * @returns {string|null} Rare find field name (e.g., "brewingRareFind") or null
+ */
+function getRareFindFieldForActionType(actionTypeHrid) {
+    // Extract skill name from action type HRID
+    // e.g., "/action_types/brewing" -> "brewing"
+    const skillName = actionTypeHrid.replace('/action_types/', '');
+
+    // Map to rare find field name
+    // e.g., "brewing" -> "brewingRareFind"
+    const rareFindField = skillName + 'RareFind';
+
+    // Valid rare find fields from game data
+    const validRareFindFields = [
+        'milkingRareFind',
+        'foragingRareFind',
+        'woodcuttingRareFind',
+        'cheesesmithingRareFind',
+        'craftingRareFind',
+        'tailoringRareFind',
+        'brewingRareFind',
+        'cookingRareFind',
+        'alchemyRareFind'
+    ];
+
+    return validRareFindFields.includes(rareFindField) ? rareFindField : null;
+}
+
+/**
+ * Parse Rare Find bonus from equipment
+ * @param {Map} characterEquipment - Equipment map from dataManager.getEquipment()
+ * @param {string} actionTypeHrid - Action type HRID (for skill-specific rare find)
+ * @param {Object} itemDetailMap - Item details from init_client_data
+ * @returns {number} Total rare find bonus as percentage (e.g., 15 for 15%)
+ *
+ * @example
+ * parseRareFindBonus(equipment, "/action_types/brewing", items)
+ * // Brewer's Top (base 0.15, bonus 0.003) +0: 15%
+ * // Brewer's Top (base 0.15, bonus 0.003) +10: 18%
+ * // Earrings of Rare Find (base 0.08, bonus 0.002) +0: 8%
+ * // Total: 26%
+ */
+export function parseRareFindBonus(characterEquipment, actionTypeHrid, itemDetailMap) {
+    if (!characterEquipment || characterEquipment.size === 0) {
+        return 0; // No equipment
+    }
+
+    if (!itemDetailMap) {
+        return 0; // Missing item data
+    }
+
+    // Get the skill-specific rare find field for this action type
+    const rareFindField = getRareFindFieldForActionType(actionTypeHrid);
+
+    let totalRareFindBonus = 0;
+
+    // Iterate through all equipped items
+    for (const [slotHrid, equippedItem] of characterEquipment) {
+        const itemDetails = itemDetailMap[equippedItem.itemHrid];
+
+        if (!itemDetails || !itemDetails.equipmentDetail) {
+            continue; // Not an equipment item
+        }
+
+        const noncombatStats = itemDetails.equipmentDetail.noncombatStats;
+        if (!noncombatStats) {
+            continue; // No noncombat stats
+        }
+
+        // Get enhancement level from equipped item
+        const enhancementLevel = equippedItem.enhancementLevel || 0;
+
+        // Get enhancement bonuses for this item
+        const enhancementBonuses = itemDetails.equipmentDetail.noncombatEnhancementBonuses;
+
+        // Check for skill-specific rare find (e.g., brewingRareFind)
+        if (rareFindField) {
+            const baseRareFind = noncombatStats[rareFindField];
+
+            if (baseRareFind && baseRareFind > 0) {
+                const enhancementBonus = (enhancementBonuses && enhancementBonuses[rareFindField]) || 0;
+                const scaledRareFind = calculateEnhancementScaling(baseRareFind, enhancementBonus, enhancementLevel);
+                totalRareFindBonus += scaledRareFind;
+            }
+        }
+
+        // Check for generic skilling rare find (applies to all skills)
+        const baseSkillingRareFind = noncombatStats.skillingRareFind;
+
+        if (baseSkillingRareFind && baseSkillingRareFind > 0) {
+            const enhancementBonus = (enhancementBonuses && enhancementBonuses.skillingRareFind) || 0;
+            const scaledRareFind = calculateEnhancementScaling(baseSkillingRareFind, enhancementBonus, enhancementLevel);
+            totalRareFindBonus += scaledRareFind;
+        }
+    }
+
+    // Convert to percentage (0.15 -> 15%)
+    return totalRareFindBonus * 100;
+}
