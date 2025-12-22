@@ -252,7 +252,7 @@ class ProfitCalculator {
         const revenuePerHour = (itemsPerHour * priceAfterTax) + (gourmetBonusItems * priceAfterTax);
 
         // Calculate tea consumption costs (drinks consumed per hour)
-        const teaCosts = this.calculateTeaCosts(actionDetails.type, actionsPerHour);
+        const teaCosts = this.calculateTeaCosts(actionDetails.type, actionsPerHour, drinkConcentration);
         const totalTeaCostPerHour = teaCosts.reduce((sum, tea) => sum + tea.totalCost, 0);
 
         // Total costs per hour (materials + teas)
@@ -536,7 +536,7 @@ class ProfitCalculator {
      * @param {number} actionsPerHour - Actions per hour (not used, but kept for consistency)
      * @returns {Array} Array of tea cost objects
      */
-    calculateTeaCosts(actionTypeHrid, actionsPerHour) {
+    calculateTeaCosts(actionTypeHrid, actionsPerHour, drinkConcentration = 0) {
         const activeDrinks = dataManager.getActionDrinkSlots(actionTypeHrid);
         if (!activeDrinks || activeDrinks.length === 0) {
             return [];
@@ -565,8 +565,8 @@ class ProfitCalculator {
                 teaPrice = (price?.ask && price.ask > 0) ? price.ask : 0;
             }
 
-            // Tea consumption: 12 drinks per hour (constant)
-            const drinksPerHour = this.DRINKS_PER_HOUR;
+            // Drink Concentration increases consumption rate: base 12/hour × (1 + DC%)
+            const drinksPerHour = 12 * (1 + drinkConcentration);
 
             costs.push({
                 itemHrid: drink.itemHrid,

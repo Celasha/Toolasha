@@ -165,6 +165,8 @@ export async function calculateGatheringProfit(actionHrid) {
     }
 
     // Calculate drink consumption costs
+    // Drink Concentration increases consumption rate: base 12/hour × (1 + DC%)
+    const drinksPerHour = 12 * (1 + drinkConcentration);
     let drinkCostPerHour = 0;
     const drinkCosts = [];
     for (const drink of drinkSlots) {
@@ -172,7 +174,7 @@ export async function calculateGatheringProfit(actionHrid) {
             continue;
         }
         const askPrice = marketData[drink.itemHrid]?.[0]?.a || 0;
-        const costPerHour = askPrice * 12; // 12 drinks per hour (5min each)
+        const costPerHour = askPrice * drinksPerHour;
         drinkCostPerHour += costPerHour;
 
         // Store individual drink cost details
@@ -180,6 +182,7 @@ export async function calculateGatheringProfit(actionHrid) {
         drinkCosts.push({
             name: drinkName,
             priceEach: askPrice,
+            drinksPerHour: drinksPerHour,
             costPerHour: costPerHour
         });
     }
@@ -571,7 +574,7 @@ export function formatProfitDisplay(profitData) {
         if (profitData.drinkCosts && profitData.drinkCosts.length > 0) {
             for (const drink of profitData.drinkCosts) {
                 lines.push(`<br><span style="font-size: 0.85em; opacity: 0.7; margin-left: 10px;">`);
-                lines.push(`• ${drink.name}: ${formatWithSeparator(Math.round(drink.priceEach))} each × 12/hour → ${formatWithSeparator(Math.round(drink.costPerHour))}/hour`);
+                lines.push(`• ${drink.name}: ${formatWithSeparator(Math.round(drink.priceEach))} each × ${drink.drinksPerHour.toFixed(1)}/hour → ${formatWithSeparator(Math.round(drink.costPerHour))}/hour`);
                 lines.push(`</span>`);
             }
         }
