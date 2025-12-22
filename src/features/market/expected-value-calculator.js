@@ -146,7 +146,7 @@ class ExpectedValueCalculator {
             return 1;
         }
 
-        // Special case: Cowbell (use bag price ÷ 10)
+        // Special case: Cowbell (use bag price ÷ 10, with 18% tax)
         if (itemHrid === this.COWBELL_HRID) {
             const bagPrice = marketAPI.getPrice(this.COWBELL_BAG_HRID, 0);
             if (bagPrice) {
@@ -164,7 +164,8 @@ class ExpectedValueCalculator {
                 }
 
                 if (bagValue > 0) {
-                    return bagValue / 10; // 10 cowbells per bag
+                    // Apply 18% market tax (Cowbell Bag only), then divide by 10
+                    return (bagValue * 0.82) / 10;
                 }
             }
             return null; // No bag price available
