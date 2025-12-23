@@ -86,7 +86,7 @@ export function initActionPanelObserver() {
 function setupMutationObserver() {
     const observer = new MutationObserver(async (mutations) => {
         for (const mutation of mutations) {
-            // Handle attribute changes (value updates from clicking up/down arrows)
+            // Handle attribute changes
             if (mutation.type === 'attributes') {
                 // Handle value attribute changes on INPUT elements (clicking up/down arrows)
                 if (mutation.attributeName === 'value' && mutation.target.tagName === 'INPUT') {
@@ -98,6 +98,15 @@ function setupMutationObserver() {
                             // Trigger the same debounced update
                             triggerEnhancementUpdate(panel, itemHrid);
                         }
+                    }
+                }
+
+                // Handle href attribute changes on USE elements (item sprite changes when selecting different item)
+                if (mutation.attributeName === 'href' && mutation.target.tagName === 'use') {
+                    const panel = mutation.target.closest(SELECTORS.ENHANCING_PANEL);
+                    if (panel) {
+                        // Item changed - re-detect and recalculate
+                        await handleEnhancingPanel(panel);
                     }
                 }
             }
@@ -167,9 +176,8 @@ function setupMutationObserver() {
     observer.observe(document.body, {
         childList: true,
         subtree: true,  // Watch entire tree, not just direct children
-        attributes: true,  // Watch for attribute changes
-        attributeOldValue: true,  // Track old values
-        attributeFilter: ['value', 'class']  // Only watch value and class attributes
+        attributes: true,  // Watch for attribute changes (all attributes)
+        attributeOldValue: true  // Track old values
     });
 }
 
@@ -260,21 +268,18 @@ async function handleEnhancingPanel(panel) {
     // Find the output element that shows the enhanced item
     const outputsSection = panel.querySelector(SELECTORS.ENHANCING_OUTPUT);
     if (!outputsSection) {
-        console.log('[MWI Tools] Enhancement panel found but no outputs section');
         return;
     }
 
     // Get the item name from the Item_name element (without +1)
     const itemNameElement = outputsSection.querySelector(SELECTORS.ITEM_NAME);
     if (!itemNameElement) {
-        console.log('[MWI Tools] Could not find item name element in outputs');
         return;
     }
 
     const itemName = itemNameElement.textContent.trim();
 
     if (!itemName) {
-        console.log('[MWI Tools] Could not extract item name from outputs');
         return;
     }
 
@@ -283,7 +288,6 @@ async function handleEnhancingPanel(panel) {
     const itemHrid = getItemHridFromName(itemName, gameData);
 
     if (!itemHrid) {
-        console.log(`[MWI Tools] Could not find item HRID for: ${itemName}`);
         return;
     }
 

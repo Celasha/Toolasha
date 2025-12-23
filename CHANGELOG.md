@@ -43,6 +43,22 @@ Patch release implementing guzzling bonus scaling for blessed tea in the enhance
   - Markov chain transition probabilities updated to scale blessed tea effect
   - Files: `enhancement-config.js`, `enhancement-calculator.js`, `enhancement-display.js`
 
+**BUG FIX:** Enhancement calculator now updates when changing the item to enhance.
+
+- **Item Change Detection:**
+  - Added `href` attribute change detection on `<use>` elements (item sprite changes)
+  - Removed `attributeFilter` restriction to watch ALL attribute changes
+  - When item sprite `href` changes (e.g., `#celestial_enhancer` → `#azure_pickaxe`), calculator recalculates
+  - Previously only watched `value` and `class` attributes, missed item selection changes
+  - File: `src/features/actions/panel-observer.js` lines 104-112, 179
+
+- **Console Cleanup:**
+  - Removed 4 debug logs from enhancement panel detection
+  - "Enhancement panel found but no outputs section"
+  - "Could not find item name element in outputs"
+  - "Could not extract item name from outputs"
+  - "Could not find item HRID for: ${itemName}"
+
 ### Changed
 
 #### **Display Improvements**
