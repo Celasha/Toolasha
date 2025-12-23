@@ -253,7 +253,17 @@ function formatEnhancementDisplay(params, calculations, itemDetails, protectFrom
     // Right column
     lines.push('<div>');
     lines.push(`<div style="color: #88ff88;"><span style="color: #888;">Success:</span> +${params.toolBonus.toFixed(2)}%</div>`);
-    lines.push(`<div style="color: #88ccff;"><span style="color: #888;">Speed:</span> +${params.speedBonus.toFixed(1)}%</div>`);
+
+    // Calculate total speed (includes level advantage if applicable)
+    let totalSpeed = params.speedBonus;
+    if (params.enhancingLevel > itemDetails.itemLevel) {
+        const levelAdvantage = params.enhancingLevel - itemDetails.itemLevel;
+        totalSpeed += levelAdvantage;
+        lines.push(`<div style="color: #88ccff;"><span style="color: #888;">Speed:</span> +${totalSpeed.toFixed(1)}%</div>`);
+        lines.push(`<div style="color: #aaddff; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">Level advantage:</span> +${levelAdvantage.toFixed(1)}%</div>`);
+    } else {
+        lines.push(`<div style="color: #88ccff;"><span style="color: #888;">Speed:</span> +${params.speedBonus.toFixed(1)}%</div>`);
+    }
 
     // Show community buff breakdown if active
     if (params.communitySpeedBonus > 0) {
@@ -323,7 +333,14 @@ function formatEnhancementDisplay(params, calculations, itemDetails, protectFrom
     }
 
     lines.push('• Attempts and time are statistical averages<br>');
-    lines.push(`• Action time: ${calculations.target10.perActionTime.toFixed(2)}s (includes ${params.speedBonus.toFixed(0)}% speed bonus)`);
+
+    // Calculate total speed for display (includes level advantage if applicable)
+    let displaySpeed = params.speedBonus;
+    if (params.enhancingLevel > itemDetails.itemLevel) {
+        displaySpeed += (params.enhancingLevel - itemDetails.itemLevel);
+    }
+
+    lines.push(`• Action time: ${calculations.target10.perActionTime.toFixed(2)}s (includes ${displaySpeed.toFixed(1)}% speed bonus)`);
     lines.push('</div>');
 
     lines.push('</div>'); // Close targets section
