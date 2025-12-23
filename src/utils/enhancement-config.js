@@ -111,6 +111,11 @@ function getAutoDetectedParams() {
     // Formula: 20% base + 0.5% per level
     const communitySpeedBonus = communityBuffLevel > 0 ? 20 + (communityBuffLevel - 1) * 0.5 : 0;
 
+    // Get Experience (Wisdom) community buff level
+    const communityWisdomLevel = dataManager.getCommunityBuffLevel('/community_buff_types/experience');
+    // Formula: 20% base + 0.5% per level (same as other community buffs)
+    const communityWisdomBonus = communityWisdomLevel > 0 ? 20 + (communityWisdomLevel - 1) * 0.5 : 0;
+
     // Calculate total success rate bonus
     // Tool bonus (from equipment) + house bonus (0.05% per level)
     const houseSuccessBonus = houseLevel * 0.05;  // 0.05% per level for success
@@ -121,13 +126,18 @@ function getAutoDetectedParams() {
     const houseSpeedBonus = houseLevel * 1.0;  // 1% per level for action speed
     const totalSpeedBonus = gear.speedBonus + houseSpeedBonus + communitySpeedBonus + teaSpeedBonus;
 
+    // Calculate total experience bonus
+    // Equipment + house wisdom + tea wisdom + community wisdom
+    const totalExperienceBonus = gear.experienceBonus + houseWisdomBonus + teaWisdomBonus + communityWisdomBonus;
+
     return {
+        // Core values for calculations
         enhancingLevel: enhancingLevel + teaLevelBonus,  // Base level + tea bonus
         houseLevel: houseLevel,
         toolBonus: totalSuccessBonus,                     // Tool + house combined
         speedBonus: totalSpeedBonus,                      // Speed + house + community + tea combined
         rareFindBonus: gear.rareFindBonus + houseRareFindBonus,  // Rare find (equipment + all house rooms)
-        experienceBonus: gear.experienceBonus + houseWisdomBonus + teaWisdomBonus,  // Experience (equipment + house wisdom + tea wisdom)
+        experienceBonus: totalExperienceBonus,            // Experience (equipment + house + tea + community wisdom)
         teas: teas,
 
         // Display info (for UI) - show best item per slot
@@ -136,13 +146,17 @@ function getAutoDetectedParams() {
         legsSlot: gear.legsSlot,
         handsSlot: gear.handsSlot,
         detectedTeaBonus: teaLevelBonus,
-        communityBuffLevel: communityBuffLevel,           // For display
+        communityBuffLevel: communityBuffLevel,           // For display (speed)
         communitySpeedBonus: communitySpeedBonus,         // For display
+        communityWisdomLevel: communityWisdomLevel,       // For display
+        communityWisdomBonus: communityWisdomBonus,       // For display
         teaSpeedBonus: teaSpeedBonus,                     // For display
         teaWisdomBonus: teaWisdomBonus,                   // For display
         drinkConcentration: drinkConcentration,           // For display
         houseRareFindBonus: houseRareFindBonus,           // For display
         houseWisdomBonus: houseWisdomBonus,               // For display
+        equipmentRareFind: gear.rareFindBonus,            // For display
+        equipmentExperience: gear.experienceBonus,        // For display
     };
 }
 
