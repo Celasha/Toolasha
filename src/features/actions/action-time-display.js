@@ -95,6 +95,7 @@ class ActionTimeDisplay {
             color: var(--text-color-secondary, #888);
             margin-top: 2px;
             line-height: 1.4;
+            text-align: left;
         `;
 
         // Insert after action name
@@ -228,16 +229,9 @@ class ActionTimeDisplay {
         if (action.hasMaxCount) {
             lines.push('<br>');
 
-            // Time per action and actions/hour on same line
+            // Time per action and actions/hour on same line (simplified - no percentages)
             lines.push(`<span style="color: var(--text-color-secondary, #888);">`);
-            lines.push(`${actionTime.toFixed(1)}s/action`);
-            if (speedBonus > 0) {
-                lines.push(` (+${(speedBonus * 100).toFixed(1)}% speed)`);
-            }
-            lines.push(` · ${actionsPerHour.toFixed(0)}/hr`);
-            if (totalEfficiency > 0) {
-                lines.push(` (+${totalEfficiency.toFixed(0)}% eff)`);
-            }
+            lines.push(`${actionTime.toFixed(1)}s/action · ${actionsPerHour.toFixed(0)}/hr`);
             lines.push('</span><br>');
 
             // Total time and completion time
