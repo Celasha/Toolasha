@@ -12,43 +12,11 @@
 
 import marketAPI from '../../api/marketplace.js';
 import dataManager from '../../core/data-manager.js';
-import { parseEquipmentSpeedBonuses, parseEssenceFindBonus, parseRareFindBonus } from '../../utils/equipment-parser.js';
+import { parseEquipmentSpeedBonuses, parseEquipmentEfficiencyBonuses } from '../../utils/equipment-parser.js';
 import { parseTeaEfficiency, parseGourmetBonus, parseProcessingBonus, parseGatheringBonus, getDrinkConcentration } from '../../utils/tea-parser.js';
-import { calculateHouseRareFind } from '../../utils/house-efficiency.js';
 import { stackAdditive } from '../../utils/efficiency.js';
 import { formatWithSeparator } from '../../utils/formatters.js';
-import expectedValueCalculator from '../market/expected-value-calculator.js';
-
-/**
- * Processing Tea conversions (raw → processed)
- * 19 total conversions: 5 Foraging, 7 Woodcutting, 7 Milking
- */
-const PROCESSING_CONVERSIONS = {
-    // Foraging (5)
-    '/items/cotton': '/items/cotton_fabric',
-    '/items/flax': '/items/linen_fabric',
-    '/items/bamboo_branch': '/items/bamboo_fabric',
-    '/items/cocoon': '/items/silk_fabric',
-    '/items/radiant_fiber': '/items/radiant_fabric',
-
-    // Woodcutting (7)
-    '/items/log': '/items/lumber',
-    '/items/arcane_log': '/items/arcane_lumber',
-    '/items/birch_log': '/items/birch_lumber',
-    '/items/cedar_log': '/items/cedar_lumber',
-    '/items/ginkgo_log': '/items/ginkgo_lumber',
-    '/items/purpleheart_log': '/items/purpleheart_lumber',
-    '/items/redwood_log': '/items/redwood_lumber',
-
-    // Milking (7)
-    '/items/milk': '/items/cheese',
-    '/items/azure_milk': '/items/azure_cheese',
-    '/items/burble_milk': '/items/burble_cheese',
-    '/items/crimson_milk': '/items/crimson_cheese',
-    '/items/holy_milk': '/items/holy_cheese',
-    '/items/rainbow_milk': '/items/rainbow_cheese',
-    '/items/verdant_milk': '/items/verdant_cheese'
-};
+import { calculateBonusRevenue } from '../../utils/bonus-revenue-calculator.js';
 
 /**
  * Action types for gathering skills (3 skills)
@@ -209,51 +177,12 @@ export async function calculateGatheringProfit(actionHrid) {
         }
     }
 
-    // Calculate equipment efficiency bonus (specific items like gathering charms)
-    // Extract skill name from action type (e.g., "/action_types/foraging" -> "foraging")
-    const skillName = actionDetail.type.replace('/action_types/', '');
-    const skillEfficiencyStat = `${skillName}Efficiency`; // e.g., "foragingEfficiency"
-
-    let equipmentEfficiency = 0;
-    for (const [slot, equippedItem] of Object.entries(equipment)) {
-        if (!equippedItem?.itemHrid) continue;
-
-        const itemDetail = gameData.itemDetailMap[equippedItem.itemHrid];
-        if (!itemDetail?.equipmentDetail?.noncombatStats) continue;
-
-        const stats = itemDetail.equipmentDetail.noncombatStats;
-
-        // Check for both generic efficiency and skill-specific efficiency
-        let efficiency = 0;
-        if (stats.efficiency) {
-            efficiency += stats.efficiency; // Generic efficiency (all skills)
-        }
-        if (stats[skillEfficiencyStat]) {
-            efficiency += stats[skillEfficiencyStat]; // Skill-specific (e.g., foragingEfficiency)
-        }
-
-        if (efficiency > 0) {
-            // Apply enhancement scaling (only accessories/charms get 5x)
-            const slotType = itemDetail.equipmentDetail.slot;
-            const isAccessory = [
-                '/equipment_types/charm',
-                '/equipment_types/neck',
-                '/equipment_types/earrings',
-                '/equipment_types/ring',
-                '/equipment_types/back',
-                '/equipment_types/trinket'
-            ].includes(slotType);
-
-            const enhancementLevel = equippedItem.enhancementLevel || 0;
-            if (enhancementLevel > 0) {
-                const enhancementBonus = getEnhancementBonus(enhancementLevel);
-                const multiplier = isAccessory ? 5 : 1;
-                efficiency *= (1 + (enhancementBonus / 100) * multiplier);
-            }
-
-            equipmentEfficiency += efficiency;
-        }
-    }
+    // Calculate equipment efficiency bonus (uses equipment-parser utility)
+    const equipmentEfficiency = parseEquipmentEfficiencyBonuses(
+        equipment,
+        actionDetail.type,
+        gameData.itemDetailMap
+    );
 
     // Total efficiency (all additive)
     const totalEfficiency = stackAdditive(
@@ -284,23 +213,25 @@ export async function calculateGatheringProfit(actionHrid) {
         const baseAvgAmount = (drop.minCount + drop.maxCount) / 2;
         const avgAmountPerAction = baseAvgAmount * (1 + totalGathering);
 
-        // Check if this item has a Processing conversion
-        const processedItemHrid = PROCESSING_CONVERSIONS[drop.itemHrid];
+        // Check if this item has a Processing conversion (look up dynamically from crafting recipes)
+        // Find a crafting action where this raw item is the input
+        const processingActionHrid = Object.keys(gameData.actionDetailMap).find(actionHrid => {
+            const action = gameData.actionDetailMap[actionHrid];
+            return action.inputItems?.[0]?.itemHrid === drop.itemHrid &&
+                   action.outputItems?.[0]?.itemHrid; // Has an output
+        });
+
+        const processedItemHrid = processingActionHrid
+            ? gameData.actionDetailMap[processingActionHrid].outputItems[0].itemHrid
+            : null;
 
         // Per-action calculations (efficiency is already in actionsPerHour, don't multiply again!)
         let rawPerAction = 0;
         let processedPerAction = 0;
 
         if (processedItemHrid && processingBonus > 0) {
-            // Look up conversion ratio from crafting recipe (2 milk → 1 cheese, etc.)
-            const processingActionHrid = Object.keys(gameData.actionDetailMap).find(actionHrid => {
-                const action = gameData.actionDetailMap[actionHrid];
-                return action.outputItems?.[0]?.itemHrid === processedItemHrid;
-            });
-
-            const conversionRatio = processingActionHrid
-                ? gameData.actionDetailMap[processingActionHrid].inputItems[0].count
-                : 2; // Default to 2:1
+            // Get conversion ratio from the processing action we already found
+            const conversionRatio = gameData.actionDetailMap[processingActionHrid].inputItems[0].count;
 
             // Processing Tea check happens per action:
             // If procs (processingBonus% chance): Convert to processed + leftover
@@ -426,135 +357,6 @@ export async function calculateGatheringProfit(actionHrid) {
             equipmentEfficiency,
             gourmetBonus
         }
-    };
-}
-
-/**
- * Get enhancement bonus percentage for a given level
- * @param {number} level - Enhancement level (1-20)
- * @returns {number} Bonus percentage
- */
-function getEnhancementBonus(level) {
-    const bonuses = {
-        1: 2.0, 2: 4.2, 3: 6.6, 4: 9.2, 5: 12.0,
-        6: 15.0, 7: 18.2, 8: 21.6, 9: 25.2, 10: 29.0,
-        11: 33.4, 12: 38.4, 13: 44.0, 14: 50.2, 15: 57.0,
-        16: 64.4, 17: 72.4, 18: 81.0, 19: 90.2, 20: 100.0
-    };
-    return bonuses[level] || 0;
-}
-
-/**
- * Calculate bonus revenue from essence and rare find drops
- * @param {Object} actionDetails - Action details from game data
- * @param {number} actionsPerHour - Actions per hour
- * @param {Map} characterEquipment - Equipment map
- * @param {Object} itemDetailMap - Item details map
- * @returns {Object} Bonus revenue data with essence and rare find drops
- */
-function calculateBonusRevenue(actionDetails, actionsPerHour, characterEquipment, itemDetailMap) {
-    // Get Essence Find bonus from equipment
-    const essenceFindBonus = parseEssenceFindBonus(characterEquipment, itemDetailMap);
-
-    // Get Rare Find bonus from BOTH equipment and house rooms
-    const equipmentRareFindBonus = parseRareFindBonus(characterEquipment, actionDetails.type, itemDetailMap);
-    const houseRareFindBonus = calculateHouseRareFind();
-    const rareFindBonus = equipmentRareFindBonus + houseRareFindBonus;
-
-    const bonusDrops = [];
-    let totalBonusRevenue = 0;
-
-    // Process essence drops
-    if (actionDetails.essenceDropTable && actionDetails.essenceDropTable.length > 0) {
-        for (const drop of actionDetails.essenceDropTable) {
-            const itemDetails = itemDetailMap[drop.itemHrid];
-            if (!itemDetails) continue;
-
-            // Calculate average drop count
-            const avgCount = (drop.minCount + drop.maxCount) / 2;
-
-            // Apply Essence Find multiplier to drop rate
-            const finalDropRate = drop.dropRate * (1 + essenceFindBonus / 100);
-
-            // Expected drops per hour
-            const dropsPerHour = actionsPerHour * finalDropRate * avgCount;
-
-            // Get price: Check if openable container (use EV), otherwise market price
-            let itemPrice = 0;
-            if (itemDetails.isOpenable) {
-                // Use expected value for openable containers
-                itemPrice = expectedValueCalculator.getCachedValue(drop.itemHrid) || 0;
-            } else {
-                // Use market price for regular items
-                const price = marketAPI.getPrice(drop.itemHrid, 0);
-                itemPrice = price?.bid || 0; // Use bid price (instant sell)
-            }
-
-            // Revenue per hour from this drop
-            const revenuePerHour = dropsPerHour * itemPrice;
-
-            bonusDrops.push({
-                itemHrid: drop.itemHrid,
-                itemName: itemDetails.name,
-                dropRate: finalDropRate,
-                dropsPerHour,
-                priceEach: itemPrice,
-                revenuePerHour,
-                type: 'essence'
-            });
-
-            totalBonusRevenue += revenuePerHour;
-        }
-    }
-
-    // Process rare find drops
-    if (actionDetails.rareDropTable && actionDetails.rareDropTable.length > 0) {
-        for (const drop of actionDetails.rareDropTable) {
-            const itemDetails = itemDetailMap[drop.itemHrid];
-            if (!itemDetails) continue;
-
-            // Calculate average drop count
-            const avgCount = (drop.minCount + drop.maxCount) / 2;
-
-            // Apply Rare Find multiplier to drop rate
-            const finalDropRate = drop.dropRate * (1 + rareFindBonus / 100);
-
-            // Expected drops per hour
-            const dropsPerHour = actionsPerHour * finalDropRate * avgCount;
-
-            // Get price: Check if openable container (use EV), otherwise market price
-            let itemPrice = 0;
-            if (itemDetails.isOpenable) {
-                // Use expected value for openable containers
-                itemPrice = expectedValueCalculator.getCachedValue(drop.itemHrid) || 0;
-            } else {
-                // Use market price for regular items
-                const price = marketAPI.getPrice(drop.itemHrid, 0);
-                itemPrice = price?.bid || 0; // Use bid price (instant sell)
-            }
-
-            // Revenue per hour from this drop
-            const revenuePerHour = dropsPerHour * itemPrice;
-
-            bonusDrops.push({
-                itemHrid: drop.itemHrid,
-                itemName: itemDetails.name,
-                dropRate: finalDropRate,
-                dropsPerHour,
-                priceEach: itemPrice,
-                revenuePerHour,
-                type: 'rare_find'
-            });
-
-            totalBonusRevenue += revenuePerHour;
-        }
-    }
-
-    return {
-        essenceFindBonus,       // Essence Find % from equipment
-        rareFindBonus,          // Rare Find % from equipment + house rooms (combined)
-        bonusDrops,             // Array of all bonus drops with details
-        totalBonusRevenue       // Total revenue/hour from all bonus drops
     };
 }
 
