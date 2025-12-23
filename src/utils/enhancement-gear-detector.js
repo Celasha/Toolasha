@@ -1,20 +1,21 @@
 /**
- * Enhancement Gear Detector
+ * Skill Gear Detector
  *
- * Auto-detects enhancing gear and buffs from character equipment and consumables.
- * Finds the best equipped tool (success rate) and gloves (speed) for enhancing.
+ * Auto-detects gear and buffs from character equipment for any skill.
+ * Originally designed for enhancing, now works generically for all skills.
  */
 
 import { getEnhancementMultiplier } from './enhancement-multipliers.js';
 
 /**
- * Detect best enhancing gear by equipment slot
+ * Detect best gear for a specific skill by equipment slot
+ * @param {string} skillName - Skill name (e.g., 'enhancing', 'cooking', 'milking')
  * @param {Map} equipment - Character equipment map (for backward compatibility, can be null)
  * @param {Object} itemDetailMap - Item details map from init_client_data
  * @param {Array} inventory - Character inventory array (all items including equipped)
- * @returns {Object} Best enhancing gear per slot with bonuses
+ * @returns {Object} Best gear per slot with bonuses
  */
-export function detectEnhancingGear(equipment, itemDetailMap, inventory = null) {
+export function detectSkillGear(skillName, equipment, itemDetailMap, inventory = null) {
     const gear = {
         // Totals for calculations
         toolBonus: 0,
@@ -42,7 +43,7 @@ export function detectEnhancingGear(equipment, itemDetailMap, inventory = null) 
 
     // Track best item per slot (by item level, then enhancement level)
     const slotCandidates = {
-        tool: [],    // main_hand or two_hand or enhancing_tool
+        tool: [],    // main_hand or two_hand or skill-specific tool
         body: [],    // body
         legs: [],    // legs
         hands: [],   // hands
@@ -51,7 +52,13 @@ export function detectEnhancingGear(equipment, itemDetailMap, inventory = null) 
         earring: [], // earring (accessories have 5× multiplier)
     };
 
-    // Search all items for enhancing bonuses and group by slot
+    // Dynamic stat names based on skill
+    const successStat = `${skillName}Success`;
+    const speedStat = `${skillName}Speed`;
+    const rareFindStat = `${skillName}RareFind`;
+    const experienceStat = `${skillName}Experience`;
+
+    // Search all items for skill-related bonuses and group by slot
     for (const item of itemsToScan) {
         const itemDetails = itemDetailMap[item.itemHrid];
         if (!itemDetails?.equipmentDetail?.noncombatStats) continue;
@@ -68,12 +75,12 @@ export function detectEnhancingGear(equipment, itemDetailMap, inventory = null) 
             allStats[statName] = statValue * 100 * multiplier;
         }
 
-        // Check if item has any enhancing-related stats (including universal skillingSpeed)
-        const hasEnhancingStats = allStats.enhancingSuccess || allStats.enhancingSpeed ||
-                                  allStats.enhancingRareFind || allStats.enhancingExperience ||
-                                  allStats.skillingSpeed;
+        // Check if item has any skill-related stats (including universal skillingSpeed)
+        const hasSkillStats = allStats[successStat] || allStats[speedStat] ||
+                             allStats[rareFindStat] || allStats[experienceStat] ||
+                             allStats.skillingSpeed;
 
-        if (!hasEnhancingStats) continue;
+        if (!hasSkillStats) continue;
 
         // Calculate bonuses for this item (backward-compatible output)
         let itemBonuses = {
@@ -81,17 +88,19 @@ export function detectEnhancingGear(equipment, itemDetailMap, inventory = null) 
             itemDetails: itemDetails,
             itemLevel: itemDetails.itemLevel || 0,
             enhancementLevel: enhancementLevel,
-            // Backward-compatible named bonuses
-            toolBonus: allStats.enhancingSuccess || 0,
-            speedBonus: (allStats.enhancingSpeed || 0) + (allStats.skillingSpeed || 0),  // Combine speed sources
-            rareFindBonus: allStats.enhancingRareFind || 0,
-            experienceBonus: allStats.enhancingExperience || 0,
-            // NEW: Generic access to all stats
+            // Named bonuses (dynamic based on skill)
+            toolBonus: allStats[successStat] || 0,
+            speedBonus: (allStats[speedStat] || 0) + (allStats.skillingSpeed || 0),  // Combine speed sources
+            rareFindBonus: allStats[rareFindStat] || 0,
+            experienceBonus: allStats[experienceStat] || 0,
+            // Generic access to all stats
             allStats: allStats,
         };
 
         // Group by slot
-        if (equipmentType === '/equipment_types/enhancing_tool' ||
+        // Tool slots: skill-specific tools (e.g., enhancing_tool, cooking_tool) plus main_hand/two_hand
+        const skillToolType = `/equipment_types/${skillName}_tool`;
+        if (equipmentType === skillToolType ||
             equipmentType === '/equipment_types/main_hand' ||
             equipmentType === '/equipment_types/two_hand') {
             slotCandidates.tool.push(itemBonuses);
@@ -267,4 +276,15 @@ export function getEnhancingTeaSpeedBonus(teas) {
     if (teas.enhancing) return 2;        // +2% base
 
     return 0;
+}
+
+/**
+ * Backward-compatible wrapper for enhancing gear detection
+ * @param {Map} equipment - Character equipment map
+ * @param {Object} itemDetailMap - Item details map from init_client_data
+ * @param {Array} inventory - Character inventory array (all items including equipped)
+ * @returns {Object} Best enhancing gear per slot with bonuses
+ */
+export function detectEnhancingGear(equipment, itemDetailMap, inventory = null) {
+    return detectSkillGear('enhancing', equipment, itemDetailMap, inventory);
 }
