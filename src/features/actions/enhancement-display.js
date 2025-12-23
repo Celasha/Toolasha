@@ -46,7 +46,6 @@ function getProtectionItemFromUI(panel) {
         if (match) {
             const itemName = match[1];
             const hrid = `/items/${itemName}`;
-            console.log('[MWI Tools] Protection item detected:', hrid);
             return hrid;
         }
 
@@ -85,8 +84,6 @@ export async function displayEnhancementStats(panel, itemHrid) {
         // Minimum protection level is 2 (dropping from +2 to +1)
         // Protection at +1 is meaningless (would drop to +0 anyway)
         const effectiveProtectFrom = protectFromLevel < 2 ? 0 : protectFromLevel;
-
-        console.log(`[MWI Tools] Protect From: ${effectiveProtectFrom > 0 ? `+${effectiveProtectFrom}` : 'Never'}`);
 
         // Calculate enhancement statistics for common targets
         // Protection only applies when target level reaches the protection threshold
@@ -129,7 +126,6 @@ export async function displayEnhancementStats(panel, itemHrid) {
         // Format and inject display
         const html = formatEnhancementDisplay(panel, params, calculations, itemDetails, effectiveProtectFrom, itemDetails.enhancementCosts || []);
         injectDisplay(panel, html);
-        console.log('[MWI Tools] ✅ Enhancement calculator displayed successfully!');
     } catch (error) {
         console.error('[MWI Tools] ❌ Error displaying enhancement stats:', error);
         console.error('[MWI Tools] Error stack:', error.stack);

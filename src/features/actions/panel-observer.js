@@ -45,7 +45,6 @@ function triggerEnhancementUpdate(panel, itemHrid) {
 
     // Set new timeout
     const timeoutId = setTimeout(async () => {
-        console.log('[MWI Tools] Input changed, re-calculating enhancement stats...');
         await displayEnhancementStats(panel, itemHrid);
         updateTimeouts.delete(itemHrid);
     }, 500); // Wait 500ms after last change

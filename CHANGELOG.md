@@ -56,6 +56,17 @@ Patch release implementing guzzling bonus scaling for blessed tea in the enhance
   - Example: +3 now shows "12.64" instead of "13"
   - File: `src/features/actions/enhancement-display.js` lines 234, 274
 
+**UX IMPROVEMENT:** Removed verbose console logging during normal operation.
+
+- **Console Output Cleanup:**
+  - Removed "Input changed, re-calculating enhancement stats..."
+  - Removed "Protect From: +X"
+  - Removed "Protection item detected: /items/..."
+  - Removed "✅ Enhancement calculator displayed successfully!"
+  - Error logs preserved for debugging
+  - Files: `enhancement-display.js` (3 logs), `panel-observer.js` (1 log)
+  - Reduces console spam during normal use
+
 ### Technical Details
 
 **Markov Chain Updates:**
