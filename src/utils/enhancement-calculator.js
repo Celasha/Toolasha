@@ -37,26 +37,26 @@ const BASE_SUCCESS_RATES = [
  * Calculate total success rate bonus multiplier
  * @param {Object} params - Enhancement parameters
  * @param {number} params.enhancingLevel - Effective enhancing level (base + tea bonus)
- * @param {number} params.houseLevel - Laboratory level
- * @param {number} params.toolBonus - Tool success bonus % (already includes house bonus)
+ * @param {number} params.toolBonus - Tool success bonus % (already includes equipment + house bonus)
  * @param {number} params.itemLevel - Item level being enhanced
- * @returns {number} Success rate multiplier (e.g., 1.15 = 115% of base rates)
+ * @returns {number} Success rate multiplier (e.g., 1.0519 = 105.19% of base rates)
  */
 function calculateSuccessMultiplier(params) {
-    const { enhancingLevel, houseLevel, toolBonus, itemLevel } = params;
+    const { enhancingLevel, toolBonus, itemLevel } = params;
 
-    // Total bonus calculation from original MWI Tools
-    // Formula: https://doh-nuts.github.io/Enhancelator/
+    // Total bonus calculation
+    // toolBonus already includes equipment + house success bonus from config
+    // We only need to add level advantage here
 
     let totalBonus;
 
     if (enhancingLevel >= itemLevel) {
-        // Above or at item level: +5% per (level + house - itemLevel) + tool bonus
-        // Note: 0.05 * value / 100 = 0.0005 * value (0.05% per level)
-        totalBonus = 1 + (0.05 * (enhancingLevel + houseLevel - itemLevel) + toolBonus) / 100;
+        // Above or at item level: +0.05% per level above item level
+        const levelAdvantage = 0.05 * (enhancingLevel - itemLevel);
+        totalBonus = 1 + (toolBonus + levelAdvantage) / 100;
     } else {
-        // Below item level: Penalty based on level deficit + house and tool bonuses
-        totalBonus = 1 - 0.5 * (1 - enhancingLevel / itemLevel) + (0.05 * houseLevel + toolBonus) / 100;
+        // Below item level: Penalty based on level deficit
+        totalBonus = 1 - 0.5 * (1 - enhancingLevel / itemLevel) + toolBonus / 100;
     }
 
     return totalBonus;
@@ -66,13 +66,14 @@ function calculateSuccessMultiplier(params) {
  * Calculate enhancement statistics using Markov Chain matrix inversion
  * @param {Object} params - Enhancement parameters
  * @param {number} params.enhancingLevel - Effective enhancing level (includes tea bonus)
- * @param {number} params.houseLevel - Laboratory house room level
- * @param {number} params.toolBonus - Tool success bonus % (includes house bonus from config)
+ * @param {number} params.houseLevel - Observatory house room level (used for speed calculation only)
+ * @param {number} params.toolBonus - Tool success bonus % (already includes equipment + house success bonus from config)
  * @param {number} params.speedBonus - Speed bonus % (for action time calculation)
  * @param {number} params.itemLevel - Item level being enhanced
  * @param {number} params.targetLevel - Target enhancement level (1-20)
  * @param {number} params.protectFrom - Start using protection items at this level (0 = never)
  * @param {boolean} params.blessedTea - Whether Blessed Tea is active (1% double jump)
+ * @param {number} params.guzzlingBonus - Drink concentration multiplier (1.0 = no bonus, scales blessed tea)
  * @returns {Object} Enhancement statistics
  */
 export function calculateEnhancement(params) {
@@ -84,7 +85,8 @@ export function calculateEnhancement(params) {
         itemLevel,
         targetLevel,
         protectFrom = 0,
-        blessedTea = false
+        blessedTea = false,
+        guzzlingBonus = 1.0
     } = params;
 
     // Validate inputs
@@ -98,7 +100,6 @@ export function calculateEnhancement(params) {
     // Calculate success rate multiplier
     const successMultiplier = calculateSuccessMultiplier({
         enhancingLevel,
-        houseLevel,
         toolBonus,
         itemLevel
     });
@@ -115,9 +116,13 @@ export function calculateEnhancement(params) {
         const failureDestination = (protectFrom > 0 && i >= protectFrom) ? i - 1 : 0;
 
         if (blessedTea) {
-            // Blessed Tea: 1% chance to jump +2, 99% chance to jump +1
-            markov.set([i, i + 2], successChance * 0.01);
-            markov.set([i, i + 1], successChance * 0.99);
+            // Blessed Tea: 1% base chance to jump +2, scaled by guzzling bonus
+            // Remaining success chance goes to +1 (after accounting for skip chance)
+            const skipChance = successChance * 0.01 * guzzlingBonus;
+            const remainingSuccess = successChance * (1 - 0.01 * guzzlingBonus);
+
+            markov.set([i, i + 2], skipChance);
+            markov.set([i, i + 1], remainingSuccess);
             markov.set([i, failureDestination], 1 - successChance);
         } else {
             // Normal: Success goes to +1, failure goes to destination
@@ -173,8 +178,9 @@ export function calculateEnhancement(params) {
     const totalTime = perActionTime * attempts;
 
     return {
-        attempts: Math.round(attempts),
-        protectionCount: Math.round(protects),
+        attempts: attempts,  // Keep exact decimal value for calculations
+        attemptsRounded: Math.round(attempts),  // Rounded for display
+        protectionCount: protects,  // Keep decimal precision
         perActionTime: perActionTime,
         totalTime: totalTime,
         successMultiplier: successMultiplier,

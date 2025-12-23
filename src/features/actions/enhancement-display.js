@@ -18,41 +18,41 @@ import marketAPI from '../../api/marketplace.js';
  */
 function getProtectionItemFromUI(panel) {
     try {
-        // Find all item slots in the panel
-        const itemSlots = panel.querySelectorAll('[class*="ItemSlot"]');
+        // Find the protection item container using the specific class
+        const protectionContainer = panel.querySelector('[class*="protectionItemInputContainer"]');
 
-        for (const slot of itemSlots) {
-            // Check if this slot's label says "Protection"
-            const slotParent = slot.parentElement;
-            if (!slotParent) continue;
-
-            // Look for text content that contains "Protection"
-            const textElements = slotParent.querySelectorAll('*');
-            let isProtectionSlot = false;
-            for (const el of textElements) {
-                if (el.textContent.trim() === 'Protection' && el.children.length === 0) {
-                    isProtectionSlot = true;
-                    break;
-                }
-            }
-
-            if (!isProtectionSlot) continue;
-
-            // Found protection slot - now get the item HRID from the image
-            const img = slot.querySelector('img[src*="/items/"]');
-            if (img && img.src) {
-                // Extract item HRID from image src
-                // Format: .../items/mirror_of_protection.svg
-                const match = img.src.match(/\/items\/([^.]+)\./);
-                if (match) {
-                    return `/items/${match[1]}`;
-                }
-            }
+        if (!protectionContainer) {
+            console.log('[MWI Tools] No protection container found');
+            return null;
         }
 
-        return null; // No protection item equipped
+        // Look for SVG sprites with items_sprite pattern
+        // Protection items are rendered as: <use href="/static/media/items_sprite.{hash}.svg#item_name"></use>
+        const useElements = protectionContainer.querySelectorAll('use[href*="items_sprite"]');
+
+        if (useElements.length === 0) {
+            // No protection item equipped
+            return null;
+        }
+
+        // Extract item HRID from the sprite reference
+        const useElement = useElements[0];
+        const href = useElement.getAttribute('href');
+
+        // Extract item name after the # (fragment identifier)
+        // Format: /static/media/items_sprite.{hash}.svg#mirror_of_protection
+        const match = href.match(/#(.+)$/);
+
+        if (match) {
+            const itemName = match[1];
+            const hrid = `/items/${itemName}`;
+            console.log('[MWI Tools] Protection item detected:', hrid);
+            return hrid;
+        }
+
+        return null;
     } catch (error) {
-        console.error('[MWI Tools] Error reading protection item:', error);
+        console.error('[MWI Tools] Error detecting protection item:', error);
         return null;
     }
 }
@@ -99,7 +99,8 @@ export async function displayEnhancementStats(panel, itemHrid) {
                 itemLevel: itemLevel,
                 targetLevel: 10,
                 protectFrom: (effectiveProtectFrom > 0 && 10 >= effectiveProtectFrom) ? effectiveProtectFrom : 0,
-                blessedTea: params.teas.blessed
+                blessedTea: params.teas.blessed,
+                guzzlingBonus: params.guzzlingBonus
             }),
             target15: calculateEnhancement({
                 enhancingLevel: params.enhancingLevel,
@@ -109,7 +110,8 @@ export async function displayEnhancementStats(panel, itemHrid) {
                 itemLevel: itemLevel,
                 targetLevel: 15,
                 protectFrom: (effectiveProtectFrom > 0 && 15 >= effectiveProtectFrom) ? effectiveProtectFrom : 0,
-                blessedTea: params.teas.blessed
+                blessedTea: params.teas.blessed,
+                guzzlingBonus: params.guzzlingBonus
             }),
             target20: calculateEnhancement({
                 enhancingLevel: params.enhancingLevel,
@@ -119,7 +121,8 @@ export async function displayEnhancementStats(panel, itemHrid) {
                 itemLevel: itemLevel,
                 targetLevel: 20,
                 protectFrom: (effectiveProtectFrom > 0 && 20 >= effectiveProtectFrom) ? effectiveProtectFrom : 0,
-                blessedTea: params.teas.blessed
+                blessedTea: params.teas.blessed,
+                guzzlingBonus: params.guzzlingBonus
             }),
         };
 
@@ -135,13 +138,14 @@ export async function displayEnhancementStats(panel, itemHrid) {
 
 /**
  * Generate costs by level table HTML for all 20 enhancement levels
+ * @param {HTMLElement} panel - Enhancement action panel element
  * @param {Object} params - Enhancement parameters
  * @param {number} itemLevel - Item level being enhanced
  * @param {number} protectFromLevel - Protection level from UI
  * @param {Array} enhancementCosts - Array of {itemHrid, count} for materials
  * @returns {string} HTML string
  */
-function generateCostsByLevelTable(params, itemLevel, protectFromLevel, enhancementCosts) {
+function generateCostsByLevelTable(panel, params, itemLevel, protectFromLevel, enhancementCosts) {
     const lines = [];
     const gameData = dataManager.getInitClientData();
 
@@ -162,11 +166,14 @@ function generateCostsByLevelTable(params, itemLevel, protectFromLevel, enhancem
             itemLevel: itemLevel,
             targetLevel: level,
             protectFrom: effectiveProtect,
-            blessedTea: params.teas.blessed
+            blessedTea: params.teas.blessed,
+            guzzlingBonus: params.guzzlingBonus
         });
 
-        // Calculate material cost
+        // Calculate material cost breakdown
         let materialCost = 0;
+        const materialBreakdown = {};
+
         if (enhancementCosts && enhancementCosts.length > 0) {
             enhancementCosts.forEach(cost => {
                 const itemDetail = gameData.itemDetailMap[cost.itemHrid];
@@ -183,28 +190,79 @@ function generateCostsByLevelTable(params, itemLevel, protectFromLevel, enhancem
                     }
                 }
 
-                materialCost += cost.count * itemPrice * calc.attempts;
+                const quantity = cost.count * calc.attempts;  // Use exact decimal attempts
+                const itemCost = quantity * itemPrice;
+                materialCost += itemCost;
+
+                // Store breakdown by item name with quantity
+                const itemName = itemDetail?.name || cost.itemHrid;
+                materialBreakdown[itemName] = {
+                    cost: itemCost,
+                    quantity: quantity
+                };
             });
         }
 
+        // Add protection item cost
+        let protectionCost = 0;
+        if (calc.protectionCount > 0) {
+            const protectionItemHrid = getProtectionItemFromUI(panel);
+            if (protectionItemHrid) {
+                const protectionItemDetail = gameData.itemDetailMap[protectionItemHrid];
+                let protectionPrice = 0;
+
+                const protectionMarketData = marketAPI.getPrice(protectionItemHrid, 0);
+                if (protectionMarketData && protectionMarketData.ask) {
+                    protectionPrice = protectionMarketData.ask;
+                } else {
+                    protectionPrice = protectionItemDetail?.sellPrice || 0;
+                }
+
+                protectionCost = calc.protectionCount * protectionPrice;
+                const protectionName = protectionItemDetail?.name || protectionItemHrid;
+                materialBreakdown[protectionName] = {
+                    cost: protectionCost,
+                    quantity: calc.protectionCount
+                };
+            }
+        }
+
+        const totalCost = materialCost + protectionCost;
+
         costData.push({
             level,
-            attempts: calc.attempts,
+            attempts: calc.attemptsRounded,  // Use rounded for display
             protection: calc.protectionCount,
             time: calc.totalTime,
-            cost: materialCost
+            cost: totalCost,
+            breakdown: materialBreakdown
         });
     }
 
     // Create scrollable table
     lines.push('<div style="max-height: 300px; overflow-y: auto;">');
     lines.push('<table style="width: 100%; border-collapse: collapse; font-size: 0.85em;">');
+
+    // Get all unique material names
+    const allMaterials = new Set();
+    costData.forEach(data => {
+        Object.keys(data.breakdown).forEach(mat => allMaterials.add(mat));
+    });
+    const materialNames = Array.from(allMaterials);
+
+    // Header row
     lines.push('<tr style="color: #888; border-bottom: 1px solid #444; position: sticky; top: 0; background: rgba(0,0,0,0.9);">');
     lines.push('<th style="text-align: left; padding: 4px;">Level</th>');
     lines.push('<th style="text-align: right; padding: 4px;">Attempts</th>');
     lines.push('<th style="text-align: right; padding: 4px;">Protection</th>');
+
+    // Add material columns
+    materialNames.forEach(matName => {
+        lines.push(`<th style="text-align: right; padding: 4px;">${matName}</th>`);
+    });
+
     lines.push('<th style="text-align: right; padding: 4px;">Time</th>');
-    lines.push('<th style="text-align: right; padding: 4px;">Cost</th>');
+    lines.push('<th style="text-align: right; padding: 4px;">Total Cost</th>');
     lines.push('</tr>');
 
     costData.forEach((data, index) => {
@@ -214,9 +272,24 @@ function generateCostsByLevelTable(params, itemLevel, protectFromLevel, enhancem
         lines.push(`<tr style="${borderStyle}">`);
         lines.push(`<td style="padding: 6px 4px; color: #fff; font-weight: bold;">+${data.level}</td>`);
         lines.push(`<td style="padding: 6px 4px; text-align: right; color: #ccc;">${data.attempts.toLocaleString()}</td>`);
-        lines.push(`<td style="padding: 6px 4px; text-align: right; color: ${data.protection > 0 ? '#ffa500' : '#888'};">${data.protection > 0 ? data.protection.toLocaleString() : '-'}</td>`);
+        lines.push(`<td style="padding: 6px 4px; text-align: right; color: ${data.protection > 0 ? '#ffa500' : '#888'};">${data.protection > 0 ? data.protection.toFixed(2) : '-'}</td>`);
+
+        // Add material breakdown columns
+        materialNames.forEach(matName => {
+            const matData = data.breakdown[matName];
+            if (matData && matData.cost > 0) {
+                const cost = Math.round(matData.cost).toLocaleString();
+                const qty = matData.quantity % 1 === 0 ?
+                    Math.round(matData.quantity).toLocaleString() :
+                    matData.quantity.toFixed(2);
+                lines.push(`<td style="padding: 6px 4px; text-align: right; color: #ccc;">${cost} (${qty}×)</td>`);
+            } else {
+                lines.push(`<td style="padding: 6px 4px; text-align: right; color: #888;">-</td>`);
+            }
+        });
+
         lines.push(`<td style="padding: 6px 4px; text-align: right; color: #ccc;">${timeReadable(data.time)}</td>`);
-        lines.push(`<td style="padding: 6px 4px; text-align: right; color: #ffa500;">${data.cost.toLocaleString()}</td>`);
+        lines.push(`<td style="padding: 6px 4px; text-align: right; color: #ffa500;">${Math.round(data.cost).toLocaleString()}</td>`);
         lines.push('</tr>');
     });
 
@@ -396,7 +469,7 @@ function formatEnhancementDisplay(panel, params, calculations, itemDetails, prot
     lines.push('</div>'); // Close stats section
 
     // Costs by level table for all 20 levels
-    const costsByLevelHTML = generateCostsByLevelTable(params, itemDetails.itemLevel, protectFromLevel, enhancementCosts);
+    const costsByLevelHTML = generateCostsByLevelTable(panel, params, itemDetails.itemLevel, protectFromLevel, enhancementCosts);
     lines.push(costsByLevelHTML);
 
     // Materials cost section (if enhancement costs exist) - just show per-attempt materials

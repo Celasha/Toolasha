@@ -7,6 +7,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2] - 2025-12-23
+
+### Overview
+
+Patch release implementing guzzling bonus scaling for blessed tea in the enhancement calculator.
+
+**Status:** Development/Testing (Version < 1.0.0 = pre-release)
+
+### Fixed
+
+#### **Blessed Tea Guzzling Bonus Implementation**
+
+**BUG FIX:** Blessed tea skip chance now correctly scales with Guzzling Pouch drink concentration.
+
+- **Guzzling Bonus Calculation:**
+  - Added `guzzlingBonus` parameter to enhancement config (1.0 + drinkConcentration / 100)
+  - Guzzling level 0 (no pouch): 1.0× multiplier (no change to current behavior)
+  - Guzzling Pouch +8 (12.16% concentration): 1.1216× multiplier
+  - Formula: `guzzlingBonus = 1 + drinkConcentration / 100`
+  - File: `src/utils/enhancement-config.js` lines 134-146
+
+- **Blessed Tea Skip Chance Scaling:**
+  - Base skip chance: 1% (hardcoded in game)
+  - Scaled skip chance: `successChance × 0.01 × guzzlingBonus`
+  - Remaining success chance: `successChance × (1 - 0.01 × guzzlingBonus)`
+  - Example: With 1.1216× guzzling, 53.065% success becomes:
+    - Skip to +2: 53.065% × 0.01 × 1.1216 = 0.595%
+    - Normal +1: 53.065% × (1 - 0.01 × 1.1216) = 52.47%
+  - File: `src/utils/enhancement-calculator.js` lines 118-127
+
+- **Integration:**
+  - Config detects drink concentration from Guzzling Pouch in inventory
+  - Calculates guzzling bonus and passes to all calculator calls
+  - Markov chain transition probabilities updated to scale blessed tea effect
+  - Files: `enhancement-config.js`, `enhancement-calculator.js`, `enhancement-display.js`
+
+### Technical Details
+
+**Markov Chain Updates:**
+```javascript
+if (blessedTea) {
+    const skipChance = successChance * 0.01 * guzzlingBonus;
+    const remainingSuccess = successChance * (1 - 0.01 * guzzlingBonus);
+
+    markov.set([i, i + 2], skipChance);
+    markov.set([i, i + 1], remainingSuccess);
+    markov.set([i, failureDestination], 1 - successChance);
+}
+```
+
+**Accuracy:**
+- Matches Enhancelator reference implementation
+- Preserves exact decimal precision in attempt calculations
+- Skip chance scales proportionally with drink concentration
+- No change to behavior when guzzling bonus = 1.0 (backward compatible)
+
 ## [0.4.1] - 2025-12-22
 
 ### Overview

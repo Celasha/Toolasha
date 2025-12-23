@@ -131,6 +131,9 @@ function getAutoDetectedParams() {
     // Equipment + house wisdom + tea wisdom + community wisdom
     const totalExperienceBonus = gear.experienceBonus + houseWisdomBonus + teaWisdomBonus + communityWisdomBonus;
 
+    // Calculate guzzling bonus multiplier (1.0 at level 0, scales with drink concentration)
+    const guzzlingBonus = 1 + drinkConcentration / 100;
+
     return {
         // Core values for calculations
         enhancingLevel: enhancingLevel + teaLevelBonus,  // Base level + tea bonus
@@ -139,6 +142,7 @@ function getAutoDetectedParams() {
         speedBonus: totalSpeedBonus,                      // Speed + house + community + tea combined
         rareFindBonus: gear.rareFindBonus + houseRareFindBonus,  // Rare find (equipment + all house rooms)
         experienceBonus: totalExperienceBonus,            // Experience (equipment + house + tea + community wisdom)
+        guzzlingBonus: guzzlingBonus,                     // Drink concentration multiplier for blessed tea
         teas: teas,
 
         // Display info (for UI) - show best item per slot
@@ -175,6 +179,7 @@ function getManualParams() {
         speedBonus: config.getSettingValue('enhanceSim_speedBonus', 0),
         rareFindBonus: config.getSettingValue('enhanceSim_rareFindBonus', 0),
         experienceBonus: config.getSettingValue('enhanceSim_experienceBonus', 0),
+        guzzlingBonus: 1 + config.getSettingValue('enhanceSim_drinkConcentration', 0) / 100,
         teas: {
             enhancing: config.getSettingValue('enhanceSim_enhancingTea', false),
             superEnhancing: config.getSettingValue('enhanceSim_superEnhancingTea', false),
