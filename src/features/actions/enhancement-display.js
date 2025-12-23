@@ -282,12 +282,27 @@ function formatEnhancementDisplay(params, calculations, itemDetails, protectFrom
         // Get game data for item names
         const gameData = dataManager.getInitClientData();
 
-        // Materials per attempt
+        // Materials per attempt with pricing
         lines.push('<div style="font-size: 0.85em; color: #ccc;">');
         const materialStrings = enhancementCosts.map(cost => {
             const itemDetail = gameData.itemDetailMap[cost.itemHrid];
             const itemName = itemDetail ? itemDetail.name : cost.itemHrid;
-            return `${cost.count}× ${itemName}`;
+
+            // Get price
+            let itemPrice = 0;
+            if (cost.itemHrid === '/items/coin') {
+                itemPrice = 1;
+            } else {
+                const marketData = marketAPI.getPrice(cost.itemHrid, 0);
+                if (marketData && marketData.ask) {
+                    itemPrice = marketData.ask;
+                } else {
+                    itemPrice = itemDetail?.sellPrice || 0;
+                }
+            }
+
+            const totalCost = cost.count * itemPrice;
+            return `${cost.count}× ${itemName} <span style="color: #888;">(@${itemPrice.toLocaleString()} → ${totalCost.toLocaleString()})</span>`;
         });
         lines.push(materialStrings.join(', '));
         lines.push('</div>');
