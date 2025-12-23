@@ -258,114 +258,26 @@ function formatEnhancementDisplay(params, calculations, itemDetails, protectFrom
     lines.push('</div>'); // Close grid
     lines.push('</div>'); // Close stats section
 
-    // Enhancement targets table
-    lines.push('<div style="background: rgba(0,0,0,0.2); padding: 8px; border-radius: 4px;">');
-    lines.push('<div style="color: #ffa500; font-weight: bold; margin-bottom: 6px; font-size: 0.95em;">Expected Enhancement Costs:</div>');
-    lines.push('<table style="width: 100%; border-collapse: collapse; font-size: 0.85em;">');
-    lines.push('<tr style="color: #888; border-bottom: 1px solid #444;">');
-    lines.push('<th style="text-align: left; padding: 4px;">Target</th>');
-    lines.push('<th style="text-align: right; padding: 4px;">Attempts</th>');
-    lines.push('<th style="text-align: right; padding: 4px;">Protection</th>');
-    lines.push('<th style="text-align: right; padding: 4px;">Time</th>');
-    lines.push('<th style="text-align: right; padding: 4px;">Actions/hr</th>');
-    lines.push('</tr>');
-
-    // Calculate actions per hour
-    const actionsPerHour = 3600 / calculations.target10.perActionTime;
-
-    // +10 row (no protection)
-    lines.push('<tr style="border-bottom: 1px solid #333;">');
-    lines.push('<td style="padding: 6px 4px; color: #fff; font-weight: bold;">+10</td>');
-    lines.push(`<td style="padding: 6px 4px; text-align: right; color: #ccc;">${calculations.target10.attempts.toLocaleString()}</td>`);
-    lines.push(`<td style="padding: 6px 4px; text-align: right; color: #888;">-</td>`);
-    lines.push(`<td style="padding: 6px 4px; text-align: right; color: #ccc;">${timeReadable(calculations.target10.totalTime)}</td>`);
-    lines.push(`<td style="padding: 6px 4px; text-align: right; color: #888;">${actionsPerHour.toFixed(0)}</td>`);
-    lines.push('</tr>');
-
-    // +15 row (protect from +11)
-    lines.push('<tr style="border-bottom: 1px solid #333;">');
-    lines.push('<td style="padding: 6px 4px; color: #fff; font-weight: bold;">+15</td>');
-    lines.push(`<td style="padding: 6px 4px; text-align: right; color: #ccc;">${calculations.target15.attempts.toLocaleString()}</td>`);
-    lines.push(`<td style="padding: 6px 4px; text-align: right; color: #ffa500;">${calculations.target15.protectionCount.toLocaleString()}</td>`);
-    lines.push(`<td style="padding: 6px 4px; text-align: right; color: #ccc;">${timeReadable(calculations.target15.totalTime)}</td>`);
-    lines.push(`<td style="padding: 6px 4px; text-align: right; color: #888;">${actionsPerHour.toFixed(0)}</td>`);
-    lines.push('</tr>');
-
-    // +20 row (protect from +11)
-    lines.push('<tr>');
-    lines.push('<td style="padding: 6px 4px; color: #fff; font-weight: bold;">+20</td>');
-    lines.push(`<td style="padding: 6px 4px; text-align: right; color: #ccc;">${calculations.target20.attempts.toLocaleString()}</td>`);
-    lines.push(`<td style="padding: 6px 4px; text-align: right; color: #ffa500;">${calculations.target20.protectionCount.toLocaleString()}</td>`);
-    lines.push(`<td style="padding: 6px 4px; text-align: right; color: #ccc;">${timeReadable(calculations.target20.totalTime)}</td>`);
-    lines.push(`<td style="padding: 6px 4px; text-align: right; color: #888;">${actionsPerHour.toFixed(0)}</td>`);
-    lines.push('</tr>');
-
-    lines.push('</table>');
-    lines.push('</div>'); // Close targets section
-
     // Costs by level table for all 20 levels
     const costsByLevelHTML = generateCostsByLevelTable(params, itemDetails.itemLevel, protectFromLevel, enhancementCosts);
     lines.push(costsByLevelHTML);
 
-    // Materials cost section (if enhancement costs exist)
+    // Materials cost section (if enhancement costs exist) - just show per-attempt materials
     if (enhancementCosts && enhancementCosts.length > 0) {
         lines.push('<div style="margin-top: 12px; background: rgba(0,0,0,0.2); padding: 8px; border-radius: 4px;">');
-        lines.push('<div style="color: #ffa500; font-weight: bold; margin-bottom: 6px; font-size: 0.95em;">Enhancement Costs:</div>');
+        lines.push('<div style="color: #ffa500; font-weight: bold; margin-bottom: 6px; font-size: 0.95em;">Materials Per Attempt:</div>');
 
         // Get game data for item names
         const gameData = dataManager.getInitClientData();
 
         // Materials per attempt
-        lines.push('<div style="font-size: 0.85em; color: #ccc; margin-bottom: 8px;">');
-        lines.push('<span style="color: #888;">Per Attempt:</span> ');
+        lines.push('<div style="font-size: 0.85em; color: #ccc;">');
         const materialStrings = enhancementCosts.map(cost => {
             const itemDetail = gameData.itemDetailMap[cost.itemHrid];
             const itemName = itemDetail ? itemDetail.name : cost.itemHrid;
             return `${cost.count}× ${itemName}`;
         });
         lines.push(materialStrings.join(', '));
-        lines.push('</div>');
-
-        // Calculate total costs for each target (in coins)
-        const calculateTotalCost = (attempts) => {
-            let totalCost = 0;
-            enhancementCosts.forEach(cost => {
-                const itemDetail = gameData.itemDetailMap[cost.itemHrid];
-                let itemPrice = 0;
-
-                if (cost.itemHrid === '/items/coin') {
-                    // Coins cost 1 coin each
-                    itemPrice = 1;
-                } else {
-                    // Try to get market price (use ask price for buying materials)
-                    const marketData = marketAPI.getPrice(cost.itemHrid, 0);
-                    if (marketData && marketData.ask) {
-                        itemPrice = marketData.ask;
-                    } else {
-                        // Fallback to vendor value if no market data
-                        itemPrice = itemDetail?.sellPrice || 0;
-                    }
-                }
-
-                totalCost += cost.count * itemPrice * attempts;
-            });
-            return totalCost;
-        };
-
-        // Show total costs
-        lines.push('<div style="padding-top: 8px; border-top: 1px solid #333;">');
-        lines.push('<div style="color: #888; font-size: 0.85em; margin-bottom: 4px;">Total Cost (materials @ market ask):</div>');
-        lines.push('<div style="font-size: 0.85em;">');
-
-        const cost10 = calculateTotalCost(calculations.target10.attempts);
-        const cost15 = calculateTotalCost(calculations.target15.attempts);
-        const cost20 = calculateTotalCost(calculations.target20.attempts);
-
-        lines.push(`<div><span style="color: #fff; font-weight: bold;">+10:</span> <span style="color: #ffa500;">${cost10.toLocaleString()}</span> coins</div>`);
-        lines.push(`<div><span style="color: #fff; font-weight: bold;">+15:</span> <span style="color: #ffa500;">${cost15.toLocaleString()}</span> coins</div>`);
-        lines.push(`<div><span style="color: #fff; font-weight: bold;">+20:</span> <span style="color: #ffa500;">${cost20.toLocaleString()}</span> coins</div>`);
-
-        lines.push('</div>');
         lines.push('</div>');
         lines.push('</div>');
     }
