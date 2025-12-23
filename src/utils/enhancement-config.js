@@ -50,15 +50,20 @@ function getAutoDetectedParams() {
     const houseLevel = dataManager.getHouseRoomLevel('/house_rooms/observatory');
 
     // Calculate total success rate bonus
-    // Tool bonus (from equipment) + house bonus (0.05% per level, not 0.5%!)
-    const houseBonus = houseLevel * 0.05;  // 0.05% per level
-    const totalSuccessBonus = gear.toolBonus + houseBonus;
+    // Tool bonus (from equipment) + house bonus (0.05% per level)
+    const houseSuccessBonus = houseLevel * 0.05;  // 0.05% per level for success
+    const totalSuccessBonus = gear.toolBonus + houseSuccessBonus;
+
+    // Calculate total speed bonus
+    // Speed bonus (from equipment) + house bonus (1% per level)
+    const houseSpeedBonus = houseLevel * 1.0;  // 1% per level for action speed
+    const totalSpeedBonus = gear.speedBonus + houseSpeedBonus;
 
     return {
         enhancingLevel: enhancingLevel + teaLevelBonus,  // Base level + tea bonus
         houseLevel: houseLevel,
         toolBonus: totalSuccessBonus,                     // Tool + house combined
-        speedBonus: gear.speedBonus,                      // Speed bonus
+        speedBonus: totalSpeedBonus,                      // Speed + house combined
         rareFindBonus: gear.rareFindBonus,                // Rare find bonus
         experienceBonus: gear.experienceBonus,            // Experience bonus
         teas: teas,

@@ -160,11 +160,13 @@ export function calculateEnhancement(params) {
     let speedMultiplier;
 
     if (enhancingLevel > itemLevel) {
-        // Above item level: Get speed bonus from level advantage + equipment
-        speedMultiplier = 1 + (enhancingLevel + houseLevel - itemLevel + speedBonus) / 100;
+        // Above item level: Get speed bonus from level advantage + equipment + house
+        // Note: speedBonus already includes house level bonus (1% per level)
+        speedMultiplier = 1 + (enhancingLevel - itemLevel + speedBonus) / 100;
     } else {
-        // Below item level: Only equipment speed bonus
-        speedMultiplier = 1 + (houseLevel + speedBonus) / 100;
+        // Below item level: Only equipment + house speed bonus
+        // Note: speedBonus already includes house level bonus (1% per level)
+        speedMultiplier = 1 + speedBonus / 100;
     }
 
     const perActionTime = baseActionTime / speedMultiplier;
