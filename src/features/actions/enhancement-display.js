@@ -12,6 +12,52 @@ import { timeReadable } from '../../utils/formatters.js';
 import marketAPI from '../../api/marketplace.js';
 
 /**
+ * Get protection item HRID from the Protection slot in the UI
+ * @param {HTMLElement} panel - Enhancement action panel element
+ * @returns {string|null} Protection item HRID or null if none equipped
+ */
+function getProtectionItemFromUI(panel) {
+    try {
+        // Find all item slots in the panel
+        const itemSlots = panel.querySelectorAll('[class*="ItemSlot"]');
+
+        for (const slot of itemSlots) {
+            // Check if this slot's label says "Protection"
+            const slotParent = slot.parentElement;
+            if (!slotParent) continue;
+
+            // Look for text content that contains "Protection"
+            const textElements = slotParent.querySelectorAll('*');
+            let isProtectionSlot = false;
+            for (const el of textElements) {
+                if (el.textContent.trim() === 'Protection' && el.children.length === 0) {
+                    isProtectionSlot = true;
+                    break;
+                }
+            }
+
+            if (!isProtectionSlot) continue;
+
+            // Found protection slot - now get the item HRID from the image
+            const img = slot.querySelector('img[src*="/items/"]');
+            if (img && img.src) {
+                // Extract item HRID from image src
+                // Format: .../items/mirror_of_protection.svg
+                const match = img.src.match(/\/items\/([^.]+)\./);
+                if (match) {
+                    return `/items/${match[1]}`;
+                }
+            }
+        }
+
+        return null; // No protection item equipped
+    } catch (error) {
+        console.error('[MWI Tools] Error reading protection item:', error);
+        return null;
+    }
+}
+
+/**
  * Calculate and display enhancement statistics in the panel
  * @param {HTMLElement} panel - Enhancement action panel element
  * @param {string} itemHrid - Item HRID (e.g., "/items/cheese_sword")
@@ -381,6 +427,27 @@ function formatEnhancementDisplay(params, calculations, itemDetails, protectFrom
             const totalCost = cost.count * itemPrice;
             lines.push(`<div style="font-size: 0.85em; color: #ccc;">${cost.count}× ${itemName} <span style="color: #888;">(@${itemPrice.toLocaleString()} → ${totalCost.toLocaleString()})</span></div>`);
         });
+
+        // Show protection item cost if protection is active (level 2+) AND item is equipped
+        if (protectFromLevel >= 2) {
+            const protectionItemHrid = getProtectionItemFromUI(panel);
+            if (protectionItemHrid) {
+                const protectionItemDetail = gameData.itemDetailMap[protectionItemHrid];
+                const protectionItemName = protectionItemDetail?.name || protectionItemHrid;
+
+                // Get protection item price
+                let protectionPrice = 0;
+                const protectionMarketData = marketAPI.getPrice(protectionItemHrid, 0);
+                if (protectionMarketData && protectionMarketData.ask) {
+                    protectionPrice = protectionMarketData.ask;
+                } else {
+                    protectionPrice = protectionItemDetail?.sellPrice || 0;
+                }
+
+                lines.push(`<div style="font-size: 0.85em; color: #ffa500; margin-top: 4px;">1× ${protectionItemName} <span style="color: #888;">(if used) (@${protectionPrice.toLocaleString()})</span></div>`);
+            }
+        }
+
         lines.push('</div>');
     }
 
