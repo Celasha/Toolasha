@@ -42,7 +42,8 @@ export async function displayEnhancementStats(panel, itemHrid) {
 
         console.log(`[MWI Tools] Protect From: ${effectiveProtectFrom > 0 ? `+${effectiveProtectFrom}` : 'Never'}`);
 
-        // Calculate enhancement statistics for common targets (all using same protection strategy)
+        // Calculate enhancement statistics for common targets
+        // Protection only applies when target level reaches the protection threshold
         const calculations = {
             target10: calculateEnhancement({
                 enhancingLevel: params.enhancingLevel,
@@ -51,7 +52,7 @@ export async function displayEnhancementStats(panel, itemHrid) {
                 speedBonus: params.speedBonus,
                 itemLevel: itemLevel,
                 targetLevel: 10,
-                protectFrom: effectiveProtectFrom,
+                protectFrom: (effectiveProtectFrom > 0 && 10 >= effectiveProtectFrom) ? effectiveProtectFrom : 0,
                 blessedTea: params.teas.blessed
             }),
             target15: calculateEnhancement({
@@ -61,7 +62,7 @@ export async function displayEnhancementStats(panel, itemHrid) {
                 speedBonus: params.speedBonus,
                 itemLevel: itemLevel,
                 targetLevel: 15,
-                protectFrom: effectiveProtectFrom,
+                protectFrom: (effectiveProtectFrom > 0 && 15 >= effectiveProtectFrom) ? effectiveProtectFrom : 0,
                 blessedTea: params.teas.blessed
             }),
             target20: calculateEnhancement({
@@ -71,7 +72,7 @@ export async function displayEnhancementStats(panel, itemHrid) {
                 speedBonus: params.speedBonus,
                 itemLevel: itemLevel,
                 targetLevel: 20,
-                protectFrom: effectiveProtectFrom,
+                protectFrom: (effectiveProtectFrom > 0 && 20 >= effectiveProtectFrom) ? effectiveProtectFrom : 0,
                 blessedTea: params.teas.blessed
             }),
         };
@@ -104,6 +105,9 @@ function generateCostsByLevelTable(params, itemLevel, protectFromLevel, enhancem
     // Calculate costs for each level
     const costData = [];
     for (let level = 1; level <= 20; level++) {
+        // Protection only applies when target level reaches the protection threshold
+        const effectiveProtect = (protectFromLevel >= 2 && level >= protectFromLevel) ? protectFromLevel : 0;
+
         const calc = calculateEnhancement({
             enhancingLevel: params.enhancingLevel,
             houseLevel: params.houseLevel,
@@ -111,7 +115,7 @@ function generateCostsByLevelTable(params, itemLevel, protectFromLevel, enhancem
             speedBonus: params.speedBonus,
             itemLevel: itemLevel,
             targetLevel: level,
-            protectFrom: protectFromLevel < 2 ? 0 : protectFromLevel,
+            protectFrom: effectiveProtect,
             blessedTea: params.teas.blessed
         });
 
