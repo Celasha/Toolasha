@@ -283,8 +283,7 @@ function formatEnhancementDisplay(params, calculations, itemDetails, protectFrom
         const gameData = dataManager.getInitClientData();
 
         // Materials per attempt with pricing
-        lines.push('<div style="font-size: 0.85em; color: #ccc;">');
-        const materialStrings = enhancementCosts.map(cost => {
+        enhancementCosts.forEach(cost => {
             const itemDetail = gameData.itemDetailMap[cost.itemHrid];
             const itemName = itemDetail ? itemDetail.name : cost.itemHrid;
 
@@ -302,10 +301,8 @@ function formatEnhancementDisplay(params, calculations, itemDetails, protectFrom
             }
 
             const totalCost = cost.count * itemPrice;
-            return `${cost.count}× ${itemName} <span style="color: #888;">(@${itemPrice.toLocaleString()} → ${totalCost.toLocaleString()})</span>`;
+            lines.push(`<div style="font-size: 0.85em; color: #ccc;">${cost.count}× ${itemName} <span style="color: #888;">(@${itemPrice.toLocaleString()} → ${totalCost.toLocaleString()})</span></div>`);
         });
-        lines.push(materialStrings.join(', '));
-        lines.push('</div>');
         lines.push('</div>');
     }
 
