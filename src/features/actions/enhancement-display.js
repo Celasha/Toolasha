@@ -252,7 +252,20 @@ function formatEnhancementDisplay(params, calculations, itemDetails, protectFrom
 
     // Right column
     lines.push('<div>');
-    lines.push(`<div style="color: #88ff88;"><span style="color: #888;">Success:</span> +${params.toolBonus.toFixed(2)}%</div>`);
+    if (params.toolBonus > 0) {
+        lines.push(`<div style="color: #88ff88;"><span style="color: #888;">Success:</span> +${params.toolBonus.toFixed(2)}%</div>`);
+
+        // Show breakdown: equipment + house
+        const equipmentSuccess = params.equipmentSuccessBonus || 0;
+        const houseSuccess = params.houseSuccessBonus || 0;
+
+        if (equipmentSuccess > 0) {
+            lines.push(`<div style="color: #88ff88; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">Equipment:</span> +${equipmentSuccess.toFixed(2)}%</div>`);
+        }
+        if (houseSuccess > 0) {
+            lines.push(`<div style="color: #88ff88; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">House (Observatory):</span> +${houseSuccess.toFixed(2)}%</div>`);
+        }
+    }
 
     // Calculate total speed (includes level advantage if applicable)
     let totalSpeed = params.speedBonus;

@@ -117,9 +117,10 @@ function getAutoDetectedParams() {
     const communityWisdomBonus = communityWisdomLevel > 0 ? 20 + (communityWisdomLevel - 1) * 0.5 : 0;
 
     // Calculate total success rate bonus
-    // Tool bonus (from equipment) + house bonus (0.05% per level)
+    // Equipment + house + (check for other sources)
     const houseSuccessBonus = houseLevel * 0.05;  // 0.05% per level for success
-    const totalSuccessBonus = gear.toolBonus + houseSuccessBonus;
+    const equipmentSuccessBonus = gear.toolBonus;
+    const totalSuccessBonus = equipmentSuccessBonus + houseSuccessBonus;
 
     // Calculate total speed bonus
     // Speed bonus (from equipment) + house bonus (1% per level) + community buff + tea speed
@@ -157,6 +158,8 @@ function getAutoDetectedParams() {
         houseWisdomBonus: houseWisdomBonus,               // For display
         equipmentRareFind: gear.rareFindBonus,            // For display
         equipmentExperience: gear.experienceBonus,        // For display
+        equipmentSuccessBonus: equipmentSuccessBonus,     // For display
+        houseSuccessBonus: houseSuccessBonus,             // For display
     };
 }
 
