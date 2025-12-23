@@ -81,6 +81,16 @@ Patch release implementing guzzling bonus scaling for blessed tea in the enhance
   - Files: `enhancement-calculator.js` (new helper), `enhancement-display.js` (simplified)
   - Zero functional changes - just removes waste
 
+**OPTIMIZATION:** Cache protection item detection to eliminate redundant DOM queries.
+
+- **Protection Item Caching:**
+  - Call `getProtectionItemFromUI()` once per render instead of 21 times
+  - Pass cached `protectionItemHrid` as parameter to functions
+  - **Reduction:** 42 DOM queries eliminated per render (2 querySelector calls × 21 iterations)
+  - DOM queries are expensive - each call traverses the entire DOM tree
+  - Files: `enhancement-display.js` (function signatures, parameter passing)
+  - Zero functional changes - pure performance optimization
+
 ### Technical Details
 
 **Markov Chain Updates:**

@@ -85,6 +85,9 @@ export async function displayEnhancementStats(panel, itemHrid) {
         // Protection at +1 is meaningless (would drop to +0 anyway)
         const effectiveProtectFrom = protectFromLevel < 2 ? 0 : protectFromLevel;
 
+        // Detect protection item once (avoid repeated DOM queries)
+        const protectionItemHrid = getProtectionItemFromUI(panel);
+
         // Calculate per-action time (simple calculation, no Markov chain needed)
         const perActionTime = calculatePerActionTime(
             params.enhancingLevel,
@@ -93,7 +96,7 @@ export async function displayEnhancementStats(panel, itemHrid) {
         );
 
         // Format and inject display
-        const html = formatEnhancementDisplay(panel, params, perActionTime, itemDetails, effectiveProtectFrom, itemDetails.enhancementCosts || []);
+        const html = formatEnhancementDisplay(panel, params, perActionTime, itemDetails, effectiveProtectFrom, itemDetails.enhancementCosts || [], protectionItemHrid);
         injectDisplay(panel, html);
     } catch (error) {
         console.error('[MWI Tools] ❌ Error displaying enhancement stats:', error);
@@ -108,9 +111,10 @@ export async function displayEnhancementStats(panel, itemHrid) {
  * @param {number} itemLevel - Item level being enhanced
  * @param {number} protectFromLevel - Protection level from UI
  * @param {Array} enhancementCosts - Array of {itemHrid, count} for materials
+ * @param {string|null} protectionItemHrid - Protection item HRID (cached, avoid repeated DOM queries)
  * @returns {string} HTML string
  */
-function generateCostsByLevelTable(panel, params, itemLevel, protectFromLevel, enhancementCosts) {
+function generateCostsByLevelTable(panel, params, itemLevel, protectFromLevel, enhancementCosts, protectionItemHrid) {
     const lines = [];
     const gameData = dataManager.getInitClientData();
 
@@ -171,7 +175,6 @@ function generateCostsByLevelTable(panel, params, itemLevel, protectFromLevel, e
         // Add protection item cost
         let protectionCost = 0;
         if (calc.protectionCount > 0) {
-            const protectionItemHrid = getProtectionItemFromUI(panel);
             if (protectionItemHrid) {
                 const protectionItemDetail = gameData.itemDetailMap[protectionItemHrid];
                 let protectionPrice = 0;
@@ -296,9 +299,10 @@ function getProtectFromLevelFromUI(panel) {
  * @param {Object} itemDetails - Item being enhanced
  * @param {number} protectFromLevel - Protection level from UI
  * @param {Array} enhancementCosts - Array of {itemHrid, count} for materials
+ * @param {string|null} protectionItemHrid - Protection item HRID (cached, avoid repeated DOM queries)
  * @returns {string} HTML string
  */
-function formatEnhancementDisplay(panel, params, perActionTime, itemDetails, protectFromLevel, enhancementCosts) {
+function formatEnhancementDisplay(panel, params, perActionTime, itemDetails, protectFromLevel, enhancementCosts, protectionItemHrid) {
     const lines = [];
 
     // Header
@@ -434,7 +438,7 @@ function formatEnhancementDisplay(panel, params, perActionTime, itemDetails, pro
     lines.push('</div>'); // Close stats section
 
     // Costs by level table for all 20 levels
-    const costsByLevelHTML = generateCostsByLevelTable(panel, params, itemDetails.itemLevel, protectFromLevel, enhancementCosts);
+    const costsByLevelHTML = generateCostsByLevelTable(panel, params, itemDetails.itemLevel, protectFromLevel, enhancementCosts, protectionItemHrid);
     lines.push(costsByLevelHTML);
 
     // Materials cost section (if enhancement costs exist) - just show per-attempt materials
@@ -469,7 +473,6 @@ function formatEnhancementDisplay(panel, params, perActionTime, itemDetails, pro
 
         // Show protection item cost if protection is active (level 2+) AND item is equipped
         if (protectFromLevel >= 2) {
-            const protectionItemHrid = getProtectionItemFromUI(panel);
             if (protectionItemHrid) {
                 const protectionItemDetail = gameData.itemDetailMap[protectionItemHrid];
                 const protectionItemName = protectionItemDetail?.name || protectionItemHrid;
