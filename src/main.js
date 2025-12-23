@@ -17,6 +17,7 @@ import profitCalculator from './features/market/profit-calculator.js';
 import expectedValueCalculator from './features/market/expected-value-calculator.js';
 import { initActionPanelObserver } from './features/actions/panel-observer.js';
 import { calculateGatheringProfit } from './features/actions/gathering-profit.js';
+import actionTimeDisplay from './features/actions/action-time-display.js';
 
 console.log('MWI Tools (Refactored) v0.3.0 - Initializing...');
 
@@ -66,6 +67,9 @@ dataManager.on('character_initialized', (data) => {
             initActionPanelObserver();
             console.log('✅ Action panel observer');
 
+            actionTimeDisplay.initialize();
+            console.log('✅ Action time display');
+
             console.log('🎉 MWI Tools v0.3.0 - Ready!');
         } catch (error) {
             console.error('❌ Feature initialization failed:', error);
@@ -84,6 +88,7 @@ targetWindow.MWITools = {
     marketAPI,
     config,
     storage,
+    actionTimeDisplay,
     version: '0.3.0'
 };
 
