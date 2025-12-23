@@ -55,28 +55,20 @@ function getEnhancementMultiplier(itemDetails, enhancementLevel) {
  */
 export function detectEnhancingGear(equipment, itemDetailMap, inventory = null) {
     const gear = {
-        // Success rate (tool)
-        tool: null,
-        toolName: null,
-        toolLevel: 0,
+        // Success rate (tool) - usually just one item
+        toolItems: [],
         toolBonus: 0,
 
-        // Speed (gloves/clothing)
-        speed: null,
-        speedName: null,
-        speedLevel: 0,
+        // Speed (gloves/clothing) - can be multiple items
+        speedItems: [],
         speedBonus: 0,
 
-        // Rare Find (clothing)
-        rareFind: null,
-        rareFindName: null,
-        rareFindLevel: 0,
+        // Rare Find (clothing) - can be multiple items
+        rareFindItems: [],
         rareFindBonus: 0,
 
-        // Experience (clothing)
-        experience: null,
-        experienceName: null,
-        experienceLevel: 0,
+        // Experience (clothing) - can be multiple items
+        experienceItems: [],
         experienceBonus: 0,
     };
 
@@ -103,45 +95,45 @@ export function detectEnhancingGear(equipment, itemDetailMap, inventory = null) 
         // Check for enhancing success rate (tools: celestial enhancer, etc.)
         if (stats.enhancingSuccess) {
             const bonus = stats.enhancingSuccess * 100 * multiplier;
-            if (bonus > gear.toolBonus) {
-                gear.toolBonus = bonus;
-                gear.tool = item;
-                gear.toolName = itemDetails.name;
-                gear.toolLevel = enhancementLevel;
-            }
+            gear.toolBonus += bonus;
+            gear.toolItems.push({
+                name: itemDetails.name,
+                enhancementLevel: enhancementLevel,
+                bonus: bonus
+            });
         }
 
         // Check for enhancing speed (gloves/clothing)
         if (stats.enhancingSpeed) {
             const bonus = stats.enhancingSpeed * 100 * multiplier;
-            if (bonus > gear.speedBonus) {
-                gear.speedBonus = bonus;
-                gear.speed = item;
-                gear.speedName = itemDetails.name;
-                gear.speedLevel = enhancementLevel;
-            }
+            gear.speedBonus += bonus;
+            gear.speedItems.push({
+                name: itemDetails.name,
+                enhancementLevel: enhancementLevel,
+                bonus: bonus
+            });
         }
 
         // Check for enhancing rare find (clothing)
         if (stats.enhancingRareFind) {
             const bonus = stats.enhancingRareFind * 100 * multiplier;
-            if (bonus > gear.rareFindBonus) {
-                gear.rareFindBonus = bonus;
-                gear.rareFind = item;
-                gear.rareFindName = itemDetails.name;
-                gear.rareFindLevel = enhancementLevel;
-            }
+            gear.rareFindBonus += bonus;
+            gear.rareFindItems.push({
+                name: itemDetails.name,
+                enhancementLevel: enhancementLevel,
+                bonus: bonus
+            });
         }
 
         // Check for enhancing experience (clothing)
         if (stats.enhancingExperience) {
             const bonus = stats.enhancingExperience * 100 * multiplier;
-            if (bonus > gear.experienceBonus) {
-                gear.experienceBonus = bonus;
-                gear.experience = item;
-                gear.experienceName = itemDetails.name;
-                gear.experienceLevel = enhancementLevel;
-            }
+            gear.experienceBonus += bonus;
+            gear.experienceItems.push({
+                name: itemDetails.name,
+                enhancementLevel: enhancementLevel,
+                bonus: bonus
+            });
         }
     }
 

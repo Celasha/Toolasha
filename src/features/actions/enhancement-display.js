@@ -230,11 +230,21 @@ function formatEnhancementDisplay(params, calculations, itemDetails, protectFrom
     lines.push('<div>');
     lines.push(`<div style="color: #ccc;"><span style="color: #888;">Level:</span> ${params.enhancingLevel - params.detectedTeaBonus}${params.detectedTeaBonus > 0 ? ` <span style="color: #88ff88;">(+${params.detectedTeaBonus} tea)</span>` : ''}</div>`);
     lines.push(`<div style="color: #ccc;"><span style="color: #888;">House:</span> Laboratory Lvl ${params.houseLevel}</div>`);
-    if (params.toolName) {
-        lines.push(`<div style="color: #ccc;"><span style="color: #888;">Tool:</span> ${params.toolName}${params.toolLevel > 0 ? ` +${params.toolLevel}` : ''}</div>`);
+
+    // Tool items (success rate)
+    if (params.toolItems && params.toolItems.length > 0) {
+        const toolText = params.toolItems.map(item =>
+            `${item.name}${item.enhancementLevel > 0 ? ` +${item.enhancementLevel}` : ''}`
+        ).join(', ');
+        lines.push(`<div style="color: #ccc;"><span style="color: #888;">Tool:</span> ${toolText}</div>`);
     }
-    if (params.speedName) {
-        lines.push(`<div style="color: #ccc;"><span style="color: #888;">Speed:</span> ${params.speedName}${params.speedLevel > 0 ? ` +${params.speedLevel}` : ''}</div>`);
+
+    // Speed items
+    if (params.speedItems && params.speedItems.length > 0) {
+        const speedText = params.speedItems.map(item =>
+            `${item.name}${item.enhancementLevel > 0 ? ` +${item.enhancementLevel}` : ''}`
+        ).join(', ');
+        lines.push(`<div style="color: #ccc;"><span style="color: #888;">Speed:</span> ${speedText}</div>`);
     }
     lines.push('</div>');
 

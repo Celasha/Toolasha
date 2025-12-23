@@ -63,15 +63,11 @@ function getAutoDetectedParams() {
         experienceBonus: gear.experienceBonus,            // Experience bonus
         teas: teas,
 
-        // Display info (for UI)
-        toolName: gear.toolName,
-        toolLevel: gear.toolLevel,
-        speedName: gear.speedName,
-        speedLevel: gear.speedLevel,
-        rareFindName: gear.rareFindName,
-        rareFindLevel: gear.rareFindLevel,
-        experienceName: gear.experienceName,
-        experienceLevel: gear.experienceLevel,
+        // Display info (for UI) - now arrays of items
+        toolItems: gear.toolItems,
+        speedItems: gear.speedItems,
+        rareFindItems: gear.rareFindItems,
+        experienceItems: gear.experienceItems,
         detectedTeaBonus: teaLevelBonus,
     };
 }
@@ -96,14 +92,10 @@ function getManualParams() {
         },
 
         // No display info for manual mode
-        toolName: null,
-        toolLevel: 0,
-        speedName: null,
-        speedLevel: 0,
-        rareFindName: null,
-        rareFindLevel: 0,
-        experienceName: null,
-        experienceLevel: 0,
+        toolItems: [],
+        speedItems: [],
+        rareFindItems: [],
+        experienceItems: [],
         detectedTeaBonus: 0,
     };
 }
