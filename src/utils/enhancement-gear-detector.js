@@ -241,17 +241,25 @@ export function detectEnhancingTeas(drinkSlots, itemDetailMap) {
  * @returns {number} Total level bonus from teas
  */
 export function getEnhancingTeaLevelBonus(teas) {
-    let bonus = 0;
-
-    if (teas.enhancing) bonus += 3;
-    if (teas.superEnhancing) bonus += 6;
-    if (teas.ultraEnhancing) bonus += 8;
-
     // Teas don't stack - highest one wins
-    // So we actually need to return the max, not sum
     if (teas.ultraEnhancing) return 8;
     if (teas.superEnhancing) return 6;
     if (teas.enhancing) return 3;
+
+    return 0;
+}
+
+/**
+ * Get enhancing tea speed bonus (base, before concentration)
+ * @param {Object} teas - Active teas from detectEnhancingTeas()
+ * @returns {number} Base speed bonus % from teas
+ */
+export function getEnhancingTeaSpeedBonus(teas) {
+    // Teas don't stack - highest one wins
+    // Base speed bonuses (before drink concentration):
+    if (teas.ultraEnhancing) return 6;  // +6% base
+    if (teas.superEnhancing) return 4;  // +4% base
+    if (teas.enhancing) return 2;        // +2% base
 
     return 0;
 }

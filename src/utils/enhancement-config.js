@@ -7,7 +7,7 @@
 
 import config from '../core/config.js';
 import dataManager from '../core/data-manager.js';
-import { detectEnhancingGear, detectEnhancingTeas, getEnhancingTeaLevelBonus } from './enhancement-gear-detector.js';
+import { detectEnhancingGear, detectEnhancingTeas, getEnhancingTeaLevelBonus, getEnhancingTeaSpeedBonus } from './enhancement-gear-detector.js';
 
 /**
  * Get enhancing parameters (auto-detected or manual)
@@ -38,9 +38,26 @@ function getAutoDetectedParams() {
     // Detect gear (scans all items in inventory, including equipped)
     const gear = detectEnhancingGear(equipment, itemDetailMap, inventory);
 
+    // Detect drink concentration from equipment (Guzzling Pouch)
+    let drinkConcentration = 0;
+    const itemsToScan = inventory ? inventory.filter(item => item && item.itemHrid) :
+                        equipment ? Array.from(equipment.values()).filter(item => item && item.itemHrid) : [];
+
+    for (const item of itemsToScan) {
+        const itemDetails = itemDetailMap[item.itemHrid];
+        if (!itemDetails?.equipmentDetail?.noncombatStats?.drinkConcentration) continue;
+
+        const concentration = itemDetails.equipmentDetail.noncombatStats.drinkConcentration;
+        drinkConcentration += concentration * 100; // Convert to percentage
+    }
+
     // Detect teas
     const teas = detectEnhancingTeas(drinkSlots, itemDetailMap);
     const teaLevelBonus = getEnhancingTeaLevelBonus(teas);
+
+    // Get tea speed bonus (base, then scale with concentration)
+    const baseTeaSpeed = getEnhancingTeaSpeedBonus(teas);
+    const teaSpeedBonus = baseTeaSpeed > 0 ? baseTeaSpeed * (1 + drinkConcentration / 100) : 0;
 
     // Get Enhancing skill level
     const enhancingSkill = skills.find(s => s.skillHrid === '/skills/enhancing');
@@ -60,15 +77,15 @@ function getAutoDetectedParams() {
     const totalSuccessBonus = gear.toolBonus + houseSuccessBonus;
 
     // Calculate total speed bonus
-    // Speed bonus (from equipment) + house bonus (1% per level) + community buff
+    // Speed bonus (from equipment) + house bonus (1% per level) + community buff + tea speed
     const houseSpeedBonus = houseLevel * 1.0;  // 1% per level for action speed
-    const totalSpeedBonus = gear.speedBonus + houseSpeedBonus + communitySpeedBonus;
+    const totalSpeedBonus = gear.speedBonus + houseSpeedBonus + communitySpeedBonus + teaSpeedBonus;
 
     return {
         enhancingLevel: enhancingLevel + teaLevelBonus,  // Base level + tea bonus
         houseLevel: houseLevel,
         toolBonus: totalSuccessBonus,                     // Tool + house combined
-        speedBonus: totalSpeedBonus,                      // Speed + house + community combined
+        speedBonus: totalSpeedBonus,                      // Speed + house + community + tea combined
         rareFindBonus: gear.rareFindBonus,                // Rare find bonus
         experienceBonus: gear.experienceBonus,            // Experience bonus
         teas: teas,
@@ -81,6 +98,8 @@ function getAutoDetectedParams() {
         detectedTeaBonus: teaLevelBonus,
         communityBuffLevel: communityBuffLevel,           // For display
         communitySpeedBonus: communitySpeedBonus,         // For display
+        teaSpeedBonus: teaSpeedBonus,                     // For display
+        drinkConcentration: drinkConcentration,           // For display
     };
 }
 

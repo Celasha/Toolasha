@@ -270,6 +270,12 @@ function formatEnhancementDisplay(params, calculations, itemDetails, protectFrom
         lines.push(`<div style="color: #aaddff; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">Community T${params.communityBuffLevel}:</span> +${params.communitySpeedBonus.toFixed(1)}%</div>`);
     }
 
+    // Show tea speed bonus if active
+    if (params.teaSpeedBonus > 0) {
+        const teaName = params.teas.ultraEnhancing ? 'Ultra' : params.teas.superEnhancing ? 'Super' : 'Enhancing';
+        lines.push(`<div style="color: #aaddff; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">${teaName} Tea:</span> +${params.teaSpeedBonus.toFixed(1)}%</div>`);
+    }
+
     if (params.teas.blessed) {
         // Calculate Blessed Tea bonus with Guzzling Pouch concentration
         const blessedBonus = 1.1; // Base 1.1% from Blessed Tea
