@@ -30,16 +30,15 @@ export function detectSkillGear(skillName, equipment, itemDetailMap, inventory =
         handsSlot: null,   // hands
     };
 
-    // Get items to scan - use inventory if provided, otherwise fall back to equipment
+    // Get items to scan - only use equipment map (already filtered to equipped items only)
     let itemsToScan = [];
 
-    if (inventory) {
-        // Scan all items in inventory (includes equipped items)
-        itemsToScan = inventory.filter(item => item && item.itemHrid);
-    } else if (equipment) {
-        // Fallback: scan only equipped items
+    if (equipment) {
+        // Scan only equipped items from equipment map
         itemsToScan = Array.from(equipment.values()).filter(item => item && item.itemHrid);
     }
+
+    console.log('[Gear Detector] Scanning', itemsToScan.length, 'equipped items for', skillName, 'gear');
 
     // Track best item per slot (by item level, then enhancement level)
     const slotCandidates = {

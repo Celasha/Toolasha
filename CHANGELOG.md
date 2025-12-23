@@ -59,6 +59,16 @@ Patch release implementing guzzling bonus scaling for blessed tea in the enhance
   - "Could not extract item name from outputs"
   - "Could not find item HRID for: ${itemName}"
 
+**BUG FIX:** Enhancement calculator now recalculates when equipping/unequipping gear.
+
+- **Equipment Detection Fix:**
+  - **CRITICAL:** Gear detector was scanning entire inventory (98 items) instead of only equipped items (10 slots)
+  - Unequipped items in inventory were incorrectly treated as equipped
+  - Now only scans equipment map which contains only equipped items
+  - Removed inventory parameter scanning from `detectSkillGear()`
+  - Result: Equipment changes (equip/unequip) now properly trigger recalculation
+  - File: `src/utils/enhancement-gear-detector.js` lines 33-41
+
 ### Changed
 
 #### **Display Improvements**
