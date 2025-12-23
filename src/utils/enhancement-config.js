@@ -70,18 +70,20 @@ function getAutoDetectedParams() {
     const houseLevel = dataManager.getHouseRoomLevel('/house_rooms/observatory');
 
     // Calculate global house buffs from ALL house rooms
-    // Rare Find: 0.2% base + 0.2% per level (per room)
-    // Wisdom: 0.05% base + 0.05% per level (per room)
+    // Rare Find: 0.2% base + 0.2% per level (per room, only if level >= 1)
+    // Wisdom: 0.05% base + 0.05% per level (per room, only if level >= 1)
     const houseRooms = dataManager.getHouseRooms();
     let houseRareFindBonus = 0;
     let houseWisdomBonus = 0;
 
     for (const [hrid, room] of houseRooms) {
         const level = room.level || 0;
-        // Each room: 0.2% base + 0.2% per level
-        houseRareFindBonus += 0.2 + (0.2 * level);
-        // Each room: 0.05% base + 0.05% per level
-        houseWisdomBonus += 0.05 + (0.05 * level);
+        if (level >= 1) {
+            // Each room: 0.2% base + 0.2% per level
+            houseRareFindBonus += 0.2 + (0.2 * level);
+            // Each room: 0.05% base + 0.05% per level
+            houseWisdomBonus += 0.05 + (0.05 * level);
+        }
     }
 
     // Get Enhancing Speed community buff level
