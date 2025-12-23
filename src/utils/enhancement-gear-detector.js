@@ -38,8 +38,6 @@ export function detectSkillGear(skillName, equipment, itemDetailMap, inventory =
         itemsToScan = Array.from(equipment.values()).filter(item => item && item.itemHrid);
     }
 
-    console.log('[Gear Detector] Scanning', itemsToScan.length, 'equipped items for', skillName, 'gear');
-
     // Track best item per slot (by item level, then enhancement level)
     const slotCandidates = {
         tool: [],    // main_hand or two_hand or skill-specific tool

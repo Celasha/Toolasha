@@ -155,24 +155,15 @@ class DataManager {
      * @param {Array} items - Character items array
      */
     updateEquipmentMap(items) {
-        console.log('[Data Manager] Updating equipment map with', items?.length || 0, 'items');
-        let equipmentChanges = 0;
-
         for (const item of items) {
             if (item.itemLocationHrid !== "/item_locations/inventory") {
                 if (item.count === 0) {
-                    console.log('[Data Manager] Removing equipment:', item.itemLocationHrid);
                     this.characterEquipment.delete(item.itemLocationHrid);
-                    equipmentChanges++;
                 } else {
-                    console.log('[Data Manager] Setting equipment:', item.itemLocationHrid, '→', item.itemHrid);
                     this.characterEquipment.set(item.itemLocationHrid, item);
-                    equipmentChanges++;
                 }
             }
         }
-
-        console.log('[Data Manager] Equipment map updated:', equipmentChanges, 'changes, total size:', this.characterEquipment.size);
     }
 
     /**

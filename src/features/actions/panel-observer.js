@@ -188,13 +188,11 @@ function setupMutationObserver() {
 function setupEnhancementRefreshListeners() {
     // Listen for equipment changes (equipping/unequipping items)
     dataManager.on('items_updated', () => {
-        console.log('[MWI Tools] Equipment changed - refreshing enhancement calculator');
         refreshEnhancementCalculator();
     });
 
     // Listen for consumable changes (drinking teas)
     dataManager.on('consumables_updated', () => {
-        console.log('[MWI Tools] Consumables changed - refreshing enhancement calculator');
         refreshEnhancementCalculator();
     });
 }

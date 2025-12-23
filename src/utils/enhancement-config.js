@@ -35,20 +35,8 @@ function getAutoDetectedParams() {
     const drinkSlots = dataManager.getActionDrinkSlots('/action_types/enhancing');
     const itemDetailMap = dataManager.getInitClientData()?.itemDetailMap || {};
 
-    console.log('[Enhancement Config] Equipment map size:', equipment?.size || 0);
-    console.log('[Enhancement Config] Equipment slots:', Array.from(equipment?.keys() || []));
-
     // Detect gear (scans all items in inventory, including equipped)
     const gear = detectEnhancingGear(equipment, itemDetailMap, inventory);
-
-    console.log('[Enhancement Config] Detected gear:', {
-        toolSlot: gear.toolSlot?.name,
-        bodySlot: gear.bodySlot?.name,
-        legsSlot: gear.legsSlot?.name,
-        handsSlot: gear.handsSlot?.name,
-        toolBonus: gear.toolBonus,
-        speedBonus: gear.speedBonus
-    });
 
     // Detect drink concentration from equipment (Guzzling Pouch)
     let drinkConcentration = 0;
