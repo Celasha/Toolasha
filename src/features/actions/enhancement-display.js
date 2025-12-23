@@ -283,9 +283,27 @@ function formatEnhancementDisplay(params, calculations, itemDetails, protectFrom
     }
     if (params.rareFindBonus > 0) {
         lines.push(`<div style="color: #ffaa55;"><span style="color: #888;">Rare Find:</span> +${params.rareFindBonus.toFixed(1)}%</div>`);
+
+        // Show house room breakdown if available
+        if (params.houseRareFindBonus > 0) {
+            const equipmentRareFind = params.rareFindBonus - params.houseRareFindBonus;
+            if (equipmentRareFind > 0) {
+                lines.push(`<div style="color: #ffaa55; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">Equipment:</span> +${equipmentRareFind.toFixed(1)}%</div>`);
+            }
+            lines.push(`<div style="color: #ffaa55; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">House Rooms:</span> +${params.houseRareFindBonus.toFixed(1)}%</div>`);
+        }
     }
     if (params.experienceBonus > 0) {
         lines.push(`<div style="color: #ffdd88;"><span style="color: #888;">Experience:</span> +${params.experienceBonus.toFixed(1)}%</div>`);
+
+        // Show house room wisdom breakdown if available
+        if (params.houseWisdomBonus > 0) {
+            const equipmentExperience = params.experienceBonus - params.houseWisdomBonus;
+            if (equipmentExperience > 0) {
+                lines.push(`<div style="color: #ffdd88; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">Equipment:</span> +${equipmentExperience.toFixed(1)}%</div>`);
+            }
+            lines.push(`<div style="color: #ffdd88; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">House Rooms (Wisdom):</span> +${params.houseWisdomBonus.toFixed(1)}%</div>`);
+        }
     }
     lines.push('</div>');
 

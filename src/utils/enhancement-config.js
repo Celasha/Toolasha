@@ -69,6 +69,21 @@ function getAutoDetectedParams() {
     // Get Observatory house room level (enhancing uses observatory, NOT laboratory!)
     const houseLevel = dataManager.getHouseRoomLevel('/house_rooms/observatory');
 
+    // Calculate global house buffs from ALL house rooms
+    // Rare Find: 0.2% base + 0.2% per level (per room)
+    // Wisdom: 0.05% base + 0.05% per level (per room)
+    const houseRooms = dataManager.getHouseRooms();
+    let houseRareFindBonus = 0;
+    let houseWisdomBonus = 0;
+
+    for (const [hrid, room] of houseRooms) {
+        const level = room.level || 0;
+        // Each room: 0.2% base + 0.2% per level
+        houseRareFindBonus += 0.2 + (0.2 * level);
+        // Each room: 0.05% base + 0.05% per level
+        houseWisdomBonus += 0.05 + (0.05 * level);
+    }
+
     // Get Enhancing Speed community buff level
     const communityBuffLevel = dataManager.getCommunityBuffLevel('/community_buff_types/enhancing_speed');
     // Formula: 20% base + 0.5% per level
@@ -89,8 +104,8 @@ function getAutoDetectedParams() {
         houseLevel: houseLevel,
         toolBonus: totalSuccessBonus,                     // Tool + house combined
         speedBonus: totalSpeedBonus,                      // Speed + house + community + tea combined
-        rareFindBonus: gear.rareFindBonus,                // Rare find bonus
-        experienceBonus: gear.experienceBonus,            // Experience bonus
+        rareFindBonus: gear.rareFindBonus + houseRareFindBonus,  // Rare find (equipment + all house rooms)
+        experienceBonus: gear.experienceBonus + houseWisdomBonus,  // Experience (equipment + all house rooms wisdom)
         teas: teas,
 
         // Display info (for UI) - show best item per slot
@@ -103,6 +118,8 @@ function getAutoDetectedParams() {
         communitySpeedBonus: communitySpeedBonus,         // For display
         teaSpeedBonus: teaSpeedBonus,                     // For display
         drinkConcentration: drinkConcentration,           // For display
+        houseRareFindBonus: houseRareFindBonus,           // For display
+        houseWisdomBonus: houseWisdomBonus,               // For display
     };
 }
 
