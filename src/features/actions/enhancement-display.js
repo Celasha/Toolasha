@@ -252,10 +252,20 @@ function formatEnhancementDisplay(params, calculations, itemDetails, protectFrom
 
     // Right column
     lines.push('<div>');
-    if (params.toolBonus > 0) {
-        lines.push(`<div style="color: #88ff88;"><span style="color: #888;">Success:</span> +${params.toolBonus.toFixed(2)}%</div>`);
 
-        // Show breakdown: equipment + house
+    // Calculate total success (includes level advantage if applicable)
+    let totalSuccess = params.toolBonus;
+    let successLevelAdvantage = 0;
+    if (params.enhancingLevel > itemDetails.itemLevel) {
+        // Level advantage includes house level: (enhancing + house - item) * 0.05%
+        successLevelAdvantage = (params.enhancingLevel + params.houseLevel - itemDetails.itemLevel) * 0.05;
+        totalSuccess += successLevelAdvantage;
+    }
+
+    if (totalSuccess > 0) {
+        lines.push(`<div style="color: #88ff88;"><span style="color: #888;">Success:</span> +${totalSuccess.toFixed(2)}%</div>`);
+
+        // Show breakdown: equipment + house + level advantage
         const equipmentSuccess = params.equipmentSuccessBonus || 0;
         const houseSuccess = params.houseSuccessBonus || 0;
 
@@ -264,6 +274,9 @@ function formatEnhancementDisplay(params, calculations, itemDetails, protectFrom
         }
         if (houseSuccess > 0) {
             lines.push(`<div style="color: #88ff88; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">House (Observatory):</span> +${houseSuccess.toFixed(2)}%</div>`);
+        }
+        if (successLevelAdvantage > 0) {
+            lines.push(`<div style="color: #88ff88; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">Level advantage:</span> +${successLevelAdvantage.toFixed(2)}%</div>`);
         }
     }
 
