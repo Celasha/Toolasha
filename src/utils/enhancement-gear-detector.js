@@ -61,24 +61,33 @@ export function detectEnhancingGear(equipment, itemDetailMap, inventory = null) 
         const multiplier = getEnhancementMultiplier(itemDetails, enhancementLevel);
         const equipmentType = itemDetails.equipmentDetail.type;
 
+        // Generic stat calculation: Loop over ALL stats and apply multiplier
+        const allStats = {};
+        for (const [statName, statValue] of Object.entries(stats)) {
+            if (typeof statValue !== 'number') continue; // Skip non-numeric values
+            allStats[statName] = statValue * 100 * multiplier;
+        }
+
         // Check if item has any enhancing-related stats (including universal skillingSpeed)
-        const hasEnhancingStats = stats.enhancingSuccess || stats.enhancingSpeed ||
-                                  stats.enhancingRareFind || stats.enhancingExperience ||
-                                  stats.skillingSpeed;
+        const hasEnhancingStats = allStats.enhancingSuccess || allStats.enhancingSpeed ||
+                                  allStats.enhancingRareFind || allStats.enhancingExperience ||
+                                  allStats.skillingSpeed;
 
         if (!hasEnhancingStats) continue;
 
-        // Calculate all bonuses for this item
+        // Calculate bonuses for this item (backward-compatible output)
         let itemBonuses = {
             item: item,
             itemDetails: itemDetails,
             itemLevel: itemDetails.itemLevel || 0,
             enhancementLevel: enhancementLevel,
-            toolBonus: stats.enhancingSuccess ? stats.enhancingSuccess * 100 * multiplier : 0,
-            speedBonus: (stats.enhancingSpeed ? stats.enhancingSpeed * 100 * multiplier : 0) +
-                       (stats.skillingSpeed ? stats.skillingSpeed * 100 * multiplier : 0),  // Add universal speed
-            rareFindBonus: stats.enhancingRareFind ? stats.enhancingRareFind * 100 * multiplier : 0,
-            experienceBonus: stats.enhancingExperience ? stats.enhancingExperience * 100 * multiplier : 0,
+            // Backward-compatible named bonuses
+            toolBonus: allStats.enhancingSuccess || 0,
+            speedBonus: (allStats.enhancingSpeed || 0) + (allStats.skillingSpeed || 0),  // Combine speed sources
+            rareFindBonus: allStats.enhancingRareFind || 0,
+            experienceBonus: allStats.enhancingExperience || 0,
+            // NEW: Generic access to all stats
+            allStats: allStats,
         };
 
         // Group by slot
