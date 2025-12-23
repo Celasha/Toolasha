@@ -62,6 +62,26 @@ function getAutoDetectedParams() {
     const baseTeaSpeed = getEnhancingTeaSpeedBonus(teas);
     const teaSpeedBonus = baseTeaSpeed > 0 ? baseTeaSpeed * (1 + drinkConcentration / 100) : 0;
 
+    // Get tea wisdom bonus (base, then scale with concentration)
+    // Wisdom Tea/Coffee provide 12% wisdom, scales with drink concentration
+    let baseTeaWisdom = 0;
+    if (drinkSlots && drinkSlots.length > 0) {
+        for (const drink of drinkSlots) {
+            if (!drink || !drink.itemHrid) continue;
+            const drinkDetails = itemDetailMap[drink.itemHrid];
+            if (!drinkDetails?.consumableDetail?.buffs) continue;
+
+            const wisdomBuff = drinkDetails.consumableDetail.buffs.find(
+                buff => buff.typeHrid === '/buff_types/wisdom'
+            );
+
+            if (wisdomBuff && wisdomBuff.flatBoost) {
+                baseTeaWisdom += wisdomBuff.flatBoost * 100; // Convert to percentage
+            }
+        }
+    }
+    const teaWisdomBonus = baseTeaWisdom > 0 ? baseTeaWisdom * (1 + drinkConcentration / 100) : 0;
+
     // Get Enhancing skill level
     const enhancingSkill = skills.find(s => s.skillHrid === '/skills/enhancing');
     const enhancingLevel = enhancingSkill?.level || 1;
@@ -107,7 +127,7 @@ function getAutoDetectedParams() {
         toolBonus: totalSuccessBonus,                     // Tool + house combined
         speedBonus: totalSpeedBonus,                      // Speed + house + community + tea combined
         rareFindBonus: gear.rareFindBonus + houseRareFindBonus,  // Rare find (equipment + all house rooms)
-        experienceBonus: gear.experienceBonus + houseWisdomBonus,  // Experience (equipment + all house rooms wisdom)
+        experienceBonus: gear.experienceBonus + houseWisdomBonus + teaWisdomBonus,  // Experience (equipment + house wisdom + tea wisdom)
         teas: teas,
 
         // Display info (for UI) - show best item per slot
@@ -119,6 +139,7 @@ function getAutoDetectedParams() {
         communityBuffLevel: communityBuffLevel,           // For display
         communitySpeedBonus: communitySpeedBonus,         // For display
         teaSpeedBonus: teaSpeedBonus,                     // For display
+        teaWisdomBonus: teaWisdomBonus,                   // For display
         drinkConcentration: drinkConcentration,           // For display
         houseRareFindBonus: houseRareFindBonus,           // For display
         houseWisdomBonus: houseWisdomBonus,               // For display

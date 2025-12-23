@@ -296,13 +296,19 @@ function formatEnhancementDisplay(params, calculations, itemDetails, protectFrom
     if (params.experienceBonus > 0) {
         lines.push(`<div style="color: #ffdd88;"><span style="color: #888;">Experience:</span> +${params.experienceBonus.toFixed(1)}%</div>`);
 
-        // Show house room wisdom breakdown if available
-        if (params.houseWisdomBonus > 0) {
-            const equipmentExperience = params.experienceBonus - params.houseWisdomBonus;
-            if (equipmentExperience > 0) {
-                lines.push(`<div style="color: #ffdd88; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">Equipment:</span> +${equipmentExperience.toFixed(1)}%</div>`);
-            }
-            lines.push(`<div style="color: #ffdd88; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">House Rooms (Wisdom):</span> +${params.houseWisdomBonus.toFixed(1)}%</div>`);
+        // Show breakdown: equipment + house wisdom + tea wisdom
+        const teaWisdom = params.teaWisdomBonus || 0;
+        const houseWisdom = params.houseWisdomBonus || 0;
+        const equipmentExperience = params.experienceBonus - houseWisdom - teaWisdom;
+
+        if (equipmentExperience > 0) {
+            lines.push(`<div style="color: #ffdd88; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">Equipment:</span> +${equipmentExperience.toFixed(1)}%</div>`);
+        }
+        if (houseWisdom > 0) {
+            lines.push(`<div style="color: #ffdd88; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">House Rooms (Wisdom):</span> +${houseWisdom.toFixed(1)}%</div>`);
+        }
+        if (teaWisdom > 0) {
+            lines.push(`<div style="color: #ffdd88; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">Wisdom Tea:</span> +${teaWisdom.toFixed(1)}%</div>`);
         }
     }
     lines.push('</div>');
