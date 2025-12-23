@@ -76,6 +76,9 @@ export function initActionPanelObserver() {
 
     // Check for existing enhancing panel (may already be on page)
     checkExistingEnhancingPanel();
+
+    // Listen for equipment and consumable changes to refresh enhancement calculator
+    setupEnhancementRefreshListeners();
 }
 
 /**
@@ -171,6 +174,36 @@ function setupMutationObserver() {
     });
 
     console.log('[MWI Tools] Action panel observer initialized (watching childList + attributes)');
+}
+
+/**
+ * Set up listeners for equipment and consumable changes
+ * Refreshes enhancement calculator when gear or teas change
+ */
+function setupEnhancementRefreshListeners() {
+    // Listen for equipment changes (equipping/unequipping items)
+    dataManager.on('items_updated', () => {
+        refreshEnhancementCalculator();
+    });
+
+    // Listen for consumable changes (drinking teas)
+    dataManager.on('consumables_updated', () => {
+        refreshEnhancementCalculator();
+    });
+}
+
+/**
+ * Refresh enhancement calculator if panel is currently visible
+ */
+function refreshEnhancementCalculator() {
+    const panel = document.querySelector(SELECTORS.ENHANCING_PANEL);
+    if (!panel) return;  // Not on enhancing panel, skip
+
+    const itemHrid = panel.dataset.mwiItemHrid;
+    if (!itemHrid) return;  // No item detected yet, skip
+
+    // Trigger debounced update
+    triggerEnhancementUpdate(panel, itemHrid);
 }
 
 /**
