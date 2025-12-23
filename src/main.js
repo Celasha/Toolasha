@@ -18,6 +18,8 @@ import expectedValueCalculator from './features/market/expected-value-calculator
 import { initActionPanelObserver } from './features/actions/panel-observer.js';
 import { calculateGatheringProfit } from './features/actions/gathering-profit.js';
 import actionTimeDisplay from './features/actions/action-time-display.js';
+import * as enhancementGearDetector from './utils/enhancement-gear-detector.js';
+import { getEnhancingParams } from './utils/enhancement-config.js';
 
 console.log('MWI Tools (Refactored) v0.3.0 - Initializing...');
 
@@ -89,6 +91,8 @@ targetWindow.MWITools = {
     config,
     storage,
     actionTimeDisplay,
+    enhancementGearDetector,
+    getEnhancingParams,
     version: '0.3.0'
 };
 
