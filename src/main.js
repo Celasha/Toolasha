@@ -20,8 +20,9 @@ import { calculateGatheringProfit } from './features/actions/gathering-profit.js
 import actionTimeDisplay from './features/actions/action-time-display.js';
 import * as enhancementGearDetector from './utils/enhancement-gear-detector.js';
 import { getEnhancingParams } from './utils/enhancement-config.js';
+import * as enhancementCalculator from './utils/enhancement-calculator.js';
 
-console.log('MWI Tools (Refactored) v0.3.0 - Initializing...');
+console.log('MWI Tools (Refactored) v0.4.0 - Initializing...');
 
 // CRITICAL: Install WebSocket hook FIRST, before game connects
 webSocketHook.install();
@@ -72,7 +73,7 @@ dataManager.on('character_initialized', (data) => {
             actionTimeDisplay.initialize();
             console.log('✅ Action time display');
 
-            console.log('🎉 MWI Tools v0.3.0 - Ready!');
+            console.log('🎉 MWI Tools v0.4.0 - Ready!');
         } catch (error) {
             console.error('❌ Feature initialization failed:', error);
         }
@@ -93,7 +94,8 @@ targetWindow.MWITools = {
     actionTimeDisplay,
     enhancementGearDetector,
     getEnhancingParams,
-    version: '0.3.0'
+    enhancementCalculator,
+    version: '0.4.0'
 };
 
 console.log('🔧 Debug: Access modules via MWITools (exposed to page context)');

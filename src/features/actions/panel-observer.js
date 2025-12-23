@@ -10,6 +10,7 @@
 
 import dataManager from '../../core/data-manager.js';
 import { calculateGatheringProfit, formatProfitDisplay } from './gathering-profit.js';
+import { displayEnhancementStats } from './enhancement-display.js';
 
 /**
  * Action types for gathering skills (3 skills)
@@ -21,14 +22,49 @@ const GATHERING_TYPES = [
 ];
 
 /**
+ * Action type for enhancing
+ */
+const ENHANCING_TYPE = '/action_types/enhancing';
+
+/**
+ * Debounced update tracker for enhancement calculations
+ * Maps itemHrid to timeout ID
+ */
+const updateTimeouts = new Map();
+
+/**
+ * Trigger debounced enhancement stats update
+ * @param {HTMLElement} panel - Enhancing panel element
+ * @param {string} itemHrid - Item HRID
+ */
+function triggerEnhancementUpdate(panel, itemHrid) {
+    // Clear existing timeout for this item
+    if (updateTimeouts.has(itemHrid)) {
+        clearTimeout(updateTimeouts.get(itemHrid));
+    }
+
+    // Set new timeout
+    const timeoutId = setTimeout(async () => {
+        console.log('[MWI Tools] Input changed, re-calculating enhancement stats...');
+        await displayEnhancementStats(panel, itemHrid);
+        updateTimeouts.delete(itemHrid);
+    }, 500); // Wait 500ms after last change
+
+    updateTimeouts.set(itemHrid, timeoutId);
+}
+
+/**
  * CSS selectors for action panel detection
  */
 const SELECTORS = {
     MODAL_CONTAINER: '.Modal_modalContainer__3B80m',
-    PANEL: 'div.SkillActionDetail_regularComponent__3oCgr',
+    REGULAR_PANEL: 'div.SkillActionDetail_regularComponent__3oCgr',
+    ENHANCING_PANEL: 'div.SkillActionDetail_enhancingComponent__17bOx',
     EXP_GAIN: 'div.SkillActionDetail_expGain__F5xHu',
     ACTION_NAME: 'div.SkillActionDetail_name__3erHV',
-    DROP_TABLE: 'div.SkillActionDetail_dropTable__3ViVp'
+    DROP_TABLE: 'div.SkillActionDetail_dropTable__3ViVp',
+    ENHANCING_OUTPUT: 'div.SkillActionDetail_enhancingOutput__VPHbY', // Outputs container
+    ITEM_NAME: 'div.Item_name__2C42x' // Item name (without +1)
 };
 
 /**
@@ -37,6 +73,9 @@ const SELECTORS = {
  */
 export function initActionPanelObserver() {
     setupMutationObserver();
+
+    // Check for existing enhancing panel (may already be on page)
+    checkExistingEnhancingPanel();
 }
 
 /**
@@ -45,15 +84,106 @@ export function initActionPanelObserver() {
 function setupMutationObserver() {
     const observer = new MutationObserver(async (mutations) => {
         for (const mutation of mutations) {
+            // DEBUG: Log all mutations
+            if (mutation.type === 'childList') {
+                console.log('[MWI Tools DEBUG] Mutation detected:', {
+                    type: mutation.type,
+                    addedNodes: mutation.addedNodes.length,
+                    removedNodes: mutation.removedNodes.length,
+                    target: mutation.target.className || mutation.target.tagName
+                });
+            }
+            if (mutation.type === 'attributes') {
+                console.log('[MWI Tools DEBUG] Attribute mutation:', {
+                    attributeName: mutation.attributeName,
+                    target: mutation.target.tagName,
+                    oldValue: mutation.oldValue,
+                    newValue: mutation.target.getAttribute(mutation.attributeName)
+                });
+
+                // Handle value attribute changes on INPUT elements (clicking up/down arrows)
+                if (mutation.attributeName === 'value' && mutation.target.tagName === 'INPUT') {
+                    const input = mutation.target;
+                    const panel = input.closest(SELECTORS.ENHANCING_PANEL);
+                    if (panel) {
+                        const itemHrid = panel.dataset.mwiItemHrid;
+                        if (itemHrid) {
+                            console.log('[MWI Tools DEBUG] Input value changed via attribute! Triggering update...');
+                            // Trigger the same debounced update
+                            triggerEnhancementUpdate(panel, itemHrid);
+                        }
+                    }
+                }
+            }
+
             for (const addedNode of mutation.addedNodes) {
-                // Check if this is a modal container with an action panel
+                if (addedNode.nodeType !== Node.ELEMENT_NODE) continue;
+
+                // DEBUG: Log added nodes
+                console.log('[MWI Tools DEBUG] Node added:', {
+                    tag: addedNode.tagName,
+                    class: addedNode.className,
+                    type: addedNode.type,
+                    id: addedNode.id
+                });
+
+                // Check for modal container with regular action panel (gathering/crafting)
                 if (
-                    addedNode.nodeType === Node.ELEMENT_NODE &&
                     addedNode.classList?.contains('Modal_modalContainer__3B80m') &&
-                    addedNode.querySelector(SELECTORS.PANEL)
+                    addedNode.querySelector(SELECTORS.REGULAR_PANEL)
                 ) {
-                    const panel = addedNode.querySelector(SELECTORS.PANEL);
+                    const panel = addedNode.querySelector(SELECTORS.REGULAR_PANEL);
                     await handleActionPanel(panel);
+                }
+
+                // Check for enhancing panel (non-modal, on main page)
+                if (
+                    addedNode.classList?.contains('SkillActionDetail_enhancingComponent__17bOx') ||
+                    addedNode.querySelector(SELECTORS.ENHANCING_PANEL)
+                ) {
+                    const panel = addedNode.classList?.contains('SkillActionDetail_enhancingComponent__17bOx')
+                        ? addedNode
+                        : addedNode.querySelector(SELECTORS.ENHANCING_PANEL);
+                    await handleEnhancingPanel(panel);
+                }
+
+                // Check if this is an outputs section being added to an existing enhancing panel
+                if (
+                    addedNode.classList?.contains('SkillActionDetail_enhancingOutput__VPHbY') ||
+                    (addedNode.querySelector && addedNode.querySelector(SELECTORS.ENHANCING_OUTPUT))
+                ) {
+                    // Find the parent enhancing panel
+                    let panel = addedNode.closest(SELECTORS.ENHANCING_PANEL);
+                    if (panel) {
+                        console.log('[MWI Tools] Detected outputs section added to enhancing panel');
+                        await handleEnhancingPanel(panel);
+                    }
+                }
+
+                // Also check for item div being added (in case outputs container already exists)
+                if (
+                    addedNode.classList?.contains('SkillActionDetail_item__2vEAz') ||
+                    addedNode.classList?.contains('Item_name__2C42x')
+                ) {
+                    // Find the parent enhancing panel
+                    let panel = addedNode.closest(SELECTORS.ENHANCING_PANEL);
+                    if (panel) {
+                        console.log('[MWI Tools] Detected item added to enhancing panel');
+                        await handleEnhancingPanel(panel);
+                    }
+                }
+
+                // Check for new input elements being added (e.g., Protect From Level after dropping protection item)
+                if (addedNode.tagName === 'INPUT' && (addedNode.type === 'number' || addedNode.type === 'text')) {
+                    const panel = addedNode.closest(SELECTORS.ENHANCING_PANEL);
+                    if (panel) {
+                        // Get the item HRID from the panel's data
+                        const itemHrid = panel.dataset.mwiItemHrid;
+                        if (itemHrid) {
+                            console.log('[MWI Tools] New input detected in enhancing panel, adding listener...');
+                            addInputListener(addedNode, panel, itemHrid);
+                        }
+                    }
                 }
             }
         }
@@ -61,14 +191,32 @@ function setupMutationObserver() {
 
     observer.observe(document.body, {
         childList: true,
-        subtree: true  // Watch entire tree, not just direct children
+        subtree: true,  // Watch entire tree, not just direct children
+        attributes: true,  // Watch for attribute changes
+        attributeOldValue: true,  // Track old values
+        attributeFilter: ['value', 'class']  // Only watch value and class attributes
     });
 
-    console.log('[MWI Tools] Action panel observer initialized');
+    console.log('[MWI Tools] Action panel observer initialized (watching childList + attributes)');
 }
 
 /**
- * Handle action panel appearance
+ * Check for existing enhancing panel on page load
+ * The enhancing panel may already exist when MWI Tools initializes
+ */
+function checkExistingEnhancingPanel() {
+    // Wait a moment for page to settle
+    setTimeout(() => {
+        const existingPanel = document.querySelector(SELECTORS.ENHANCING_PANEL);
+        if (existingPanel) {
+            console.log('[MWI Tools] Found existing enhancing panel on page');
+            handleEnhancingPanel(existingPanel);
+        }
+    }, 500);
+}
+
+/**
+ * Handle action panel appearance (gathering/crafting/production)
  * @param {HTMLElement} panel - Action panel element
  */
 async function handleActionPanel(panel) {
@@ -78,10 +226,6 @@ async function handleActionPanel(panel) {
     const expGainElement = panel.querySelector(SELECTORS.EXP_GAIN);
     if (!expGainElement) return; // Combat panel, skip
 
-    // Check if this is a gathering action (Foraging/Woodcutting/Milking) with drop table
-    const dropTableElement = panel.querySelector(SELECTORS.DROP_TABLE);
-    if (!dropTableElement) return; // No drop table, skip
-
     // Get action name
     const actionNameElement = panel.querySelector(SELECTORS.ACTION_NAME);
     if (!actionNameElement) return;
@@ -90,14 +234,118 @@ async function handleActionPanel(panel) {
     const actionHrid = getActionHridFromName(actionName);
     if (!actionHrid) return;
 
-    // Check if action is a gathering skill (Foraging, Woodcutting, Milking)
+    // Get action details
     const gameData = dataManager.getInitClientData();
     const actionDetail = gameData.actionDetailMap[actionHrid];
+    if (!actionDetail) return;
 
-    if (!actionDetail || !GATHERING_TYPES.includes(actionDetail.type)) return; // Not gathering, skip
+    // Check if this is a gathering action
+    if (GATHERING_TYPES.includes(actionDetail.type)) {
+        const dropTableElement = panel.querySelector(SELECTORS.DROP_TABLE);
+        if (dropTableElement) {
+            await displayGatheringProfit(panel, actionHrid);
+        }
+    }
+}
 
-    // Calculate and display profit
-    await displayGatheringProfit(panel, actionHrid);
+/**
+ * Handle enhancing panel appearance
+ * @param {HTMLElement} panel - Enhancing panel element
+ */
+async function handleEnhancingPanel(panel) {
+    if (!panel) return;
+
+    // Find the output element that shows the enhanced item
+    const outputsSection = panel.querySelector(SELECTORS.ENHANCING_OUTPUT);
+    if (!outputsSection) {
+        console.log('[MWI Tools] Enhancement panel found but no outputs section');
+        return;
+    }
+
+    // Get the item name from the Item_name element (without +1)
+    const itemNameElement = outputsSection.querySelector(SELECTORS.ITEM_NAME);
+    if (!itemNameElement) {
+        console.log('[MWI Tools] Could not find item name element in outputs');
+        return;
+    }
+
+    const itemName = itemNameElement.textContent.trim();
+
+    if (!itemName) {
+        console.log('[MWI Tools] Could not extract item name from outputs');
+        return;
+    }
+
+    // Find the item HRID from the name
+    const gameData = dataManager.getInitClientData();
+    const itemHrid = getItemHridFromName(itemName, gameData);
+
+    if (!itemHrid) {
+        console.log(`[MWI Tools] Could not find item HRID for: ${itemName}`);
+        return;
+    }
+
+    // Get item details
+    const itemDetails = gameData.itemDetailMap[itemHrid];
+    if (!itemDetails) return;
+
+    console.log(`[MWI Tools] Detected enhancing: ${itemName} (${itemHrid})`);
+
+    // Store itemHrid on panel for later reference (when new inputs are added)
+    panel.dataset.mwiItemHrid = itemHrid;
+
+    // Display enhancement stats using the item HRID directly
+    await displayEnhancementStats(panel, itemHrid);
+
+    // Set up observers for Target Level and Protect From Level inputs
+    setupInputObservers(panel, itemHrid);
+}
+
+/**
+ * Add input listener to a single input element
+ * @param {HTMLInputElement} input - Input element
+ * @param {HTMLElement} panel - Enhancing panel element
+ * @param {string} itemHrid - Item HRID
+ */
+function addInputListener(input, panel, itemHrid) {
+    console.log('[MWI Tools DEBUG] Adding listener to input:', {
+        tag: input.tagName,
+        type: input.type,
+        value: input.value,
+        name: input.name,
+        className: input.className,
+        parent: input.parentElement?.className
+    });
+
+    // Handler that triggers the shared debounced update
+    const handleInputChange = () => {
+        console.log('[MWI Tools DEBUG] Input event fired! Value:', input.value);
+        triggerEnhancementUpdate(panel, itemHrid);
+    };
+
+    // Add change listeners
+    input.addEventListener('input', handleInputChange);
+    input.addEventListener('change', handleInputChange);
+
+    console.log('[MWI Tools DEBUG] Listeners attached to input');
+}
+
+/**
+ * Set up observers for Target Level and Protect From Level inputs
+ * Re-calculates enhancement stats when user changes these values
+ * @param {HTMLElement} panel - Enhancing panel element
+ * @param {string} itemHrid - Item HRID
+ */
+function setupInputObservers(panel, itemHrid) {
+    // Find all input elements in the panel
+    const inputs = panel.querySelectorAll('input[type="number"], input[type="text"]');
+
+    // Add listeners to all existing inputs
+    inputs.forEach(input => {
+        addInputListener(input, panel, itemHrid);
+    });
+
+    console.log(`[MWI Tools] Set up input observers for ${inputs.length} input(s)`);
 }
 
 /**
@@ -172,6 +420,27 @@ function getActionHridFromName(actionName) {
     // Search for action by name
     for (const [hrid, detail] of Object.entries(gameData.actionDetailMap)) {
         if (detail.name === actionName) {
+            return hrid;
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Convert item name to HRID
+ * @param {string} itemName - Display name of item
+ * @param {Object} gameData - Game data from dataManager
+ * @returns {string|null} Item HRID or null if not found
+ */
+function getItemHridFromName(itemName, gameData) {
+    if (!gameData?.itemDetailMap) {
+        return null;
+    }
+
+    // Search for item by name
+    for (const [hrid, detail] of Object.entries(gameData.itemDetailMap)) {
+        if (detail.name === itemName) {
             return hrid;
         }
     }

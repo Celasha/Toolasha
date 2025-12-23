@@ -50,8 +50,8 @@ function getAutoDetectedParams() {
     const houseLevel = dataManager.getHouseRoomLevel('/house_rooms/laboratory');
 
     // Calculate total success rate bonus
-    // Tool bonus (from equipment) + house bonus (0.5% per level) + tea level bonus
-    const houseBonus = houseLevel * 0.5;
+    // Tool bonus (from equipment) + house bonus (0.05% per level, not 0.5%!)
+    const houseBonus = houseLevel * 0.05;  // 0.05% per level
     const totalSuccessBonus = gear.toolBonus + houseBonus;
 
     return {

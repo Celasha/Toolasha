@@ -1,6 +1,6 @@
 # MWI Tools - Refactoring Project
 
-![Version](https://img.shields.io/badge/version-0.3.0-orange?style=flat-square) ![Status](https://img.shields.io/badge/status-pre--release-yellow?style=flat-square) ![License](https://img.shields.io/badge/license-CC--BY--NC--SA--4.0-blue?style=flat-square)
+![Version](https://img.shields.io/badge/version-0.4.0-orange?style=flat-square) ![Status](https://img.shields.io/badge/status-pre--release-yellow?style=flat-square) ![License](https://img.shields.io/badge/license-CC--BY--NC--SA--4.0-blue?style=flat-square)
 
 Modular, maintainable rewrite of MWITools userscript for Milky Way Idle.
 
@@ -290,7 +290,7 @@ node tests/MODULE_NAME.test.js
 
 ---
 
-**Version:** 0.3.0 (Pre-release)
+**Version:** 0.4.0 (Pre-release)
 **Status:** Development/Testing
 **Original Author:** bot7420
 **Updated By:** Celasha and Claude
