@@ -9,6 +9,8 @@
  * All tea effects scale with Drink Concentration equipment stat.
  */
 
+import { getEnhancementMultiplier } from './enhancement-multipliers.js';
+
 /**
  * Generic tea buff parser - handles all tea buff types with consistent logic
  * @param {Array} activeDrinks - Array of active drink items from actionTypeDrinkSlotsMap
@@ -163,13 +165,10 @@ export function getDrinkConcentration(characterEquipment, itemDetailMap) {
         // Get enhancement level from equipped item
         const enhancementLevel = equippedItem.enhancementLevel || 0;
 
-        // Get enhancement bonus for drink concentration
-        const enhancementBonuses = itemDetails.equipmentDetail.noncombatEnhancementBonuses;
-        const enhancementBonus = (enhancementBonuses && enhancementBonuses.drinkConcentration) || 0;
-
         // Calculate scaled drink concentration with enhancement
-        // Formula: base + (enhancementBonus × enhancementLevel)
-        const scaledDrinkConcentration = baseDrinkConcentration + (enhancementBonus * enhancementLevel);
+        // Uses enhancement multiplier table (e.g., +10 = 1.29× for 1× slots like pouch)
+        const enhancementMultiplier = getEnhancementMultiplier(itemDetails, enhancementLevel);
+        const scaledDrinkConcentration = baseDrinkConcentration * enhancementMultiplier;
 
         totalDrinkConcentration += scaledDrinkConcentration;
     }

@@ -14,7 +14,7 @@
 
 import dataManager from '../../core/data-manager.js';
 import { parseEquipmentSpeedBonuses, parseEquipmentEfficiencyBonuses } from '../../utils/equipment-parser.js';
-import { parseTeaEfficiency, getDrinkConcentration, parseActionLevelBonus } from '../../utils/tea-parser.js';
+import { parseTeaEfficiency, getDrinkConcentration, parseActionLevelBonus, parseArtisanBonus } from '../../utils/tea-parser.js';
 import { calculateHouseEfficiency } from '../../utils/house-efficiency.js';
 import { stackAdditive } from '../../utils/efficiency.js';
 import { timeReadable, formatWithSeparator } from '../../utils/formatters.js';
@@ -393,8 +393,9 @@ class QuickInputButtons {
             });
 
             const maxButton = this.createButton('Max', () => {
-                const maxValue = this.calculateMaxValue(panel);
-                if (maxValue > 0) {
+                const maxValue = this.calculateMaxValue(panel, actionDetails);
+                // Handle both infinity symbol and numeric values
+                if (maxValue === '∞' || maxValue > 0) {
                     this.setInputValue(numberInput, maxValue);
                 }
             });
@@ -588,16 +589,53 @@ class QuickInputButtons {
     /**
      * Calculate maximum possible value based on inventory
      * @param {HTMLElement} panel - Action panel element
-     * @returns {number} Maximum value
+     * @param {Object} actionDetails - Action details from game data
+     * @returns {number|string} Maximum value (number for production, '∞' for gathering)
      */
-    calculateMaxValue(panel) {
+    calculateMaxValue(panel, actionDetails) {
         try {
-            // For now, return a sensible default max (10000)
-            // TODO: Calculate based on actual inventory/materials available
-            return 10000;
+            // Gathering actions (no materials needed) - return infinity symbol
+            if (!actionDetails.inputItems || actionDetails.inputItems.length === 0) {
+                return '∞';
+            }
+
+            // Production actions - calculate based on available materials
+            const inventory = dataManager.getInventory();
+            if (!inventory) {
+                return 0; // No inventory data available
+            }
+
+            // Get Artisan Tea reduction if active
+            const equipment = dataManager.getEquipment();
+            const itemDetailMap = dataManager.getInitClientData()?.itemDetailMap || {};
+            const drinkConcentration = getDrinkConcentration(equipment, itemDetailMap);
+            const activeDrinks = dataManager.getActionDrinkSlots(actionDetails.type);
+            const artisanBonus = parseArtisanBonus(activeDrinks, itemDetailMap, drinkConcentration);
+
+            let maxActions = Infinity;
+
+            for (const input of actionDetails.inputItems) {
+                // Find this item in inventory array
+                const inventoryItem = inventory.find(item => item.itemHrid === input.itemHrid);
+                const availableAmount = inventoryItem?.count || 0;
+                const baseRequirement = input.count;
+
+                // Apply Artisan reduction using expected value (average over many actions)
+                // Formula: effectiveCost = baseRequirement × (1 - artisanBonus)
+                const effectiveRequirement = baseRequirement * (1 - artisanBonus);
+
+                if (effectiveRequirement > 0) {
+                    const possibleActions = Math.floor(availableAmount / effectiveRequirement);
+                    maxActions = Math.min(maxActions, possibleActions);
+                }
+            }
+
+            // If we couldn't calculate (no materials found), return 0
+            // Otherwise return the calculated max (no artificial cap)
+            return maxActions === Infinity ? 0 : maxActions;
         } catch (error) {
             console.error('[MWI Tools] Error calculating max value:', error);
-            return 10000;
+            return 10000; // Safe fallback on error
         }
     }
 

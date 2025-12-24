@@ -3,13 +3,15 @@
  *
  * Detects when action panels appear and enhances them with:
  * - Gathering profit calculations (Foraging, Woodcutting, Milking)
+ * - Production profit calculations (Brewing, Cooking, Crafting, Tailoring, Cheesesmithing)
  * - Other action panel enhancements (future)
  *
  * Automatically filters out combat action panels.
  */
 
 import dataManager from '../../core/data-manager.js';
-import { calculateGatheringProfit, formatProfitDisplay } from './gathering-profit.js';
+import { calculateGatheringProfit } from './gathering-profit.js';
+import { calculateProductionProfit } from './production-profit.js';
 import { displayEnhancementStats } from './enhancement-display.js';
 import { formatWithSeparator } from '../../utils/formatters.js';
 
@@ -20,6 +22,17 @@ const GATHERING_TYPES = [
     '/action_types/foraging',
     '/action_types/woodcutting',
     '/action_types/milking'
+];
+
+/**
+ * Action types for production skills (5 skills)
+ */
+const PRODUCTION_TYPES = [
+    '/action_types/brewing',
+    '/action_types/cooking',
+    '/action_types/cheesesmithing',
+    '/action_types/crafting',
+    '/action_types/tailoring'
 ];
 
 /**
@@ -255,6 +268,14 @@ async function handleActionPanel(panel) {
         const dropTableElement = panel.querySelector(SELECTORS.DROP_TABLE);
         if (dropTableElement) {
             await displayGatheringProfit(panel, actionHrid);
+        }
+    }
+
+    // Check if this is a production action
+    if (PRODUCTION_TYPES.includes(actionDetail.type)) {
+        const dropTableElement = panel.querySelector(SELECTORS.DROP_TABLE);
+        if (dropTableElement) {
+            await displayProductionProfit(panel, actionHrid);
         }
     }
 }
@@ -828,6 +849,234 @@ async function displayGatheringProfit(panel, actionHrid) {
         0
     );
     profitSection.id = 'mwi-foraging-profit';
+
+    // Find insertion point - look for existing collapsible sections or drop table
+    let insertionPoint = panel.querySelector('.mwi-collapsible-section');
+    if (insertionPoint) {
+        // Insert after last collapsible section
+        while (insertionPoint.nextElementSibling && insertionPoint.nextElementSibling.className === 'mwi-collapsible-section') {
+            insertionPoint = insertionPoint.nextElementSibling;
+        }
+        insertionPoint.insertAdjacentElement('afterend', profitSection);
+    } else {
+        // Fallback: insert after drop table
+        const dropTableElement = panel.querySelector(SELECTORS.DROP_TABLE);
+        if (dropTableElement) {
+            dropTableElement.parentNode.insertBefore(
+                profitSection,
+                dropTableElement.nextSibling
+            );
+        }
+    }
+}
+
+/**
+ * Display production profit calculation in panel
+ * @param {HTMLElement} panel - Action panel element
+ * @param {string} actionHrid - Action HRID
+ */
+async function displayProductionProfit(panel, actionHrid) {
+    // Calculate profit
+    const profitData = await calculateProductionProfit(actionHrid);
+    if (!profitData) {
+        console.error('❌ Production profit calculation failed for:', actionHrid);
+        return;
+    }
+
+    // Check if we already added profit display
+    const existingProfit = panel.querySelector('#mwi-production-profit');
+    if (existingProfit) {
+        existingProfit.remove();
+    }
+
+    // Create top-level summary
+    const profit = Math.round(profitData.profitPerHour);
+    const profitPerDay = Math.round(profitData.profitPerDay);
+    const revenue = Math.round(profitData.itemsPerHour * profitData.priceAfterTax + profitData.gourmetBonusItems * profitData.priceAfterTax);
+    const costs = Math.round(profitData.materialCostPerHour + profitData.totalTeaCostPerHour);
+    const summary = `${formatWithSeparator(profit)}/hr, ${formatWithSeparator(profitPerDay)}/day`;
+
+    // ===== Build Detailed Breakdown Content =====
+    const detailsContent = document.createElement('div');
+
+    // Revenue Section
+    const revenueDiv = document.createElement('div');
+    revenueDiv.innerHTML = `<div style="font-weight: 500; color: var(--text-color-primary, #fff); margin-bottom: 4px;">Revenue: ${formatWithSeparator(revenue)}/hr</div>`;
+
+    // Base Output subsection
+    const baseOutputContent = document.createElement('div');
+    const baseOutputLine = document.createElement('div');
+    baseOutputLine.style.marginLeft = '8px';
+    baseOutputLine.textContent = `• Base Output: ${profitData.itemsPerHour.toFixed(1)}/hr @ ${formatWithSeparator(profitData.priceAfterTax)} each → ${formatWithSeparator(Math.round(profitData.itemsPerHour * profitData.priceAfterTax))}/hr`;
+    baseOutputContent.appendChild(baseOutputLine);
+
+    const baseRevenue = profitData.itemsPerHour * profitData.priceAfterTax;
+    const baseOutputSection = createCollapsibleSection(
+        '',
+        `Base Output: ${formatWithSeparator(Math.round(baseRevenue))}/hr`,
+        null,
+        baseOutputContent,
+        false,
+        1
+    );
+
+    // Gourmet Bonus subsection
+    let gourmetSection = null;
+    if (profitData.gourmetBonusItems > 0) {
+        const gourmetContent = document.createElement('div');
+        const gourmetLine = document.createElement('div');
+        gourmetLine.style.marginLeft = '8px';
+        gourmetLine.textContent = `• Gourmet Bonus: ${profitData.gourmetBonusItems.toFixed(1)}/hr @ ${formatWithSeparator(profitData.priceAfterTax)} each → ${formatWithSeparator(Math.round(profitData.gourmetBonusItems * profitData.priceAfterTax))}/hr`;
+        gourmetContent.appendChild(gourmetLine);
+
+        const gourmetRevenue = profitData.gourmetBonusItems * profitData.priceAfterTax;
+        gourmetSection = createCollapsibleSection(
+            '',
+            `Gourmet Bonus: ${formatWithSeparator(Math.round(gourmetRevenue))}/hr (${(profitData.gourmetBonus * 100).toFixed(1)}% gourmet)`,
+            null,
+            gourmetContent,
+            false,
+            1
+        );
+    }
+
+    revenueDiv.appendChild(baseOutputSection);
+    if (gourmetSection) {
+        revenueDiv.appendChild(gourmetSection);
+    }
+
+    // Costs Section
+    const costsDiv = document.createElement('div');
+    costsDiv.innerHTML = `<div style="font-weight: 500; color: var(--text-color-primary, #fff); margin-top: 12px; margin-bottom: 4px;">Costs: ${formatWithSeparator(costs)}/hr</div>`;
+
+    // Material Costs subsection
+    const materialCostsContent = document.createElement('div');
+    if (profitData.materialCosts && profitData.materialCosts.length > 0) {
+        for (const material of profitData.materialCosts) {
+            const line = document.createElement('div');
+            line.style.marginLeft = '8px';
+            line.textContent = `• ${material.name}: ${material.perHour.toFixed(1)}/hr @ ${formatWithSeparator(material.price)} → ${formatWithSeparator(Math.round(material.costPerHour))}/hr`;
+            materialCostsContent.appendChild(line);
+        }
+    }
+
+    const materialCostsSection = createCollapsibleSection(
+        '',
+        `Material Costs: ${formatWithSeparator(Math.round(profitData.materialCostPerHour))}/hr (${profitData.materialCosts?.length || 0} material${profitData.materialCosts?.length !== 1 ? 's' : ''})`,
+        null,
+        materialCostsContent,
+        false,
+        1
+    );
+
+    // Tea Costs subsection
+    const teaCostsContent = document.createElement('div');
+    if (profitData.teaCosts && profitData.teaCosts.length > 0) {
+        for (const tea of profitData.teaCosts) {
+            const line = document.createElement('div');
+            line.style.marginLeft = '8px';
+            line.textContent = `• ${tea.name}: ${tea.drinksPerHour.toFixed(1)}/hr @ ${formatWithSeparator(tea.priceEach)} → ${formatWithSeparator(Math.round(tea.totalCost))}/hr`;
+            teaCostsContent.appendChild(line);
+        }
+    }
+
+    const teaCount = profitData.teaCosts?.length || 0;
+    const teaCostsSection = createCollapsibleSection(
+        '',
+        `Drink Costs: ${formatWithSeparator(Math.round(profitData.totalTeaCostPerHour))}/hr (${teaCount} drink${teaCount !== 1 ? 's' : ''})`,
+        null,
+        teaCostsContent,
+        false,
+        1
+    );
+
+    costsDiv.appendChild(materialCostsSection);
+    costsDiv.appendChild(teaCostsSection);
+
+    // Modifiers Section
+    const modifiersDiv = document.createElement('div');
+    modifiersDiv.style.cssText = `
+        margin-top: 12px;
+        color: var(--text-color-secondary, #888);
+    `;
+
+    const modifierLines = [];
+
+    // Efficiency breakdown
+    const effParts = [];
+    if (profitData.details.levelEfficiency > 0) {
+        effParts.push(`${profitData.details.levelEfficiency}% level`);
+    }
+    if (profitData.details.houseEfficiency > 0) {
+        effParts.push(`${profitData.details.houseEfficiency.toFixed(1)}% house`);
+    }
+    if (profitData.details.teaEfficiency > 0) {
+        effParts.push(`${profitData.details.teaEfficiency.toFixed(1)}% tea`);
+    }
+    if (profitData.details.equipmentEfficiency > 0) {
+        effParts.push(`${profitData.details.equipmentEfficiency.toFixed(1)}% equip`);
+    }
+
+    if (effParts.length > 0) {
+        modifierLines.push(`<div style="font-weight: 500; color: var(--text-color-primary, #fff);">Modifiers:</div>`);
+        modifierLines.push(`<div style="margin-left: 8px;">• Efficiency: +${profitData.totalEfficiency.toFixed(1)}% (${effParts.join(', ')})</div>`);
+    }
+
+    // Artisan Bonus
+    if (profitData.details.artisanBonus > 0) {
+        modifierLines.push(`<div style="margin-left: 8px;">• Artisan: -${(profitData.details.artisanBonus * 100).toFixed(1)}% material requirement</div>`);
+    }
+
+    // Gourmet Bonus
+    if (profitData.details.gourmetBonus > 0) {
+        modifierLines.push(`<div style="margin-left: 8px;">• Gourmet: +${(profitData.details.gourmetBonus * 100).toFixed(1)}% bonus items</div>`);
+    }
+
+    modifiersDiv.innerHTML = modifierLines.join('');
+
+    // Assemble Detailed Breakdown (WITHOUT net profit - that goes in top level)
+    detailsContent.appendChild(revenueDiv);
+    detailsContent.appendChild(costsDiv);
+    detailsContent.appendChild(modifiersDiv);
+
+    // Create "Detailed Breakdown" collapsible
+    const topLevelContent = document.createElement('div');
+    topLevelContent.innerHTML = `
+        <div style="margin-bottom: 4px;">Actions: ${profitData.actionsPerHour.toFixed(1)}/hr | Efficiency: +${profitData.totalEfficiency.toFixed(1)}%</div>
+    `;
+
+    // Add Net Profit line at top level (always visible when Profitability is expanded)
+    const profitColor = profit >= 0 ? '#4ade80' : '#f87171'; // green if positive, red if negative
+    const netProfitLine = document.createElement('div');
+    netProfitLine.style.cssText = `
+        font-weight: 500;
+        color: ${profitColor};
+        margin-bottom: 8px;
+    `;
+    netProfitLine.textContent = `Net Profit: ${formatWithSeparator(profit)}/hr, ${formatWithSeparator(profitPerDay)}/day`;
+    topLevelContent.appendChild(netProfitLine);
+
+    const detailedBreakdownSection = createCollapsibleSection(
+        '📊',
+        'Detailed Breakdown',
+        null,
+        detailsContent,
+        false,
+        0
+    );
+
+    topLevelContent.appendChild(detailedBreakdownSection);
+
+    // Create main profit section
+    const profitSection = createCollapsibleSection(
+        '💰',
+        'Profitability',
+        summary,
+        topLevelContent,
+        false,
+        0
+    );
+    profitSection.id = 'mwi-production-profit';
 
     // Find insertion point - look for existing collapsible sections or drop table
     let insertionPoint = panel.querySelector('.mwi-collapsible-section');

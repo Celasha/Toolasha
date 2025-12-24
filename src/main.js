@@ -17,6 +17,7 @@ import profitCalculator from './features/market/profit-calculator.js';
 import expectedValueCalculator from './features/market/expected-value-calculator.js';
 import { initActionPanelObserver } from './features/actions/panel-observer.js';
 import { calculateGatheringProfit } from './features/actions/gathering-profit.js';
+import { calculateProductionProfit } from './features/actions/production-profit.js';
 import actionTimeDisplay from './features/actions/action-time-display.js';
 import quickInputButtons from './features/actions/quick-input-buttons.js';
 import * as enhancementGearDetector from './utils/enhancement-gear-detector.js';
@@ -79,6 +80,7 @@ targetWindow.MWITools = {
     dataManager,
     profitCalculator,
     gatheringProfitCalculator: { calculateGatheringProfit },
+    productionProfitCalculator: { calculateProductionProfit },
     expectedValueCalculator,
     marketAPI,
     config,

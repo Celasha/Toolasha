@@ -111,6 +111,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `src/features/actions/panel-observer.js` (complete rewrite of displayGatheringProfit)
   - `src/features/actions/gathering-profit.js` (added priceEach and revenuePerHour to baseOutputs)
 
+#### **Production Profit Calculator**
+
+**NEW FEATURE:** Comprehensive profit analysis for production actions (Brewing, Cooking, Crafting, Tailoring, Cheesesmithing) with same progressive disclosure pattern as gathering profit.
+
+- **Collapsed Summary:**
+  - Shows profit/hr and profit/day only
+  - Format: `985,313/hr, 23,647,512/day`
+  - Quick reference matching gathering profit display
+
+- **Progressive Disclosure Structure:**
+  ```
+  ▼ 💰 Profitability
+    Actions: 251.2/hr | Efficiency: +33.2%
+    Net Profit: 985,313/hr, 23,647,512/day (always visible when expanded)
+
+    ▼ 📊 Detailed Breakdown
+      Revenue: 2,150,000/hr
+        ▶ Base Output: 1,950,000/hr (251.2 items @ 7,765 each)
+        ▶ Gourmet Bonus: 200,000/hr (13.4% gourmet)
+
+      Costs: 1,164,687/hr
+        ▶ Material Costs: 1,089,751/hr (3 materials)
+        ▶ Drink Costs: 74,936/hr (3 drinks)
+
+      Modifiers:
+        • Efficiency: +33.2% (20% level, 11.2% tea, 2.0% equip)
+        • Artisan: -11.2% material requirement
+        • Gourmet: +13.4% bonus items
+  ```
+
+- **Key Features:**
+  - Net Profit line always visible at top level (not hidden in Detailed Breakdown)
+  - Color-coded profit (green if positive, red if negative)
+  - Revenue breakdown: Base Output + Gourmet Bonus (when applicable)
+  - Costs breakdown: Materials + Teas (both with detailed item-by-item lists)
+  - Modifiers: Efficiency, Artisan, Gourmet bonuses
+  - Each subsection independently collapsible
+  - Pattern: "Subtotal first, detailed breakdown nested below"
+
+- **Calculation:**
+  - Reuses existing `profit-calculator.js` for all calculations
+  - Accurate material costs with Artisan Tea reduction
+  - Tea consumption costs (12 drinks/hour per active tea)
+  - Efficiency scaling on outputs and material costs
+  - Gourmet Tea bonus items factored into revenue
+
+- **Technical Implementation:**
+  - NEW: `src/features/actions/production-profit.js` (111 lines)
+    - `calculateProductionProfit()` - Calls profit-calculator, adds profitPerDay
+    - `formatProfitDisplay()` - Formats data for display (optional helper)
+  - Modified: `src/features/actions/panel-observer.js` (lines 14, 30-36, 274-280, 873-1099)
+    - Added PRODUCTION_TYPES constant
+    - Added production detection in handleActionPanel()
+    - Added displayProductionProfit() function with progressive disclosure
+
+- **Files:**
+  - NEW: `src/features/actions/production-profit.js` (111 lines)
+  - Modified: `src/features/actions/panel-observer.js`
+  - Modified: `src/main.js` (import production-profit)
+
+**Result:** Production actions now show comprehensive profit analysis with same UX as gathering profit, making it easy to compare different recipes and optimize production chains.
+
 #### **Quick Input Buttons**
 
 **NEW FEATURE:** Action panels now include quick input buttons for fast queue setup with real-time total time display.
@@ -216,6 +278,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Fix:** Changed to `(xpGainedThisLevel) / (xpNeededThisLevel)` (matches game's display)
   - **Example:** Level 50 (10,000 XP) with 12,000 current XP → 40% progress (not 80%)
   - **File:** `src/features/actions/quick-input-buttons.js`
+
+#### **Drink Concentration Enhancement Scaling Fix**
+
+**CRITICAL BUG FIX:** Drink Concentration was using incorrect linear scaling instead of proper enhancement multiplier table.
+
+- **Root Cause:** Used additive per-level formula instead of multiplicative enhancement table
+- **Previous Formula:** `base + (bonus × level)` - treated enhancement as linear scaling ❌
+- **Correct Formula:** `base × ENHANCEMENT_MULTIPLIERS[level]` - uses proper enhancement table ✓
+- **Impact:**
+  - Guzzling Pouch +10: Was calculating 12.0% instead of 12.9%
+  - Processing Tea: Was showing 16.8% instead of 16.94%
+  - All tea effects (Efficiency, Artisan, Gourmet, Wisdom) were undervalued
+- **Fix:**
+  - Replaced manual enhancement calculation with `getEnhancementMultiplier()` function
+  - Now uses same enhancement system as all other equipment stats
+  - Proper slot multipliers applied (1× for pouch, 5× for accessories)
+- **Example:** Guzzling Pouch +10 (1× slot): 10% base × 1.29 multiplier = 12.9% ✓
+- **File:** `src/utils/tea-parser.js` (lines 12, 165-173)
+
+#### **Max Button Implementation**
+
+**NEW FEATURE:** Max button now intelligently calculates maximum queue based on action type and available materials.
+
+- **Gathering Actions** (Foraging, Woodcutting, Milking):
+  - Returns infinity symbol (`∞`) to match game's infinity button behavior
+  - No material constraints, allows unlimited queuing
+
+- **Production Actions** (Brewing, Cooking, Crafting, Tailoring, Cheesesmithing):
+  - Calculates based on available inventory materials
+  - Finds bottleneck material (minimum across all required inputs)
+  - **Artisan Tea Integration:** Accounts for material reduction when Artisan Tea is active
+    - Uses expected value formula: `effectiveCost = baseRequirement × (1 - artisanBonus)`
+    - Example: 10 materials with 11.2% Artisan → 8.88 effective cost per action
+    - Accurate over many actions (probabilistic savings average out)
+  - Formula: `Math.floor(available / effectiveRequirement)` for each material
+  - Returns 0 if no materials available
+  - **No artificial cap** - respects actual inventory quantities
+
+- **Example:**
+  ```
+  Crafting "Azure Staff" (without Artisan Tea):
+  - Requires: 5 Azure Lumber, 2 Branch of Insight
+  - Inventory: 50 Azure Lumber, 3 Branch of Insight
+
+  Calculation:
+  - Azure Lumber: 50 / 5 = 10 possible
+  - Branch of Insight: 3 / 2 = 1 possible (bottleneck)
+  - Max = min(10, 1) = 1
+
+  With 11.2% Artisan Tea:
+  - Azure Lumber: 50 / (5 × 0.888) = 50 / 4.44 = 11 possible
+  - Branch of Insight: 3 / (2 × 0.888) = 3 / 1.776 = 1 possible (still bottleneck)
+  - Max = min(11, 1) = 1
+  ```
+
+- **Error Handling:**
+  - Returns 10000 as safe fallback on calculation errors
+  - Handles missing inventory data with null check
+  - Uses `.find()` to search inventory array (not Map.get())
+  - Skips division by zero with guard clause
+
+- **Files Modified:**
+  - `src/features/actions/quick-input-buttons.js` (lines 17, 396-399, 589-640)
+
+**Result:** Max button provides accurate, intelligent queue sizing based on actual game state instead of arbitrary 10000 value.
 
 ### Changed
 

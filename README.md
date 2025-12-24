@@ -223,6 +223,22 @@ All efficiency sources are automatically detected from character data - no manua
   - Market tax: 2% selling fee applied to all revenue
   - Returns: profitPerHour, profitPerDay, revenuePerHour, drinkCostPerHour, actionsPerHour, efficiency breakdown, bonus revenue details, gathering/processing breakdowns
 
+- **production-profit.js** - Comprehensive production profit calculator ✅
+  - `calculateProductionProfit(actionHrid)` - Calculate hourly and daily profit
+  - **Supports all production skills:** Brewing, Cooking, Crafting, Tailoring, Cheesesmithing
+  - **Progressive disclosure display:** Same UX pattern as gathering profit
+    - Collapsed: Shows profit/hr and profit/day only
+    - Expanded: Net profit at top level, detailed breakdown nested below
+    - Revenue breakdown: Base Output + Gourmet Bonus (when applicable)
+    - Costs breakdown: Materials + Teas (with item-by-item details)
+  - Reuses existing `profit-calculator.js` for all calculations
+  - Accounts for: Material costs, tea consumption, efficiency bonuses, Artisan reduction, Gourmet bonus
+  - **Artisan Tea:** Material reduction (10% base, scales with Drink Concentration)
+  - **Gourmet Tea:** Bonus items (12% base, scales with Drink Concentration)
+  - Efficiency sources: Level advantage, house rooms, tea buffs, equipment stats
+  - Market tax: 2% selling fee applied to all revenue
+  - Returns: profitPerHour, profitPerDay, revenue, costs, materials breakdown, teas breakdown, efficiency breakdown
+
 - **quick-input-buttons.js** - Fast queue setup with preset buttons ✅
   - **Total time display:** Real-time "Total time: [duration]" above buttons
   - **Two-row layout:**
@@ -260,6 +276,7 @@ All efficiency sources are automatically detected from character data - no manua
 
 **Action Panel Features Summary:**
 - ✅ **Gathering profit calculator** - Comprehensive economic analysis for Foraging, Woodcutting, Milking
+- ✅ **Production profit calculator** - Comprehensive economic analysis for Brewing, Cooking, Crafting, Tailoring, Cheesesmithing
 - ✅ **Total action time** - Current action display in header + queue tooltip with individual/cumulative times
 - ✅ **Quick input buttons** - Preset buttons (10, 100, 1000, Max) for fast queue input with React _valueTracker integration
 - ✅ **Level progression calculator** - Real-time XP tracking with comprehensive bonus breakdown
