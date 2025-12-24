@@ -10,12 +10,11 @@ import { getEnhancementMultiplier } from './enhancement-multipliers.js';
 /**
  * Detect best gear for a specific skill by equipment slot
  * @param {string} skillName - Skill name (e.g., 'enhancing', 'cooking', 'milking')
- * @param {Map} equipment - Character equipment map (for backward compatibility, can be null)
+ * @param {Map} equipment - Character equipment map (equipped items only)
  * @param {Object} itemDetailMap - Item details map from init_client_data
- * @param {Array} inventory - Character inventory array (all items including equipped)
  * @returns {Object} Best gear per slot with bonuses
  */
-export function detectSkillGear(skillName, equipment, itemDetailMap, inventory = null) {
+export function detectSkillGear(skillName, equipment, itemDetailMap) {
     const gear = {
         // Totals for calculations
         toolBonus: 0,
@@ -277,11 +276,10 @@ export function getEnhancingTeaSpeedBonus(teas) {
 
 /**
  * Backward-compatible wrapper for enhancing gear detection
- * @param {Map} equipment - Character equipment map
+ * @param {Map} equipment - Character equipment map (equipped items only)
  * @param {Object} itemDetailMap - Item details map from init_client_data
- * @param {Array} inventory - Character inventory array (all items including equipped)
  * @returns {Object} Best enhancing gear per slot with bonuses
  */
-export function detectEnhancingGear(equipment, itemDetailMap, inventory = null) {
-    return detectSkillGear('enhancing', equipment, itemDetailMap, inventory);
+export function detectEnhancingGear(equipment, itemDetailMap) {
+    return detectSkillGear('enhancing', equipment, itemDetailMap);
 }

@@ -7,6 +7,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.4] - 2025-12-23
+
+### Overview
+
+Patch release fixing critical Drink Concentration (Guzzling Pouch) detection bugs.
+
+**Status:** Development/Testing (Version < 1.0.0 = pre-release)
+
+### Fixed
+
+#### **CRITICAL: Drink Concentration Detection Fixes**
+
+**BUG FIX:** Guzzling Pouch enhancement levels now correctly affect Drink Concentration calculations.
+
+- **Enhancement Multiplier Bug (CRITICAL):**
+  - **Previous behavior:** Drink Concentration ignored enhancement levels entirely
+  - **Example:** Guzzling Pouch +0 and +10 both gave 8% (WRONG!)
+  - **Root cause:** Line 51 in enhancement-config.js used `concentration * 100` without multiplier
+  - **Fix:** Now applies proper enhancement scaling: `concentration * 100 * multiplier`
+  - **Result:**
+    - Guzzling Pouch +0: 8% × 1.00 = 8.00% ✓
+    - Guzzling Pouch +10: 8% × 1.29 = 10.32% ✓
+  - File: `src/utils/enhancement-config.js` lines 50-58
+
+- **Inventory Scanning Bug (CRITICAL):**
+  - **Previous behavior:** Scanned all 106 inventory items (including unequipped)
+  - **Impact:** Always picked highest pouch in inventory, swapping pouches had no effect
+  - **Root cause:** Used `inventory.filter()` instead of `equipment.values()`
+  - **Fix:** Now only scans equipped items (like all other equipment detection)
+  - **Result:** Correctly detects only the equipped pouch, updates on swap
+  - File: `src/utils/enhancement-config.js` line 44
+
+### Changed
+
+#### **Code Cleanup: Equipment Scanning Consistency**
+
+**REFACTOR:** Removed misleading comments and unused parameters.
+
+- **Removed unused inventory parameter:**
+  - Removed `inventory` parameter from `detectSkillGear()` (line 17)
+  - Removed `inventory` parameter from `detectEnhancingGear()` (line 283)
+  - Removed unused `inventory` variable from `getAutoDetectedParams()` (line 33)
+  - All functions now clearly document "equipped items only"
+  - File: `src/utils/enhancement-gear-detector.js`, `src/utils/enhancement-config.js`
+
+- **Updated JSDoc comments:**
+  - Changed misleading "all items including equipped" to "equipped items only"
+  - Clarified that equipment map contains only equipped items
+  - Consistent documentation across all equipment scanning functions
+
+**Technical Details:**
+- Added `getEnhancementMultiplier` import to enhancement-config.js
+- Pouch slot uses 1× multiplier (armor slot, not accessory)
+- Guzzling Pouch +8: 8% × 1.22 = 9.76%
+- Guzzling Pouch +10: 8% × 1.29 = 10.32%
+
 ## [0.4.3] - 2025-12-23
 
 ### Overview

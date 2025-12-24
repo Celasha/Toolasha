@@ -88,5 +88,5 @@ targetWindow.MWITools = {
     // Debug utilities available manually via console
     // gameMechanicsAudit,
     // debugEnhancementSpeed,
-    version: '0.4.3'
+    version: '0.4.4'
 };

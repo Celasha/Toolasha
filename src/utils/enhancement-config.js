@@ -8,6 +8,7 @@
 import config from '../core/config.js';
 import dataManager from '../core/data-manager.js';
 import { detectEnhancingGear, detectEnhancingTeas, getEnhancingTeaLevelBonus, getEnhancingTeaSpeedBonus } from './enhancement-gear-detector.js';
+import { getEnhancementMultiplier } from './enhancement-multipliers.js';
 
 /**
  * Get enhancing parameters (auto-detected or manual)
@@ -30,25 +31,31 @@ export function getEnhancingParams() {
 function getAutoDetectedParams() {
     // Get character data
     const equipment = dataManager.getEquipment();
-    const inventory = dataManager.getInventory();
     const skills = dataManager.getSkills();
     const drinkSlots = dataManager.getActionDrinkSlots('/action_types/enhancing');
     const itemDetailMap = dataManager.getInitClientData()?.itemDetailMap || {};
 
-    // Detect gear (scans all items in inventory, including equipped)
-    const gear = detectEnhancingGear(equipment, itemDetailMap, inventory);
+    // Detect gear from equipped items only
+    const gear = detectEnhancingGear(equipment, itemDetailMap);
 
     // Detect drink concentration from equipment (Guzzling Pouch)
+    // IMPORTANT: Only scan equipped items, not entire inventory
     let drinkConcentration = 0;
-    const itemsToScan = inventory ? inventory.filter(item => item && item.itemHrid) :
-                        equipment ? Array.from(equipment.values()).filter(item => item && item.itemHrid) : [];
+    const itemsToScan = equipment ? Array.from(equipment.values()).filter(item => item && item.itemHrid) : [];
 
     for (const item of itemsToScan) {
         const itemDetails = itemDetailMap[item.itemHrid];
         if (!itemDetails?.equipmentDetail?.noncombatStats?.drinkConcentration) continue;
 
         const concentration = itemDetails.equipmentDetail.noncombatStats.drinkConcentration;
-        drinkConcentration += concentration * 100; // Convert to percentage
+        const enhancementLevel = item.enhancementLevel || 0;
+        const multiplier = getEnhancementMultiplier(itemDetails, enhancementLevel);
+        const scaledConcentration = concentration * 100 * multiplier;
+
+        // Only keep the highest concentration (shouldn't have multiple, but just in case)
+        if (scaledConcentration > drinkConcentration) {
+            drinkConcentration = scaledConcentration;
+        }
     }
 
     // Detect teas

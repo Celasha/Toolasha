@@ -1,6 +1,6 @@
 # MWI Tools - Refactoring Project
 
-![Version](https://img.shields.io/badge/version-0.4.3-orange?style=flat-square) ![Status](https://img.shields.io/badge/status-pre--release-yellow?style=flat-square) ![License](https://img.shields.io/badge/license-CC--BY--NC--SA--4.0-blue?style=flat-square)
+![Version](https://img.shields.io/badge/version-0.4.4-orange?style=flat-square) ![Status](https://img.shields.io/badge/status-pre--release-yellow?style=flat-square) ![License](https://img.shields.io/badge/license-CC--BY--NC--SA--4.0-blue?style=flat-square)
 
 Modular, maintainable rewrite of MWITools userscript for Milky Way Idle.
 
