@@ -221,10 +221,12 @@ All efficiency sources are automatically detected from character data - no manua
   - Returns: profitPerHour, profitPerDay, revenuePerHour, drinkCostPerHour, actionsPerHour, efficiency breakdown, bonus revenue details, gathering/processing breakdowns
 
 - **quick-input-buttons.js** - Fast queue setup with preset buttons ✅
+  - **Total time display:** Real-time "Total time: [duration]" above buttons
   - **Two-row layout:**
     - Time-based: 0.5, 1, 2, 3, 4, 5, 6, 10, 12, 24 hours
     - Count-based: 10, 100, 1,000, Max (10,000)
   - **Time calculation:** `(hours * 3600 * efficiency) / actionDuration`
+  - **Auto-updates:** MutationObserver on input value attribute + input/change events
   - Dynamically adjusts for character state (gear, skills, buffs)
   - Positioned inside action panel modal, below queue input field
   - Uses React's `_valueTracker` for proper state updates

@@ -11,13 +11,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### **Quick Input Buttons**
 
-**NEW FEATURE:** Action panels now include quick input buttons for fast queue setup.
+**NEW FEATURE:** Action panels now include quick input buttons for fast queue setup with real-time total time display.
+
+- **Total Time Display:**
+  - Shows "Total time: [duration]" above buttons
+  - Updates automatically when input changes
+  - Format: "1 day 5h 45m" using timeReadable()
+  - Accounts for efficiency reducing actions needed
+  - Blue color matching game's main theme
 
 - **Two-Row Layout:**
   - **First row (time-based):** 0.5, 1, 2, 3, 4, 5, 6, 10, 12, 24 hours
   - **Second row (count-based):** 10, 100, 1,000, Max
-  - Format:
+  - Layout:
     ```
+    [Input field: 1000]
+    Total time: 1h 23m 45s
     Do [0.5] [1] [2] [3] [4] [5] [6] [10] [12] [24] hours
     Do [10] [100] [1,000] [Max] times
     ```
@@ -41,7 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Technical Implementation:**
   - MutationObserver watches for `[class*="SkillActionDetail_skillActionDetail"]` panels
-  - Finds input via `querySelector('input[type="number"]')` with fallbacks
+  - Input monitoring: MutationObserver on `value` attribute + input/change events
   - Positions after `numberInput.parentNode.parentNode.parentNode` container
   - Simple white button styling matching original (1px 6px padding, #fff background)
   - `calculateActionMetrics()` computes real-time action duration and efficiency
@@ -49,11 +58,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Full efficiency system integration (speed, level, house, tea, equipment)
 
 - **Files:**
-  - NEW: `src/features/actions/quick-input-buttons.js` (387 lines)
+  - NEW: `src/features/actions/quick-input-buttons.js` (437 lines)
   - Modified: `src/main.js` (import, initialize, export to window.MWITools)
   - Modified: `README.md` (feature status update)
 
-**Result:** Fast queue input with both time-based and count-based options. Click "1 hour" and it calculates exactly how many actions you can do in 1 hour with your current stats.
+**Result:** Fast queue input with both time-based and count-based options plus real-time feedback. Click "1 hour" and see exactly how long it will take. Type any number and immediately see the total duration.
 
 ## [0.4.5] - 2025-12-23
 
