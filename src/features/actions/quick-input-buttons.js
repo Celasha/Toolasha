@@ -129,7 +129,15 @@ class QuickInputButtons {
 
             // Function to update total time display
             const updateTotalTime = () => {
-                const queueCount = parseInt(numberInput.value) || 0;
+                const inputValue = numberInput.value;
+
+                // Check for infinity (empty string when infinity is selected)
+                if (inputValue === '' || inputValue === 'Infinity' || numberInput.value === '') {
+                    totalTimeDiv.textContent = 'Total time: ∞';
+                    return;
+                }
+
+                const queueCount = parseInt(inputValue) || 0;
                 if (queueCount > 0) {
                     // Account for efficiency reducing actions needed
                     const actualActionsNeeded = queueCount / efficiencyMultiplier;
