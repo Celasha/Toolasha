@@ -626,34 +626,37 @@ class QuickInputButtons {
 
             // XP breakdown (if any bonuses exist)
             if (xpData.totalWisdom > 0 || xpData.charmExperience > 0) {
-                // Wisdom breakdown
-                if (xpData.totalWisdom > 0) {
-                    lines.push(`  Wisdom: +${xpData.totalWisdom.toFixed(1)}%`);
-                    if (xpData.breakdown.equipmentWisdom > 0) {
-                        lines.push(`    • Equipment: +${xpData.breakdown.equipmentWisdom.toFixed(1)}%`);
-                    }
-                    if (xpData.breakdown.houseWisdom > 0) {
-                        lines.push(`    • House: +${xpData.breakdown.houseWisdom.toFixed(1)}%`);
-                    }
-                    if (xpData.breakdown.communityWisdom > 0) {
-                        lines.push(`    • Community: +${xpData.breakdown.communityWisdom.toFixed(1)}%`);
-                    }
-                    if (xpData.breakdown.consumableWisdom > 0) {
-                        lines.push(`    • Tea: +${xpData.breakdown.consumableWisdom.toFixed(1)}%`);
+                const totalXPBonus = xpData.totalWisdom + xpData.charmExperience;
+                lines.push(`  Total XP Bonus: +${totalXPBonus.toFixed(1)}%`);
+
+                // List all sources that contribute
+
+                // Equipment skill-specific XP (e.g., Celestial Shears foragingExperience)
+                if (xpData.charmBreakdown && xpData.charmBreakdown.length > 0) {
+                    for (const item of xpData.charmBreakdown) {
+                        const enhText = item.enhancementLevel > 0 ? ` +${item.enhancementLevel}` : '';
+                        lines.push(`    • ${item.name}${enhText}: +${item.value.toFixed(1)}%`);
                     }
                 }
 
-                // Equipment skill-specific XP (separate from wisdom)
-                if (xpData.charmExperience > 0) {
-                    const skillName = skillHrid.replace('/skills/', '').charAt(0).toUpperCase() + skillHrid.replace('/skills/', '').slice(1);
-                    lines.push(`  Equipment (${skillName} XP): +${xpData.charmExperience.toFixed(1)}%`);
-                    // Show which equipment items are providing skill XP
-                    if (xpData.charmBreakdown && xpData.charmBreakdown.length > 0) {
-                        for (const item of xpData.charmBreakdown) {
-                            const enhText = item.enhancementLevel > 0 ? ` +${item.enhancementLevel}` : '';
-                            lines.push(`    • ${item.name}${enhText}: +${item.value.toFixed(1)}%`);
-                        }
-                    }
+                // Equipment wisdom (e.g., Philosopher's Necklace skillingExperience)
+                if (xpData.breakdown.equipmentWisdom > 0) {
+                    lines.push(`    • Philosopher's Equipment: +${xpData.breakdown.equipmentWisdom.toFixed(1)}%`);
+                }
+
+                // House rooms
+                if (xpData.breakdown.houseWisdom > 0) {
+                    lines.push(`    • House Rooms: +${xpData.breakdown.houseWisdom.toFixed(1)}%`);
+                }
+
+                // Community buff
+                if (xpData.breakdown.communityWisdom > 0) {
+                    lines.push(`    • Community Buff: +${xpData.breakdown.communityWisdom.toFixed(1)}%`);
+                }
+
+                // Tea/Coffee
+                if (xpData.breakdown.consumableWisdom > 0) {
+                    lines.push(`    • Wisdom Tea: +${xpData.breakdown.consumableWisdom.toFixed(1)}%`);
                 }
             }
 
