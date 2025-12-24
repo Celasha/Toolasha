@@ -231,7 +231,17 @@ class QuickInputButtons {
                 if (queueCount > 0) {
                     const actualActionsNeeded = queueCount / efficiencyMultiplier;
                     const totalSeconds = actualActionsNeeded * actionTime;
-                    totalTimeLine.textContent = `Total time: ${timeReadable(totalSeconds)}`;
+
+                    // Show actual actions needed when efficiency is present
+                    if (totalEfficiency > 0) {
+                        // Format actions with 1 decimal if fractional, no decimals if whole number
+                        const actionsDisplay = actualActionsNeeded % 1 === 0
+                            ? actualActionsNeeded.toFixed(0)
+                            : actualActionsNeeded.toFixed(1);
+                        totalTimeLine.textContent = `Total time: ${timeReadable(totalSeconds)} (${queueCount} items, ${actionsDisplay} actions)`;
+                    } else {
+                        totalTimeLine.textContent = `Total time: ${timeReadable(totalSeconds)}`;
+                    }
                 } else {
                     totalTimeLine.textContent = 'Total time: 0s';
                 }
