@@ -58,10 +58,11 @@ export function parseEquipmentWisdom(equipment, itemDetailMap) {
  * @param {Map} equipment - Character equipment map
  * @param {string} skillHrid - Skill HRID (e.g., "/skills/foraging")
  * @param {Object} itemDetailMap - Item details from game data
- * @returns {number} Charm experience percentage (e.g., 6.5 for 6.5%)
+ * @returns {Object} {total: number, breakdown: Array} Total charm XP and item breakdown
  */
 export function parseCharmExperience(equipment, skillHrid, itemDetailMap) {
     let totalCharmXP = 0;
+    const breakdown = [];
 
     // Convert skill HRID to stat name (e.g., "/skills/foraging" → "foragingExperience")
     const skillName = skillHrid.replace('/skills/', '');
@@ -96,9 +97,19 @@ export function parseCharmExperience(equipment, skillHrid, itemDetailMap) {
         // Calculate total charm XP from this item
         const itemCharmXP = (baseCharmXP + (enhancementBonus * enhancementLevel * multiplier)) * 100;
         totalCharmXP += itemCharmXP;
+
+        // Add to breakdown
+        breakdown.push({
+            name: itemDetails.name,
+            value: itemCharmXP,
+            enhancementLevel: enhancementLevel
+        });
     }
 
-    return totalCharmXP;
+    return {
+        total: totalCharmXP,
+        breakdown: breakdown
+    };
 }
 
 /**
@@ -200,8 +211,9 @@ export function calculateExperienceMultiplier(skillHrid, actionTypeHrid) {
 
     const totalWisdom = equipmentWisdom + houseWisdom + communityWisdom + consumableWisdom;
 
-    // Parse charm experience (skill-specific)
-    const charmExperience = parseCharmExperience(equipment, skillHrid, itemDetailMap);
+    // Parse charm experience (skill-specific) - now returns object with total and breakdown
+    const charmData = parseCharmExperience(equipment, skillHrid, itemDetailMap);
+    const charmExperience = charmData.total;
 
     // Total multiplier (additive)
     const totalMultiplier = 1 + (totalWisdom / 100) + (charmExperience / 100);
@@ -210,6 +222,7 @@ export function calculateExperienceMultiplier(skillHrid, actionTypeHrid) {
         totalMultiplier,
         totalWisdom,
         charmExperience,
+        charmBreakdown: charmData.breakdown,
         breakdown: {
             equipmentWisdom,
             houseWisdom,

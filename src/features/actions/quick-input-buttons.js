@@ -643,9 +643,17 @@ class QuickInputButtons {
                     }
                 }
 
-                // Charm experience breakdown
+                // Equipment skill-specific XP (separate from wisdom)
                 if (xpData.charmExperience > 0) {
-                    lines.push(`  Charm Experience: +${xpData.charmExperience.toFixed(1)}%`);
+                    const skillName = skillHrid.replace('/skills/', '').charAt(0).toUpperCase() + skillHrid.replace('/skills/', '').slice(1);
+                    lines.push(`  Equipment (${skillName} XP): +${xpData.charmExperience.toFixed(1)}%`);
+                    // Show which equipment items are providing skill XP
+                    if (xpData.charmBreakdown && xpData.charmBreakdown.length > 0) {
+                        for (const item of xpData.charmBreakdown) {
+                            const enhText = item.enhancementLevel > 0 ? ` +${item.enhancementLevel}` : '';
+                            lines.push(`    • ${item.name}${enhText}: +${item.value.toFixed(1)}%`);
+                        }
+                    }
                 }
             }
 
