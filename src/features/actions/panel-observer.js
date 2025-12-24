@@ -501,16 +501,18 @@ function setupInputObservers(panel, itemHrid) {
  * @param {string} icon - Icon/emoji for the section
  * @param {string} title - Section title
  * @param {string} summary - Summary text (shown when collapsed)
- * @param {HTMLElement} detailsContent - Detailed content element
+ * @param {HTMLElement} content - Content element to show/hide
  * @param {boolean} defaultOpen - Whether section starts open
+ * @param {number} indent - Indentation level (0 = root, 1 = nested, etc.)
  * @returns {HTMLElement} Section container
  */
-function createCollapsibleSection(icon, title, summary, detailsContent, defaultOpen = false) {
+function createCollapsibleSection(icon, title, summary, content, defaultOpen = false, indent = 0) {
     const section = document.createElement('div');
     section.className = 'mwi-collapsible-section';
     section.style.cssText = `
-        margin-top: 8px;
-        margin-bottom: 8px;
+        margin-top: ${indent > 0 ? '4px' : '8px'};
+        margin-bottom: ${indent > 0 ? '4px' : '8px'};
+        margin-left: ${indent * 16}px;
     `;
 
     // Create header
@@ -523,7 +525,8 @@ function createCollapsibleSection(icon, title, summary, detailsContent, defaultO
         user-select: none;
         padding: 4px 0;
         color: var(--text-color-primary, #fff);
-        font-weight: 500;
+        font-weight: ${indent === 0 ? '500' : '400'};
+        font-size: ${indent > 0 ? '0.9em' : '1em'};
     `;
 
     const arrow = document.createElement('span');
@@ -535,7 +538,7 @@ function createCollapsibleSection(icon, title, summary, detailsContent, defaultO
     `;
 
     const label = document.createElement('span');
-    label.textContent = `${icon} ${title}`;
+    label.textContent = icon ? `${icon} ${title}` : title;
 
     header.appendChild(arrow);
     header.appendChild(label);
@@ -549,31 +552,37 @@ function createCollapsibleSection(icon, title, summary, detailsContent, defaultO
         font-size: 0.9em;
         display: ${defaultOpen ? 'none' : 'block'};
     `;
-    summaryDiv.textContent = summary;
+    if (summary) {
+        summaryDiv.textContent = summary;
+    }
 
-    // Create details content wrapper
+    // Create content wrapper
     const contentWrapper = document.createElement('div');
     contentWrapper.className = 'mwi-section-content';
     contentWrapper.style.cssText = `
         display: ${defaultOpen ? 'block' : 'none'};
-        margin-left: 16px;
+        margin-left: ${indent === 0 ? '16px' : '0px'};
         margin-top: 4px;
         color: var(--text-color-secondary, #888);
         font-size: 0.9em;
         line-height: 1.6;
     `;
-    contentWrapper.appendChild(detailsContent);
+    contentWrapper.appendChild(content);
 
     // Toggle functionality
     header.addEventListener('click', () => {
         const isOpen = contentWrapper.style.display === 'block';
         contentWrapper.style.display = isOpen ? 'none' : 'block';
-        summaryDiv.style.display = isOpen ? 'block' : 'none';
+        if (summary) {
+            summaryDiv.style.display = isOpen ? 'block' : 'none';
+        }
         arrow.textContent = isOpen ? '▶' : '▼';
     });
 
     section.appendChild(header);
-    section.appendChild(summaryDiv);
+    if (summary) {
+        section.appendChild(summaryDiv);
+    }
     section.appendChild(contentWrapper);
 
     return section;
@@ -598,24 +607,173 @@ async function displayGatheringProfit(panel, actionHrid) {
         existingProfit.remove();
     }
 
-    // Create summary line
+    // Create top-level summary
     const profit = Math.round(profitData.profitPerHour);
     const revenue = Math.round(profitData.revenuePerHour);
     const costs = Math.round(profitData.drinkCostPerHour);
-    const summary = `Profit: ${formatWithSeparator(profit)}/hr | Revenue: ${formatWithSeparator(revenue)}/hr | Costs: ${formatWithSeparator(costs)}/hr`;
+    const summary = `Profit: ${formatWithSeparator(profit)}/hr (Revenue: ${formatWithSeparator(revenue)} - Costs: ${formatWithSeparator(costs)})`;
 
-    // Create detailed content
-    const detailsDiv = document.createElement('div');
-    const profitHTML = formatProfitDisplay(profitData);
-    detailsDiv.innerHTML = profitHTML;
+    // ===== Build Detailed Breakdown Content =====
+    const detailsContent = document.createElement('div');
 
-    // Create collapsible section
+    // Revenue Section
+    const revenueDiv = document.createElement('div');
+    revenueDiv.innerHTML = `<div style="font-weight: 500; color: var(--text-color-primary, #fff); margin-bottom: 4px;">Revenue: ${formatWithSeparator(revenue)}/hr</div>`;
+
+    // Base Output subsection
+    const baseOutputContent = document.createElement('div');
+    if (profitData.baseOutputs && profitData.baseOutputs.length > 0) {
+        for (const output of profitData.baseOutputs) {
+            const decimals = output.itemsPerHour < 1 ? 2 : 1;
+            const line = document.createElement('div');
+            line.style.marginLeft = '8px';
+            line.textContent = `• ${output.name}: ${output.itemsPerHour.toFixed(decimals)}/hr @ ${formatWithSeparator(output.priceEach)} each → ${formatWithSeparator(Math.round(output.revenuePerHour))}/hr`;
+            baseOutputContent.appendChild(line);
+        }
+    }
+
+    const baseRevenue = profitData.baseOutputs?.reduce((sum, o) => sum + o.revenuePerHour, 0) || 0;
+    const baseOutputSection = createCollapsibleSection(
+        '',
+        `Base Output: ${formatWithSeparator(Math.round(baseRevenue))}/hr (${profitData.baseOutputs?.length || 0} item${profitData.baseOutputs?.length !== 1 ? 's' : ''})`,
+        null,
+        baseOutputContent,
+        false,
+        1
+    );
+
+    // Bonus Drops subsection
+    const bonusDropsContent = document.createElement('div');
+    if (profitData.bonusRevenue?.bonusDrops && profitData.bonusRevenue.bonusDrops.length > 0) {
+        for (const drop of profitData.bonusRevenue.bonusDrops) {
+            const decimals = drop.dropsPerHour < 1 ? 2 : 1;
+            const line = document.createElement('div');
+            line.style.marginLeft = '8px';
+            line.textContent = `• ${drop.itemName}: ${drop.dropsPerHour.toFixed(decimals)}/hr (${(drop.dropRate * 100).toFixed(drop.dropRate < 0.01 ? 3 : 2)}%) → ${formatWithSeparator(Math.round(drop.revenuePerHour))}/hr`;
+            bonusDropsContent.appendChild(line);
+        }
+    }
+
+    const bonusRevenue = Math.round(profitData.bonusRevenue?.totalBonusRevenue || 0);
+    const bonusCount = profitData.bonusRevenue?.bonusDrops?.length || 0;
+    const rareFindBonus = profitData.bonusRevenue?.rareFindBonus || 0;
+    const bonusDropsSection = createCollapsibleSection(
+        '',
+        `Bonus Drops: ${formatWithSeparator(bonusRevenue)}/hr (${bonusCount} item${bonusCount !== 1 ? 's' : ''}, ${rareFindBonus.toFixed(1)}% rare find)`,
+        null,
+        bonusDropsContent,
+        false,
+        1
+    );
+
+    revenueDiv.appendChild(baseOutputSection);
+    if (bonusRevenue > 0) {
+        revenueDiv.appendChild(bonusDropsSection);
+    }
+
+    // Costs Section
+    const costsDiv = document.createElement('div');
+    costsDiv.innerHTML = `<div style="font-weight: 500; color: var(--text-color-primary, #fff); margin-top: 12px; margin-bottom: 4px;">Costs: ${formatWithSeparator(costs)}/hr</div>`;
+
+    // Drink Costs subsection
+    const drinkCostsContent = document.createElement('div');
+    if (profitData.drinkCosts && profitData.drinkCosts.length > 0) {
+        for (const drink of profitData.drinkCosts) {
+            const line = document.createElement('div');
+            line.style.marginLeft = '8px';
+            line.textContent = `• ${drink.name}: ${drink.drinksPerHour.toFixed(1)}/hr @ ${formatWithSeparator(drink.priceEach)} → ${formatWithSeparator(Math.round(drink.costPerHour))}/hr`;
+            drinkCostsContent.appendChild(line);
+        }
+    }
+
+    const drinkCount = profitData.drinkCosts?.length || 0;
+    const drinkCostsSection = createCollapsibleSection(
+        '',
+        `Drink Costs: ${formatWithSeparator(costs)}/hr (${drinkCount} drink${drinkCount !== 1 ? 's' : ''})`,
+        null,
+        drinkCostsContent,
+        false,
+        1
+    );
+
+    costsDiv.appendChild(drinkCostsSection);
+
+    // Modifiers Section
+    const modifiersDiv = document.createElement('div');
+    modifiersDiv.style.cssText = `
+        margin-top: 12px;
+        color: var(--text-color-secondary, #888);
+    `;
+
+    const modifierLines = [];
+
+    // Efficiency breakdown
+    const effParts = [];
+    if (profitData.details.levelEfficiency > 0) {
+        effParts.push(`${profitData.details.levelEfficiency}% level`);
+    }
+    if (profitData.details.houseEfficiency > 0) {
+        effParts.push(`${profitData.details.houseEfficiency.toFixed(1)}% house`);
+    }
+    if (profitData.details.teaEfficiency > 0) {
+        effParts.push(`${profitData.details.teaEfficiency.toFixed(1)}% tea`);
+    }
+    if (profitData.details.equipmentEfficiency > 0) {
+        effParts.push(`${profitData.details.equipmentEfficiency.toFixed(1)}% equip`);
+    }
+    if (profitData.details.gourmetBonus > 0) {
+        effParts.push(`${profitData.details.gourmetBonus.toFixed(1)}% gourmet`);
+    }
+
+    if (effParts.length > 0) {
+        modifierLines.push(`<div style="font-weight: 500; color: var(--text-color-primary, #fff);">Modifiers:</div>`);
+        modifierLines.push(`<div style="margin-left: 8px;">• Efficiency: +${profitData.totalEfficiency.toFixed(1)}% (${effParts.join(', ')})</div>`);
+    }
+
+    // Gathering Quantity
+    if (profitData.gatheringQuantity > 0) {
+        const gatheringParts = [];
+        if (profitData.details.communityBuffQuantity > 0) {
+            gatheringParts.push(`${profitData.details.communityBuffQuantity.toFixed(1)}% community`);
+        }
+        if (profitData.details.gatheringTeaBonus > 0) {
+            gatheringParts.push(`${profitData.details.gatheringTeaBonus.toFixed(1)}% tea`);
+        }
+        modifierLines.push(`<div style="margin-left: 8px;">• Gathering Quantity: +${profitData.gatheringQuantity.toFixed(1)}% (${gatheringParts.join(', ')})</div>`);
+    }
+
+    modifiersDiv.innerHTML = modifierLines.join('');
+
+    // Assemble Detailed Breakdown
+    detailsContent.appendChild(revenueDiv);
+    detailsContent.appendChild(costsDiv);
+    detailsContent.appendChild(modifiersDiv);
+
+    // Create "Detailed Breakdown" collapsible
+    const topLevelContent = document.createElement('div');
+    topLevelContent.innerHTML = `
+        <div style="margin-bottom: 4px;">Actions: ${profitData.actionsPerHour.toFixed(1)}/hr | Efficiency: +${profitData.totalEfficiency.toFixed(1)}%</div>
+    `;
+
+    const detailedBreakdownSection = createCollapsibleSection(
+        '📊',
+        'Detailed Breakdown',
+        null,
+        detailsContent,
+        false,
+        0
+    );
+
+    topLevelContent.appendChild(detailedBreakdownSection);
+
+    // Create main profit section
     const profitSection = createCollapsibleSection(
         '💰',
         'Profitability (Gathering)',
         summary,
-        detailsDiv,
-        false // Start collapsed
+        topLevelContent,
+        false,
+        0
     );
     profitSection.id = 'mwi-foraging-profit';
 
