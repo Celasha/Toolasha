@@ -18,6 +18,7 @@ import { parseTeaEfficiency, getDrinkConcentration, parseActionLevelBonus } from
 import { calculateHouseEfficiency } from '../../utils/house-efficiency.js';
 import { stackAdditive } from '../../utils/efficiency.js';
 import { timeReadable, formatWithSeparator } from '../../utils/formatters.js';
+import { calculateExperienceMultiplier } from '../../utils/experience-parser.js';
 
 /**
  * QuickInputButtons class manages quick input button injection
@@ -595,6 +596,9 @@ class QuickInputButtons {
             const xpForLevelRange = xpForNextLevel - xpForCurrentLevel;
             const dailyLevelProgress = xpPerDay / xpForLevelRange;
 
+            // Calculate XP multipliers and breakdown
+            const xpData = calculateExperienceMultiplier(skillHrid, actionDetails.type);
+
             // Create content
             const content = document.createElement('div');
             content.style.cssText = `
@@ -616,7 +620,35 @@ class QuickInputButtons {
             lines.push('');
 
             // Action details
-            lines.push(`XP per action: ${formatWithSeparator(xpPerAction)}`);
+            const baseXP = xpPerAction / xpData.totalMultiplier;
+            const modifiedXP = xpPerAction;
+            lines.push(`XP per action: ${formatWithSeparator(baseXP.toFixed(1))} base → ${formatWithSeparator(modifiedXP.toFixed(1))} (×${xpData.totalMultiplier.toFixed(2)})`);
+
+            // XP breakdown (if any bonuses exist)
+            if (xpData.totalWisdom > 0 || xpData.charmExperience > 0) {
+                const breakdownParts = [];
+                if (xpData.breakdown.equipmentWisdom > 0) {
+                    breakdownParts.push(`${xpData.breakdown.equipmentWisdom.toFixed(1)}% equipment`);
+                }
+                if (xpData.breakdown.houseWisdom > 0) {
+                    breakdownParts.push(`${xpData.breakdown.houseWisdom.toFixed(1)}% house`);
+                }
+                if (xpData.breakdown.communityWisdom > 0) {
+                    breakdownParts.push(`${xpData.breakdown.communityWisdom.toFixed(1)}% community`);
+                }
+                if (xpData.breakdown.consumableWisdom > 0) {
+                    breakdownParts.push(`${xpData.breakdown.consumableWisdom.toFixed(1)}% tea`);
+                }
+                if (xpData.charmExperience > 0) {
+                    breakdownParts.push(`${xpData.charmExperience.toFixed(1)}% charm`);
+                }
+
+                if (breakdownParts.length > 0) {
+                    lines.push(`  → Wisdom: +${xpData.totalWisdom.toFixed(1)}%${xpData.charmExperience > 0 ? `, Charm: +${xpData.charmExperience.toFixed(1)}%` : ''}`);
+                    lines.push(`  → (${breakdownParts.join(', ')})`);
+                }
+            }
+
             lines.push(`Actions to level: ${formatWithSeparator(actionsNeeded)} actions`);
             lines.push(`Time to level: ${timeReadable(timeNeeded)}`);
             lines.push('');
