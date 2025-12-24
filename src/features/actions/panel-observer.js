@@ -11,6 +11,7 @@
 import dataManager from '../../core/data-manager.js';
 import { calculateGatheringProfit, formatProfitDisplay } from './gathering-profit.js';
 import { displayEnhancementStats } from './enhancement-display.js';
+import { formatWithSeparator } from '../../utils/formatters.js';
 
 /**
  * Action types for gathering skills (3 skills)
@@ -496,6 +497,89 @@ function setupInputObservers(panel, itemHrid) {
 }
 
 /**
+ * Create a collapsible section
+ * @param {string} icon - Icon/emoji for the section
+ * @param {string} title - Section title
+ * @param {string} summary - Summary text (shown when collapsed)
+ * @param {HTMLElement} detailsContent - Detailed content element
+ * @param {boolean} defaultOpen - Whether section starts open
+ * @returns {HTMLElement} Section container
+ */
+function createCollapsibleSection(icon, title, summary, detailsContent, defaultOpen = false) {
+    const section = document.createElement('div');
+    section.className = 'mwi-collapsible-section';
+    section.style.cssText = `
+        margin-top: 8px;
+        margin-bottom: 8px;
+    `;
+
+    // Create header
+    const header = document.createElement('div');
+    header.className = 'mwi-section-header';
+    header.style.cssText = `
+        display: flex;
+        align-items: center;
+        cursor: pointer;
+        user-select: none;
+        padding: 4px 0;
+        color: var(--text-color-primary, #fff);
+        font-weight: 500;
+    `;
+
+    const arrow = document.createElement('span');
+    arrow.textContent = defaultOpen ? '▼' : '▶';
+    arrow.style.cssText = `
+        margin-right: 6px;
+        font-size: 0.7em;
+        transition: transform 0.2s;
+    `;
+
+    const label = document.createElement('span');
+    label.textContent = `${icon} ${title}`;
+
+    header.appendChild(arrow);
+    header.appendChild(label);
+
+    // Create summary (shown when collapsed)
+    const summaryDiv = document.createElement('div');
+    summaryDiv.style.cssText = `
+        margin-left: 16px;
+        margin-top: 2px;
+        color: var(--text-color-secondary, #888);
+        font-size: 0.9em;
+        display: ${defaultOpen ? 'none' : 'block'};
+    `;
+    summaryDiv.textContent = summary;
+
+    // Create details content wrapper
+    const contentWrapper = document.createElement('div');
+    contentWrapper.className = 'mwi-section-content';
+    contentWrapper.style.cssText = `
+        display: ${defaultOpen ? 'block' : 'none'};
+        margin-left: 16px;
+        margin-top: 4px;
+        color: var(--text-color-secondary, #888);
+        font-size: 0.9em;
+        line-height: 1.6;
+    `;
+    contentWrapper.appendChild(detailsContent);
+
+    // Toggle functionality
+    header.addEventListener('click', () => {
+        const isOpen = contentWrapper.style.display === 'block';
+        contentWrapper.style.display = isOpen ? 'none' : 'block';
+        summaryDiv.style.display = isOpen ? 'block' : 'none';
+        arrow.textContent = isOpen ? '▶' : '▼';
+    });
+
+    section.appendChild(header);
+    section.appendChild(summaryDiv);
+    section.appendChild(contentWrapper);
+
+    return section;
+}
+
+/**
  * Display gathering profit calculation in panel
  * @param {HTMLElement} panel - Action panel element
  * @param {string} actionHrid - Action HRID
@@ -508,33 +592,51 @@ async function displayGatheringProfit(panel, actionHrid) {
         return;
     }
 
-    // Format and inject HTML
-    const profitHTML = formatProfitDisplay(profitData);
-    if (!profitHTML) {
-        console.error('❌ Profit display generation failed');
-        return;
-    }
-
-    // Find insertion point (after drop table)
-    const dropTableElement = panel.querySelector(SELECTORS.DROP_TABLE);
-    if (!dropTableElement) return;
-
     // Check if we already added profit display
     const existingProfit = panel.querySelector('#mwi-foraging-profit');
     if (existingProfit) {
         existingProfit.remove();
     }
 
-    // Create profit display container
-    const profitContainer = document.createElement('div');
-    profitContainer.id = 'mwi-foraging-profit';
-    profitContainer.innerHTML = profitHTML;
+    // Create summary line
+    const profit = Math.round(profitData.profitPerHour);
+    const revenue = Math.round(profitData.revenuePerHour);
+    const costs = Math.round(profitData.drinkCostPerHour);
+    const summary = `Profit: ${formatWithSeparator(profit)}/hr | Revenue: ${formatWithSeparator(revenue)}/hr | Costs: ${formatWithSeparator(costs)}/hr`;
 
-    // Insert after drop table
-    dropTableElement.parentNode.insertBefore(
-        profitContainer,
-        dropTableElement.nextSibling
+    // Create detailed content
+    const detailsDiv = document.createElement('div');
+    const profitHTML = formatProfitDisplay(profitData);
+    detailsDiv.innerHTML = profitHTML;
+
+    // Create collapsible section
+    const profitSection = createCollapsibleSection(
+        '💰',
+        'Profitability (Gathering)',
+        summary,
+        detailsDiv,
+        false // Start collapsed
     );
+    profitSection.id = 'mwi-foraging-profit';
+
+    // Find insertion point - look for existing collapsible sections or drop table
+    let insertionPoint = panel.querySelector('.mwi-collapsible-section');
+    if (insertionPoint) {
+        // Insert after last collapsible section
+        while (insertionPoint.nextElementSibling && insertionPoint.nextElementSibling.className === 'mwi-collapsible-section') {
+            insertionPoint = insertionPoint.nextElementSibling;
+        }
+        insertionPoint.insertAdjacentElement('afterend', profitSection);
+    } else {
+        // Fallback: insert after drop table
+        const dropTableElement = panel.querySelector(SELECTORS.DROP_TABLE);
+        if (dropTableElement) {
+            dropTableElement.parentNode.insertBefore(
+                profitSection,
+                dropTableElement.nextSibling
+            );
+        }
+    }
 }
 
 /**

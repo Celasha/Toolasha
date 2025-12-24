@@ -71,13 +71,80 @@ class QuickInputButtons {
     }
 
     /**
+     * Create a collapsible section
+     * @param {string} id - Unique ID for the section
+     * @param {string} icon - Icon/emoji for the section
+     * @param {string} title - Section title
+     * @param {HTMLElement} content - Content element to show/hide
+     * @param {boolean} defaultOpen - Whether section starts open
+     * @returns {HTMLElement} Section container
+     */
+    createCollapsibleSection(id, icon, title, content, defaultOpen = true) {
+        const section = document.createElement('div');
+        section.className = 'mwi-collapsible-section';
+        section.style.cssText = `
+            margin-top: 8px;
+            margin-bottom: 8px;
+        `;
+
+        // Create header
+        const header = document.createElement('div');
+        header.className = 'mwi-section-header';
+        header.style.cssText = `
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            user-select: none;
+            padding: 4px 0;
+            color: var(--text-color-primary, #fff);
+            font-weight: 500;
+        `;
+
+        const arrow = document.createElement('span');
+        arrow.textContent = defaultOpen ? '▼' : '▶';
+        arrow.style.cssText = `
+            margin-right: 6px;
+            font-size: 0.7em;
+            transition: transform 0.2s;
+        `;
+
+        const label = document.createElement('span');
+        label.textContent = `${icon} ${title}`;
+
+        header.appendChild(arrow);
+        header.appendChild(label);
+
+        // Create content wrapper
+        const contentWrapper = document.createElement('div');
+        contentWrapper.className = 'mwi-section-content';
+        contentWrapper.style.cssText = `
+            display: ${defaultOpen ? 'block' : 'none'};
+            margin-left: 16px;
+            margin-top: 4px;
+        `;
+        contentWrapper.appendChild(content);
+
+        // Toggle functionality
+        header.addEventListener('click', () => {
+            const isOpen = contentWrapper.style.display === 'block';
+            contentWrapper.style.display = isOpen ? 'none' : 'block';
+            arrow.textContent = isOpen ? '▶' : '▼';
+        });
+
+        section.appendChild(header);
+        section.appendChild(contentWrapper);
+
+        return section;
+    }
+
+    /**
      * Inject quick input buttons into action panel
      * @param {HTMLElement} panel - Action panel element
      */
     injectButtons(panel) {
         try {
             // Check if already injected
-            if (panel.querySelector('.mwi-quick-input-buttons') || panel.querySelector('.mwi-speed-breakdown')) {
+            if (panel.querySelector('.mwi-collapsible-section')) {
                 return;
             }
 
@@ -116,18 +183,6 @@ class QuickInputButtons {
                 return;
             }
 
-            // Create speed breakdown display
-            const speedBreakdownDiv = document.createElement('div');
-            speedBreakdownDiv.className = 'mwi-speed-breakdown';
-            speedBreakdownDiv.style.cssText = `
-                margin-top: 4px;
-                margin-bottom: 4px;
-                text-align: left;
-                color: var(--text-color-secondary, #888);
-                font-size: 0.85em;
-                line-height: 1.4;
-            `;
-
             // Get equipment details for display
             const equipment = dataManager.getEquipment();
             const itemDetailMap = dataManager.getInitClientData()?.itemDetailMap || {};
@@ -140,56 +195,56 @@ class QuickInputButtons {
                 itemDetailMap
             );
 
-            // Build speed breakdown text
-            const speedLines = [];
-            speedLines.push(`<span style="color: var(--text-color-primary, #fff);">Action Speed:</span>`);
-            speedLines.push(`  Base time: ${baseTime.toFixed(2)}s`);
-            if (speedBonus > 0) {
-                speedLines.push(`  Speed bonus: +${(speedBonus * 100).toFixed(1)}%`);
-            }
-            speedLines.push(`  <span style="color: var(--text-color-primary, #fff);">Final time: ${actionTime.toFixed(2)}s/action (${(3600 / actionTime).toFixed(0)}/hr)</span>`);
-
-            speedBreakdownDiv.innerHTML = speedLines.join('<br>');
-
-            // Insert speed breakdown
-            inputContainer.insertAdjacentElement('afterend', speedBreakdownDiv);
-
-            // Create total time display div (inserted after speed breakdown)
-            const totalTimeDiv = document.createElement('div');
-            totalTimeDiv.className = 'mwi-total-time-display';
-            totalTimeDiv.style.cssText = `
-                margin-top: 4px;
-                margin-bottom: 4px;
-                text-align: left;
-                color: var(--text-color-main, #6fb8e8);
-                font-weight: 500;
+            // ===== SECTION 1: Action Speed & Time =====
+            const speedContent = document.createElement('div');
+            speedContent.style.cssText = `
+                color: var(--text-color-secondary, #888);
+                font-size: 0.9em;
+                line-height: 1.6;
             `;
 
-            // Function to update total time display
+            const speedLines = [];
+            speedLines.push(`Base: ${baseTime.toFixed(2)}s → ${actionTime.toFixed(2)}s`);
+            if (speedBonus > 0) {
+                speedLines.push(`Speed: +${(speedBonus * 100).toFixed(1)}% | ${(3600 / actionTime).toFixed(0)}/hr`);
+            } else {
+                speedLines.push(`${(3600 / actionTime).toFixed(0)}/hr`);
+            }
+
+            // Total time (dynamic)
+            const totalTimeLine = document.createElement('div');
+            totalTimeLine.style.cssText = `
+                color: var(--text-color-main, #6fb8e8);
+                font-weight: 500;
+                margin-top: 4px;
+            `;
+
             const updateTotalTime = () => {
                 const inputValue = numberInput.value;
 
-                // Check for infinity (∞ symbol when infinity is selected)
                 if (inputValue === '∞') {
-                    totalTimeDiv.textContent = 'Total time: ∞';
+                    totalTimeLine.textContent = 'Total time: ∞';
                     return;
                 }
 
                 const queueCount = parseInt(inputValue) || 0;
                 if (queueCount > 0) {
-                    // Account for efficiency reducing actions needed
                     const actualActionsNeeded = queueCount / efficiencyMultiplier;
                     const totalSeconds = actualActionsNeeded * actionTime;
-                    totalTimeDiv.textContent = `Total time: ${timeReadable(totalSeconds)}`;
+                    totalTimeLine.textContent = `Total time: ${timeReadable(totalSeconds)}`;
                 } else {
-                    totalTimeDiv.textContent = 'Total time: 0s';
+                    totalTimeLine.textContent = 'Total time: 0s';
                 }
             };
+
+            speedLines.push(''); // Empty line before total time
+            speedContent.innerHTML = speedLines.join('<br>');
+            speedContent.appendChild(totalTimeLine);
 
             // Initial update
             updateTotalTime();
 
-            // Watch for input changes using MutationObserver (game uses attribute mutations)
+            // Watch for input changes
             const inputObserver = new MutationObserver(() => {
                 updateTotalTime();
             });
@@ -199,68 +254,72 @@ class QuickInputButtons {
                 attributeFilter: ['value']
             });
 
-            // Also listen to input/change events for manual typing
             numberInput.addEventListener('input', updateTotalTime);
             numberInput.addEventListener('change', updateTotalTime);
-
-            // Listen to panel clicks (buttons, etc.)
             panel.addEventListener('click', () => {
                 setTimeout(updateTotalTime, 50);
             });
 
-            // Insert total time display after speed breakdown
-            speedBreakdownDiv.insertAdjacentElement('afterend', totalTimeDiv);
+            const speedSection = this.createCollapsibleSection(
+                'speed-time',
+                '⏱',
+                'Action Speed & Time',
+                speedContent,
+                true
+            );
 
-            // Create button container
-            const buttonContainer = document.createElement('div');
-            buttonContainer.className = 'mwi-quick-input-buttons';
-            buttonContainer.style.cssText = `
-                margin-top: 4px;
-                margin-bottom: 4px;
-                text-align: left;
+            // ===== SECTION 2: Quick Queue Setup =====
+            const queueContent = document.createElement('div');
+            queueContent.style.cssText = `
                 color: var(--text-color-secondary, #888);
+                font-size: 0.9em;
             `;
 
             // FIRST ROW: Time-based buttons (hours)
-            buttonContainer.appendChild(document.createTextNode('Do '));
+            queueContent.appendChild(document.createTextNode('Do '));
 
             this.presetHours.forEach(hours => {
                 const button = this.createButton(hours === 0.5 ? '0.5' : hours.toString(), () => {
-                    // Calculate: (hours * 3600 seconds * efficiency) / action duration = number of actions
                     const actionCount = Math.round((hours * 60 * 60 * efficiencyMultiplier) / actionTime);
                     this.setInputValue(numberInput, actionCount);
                 });
-                buttonContainer.appendChild(button);
+                queueContent.appendChild(button);
             });
 
-            buttonContainer.appendChild(document.createTextNode(' hours'));
-
-            // Line break between rows
-            buttonContainer.appendChild(document.createElement('div'));
+            queueContent.appendChild(document.createTextNode(' hours'));
+            queueContent.appendChild(document.createElement('div')); // Line break
 
             // SECOND ROW: Count-based buttons (times)
-            buttonContainer.appendChild(document.createTextNode('Do '));
+            queueContent.appendChild(document.createTextNode('Do '));
 
             this.presetValues.forEach(value => {
                 const button = this.createButton(value.toLocaleString(), () => {
                     this.setInputValue(numberInput, value);
                 });
-                buttonContainer.appendChild(button);
+                queueContent.appendChild(button);
             });
 
-            // Add Max button
             const maxButton = this.createButton('Max', () => {
                 const maxValue = this.calculateMaxValue(panel);
                 if (maxValue > 0) {
                     this.setInputValue(numberInput, maxValue);
                 }
             });
-            buttonContainer.appendChild(maxButton);
+            queueContent.appendChild(maxButton);
 
-            buttonContainer.appendChild(document.createTextNode(' times'));
+            queueContent.appendChild(document.createTextNode(' times'));
 
-            // Insert buttons after total time display
-            totalTimeDiv.insertAdjacentElement('afterend', buttonContainer);
+            const queueSection = this.createCollapsibleSection(
+                'quick-queue',
+                '⚡',
+                'Quick Queue Setup',
+                queueContent,
+                true
+            );
+
+            // Insert sections
+            inputContainer.insertAdjacentElement('afterend', speedSection);
+            speedSection.insertAdjacentElement('afterend', queueSection);
 
         } catch (error) {
             console.error('[MWI Tools] Error injecting quick input buttons:', error);
