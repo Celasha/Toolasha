@@ -13,6 +13,10 @@
  */
 
 import dataManager from '../../core/data-manager.js';
+import { parseEquipmentSpeedBonuses, parseEquipmentEfficiencyBonuses } from '../../utils/equipment-parser.js';
+import { parseTeaEfficiency, getDrinkConcentration, parseActionLevelBonus } from '../../utils/tea-parser.js';
+import { calculateHouseEfficiency } from '../../utils/house-efficiency.js';
+import { stackAdditive } from '../../utils/efficiency.js';
 
 /**
  * QuickInputButtons class manages quick input button injection
@@ -21,6 +25,7 @@ class QuickInputButtons {
     constructor() {
         this.isInitialized = false;
         this.observer = null;
+        this.presetHours = [0.5, 1, 2, 3, 4, 5, 6, 10, 12, 24];
         this.presetValues = [10, 100, 1000];
     }
 
@@ -88,9 +93,23 @@ class QuickInputButtons {
                 return;
             }
 
+            // Get action details for time-based calculations
+            const actionNameElement = panel.querySelector('[class*="SkillActionDetail_name"]');
+            if (!actionNameElement) {
+                return;
+            }
+
+            const actionName = actionNameElement.textContent.trim();
+            const actionDetails = this.getActionDetailsByName(actionName);
+            if (!actionDetails) {
+                return;
+            }
+
+            // Calculate action duration and efficiency
+            const { actionTime, totalEfficiency } = this.calculateActionMetrics(actionDetails);
+            const efficiencyMultiplier = 1 + (totalEfficiency / 100);
+
             // Find the container to insert after (same as original MWI Tools)
-            // Original: const gatherDiv = inputElem.parentNode.parentNode.parentNode;
-            // Then: gatherDiv.insertAdjacentHTML("afterend", hTMLStr);
             const inputContainer = numberInput.parentNode.parentNode.parentNode;
             if (!inputContainer) {
                 return;
@@ -106,10 +125,26 @@ class QuickInputButtons {
                 color: var(--text-color-secondary, #888);
             `;
 
-            // Add "Do " label
+            // FIRST ROW: Time-based buttons (hours)
             buttonContainer.appendChild(document.createTextNode('Do '));
 
-            // Add preset value buttons
+            this.presetHours.forEach(hours => {
+                const button = this.createButton(hours === 0.5 ? '0.5' : hours.toString(), () => {
+                    // Calculate: (hours * 3600 seconds * efficiency) / action duration = number of actions
+                    const actionCount = Math.round((hours * 60 * 60 * efficiencyMultiplier) / actionTime);
+                    this.setInputValue(numberInput, actionCount);
+                });
+                buttonContainer.appendChild(button);
+            });
+
+            buttonContainer.appendChild(document.createTextNode(' hours'));
+
+            // Line break between rows
+            buttonContainer.appendChild(document.createElement('div'));
+
+            // SECOND ROW: Count-based buttons (times)
+            buttonContainer.appendChild(document.createTextNode('Do '));
+
             this.presetValues.forEach(value => {
                 const button = this.createButton(value.toLocaleString(), () => {
                     this.setInputValue(numberInput, value);
@@ -126,16 +161,115 @@ class QuickInputButtons {
             });
             buttonContainer.appendChild(maxButton);
 
-            // Add " times" label
             buttonContainer.appendChild(document.createTextNode(' times'));
 
             // Insert buttons inside the panel, after the input container
-            // This matches original MWI Tools positioning
             inputContainer.insertAdjacentElement('afterend', buttonContainer);
 
         } catch (error) {
             console.error('[MWI Tools] Error injecting quick input buttons:', error);
         }
+    }
+
+    /**
+     * Get action details by name
+     * @param {string} actionName - Display name of the action
+     * @returns {Object|null} Action details or null if not found
+     */
+    getActionDetailsByName(actionName) {
+        const actionDetailMap = dataManager.getInitClientData()?.actionDetailMap;
+        if (!actionDetailMap) {
+            return null;
+        }
+
+        // Find action by matching name
+        for (const [hrid, details] of Object.entries(actionDetailMap)) {
+            if (details.name === actionName) {
+                return details;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Calculate action time and efficiency for current character state
+     * @param {Object} actionDetails - Action details from game data
+     * @returns {Object} {actionTime, totalEfficiency}
+     */
+    calculateActionMetrics(actionDetails) {
+        const equipment = dataManager.getEquipment();
+        const skills = dataManager.getSkills();
+        const itemDetailMap = dataManager.getInitClientData()?.itemDetailMap || {};
+
+        // Calculate base action time
+        const baseTime = actionDetails.baseTimeCost / 1e9; // nanoseconds to seconds
+
+        // Get equipment speed bonus
+        const speedBonus = parseEquipmentSpeedBonuses(
+            equipment,
+            actionDetails.type,
+            itemDetailMap
+        );
+
+        // Calculate actual action time (with speed)
+        const actionTime = baseTime / (1 + speedBonus);
+
+        // Calculate efficiency
+        const skillLevel = this.getSkillLevel(skills, actionDetails.type);
+        const baseRequirement = actionDetails.levelRequirement?.level || 1;
+
+        // Get drink concentration
+        const drinkConcentration = getDrinkConcentration(equipment, itemDetailMap);
+
+        // Get active drinks for this action type
+        const activeDrinks = dataManager.getActionDrinkSlots(actionDetails.type);
+
+        // Calculate Action Level bonus from teas
+        const actionLevelBonus = parseActionLevelBonus(
+            activeDrinks,
+            itemDetailMap,
+            drinkConcentration
+        );
+
+        // Calculate efficiency components
+        const effectiveRequirement = baseRequirement + actionLevelBonus;
+        const levelEfficiency = Math.max(0, skillLevel - effectiveRequirement);
+        const houseEfficiency = calculateHouseEfficiency(actionDetails.type);
+        const equipmentEfficiency = parseEquipmentEfficiencyBonuses(
+            equipment,
+            actionDetails.type,
+            itemDetailMap
+        );
+        const teaEfficiency = parseTeaEfficiency(
+            actionDetails.type,
+            activeDrinks,
+            itemDetailMap,
+            drinkConcentration
+        );
+
+        // Total efficiency
+        const totalEfficiency = stackAdditive(
+            levelEfficiency,
+            houseEfficiency,
+            equipmentEfficiency,
+            teaEfficiency
+        );
+
+        return { actionTime, totalEfficiency };
+    }
+
+    /**
+     * Get character skill level for a skill type
+     * @param {Array} skills - Character skills array
+     * @param {string} skillType - Skill type HRID (e.g., "/action_types/cheesesmithing")
+     * @returns {number} Skill level
+     */
+    getSkillLevel(skills, skillType) {
+        // Map action type to skill HRID
+        const skillHrid = skillType.replace('/action_types/', '/skills/');
+        const skill = skills.find(s => s.skillHrid === skillHrid);
+        return skill?.level || 1;
     }
 
     /**
