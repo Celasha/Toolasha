@@ -277,13 +277,17 @@ export async function calculateGatheringProfit(actionHrid) {
             baseOutputs.push({
                 name: rawItemName,
                 itemsPerHour: rawItemsPerHour,
-                dropRate: drop.dropRate
+                dropRate: drop.dropRate,
+                priceEach: rawPriceAfterTax,
+                revenuePerHour: rawItemsPerHour * rawPriceAfterTax
             });
 
             baseOutputs.push({
                 name: processedItemName,
                 itemsPerHour: processedItemsPerHour,
-                dropRate: drop.dropRate * processingBonus
+                dropRate: drop.dropRate * processingBonus,
+                priceEach: processedPriceAfterTax,
+                revenuePerHour: processedItemsPerHour * processedPriceAfterTax
             });
         } else {
             // No processing - simple calculation
@@ -295,7 +299,9 @@ export async function calculateGatheringProfit(actionHrid) {
             baseOutputs.push({
                 name: itemName,
                 itemsPerHour: rawItemsPerHour,
-                dropRate: drop.dropRate
+                dropRate: drop.dropRate,
+                priceEach: rawPriceAfterTax,
+                revenuePerHour: rawItemsPerHour * rawPriceAfterTax
             });
         }
 
@@ -340,7 +346,7 @@ export async function calculateGatheringProfit(actionHrid) {
         drinkCostPerHour,
         drinkCosts,                // Array of individual drink costs {name, priceEach, costPerHour}
         actionsPerHour,
-        baseOutputs,               // Array of base item outputs {name, itemsPerHour, dropRate}
+        baseOutputs,               // Array of base item outputs {name, itemsPerHour, dropRate, priceEach, revenuePerHour}
         totalEfficiency,
         speedBonus,
         bonusRevenue,              // Essence and rare find details
