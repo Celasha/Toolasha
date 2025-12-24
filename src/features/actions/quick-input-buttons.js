@@ -636,9 +636,8 @@ class QuickInputButtons {
 
             const lines = [];
 
-            // Current level and XP
-            lines.push(`Current: Level ${currentLevel} (${formatWithSeparator(currentXP)}/${formatWithSeparator(xpForNextLevel)} XP)`);
-            lines.push(`Progress: ${progressPercent.toFixed(1)}% to Level ${nextLevel}`);
+            // Current level and progress
+            lines.push(`Current: Level ${currentLevel} | ${progressPercent.toFixed(1)}% to Level ${nextLevel}`);
             lines.push('');
 
             // Action details
