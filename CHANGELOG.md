@@ -7,6 +7,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.5] - 2025-12-23
+
+### Overview
+
+Minor release adding queue time display to the total action time feature.
+
+**Status:** Development/Testing (Version < 1.0.0 = pre-release)
+
+### Added
+
+#### **Queue Time Display Enhancement**
+
+**NEW FEATURE:** Queue tooltip now shows time for each individual queued action plus total time.
+
+- **Queue Tooltip Time Display:**
+  - Shows `[time] Complete at HH:MM:SS` for each queued action
+  - Cumulative completion times (each action shows when it will finish)
+  - Total time at bottom of queue: `Total time: [total]`
+  - Handles infinite queues with ∞ symbol
+  - Auto-updates when queue changes via WebSocket
+
+- **Implementation Details:**
+  - Added to existing `action-time-display.js` module (lines 33, 58-90, 327-517)
+  - Uses MutationObserver to detect queue tooltip appearance
+  - Watches for `[class*="QueuedActions_queuedActionsEditMenu"]` selector
+  - Reuses existing time calculation utilities (speed, efficiency)
+  - Properly accounts for efficiency reducing actions needed
+
+- **Display Format:**
+  ```
+  Action 1: [5m 30s] Complete at 14:35:22
+  Action 2: [10m 15s] Complete at 14:45:37
+  Action 3: [2h 5m] Complete at 16:50:42
+  ───────────────────────────────────────────
+  Total time: [2h 20m 50s]
+  ```
+
+- **Key Features:**
+  - ✅ Time for each queued action
+  - ✅ Cumulative completion time (HH:MM:SS format)
+  - ✅ Total time at bottom of queue
+  - ✅ Handles infinite queues (∞)
+  - ✅ Auto-updates via WebSocket events
+  - ✅ Reuses existing calculation logic
+
+**Technical Details:**
+- `initializeQueueObserver()` - MutationObserver for tooltip detection
+- `injectQueueTimes()` - Calculates and injects time displays
+- `calculateActionTime()` - Helper for action time calculations
+- Efficiency-aware: Divides queue count by efficiency multiplier
+- Matches original MWI Tools behavior from lines 4774-4850
+
+**Files Modified:**
+- `src/features/actions/action-time-display.js` (lines 1-517)
+  - Added queue observer initialization
+  - Added queue time calculation and injection
+  - Extended module documentation
+
+**Result:** Complete action time visibility - header shows current action, queue tooltip shows all queued actions with cumulative times.
+
 ## [0.4.4] - 2025-12-23
 
 ### Overview

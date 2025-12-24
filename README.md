@@ -1,6 +1,6 @@
 # MWI Tools - Refactoring Project
 
-![Version](https://img.shields.io/badge/version-0.4.4-orange?style=flat-square) ![Status](https://img.shields.io/badge/status-pre--release-yellow?style=flat-square) ![License](https://img.shields.io/badge/license-CC--BY--NC--SA--4.0-blue?style=flat-square)
+![Version](https://img.shields.io/badge/version-0.4.5-orange?style=flat-square) ![Status](https://img.shields.io/badge/status-pre--release-yellow?style=flat-square) ![License](https://img.shields.io/badge/license-CC--BY--NC--SA--4.0-blue?style=flat-square)
 
 Modular, maintainable rewrite of MWITools userscript for Milky Way Idle.
 
@@ -222,7 +222,7 @@ All efficiency sources are automatically detected from character data - no manua
 
 **Action Panel Features Summary:**
 - ✅ **Gathering profit calculator** - Comprehensive economic analysis for Foraging, Woodcutting, Milking
-- ❌ **Total action time** - Not yet implemented
+- ✅ **Total action time** - Current action display in header + queue tooltip with individual/cumulative times
 - ❌ **Quick input buttons** - Not yet implemented
 - ❌ **Level progression calculator** - Not yet implemented
 - ❌ **XP per hour display** - Not yet implemented

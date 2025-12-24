@@ -11,6 +11,7 @@
  * - Estimates total time remaining
  * - Shows estimated completion time (clock format)
  * - Updates automatically on action changes
+ * - Queue tooltip enhancement (time for each action + total)
  */
 
 import dataManager from '../../core/data-manager.js';
@@ -22,13 +23,14 @@ import { timeReadable } from '../../utils/formatters.js';
 import { stackAdditive } from '../../utils/efficiency.js';
 
 /**
- * ActionTimeDisplay class manages the time display panel
+ * ActionTimeDisplay class manages the time display panel and queue tooltips
  */
 class ActionTimeDisplay {
     constructor() {
         this.displayElement = null;
         this.isInitialized = false;
         this.updateTimer = null;
+        this.queueObserver = null;
     }
 
     /**
@@ -52,7 +54,39 @@ class ActionTimeDisplay {
         dataManager.on('actions_updated', () => this.updateDisplay());
         dataManager.on('action_completed', () => this.updateDisplay());
 
+        // Initialize queue tooltip observer
+        this.initializeQueueObserver();
+
         this.isInitialized = true;
+    }
+
+    /**
+     * Initialize MutationObserver for queue tooltip
+     */
+    initializeQueueObserver() {
+        // Watch for queue tooltip appearance
+        this.queueObserver = new MutationObserver((mutations) => {
+            for (const mutation of mutations) {
+                for (const node of mutation.addedNodes) {
+                    if (node.nodeType !== Node.ELEMENT_NODE) continue;
+
+                    // Look for queue menu container
+                    const queueMenu = node.querySelector?.('[class*="QueuedActions_queuedActionsEditMenu"]');
+                    if (queueMenu) {
+                        this.injectQueueTimes(queueMenu);
+                    } else if (node.className && typeof node.className === 'string' &&
+                               node.className.includes('QueuedActions_queuedActionsEditMenu')) {
+                        this.injectQueueTimes(node);
+                    }
+                }
+            }
+        });
+
+        // Start observing document body for tooltip additions
+        this.queueObserver.observe(document.body, {
+            childList: true,
+            subtree: true
+        });
     }
 
     /**
@@ -288,6 +322,198 @@ class ActionTimeDisplay {
         const skillHrid = skillType.replace('/action_types/', '/skills/');
         const skill = skills.find(s => s.skillHrid === skillHrid);
         return skill?.level || 1;
+    }
+
+    /**
+     * Calculate action time for a given action
+     * @param {Object} actionDetails - Action details from data manager
+     * @returns {Object} {actionTime, totalEfficiency} or null if calculation fails
+     */
+    calculateActionTime(actionDetails) {
+        try {
+            const equipment = dataManager.getEquipment();
+            const skills = dataManager.getSkills();
+            const itemDetailMap = dataManager.getInitClientData()?.itemDetailMap || {};
+
+            // Calculate base action time
+            const baseTime = actionDetails.baseTimeCost / 1e9; // nanoseconds to seconds
+
+            // Get equipment speed bonus
+            const speedBonus = parseEquipmentSpeedBonuses(
+                equipment,
+                actionDetails.type,
+                itemDetailMap
+            );
+
+            // Calculate actual action time (speed only)
+            const actionTime = baseTime / (1 + speedBonus);
+
+            // Calculate efficiency for output calculations
+            const skillLevel = this.getSkillLevel(skills, actionDetails.type);
+            const baseRequirement = actionDetails.levelRequirement?.level || 1;
+
+            // Get drink concentration
+            const drinkConcentration = getDrinkConcentration(equipment, itemDetailMap);
+
+            // Get active drinks for this action type
+            const activeDrinks = dataManager.getActionDrinkSlots(actionDetails.type);
+
+            // Calculate Action Level bonus from teas
+            const actionLevelBonus = parseActionLevelBonus(
+                activeDrinks,
+                itemDetailMap,
+                drinkConcentration
+            );
+
+            // Calculate efficiency components
+            const effectiveRequirement = baseRequirement + actionLevelBonus;
+            const levelEfficiency = Math.max(0, skillLevel - effectiveRequirement);
+            const houseEfficiency = calculateHouseEfficiency(actionDetails.type);
+            const equipmentEfficiency = parseEquipmentEfficiencyBonuses(
+                equipment,
+                actionDetails.type,
+                itemDetailMap
+            );
+            const teaEfficiency = parseTeaEfficiency(
+                actionDetails.type,
+                activeDrinks,
+                itemDetailMap,
+                drinkConcentration
+            );
+
+            // Total efficiency
+            const totalEfficiency = stackAdditive(
+                levelEfficiency,
+                houseEfficiency,
+                equipmentEfficiency,
+                teaEfficiency
+            );
+
+            return { actionTime, totalEfficiency };
+        } catch (error) {
+            console.error('[MWI Tools] Error calculating action time:', error);
+            return null;
+        }
+    }
+
+    /**
+     * Inject time display into queue tooltip
+     * @param {HTMLElement} queueMenu - Queue menu container element
+     */
+    injectQueueTimes(queueMenu) {
+        try {
+            // Check if already injected
+            if (queueMenu.querySelector('#mwi-queue-total-time')) {
+                return;
+            }
+
+            // Get all queued actions
+            const currentActions = dataManager.getCurrentActions();
+            if (!currentActions || currentActions.length === 0) {
+                return;
+            }
+
+            // Find all action divs in the queue
+            const actionDivs = queueMenu.querySelectorAll('[class*="QueuedActions_action"]');
+            if (actionDivs.length === 0) {
+                return;
+            }
+
+            let accumulatedTime = 0;
+            let hasInfinite = false;
+
+            // Process each queued action
+            currentActions.forEach((actionObj, index) => {
+                if (index >= actionDivs.length) return;
+
+                const actionDetails = dataManager.getActionDetails(actionObj.actionHrid);
+                if (!actionDetails) return;
+
+                // Calculate count remaining
+                const count = actionObj.maxCount - actionObj.currentCount;
+                const isInfinite = count === 0 || actionObj.actionHrid.includes('/combat/');
+
+                if (isInfinite) {
+                    hasInfinite = true;
+                }
+
+                // Calculate action time
+                const timeData = this.calculateActionTime(actionDetails);
+                if (!timeData) return;
+
+                const { actionTime, totalEfficiency } = timeData;
+
+                // Calculate total time for this action (accounting for efficiency)
+                let totalTime;
+                if (isInfinite) {
+                    totalTime = Infinity;
+                } else {
+                    const efficiencyMultiplier = 1 + (totalEfficiency / 100);
+                    const actualActionsNeeded = count / efficiencyMultiplier;
+                    totalTime = actualActionsNeeded * actionTime;
+                    accumulatedTime += totalTime;
+                }
+
+                // Format completion time
+                let completionText = '';
+                if (!hasInfinite && !isInfinite) {
+                    const completionDate = new Date();
+                    completionDate.setSeconds(completionDate.getSeconds() + accumulatedTime);
+
+                    const hours = String(completionDate.getHours()).padStart(2, '0');
+                    const minutes = String(completionDate.getMinutes()).padStart(2, '0');
+                    const seconds = String(completionDate.getSeconds()).padStart(2, '0');
+
+                    completionText = ` Complete at ${hours}:${minutes}:${seconds}`;
+                }
+
+                // Create time display element
+                const timeDiv = document.createElement('div');
+                timeDiv.className = 'mwi-queue-action-time';
+                timeDiv.style.cssText = `
+                    color: var(--text-color-secondary, #888);
+                    font-size: 0.85em;
+                    margin-top: 2px;
+                `;
+
+                if (isInfinite) {
+                    timeDiv.textContent = '[∞]';
+                } else {
+                    const timeStr = timeReadable(totalTime);
+                    timeDiv.textContent = `[${timeStr}]${completionText}`;
+                }
+
+                // Inject into action div (append to first child div)
+                const firstChild = actionDivs[index].querySelector('div');
+                if (firstChild) {
+                    firstChild.appendChild(timeDiv);
+                }
+            });
+
+            // Add total time at bottom
+            const totalDiv = document.createElement('div');
+            totalDiv.id = 'mwi-queue-total-time';
+            totalDiv.style.cssText = `
+                color: var(--text-color-primary, #fff);
+                font-weight: bold;
+                margin-top: 12px;
+                padding: 8px;
+                border-top: 1px solid var(--border-color, #444);
+                text-align: center;
+            `;
+
+            if (hasInfinite) {
+                totalDiv.textContent = 'Total time: [∞]';
+            } else {
+                totalDiv.textContent = `Total time: [${timeReadable(accumulatedTime)}]`;
+            }
+
+            // Insert after queue menu
+            queueMenu.insertAdjacentElement('afterend', totalDiv);
+
+        } catch (error) {
+            console.error('[MWI Tools] Error injecting queue times:', error);
+        }
     }
 }
 

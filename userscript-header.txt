@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MWITools - Refactored
 // @namespace    http://tampermonkey.net/
-// @version      0.4.4
+// @version      0.4.5
 // @description  Tools for MilkyWayIdle. Shows total action time. Shows market prices. Shows action number quick inputs. Shows how many actions are needed to reach certain skill level. Shows skill exp percentages. Shows total networth. Shows combat summary. Shows combat maps index. Shows item level on item icons. Shows how many ability books are needed to reach certain level. Shows market equipment filters.
 // @author       Original: bot7420, updated by: Celasha and Claude
 // @license      CC-BY-NC-SA-4.0

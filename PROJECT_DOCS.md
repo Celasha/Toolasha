@@ -11,7 +11,7 @@ This project aims to break apart the monolithic MWITools-25.0.user.js (~6,700 li
 **Updated By:** Celasha and Claude
 **License:** CC-BY-NC-SA-4.0
 
-**Versioning:** This project uses [Semantic Versioning](https://semver.org/). Version 0.1.0 indicates pre-release/development status. See [CHANGELOG.md](CHANGELOG.md) for version history.
+See [CHANGELOG.md](CHANGELOG.md) for version history.
 
 ## Goals
 
