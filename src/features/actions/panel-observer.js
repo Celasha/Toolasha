@@ -259,65 +259,66 @@ async function handleActionPanel(panel) {
 }
 
 /**
- * Check if we're on the "Enhance" tab (not "Current Action" tab)
+ * Find and cache the Current Action tab button
  * @param {HTMLElement} panel - Enhancing panel element
- * @returns {boolean} True if on Enhance tab
+ * @returns {HTMLButtonElement|null} Current Action tab button or null
  */
-function isEnhanceTabActive(panel) {
-    // Walk up the DOM to find the parent that contains tab buttons
-    // Based on diagnostic: tabs are 3 levels up in EnhancingPanel_enhancingAction__2GJtD
+function getCurrentActionTabButton(panel) {
+    // Check if we already cached it
+    if (panel._cachedCurrentActionTab) {
+        return panel._cachedCurrentActionTab;
+    }
+
+    // Walk up the DOM to find tab buttons (only once)
     let current = panel;
     let depth = 0;
     const maxDepth = 5;
 
-    let tabButtons = [];
-
     while (current && depth < maxDepth) {
         const buttons = Array.from(current.querySelectorAll('button[role="tab"]'));
-        const foundTabs = buttons.filter(btn => {
-            const text = btn.textContent.trim();
-            return text === 'Enhance' || text === 'Current Action';
-        });
+        const currentActionTab = buttons.find(btn => btn.textContent.trim() === 'Current Action');
 
-        if (foundTabs.length === 2) {
-            tabButtons = foundTabs;
-            break;
+        if (currentActionTab) {
+            // Cache it on the panel for future lookups
+            panel._cachedCurrentActionTab = currentActionTab;
+            return currentActionTab;
         }
 
         current = current.parentElement;
         depth++;
     }
 
-    if (tabButtons.length !== 2) {
-        // Can't find tabs, default to showing calculator
-        return true;
-    }
+    return null;
+}
 
-    // Find the "Current Action" tab and check if it's active
-    const currentActionTab = tabButtons.find(btn => btn.textContent.trim() === 'Current Action');
+/**
+ * Check if we're on the "Enhance" tab (not "Current Action" tab)
+ * @param {HTMLElement} panel - Enhancing panel element
+ * @returns {boolean} True if on Enhance tab
+ */
+function isEnhanceTabActive(panel) {
+    // Get cached tab button (DOM query happens only once per panel)
+    const currentActionTab = getCurrentActionTabButton(panel);
 
     if (!currentActionTab) {
         // No Current Action tab found, show calculator
         return true;
     }
 
-    // Check multiple reliable indicators (from diagnostic output):
-    // 1. aria-selected="true" (most reliable)
+    // Fast checks: just 3 property accesses (no DOM queries)
     if (currentActionTab.getAttribute('aria-selected') === 'true') {
-        return false; // Current Action is active, DON'T show calculator
+        return false; // Current Action is active
     }
 
-    // 2. CSS class "Mui-selected"
     if (currentActionTab.classList.contains('Mui-selected')) {
         return false;
     }
 
-    // 3. tabindex="0" (active tabs have 0, inactive have -1)
     if (currentActionTab.getAttribute('tabindex') === '0') {
         return false;
     }
 
-    // If none of the above, assume Enhance tab is active
+    // Enhance tab is active
     return true;
 }
 
@@ -328,8 +329,19 @@ function isEnhanceTabActive(panel) {
 async function handleEnhancingPanel(panel) {
     if (!panel) return;
 
+    // Set up tab click listeners (only once per panel)
+    if (!panel.dataset.mwiTabListenersAdded) {
+        setupTabClickListeners(panel);
+        panel.dataset.mwiTabListenersAdded = 'true';
+    }
+
     // Only show calculator on "Enhance" tab, not "Current Action" tab
     if (!isEnhanceTabActive(panel)) {
+        // Remove calculator if it exists
+        const existingDisplay = panel.querySelector('#mwi-enhancement-stats');
+        if (existingDisplay) {
+            existingDisplay.remove();
+        }
         return;
     }
 
@@ -379,11 +391,75 @@ async function handleEnhancingPanel(panel) {
     // Store itemHrid on panel for later reference (when new inputs are added)
     panel.dataset.mwiItemHrid = itemHrid;
 
+    // Double-check tab state right before rendering (safety check for race conditions)
+    if (!isEnhanceTabActive(panel)) {
+        // Current Action tab became active during processing, don't render
+        return;
+    }
+
     // Display enhancement stats using the item HRID directly
     await displayEnhancementStats(panel, itemHrid);
 
     // Set up observers for Target Level and Protect From Level inputs
     setupInputObservers(panel, itemHrid);
+}
+
+/**
+ * Set up click listeners on tab buttons to show/hide calculator
+ * @param {HTMLElement} panel - Enhancing panel element
+ */
+function setupTabClickListeners(panel) {
+    // Walk up the DOM to find tab buttons
+    let current = panel;
+    let depth = 0;
+    const maxDepth = 5;
+
+    let tabButtons = [];
+
+    while (current && depth < maxDepth) {
+        const buttons = Array.from(current.querySelectorAll('button[role="tab"]'));
+        const foundTabs = buttons.filter(btn => {
+            const text = btn.textContent.trim();
+            return text === 'Enhance' || text === 'Current Action';
+        });
+
+        if (foundTabs.length === 2) {
+            tabButtons = foundTabs;
+            break;
+        }
+
+        current = current.parentElement;
+        depth++;
+    }
+
+    if (tabButtons.length !== 2) {
+        return; // Can't find tabs, skip listener setup
+    }
+
+    // Add click listeners to both tabs
+    tabButtons.forEach(button => {
+        button.addEventListener('click', async () => {
+            // Small delay to let the tab change take effect
+            setTimeout(async () => {
+                const isEnhanceActive = isEnhanceTabActive(panel);
+                const existingDisplay = panel.querySelector('#mwi-enhancement-stats');
+
+                if (!isEnhanceActive) {
+                    // Current Action tab clicked - remove calculator
+                    if (existingDisplay) {
+                        existingDisplay.remove();
+                    }
+                } else {
+                    // Enhance tab clicked - show calculator if item is selected
+                    const itemHrid = panel.dataset.mwiItemHrid;
+                    if (itemHrid && !existingDisplay) {
+                        // Re-render calculator
+                        await displayEnhancementStats(panel, itemHrid);
+                    }
+                }
+            }, 100);
+        });
+    });
 }
 
 /**

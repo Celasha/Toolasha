@@ -538,11 +538,57 @@ function formatEnhancementDisplay(panel, params, perActionTime, itemDetails, pro
 }
 
 /**
+ * Find the "Current Action" tab button (cached on panel for performance)
+ * @param {HTMLElement} panel - Enhancement panel element
+ * @returns {HTMLButtonElement|null} Current Action tab button or null
+ */
+function findCurrentActionTab(panel) {
+    // Check if we already cached it
+    if (panel._cachedCurrentActionTab) {
+        return panel._cachedCurrentActionTab;
+    }
+
+    // Walk up the DOM to find tab buttons (only once per panel)
+    let current = panel;
+    let depth = 0;
+    const maxDepth = 5;
+
+    while (current && depth < maxDepth) {
+        const buttons = Array.from(current.querySelectorAll('button[role="tab"]'));
+        const currentActionTab = buttons.find(btn => btn.textContent.trim() === 'Current Action');
+
+        if (currentActionTab) {
+            // Cache it on the panel for future lookups
+            panel._cachedCurrentActionTab = currentActionTab;
+            return currentActionTab;
+        }
+
+        current = current.parentElement;
+        depth++;
+    }
+
+    return null;
+}
+
+/**
  * Inject enhancement display into panel
  * @param {HTMLElement} panel - Action panel element
  * @param {string} html - HTML to inject
  */
 function injectDisplay(panel, html) {
+    // CRITICAL: Final safety check - verify we're on Enhance tab before injecting
+    // This prevents the calculator from appearing on Current Action tab due to race conditions
+    const currentActionTab = findCurrentActionTab(panel);
+    if (currentActionTab) {
+        // Check if Current Action tab is active
+        if (currentActionTab.getAttribute('aria-selected') === 'true' ||
+            currentActionTab.classList.contains('Mui-selected') ||
+            currentActionTab.getAttribute('tabindex') === '0') {
+            // Current Action tab is active, don't inject calculator
+            return;
+        }
+    }
+
     // Check if we already added display
     const existing = panel.querySelector('#mwi-enhancement-stats');
     if (existing) {
