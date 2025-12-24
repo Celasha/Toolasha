@@ -578,9 +578,12 @@ class QuickInputButtons {
                 return null;
             }
 
-            // Calculate progress
+            // Calculate progress (XP gained this level / XP needed for this level)
+            const xpForCurrentLevel = levelExperienceTable[currentLevel] || 0;
+            const xpGainedThisLevel = currentXP - xpForCurrentLevel;
+            const xpNeededThisLevel = xpForNextLevel - xpForCurrentLevel;
+            const progressPercent = (xpGainedThisLevel / xpNeededThisLevel) * 100;
             const xpNeeded = xpForNextLevel - currentXP;
-            const progressPercent = (currentXP / xpForNextLevel) * 100;
 
             // Calculate XP multipliers and breakdown (MUST happen before calculating actions/rates)
             const xpData = calculateExperienceMultiplier(skillHrid, actionDetails.type);
@@ -599,9 +602,7 @@ class QuickInputButtons {
             const xpPerDay = xpPerHour * 24;
 
             // Calculate daily level progress
-            const xpForCurrentLevel = levelExperienceTable[currentLevel] || 0;
-            const xpForLevelRange = xpForNextLevel - xpForCurrentLevel;
-            const dailyLevelProgress = xpPerDay / xpForLevelRange;
+            const dailyLevelProgress = xpPerDay / xpNeededThisLevel;
 
             // Create content
             const content = document.createElement('div');
