@@ -282,14 +282,73 @@ class QuickInputButtons {
                 setTimeout(updateTotalTime, 50);
             });
 
+            // Create initial summary for Action Speed & Time
+            const actionsPerHour = (3600 / actionTime).toFixed(0);
+            const initialSummary = `${actionsPerHour}/hr | Total time: 0s`;
+
             const speedSection = this.createCollapsibleSection(
                 'speed-time',
                 '⏱',
                 'Action Speed & Time',
-                null, // No summary
+                initialSummary,
                 speedContent,
-                true
+                false // Collapsed by default
             );
+
+            // Get the summary div to update it dynamically
+            const speedSummaryDiv = speedSection.querySelector('.mwi-section-header + div');
+
+            // Enhanced updateTotalTime to also update the summary
+            const originalUpdateTotalTime = updateTotalTime;
+            const enhancedUpdateTotalTime = () => {
+                originalUpdateTotalTime();
+
+                // Update summary when collapsed
+                if (speedSummaryDiv) {
+                    const inputValue = numberInput.value;
+                    if (inputValue === '∞') {
+                        speedSummaryDiv.textContent = `${actionsPerHour}/hr | Total time: ∞`;
+                    } else {
+                        const queueCount = parseInt(inputValue) || 0;
+                        if (queueCount > 0) {
+                            const totalSeconds = queueCount * actionTime;
+                            speedSummaryDiv.textContent = `${actionsPerHour}/hr | Total time: ${timeReadable(totalSeconds)}`;
+                        } else {
+                            speedSummaryDiv.textContent = `${actionsPerHour}/hr | Total time: 0s`;
+                        }
+                    }
+                }
+            };
+
+            // Replace all updateTotalTime calls with enhanced version
+            inputObserver.disconnect();
+            inputObserver.observe(numberInput, {
+                attributes: true,
+                attributeFilter: ['value']
+            });
+
+            const newInputObserver = new MutationObserver(() => {
+                enhancedUpdateTotalTime();
+            });
+            newInputObserver.observe(numberInput, {
+                attributes: true,
+                attributeFilter: ['value']
+            });
+
+            numberInput.removeEventListener('input', updateTotalTime);
+            numberInput.removeEventListener('change', updateTotalTime);
+            numberInput.addEventListener('input', enhancedUpdateTotalTime);
+            numberInput.addEventListener('change', enhancedUpdateTotalTime);
+
+            panel.removeEventListener('click', () => {
+                setTimeout(updateTotalTime, 50);
+            });
+            panel.addEventListener('click', () => {
+                setTimeout(enhancedUpdateTotalTime, 50);
+            });
+
+            // Initial update with enhanced version
+            enhancedUpdateTotalTime();
 
             // ===== SECTION 2: Level Progress =====
             const levelProgressSection = this.createLevelProgressSection(
@@ -302,6 +361,8 @@ class QuickInputButtons {
             queueContent.style.cssText = `
                 color: var(--text-color-secondary, #888);
                 font-size: 0.9em;
+                margin-top: 8px;
+                margin-bottom: 8px;
             `;
 
             // FIRST ROW: Time-based buttons (hours)
@@ -341,22 +402,11 @@ class QuickInputButtons {
 
             queueContent.appendChild(document.createTextNode(' times'));
 
-            const queueSection = this.createCollapsibleSection(
-                'quick-queue',
-                '⚡',
-                'Quick Queue Setup',
-                null, // No summary
-                queueContent,
-                true
-            );
-
-            // Insert sections
-            inputContainer.insertAdjacentElement('afterend', speedSection);
+            // Insert sections: inputContainer -> queueContent -> speedSection -> levelProgressSection
+            inputContainer.insertAdjacentElement('afterend', queueContent);
+            queueContent.insertAdjacentElement('afterend', speedSection);
             if (levelProgressSection) {
                 speedSection.insertAdjacentElement('afterend', levelProgressSection);
-                levelProgressSection.insertAdjacentElement('afterend', queueSection);
-            } else {
-                speedSection.insertAdjacentElement('afterend', queueSection);
             }
 
         } catch (error) {
@@ -696,7 +746,7 @@ class QuickInputButtons {
                 'Level Progress',
                 summary,
                 content,
-                true
+                false // Collapsed by default
             );
         } catch (error) {
             console.error('[MWI Tools] Error creating level progress section:', error);
