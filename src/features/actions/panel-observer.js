@@ -609,9 +609,10 @@ async function displayGatheringProfit(panel, actionHrid) {
 
     // Create top-level summary
     const profit = Math.round(profitData.profitPerHour);
+    const profitPerDay = Math.round(profitData.profitPerDay);
     const revenue = Math.round(profitData.revenuePerHour);
     const costs = Math.round(profitData.drinkCostPerHour);
-    const summary = `Profit: ${formatWithSeparator(profit)}/hr (Revenue: ${formatWithSeparator(revenue)} - Costs: ${formatWithSeparator(costs)})`;
+    const summary = `${formatWithSeparator(profit)}/hr, ${formatWithSeparator(profitPerDay)}/day`;
 
     // ===== Build Detailed Breakdown Content =====
     const detailsContent = document.createElement('div');
@@ -642,33 +643,65 @@ async function displayGatheringProfit(panel, actionHrid) {
         1
     );
 
-    // Bonus Drops subsection
-    const bonusDropsContent = document.createElement('div');
-    if (profitData.bonusRevenue?.bonusDrops && profitData.bonusRevenue.bonusDrops.length > 0) {
-        for (const drop of profitData.bonusRevenue.bonusDrops) {
+    // Bonus Drops subsections - split by type
+    const bonusDrops = profitData.bonusRevenue?.bonusDrops || [];
+    const essenceDrops = bonusDrops.filter(drop => drop.type === 'essence');
+    const rareFinds = bonusDrops.filter(drop => drop.type === 'rare_find');
+
+    // Essence Drops subsection
+    let essenceSection = null;
+    if (essenceDrops.length > 0) {
+        const essenceContent = document.createElement('div');
+        for (const drop of essenceDrops) {
             const decimals = drop.dropsPerHour < 1 ? 2 : 1;
             const line = document.createElement('div');
             line.style.marginLeft = '8px';
             line.textContent = `• ${drop.itemName}: ${drop.dropsPerHour.toFixed(decimals)}/hr (${(drop.dropRate * 100).toFixed(drop.dropRate < 0.01 ? 3 : 2)}%) → ${formatWithSeparator(Math.round(drop.revenuePerHour))}/hr`;
-            bonusDropsContent.appendChild(line);
+            essenceContent.appendChild(line);
         }
+
+        const essenceRevenue = essenceDrops.reduce((sum, d) => sum + d.revenuePerHour, 0);
+        const essenceFindBonus = profitData.bonusRevenue?.essenceFindBonus || 0;
+        essenceSection = createCollapsibleSection(
+            '',
+            `Essence Drops: ${formatWithSeparator(Math.round(essenceRevenue))}/hr (${essenceDrops.length} item${essenceDrops.length !== 1 ? 's' : ''}, ${essenceFindBonus.toFixed(1)}% essence find)`,
+            null,
+            essenceContent,
+            false,
+            1
+        );
     }
 
-    const bonusRevenue = Math.round(profitData.bonusRevenue?.totalBonusRevenue || 0);
-    const bonusCount = profitData.bonusRevenue?.bonusDrops?.length || 0;
-    const rareFindBonus = profitData.bonusRevenue?.rareFindBonus || 0;
-    const bonusDropsSection = createCollapsibleSection(
-        '',
-        `Bonus Drops: ${formatWithSeparator(bonusRevenue)}/hr (${bonusCount} item${bonusCount !== 1 ? 's' : ''}, ${rareFindBonus.toFixed(1)}% rare find)`,
-        null,
-        bonusDropsContent,
-        false,
-        1
-    );
+    // Rare Finds subsection
+    let rareFindSection = null;
+    if (rareFinds.length > 0) {
+        const rareFindContent = document.createElement('div');
+        for (const drop of rareFinds) {
+            const decimals = drop.dropsPerHour < 1 ? 2 : 1;
+            const line = document.createElement('div');
+            line.style.marginLeft = '8px';
+            line.textContent = `• ${drop.itemName}: ${drop.dropsPerHour.toFixed(decimals)}/hr (${(drop.dropRate * 100).toFixed(drop.dropRate < 0.01 ? 3 : 2)}%) → ${formatWithSeparator(Math.round(drop.revenuePerHour))}/hr`;
+            rareFindContent.appendChild(line);
+        }
+
+        const rareFindRevenue = rareFinds.reduce((sum, d) => sum + d.revenuePerHour, 0);
+        const rareFindBonus = profitData.bonusRevenue?.rareFindBonus || 0;
+        rareFindSection = createCollapsibleSection(
+            '',
+            `Rare Finds: ${formatWithSeparator(Math.round(rareFindRevenue))}/hr (${rareFinds.length} item${rareFinds.length !== 1 ? 's' : ''}, ${rareFindBonus.toFixed(1)}% rare find)`,
+            null,
+            rareFindContent,
+            false,
+            1
+        );
+    }
 
     revenueDiv.appendChild(baseOutputSection);
-    if (bonusRevenue > 0) {
-        revenueDiv.appendChild(bonusDropsSection);
+    if (essenceSection) {
+        revenueDiv.appendChild(essenceSection);
+    }
+    if (rareFindSection) {
+        revenueDiv.appendChild(rareFindSection);
     }
 
     // Costs Section

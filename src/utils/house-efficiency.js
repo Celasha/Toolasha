@@ -84,12 +84,12 @@ export function getHouseRoomName(houseRoomHrid) {
  *
  * @example
  * calculateHouseRareFind()
- * // Returns: 1.6 (if total house room levels = 8: flatBoost 0.2% + (8 × 0.2% per level) = 1.8%)
+ * // Returns: 1.6 (if total house room levels = 8: 8 × 0.2% per level = 1.6%)
  *
  * Formula from game data:
- * - flatBoost: 0.2%
  * - flatBoostLevelBonus: 0.2% per level
- * - Total: 0.2% + (totalLevels × 0.2%)
+ * - Total: totalLevels × 0.2%
+ * - Max: 8 rooms × 8 levels = 64 × 0.2% = 12.8%
  */
 export function calculateHouseRareFind() {
     // Get all house rooms
@@ -105,12 +105,11 @@ export function calculateHouseRareFind() {
         totalLevels += room.level || 0;
     }
 
-    // Formula: flatBoost + (totalLevels × flatBoostLevelBonus)
-    // flatBoost: 0.2%, flatBoostLevelBonus: 0.2%
-    const flatBoost = 0.2;
+    // Formula: totalLevels × flatBoostLevelBonus
+    // flatBoostLevelBonus: 0.2% per level (no base bonus)
     const flatBoostLevelBonus = 0.2;
 
-    return flatBoost + (totalLevels * flatBoostLevelBonus);
+    return totalLevels * flatBoostLevelBonus;
 }
 
 export default {
