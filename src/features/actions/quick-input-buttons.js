@@ -683,15 +683,8 @@ class QuickInputButtons {
             lines.push('');
             lines.push(`Actions to level: ${formatWithSeparator(actionsNeeded)} actions`);
             lines.push(`Time to level: ${timeReadable(timeNeeded)}`);
-            lines.push('');
-
-            // Separator
-            lines.push('<div style="border-top: 1px solid var(--text-color-secondary, #888); opacity: 0.3; margin: 8px 0;"></div>');
-
-            // Rates
-            lines.push('<div style="color: var(--text-color-primary, #fff); font-weight: 500; margin-bottom: 4px;">At current rate:</div>');
-            lines.push(`• XP/hour: ${formatWithSeparator(Math.round(xpPerHour))}`);
-            lines.push(`• Daily gain: ${formatWithSeparator(Math.round(xpPerDay))} XP (${dailyLevelProgress.toFixed(1)} levels)`);
+            lines.push(`XP/hour: ${formatWithSeparator(Math.round(xpPerHour))}`);
+            lines.push(`Daily gain: ${formatWithSeparator(Math.round(xpPerDay))} XP (${dailyLevelProgress.toFixed(1)} levels)`);
 
             content.innerHTML = lines.join('<br>');
 
