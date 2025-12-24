@@ -13,10 +13,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **NEW FEATURE:** Action panels now include quick input buttons for fast queue setup.
 
-- **Preset Buttons:**
-  - 10, 100, 1,000 actions
-  - Max button (currently set to 10,000)
-  - Format: "Do [10] [100] [1,000] [Max] times"
+- **Two-Row Layout:**
+  - **First row (time-based):** 0.5, 1, 2, 3, 4, 5, 6, 10, 12, 24 hours
+  - **Second row (count-based):** 10, 100, 1,000, Max
+  - Format:
+    ```
+    Do [0.5] [1] [2] [3] [4] [5] [6] [10] [12] [24] hours
+    Do [10] [100] [1,000] [Max] times
+    ```
+
+- **Time-Based Calculation:**
+  - Formula: `actionCount = Math.round((hours * 60 * 60 * efficiency) / actionDuration)`
+  - Accounts for: equipment speed bonuses, level efficiency, house rooms, tea buffs
+  - Example: "1 hour" button calculates how many actions fit in 1 hour with your current stats
+  - Dynamically adjusts based on character state (gear, skills, buffs)
 
 - **Positioning:**
   - Buttons appear inside the action panel modal
@@ -34,13 +44,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Finds input via `querySelector('input[type="number"]')` with fallbacks
   - Positions after `numberInput.parentNode.parentNode.parentNode` container
   - Simple white button styling matching original (1px 6px padding, #fff background)
+  - `calculateActionMetrics()` computes real-time action duration and efficiency
+  - `getActionDetailsByName()` looks up action from display name
+  - Full efficiency system integration (speed, level, house, tea, equipment)
 
 - **Files:**
-  - NEW: `src/features/actions/quick-input-buttons.js` (245 lines)
+  - NEW: `src/features/actions/quick-input-buttons.js` (387 lines)
   - Modified: `src/main.js` (import, initialize, export to window.MWITools)
   - Modified: `README.md` (feature status update)
 
-**Result:** Fast queue input without manual typing. Click a button and React updates the input value immediately.
+**Result:** Fast queue input with both time-based and count-based options. Click "1 hour" and it calculates exactly how many actions you can do in 1 hour with your current stats.
 
 ## [0.4.5] - 2025-12-23
 

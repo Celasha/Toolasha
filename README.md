@@ -221,12 +221,16 @@ All efficiency sources are automatically detected from character data - no manua
   - Returns: profitPerHour, profitPerDay, revenuePerHour, drinkCostPerHour, actionsPerHour, efficiency breakdown, bonus revenue details, gathering/processing breakdowns
 
 - **quick-input-buttons.js** - Fast queue setup with preset buttons ✅
-  - Preset buttons: 10, 100, 1,000, Max (currently 10,000)
+  - **Two-row layout:**
+    - Time-based: 0.5, 1, 2, 3, 4, 5, 6, 10, 12, 24 hours
+    - Count-based: 10, 100, 1,000, Max (10,000)
+  - **Time calculation:** `(hours * 3600 * efficiency) / actionDuration`
+  - Dynamically adjusts for character state (gear, skills, buffs)
   - Positioned inside action panel modal, below queue input field
   - Uses React's `_valueTracker` for proper state updates
   - `setInputValue()` mimics original `reactInputTriggerHack()` implementation
-  - Saves old value → sets new value → updates tracker → dispatches event
-  - React recognizes change and updates component state immediately
+  - `calculateActionMetrics()` computes real-time duration and efficiency
+  - Full efficiency system: speed, level, house, tea, equipment
   - Simple white button styling matching original MWI Tools
   - Works on all action types (gathering, production, combat)
 
