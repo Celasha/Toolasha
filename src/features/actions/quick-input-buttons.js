@@ -582,22 +582,26 @@ class QuickInputButtons {
             const xpNeeded = xpForNextLevel - currentXP;
             const progressPercent = (currentXP / xpForNextLevel) * 100;
 
-            // Calculate actions and time needed
-            const actionsNeeded = Math.ceil(xpNeeded / xpPerAction);
+            // Calculate XP multipliers and breakdown (MUST happen before calculating actions/rates)
+            const xpData = calculateExperienceMultiplier(skillHrid, actionDetails.type);
+
+            // Calculate modified XP per action (base XP × multiplier)
+            const baseXP = xpPerAction;
+            const modifiedXP = xpPerAction * xpData.totalMultiplier;
+
+            // Calculate actions and time needed (using modified XP)
+            const actionsNeeded = Math.ceil(xpNeeded / modifiedXP);
             const timeNeeded = actionsNeeded * actionTime;
 
-            // Calculate rates
+            // Calculate rates (using modified XP)
             const actionsPerHour = 3600 / actionTime;
-            const xpPerHour = actionsPerHour * xpPerAction;
+            const xpPerHour = actionsPerHour * modifiedXP;
             const xpPerDay = xpPerHour * 24;
 
             // Calculate daily level progress
             const xpForCurrentLevel = levelExperienceTable[currentLevel] || 0;
             const xpForLevelRange = xpForNextLevel - xpForCurrentLevel;
             const dailyLevelProgress = xpPerDay / xpForLevelRange;
-
-            // Calculate XP multipliers and breakdown
-            const xpData = calculateExperienceMultiplier(skillHrid, actionDetails.type);
 
             // Create content
             const content = document.createElement('div');
@@ -620,8 +624,6 @@ class QuickInputButtons {
             lines.push('');
 
             // Action details
-            const baseXP = xpPerAction / xpData.totalMultiplier;
-            const modifiedXP = xpPerAction;
             lines.push(`XP per action: ${formatWithSeparator(baseXP.toFixed(1))} base → ${formatWithSeparator(modifiedXP.toFixed(1))} (×${xpData.totalMultiplier.toFixed(2)})`);
 
             // XP breakdown (if any bonuses exist)
