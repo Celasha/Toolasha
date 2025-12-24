@@ -907,7 +907,7 @@ async function displayProductionProfit(panel, actionHrid) {
     const baseOutputContent = document.createElement('div');
     const baseOutputLine = document.createElement('div');
     baseOutputLine.style.marginLeft = '8px';
-    baseOutputLine.textContent = `• Base Output: ${profitData.itemsPerHour.toFixed(1)}/hr @ ${formatWithSeparator(profitData.priceAfterTax)} each → ${formatWithSeparator(Math.round(profitData.itemsPerHour * profitData.priceAfterTax))}/hr`;
+    baseOutputLine.textContent = `• Base Output: ${profitData.itemsPerHour.toFixed(1)}/hr @ ${formatWithSeparator(Math.round(profitData.priceAfterTax))} each → ${formatWithSeparator(Math.round(profitData.itemsPerHour * profitData.priceAfterTax))}/hr`;
     baseOutputContent.appendChild(baseOutputLine);
 
     const baseRevenue = profitData.itemsPerHour * profitData.priceAfterTax;
@@ -926,7 +926,7 @@ async function displayProductionProfit(panel, actionHrid) {
         const gourmetContent = document.createElement('div');
         const gourmetLine = document.createElement('div');
         gourmetLine.style.marginLeft = '8px';
-        gourmetLine.textContent = `• Gourmet Bonus: ${profitData.gourmetBonusItems.toFixed(1)}/hr @ ${formatWithSeparator(profitData.priceAfterTax)} each → ${formatWithSeparator(Math.round(profitData.gourmetBonusItems * profitData.priceAfterTax))}/hr`;
+        gourmetLine.textContent = `• Gourmet Bonus: ${profitData.gourmetBonusItems.toFixed(1)}/hr @ ${formatWithSeparator(Math.round(profitData.priceAfterTax))} each → ${formatWithSeparator(Math.round(profitData.gourmetBonusItems * profitData.priceAfterTax))}/hr`;
         gourmetContent.appendChild(gourmetLine);
 
         const gourmetRevenue = profitData.gourmetBonusItems * profitData.priceAfterTax;
@@ -955,7 +955,7 @@ async function displayProductionProfit(panel, actionHrid) {
         for (const material of profitData.materialCosts) {
             const line = document.createElement('div');
             line.style.marginLeft = '8px';
-            line.textContent = `• ${material.name}: ${material.perHour.toFixed(1)}/hr @ ${formatWithSeparator(material.price)} → ${formatWithSeparator(Math.round(material.costPerHour))}/hr`;
+            line.textContent = `• ${material.name}: ${material.perHour.toFixed(1)}/hr @ ${formatWithSeparator(Math.round(material.price))} → ${formatWithSeparator(Math.round(material.costPerHour))}/hr`;
             materialCostsContent.appendChild(line);
         }
     }
@@ -975,7 +975,7 @@ async function displayProductionProfit(panel, actionHrid) {
         for (const tea of profitData.teaCosts) {
             const line = document.createElement('div');
             line.style.marginLeft = '8px';
-            line.textContent = `• ${tea.name}: ${tea.drinksPerHour.toFixed(1)}/hr @ ${formatWithSeparator(tea.priceEach)} → ${formatWithSeparator(Math.round(tea.totalCost))}/hr`;
+            line.textContent = `• ${tea.name}: ${tea.drinksPerHour.toFixed(1)}/hr @ ${formatWithSeparator(Math.round(tea.priceEach))} → ${formatWithSeparator(Math.round(tea.totalCost))}/hr`;
             teaCostsContent.appendChild(line);
         }
     }
@@ -1004,32 +1004,32 @@ async function displayProductionProfit(panel, actionHrid) {
 
     // Efficiency breakdown
     const effParts = [];
-    if (profitData.details.levelEfficiency > 0) {
-        effParts.push(`${profitData.details.levelEfficiency}% level`);
+    if (profitData.levelEfficiency > 0) {
+        effParts.push(`${profitData.levelEfficiency}% level`);
     }
-    if (profitData.details.houseEfficiency > 0) {
-        effParts.push(`${profitData.details.houseEfficiency.toFixed(1)}% house`);
+    if (profitData.houseEfficiency > 0) {
+        effParts.push(`${profitData.houseEfficiency.toFixed(1)}% house`);
     }
-    if (profitData.details.teaEfficiency > 0) {
-        effParts.push(`${profitData.details.teaEfficiency.toFixed(1)}% tea`);
+    if (profitData.teaEfficiency > 0) {
+        effParts.push(`${profitData.teaEfficiency.toFixed(1)}% tea`);
     }
-    if (profitData.details.equipmentEfficiency > 0) {
-        effParts.push(`${profitData.details.equipmentEfficiency.toFixed(1)}% equip`);
+    if (profitData.equipmentEfficiency > 0) {
+        effParts.push(`${profitData.equipmentEfficiency.toFixed(1)}% equip`);
     }
 
     if (effParts.length > 0) {
         modifierLines.push(`<div style="font-weight: 500; color: var(--text-color-primary, #fff);">Modifiers:</div>`);
-        modifierLines.push(`<div style="margin-left: 8px;">• Efficiency: +${profitData.totalEfficiency.toFixed(1)}% (${effParts.join(', ')})</div>`);
+        modifierLines.push(`<div style="margin-left: 8px;">• Efficiency: +${profitData.efficiencyBonus.toFixed(1)}% (${effParts.join(', ')})</div>`);
     }
 
     // Artisan Bonus
-    if (profitData.details.artisanBonus > 0) {
-        modifierLines.push(`<div style="margin-left: 8px;">• Artisan: -${(profitData.details.artisanBonus * 100).toFixed(1)}% material requirement</div>`);
+    if (profitData.artisanBonus > 0) {
+        modifierLines.push(`<div style="margin-left: 8px;">• Artisan: -${(profitData.artisanBonus * 100).toFixed(1)}% material requirement</div>`);
     }
 
     // Gourmet Bonus
-    if (profitData.details.gourmetBonus > 0) {
-        modifierLines.push(`<div style="margin-left: 8px;">• Gourmet: +${(profitData.details.gourmetBonus * 100).toFixed(1)}% bonus items</div>`);
+    if (profitData.gourmetBonus > 0) {
+        modifierLines.push(`<div style="margin-left: 8px;">• Gourmet: +${(profitData.gourmetBonus * 100).toFixed(1)}% bonus items</div>`);
     }
 
     modifiersDiv.innerHTML = modifierLines.join('');
@@ -1042,7 +1042,7 @@ async function displayProductionProfit(panel, actionHrid) {
     // Create "Detailed Breakdown" collapsible
     const topLevelContent = document.createElement('div');
     topLevelContent.innerHTML = `
-        <div style="margin-bottom: 4px;">Actions: ${profitData.actionsPerHour.toFixed(1)}/hr | Efficiency: +${profitData.totalEfficiency.toFixed(1)}%</div>
+        <div style="margin-bottom: 4px;">Actions: ${profitData.actionsPerHour.toFixed(1)}/hr | Efficiency: +${profitData.efficiencyBonus.toFixed(1)}%</div>
     `;
 
     // Add Net Profit line at top level (always visible when Profitability is expanded)
