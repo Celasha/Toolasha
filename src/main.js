@@ -18,6 +18,7 @@ import expectedValueCalculator from './features/market/expected-value-calculator
 import { initActionPanelObserver } from './features/actions/panel-observer.js';
 import { calculateGatheringProfit } from './features/actions/gathering-profit.js';
 import actionTimeDisplay from './features/actions/action-time-display.js';
+import quickInputButtons from './features/actions/quick-input-buttons.js';
 import * as enhancementGearDetector from './utils/enhancement-gear-detector.js';
 import { getEnhancingParams } from './utils/enhancement-config.js';
 import * as enhancementCalculator from './utils/enhancement-calculator.js';
@@ -64,6 +65,7 @@ dataManager.on('character_initialized', (data) => {
             initActionPanelObserver();
 
             actionTimeDisplay.initialize();
+            quickInputButtons.initialize();
         } catch (error) {
             console.error('❌ Feature initialization failed:', error);
         }
@@ -82,6 +84,7 @@ targetWindow.MWITools = {
     config,
     storage,
     actionTimeDisplay,
+    quickInputButtons,
     enhancementGearDetector,
     getEnhancingParams,
     enhancementCalculator,

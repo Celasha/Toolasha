@@ -223,7 +223,7 @@ All efficiency sources are automatically detected from character data - no manua
 **Action Panel Features Summary:**
 - ✅ **Gathering profit calculator** - Comprehensive economic analysis for Foraging, Woodcutting, Milking
 - ✅ **Total action time** - Current action display in header + queue tooltip with individual/cumulative times
-- ❌ **Quick input buttons** - Not yet implemented
+- ✅ **Quick input buttons** - Preset buttons (10, 100, 1000, Max) for fast queue input with React _valueTracker integration
 - ❌ **Level progression calculator** - Not yet implemented
 - ❌ **XP per hour display** - Not yet implemented
 
