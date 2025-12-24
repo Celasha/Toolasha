@@ -88,12 +88,11 @@ class QuickInputButtons {
                 return;
             }
 
-            // Find our time display element (created by action-time-display.js)
-            // This is where we'll insert the buttons (right after it)
-            const timeDisplay = document.querySelector('#mwi-action-time-display');
-            if (!timeDisplay) {
-                // Time display not ready yet, try again in a moment
-                setTimeout(() => this.injectButtons(panel), 100);
+            // Find the container to insert after (same as original MWI Tools)
+            // Original: const gatherDiv = inputElem.parentNode.parentNode.parentNode;
+            // Then: gatherDiv.insertAdjacentHTML("afterend", hTMLStr);
+            const inputContainer = numberInput.parentNode.parentNode.parentNode;
+            if (!inputContainer) {
                 return;
             }
 
@@ -130,9 +129,9 @@ class QuickInputButtons {
             // Add " times" label
             buttonContainer.appendChild(document.createTextNode(' times'));
 
-            // Insert buttons right after the time display
-            // This matches original MWI Tools positioning (after showTotalTimeDiv)
-            timeDisplay.parentNode.insertBefore(buttonContainer, timeDisplay.nextSibling);
+            // Insert buttons inside the panel, after the input container
+            // This matches original MWI Tools positioning
+            inputContainer.insertAdjacentElement('afterend', buttonContainer);
 
         } catch (error) {
             console.error('[MWI Tools] Error injecting quick input buttons:', error);
