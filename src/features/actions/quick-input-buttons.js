@@ -229,19 +229,10 @@ class QuickInputButtons {
 
                 const queueCount = parseInt(inputValue) || 0;
                 if (queueCount > 0) {
-                    const actualActionsNeeded = queueCount / efficiencyMultiplier;
-                    const totalSeconds = actualActionsNeeded * actionTime;
-
-                    // Show actual actions needed when efficiency is present
-                    if (totalEfficiency > 0) {
-                        // Format actions with 1 decimal if fractional, no decimals if whole number
-                        const actionsDisplay = actualActionsNeeded % 1 === 0
-                            ? actualActionsNeeded.toFixed(0)
-                            : actualActionsNeeded.toFixed(1);
-                        totalTimeLine.textContent = `Total time: ${timeReadable(totalSeconds)} (${queueCount} items, ${actionsDisplay} actions)`;
-                    } else {
-                        totalTimeLine.textContent = `Total time: ${timeReadable(totalSeconds)}`;
-                    }
+                    // Input is number of ACTIONS, not items
+                    // Total time = actions × time per action
+                    const totalSeconds = queueCount * actionTime;
+                    totalTimeLine.textContent = `Total time: ${timeReadable(totalSeconds)}`;
                 } else {
                     totalTimeLine.textContent = 'Total time: 0s';
                 }
@@ -290,7 +281,10 @@ class QuickInputButtons {
 
             this.presetHours.forEach(hours => {
                 const button = this.createButton(hours === 0.5 ? '0.5' : hours.toString(), () => {
-                    const actionCount = Math.round((hours * 60 * 60 * efficiencyMultiplier) / actionTime);
+                    // How many actions fit in X hours?
+                    // Time (seconds) = hours × 3600
+                    // Actions = Time / actionTime
+                    const actionCount = Math.round((hours * 60 * 60) / actionTime);
                     this.setInputValue(numberInput, actionCount);
                 });
                 queueContent.appendChild(button);
