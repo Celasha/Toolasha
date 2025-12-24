@@ -131,8 +131,8 @@ class QuickInputButtons {
             const updateTotalTime = () => {
                 const inputValue = numberInput.value;
 
-                // Check for infinity (empty string when infinity is selected)
-                if (inputValue === '' || inputValue === 'Infinity' || numberInput.value === '') {
+                // Check for infinity (∞ symbol when infinity is selected)
+                if (inputValue === '∞') {
                     totalTimeDiv.textContent = 'Total time: ∞';
                     return;
                 }
