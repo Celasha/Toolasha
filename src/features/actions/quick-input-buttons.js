@@ -241,24 +241,36 @@ class QuickInputButtons {
                 // Calculate raw level delta (before any Action Level bonuses)
                 const rawLevelDelta = efficiencyBreakdown.skillLevel - efficiencyBreakdown.baseRequirement;
 
-                // Show final level efficiency
-                speedLines.push(`  - Level: +${efficiencyBreakdown.levelEfficiency.toFixed(1)}%`);
+                // Show final level efficiency (with full precision for verification)
+                speedLines.push(`  - Level: +${efficiencyBreakdown.levelEfficiency.toFixed(3)}%`);
 
                 // Show raw level delta (what you'd get without Action Level bonuses)
-                speedLines.push(`    - Raw level delta: +${rawLevelDelta.toFixed(1)}% (${efficiencyBreakdown.skillLevel} - ${efficiencyBreakdown.baseRequirement} base requirement)`);
+                speedLines.push(`    - Raw level delta: +${rawLevelDelta.toFixed(3)}% (${efficiencyBreakdown.skillLevel} - ${efficiencyBreakdown.baseRequirement} base requirement)`);
+
+                // Track total impact for verification
+                let totalImpact = 0;
 
                 // Show Action Level bonus teas that reduce level efficiency
                 if (efficiencyBreakdown.actionLevelBreakdown && efficiencyBreakdown.actionLevelBreakdown.length > 0) {
                     for (const tea of efficiencyBreakdown.actionLevelBreakdown) {
                         // Calculate impact: base tea effect reduces efficiency
                         const baseTeaImpact = -tea.baseActionLevel;
-                        speedLines.push(`    - ${tea.name} impact: ${baseTeaImpact.toFixed(1)}% (raises requirement)`);
+                        totalImpact += baseTeaImpact;
+                        speedLines.push(`    - ${tea.name} impact: ${baseTeaImpact.toFixed(3)}% (raises requirement)`);
 
                         // Show DC contribution as additional reduction if > 0
                         if (tea.dcContribution > 0) {
                             const dcImpact = -tea.dcContribution;
-                            speedLines.push(`      - Drink Concentration: ${dcImpact.toFixed(1)}%`);
+                            totalImpact += dcImpact;
+                            speedLines.push(`      - Drink Concentration: ${dcImpact.toFixed(3)}%`);
                         }
+                    }
+
+                    // Verification line: Does the math add up?
+                    const calculatedTotal = rawLevelDelta + totalImpact;
+                    const difference = calculatedTotal - efficiencyBreakdown.levelEfficiency;
+                    if (Math.abs(difference) > 0.001) {
+                        speedLines.push(`    - ⚠️ Verification: ${rawLevelDelta.toFixed(3)} + ${totalImpact.toFixed(3)} = ${calculatedTotal.toFixed(3)} (expected ${efficiencyBreakdown.levelEfficiency.toFixed(3)}, diff: ${difference.toFixed(6)})`);
                     }
                 }
             }
