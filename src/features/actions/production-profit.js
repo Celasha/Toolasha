@@ -27,55 +27,42 @@ const PRODUCTION_TYPES = [
  * @returns {Object|null} Profit data or null if not applicable
  */
 export async function calculateProductionProfit(actionHrid) {
-    console.log('[Production Profit] Calculating for action:', actionHrid);
-
     // Get action details
     const gameData = dataManager.getInitClientData();
     const actionDetail = gameData.actionDetailMap[actionHrid];
 
     if (!actionDetail) {
-        console.log('[Production Profit] No action detail found for:', actionHrid);
         return null;
     }
 
-    console.log('[Production Profit] Action type:', actionDetail.type);
-
     // Only process production actions with outputs
     if (!PRODUCTION_TYPES.includes(actionDetail.type)) {
-        console.log('[Production Profit] Not a production action, skipping');
         return null;
     }
 
     if (!actionDetail.outputItems || actionDetail.outputItems.length === 0) {
-        console.log('[Production Profit] No output items, skipping');
         return null; // No output - nothing to calculate
     }
 
     // Ensure market data is loaded
     const marketData = await marketAPI.fetch();
     if (!marketData) {
-        console.log('[Production Profit] Market data not available');
         return null;
     }
 
     // Get output item HRID
     const outputItemHrid = actionDetail.outputItems[0].itemHrid;
-    console.log('[Production Profit] Output item:', outputItemHrid);
 
     // Reuse existing profit calculator (does all the heavy lifting)
     const profitData = await profitCalculator.calculateProfit(outputItemHrid);
 
     if (!profitData) {
-        console.log('[Production Profit] Profit calculator returned null for:', outputItemHrid);
         return null;
     }
-
-    console.log('[Production Profit] Got profit data:', profitData);
 
     // Add profit per day calculation
     profitData.profitPerDay = profitData.profitPerHour * 24;
 
-    console.log('[Production Profit] Returning profit data with profitPerDay:', profitData.profitPerDay);
     return profitData;
 }
 

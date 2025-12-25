@@ -14,6 +14,7 @@ import { calculateGatheringProfit } from './gathering-profit.js';
 import { calculateProductionProfit } from './production-profit.js';
 import { displayEnhancementStats } from './enhancement-display.js';
 import { formatWithSeparator } from '../../utils/formatters.js';
+import { createCollapsibleSection } from '../../utils/ui-components.js';
 
 /**
  * Action types for gathering skills (3 skills)
@@ -515,98 +516,6 @@ function setupInputObservers(panel, itemHrid) {
     inputs.forEach(input => {
         addInputListener(input, panel, itemHrid);
     });
-}
-
-/**
- * Create a collapsible section
- * @param {string} icon - Icon/emoji for the section
- * @param {string} title - Section title
- * @param {string} summary - Summary text (shown when collapsed)
- * @param {HTMLElement} content - Content element to show/hide
- * @param {boolean} defaultOpen - Whether section starts open
- * @param {number} indent - Indentation level (0 = root, 1 = nested, etc.)
- * @returns {HTMLElement} Section container
- */
-function createCollapsibleSection(icon, title, summary, content, defaultOpen = false, indent = 0) {
-    const section = document.createElement('div');
-    section.className = 'mwi-collapsible-section';
-    section.style.cssText = `
-        margin-top: ${indent > 0 ? '4px' : '8px'};
-        margin-bottom: ${indent > 0 ? '4px' : '8px'};
-        margin-left: ${indent * 16}px;
-    `;
-
-    // Create header
-    const header = document.createElement('div');
-    header.className = 'mwi-section-header';
-    header.style.cssText = `
-        display: flex;
-        align-items: center;
-        cursor: pointer;
-        user-select: none;
-        padding: 4px 0;
-        color: var(--text-color-primary, #fff);
-        font-weight: ${indent === 0 ? '500' : '400'};
-        font-size: ${indent > 0 ? '0.9em' : '1em'};
-    `;
-
-    const arrow = document.createElement('span');
-    arrow.textContent = defaultOpen ? '▼' : '▶';
-    arrow.style.cssText = `
-        margin-right: 6px;
-        font-size: 0.7em;
-        transition: transform 0.2s;
-    `;
-
-    const label = document.createElement('span');
-    label.textContent = icon ? `${icon} ${title}` : title;
-
-    header.appendChild(arrow);
-    header.appendChild(label);
-
-    // Create summary (shown when collapsed)
-    const summaryDiv = document.createElement('div');
-    summaryDiv.style.cssText = `
-        margin-left: 16px;
-        margin-top: 2px;
-        color: var(--text-color-secondary, #888);
-        font-size: 0.9em;
-        display: ${defaultOpen ? 'none' : 'block'};
-    `;
-    if (summary) {
-        summaryDiv.textContent = summary;
-    }
-
-    // Create content wrapper
-    const contentWrapper = document.createElement('div');
-    contentWrapper.className = 'mwi-section-content';
-    contentWrapper.style.cssText = `
-        display: ${defaultOpen ? 'block' : 'none'};
-        margin-left: ${indent === 0 ? '16px' : '0px'};
-        margin-top: 4px;
-        color: var(--text-color-secondary, #888);
-        font-size: 0.9em;
-        line-height: 1.6;
-    `;
-    contentWrapper.appendChild(content);
-
-    // Toggle functionality
-    header.addEventListener('click', () => {
-        const isOpen = contentWrapper.style.display === 'block';
-        contentWrapper.style.display = isOpen ? 'none' : 'block';
-        if (summary) {
-            summaryDiv.style.display = isOpen ? 'block' : 'none';
-        }
-        arrow.textContent = isOpen ? '▶' : '▼';
-    });
-
-    section.appendChild(header);
-    if (summary) {
-        section.appendChild(summaryDiv);
-    }
-    section.appendChild(contentWrapper);
-
-    return section;
 }
 
 /**

@@ -19,6 +19,7 @@ import { calculateHouseEfficiency } from '../../utils/house-efficiency.js';
 import { stackAdditive } from '../../utils/efficiency.js';
 import { timeReadable, formatWithSeparator } from '../../utils/formatters.js';
 import { calculateExperienceMultiplier } from '../../utils/experience-parser.js';
+import { createCollapsibleSection } from '../../utils/ui-components.js';
 
 /**
  * QuickInputButtons class manages quick input button injection
@@ -69,93 +70,6 @@ class QuickInputButtons {
             childList: true,
             subtree: true
         });
-    }
-
-    /**
-     * Create a collapsible section
-     * @param {string} id - Unique ID for the section
-     * @param {string} icon - Icon/emoji for the section
-     * @param {string} title - Section title
-     * @param {string} summary - Summary text (shown when collapsed)
-     * @param {HTMLElement} content - Content element to show/hide
-     * @param {boolean} defaultOpen - Whether section starts open
-     * @returns {HTMLElement} Section container
-     */
-    createCollapsibleSection(id, icon, title, summary, content, defaultOpen = true) {
-        const section = document.createElement('div');
-        section.className = 'mwi-collapsible-section';
-        section.style.cssText = `
-            margin-top: 8px;
-            margin-bottom: 8px;
-        `;
-
-        // Create header
-        const header = document.createElement('div');
-        header.className = 'mwi-section-header';
-        header.style.cssText = `
-            display: flex;
-            align-items: center;
-            cursor: pointer;
-            user-select: none;
-            padding: 4px 0;
-            color: var(--text-color-primary, #fff);
-            font-weight: 500;
-        `;
-
-        const arrow = document.createElement('span');
-        arrow.textContent = defaultOpen ? '▼' : '▶';
-        arrow.style.cssText = `
-            margin-right: 6px;
-            font-size: 0.7em;
-            transition: transform 0.2s;
-        `;
-
-        const label = document.createElement('span');
-        label.textContent = `${icon} ${title}`;
-
-        header.appendChild(arrow);
-        header.appendChild(label);
-
-        // Create summary (shown when collapsed)
-        const summaryDiv = document.createElement('div');
-        summaryDiv.style.cssText = `
-            margin-left: 16px;
-            margin-top: 2px;
-            color: var(--text-color-secondary, #888);
-            font-size: 0.9em;
-            display: ${defaultOpen ? 'none' : 'block'};
-        `;
-        if (summary) {
-            summaryDiv.textContent = summary;
-        }
-
-        // Create content wrapper
-        const contentWrapper = document.createElement('div');
-        contentWrapper.className = 'mwi-section-content';
-        contentWrapper.style.cssText = `
-            display: ${defaultOpen ? 'block' : 'none'};
-            margin-left: 16px;
-            margin-top: 4px;
-        `;
-        contentWrapper.appendChild(content);
-
-        // Toggle functionality
-        header.addEventListener('click', () => {
-            const isOpen = contentWrapper.style.display === 'block';
-            contentWrapper.style.display = isOpen ? 'none' : 'block';
-            if (summary) {
-                summaryDiv.style.display = isOpen ? 'block' : 'none';
-            }
-            arrow.textContent = isOpen ? '▶' : '▼';
-        });
-
-        section.appendChild(header);
-        if (summary) {
-            section.appendChild(summaryDiv);
-        }
-        section.appendChild(contentWrapper);
-
-        return section;
     }
 
     /**
@@ -340,8 +254,7 @@ class QuickInputButtons {
             const actionsPerHour = (3600 / actionTime).toFixed(0);
             const initialSummary = `${actionsPerHour}/hr | Total time: 0s`;
 
-            const speedSection = this.createCollapsibleSection(
-                'speed-time',
+            const speedSection = createCollapsibleSection(
                 '⏱',
                 'Action Speed & Time',
                 initialSummary,
@@ -893,8 +806,7 @@ class QuickInputButtons {
             const summary = `${timeReadable(timeNeeded)} to Level ${nextLevel}`;
 
             // Create collapsible section
-            return this.createCollapsibleSection(
-                'level-progress',
+            return createCollapsibleSection(
                 '📈',
                 'Level Progress',
                 summary,
