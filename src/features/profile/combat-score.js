@@ -6,6 +6,7 @@
 import config from '../../core/config.js';
 import webSocketHook from '../../core/websocket.js';
 import { calculateCombatScore } from './score-calculator.js';
+import { numberFormatter } from '../../utils/formatters.js';
 
 /**
  * CombatScore class manages combat score display on profiles
@@ -126,17 +127,17 @@ class CombatScore {
 
         // Build house breakdown HTML
         const houseBreakdownHTML = scoreData.breakdown.houses.map(item =>
-            `<div style="margin-left: 10px; font-size: 0.8rem; color: #bbb;">${item.name}: ${item.value}</div>`
+            `<div style="margin-left: 10px; font-size: 0.8rem; color: #bbb;">${item.name}: ${numberFormatter(item.value)}</div>`
         ).join('');
 
         // Build ability breakdown HTML
         const abilityBreakdownHTML = scoreData.breakdown.abilities.map(item =>
-            `<div style="margin-left: 10px; font-size: 0.8rem; color: #bbb;">${item.name}: ${item.value}</div>`
+            `<div style="margin-left: 10px; font-size: 0.8rem; color: #bbb;">${item.name}: ${numberFormatter(item.value)}</div>`
         ).join('');
 
         // Build equipment breakdown HTML
         const equipmentBreakdownHTML = scoreData.breakdown.equipment.map(item =>
-            `<div style="margin-left: 10px; font-size: 0.8rem; color: #bbb;">${item.name}: ${item.value}</div>`
+            `<div style="margin-left: 10px; font-size: 0.8rem; color: #bbb;">${item.name}: ${numberFormatter(item.value)}</div>`
         ).join('');
 
         // Create panel HTML
@@ -152,25 +153,25 @@ class CombatScore {
                 " title="Close">×</span>
             </div>
             <div style="cursor: pointer; font-weight: bold; margin-bottom: 8px; color: #4CAF50;" id="mwi-score-toggle">
-                + Combat Score: ${scoreData.total.toFixed(1)}${equipmentHiddenText}
+                + Combat Score: ${numberFormatter(scoreData.total.toFixed(1))}${equipmentHiddenText}
             </div>
             <div id="mwi-score-details" style="display: none; margin-left: 10px; color: #ddd;">
                 <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-house-toggle">
-                    + House: ${scoreData.house.toFixed(1)}
+                    + House: ${numberFormatter(scoreData.house.toFixed(1))}
                 </div>
                 <div id="mwi-house-breakdown" style="display: none; margin-bottom: 6px;">
                     ${houseBreakdownHTML}
                 </div>
 
                 <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-ability-toggle">
-                    + Ability: ${scoreData.ability.toFixed(1)}
+                    + Ability: ${numberFormatter(scoreData.ability.toFixed(1))}
                 </div>
                 <div id="mwi-ability-breakdown" style="display: none; margin-bottom: 6px;">
                     ${abilityBreakdownHTML}
                 </div>
 
                 <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-equipment-toggle">
-                    + Equipment: ${scoreData.equipment.toFixed(1)}
+                    + Equipment: ${numberFormatter(scoreData.equipment.toFixed(1))}
                 </div>
                 <div id="mwi-equipment-breakdown" style="display: none;">
                     ${equipmentBreakdownHTML}
@@ -244,7 +245,7 @@ class CombatScore {
                 details.style.display = isCollapsed ? 'block' : 'none';
                 toggleBtn.textContent =
                     (isCollapsed ? '- ' : '+ ') +
-                    `Combat Score: ${scoreData.total.toFixed(1)}${equipmentHiddenText}`;
+                    `Combat Score: ${numberFormatter(scoreData.total.toFixed(1))}${equipmentHiddenText}`;
             });
         }
 
@@ -257,7 +258,7 @@ class CombatScore {
                 houseBreakdown.style.display = isCollapsed ? 'block' : 'none';
                 houseToggle.textContent =
                     (isCollapsed ? '- ' : '+ ') +
-                    `House: ${scoreData.house.toFixed(1)}`;
+                    `House: ${numberFormatter(scoreData.house.toFixed(1))}`;
             });
         }
 
@@ -270,7 +271,7 @@ class CombatScore {
                 abilityBreakdown.style.display = isCollapsed ? 'block' : 'none';
                 abilityToggle.textContent =
                     (isCollapsed ? '- ' : '+ ') +
-                    `Ability: ${scoreData.ability.toFixed(1)}`;
+                    `Ability: ${numberFormatter(scoreData.ability.toFixed(1))}`;
             });
         }
 
@@ -283,7 +284,7 @@ class CombatScore {
                 equipmentBreakdown.style.display = isCollapsed ? 'block' : 'none';
                 equipmentToggle.textContent =
                     (isCollapsed ? '- ' : '+ ') +
-                    `Equipment: ${scoreData.equipment.toFixed(1)}`;
+                    `Equipment: ${numberFormatter(scoreData.equipment.toFixed(1))}`;
             });
         }
     }
