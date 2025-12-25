@@ -883,6 +883,22 @@ async function displayProductionProfit(panel, actionHrid) {
         return;
     }
 
+    // Validate required fields
+    const requiredFields = [
+        'profitPerHour', 'profitPerDay', 'itemsPerHour', 'priceAfterTax',
+        'gourmetBonusItems', 'materialCostPerHour', 'totalTeaCostPerHour',
+        'actionsPerHour', 'efficiencyBonus', 'levelEfficiency', 'houseEfficiency',
+        'teaEfficiency', 'equipmentEfficiency', 'artisanBonus', 'gourmetBonus',
+        'materialCosts', 'teaCosts'
+    ];
+
+    const missingFields = requiredFields.filter(field => profitData[field] === undefined);
+    if (missingFields.length > 0) {
+        console.error('❌ Production profit data missing required fields:', missingFields, 'for action:', actionHrid);
+        console.error('Received profitData:', profitData);
+        return;
+    }
+
     // Check if we already added profit display
     const existingProfit = panel.querySelector('#mwi-production-profit');
     if (existingProfit) {
@@ -890,9 +906,10 @@ async function displayProductionProfit(panel, actionHrid) {
     }
 
     // Create top-level summary
-    const profit = Math.round(profitData.profitPerHour);
-    const profitPerDay = Math.round(profitData.profitPerDay);
-    const revenue = Math.round(profitData.itemsPerHour * profitData.priceAfterTax + profitData.gourmetBonusItems * profitData.priceAfterTax);
+    const bonusRevenueTotal = profitData.bonusRevenue?.totalBonusRevenue || 0;
+    const profit = Math.round(profitData.profitPerHour + bonusRevenueTotal);
+    const profitPerDay = Math.round(profit * 24);
+    const revenue = Math.round(profitData.itemsPerHour * profitData.priceAfterTax + profitData.gourmetBonusItems * profitData.priceAfterTax + bonusRevenueTotal);
     const costs = Math.round(profitData.materialCostPerHour + profitData.totalTeaCostPerHour);
     const summary = `${formatWithSeparator(profit)}/hr, ${formatWithSeparator(profitPerDay)}/day`;
 
@@ -945,6 +962,66 @@ async function displayProductionProfit(panel, actionHrid) {
         revenueDiv.appendChild(gourmetSection);
     }
 
+    // Bonus Drops subsections - split by type
+    const bonusDrops = profitData.bonusRevenue?.bonusDrops || [];
+    const essenceDrops = bonusDrops.filter(drop => drop.type === 'essence');
+    const rareFinds = bonusDrops.filter(drop => drop.type === 'rare_find');
+
+    // Essence Drops subsection
+    let essenceSection = null;
+    if (essenceDrops.length > 0) {
+        const essenceContent = document.createElement('div');
+        for (const drop of essenceDrops) {
+            const decimals = drop.dropsPerHour < 1 ? 2 : 1;
+            const line = document.createElement('div');
+            line.style.marginLeft = '8px';
+            line.textContent = `• ${drop.itemName}: ${drop.dropsPerHour.toFixed(decimals)}/hr (${(drop.dropRate * 100).toFixed(drop.dropRate < 0.01 ? 3 : 2)}%) → ${formatWithSeparator(Math.round(drop.revenuePerHour))}/hr`;
+            essenceContent.appendChild(line);
+        }
+
+        const essenceRevenue = essenceDrops.reduce((sum, d) => sum + d.revenuePerHour, 0);
+        const essenceFindBonus = profitData.bonusRevenue?.essenceFindBonus || 0;
+        essenceSection = createCollapsibleSection(
+            '',
+            `Essence Drops: ${formatWithSeparator(Math.round(essenceRevenue))}/hr (${essenceDrops.length} item${essenceDrops.length !== 1 ? 's' : ''}, ${essenceFindBonus.toFixed(1)}% essence find)`,
+            null,
+            essenceContent,
+            false,
+            1
+        );
+    }
+
+    // Rare Finds subsection
+    let rareFindSection = null;
+    if (rareFinds.length > 0) {
+        const rareFindContent = document.createElement('div');
+        for (const drop of rareFinds) {
+            const decimals = drop.dropsPerHour < 1 ? 2 : 1;
+            const line = document.createElement('div');
+            line.style.marginLeft = '8px';
+            line.textContent = `• ${drop.itemName}: ${drop.dropsPerHour.toFixed(decimals)}/hr (${(drop.dropRate * 100).toFixed(drop.dropRate < 0.01 ? 3 : 2)}%) → ${formatWithSeparator(Math.round(drop.revenuePerHour))}/hr`;
+            rareFindContent.appendChild(line);
+        }
+
+        const rareFindRevenue = rareFinds.reduce((sum, d) => sum + d.revenuePerHour, 0);
+        const rareFindBonus = profitData.bonusRevenue?.rareFindBonus || 0;
+        rareFindSection = createCollapsibleSection(
+            '',
+            `Rare Finds: ${formatWithSeparator(Math.round(rareFindRevenue))}/hr (${rareFinds.length} item${rareFinds.length !== 1 ? 's' : ''}, ${rareFindBonus.toFixed(1)}% rare find)`,
+            null,
+            rareFindContent,
+            false,
+            1
+        );
+    }
+
+    if (essenceSection) {
+        revenueDiv.appendChild(essenceSection);
+    }
+    if (rareFindSection) {
+        revenueDiv.appendChild(rareFindSection);
+    }
+
     // Costs Section
     const costsDiv = document.createElement('div');
     costsDiv.innerHTML = `<div style="font-weight: 500; color: var(--text-color-primary, #fff); margin-top: 12px; margin-bottom: 4px;">Costs: ${formatWithSeparator(costs)}/hr</div>`;
@@ -955,7 +1032,22 @@ async function displayProductionProfit(panel, actionHrid) {
         for (const material of profitData.materialCosts) {
             const line = document.createElement('div');
             line.style.marginLeft = '8px';
-            line.textContent = `• ${material.name}: ${material.perHour.toFixed(1)}/hr @ ${formatWithSeparator(Math.round(material.price))} → ${formatWithSeparator(Math.round(material.costPerHour))}/hr`;
+            // Material structure: { itemName, amount, askPrice, totalCost, baseAmount }
+            const amountPerAction = material.amount || 0;
+            const amountPerHour = amountPerAction * profitData.actionsPerHour;
+
+            // Build material line with embedded Artisan information
+            let materialText = `• ${material.itemName}: ${amountPerHour.toFixed(1)}/hr`;
+
+            // Add Artisan reduction info if present
+            if (profitData.artisanBonus > 0 && material.baseAmount) {
+                const baseAmountPerHour = material.baseAmount * profitData.actionsPerHour;
+                materialText += ` (${baseAmountPerHour.toFixed(1)} base -${(profitData.artisanBonus * 100).toFixed(1)}% 🍵)`;
+            }
+
+            materialText += ` @ ${formatWithSeparator(Math.round(material.askPrice))} → ${formatWithSeparator(Math.round(material.totalCost * profitData.actionsPerHour))}/hr`;
+
+            line.textContent = materialText;
             materialCostsContent.appendChild(line);
         }
     }
@@ -975,7 +1067,8 @@ async function displayProductionProfit(panel, actionHrid) {
         for (const tea of profitData.teaCosts) {
             const line = document.createElement('div');
             line.style.marginLeft = '8px';
-            line.textContent = `• ${tea.name}: ${tea.drinksPerHour.toFixed(1)}/hr @ ${formatWithSeparator(Math.round(tea.priceEach))} → ${formatWithSeparator(Math.round(tea.totalCost))}/hr`;
+            // Tea structure: { itemName, pricePerDrink, drinksPerHour, totalCost }
+            line.textContent = `• ${tea.itemName}: ${tea.drinksPerHour.toFixed(1)}/hr @ ${formatWithSeparator(Math.round(tea.pricePerDrink))} → ${formatWithSeparator(Math.round(tea.totalCost))}/hr`;
             teaCostsContent.appendChild(line);
         }
     }
@@ -1002,33 +1095,17 @@ async function displayProductionProfit(panel, actionHrid) {
 
     const modifierLines = [];
 
-    // Efficiency breakdown
-    const effParts = [];
-    if (profitData.levelEfficiency > 0) {
-        effParts.push(`${profitData.levelEfficiency}% level`);
-    }
-    if (profitData.houseEfficiency > 0) {
-        effParts.push(`${profitData.houseEfficiency.toFixed(1)}% house`);
-    }
-    if (profitData.teaEfficiency > 0) {
-        effParts.push(`${profitData.teaEfficiency.toFixed(1)}% tea`);
-    }
-    if (profitData.equipmentEfficiency > 0) {
-        effParts.push(`${profitData.equipmentEfficiency.toFixed(1)}% equip`);
-    }
-
-    if (effParts.length > 0) {
-        modifierLines.push(`<div style="font-weight: 500; color: var(--text-color-primary, #fff);">Modifiers:</div>`);
-        modifierLines.push(`<div style="margin-left: 8px;">• Efficiency: +${profitData.efficiencyBonus.toFixed(1)}% (${effParts.join(', ')})</div>`);
-    }
-
-    // Artisan Bonus
+    // Artisan Bonus (still shown here for reference, also embedded in materials)
     if (profitData.artisanBonus > 0) {
+        modifierLines.push(`<div style="font-weight: 500; color: var(--text-color-primary, #fff);">Modifiers:</div>`);
         modifierLines.push(`<div style="margin-left: 8px;">• Artisan: -${(profitData.artisanBonus * 100).toFixed(1)}% material requirement</div>`);
     }
 
     // Gourmet Bonus
     if (profitData.gourmetBonus > 0) {
+        if (modifierLines.length === 0) {
+            modifierLines.push(`<div style="font-weight: 500; color: var(--text-color-primary, #fff);">Modifiers:</div>`);
+        }
         modifierLines.push(`<div style="margin-left: 8px;">• Gourmet: +${(profitData.gourmetBonus * 100).toFixed(1)}% bonus items</div>`);
     }
 
@@ -1037,12 +1114,14 @@ async function displayProductionProfit(panel, actionHrid) {
     // Assemble Detailed Breakdown (WITHOUT net profit - that goes in top level)
     detailsContent.appendChild(revenueDiv);
     detailsContent.appendChild(costsDiv);
-    detailsContent.appendChild(modifiersDiv);
+    if (modifierLines.length > 0) {
+        detailsContent.appendChild(modifiersDiv);
+    }
 
     // Create "Detailed Breakdown" collapsible
     const topLevelContent = document.createElement('div');
     topLevelContent.innerHTML = `
-        <div style="margin-bottom: 4px;">Actions: ${profitData.actionsPerHour.toFixed(1)}/hr | Efficiency: +${profitData.efficiencyBonus.toFixed(1)}%</div>
+        <div style="margin-bottom: 4px;">Actions: ${profitData.actionsPerHour.toFixed(1)}/hr</div>
     `;
 
     // Add Net Profit line at top level (always visible when Profitability is expanded)

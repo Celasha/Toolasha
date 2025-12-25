@@ -9,6 +9,111 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### **Production Actions: Bonus Revenue from Essence & Rare Find Drops**
+
+**NEW FEATURE:** Production actions now display bonus revenue from essence and rare find drops, matching gathering profit calculator.
+
+- **Bonus Revenue Display:**
+  - Split into "Essence Drops" and "Rare Finds" subsections
+  - Each subsection shows relevant bonus percentage (Essence Find % or Rare Find %)
+  - Item-by-item breakdown with drop rate and revenue per hour
+  - Format: `• Item: drops/hr (dropRate%) → revenue/hr`
+  - Progressive disclosure pattern matching gathering profit display
+
+- **Integration:**
+  - Added to production profit display in `panel-observer.js`
+  - Reuses existing bonus revenue calculation from `profit-calculator.js`
+  - Total bonus revenue added to net profit calculation
+  - Adjusted profit shown with bonus revenue included
+
+- **Example Display:**
+  ```
+  ▼ 💰 Profitability
+    Actions: 251.2/hr
+    Net Profit: 1,053,773/hr, 25,290,552/day
+
+    ▼ 📊 Detailed Breakdown
+      Revenue: 2,150,000/hr
+        ▶ Base Output: 1,950,000/hr
+        ▶ Gourmet Bonus: 177,451/hr (13.4% gourmet)
+        ▶ Essence Drops: 16,035/hr (1 item, 10.0% essence find)
+        ▶ Rare Finds: 6,514/hr (1 item, 2.4% rare find)
+  ```
+
+- **Files Modified:**
+  - `src/features/actions/panel-observer.js` (lines 908-1023)
+
+**Result:** Complete revenue transparency for production actions showing all income sources including essence and rare find drops.
+
+### Changed
+
+#### **Action Panel Efficiency Display Reorganization**
+
+**UX IMPROVEMENT:** Comprehensive reorganization of efficiency and modifier displays for better clarity and reduced redundancy.
+
+- **Action Speed & Time Section Enhancement (quick-input-buttons.js):**
+  - **Moved efficiency breakdown** from Profitability/Modifiers to this section
+  - **Detailed component display:**
+    - Level efficiency with levels above requirement
+    - House efficiency with room name and level (e.g., "Forge level 1")
+    - Equipment efficiency percentage
+    - Tea efficiency percentage
+    - Community efficiency with tier level (e.g., "Production Efficiency T20")
+  - **Format:**
+    ```
+    Efficiency: +123.7% → Output: ×2.24 (561/hr)
+      - Level: +100.0% (100 levels above requirement)
+      - House: +13.5% (Forge level 8)
+      - Equipment: +2.0%
+      - Tea: +6.0%
+      - Community: +2.2% (Production Efficiency T1)
+    ```
+  - Each component on separate line with specific details
+
+- **Material Costs Display Enhancement (panel-observer.js):**
+  - **Embedded Artisan tea information** directly in material lines
+  - **Format:** `amount/hr (base amount -X% 🍵) @ price → total/hr`
+  - **Example:** `• Verdant Sword: 237.5/hr (267.9 base -11.3% 🍵) @ 28,500 → 6,769,349/hr`
+  - Only shows when Artisan tea is active and material has baseAmount
+  - Cleaner display eliminating redundant Artisan section
+
+- **Modifiers Section Simplification (panel-observer.js):**
+  - **Removed efficiency display** (moved to Action Speed & Time)
+  - **Kept Artisan and Gourmet** for quick reference
+  - No longer duplicates efficiency information shown elsewhere
+
+- **Profitability Summary Cleanup (panel-observer.js):**
+  - **Simplified top-level line** to just "Actions: X/hr"
+  - **Removed efficiency percentage** (now in Action Speed & Time section)
+  - Cleaner, less cluttered summary
+
+- **Files Modified:**
+  - `src/features/actions/quick-input-buttons.js` (lines 236-257, 468-530, 563-589)
+    - Enhanced `calculateActionMetrics()` to return `efficiencyBreakdown` with all components
+    - Added `getHouseRoomName()` helper method
+    - Added detailed efficiency display to Action Speed & Time section
+  - `src/features/actions/panel-observer.js` (lines 1039-1053, 1089-1119, 1121-1125)
+    - Embedded Artisan info in Material Costs lines
+    - Removed efficiency from Modifiers section
+    - Simplified Profitability summary line
+
+**Result:** Efficiency information consolidated in one place (Action Speed & Time) with detailed breakdown, while material costs show embedded Artisan savings inline. No information lost, better organization.
+
+### Fixed
+
+#### **Community Buff Efficiency Integration in Quick Input Buttons**
+
+**BUG FIX:** Added missing community buff efficiency calculation to Action Speed & Time section.
+
+- **Issue:** Community buff efficiency was calculated in profit-calculator.js but missing from quick-input-buttons.js
+- **Impact:** Efficiency display in Action Speed & Time may have been 0.6% lower than actual
+- **Fix:** Added community buff detection and calculation to `calculateActionMetrics()`
+- **Formula:** `(0.14 + ((level - 1) × 0.003)) × 100` for Production Efficiency buff
+- **Display:** Shows tier level in breakdown (e.g., "Production Efficiency T20")
+- **File:** `src/features/actions/quick-input-buttons.js` (lines 519-521, 524-530)
+
+**Result:** Action Speed & Time section now shows complete efficiency breakdown matching profit calculator.
+
 #### **Level Progress Calculator**
 
 **NEW FEATURE:** Action panels now display comprehensive level progression tracking with XP breakdown and time estimates.

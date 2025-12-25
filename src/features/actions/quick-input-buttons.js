@@ -195,7 +195,7 @@ class QuickInputButtons {
             }
 
             // Calculate action duration and efficiency
-            const { actionTime, totalEfficiency } = this.calculateActionMetrics(actionDetails);
+            const { actionTime, totalEfficiency, efficiencyBreakdown } = this.calculateActionMetrics(actionDetails);
             const efficiencyMultiplier = 1 + (totalEfficiency / 100);
 
             // Find the container to insert after (same as original MWI Tools)
@@ -230,6 +230,30 @@ class QuickInputButtons {
                 speedLines.push(`Speed: +${(speedBonus * 100).toFixed(1)}% | ${(3600 / actionTime).toFixed(0)}/hr`);
             } else {
                 speedLines.push(`${(3600 / actionTime).toFixed(0)}/hr`);
+            }
+
+            // Add Efficiency breakdown
+            speedLines.push(''); // Empty line
+            speedLines.push(`<span style="font-weight: 500; color: var(--text-color-primary, #fff);">Efficiency: +${totalEfficiency.toFixed(1)}% → Output: ×${efficiencyMultiplier.toFixed(2)} (${Math.round((3600 / actionTime) * efficiencyMultiplier)}/hr)</span>`);
+
+            // Detailed efficiency breakdown
+            if (efficiencyBreakdown.levelEfficiency > 0) {
+                speedLines.push(`  - Level: +${efficiencyBreakdown.levelEfficiency.toFixed(1)}% (${efficiencyBreakdown.skillLevel} levels above requirement)`);
+            }
+            if (efficiencyBreakdown.houseEfficiency > 0) {
+                // Get house room name
+                const houseRoomName = this.getHouseRoomName(actionDetails.type);
+                speedLines.push(`  - House: +${efficiencyBreakdown.houseEfficiency.toFixed(1)}% (${houseRoomName})`);
+            }
+            if (efficiencyBreakdown.equipmentEfficiency > 0) {
+                speedLines.push(`  - Equipment: +${efficiencyBreakdown.equipmentEfficiency.toFixed(1)}%`);
+            }
+            if (efficiencyBreakdown.teaEfficiency > 0) {
+                speedLines.push(`  - Tea: +${efficiencyBreakdown.teaEfficiency.toFixed(1)}%`);
+            }
+            if (efficiencyBreakdown.communityEfficiency > 0) {
+                const communityBuffLevel = dataManager.getCommunityBuffLevel('/community_buff_types/production_efficiency');
+                speedLines.push(`  - Community: +${efficiencyBreakdown.communityEfficiency.toFixed(1)}% (Production Efficiency T${communityBuffLevel})`);
             }
 
             // Total time (dynamic)
@@ -439,7 +463,7 @@ class QuickInputButtons {
     /**
      * Calculate action time and efficiency for current character state
      * @param {Object} actionDetails - Action details from game data
-     * @returns {Object} {actionTime, totalEfficiency}
+     * @returns {Object} {actionTime, totalEfficiency, efficiencyBreakdown}
      */
     calculateActionMetrics(actionDetails) {
         const equipment = dataManager.getEquipment();
@@ -492,15 +516,35 @@ class QuickInputButtons {
             drinkConcentration
         );
 
+        // Get community buff efficiency
+        const communityBuffLevel = dataManager.getCommunityBuffLevel('/community_buff_types/production_efficiency');
+        const communityEfficiency = communityBuffLevel ? (0.14 + ((communityBuffLevel - 1) * 0.003)) * 100 : 0;
+
         // Total efficiency
         const totalEfficiency = stackAdditive(
             levelEfficiency,
             houseEfficiency,
             equipmentEfficiency,
-            teaEfficiency
+            teaEfficiency,
+            communityEfficiency
         );
 
-        return { actionTime, totalEfficiency };
+        // Return with breakdown
+        return {
+            actionTime,
+            totalEfficiency,
+            efficiencyBreakdown: {
+                levelEfficiency,
+                houseEfficiency,
+                equipmentEfficiency,
+                teaEfficiency,
+                communityEfficiency,
+                skillLevel,
+                baseRequirement,
+                actionLevelBonus,
+                effectiveRequirement
+            }
+        };
     }
 
     /**
@@ -514,6 +558,34 @@ class QuickInputButtons {
         const skillHrid = skillType.replace('/action_types/', '/skills/');
         const skill = skills.find(s => s.skillHrid === skillHrid);
         return skill?.level || 1;
+    }
+
+    /**
+     * Get house room name for an action type
+     * @param {string} actionType - Action type HRID
+     * @returns {string} House room name with level
+     */
+    getHouseRoomName(actionType) {
+        const houseRooms = dataManager.getHouseRooms();
+        const roomMapping = {
+            '/action_types/cheesesmithing': '/house_rooms/forge',
+            '/action_types/cooking': '/house_rooms/kitchen',
+            '/action_types/crafting': '/house_rooms/workshop',
+            '/action_types/foraging': '/house_rooms/garden',
+            '/action_types/milking': '/house_rooms/dairy_barn',
+            '/action_types/tailoring': '/house_rooms/sewing_parlor',
+            '/action_types/woodcutting': '/house_rooms/log_shed',
+            '/action_types/brewing': '/house_rooms/brewery'
+        };
+
+        const roomHrid = roomMapping[actionType];
+        if (!roomHrid) return 'Unknown Room';
+
+        const room = houseRooms.get(roomHrid);
+        const roomName = roomHrid.split('/').pop().split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+        const level = room?.level || 0;
+
+        return `${roomName} level ${level}`;
     }
 
     /**
