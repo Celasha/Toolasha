@@ -237,16 +237,27 @@ class QuickInputButtons {
             speedLines.push(`<span style="font-weight: 500; color: var(--text-color-primary, #fff);">Efficiency: +${totalEfficiency.toFixed(1)}% → Output: ×${efficiencyMultiplier.toFixed(2)} (${Math.round((3600 / actionTime) * efficiencyMultiplier)}/hr)</span>`);
 
             // Detailed efficiency breakdown
-            if (efficiencyBreakdown.levelEfficiency > 0) {
-                speedLines.push(`  - Level: +${efficiencyBreakdown.levelEfficiency.toFixed(1)}% (${efficiencyBreakdown.skillLevel} levels above requirement)`);
+            if (efficiencyBreakdown.levelEfficiency > 0 || (efficiencyBreakdown.actionLevelBreakdown && efficiencyBreakdown.actionLevelBreakdown.length > 0)) {
+                // Calculate raw level delta (before any Action Level bonuses)
+                const rawLevelDelta = efficiencyBreakdown.skillLevel - efficiencyBreakdown.baseRequirement;
 
-                // Show Action Level bonus teas that raise the effective requirement
+                // Show final level efficiency
+                speedLines.push(`  - Level: +${efficiencyBreakdown.levelEfficiency.toFixed(1)}%`);
+
+                // Show raw level delta (what you'd get without Action Level bonuses)
+                speedLines.push(`    - Raw level delta: +${rawLevelDelta.toFixed(1)}% (${efficiencyBreakdown.skillLevel} - ${efficiencyBreakdown.baseRequirement} base requirement)`);
+
+                // Show Action Level bonus teas that reduce level efficiency
                 if (efficiencyBreakdown.actionLevelBreakdown && efficiencyBreakdown.actionLevelBreakdown.length > 0) {
                     for (const tea of efficiencyBreakdown.actionLevelBreakdown) {
-                        speedLines.push(`    - ${tea.name} raises requirement: +${tea.actionLevel.toFixed(1)} levels`);
-                        // Show DC contribution as sub-line if > 0
+                        // Calculate impact: base tea effect reduces efficiency
+                        const baseTeaImpact = -tea.baseActionLevel;
+                        speedLines.push(`    - ${tea.name} impact: ${baseTeaImpact.toFixed(1)}% (raises requirement)`);
+
+                        // Show DC contribution as additional reduction if > 0
                         if (tea.dcContribution > 0) {
-                            speedLines.push(`      - Drink Concentration: +${tea.dcContribution.toFixed(1)} levels`);
+                            const dcImpact = -tea.dcContribution;
+                            speedLines.push(`      - Drink Concentration: ${dcImpact.toFixed(1)}%`);
                         }
                     }
                 }

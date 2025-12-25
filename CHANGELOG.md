@@ -61,10 +61,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - No longer shows "Tea: +17.9%" lumped together
   - **Action Level bonus tea display:**
     - Shows teas that raise effective requirement (e.g., Artisan Tea)
-    - Displays as indented sub-line under Level efficiency
-    - Shows base Action Level bonus and DC contribution separately
-    - Example: "Artisan Tea raises requirement: +5.6 levels" with sub-line "Drink Concentration: +0.6 levels"
-    - Makes relationship between Action Level bonuses and level efficiency explicit
+    - Displays progression: Raw level delta → Artisan Tea impact → DC impact
+    - **Raw level delta:** Shows efficiency before any Action Level bonuses (e.g., 100 - 1 = +99.0%)
+    - **Tea impact:** Shows reduction from base tea effect (e.g., -5.0% from Artisan Tea)
+    - **DC impact:** Shows additional reduction from Drink Concentration scaling (e.g., -0.6%)
+    - Makes explicit how Action Level bonuses REDUCE level efficiency by raising effective requirement
+    - Example: "Raw level delta: +99.0% → Artisan Tea: -5.0% → DC: -0.6% = Final: +93.4%"
   - **Detailed component display:**
     - Level efficiency with levels above requirement
     - Action Level bonus teas with DC breakdown (if present)
@@ -76,9 +78,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Format:**
     ```
     Efficiency: +123.7% → Output: ×2.24 (561/hr)
-      - Level: +100.0% (100 levels above requirement)
-        - Artisan Tea raises requirement: +5.6 levels
-          - Drink Concentration: +0.6 levels
+      - Level: +93.4%
+        - Raw level delta: +99.0% (100 - 1 base requirement)
+        - Artisan Tea impact: -5.0% (raises requirement)
+          - Drink Concentration: -0.6%
       - House: +13.5% (Forge level 8)
       - Equipment: +2.0%
       - Efficiency Tea: +11.2%
@@ -107,12 +110,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Cleaner, less cluttered summary
 
 - **Files Modified:**
-  - `src/features/actions/quick-input-buttons.js` (lines 17, 240-253, 503-567)
+  - `src/features/actions/quick-input-buttons.js` (lines 17, 240-264, 503-567)
     - Imported `parseTeaEfficiencyBreakdown` and `parseActionLevelBonusBreakdown` functions
     - Enhanced `calculateActionMetrics()` to use tea breakdown and Action Level breakdown
     - Returns `teaBreakdown` and `actionLevelBreakdown` arrays in efficiencyBreakdown
     - Display each tea on separate line with DC contribution sub-line
-    - Display Action Level bonus teas under Level efficiency with DC breakdown
+    - Display Action Level bonus progression: Raw delta → Tea impact → DC impact
+    - Shows negative impact values to clarify reduction in level efficiency
   - `src/utils/tea-parser.js` (lines 125-202, 330-392)
     - Added `parseTeaEfficiencyBreakdown()` function
     - Returns array of `{name, efficiency, baseEfficiency, dcContribution}` objects
