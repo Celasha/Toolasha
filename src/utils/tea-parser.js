@@ -123,6 +123,80 @@ export function parseTeaEfficiency(actionTypeHrid, activeDrinks, itemDetailMap, 
 }
 
 /**
+ * Parse tea efficiency bonuses with breakdown by individual tea
+ * @param {string} actionTypeHrid - Action type HRID (e.g., "/action_types/brewing")
+ * @param {Array} activeDrinks - Array of active drink items from actionTypeDrinkSlotsMap
+ * @param {Object} itemDetailMap - Item details from init_client_data
+ * @param {number} drinkConcentration - Drink Concentration stat (as decimal, e.g., 0.12 for 12%)
+ * @returns {Array<{name: string, efficiency: number}>} Array of tea contributions
+ *
+ * @example
+ * // With Efficiency Tea (10% base) and Ultra Cheesesmithing Tea (6% base) with 12% DC:
+ * parseTeaEfficiencyBreakdown("/action_types/cheesesmithing", activeDrinks, items, 0.12)
+ * // Returns: [
+ * //   { name: "Efficiency Tea", efficiency: 11.2 },
+ * //   { name: "Ultra Cheesesmithing Tea", efficiency: 6.72 }
+ * // ]
+ */
+export function parseTeaEfficiencyBreakdown(actionTypeHrid, activeDrinks, itemDetailMap, drinkConcentration = 0) {
+    if (!activeDrinks || activeDrinks.length === 0) {
+        return []; // No active teas
+    }
+
+    if (!actionTypeHrid || !itemDetailMap) {
+        return []; // Missing required data
+    }
+
+    const teaBreakdown = [];
+
+    // Extract skill name from action type for skill-specific tea detection
+    // e.g., "/action_types/brewing" -> "brewing"
+    const skillName = actionTypeHrid.replace('/action_types/', '');
+    const skillLevelBuffType = `/buff_types/${skillName}_level`;
+
+    // Process each active tea/drink
+    for (const drink of activeDrinks) {
+        if (!drink || !drink.itemHrid) {
+            continue; // Empty slot
+        }
+
+        const itemDetails = itemDetailMap[drink.itemHrid];
+        if (!itemDetails || !itemDetails.consumableDetail || !itemDetails.consumableDetail.buffs) {
+            continue; // Not a consumable or has no buffs
+        }
+
+        let teaEfficiency = 0;
+
+        // Check each buff on this tea
+        for (const buff of itemDetails.consumableDetail.buffs) {
+            // Generic efficiency buff (e.g., Efficiency Tea)
+            if (buff.typeHrid === '/buff_types/efficiency') {
+                const baseEfficiency = buff.flatBoost * 100; // Convert to percentage
+                const scaledEfficiency = baseEfficiency * (1 + drinkConcentration);
+                teaEfficiency += scaledEfficiency;
+            }
+            // Skill-specific level buff (e.g., Brewing Tea: +3 Brewing levels)
+            // Level bonuses translate to efficiency: +1 level = +1% efficiency
+            else if (buff.typeHrid === skillLevelBuffType) {
+                const levelBonus = buff.flatBoost;
+                const scaledBonus = levelBonus * (1 + drinkConcentration);
+                teaEfficiency += scaledBonus;
+            }
+        }
+
+        // Only add to breakdown if this tea contributes efficiency
+        if (teaEfficiency > 0) {
+            teaBreakdown.push({
+                name: itemDetails.name,
+                efficiency: teaEfficiency
+            });
+        }
+    }
+
+    return teaBreakdown;
+}
+
+/**
  * Get Drink Concentration stat from equipped items
  * @param {Map} characterEquipment - Equipment map from dataManager.getEquipment()
  * @param {Object} itemDetailMap - Item details from init_client_data

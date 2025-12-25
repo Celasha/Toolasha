@@ -53,11 +53,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Action Speed & Time Section Enhancement (quick-input-buttons.js):**
   - **Moved efficiency breakdown** from Profitability/Modifiers to this section
+  - **Individual tea breakdown** instead of lumping teas together:
+    - Each active tea shown on its own line with contribution percentage
+    - Example: "Efficiency Tea: +11.2%", "Ultra Cheesesmithing Tea: +6.7%"
+    - No longer shows "Tea: +17.9%" lumped together
   - **Detailed component display:**
     - Level efficiency with levels above requirement
     - House efficiency with room name and level (e.g., "Forge level 1")
     - Equipment efficiency percentage
-    - Tea efficiency percentage
+    - Individual teas with their contributions (broken out)
     - Community efficiency with tier level (e.g., "Production Efficiency T20")
   - **Format:**
     ```
@@ -65,7 +69,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       - Level: +100.0% (100 levels above requirement)
       - House: +13.5% (Forge level 8)
       - Equipment: +2.0%
-      - Tea: +6.0%
+      - Efficiency Tea: +11.2%
+      - Ultra Cheesesmithing Tea: +6.7%
       - Community: +2.2% (Production Efficiency T1)
     ```
   - Each component on separate line with specific details
@@ -88,10 +93,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Cleaner, less cluttered summary
 
 - **Files Modified:**
-  - `src/features/actions/quick-input-buttons.js` (lines 236-257, 468-530, 563-589)
-    - Enhanced `calculateActionMetrics()` to return `efficiencyBreakdown` with all components
-    - Added `getHouseRoomName()` helper method
-    - Added detailed efficiency display to Action Speed & Time section
+  - `src/features/actions/quick-input-buttons.js` (lines 17, 236-260, 468-552)
+    - Imported `parseTeaEfficiencyBreakdown` function
+    - Enhanced `calculateActionMetrics()` to use tea breakdown and return `teaBreakdown` array
+    - Display each tea on separate line instead of lumped "Tea: +X%"
+  - `src/utils/tea-parser.js` (lines 125-197)
+    - Added `parseTeaEfficiencyBreakdown()` function
+    - Returns array of `{name, efficiency}` objects for each active tea
   - `src/features/actions/panel-observer.js` (lines 1039-1053, 1089-1119, 1121-1125)
     - Embedded Artisan info in Material Costs lines
     - Removed efficiency from Modifiers section

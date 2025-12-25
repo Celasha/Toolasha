@@ -14,7 +14,7 @@
 
 import dataManager from '../../core/data-manager.js';
 import { parseEquipmentSpeedBonuses, parseEquipmentEfficiencyBonuses } from '../../utils/equipment-parser.js';
-import { parseTeaEfficiency, getDrinkConcentration, parseActionLevelBonus, parseArtisanBonus } from '../../utils/tea-parser.js';
+import { parseTeaEfficiency, parseTeaEfficiencyBreakdown, getDrinkConcentration, parseActionLevelBonus, parseArtisanBonus } from '../../utils/tea-parser.js';
 import { calculateHouseEfficiency } from '../../utils/house-efficiency.js';
 import { stackAdditive } from '../../utils/efficiency.js';
 import { timeReadable, formatWithSeparator } from '../../utils/formatters.js';
@@ -248,8 +248,11 @@ class QuickInputButtons {
             if (efficiencyBreakdown.equipmentEfficiency > 0) {
                 speedLines.push(`  - Equipment: +${efficiencyBreakdown.equipmentEfficiency.toFixed(1)}%`);
             }
-            if (efficiencyBreakdown.teaEfficiency > 0) {
-                speedLines.push(`  - Tea: +${efficiencyBreakdown.teaEfficiency.toFixed(1)}%`);
+            // Break out individual teas instead of lumping them together
+            if (efficiencyBreakdown.teaBreakdown && efficiencyBreakdown.teaBreakdown.length > 0) {
+                for (const tea of efficiencyBreakdown.teaBreakdown) {
+                    speedLines.push(`  - ${tea.name}: +${tea.efficiency.toFixed(1)}%`);
+                }
             }
             if (efficiencyBreakdown.communityEfficiency > 0) {
                 const communityBuffLevel = dataManager.getCommunityBuffLevel('/community_buff_types/production_efficiency');
@@ -509,12 +512,15 @@ class QuickInputButtons {
             actionDetails.type,
             itemDetailMap
         );
-        const teaEfficiency = parseTeaEfficiency(
+
+        // Get tea efficiency breakdown (individual teas)
+        const teaBreakdown = parseTeaEfficiencyBreakdown(
             actionDetails.type,
             activeDrinks,
             itemDetailMap,
             drinkConcentration
         );
+        const teaEfficiency = teaBreakdown.reduce((sum, tea) => sum + tea.efficiency, 0);
 
         // Get community buff efficiency
         const communityBuffLevel = dataManager.getCommunityBuffLevel('/community_buff_types/production_efficiency');
@@ -538,6 +544,7 @@ class QuickInputButtons {
                 houseEfficiency,
                 equipmentEfficiency,
                 teaEfficiency,
+                teaBreakdown, // Individual tea contributions
                 communityEfficiency,
                 skillLevel,
                 baseRequirement,
