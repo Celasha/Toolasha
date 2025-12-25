@@ -77,20 +77,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Community efficiency with tier level (e.g., "Production Efficiency T20")
   - **Format:**
     ```
-    Efficiency: +123.7% → Output: ×2.24 (561/hr)
-      - Level: +93.4%
-        - Raw level delta: +99.0% (100 - 1 base requirement)
-        - Artisan Tea impact: -5.0% (raises requirement)
-          - Drink Concentration: -0.6%
-      - House: +13.5% (Forge level 8)
-      - Equipment: +2.0%
-      - Efficiency Tea: +11.2%
-        - Drink Concentration: +1.2%
-      - Ultra Cheesesmithing Tea: +6.7%
-        - Drink Concentration: +0.7%
-      - Community: +2.2% (Production Efficiency T1)
+    Efficiency: +123.655% → Output: ×2.24 (561/hr)
+      - Level: +73.355%
+        - Raw level delta: +79.000% (100 - 21 base requirement)
+        - Artisan Tea impact: -5.000% (raises requirement)
+          - Drink Concentration: -0.645%
+      - House: +1.500% (Forge level 1)
+      - Equipment: +2.000%
+      - Efficiency Tea: +10.000%
+        - Drink Concentration: +1.300%
+      - Ultra Cheesesmithing Tea: +14.000%
+        - Drink Concentration: +1.800%
+      - Community: +19.700% (Production Efficiency T20)
     ```
+  - **All top-level items are additive:** 73.355 + 1.500 + 2.000 + 10.000 + 1.300 + 14.000 + 1.800 + 19.700 = 123.655%
   - Each component on separate line with specific details
+  - 3 decimal precision throughout for verification
 
 - **Material Costs Display Enhancement (panel-observer.js):**
   - **Embedded Artisan tea information** directly in material lines
