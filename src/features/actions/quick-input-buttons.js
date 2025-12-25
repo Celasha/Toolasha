@@ -234,68 +234,56 @@ class QuickInputButtons {
 
             // Add Efficiency breakdown
             speedLines.push(''); // Empty line
-            speedLines.push(`<span style="font-weight: 500; color: var(--text-color-primary, #fff);">Efficiency: +${totalEfficiency.toFixed(3)}% → Output: ×${efficiencyMultiplier.toFixed(2)} (${Math.round((3600 / actionTime) * efficiencyMultiplier)}/hr)</span>`);
+            speedLines.push(`<span style="font-weight: 500; color: var(--text-color-primary, #fff);">Efficiency: +${totalEfficiency.toFixed(1)}% → Output: ×${efficiencyMultiplier.toFixed(2)} (${Math.round((3600 / actionTime) * efficiencyMultiplier)}/hr)</span>`);
 
             // Detailed efficiency breakdown
             if (efficiencyBreakdown.levelEfficiency > 0 || (efficiencyBreakdown.actionLevelBreakdown && efficiencyBreakdown.actionLevelBreakdown.length > 0)) {
                 // Calculate raw level delta (before any Action Level bonuses)
                 const rawLevelDelta = efficiencyBreakdown.skillLevel - efficiencyBreakdown.baseRequirement;
 
-                // Show final level efficiency (with full precision for verification)
-                speedLines.push(`  - Level: +${efficiencyBreakdown.levelEfficiency.toFixed(3)}%`);
+                // Show final level efficiency
+                speedLines.push(`  - Level: +${efficiencyBreakdown.levelEfficiency.toFixed(1)}%`);
 
                 // Show raw level delta (what you'd get without Action Level bonuses)
-                speedLines.push(`    - Raw level delta: +${rawLevelDelta.toFixed(3)}% (${efficiencyBreakdown.skillLevel} - ${efficiencyBreakdown.baseRequirement} base requirement)`);
-
-                // Track total impact for verification
-                let totalImpact = 0;
+                speedLines.push(`    - Raw level delta: +${rawLevelDelta.toFixed(1)}% (${efficiencyBreakdown.skillLevel} - ${efficiencyBreakdown.baseRequirement} base requirement)`);
 
                 // Show Action Level bonus teas that reduce level efficiency
                 if (efficiencyBreakdown.actionLevelBreakdown && efficiencyBreakdown.actionLevelBreakdown.length > 0) {
                     for (const tea of efficiencyBreakdown.actionLevelBreakdown) {
                         // Calculate impact: base tea effect reduces efficiency
                         const baseTeaImpact = -tea.baseActionLevel;
-                        totalImpact += baseTeaImpact;
-                        speedLines.push(`    - ${tea.name} impact: ${baseTeaImpact.toFixed(3)}% (raises requirement)`);
+                        speedLines.push(`    - ${tea.name} impact: ${baseTeaImpact.toFixed(1)}% (raises requirement)`);
 
                         // Show DC contribution as additional reduction if > 0
                         if (tea.dcContribution > 0) {
                             const dcImpact = -tea.dcContribution;
-                            totalImpact += dcImpact;
-                            speedLines.push(`      - Drink Concentration: ${dcImpact.toFixed(3)}%`);
+                            speedLines.push(`      - Drink Concentration: ${dcImpact.toFixed(1)}%`);
                         }
-                    }
-
-                    // Verification line: Does the math add up?
-                    const calculatedTotal = rawLevelDelta + totalImpact;
-                    const difference = calculatedTotal - efficiencyBreakdown.levelEfficiency;
-                    if (Math.abs(difference) > 0.001) {
-                        speedLines.push(`    - ⚠️ Verification: ${rawLevelDelta.toFixed(3)} + ${totalImpact.toFixed(3)} = ${calculatedTotal.toFixed(3)} (expected ${efficiencyBreakdown.levelEfficiency.toFixed(3)}, diff: ${difference.toFixed(6)})`);
                     }
                 }
             }
             if (efficiencyBreakdown.houseEfficiency > 0) {
                 // Get house room name
                 const houseRoomName = this.getHouseRoomName(actionDetails.type);
-                speedLines.push(`  - House: +${efficiencyBreakdown.houseEfficiency.toFixed(3)}% (${houseRoomName})`);
+                speedLines.push(`  - House: +${efficiencyBreakdown.houseEfficiency.toFixed(1)}% (${houseRoomName})`);
             }
             if (efficiencyBreakdown.equipmentEfficiency > 0) {
-                speedLines.push(`  - Equipment: +${efficiencyBreakdown.equipmentEfficiency.toFixed(3)}%`);
+                speedLines.push(`  - Equipment: +${efficiencyBreakdown.equipmentEfficiency.toFixed(1)}%`);
             }
             // Break out individual teas - show BASE efficiency on main line, DC as sub-line
             if (efficiencyBreakdown.teaBreakdown && efficiencyBreakdown.teaBreakdown.length > 0) {
                 for (const tea of efficiencyBreakdown.teaBreakdown) {
                     // Show BASE efficiency (without DC scaling) on main line
-                    speedLines.push(`  - ${tea.name}: +${tea.baseEfficiency.toFixed(3)}%`);
+                    speedLines.push(`  - ${tea.name}: +${tea.baseEfficiency.toFixed(1)}%`);
                     // Show DC contribution as sub-line if > 0
                     if (tea.dcContribution > 0) {
-                        speedLines.push(`    - Drink Concentration: +${tea.dcContribution.toFixed(3)}%`);
+                        speedLines.push(`    - Drink Concentration: +${tea.dcContribution.toFixed(1)}%`);
                     }
                 }
             }
             if (efficiencyBreakdown.communityEfficiency > 0) {
                 const communityBuffLevel = dataManager.getCommunityBuffLevel('/community_buff_types/production_efficiency');
-                speedLines.push(`  - Community: +${efficiencyBreakdown.communityEfficiency.toFixed(3)}% (Production Efficiency T${communityBuffLevel})`);
+                speedLines.push(`  - Community: +${efficiencyBreakdown.communityEfficiency.toFixed(1)}% (Production Efficiency T${communityBuffLevel})`);
             }
 
             // Total time (dynamic)
