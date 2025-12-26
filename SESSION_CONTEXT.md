@@ -4,28 +4,30 @@
 
 ## === LAST SESSION ===
 
-**Task Profit Calculator Implementation**
-- Implemented comprehensive task profit display for gathering and production tasks
-- Shows total profit (task rewards + action profit) with expandable breakdown
-- Integrated Task Token valuation (best Task Shop item / 30)
-- Integrated Purple's Gift prorated value (EV / 50 tasks)
-- Combat tasks intentionally excluded (too unpredictable)
-- Files created:
-  - `src/features/tasks/task-profit-calculator.js` (255 lines)
-  - `src/features/tasks/task-profit-display.js` (248 lines)
-- Files modified:
-  - `src/core/config.js` (added `taskProfitCalculator` setting)
-  - `src/main.js` (import, initialization, export)
-- Status: Complete, built successfully, ready for testing
+**Alchemy Item Dimming Implementation**
+- Implemented item dimming for alchemy selector based on player Alchemy level
+- Compares player level to itemLevel requirement (not equipment level)
+- Visual: 0.5 opacity, items remain clickable for tooltips
+- MutationObserver detects ItemSelector dropdown (MuiTooltip)
+- WeakSet tracking prevents duplicate processing
+- Config setting: alchemyItemDimming (default: true)
+- Fixed initial implementation: Changed from modal detection to ItemSelector_menu class
+- Cleaned up all debug console.log statements
+- Files:
+  - NEW: `src/features/ui/alchemy-item-dimming.js` (168 lines)
+  - Modified: `src/core/config.js` (added alchemyItemDimming setting)
+  - Modified: `src/main.js` (import, initialization, export)
+  - Updated: `CHANGELOG.md` (documented feature)
+- Status: Complete, built successfully, committed to git (3b7ca86)
 
 ## === NEXT PRIORITY ===
 
-Test task profit calculator in-game:
-- Verify gathering task profit calculations
-- Verify production task profit calculations
-- Verify Task Token valuation accuracy
-- Verify combat tasks show nothing (as intended)
-- Check for any edge cases or parsing failures
+Test alchemy item dimming in-game:
+- Verify items above player level are dimmed (0.5 opacity)
+- Verify items at/below player level are not dimmed
+- Verify dimming updates when leveling up
+- Check all three alchemy tabs (Transmute, Decompose, Coinify)
+- Test with various Alchemy levels
 
 ## === ESSENTIAL FILES ===
 
@@ -82,6 +84,13 @@ input.dispatchEvent(new Event('input', {bubbles: true}));
 None currently
 
 ## === SESSION HISTORY ===
+
+**2025-12-25 - Alchemy Item Dimming**
+- Implemented alchemy item dimming feature for level requirements
+- Items requiring higher Alchemy level than player has are dimmed (0.5 opacity)
+- Fixed initial modal detection bug → uses ItemSelector_menu class
+- Cleaned up all debug console.log statements
+- Files: alchemy-item-dimming.js (NEW), config.js, main.js, CHANGELOG.md
 
 **2025-12-25 - Task Profit Calculator**
 - Implemented task profit calculator with expandable breakdown

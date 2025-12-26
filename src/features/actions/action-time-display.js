@@ -542,6 +542,35 @@ class ActionTimeDisplay {
             console.error('[MWI Tools] Error injecting queue times:', error);
         }
     }
+
+    /**
+     * Disable the action time display (cleanup)
+     */
+    disable() {
+        // Disconnect queue observer
+        if (this.queueObserver) {
+            this.queueObserver.disconnect();
+            this.queueObserver = null;
+        }
+
+        // Clear update timer
+        if (this.updateTimer) {
+            clearInterval(this.updateTimer);
+            this.updateTimer = null;
+        }
+
+        // Remove display element
+        if (this.displayElement && this.displayElement.parentNode) {
+            this.displayElement.parentNode.removeChild(this.displayElement);
+            this.displayElement = null;
+        }
+
+        // Remove event listeners (DataManager cleanup)
+        dataManager.off('actions_updated');
+        dataManager.off('action_completed');
+
+        this.isInitialized = false;
+    }
 }
 
 // Create and export singleton instance

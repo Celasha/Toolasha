@@ -50,6 +50,11 @@ const ENHANCING_TYPE = '/action_types/enhancing';
 const updateTimeouts = new Map();
 
 /**
+ * Module-level observer reference for cleanup
+ */
+let panelObserver = null;
+
+/**
  * Trigger debounced enhancement stats update
  * @param {HTMLElement} panel - Enhancing panel element
  * @param {string} itemHrid - Item HRID
@@ -101,7 +106,7 @@ export function initActionPanelObserver() {
  * Set up MutationObserver to detect action panels
  */
 function setupMutationObserver() {
-    const observer = new MutationObserver(async (mutations) => {
+    panelObserver = new MutationObserver(async (mutations) => {
         for (const mutation of mutations) {
             // Handle attribute changes
             if (mutation.type === 'attributes') {
@@ -190,7 +195,7 @@ function setupMutationObserver() {
         }
     });
 
-    observer.observe(document.body, {
+    panelObserver.observe(document.body, {
         childList: true,
         subtree: true,  // Watch entire tree, not just direct children
         attributes: true,  // Watch for attribute changes (all attributes)
@@ -560,4 +565,26 @@ function getItemHridFromName(itemName, gameData) {
     }
 
     return null;
+}
+
+/**
+ * Cleanup function for disabling panel observer
+ * Disconnects MutationObserver and clears pending timeouts
+ */
+export function disablePanelObserver() {
+    // Disconnect observer
+    if (panelObserver) {
+        panelObserver.disconnect();
+        panelObserver = null;
+    }
+
+    // Clear all pending debounced updates
+    for (const timeoutId of updateTimeouts.values()) {
+        clearTimeout(timeoutId);
+    }
+    updateTimeouts.clear();
+
+    // Remove dataManager event listeners
+    dataManager.off('items_updated');
+    dataManager.off('consumables_updated');
 }

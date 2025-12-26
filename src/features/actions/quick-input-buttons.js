@@ -828,6 +828,24 @@ class QuickInputButtons {
             return null;
         }
     }
+
+    /**
+     * Disable quick input buttons (cleanup)
+     */
+    disable() {
+        // Disconnect main observer
+        if (this.observer) {
+            this.observer.disconnect();
+            this.observer = null;
+        }
+
+        // Note: inputObserver and newInputObserver are created locally in injectQuickInputButtons()
+        // and attached to panels, which will be garbage collected when panels are removed.
+        // They cannot be explicitly disconnected here, but this is acceptable as they're
+        // short-lived observers tied to specific panel instances.
+
+        this.isActive = false;
+    }
 }
 
 // Create and export singleton instance
