@@ -282,6 +282,20 @@ class DataManager {
     }
 
     /**
+     * Get achievement buffs for an action type
+     * Achievement buffs are provided by the game based on completed achievement tiers
+     * @param {string} actionTypeHrid - Action type HRID (e.g., "/action_types/foraging")
+     * @returns {Object} Buff object with stat bonuses (e.g., {gatheringQuantity: 0.02}) or empty object
+     */
+    getAchievementBuffs(actionTypeHrid) {
+        if (!this.characterData?.achievementActionTypeBuffsMap) {
+            return {};
+        }
+
+        return this.characterData.achievementActionTypeBuffsMap[actionTypeHrid] || {};
+    }
+
+    /**
      * Get player's skills
      * @returns {Array|null} Character skills
      */

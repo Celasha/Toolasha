@@ -118,6 +118,7 @@ export async function calculateGatheringProfit(actionHrid) {
     let totalGathering = 0;
     let gatheringTea = 0;
     let communityGathering = 0;
+    let achievementGathering = 0;
     if (GATHERING_TYPES.includes(actionDetail.type)) {
         // Parse Gathering Tea bonus
         gatheringTea = parseGatheringBonus(drinkSlots, gameData.itemDetailMap, drinkConcentration);
@@ -126,11 +127,12 @@ export async function calculateGatheringProfit(actionHrid) {
         const communityBuffLevel = dataManager.getCommunityBuffLevel('/community_buff_types/gathering_quantity');
         communityGathering = communityBuffLevel ? 0.2 + ((communityBuffLevel - 1) * 0.005) : 0;
 
-        // TODO: Add achievement tier bonus when available
-        // const achievementGathering = ...
+        // Get Achievement buffs for this action type (Beginner tier: +2% Gathering Quantity)
+        const achievementBuffs = dataManager.getAchievementBuffs(actionDetail.type);
+        achievementGathering = achievementBuffs.gatheringQuantity || 0;
 
         // Stack all bonuses additively
-        totalGathering = gatheringTea + communityGathering;
+        totalGathering = gatheringTea + communityGathering + achievementGathering;
     }
 
     // Calculate drink consumption costs
@@ -358,6 +360,7 @@ export async function calculateGatheringProfit(actionHrid) {
         totalGathering,            // Total gathering quantity bonus (as decimal)
         gatheringTea,              // Gathering Tea component (as decimal)
         communityGathering,        // Community Buff component (as decimal)
+        achievementGathering,      // Achievement Tier component (as decimal)
         details: {
             levelEfficiency,
             houseEfficiency,
@@ -495,6 +498,9 @@ export function formatProfitDisplay(profitData) {
         }
         if (profitData.communityGathering > 0) {
             gatheringParts.push(`${(profitData.communityGathering * 100).toFixed(1)}% community`);
+        }
+        if (profitData.achievementGathering > 0) {
+            gatheringParts.push(`${(profitData.achievementGathering * 100).toFixed(1)}% achievement`);
         }
 
         lines.push(`<br>Gathering: +${(profitData.totalGathering * 100).toFixed(1)}% quantity`);
