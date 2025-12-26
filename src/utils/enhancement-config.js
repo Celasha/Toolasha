@@ -15,7 +15,7 @@ import { getEnhancementMultiplier } from './enhancement-multipliers.js';
  * @returns {Object} Enhancement parameters for simulator
  */
 export function getEnhancingParams() {
-    const autoDetect = config.getSettingValue('enhanceSim_autoDetect', true);
+    const autoDetect = config.getSettingValue('enhanceSim_autoDetect', false);
 
     if (autoDetect) {
         return getAutoDetectedParams();
@@ -182,16 +182,16 @@ function getManualParams() {
     return {
         enhancingLevel: config.getSettingValue('enhanceSim_enhancingLevel', 125),
         houseLevel: config.getSettingValue('enhanceSim_houseLevel', 6),
-        toolBonus: config.getSettingValue('enhanceSim_toolBonus', 15),
+        toolBonus: config.getSettingValue('enhanceSim_toolBonus', 19.35),
         speedBonus: config.getSettingValue('enhanceSim_speedBonus', 0),
         rareFindBonus: config.getSettingValue('enhanceSim_rareFindBonus', 0),
         experienceBonus: config.getSettingValue('enhanceSim_experienceBonus', 0),
-        guzzlingBonus: 1 + config.getSettingValue('enhanceSim_drinkConcentration', 0) / 100,
+        guzzlingBonus: 1 + config.getSettingValue('enhanceSim_drinkConcentration', 10.32) / 100,
         teas: {
             enhancing: config.getSettingValue('enhanceSim_enhancingTea', false),
             superEnhancing: config.getSettingValue('enhanceSim_superEnhancingTea', false),
-            ultraEnhancing: config.getSettingValue('enhanceSim_ultraEnhancingTea', false),
-            blessed: config.getSettingValue('enhanceSim_blessedTea', false),
+            ultraEnhancing: config.getSettingValue('enhanceSim_ultraEnhancingTea', true),
+            blessed: config.getSettingValue('enhanceSim_blessedTea', true),
         },
 
         // No display info for manual mode

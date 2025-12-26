@@ -220,10 +220,8 @@ class ProfitCalculator {
         const totalMaterialCost = materialCosts.reduce((sum, mat) => sum + mat.totalCost, 0);
 
         // Get market price for the item
-        const itemPrice = marketAPI.getPrice(itemHrid, 0);
-        if (!itemPrice) {
-            return null; // No market data
-        }
+        // Use fallback {ask: 0, bid: 0} if no market data exists (e.g., refined items)
+        const itemPrice = marketAPI.getPrice(itemHrid, 0) || { ask: 0, bid: 0 };
 
         // Check pricing mode setting
         const pricingMode = config.getSettingValue('profitCalc_pricingMode', 'conservative');

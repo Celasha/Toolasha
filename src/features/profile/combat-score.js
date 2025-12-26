@@ -32,7 +32,6 @@ class CombatScore {
         });
 
         this.isActive = true;
-        console.log('[CombatScore] Initialized - listening for profile_shared messages');
     }
 
     /**
@@ -40,16 +39,12 @@ class CombatScore {
      * @param {Object} profileData - Profile data from WebSocket
      */
     async handleProfileShared(profileData) {
-        console.log('[CombatScore] Profile shared received:', profileData);
-
         // Wait for profile panel to appear in DOM
         const profilePanel = await this.waitForProfilePanel();
         if (!profilePanel) {
             console.error('[CombatScore] Could not find profile panel');
             return;
         }
-
-        console.log('[CombatScore] Profile panel found:', profilePanel);
 
         // Find the modal container
         const modalContainer = profilePanel.closest('.Modal_modalContent__Iw0Yv') ||

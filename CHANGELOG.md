@@ -9,6 +9,509 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### **Task Profit Calculator**
+
+**NEW FEATURE:** Shows total profit for gathering and production tasks (task rewards + action profit) directly on task cards.
+
+- **Functionality:**
+  - Calculates total profit for gathering tasks (Foraging, Woodcutting, Milking)
+  - Calculates total profit for production tasks (Brewing, Cooking, Crafting, Tailoring, Cheesesmithing)
+  - No display for combat tasks (too unpredictable due to RNG drops)
+  - Shows "Unable to calculate" for unparseable tasks (rare edge case)
+
+- **Profit Calculation:**
+  - **Task Rewards:** Coins + Task Tokens (valued by best Task Shop item) + Purple's Gift (prorated per task)
+  - **Task Token Value:** Based on best Task Shop item expected value / 30 tokens
+    - Checks: Large Meteorite Cache, Large Artisan's Crate, Large Treasure Chest
+    - Uses highest expected value to determine token worth
+  - **Purple's Gift:** Expected value divided by 50 (tasks per gift)
+  - **Action Profit:**
+    - Gathering: Uses `calculateGatheringProfit()` for resource value
+    - Production: Uses `calculateProductionProfit()` for output value - material costs
+  - **Total:** Task Rewards + Action Profit
+
+- **Display Format:**
+  - **Collapsed:** `💰 Total Profit: 23,600 ▸`
+  - **Expanded (click to view):**
+    ```
+    Task Profit Breakdown
+    ━━━━━━━━━━━━━━━━━━━━━━━━
+    Task Rewards:
+      Coins: 2,000
+      Task Tokens: 6,200
+        (8 tokens @ 775 each)
+      Purple's Gift: 160
+        (3.2 per task)
+
+    Gathering Value: 15,400
+      (1000× @ 15 each)
+
+    ━━━━━━━━━━━━━━━━━━━━━━━━
+    Total Profit: 23,600
+    ```
+
+- **Production Task Example:**
+  ```
+  Task Profit Breakdown
+  ━━━━━━━━━━━━━━━━━━━━━━━━
+  Task Rewards:
+    Coins: 2,000
+    Task Tokens: 6,200
+    Purple's Gift: 160
+
+  Output Value: 12,500
+  Material Cost: -14,800
+  Net Production: -2,300
+    (5× @ -460 each)
+
+  ━━━━━━━━━━━━━━━━━━━━━━━━
+  Total Profit: 5,900
+  ```
+
+- **Technical Implementation:**
+  - NEW: `src/features/tasks/task-profit-calculator.js` (255 lines)
+    - `calculateTaskTokenValue()` - Finds best Task Shop item value
+    - `calculateTaskRewardValue()` - Calculates coins + tokens + Purple's Gift
+    - `calculateTaskProfit()` - Main calculation function
+    - Parses task descriptions to extract action HRID and quantity
+    - Returns complete breakdown with all components separated
+
+  - NEW: `src/features/tasks/task-profit-display.js` (248 lines)
+    - MutationObserver watches for task panel changes
+    - Parses task data from DOM (description, rewards)
+    - Displays profit with expandable breakdown on click
+    - Three-level display: Total → Rewards/Action → Individual items
+
+  - Modified: `src/main.js` (lines 27, 79, 104)
+    - Added import for taskProfitDisplay
+    - Initialize after character data loads
+    - Export to window.MWITools for debugging
+
+  - Modified: `src/core/config.js` (lines 212-216)
+    - Added `taskProfitCalculator` setting (enabled by default)
+
+- **Integration:**
+  - Reuses `calculateGatheringProfit()` from gathering-profit.js
+  - Reuses `calculateProductionProfit()` from production-profit.js
+  - Reuses `expectedValueCalculator.calculate()` for Task Shop items
+  - Reuses `marketAPI` for pricing
+  - Reuses `numberFormatter()` for display
+
+- **Configuration:**
+  - `taskProfitCalculator` - Enable/disable task profit display (default: true)
+
+**Result:** Players can now see at a glance whether a task is profitable before accepting it, with complete transparency into all profit components.
+
+#### **Combat Zone Indices**
+
+**NEW FEATURE:** Shows index numbers on combat zones and task cards for quick zone identification.
+
+- **Functionality:**
+  - **Map Indices:** Sequential numbers (1, 2, 3...) prepended to zone buttons on combat maps page
+  - **Task Indices:** Zone index (Z1, Z2, Z3...) appended to monster kill tasks
+  - Helps players quickly identify which zone contains target monsters
+  - Auto-updates when navigating between pages
+
+- **Map Index Display:**
+  - Appears on vertical zone tabs in combat panel
+  - Format: "1. Zone Name", "2. Zone Name", etc.
+  - Sequential numbering from top to bottom
+  - Color matches script theme
+
+- **Task Index Display:**
+  - Appears on task cards with monster kill objectives
+  - Format: "Kill Monster Name 100 times Z5"
+  - Automatically detects combat tasks
+  - Looks up zone based on monster name
+  - Handles both regular monsters and bosses
+
+- **Technical Implementation:**
+  - NEW: `src/features/combat/zone-indices.js` (245 lines)
+  - MutationObserver watches for task cards and zone buttons
+  - Uses `actionCategoryDetailMap[category].sortIndex` for zone numbers
+  - WeakSet tracking prevents duplicate processing
+  - Parses monster names from task descriptions
+  - Searches combat actions and boss spawns for zone mapping
+
+- **Configuration:**
+  - `taskMapIndex` - Enable/disable task card indices
+  - `mapIndex` - Enable/disable map page indices
+  - Both settings independent (can enable one or both)
+
+- **Files Modified:**
+  - `src/main.js` (lines 25, 75, 98)
+    - Added import for zoneIndices
+    - Initialize after character data loads
+    - Export to window.MWITools for debugging
+
+**Result:** Quick visual reference for zone locations without needing to check each zone individually.
+
+#### **Ability Book Calculator**
+
+**NEW FEATURE:** Shows number of ability books needed to reach target level in Item Dictionary.
+
+- **Functionality:**
+  - Appears when viewing ability books in Item Dictionary modal
+  - Shows books needed to reach target level
+  - Displays total cost (market ask/bid prices)
+  - Interactive: Change target level to see updated calculations
+  - Handles level 0 abilities (needs +1 book to learn initially)
+
+- **Display Format:**
+  ```
+  To level: [45]
+  Books needed: 124.3
+  Cost: 248,600 / 186,450 (ask / bid)
+  Refresh page to update current level
+  ```
+
+- **Calculation:**
+  - Gets current ability level and XP from character data
+  - Uses level XP table to calculate XP needed for target level
+  - Formula: `booksNeeded = (targetXP - currentXP) / xpPerBook`
+  - Level 0 abilities: Add +1 book to learn ability initially
+  - Max level cap: 200
+
+- **Market Integration:**
+  - Fetches current market prices (ask/bid)
+  - Shows total cost range for books needed
+  - Updates cost calculation when target level changes
+  - Handles missing market data gracefully
+
+- **User Experience:**
+  - Real-time updates as you type target level
+  - Input validation (target must be > current level, ≤ 200)
+  - Styled to match game UI
+  - Non-intrusive placement at bottom of modal
+
+- **Technical Implementation:**
+  - NEW: `src/features/abilities/ability-book-calculator.js` (286 lines)
+  - MutationObserver watches for Item Dictionary modal (class: `ItemDictionary_modalContent__WvEBY`)
+  - Extracts ability from modal title
+  - Reads character ability data from game data
+  - Integrates with existing market API for pricing
+
+- **Files Modified:**
+  - `src/main.js` (lines 23, 71, 92)
+    - Added import for abilityBookCalculator
+    - Initialize after character data loads
+    - Export to window.MWITools for debugging
+
+**Result:** Players can quickly calculate how many ability books they need to reach their desired level and see the total cost.
+
+### Changed
+
+#### **Ability Book Calculator Display Formatting**
+
+**UX IMPROVEMENT:** Books needed now displays with thousands separators for better readability.
+
+- **Previous Display:** "Books needed: 2000000001.0"
+- **Current Display:** "Books needed: 2,000,000,001"
+- **Changes:**
+  - Applied `numberFormatter()` to books needed value
+  - Removed decimal place (unnecessary for book counts)
+  - Matches cost display formatting for consistency
+
+- **Files Modified:**
+  - `src/features/abilities/ability-book-calculator.js` (lines 244, 263)
+    - Changed from `toFixed(1)` to `numberFormatter()`
+    - Applied to both initial display and dynamic updates
+
+**Result:** Large book quantities are now easy to read at a glance.
+
+#### **Ability Book Calculator Positioning**
+
+**UX IMPROVEMENT:** Calculator now utilizes blank space in left column instead of always appearing at bottom.
+
+- **Previous Behavior:**
+  - Calculator always appeared at very bottom of modal
+  - Required scrolling to see calculator on long transmutation lists
+  - Left column often had significant blank space (e.g., only 1 monster drop)
+
+- **New Behavior:**
+  - Calculator attempts to inject into left column after "Dropped By Monsters:" section
+  - Uses available blank space more efficiently
+  - Keeps calculator visible without scrolling in most cases
+  - Falls back to bottom placement if left column not found
+
+- **Implementation:**
+  - Detects two-column flex layout by searching for containers with 2 visible children
+  - Appends to first column (left side) when detected
+  - Works regardless of column content ("Dropped By Monsters", "Gathering Sources", etc.)
+  - Graceful fallback to original bottom placement if layout not detected
+  - Performance: Runs once on modal open, no performance impact
+
+- **Files Modified:**
+  - `src/features/abilities/ability-book-calculator.js` (lines 275-292)
+
+**Result:** Better space utilization and improved visibility of calculator without needing to scroll.
+
+#### **Equipment Level Display**
+
+**NEW FEATURE:** Shows item level in top right corner of equipment icons throughout the game.
+
+- **Functionality:**
+  - Automatically detects all equipment icons on the page
+  - Extracts item HRID from SVG icon elements
+  - Looks up item level from game data
+  - Injects level number overlay in top right corner
+  - Watches for dynamically added icons (inventory changes, modals, etc.)
+
+- **Display Format:**
+  - Bold number in top right corner of icon
+  - Script color with black stroke for visibility
+  - Positioned at (width - 2, 2) for consistent placement
+  - 12px font size, works on all icon sizes
+
+- **Scope:**
+  - Equipped items in character panel
+  - Inventory items
+  - Item Dictionary modal icons
+  - Action panel icons
+  - Marketplace icons
+  - All other item icon displays
+
+- **Technical Implementation:**
+  - NEW: `src/features/ui/equipment-level-display.js` (200 lines)
+  - Uses MutationObserver to watch for new icons
+  - Processes existing icons on page load
+  - WeakSet tracking to prevent duplicate overlays
+  - SVG text element for level display
+  - Only shows level for items with itemLevel > 0
+
+- **User Experience:**
+  - Non-intrusive: doesn't interfere with tooltips or clicks
+  - Always visible without hovering
+  - Helps quickly identify gear progression
+  - Useful for sorting/comparing equipment at a glance
+
+- **Files Modified:**
+  - `src/main.js` (lines 24, 73, 95)
+    - Added import for equipmentLevelDisplay
+    - Initialize after character data loads
+    - Export to window.MWITools for debugging
+
+**Result:** Players can instantly see equipment levels without hovering, making gear management and progression tracking much faster.
+
+### Fixed
+
+#### **Equipment Level Display Implementation**
+
+**BUG FIX:** Equipment Level Display completely rewritten to match original MWI Tools implementation.
+
+- **Previous Implementation (FAILED):**
+  - Used MutationObserver to watch for new icons
+  - Targeted SVG `use` elements directly
+  - Injected SVG text elements for level display
+  - WeakSet tracking to prevent duplicates
+
+- **New Implementation (WORKING):**
+  - Uses `setInterval` every 500ms (polling approach)
+  - Targets item container divs: `div.Item_itemContainer__x7kH1 div.Item_item__2De2O.Item_clickable__3viV6`
+  - Injects HTML `<div>` elements with class `script_itemLevel`
+  - Checks for `equipmentDetail` existence for equipment items
+  - Also handles ability books with `abilityBookDetail?.levelRequirements?.[0]?.level`
+  - Skips items with open tooltips (contains `div.Item_name__2C42x`)
+
+- **Technical Changes:**
+  - Changed from event-driven to polling-based detection
+  - Changed from SVG manipulation to HTML div injection
+  - Changed from targeting SVG elements to targeting container divs
+  - Added proper equipment/ability book type checking
+  - File reduced from 200+ lines to 117 lines
+
+- **File Modified:**
+  - `src/features/ui/equipment-level-display.js` (complete rewrite)
+  - Now matches original MWI Tools implementation exactly
+
+**Result:** Equipment level display should now work correctly throughout the game (inventory, character panel, modals, marketplace, etc.).
+
+#### **Profit Tooltips for Items Without Market Data**
+
+**BUG FIX + ENHANCEMENT:** Profit tooltips now appear for items without market data, showing production cost.
+
+- **Previous Behavior:**
+  - Profit calculator returned null if item had no market price data
+  - Refined items (Chaotic Flail (R), Blazing Trident (R)) showed no profit tooltip
+  - Users couldn't see material costs or production information
+
+- **Current Behavior:**
+  - Profit calculator uses fallback `{ask: 0, bid: 0}` when market data missing
+  - Tooltip shows cost per item when no market data available
+  - Calculates total production cost (materials + tea consumption)
+  - Displays "No market data available" note
+
+- **Example Display:**
+  ```
+  Cost: 1,250,000/item
+  No market data available
+  ```
+
+- **Root Cause:**
+  - Refined items and rare items may not have market data
+  - Early return in profit calculator prevented tooltip display
+  - Missing cost display for items without prices
+
+- **Files Modified:**
+  - `src/features/market/profit-calculator.js` (line 224)
+    - Changed from early return to fallback object
+    - Comment explains refined items use case
+  - `src/features/market/tooltip-prices.js` (lines 393-402)
+    - Added cost display for items without market data
+    - Calculates tea cost per item: `totalTeaCostPerHour / itemsPerHour`
+    - Shows total production cost instead of "Incomplete market data"
+
+**Result:** All craftable items now show informative tooltips - profit when market data exists, production cost when it doesn't.
+
+### Changed
+
+#### **Production Item Tooltip Simplification (Phase 1 - Option D)**
+
+**UX IMPROVEMENT:** Simplified production item tooltips to show only essential profit metrics.
+
+- **Previous Behavior:**
+  - Complex two-column layout with 8 detailed sections
+  - Material costs, tea consumption, time breakdown, efficiency breakdown
+  - Bonus revenue, gourmet, processing, artisan details
+  - Very tall tooltips requiring scrolling
+
+- **New Behavior:**
+  - Single profit line: "Net: X/hr (Y/day)"
+  - Color-coded: Green if profitable, red if not
+  - Minimal vertical space, no scrolling needed
+  - All detailed analysis still available on Action panels
+
+- **Rationale:**
+  - Tooltips are for quick reference, panels are for deep analysis
+  - Enhancement panel already shows 20-level enhancement table
+  - Reduces tooltip clutter and improves readability
+  - Prepares for Phase 2: Enhancement tooltip integration
+
+- **Files Modified:**
+  - `src/features/market/tooltip-prices.js` (lines 283-322)
+    - Simplified `injectProfitDisplay()` to minimal profit display
+    - Removed 8 unused helper methods (262 lines total)
+
+- **Consumable Tooltips:** Unchanged - still show full documentation (HP/MP restoration, cost efficiency, duration)
+
+**Result:** Clean, focused production tooltips showing only essential profit information at a glance.
+
+#### **Enhancement Tooltip Module Creation (Phase 2 - Option D)**
+
+**NEW MODULE:** Created dedicated enhancement tooltip module for analyzing optimal enhancement paths.
+
+- **Module:** `src/features/enhancement/tooltip-enhancement.js`
+  - `calculateEnhancementPath()` - Calculates optimal enhancement strategy
+  - `buildEnhancementTooltipHTML()` - Generates tooltip HTML
+  - Tests all protection strategies (2 through target level)
+  - Finds cheapest strategy based on material + protection costs
+
+- **Key Features:**
+  - Optimal strategy selection (tests "Never", "From +2", "From +3", etc.)
+  - Material cost calculation from market prices
+  - Protection cost calculation (uses protection items or item itself)
+  - Total cost and time estimates
+
+- **Integration:**
+  - Reuses existing `enhancement-calculator.js` for Markov chain math
+  - Uses `enhancement-config.js` for character state detection
+  - Plugs into tooltip system for display
+
+**Result:** Reusable module that calculates optimal enhancement path for any item at any enhancement level.
+
+#### **Enhancement Tooltip Integration (Phase 3 - Option D)**
+
+**NEW FEATURE:** Enhanced items now show optimal enhancement path analysis in tooltips.
+
+- **Tooltip Detection:**
+  - Automatically detects "+X" in item names (e.g., "Cheese Sword +8")
+  - Extracts enhancement level using regex: `/\+(\d+)$/`
+  - Passes base item HRID to calculator
+
+- **Tooltip Display:**
+  - Shows optimal protection strategy (e.g., "Never" or "From +5")
+  - Expected attempts to reach current level
+  - Material costs and protection costs breakdown
+  - Total cost and time estimate
+
+- **Example Display:**
+  ```
+  ENHANCEMENT PATH (+0 → +8)
+  Strategy: From +5
+  Expected Attempts: 42.3
+
+  Material Cost: 1,250,000
+  Protection Cost: 850,000
+  Total Cost: 2,100,000
+
+  Time: ~3.5 hours
+  ```
+
+- **Files Modified:**
+  - `src/features/market/tooltip-prices.js` (lines 11-12, 172-248)
+    - Added enhancement detection logic
+    - Added `extractEnhancementLevel()` method
+    - Added `injectEnhancementDisplay()` method
+    - Integration with enhancement-config and tooltip-enhancement modules
+
+**Result:** Complete enhancement analysis directly in item tooltips, matching original MWI Tools v25.0 behavior while keeping 20-level table on Enhancement panel.
+
+#### **Enhancement Tooltip: Market Defaults Mode**
+
+**UX IMPROVEMENT:** Enhancement tooltips now show professional enhancer costs by default instead of auto-detecting player stats.
+
+- **Previous Behavior:**
+  - Auto-detected your current Enhancing level, equipment, house rooms, and teas
+  - Showed enhancement costs based on YOUR stats
+  - Problem: Casual players with low Enhancing skill saw inflated costs
+  - Misleading for understanding actual market prices
+
+- **New Behavior (Default):**
+  - Uses professional enhancer baseline stats:
+    - Enhancing Level: 125
+    - Observatory Level: 6
+    - Tool Bonus: 19.35% (Celestial Enhancer +10)
+    - Ultra Enhancing Tea: Active (+12 levels)
+    - Blessed Tea: Active (1% skip chance)
+    - Drink Concentration: 10.32% (Guzzling Pouch +10)
+  - Shows **realistic market costs** (what professionals charge)
+  - Helps players understand true enhancement economics
+
+- **Optional Auto-Detect Mode:**
+  - Advanced users can switch to auto-detect via console:
+    ```javascript
+    MWITools.config.setSettingValue('enhanceSim_autoDetect', true)
+    ```
+  - Useful for theory-crafting or comparing your stats to professionals
+  - Individual settings customizable via config system
+
+- **Configuration Settings (11 new settings):**
+  - `enhanceSim_autoDetect` (default: false) - Toggle between market defaults and auto-detect
+  - `enhanceSim_enhancingLevel` (default: 125) - Professional Enhancing skill level
+  - `enhanceSim_houseLevel` (default: 6) - Observatory house room level
+  - `enhanceSim_toolBonus` (default: 19.35) - Tool success rate bonus percentage
+  - `enhanceSim_speedBonus` (default: 0) - Speed bonus (not critical for cost calc)
+  - `enhanceSim_blessedTea` (default: true) - Blessed Tea active
+  - `enhanceSim_ultraEnhancingTea` (default: true) - Ultra Enhancing Tea active
+  - `enhanceSim_superEnhancingTea` (default: false) - Super Enhancing Tea
+  - `enhanceSim_enhancingTea` (default: false) - Basic Enhancing Tea
+  - `enhanceSim_drinkConcentration` (default: 10.32) - Drink Concentration percentage
+  - Future config UI will provide friendly interface for these settings
+
+- **Files Modified:**
+  - `src/core/config.js` (lines 102-151) - Added 11 enhancement simulator settings
+  - `src/utils/enhancement-config.js` (line 18, lines 185-194) - Changed default to manual mode, updated defaults
+
+- **Rationale:**
+  - Most players are NOT professional enhancers with maxed gear
+  - Auto-detecting a level 50 player's stats showed costs 2-3× higher than market reality
+  - Market is driven by professional enhancers with optimal setups
+  - Tooltips should show "what will it cost to buy/commission" not "what would it cost me personally"
+
+**Result:** Enhancement tooltips now show realistic market economics out-of-the-box, with optional auto-detect for advanced users.
+
+### Added
+
 #### **Production Actions: Bonus Revenue from Essence & Rare Find Drops**
 
 **NEW FEATURE:** Production actions now display bonus revenue from essence and rare find drops, matching gathering profit calculator.

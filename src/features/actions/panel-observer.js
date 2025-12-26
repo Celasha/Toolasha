@@ -16,6 +16,7 @@ import { displayEnhancementStats } from './enhancement-display.js';
 import { displayGatheringProfit, displayProductionProfit } from './profit-display.js';
 import { formatWithSeparator } from '../../utils/formatters.js';
 import { createCollapsibleSection } from '../../utils/ui-components.js';
+import { getOriginalText } from '../../utils/dom.js';
 
 /**
  * Action types for gathering skills (3 skills)
@@ -517,22 +518,6 @@ function setupInputObservers(panel, itemHrid) {
     inputs.forEach(input => {
         addInputListener(input, panel, itemHrid);
     });
-}
-
-/**
- * Get original text from element (strips injected content)
- * @param {HTMLElement} element - Element to extract text from
- * @returns {string} Original text content
- */
-function getOriginalText(element) {
-    // Clone element to avoid modifying original
-    const clone = element.cloneNode(true);
-
-    // Remove any injected elements
-    const injected = clone.querySelectorAll('[id^="mwi-"]');
-    injected.forEach(el => el.remove());
-
-    return clone.textContent.trim();
 }
 
 /**

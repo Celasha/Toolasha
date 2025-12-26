@@ -83,6 +83,12 @@ class QuickInputButtons {
                 return;
             }
 
+            // Cache game data once for all method calls
+            const gameData = dataManager.getInitClientData();
+            if (!gameData) {
+                return;
+            }
+
             // Find the number input field
             let numberInput = panel.querySelector('input[type="number"]');
             if (!numberInput) {
@@ -103,13 +109,13 @@ class QuickInputButtons {
             }
 
             const actionName = actionNameElement.textContent.trim();
-            const actionDetails = this.getActionDetailsByName(actionName);
+            const actionDetails = this.getActionDetailsByName(actionName, gameData);
             if (!actionDetails) {
                 return;
             }
 
             // Calculate action duration and efficiency
-            const { actionTime, totalEfficiency, efficiencyBreakdown } = this.calculateActionMetrics(actionDetails);
+            const { actionTime, totalEfficiency, efficiencyBreakdown } = this.calculateActionMetrics(actionDetails, gameData);
             const efficiencyMultiplier = 1 + (totalEfficiency / 100);
 
             // Find the container to insert after (same as original MWI Tools)
@@ -120,7 +126,7 @@ class QuickInputButtons {
 
             // Get equipment details for display
             const equipment = dataManager.getEquipment();
-            const itemDetailMap = dataManager.getInitClientData()?.itemDetailMap || {};
+            const itemDetailMap = gameData.itemDetailMap || {};
 
             // Calculate speed breakdown
             const baseTime = actionDetails.baseTimeCost / 1e9;
@@ -320,7 +326,8 @@ class QuickInputButtons {
             // ===== SECTION 2: Level Progress =====
             const levelProgressSection = this.createLevelProgressSection(
                 actionDetails,
-                actionTime
+                actionTime,
+                gameData
             );
 
             // ===== SECTION 3: Quick Queue Setup =====
@@ -360,7 +367,7 @@ class QuickInputButtons {
             });
 
             const maxButton = this.createButton('Max', () => {
-                const maxValue = this.calculateMaxValue(panel, actionDetails);
+                const maxValue = this.calculateMaxValue(panel, actionDetails, gameData);
                 // Handle both infinity symbol and numeric values
                 if (maxValue === '∞' || maxValue > 0) {
                     this.setInputValue(numberInput, maxValue);
@@ -385,10 +392,11 @@ class QuickInputButtons {
     /**
      * Get action details by name
      * @param {string} actionName - Display name of the action
+     * @param {Object} gameData - Cached game data from dataManager
      * @returns {Object|null} Action details or null if not found
      */
-    getActionDetailsByName(actionName) {
-        const actionDetailMap = dataManager.getInitClientData()?.actionDetailMap;
+    getActionDetailsByName(actionName, gameData) {
+        const actionDetailMap = gameData?.actionDetailMap;
         if (!actionDetailMap) {
             return null;
         }
@@ -406,12 +414,13 @@ class QuickInputButtons {
     /**
      * Calculate action time and efficiency for current character state
      * @param {Object} actionDetails - Action details from game data
+     * @param {Object} gameData - Cached game data from dataManager
      * @returns {Object} {actionTime, totalEfficiency, efficiencyBreakdown}
      */
-    calculateActionMetrics(actionDetails) {
+    calculateActionMetrics(actionDetails, gameData) {
         const equipment = dataManager.getEquipment();
         const skills = dataManager.getSkills();
-        const itemDetailMap = dataManager.getInitClientData()?.itemDetailMap || {};
+        const itemDetailMap = gameData?.itemDetailMap || {};
 
         // Calculate base action time
         const baseTime = actionDetails.baseTimeCost / 1e9; // nanoseconds to seconds
@@ -618,9 +627,10 @@ class QuickInputButtons {
      * Calculate maximum possible value based on inventory
      * @param {HTMLElement} panel - Action panel element
      * @param {Object} actionDetails - Action details from game data
+     * @param {Object} gameData - Cached game data from dataManager
      * @returns {number|string} Maximum value (number for production, '∞' for gathering)
      */
-    calculateMaxValue(panel, actionDetails) {
+    calculateMaxValue(panel, actionDetails, gameData) {
         try {
             // Gathering actions (no materials needed) - return infinity symbol
             if (!actionDetails.inputItems || actionDetails.inputItems.length === 0) {
@@ -635,7 +645,7 @@ class QuickInputButtons {
 
             // Get Artisan Tea reduction if active
             const equipment = dataManager.getEquipment();
-            const itemDetailMap = dataManager.getInitClientData()?.itemDetailMap || {};
+            const itemDetailMap = gameData?.itemDetailMap || {};
             const drinkConcentration = getDrinkConcentration(equipment, itemDetailMap);
             const activeDrinks = dataManager.getActionDrinkSlots(actionDetails.type);
             const artisanBonus = parseArtisanBonus(activeDrinks, itemDetailMap, drinkConcentration);
@@ -671,9 +681,10 @@ class QuickInputButtons {
      * Create level progress section
      * @param {Object} actionDetails - Action details from game data
      * @param {number} actionTime - Time per action in seconds
+     * @param {Object} gameData - Cached game data from dataManager
      * @returns {HTMLElement|null} Level progress section or null if not applicable
      */
-    createLevelProgressSection(actionDetails, actionTime) {
+    createLevelProgressSection(actionDetails, actionTime, gameData) {
         try {
             // Get XP information from action
             const experienceGain = actionDetails.experienceGain;
@@ -697,7 +708,6 @@ class QuickInputButtons {
             }
 
             // Get level experience table
-            const gameData = dataManager.getInitClientData();
             const levelExperienceTable = gameData?.levelExperienceTable;
             if (!levelExperienceTable) {
                 return null;

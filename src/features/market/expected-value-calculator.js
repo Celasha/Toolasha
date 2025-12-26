@@ -67,8 +67,8 @@ class ExpectedValueCalculator {
         // Iterate 4 times for convergence (handles nesting depth)
         for (let iteration = 0; iteration < this.CONVERGENCE_ITERATIONS; iteration++) {
             for (const containerHrid of containerHrids) {
-                // Calculate and cache EV for this container
-                const ev = this.calculateSingleContainer(containerHrid);
+                // Calculate and cache EV for this container (pass cached initData)
+                const ev = this.calculateSingleContainer(containerHrid, initData);
                 if (ev !== null) {
                     this.containerCache.set(containerHrid, ev);
                 }
@@ -79,10 +79,14 @@ class ExpectedValueCalculator {
     /**
      * Calculate expected value for a single container
      * @param {string} containerHrid - Container item HRID
+     * @param {Object} initData - Cached game data (optional, will fetch if not provided)
      * @returns {number|null} Expected value or null if unavailable
      */
-    calculateSingleContainer(containerHrid) {
-        const initData = dataManager.getInitClientData();
+    calculateSingleContainer(containerHrid, initData = null) {
+        // Use cached data if provided, otherwise fetch
+        if (!initData) {
+            initData = dataManager.getInitClientData();
+        }
         if (!initData || !initData.openableLootDropMap) {
             return null;
         }

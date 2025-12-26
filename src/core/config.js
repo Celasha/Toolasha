@@ -209,6 +209,11 @@ class Config {
                 desc: "Profile panel: Combat readiness score based on houses, abilities, and equipment.",
                 isTrue: true,
             },
+            taskProfitCalculator: {
+                id: "taskProfitCalculator",
+                desc: "Task panel: Show total profit for gathering and production tasks (rewards + action profit).",
+                isTrue: true,
+            },
             ThirdPartyLinks: {
                 id: "ThirdPartyLinks",
                 desc: "Left sidebar: Links to 3rd-party websites, script settings.",
