@@ -11,7 +11,7 @@ import { createCollapsibleSection } from '../../utils/ui-components.js';
 class HouseCostDisplay {
     constructor() {
         this.isActive = false;
-        this.displayedRooms = new WeakSet(); // Track which room cards have been enhanced
+        this.currentModalContent = null; // Track current modal to detect room switches
     }
 
     /**
@@ -26,17 +26,14 @@ class HouseCostDisplay {
     }
 
     /**
-     * Add upgrade cost display to a house room card
-     * @param {Element} roomCard - The house room card DOM element
+     * Add upgrade cost column next to native costs section
+     * @param {Element} costsSection - The native HousePanel_costs element
      * @param {string} houseRoomHrid - House room HRID
+     * @param {Element} modalContent - The modal content element
      */
-    async addCostDisplay(roomCard, houseRoomHrid) {
-        // Don't add twice to same card
-        if (this.displayedRooms.has(roomCard)) {
-            return;
-        }
-
-        this.displayedRooms.add(roomCard);
+    async addCostColumn(costsSection, houseRoomHrid, modalContent) {
+        // Remove any existing column first
+        this.removeExistingColumn(modalContent);
 
         const currentLevel = houseCostCalculator.getCurrentRoomLevel(houseRoomHrid);
 
@@ -46,111 +43,141 @@ class HouseCostDisplay {
         }
 
         try {
-            // Create collapsible section
-            const content = await this.createCostContent(houseRoomHrid, currentLevel);
-            const section = createCollapsibleSection(
-                '💰',
-                'Upgrade Costs',
-                content,
-                false // collapsed by default
-            );
+            // Make costs section a flex container if not already
+            const parent = costsSection.parentElement;
+            if (!parent.style.display || parent.style.display !== 'flex') {
+                parent.style.display = 'flex';
+                parent.style.gap = '20px';
+                parent.style.alignItems = 'flex-start';
+            }
 
-            // Find insertion point (after the room's existing content)
-            const insertPoint = roomCard.querySelector('[class*="HouseRoom_"]') || roomCard;
-            insertPoint.appendChild(section);
+            // Create our column
+            const column = await this.createCostColumn(houseRoomHrid, currentLevel);
+
+            // Insert after the native costs section
+            parent.insertBefore(column, costsSection.nextSibling);
+
+            // Mark this modal as processed
+            this.currentModalContent = modalContent;
 
         } catch (error) {
-            console.error('[House Cost Display] Failed to display costs:', error);
+            console.error('[House Cost Display] Failed to add cost column:', error);
         }
     }
 
     /**
-     * Create the cost content HTML
+     * Remove existing cost column from modal
+     * @param {Element} modalContent - The modal content element
+     */
+    removeExistingColumn(modalContent) {
+        const existing = modalContent.querySelector('.mwi-house-cost-column');
+        if (existing) {
+            existing.remove();
+        }
+    }
+
+    /**
+     * Create the cost column element
      * @param {string} houseRoomHrid - House room HRID
      * @param {number} currentLevel - Current room level
-     * @returns {Promise<HTMLElement>} Content element
+     * @returns {Promise<HTMLElement>} Column element
      */
-    async createCostContent(houseRoomHrid, currentLevel) {
-        const container = document.createElement('div');
-        container.style.cssText = `
-            padding: 8px;
-            font-size: 0.875rem;
+    async createCostColumn(houseRoomHrid, currentLevel) {
+        const column = document.createElement('div');
+        column.className = 'mwi-house-cost-column';
+        column.style.cssText = `
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
         `;
-
-        // Current upgrade section
-        const currentSection = await this.createCurrentUpgradeSection(houseRoomHrid, currentLevel);
-        container.appendChild(currentSection);
-
-        // Cumulative cost section (if not upgrading to max)
-        if (currentLevel < 7) { // Can select levels beyond current+1
-            const separator = document.createElement('div');
-            separator.style.cssText = `
-                border-top: 1px solid ${config.SCRIPT_COLOR_SECONDARY};
-                margin: 12px 0;
-                opacity: 0.3;
-            `;
-            container.appendChild(separator);
-
-            const cumulativeSection = await this.createCumulativeCostSection(houseRoomHrid, currentLevel);
-            container.appendChild(cumulativeSection);
-        }
-
-        return container;
-    }
-
-    /**
-     * Create current upgrade section (next level only)
-     * @param {string} houseRoomHrid - House room HRID
-     * @param {number} currentLevel - Current room level
-     * @returns {Promise<HTMLElement>} Section element
-     */
-    async createCurrentUpgradeSection(houseRoomHrid, currentLevel) {
-        const section = document.createElement('div');
-
-        const nextLevel = currentLevel + 1;
-        const costData = await houseCostCalculator.calculateLevelCost(houseRoomHrid, nextLevel);
 
         // Header
         const header = document.createElement('div');
         header.style.cssText = `
             color: ${config.SCRIPT_COLOR_MAIN};
             font-weight: bold;
-            margin-bottom: 8px;
+            font-size: 1rem;
+            text-align: center;
+            margin-bottom: 4px;
         `;
-        header.textContent = `Next Upgrade (Level ${currentLevel} → ${nextLevel})`;
-        section.appendChild(header);
+        header.textContent = 'Upgrade Cost';
+        column.appendChild(header);
+
+        // Current upgrade costs
+        const currentSection = await this.createCurrentCostsList(houseRoomHrid, currentLevel);
+        column.appendChild(currentSection);
+
+        // Cumulative costs (if not upgrading to max)
+        if (currentLevel < 7) {
+            const separator = document.createElement('div');
+            separator.style.cssText = `
+                border-top: 1px solid ${config.SCRIPT_COLOR_SECONDARY};
+                margin: 8px 0;
+                opacity: 0.3;
+            `;
+            column.appendChild(separator);
+
+            const cumulativeSection = await this.createCumulativeSection(houseRoomHrid, currentLevel);
+            column.appendChild(cumulativeSection);
+        }
+
+        return column;
+    }
+
+    /**
+     * Create current upgrade costs list
+     * @param {string} houseRoomHrid - House room HRID
+     * @param {number} currentLevel - Current room level
+     * @returns {Promise<HTMLElement>} Section element
+     */
+    async createCurrentCostsList(houseRoomHrid, currentLevel) {
+        const section = document.createElement('div');
+        section.style.cssText = `
+            font-size: 0.875rem;
+        `;
+
+        const nextLevel = currentLevel + 1;
+        const costData = await houseCostCalculator.calculateLevelCost(houseRoomHrid, nextLevel);
 
         // Materials list
-        const materialsList = this.createMaterialsList(costData, true);
+        const materialsList = this.createSimpleMaterialsList(costData);
         section.appendChild(materialsList);
 
         // Total value
         const totalDiv = document.createElement('div');
         totalDiv.style.cssText = `
             margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
             font-weight: bold;
             color: ${config.SCRIPT_COLOR_MAIN};
+            text-align: center;
         `;
-        totalDiv.textContent = `Total Market Value: ${numberFormatter(costData.totalValue)}`;
+        totalDiv.textContent = `Total: ${numberFormatter(costData.totalValue)}`;
         section.appendChild(totalDiv);
 
         return section;
     }
 
     /**
-     * Create cumulative cost section with dropdown selector
+     * Create cumulative cost section with dropdown
      * @param {string} houseRoomHrid - House room HRID
      * @param {number} currentLevel - Current room level
      * @returns {Promise<HTMLElement>} Section element
      */
-    async createCumulativeCostSection(houseRoomHrid, currentLevel) {
+    async createCumulativeSection(houseRoomHrid, currentLevel) {
         const section = document.createElement('div');
+        section.style.cssText = `
+            font-size: 0.875rem;
+        `;
 
         // Header with dropdown
         const headerContainer = document.createElement('div');
         headerContainer.style.cssText = `
             display: flex;
             align-items: center;
+            justify-content: center;
             gap: 8px;
             margin-bottom: 8px;
         `;
@@ -160,7 +187,7 @@ class HouseCostDisplay {
             color: ${config.SCRIPT_COLOR_MAIN};
             font-weight: bold;
         `;
-        headerLabel.textContent = 'Cost to Level:';
+        headerLabel.textContent = 'To Level:';
 
         const dropdown = document.createElement('select');
         dropdown.style.cssText = `
@@ -196,60 +223,52 @@ class HouseCostDisplay {
         section.appendChild(costContainer);
 
         // Initial render
-        await this.updateCumulativeCostDisplay(costContainer, houseRoomHrid, currentLevel, parseInt(dropdown.value));
+        await this.updateCumulativeDisplay(costContainer, houseRoomHrid, currentLevel, parseInt(dropdown.value));
 
         // Update on dropdown change
         dropdown.addEventListener('change', async () => {
-            await this.updateCumulativeCostDisplay(costContainer, houseRoomHrid, currentLevel, parseInt(dropdown.value));
+            await this.updateCumulativeDisplay(costContainer, houseRoomHrid, currentLevel, parseInt(dropdown.value));
         });
 
         return section;
     }
 
     /**
-     * Update cumulative cost display based on selected target level
+     * Update cumulative cost display
      * @param {Element} container - Container element
      * @param {string} houseRoomHrid - House room HRID
      * @param {number} currentLevel - Current room level
      * @param {number} targetLevel - Target room level
      */
-    async updateCumulativeCostDisplay(container, houseRoomHrid, currentLevel, targetLevel) {
+    async updateCumulativeDisplay(container, houseRoomHrid, currentLevel, targetLevel) {
         container.innerHTML = ''; // Clear previous content
 
         const costData = await houseCostCalculator.calculateCumulativeCost(houseRoomHrid, currentLevel, targetLevel);
 
-        // Subheader
-        const subheader = document.createElement('div');
-        subheader.style.cssText = `
-            color: ${config.SCRIPT_COLOR_SECONDARY};
-            margin-bottom: 8px;
-            font-size: 0.8125rem;
-        `;
-        subheader.textContent = `Cumulative Cost (Level ${currentLevel} → ${targetLevel})`;
-        container.appendChild(subheader);
-
         // Materials list
-        const materialsList = this.createMaterialsList(costData, true);
+        const materialsList = this.createSimpleMaterialsList(costData);
         container.appendChild(materialsList);
 
         // Total value
         const totalDiv = document.createElement('div');
         totalDiv.style.cssText = `
             margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
             font-weight: bold;
             color: ${config.SCRIPT_COLOR_MAIN};
+            text-align: center;
         `;
-        totalDiv.textContent = `Total Market Value: ${numberFormatter(costData.totalValue)}`;
+        totalDiv.textContent = `Total: ${numberFormatter(costData.totalValue)}`;
         container.appendChild(totalDiv);
     }
 
     /**
-     * Create materials list HTML
+     * Create simple materials list (compact format for column)
      * @param {Object} costData - Cost data object
-     * @param {boolean} showInventory - Whether to show inventory comparison
      * @returns {HTMLElement} Materials list element
      */
-    createMaterialsList(costData, showInventory) {
+    createSimpleMaterialsList(costData) {
         const list = document.createElement('div');
         list.style.cssText = `
             display: flex;
@@ -259,18 +278,18 @@ class HouseCostDisplay {
 
         // Add coins first
         if (costData.coins > 0) {
-            const coinItem = this.createMaterialItem({
+            const coinItem = this.createSimpleMaterialItem({
                 itemHrid: '/items/coin',
                 count: costData.coins,
                 marketPrice: 1,
                 totalValue: costData.coins
-            }, showInventory);
+            });
             list.appendChild(coinItem);
         }
 
-        // Add all materials (flat list)
+        // Add all materials
         for (const material of costData.materials) {
-            const materialItem = this.createMaterialItem(material, showInventory);
+            const materialItem = this.createSimpleMaterialItem(material);
             list.appendChild(materialItem);
         }
 
@@ -278,55 +297,60 @@ class HouseCostDisplay {
     }
 
     /**
-     * Create a single material item row
+     * Create a simple material item row (compact for column)
      * @param {Object} material - Material data
-     * @param {boolean} showInventory - Whether to show inventory comparison
      * @returns {HTMLElement} Material row element
      */
-    createMaterialItem(material, showInventory) {
+    createSimpleMaterialItem(material) {
         const row = document.createElement('div');
         row.style.cssText = `
             display: flex;
-            align-items: center;
-            gap: 8px;
+            flex-direction: column;
+            gap: 2px;
             padding: 4px;
             background: rgba(0, 0, 0, 0.2);
             border-radius: 4px;
+            font-size: 0.8125rem;
         `;
 
         const itemName = houseCostCalculator.getItemName(material.itemHrid);
-        const inventoryCount = showInventory ? houseCostCalculator.getInventoryCount(material.itemHrid) : 0;
+        const inventoryCount = houseCostCalculator.getInventoryCount(material.itemHrid);
         const hasEnough = inventoryCount >= material.count;
 
-        // Item name and count
-        const nameSpan = document.createElement('span');
-        nameSpan.style.cssText = `
-            flex: 1;
+        // First line: item name and count
+        const nameRow = document.createElement('div');
+        nameRow.style.cssText = `
             color: ${config.SCRIPT_COLOR_MAIN};
         `;
-        nameSpan.textContent = `${numberFormatter(material.count)} ${itemName}`;
-        row.appendChild(nameSpan);
+        nameRow.textContent = `${numberFormatter(material.count)} ${itemName}`;
+        row.appendChild(nameRow);
 
-        // Market value
+        // Second line: market value and inventory
+        const detailRow = document.createElement('div');
+        detailRow.style.cssText = `
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.75rem;
+        `;
+
+        // Market value (skip for coins)
         if (material.itemHrid !== '/items/coin') {
             const valueSpan = document.createElement('span');
             valueSpan.style.cssText = `
                 color: ${config.SCRIPT_COLOR_SECONDARY};
-                font-size: 0.8125rem;
             `;
-            valueSpan.textContent = `(${numberFormatter(material.totalValue)})`;
-            row.appendChild(valueSpan);
-        }
+            valueSpan.textContent = numberFormatter(material.totalValue);
+            detailRow.appendChild(valueSpan);
 
-        // Inventory comparison
-        if (showInventory && material.itemHrid !== '/items/coin') {
+            // Inventory status
             const inventorySpan = document.createElement('span');
             inventorySpan.style.cssText = `
                 color: ${hasEnough ? '#4ade80' : '#f87171'};
-                font-size: 0.8125rem;
             `;
             inventorySpan.textContent = hasEnough ? `✓ ${numberFormatter(inventoryCount)}` : `✗ ${numberFormatter(inventoryCount)}`;
-            row.appendChild(inventorySpan);
+            detailRow.appendChild(inventorySpan);
+
+            row.appendChild(detailRow);
         }
 
         return row;
@@ -336,9 +360,9 @@ class HouseCostDisplay {
      * Disable the feature
      */
     disable() {
-        // Remove all injected cost displays
-        document.querySelectorAll('.mwi-house-upgrade-costs').forEach(el => el.remove());
-        this.displayedRooms = new WeakSet();
+        // Remove all injected cost columns
+        document.querySelectorAll('.mwi-house-cost-column').forEach(el => el.remove());
+        this.currentModalContent = null;
         this.isActive = false;
     }
 }
