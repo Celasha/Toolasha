@@ -32,7 +32,7 @@ class HouseCostDisplay {
      * @param {Element} modalContent - The modal content element
      */
     async addCostColumn(costsSection, houseRoomHrid, modalContent) {
-        // Remove any existing column first
+        // Remove any existing wrapper first
         this.removeExistingColumn(modalContent);
 
         const currentLevel = houseCostCalculator.getCurrentRoomLevel(houseRoomHrid);
@@ -43,19 +43,27 @@ class HouseCostDisplay {
         }
 
         try {
-            // Make costs section a flex container if not already
+            // Create a wrapper container for side-by-side layout
+            const wrapper = document.createElement('div');
+            wrapper.className = 'mwi-house-costs-wrapper';
+            wrapper.style.cssText = `
+                display: flex;
+                flex-direction: row;
+                gap: 20px;
+                align-items: flex-start;
+                width: 100%;
+            `;
+
+            // Replace the native costs section with our wrapper
             const parent = costsSection.parentElement;
-            if (!parent.style.display || parent.style.display !== 'flex') {
-                parent.style.display = 'flex';
-                parent.style.gap = '20px';
-                parent.style.alignItems = 'flex-start';
-            }
+            parent.replaceChild(wrapper, costsSection);
 
-            // Create our column
+            // Add native costs section to wrapper (left side)
+            wrapper.appendChild(costsSection);
+
+            // Create and add our column (right side)
             const column = await this.createCostColumn(houseRoomHrid, currentLevel);
-
-            // Insert after the native costs section
-            parent.insertBefore(column, costsSection.nextSibling);
+            wrapper.appendChild(column);
 
             // Mark this modal as processed
             this.currentModalContent = modalContent;
@@ -66,13 +74,22 @@ class HouseCostDisplay {
     }
 
     /**
-     * Remove existing cost column from modal
+     * Remove existing wrapper and restore native costs section
      * @param {Element} modalContent - The modal content element
      */
     removeExistingColumn(modalContent) {
-        const existing = modalContent.querySelector('.mwi-house-cost-column');
-        if (existing) {
-            existing.remove();
+        const existingWrapper = modalContent.querySelector('.mwi-house-costs-wrapper');
+        if (existingWrapper) {
+            // Find the native costs section inside the wrapper
+            const nativeCosts = existingWrapper.querySelector('[class*="HousePanel_costs"]');
+
+            if (nativeCosts) {
+                // Move native costs back to where wrapper is
+                existingWrapper.parentElement.replaceChild(nativeCosts, existingWrapper);
+            } else {
+                // Just remove the wrapper if we can't find native costs
+                existingWrapper.remove();
+            }
         }
     }
 
@@ -360,8 +377,15 @@ class HouseCostDisplay {
      * Disable the feature
      */
     disable() {
-        // Remove all injected cost columns
-        document.querySelectorAll('.mwi-house-cost-column').forEach(el => el.remove());
+        // Remove all wrappers and restore native sections
+        document.querySelectorAll('.mwi-house-costs-wrapper').forEach(wrapper => {
+            const nativeCosts = wrapper.querySelector('[class*="HousePanel_costs"]');
+            if (nativeCosts && wrapper.parentElement) {
+                wrapper.parentElement.replaceChild(nativeCosts, wrapper);
+            } else {
+                wrapper.remove();
+            }
+        });
         this.currentModalContent = null;
         this.isActive = false;
     }
