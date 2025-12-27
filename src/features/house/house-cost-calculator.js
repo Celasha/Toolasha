@@ -30,13 +30,7 @@ class HouseCostCalculator {
      * @returns {number} Current level (0-8)
      */
     getCurrentRoomLevel(houseRoomHrid) {
-        const characterData = dataManager.getCharacterData();
-        if (!characterData || !characterData.characterHouseRoomMap) {
-            return 0;
-        }
-
-        const room = characterData.characterHouseRoomMap[houseRoomHrid];
-        return room ? room.level : 0;
+        return dataManager.getHouseRoomLevel(houseRoomHrid);
     }
 
     /**
