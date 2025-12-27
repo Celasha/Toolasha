@@ -50,7 +50,8 @@ class TaskProfitDisplay {
         // Start observing the document body for changes
         this.observer.observe(document.body, {
             childList: true,
-            subtree: true
+            subtree: true,
+            characterData: true  // Detect text content changes (for task rerolls)
         });
 
         // Initial update
@@ -72,9 +73,22 @@ class TaskProfitDisplay {
 
         const taskNodes = taskListNode.querySelectorAll('.RandomTask_taskInfo__1uasf');
         for (const taskNode of taskNodes) {
-            // Skip if already processed
-            if (taskNode.querySelector('.mwi-task-profit')) {
-                continue;
+            // Get current task description to detect changes
+            const taskData = this.parseTaskData(taskNode);
+            if (!taskData) continue;
+
+            const currentTaskKey = `${taskData.description}|${taskData.quantity}`;
+
+            // Check if already processed
+            const existingProfit = taskNode.querySelector('.mwi-task-profit');
+            if (existingProfit) {
+                // Check if task has changed (rerolled)
+                const savedTaskKey = existingProfit.dataset.taskKey;
+                if (savedTaskKey === currentTaskKey) {
+                    continue; // Same task, skip
+                }
+                // Task changed - remove ALL old profit displays (visible + hidden markers)
+                taskNode.querySelectorAll('.mwi-task-profit').forEach(el => el.remove());
             }
 
             this.addProfitToTask(taskNode);
@@ -134,8 +148,18 @@ class TaskProfitDisplay {
         // Calculate profit
         const profitData = await calculateTaskProfit(taskData);
 
-        // Don't show anything for combat tasks
+        // Don't show anything for combat tasks, but mark them so we detect rerolls
         if (profitData === null) {
+            // Add hidden marker for combat tasks to enable reroll detection
+            const combatMarker = document.createElement('div');
+            combatMarker.className = 'mwi-task-profit';
+            combatMarker.style.display = 'none';
+            combatMarker.dataset.taskKey = `${taskData.description}|${taskData.quantity}`;
+
+            const actionNode = taskNode.querySelector('.RandomTask_action__3eC6o');
+            if (actionNode) {
+                actionNode.appendChild(combatMarker);
+            }
             return;
         }
 
@@ -163,13 +187,15 @@ class TaskProfitDisplay {
         // Get quantity from progress (plain div with text "Progress: 0 / 1562")
         // Find all divs in taskInfo and look for the one containing "Progress:"
         let quantity = 0;
+        let currentProgress = 0;
         const taskInfoDivs = taskNode.querySelectorAll('div');
         for (const div of taskInfoDivs) {
             const text = div.textContent.trim();
             if (text.startsWith('Progress:')) {
                 const match = text.match(REGEX_TASK_PROGRESS);
                 if (match) {
-                    quantity = parseInt(match[2]); // Total quantity (not current progress)
+                    currentProgress = parseInt(match[1]); // Current progress
+                    quantity = parseInt(match[2]); // Total quantity
                 }
                 break;
             }
@@ -207,7 +233,8 @@ class TaskProfitDisplay {
             description,
             coinReward,
             taskTokenReward,
-            quantity
+            quantity,
+            currentProgress
         };
 
         return taskData;
@@ -247,6 +274,12 @@ class TaskProfitDisplay {
             font-size: 0.75rem;
         `;
 
+        // Store task key for reroll detection
+        if (profitData.taskInfo) {
+            const taskKey = `${profitData.taskInfo.description}|${profitData.taskInfo.quantity}`;
+            profitContainer.dataset.taskKey = taskKey;
+        }
+
         // Check for error state
         if (profitData.error) {
             profitContainer.innerHTML = `
@@ -262,11 +295,13 @@ class TaskProfitDisplay {
         let timeEstimate = '???';
         if (profitData.action?.details?.actionsPerHour && profitData.taskInfo?.quantity) {
             const actionsPerHour = profitData.action.details.actionsPerHour;
-            const quantity = profitData.taskInfo.quantity;
+            const totalQuantity = profitData.taskInfo.quantity;
+            const currentProgress = profitData.taskInfo.currentProgress || 0;
+            const remainingActions = totalQuantity - currentProgress;
             const efficiencyMultiplier = profitData.action.details.efficiencyMultiplier || 1;
 
             // Efficiency reduces the number of actions needed
-            const actualActionsNeeded = quantity / efficiencyMultiplier;
+            const actualActionsNeeded = remainingActions / efficiencyMultiplier;
             const totalSeconds = (actualActionsNeeded / actionsPerHour) * 3600;
             timeEstimate = timeReadable(totalSeconds);
         }

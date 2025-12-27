@@ -116,9 +116,10 @@ function detectTaskType(taskDescription) {
  * @param {string} taskDescription - Task description text
  * @param {string} taskType - Task type (gathering/production)
  * @param {number} quantity - Task quantity
- * @returns {Object|null} {actionHrid, quantity} or null if parsing fails
+ * @param {number} currentProgress - Current progress (actions completed)
+ * @returns {Object|null} {actionHrid, quantity, currentProgress, description} or null if parsing fails
  */
-function parseTaskDescription(taskDescription, taskType, quantity) {
+function parseTaskDescription(taskDescription, taskType, quantity, currentProgress) {
 
     const gameData = dataManager.getInitClientData();
     if (!gameData) {
@@ -141,7 +142,7 @@ function parseTaskDescription(taskDescription, taskType, quantity) {
     // Find matching action HRID by searching for action name in action details
     for (const [actionHrid, actionDetail] of Object.entries(actionDetailMap)) {
         if (actionDetail.name && actionDetail.name.toLowerCase() === actionName.toLowerCase()) {
-            return { actionHrid, quantity };
+            return { actionHrid, quantity, currentProgress, description: taskDescription };
         }
     }
 
@@ -268,7 +269,7 @@ export async function calculateTaskProfit(taskData) {
     }
 
     // Parse task details
-    const taskInfo = parseTaskDescription(taskData.description, taskType, taskData.quantity);
+    const taskInfo = parseTaskDescription(taskData.description, taskType, taskData.quantity, taskData.currentProgress);
     if (!taskInfo) {
         // Return error state for UI to display "Unable to calculate"
         return {

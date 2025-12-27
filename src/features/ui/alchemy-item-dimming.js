@@ -119,9 +119,18 @@ class AlchemyItemDimming {
         // It appears when clicking in the "Alchemize Item" box
         const itemSelectorMenus = document.querySelectorAll('div.ItemSelector_menu__12sEM');
 
-        // Return the first one found (only one should be visible at a time)
-        if (itemSelectorMenus.length > 0) {
-            return itemSelectorMenus[0];
+        // Check each menu to find the one with "Alchemize Item" label
+        for (const menu of itemSelectorMenus) {
+            // Look for the ItemSelector_label element in the document
+            // (It's not a direct sibling, it's part of the button that opens this menu)
+            const alchemyLabels = document.querySelectorAll('div.ItemSelector_label__22ds9');
+
+            for (const label of alchemyLabels) {
+                if (label.textContent.trim() === 'Alchemize Item') {
+                    // Found the alchemy label, this menu is likely the alchemy selector
+                    return menu;
+                }
+            }
         }
 
         return null;

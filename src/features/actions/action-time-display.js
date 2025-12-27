@@ -206,13 +206,18 @@ class ActionTimeDisplay {
             teaEfficiency
         );
 
-        // Get queue size
-        const queueSize = action.hasMaxCount ? action.maxCount : action.currentCount;
+        // Get queue size for display (total queued, doesn't change)
+        const queueSizeDisplay = action.hasMaxCount ? action.maxCount : Infinity;
+
+        // Get remaining actions for time calculation
+        const remainingActions = action.hasMaxCount
+            ? (action.maxCount - action.currentCount)
+            : Infinity;
 
         // Calculate total actions needed (accounting for efficiency)
         // Efficiency repeats the action, so we need fewer queue items
         const efficiencyMultiplier = 1 + (totalEfficiency / 100);
-        const actualActionsNeeded = queueSize / efficiencyMultiplier;
+        const actualActionsNeeded = remainingActions !== Infinity ? remainingActions / efficiencyMultiplier : Infinity;
 
         // Calculate total time
         const totalTimeSeconds = actualActionsNeeded * actionTime;
@@ -272,7 +277,7 @@ class ActionTimeDisplay {
 
         // Queue size (with thousand separators)
         if (action.hasMaxCount) {
-            lines.push(` <span style="color: var(--text-color-secondary, #888);">(${queueSize.toLocaleString()} queued)</span>`);
+            lines.push(` <span style="color: var(--text-color-secondary, #888);">(${queueSizeDisplay.toLocaleString()} queued)</span>`);
         } else {
             lines.push(` <span style="color: var(--text-color-secondary, #888);">(∞)</span>`);
         }

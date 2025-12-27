@@ -186,8 +186,21 @@ class TaskRerollTracker {
                 // Parse cost from button at click time (not when listener attached)
                 // because the cost changes each reroll (1→2→4→8...)
                 const buttonText = button.textContent || '';
-                const costMatch = buttonText.match(/(\d+)/);
-                const cost = costMatch ? parseInt(costMatch[1]) : null;
+                const costMatch = buttonText.match(/([\d.]+)\s*([KM])?/);
+
+                let cost = null;
+                if (costMatch) {
+                    const number = parseFloat(costMatch[1]);
+                    const suffix = costMatch[2];
+
+                    if (suffix === 'K') {
+                        cost = Math.floor(number * 1000);
+                    } else if (suffix === 'M') {
+                        cost = Math.floor(number * 1000000);
+                    } else {
+                        cost = Math.floor(number);
+                    }
+                }
 
                 if (!cost) return;
 
