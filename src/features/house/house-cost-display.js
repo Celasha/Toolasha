@@ -80,9 +80,19 @@ class HouseCostDisplay {
      * @param {Object} costData - Cost data from calculator
      */
     async augmentNativeCosts(costsSection, costData) {
-        // Find all native cost item elements
-        // They should be divs containing item images and counts
-        const costItems = costsSection.querySelectorAll('[class*="HousePanel_cost"]');
+        // Find the item requirements grid container
+        const itemRequirementsGrid = costsSection.querySelector('[class*="HousePanel_itemRequirements"]');
+        if (!itemRequirementsGrid) {
+            console.warn('[House Cost Display] Could not find item requirements grid');
+            return;
+        }
+
+        // Find all individual item requirement cells
+        const costItems = itemRequirementsGrid.querySelectorAll('[class*="HousePanel_itemRequirementCell"]');
+        if (costItems.length === 0) {
+            console.warn('[House Cost Display] No item requirement cells found');
+            return;
+        }
 
         for (const costItem of costItems) {
             // Find item image to identify the item
