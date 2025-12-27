@@ -153,24 +153,20 @@ class HouseCostDisplay {
     /**
      * Add empty cell for coins to maintain grid structure
      * @param {Element} grid - The requirements grid
-     * @param {Element} itemContainer - The item icon container
+     * @param {Element} itemContainer - The item icon container (badge)
      */
     addEmptyCell(grid, itemContainer) {
-        // Find the input count cell (3rd cell after icon)
-        let inputCell = itemContainer.nextElementSibling?.nextElementSibling;
-
         const emptyCell = document.createElement('span');
         emptyCell.className = 'mwi-house-pricing-empty HousePanel_itemRequirementCell__3hSBN';
 
-        if (inputCell) {
-            inputCell.after(emptyCell);
-        }
+        // Insert immediately after the item badge
+        itemContainer.after(emptyCell);
     }
 
     /**
      * Add pricing as a new grid cell to the right of the item
      * @param {Element} grid - The requirements grid
-     * @param {Element} itemContainer - The item icon container
+     * @param {Element} itemContainer - The item icon container (badge)
      * @param {Object} materialData - Material data with pricing
      */
     addPricingCell(grid, itemContainer, materialData) {
@@ -183,9 +179,6 @@ class HouseCostDisplay {
         const inventoryCount = houseCostCalculator.getInventoryCount(materialData.itemHrid);
         const hasEnough = inventoryCount >= materialData.count;
 
-        // Find the input count cell (3rd cell after icon: icon -> inventory -> input)
-        let inputCell = itemContainer.nextElementSibling?.nextElementSibling;
-
         // Create pricing cell
         const pricingCell = document.createElement('span');
         pricingCell.className = 'mwi-house-pricing HousePanel_itemRequirementCell__3hSBN';
@@ -196,6 +189,7 @@ class HouseCostDisplay {
             font-size: 0.75rem;
             color: ${config.SCRIPT_COLOR_MAIN};
             text-align: right;
+            padding-left: 8px;
         `;
 
         pricingCell.innerHTML = `
@@ -204,12 +198,8 @@ class HouseCostDisplay {
             <div style="color: ${hasEnough ? '#4ade80' : '#f87171'};">${hasEnough ? '✓' : '✗'} ${numberFormatter(inventoryCount)}</div>
         `;
 
-        // Insert after the input cell
-        if (inputCell && inputCell.nextSibling) {
-            grid.insertBefore(pricingCell, inputCell.nextSibling);
-        } else if (inputCell) {
-            inputCell.after(pricingCell);
-        }
+        // Insert immediately after the item badge
+        itemContainer.after(pricingCell);
     }
 
     /**
