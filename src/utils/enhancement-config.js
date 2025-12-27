@@ -179,22 +179,9 @@ function getAutoDetectedParams() {
  * @returns {Object} Manual parameters
  */
 function getManualParams() {
-    // Fallback: read directly from localStorage if config system hasn't loaded the value yet
-    const settingsMap = typeof localStorage !== 'undefined'
-        ? JSON.parse(localStorage.getItem('mwitools_script_settingsMap') || '{}')
-        : {};
-
-    // Helper to get value from either config or localStorage settingsMap
+    // Get values directly from config
     const getValue = (key, defaultValue) => {
-        const configValue = config.getSettingValue(key, null);
-        if (configValue !== null) {
-            return configValue;
-        }
-        // Fallback to localStorage
-        if (settingsMap[key]) {
-            return settingsMap[key].value !== undefined ? settingsMap[key].value : settingsMap[key].isTrue;
-        }
-        return defaultValue;
+        return config.getSettingValue(key, defaultValue);
     };
 
     return {

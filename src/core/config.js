@@ -266,18 +266,24 @@ class Config {
             },
         };
 
-        // Load settings from storage
-        this.loadSettings();
+        // Note: loadSettings() must be called separately (async)
+    }
 
-        // Apply color settings
+    /**
+     * Initialize config (async) - loads settings from storage
+     * @returns {Promise<void>}
+     */
+    async initialize() {
+        await this.loadSettings();
         this.applyColorSettings();
     }
 
     /**
-     * Load settings from storage
+     * Load settings from storage (async)
+     * @returns {Promise<void>}
      */
-    loadSettings() {
-        const saved = storage.getJSON('script_settingsMap', null);
+    async loadSettings() {
+        const saved = await storage.getJSON('script_settingsMap', 'settings', null);
 
         if (saved) {
             // Merge saved settings with defaults
@@ -296,10 +302,10 @@ class Config {
     }
 
     /**
-     * Save settings to storage
+     * Save settings to storage (debounced)
      */
     saveSettings() {
-        storage.setJSON('script_settingsMap', this.settingsMap);
+        storage.setJSON('script_settingsMap', this.settingsMap, 'settings');
     }
 
     /**

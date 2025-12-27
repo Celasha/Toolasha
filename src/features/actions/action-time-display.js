@@ -21,6 +21,7 @@ import { parseTeaEfficiency, getDrinkConcentration, parseActionLevelBonus } from
 import { calculateHouseEfficiency } from '../../utils/house-efficiency.js';
 import { timeReadable } from '../../utils/formatters.js';
 import { stackAdditive } from '../../utils/efficiency.js';
+import domObserver from '../../core/dom-observer.js';
 
 /**
  * ActionTimeDisplay class manages the time display panel and queue tooltips
@@ -30,7 +31,7 @@ class ActionTimeDisplay {
         this.displayElement = null;
         this.isInitialized = false;
         this.updateTimer = null;
-        this.queueObserver = null;
+        this.unregisterQueueObserver = null;
     }
 
     /**
@@ -61,32 +62,17 @@ class ActionTimeDisplay {
     }
 
     /**
-     * Initialize MutationObserver for queue tooltip
+     * Initialize observer for queue tooltip
      */
     initializeQueueObserver() {
-        // Watch for queue tooltip appearance
-        this.queueObserver = new MutationObserver((mutations) => {
-            for (const mutation of mutations) {
-                for (const node of mutation.addedNodes) {
-                    if (node.nodeType !== Node.ELEMENT_NODE) continue;
-
-                    // Look for queue menu container
-                    const queueMenu = node.querySelector?.('[class*="QueuedActions_queuedActionsEditMenu"]');
-                    if (queueMenu) {
-                        this.injectQueueTimes(queueMenu);
-                    } else if (node.className && typeof node.className === 'string' &&
-                               node.className.includes('QueuedActions_queuedActionsEditMenu')) {
-                        this.injectQueueTimes(node);
-                    }
-                }
+        // Register with centralized DOM observer to watch for queue menu
+        this.unregisterQueueObserver = domObserver.onClass(
+            'ActionTimeDisplay-Queue',
+            'QueuedActions_queuedActionsEditMenu',
+            (queueMenu) => {
+                this.injectQueueTimes(queueMenu);
             }
-        });
-
-        // Start observing document body for tooltip additions
-        this.queueObserver.observe(document.body, {
-            childList: true,
-            subtree: true
-        });
+        );
     }
 
     /**
@@ -547,10 +533,10 @@ class ActionTimeDisplay {
      * Disable the action time display (cleanup)
      */
     disable() {
-        // Disconnect queue observer
-        if (this.queueObserver) {
-            this.queueObserver.disconnect();
-            this.queueObserver = null;
+        // Unregister queue observer
+        if (this.unregisterQueueObserver) {
+            this.unregisterQueueObserver();
+            this.unregisterQueueObserver = null;
         }
 
         // Clear update timer

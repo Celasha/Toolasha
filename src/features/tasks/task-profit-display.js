@@ -5,8 +5,12 @@
  */
 
 import config from '../../core/config.js';
+import dataManager from '../../core/data-manager.js';
 import { numberFormatter, timeReadable } from '../../utils/formatters.js';
 import { calculateTaskProfit } from './task-profit-calculator.js';
+
+// Compiled regex pattern (created once, reused for performance)
+const REGEX_TASK_PROGRESS = /(\d+)\s*\/\s*(\d+)/;
 
 /**
  * TaskProfitDisplay class manages task profit UI
@@ -14,7 +18,9 @@ import { calculateTaskProfit } from './task-profit-calculator.js';
 class TaskProfitDisplay {
     constructor() {
         this.isActive = false;
-        this.observer = null;
+        this.observer = null; // Manual MutationObserver for this feature
+        this.retryHandler = null; // Retry handler reference for cleanup
+        this.pendingTaskNodes = new Set(); // Track task nodes waiting for data
     }
 
     /**
@@ -25,16 +31,18 @@ class TaskProfitDisplay {
             return;
         }
 
-        // Set up MutationObserver to watch for task panel changes
-        this.setupTaskPanelObserver();
+        // Set up retry handler for when game data loads
+        if (!dataManager.getInitClientData()) {
+            if (!this.retryHandler) {
+                this.retryHandler = () => {
+                    // Retry all pending task nodes
+                    this.retryPendingTasks();
+                };
+                dataManager.on('character_initialized', this.retryHandler);
+            }
+        }
 
-        this.isActive = true;
-    }
-
-    /**
-     * Set up observer to watch for task panel updates
-     */
-    setupTaskPanelObserver() {
+        // Set up manual MutationObserver to watch for task panel changes
         this.observer = new MutationObserver(() => {
             this.updateTaskProfits();
         });
@@ -47,6 +55,8 @@ class TaskProfitDisplay {
 
         // Initial update
         this.updateTaskProfits();
+
+        this.isActive = true;
     }
 
     /**
@@ -72,10 +82,43 @@ class TaskProfitDisplay {
     }
 
     /**
+     * Retry processing pending task nodes after data becomes available
+     */
+    retryPendingTasks() {
+        if (!dataManager.getInitClientData()) {
+            return; // Data still not ready
+        }
+
+        // Remove retry handler - we're ready now
+        if (this.retryHandler) {
+            dataManager.off('character_initialized', this.retryHandler);
+            this.retryHandler = null;
+        }
+
+        // Process all pending tasks
+        const pendingNodes = Array.from(this.pendingTaskNodes);
+        this.pendingTaskNodes.clear();
+
+        for (const taskNode of pendingNodes) {
+            // Check if node still exists in DOM
+            if (document.contains(taskNode)) {
+                this.addProfitToTask(taskNode);
+            }
+        }
+    }
+
+    /**
      * Add profit display to a task card
      * @param {Element} taskNode - Task card DOM element
      */
     async addProfitToTask(taskNode) {
+        // Check if game data is ready
+        if (!dataManager.getInitClientData()) {
+            // Game data not ready - add to pending queue
+            this.pendingTaskNodes.add(taskNode);
+            return;
+        }
+
         // Double-check we haven't already processed this task
         // (check again in case another async call beat us to it)
         if (taskNode.querySelector('.mwi-task-profit')) {
@@ -124,7 +167,7 @@ class TaskProfitDisplay {
         for (const div of taskInfoDivs) {
             const text = div.textContent.trim();
             if (text.startsWith('Progress:')) {
-                const match = text.match(/(\d+)\s*\/\s*(\d+)/);
+                const match = text.match(REGEX_TASK_PROGRESS);
                 if (match) {
                     quantity = parseInt(match[2]); // Total quantity (not current progress)
                 }
@@ -303,7 +346,72 @@ class TaskProfitDisplay {
         lines.push('<div style="margin-top: 6px; margin-bottom: 4px; color: #aaa;">Action Profit:</div>');
 
         if (profitData.type === 'gathering') {
-            lines.push(`<div style="margin-left: 10px;">Gathering Value: ${numberFormatter(profitData.action.totalValue)}</div>`);
+            // Gathering Value (expandable)
+            lines.push(`<div class="mwi-expandable-header" data-section="gathering" style="margin-left: 10px; cursor: pointer; user-select: none;">Gathering Value: ${numberFormatter(profitData.action.totalValue)} ▸</div>`);
+            lines.push(`<div class="mwi-expandable-section" data-section="gathering" style="display: none; margin-left: 20px; font-size: 0.65rem; color: #888; margin-top: 2px;">`);
+
+            if (profitData.action.details) {
+                const details = profitData.action.details;
+                const quantity = profitData.action.breakdown.quantity;
+                const actionsPerHour = details.actionsPerHour;
+                const hoursNeeded = quantity / actionsPerHour;
+
+                // Base outputs (gathered items)
+                if (details.baseOutputs && details.baseOutputs.length > 0) {
+                    lines.push(`<div style="margin-top: 2px; color: #aaa;">Items Gathered:</div>`);
+                    for (const output of details.baseOutputs) {
+                        const itemsForTask = (output.itemsPerHour / actionsPerHour) * quantity;
+                        const revenueForTask = output.revenuePerHour * hoursNeeded;
+                        const dropRateText = output.dropRate < 1.0 ? ` (${(output.dropRate * 100).toFixed(1)}% drop)` : '';
+                        const processingText = output.isProcessed ? ` [${(output.processingChance * 100).toFixed(1)}% processed]` : '';
+                        lines.push(`<div>• ${output.name}: ${itemsForTask.toFixed(1)} items @ ${numberFormatter(Math.round(output.priceEach))} = ${numberFormatter(Math.round(revenueForTask))}${dropRateText}${processingText}</div>`);
+                    }
+                }
+
+                // Bonus Revenue (essence and rare finds)
+                if (details.bonusRevenue && details.bonusRevenue.bonusDrops && details.bonusRevenue.bonusDrops.length > 0) {
+                    const bonusRevenue = details.bonusRevenue;
+                    const efficiencyMultiplier = details.efficiencyMultiplier || 1;
+                    const totalBonusRevenue = bonusRevenue.totalBonusRevenue * efficiencyMultiplier * hoursNeeded;
+
+                    lines.push(`<div style="margin-top: 4px; color: #aaa;">Bonus Drops: ${numberFormatter(Math.round(totalBonusRevenue))}</div>`);
+
+                    // Group drops by type
+                    const essenceDrops = bonusRevenue.bonusDrops.filter(d => d.type === 'essence');
+                    const rareFindDrops = bonusRevenue.bonusDrops.filter(d => d.type === 'rare_find');
+
+                    // Show essence drops
+                    if (essenceDrops.length > 0) {
+                        for (const drop of essenceDrops) {
+                            const dropsForTask = drop.dropsPerHour * efficiencyMultiplier * hoursNeeded;
+                            const revenueForTask = drop.revenuePerHour * efficiencyMultiplier * hoursNeeded;
+                            lines.push(`<div>• ${drop.itemName}: ${dropsForTask.toFixed(2)} drops @ ${numberFormatter(Math.round(drop.priceEach))} = ${numberFormatter(Math.round(revenueForTask))}</div>`);
+                        }
+                    }
+
+                    // Show rare find drops
+                    if (rareFindDrops.length > 0) {
+                        for (const drop of rareFindDrops) {
+                            const dropsForTask = drop.dropsPerHour * efficiencyMultiplier * hoursNeeded;
+                            const revenueForTask = drop.revenuePerHour * efficiencyMultiplier * hoursNeeded;
+                            lines.push(`<div>• ${drop.itemName}: ${dropsForTask.toFixed(2)} drops @ ${numberFormatter(Math.round(drop.priceEach))} = ${numberFormatter(Math.round(revenueForTask))}</div>`);
+                        }
+                    }
+                }
+
+                // Processing conversions (raw → processed)
+                if (details.processingConversions && details.processingConversions.length > 0) {
+                    const processingBonus = details.processingRevenueBonus * hoursNeeded;
+                    lines.push(`<div style="margin-top: 4px; color: #aaa;">Processing Bonus: ${numberFormatter(Math.round(processingBonus))}</div>`);
+                    for (const conversion of details.processingConversions) {
+                        const conversionsForTask = conversion.conversionsPerHour * hoursNeeded;
+                        const revenueForTask = conversion.revenuePerHour * hoursNeeded;
+                        lines.push(`<div>• ${conversion.rawItem} → ${conversion.processedItem}: ${conversionsForTask.toFixed(1)} conversions, +${numberFormatter(Math.round(conversion.valueGain))} each = ${numberFormatter(Math.round(revenueForTask))}</div>`);
+                    }
+                }
+            }
+
+            lines.push(`</div>`);
             lines.push(`<div style="margin-left: 20px; font-size: 0.65rem; color: #888;">(${profitData.action.breakdown.quantity}× @ ${numberFormatter(profitData.action.breakdown.perAction.toFixed(0))} each)</div>`);
         } else if (profitData.type === 'production') {
             // Output Value (expandable)
@@ -407,10 +515,20 @@ class TaskProfitDisplay {
      * Disable the feature
      */
     disable() {
+        // Disconnect manual observer
         if (this.observer) {
             this.observer.disconnect();
             this.observer = null;
         }
+
+        // Unregister retry handler
+        if (this.retryHandler) {
+            dataManager.off('character_initialized', this.retryHandler);
+            this.retryHandler = null;
+        }
+
+        // Clear pending tasks
+        this.pendingTaskNodes.clear();
 
         // Remove all profit displays
         document.querySelectorAll('.mwi-task-profit').forEach(el => el.remove());

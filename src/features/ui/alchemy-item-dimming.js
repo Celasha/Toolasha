@@ -6,13 +6,14 @@
 
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
+import domObserver from '../../core/dom-observer.js';
 
 /**
  * AlchemyItemDimming class dims items based on level requirements
  */
 class AlchemyItemDimming {
     constructor() {
-        this.observer = null;
+        this.unregisterObserver = null; // Unregister function from centralized observer
         this.isActive = false;
         this.processedDivs = new WeakSet(); // Track already-processed divs
     }
@@ -26,27 +27,14 @@ class AlchemyItemDimming {
             return;
         }
 
-        // Set up MutationObserver to watch for alchemy panel changes
-        this.observer = new MutationObserver((mutations) => {
-            // Only process if we see actual node additions
-            let shouldProcess = false;
-            for (const mutation of mutations) {
-                if (mutation.addedNodes.length > 0) {
-                    shouldProcess = true;
-                    break;
-                }
-            }
-
-            if (shouldProcess) {
+        // Register with centralized observer to watch for alchemy panel
+        this.unregisterObserver = domObserver.onClass(
+            'AlchemyItemDimming',
+            'ItemSelector_menu__12sEM',
+            () => {
                 this.processAlchemyItems();
             }
-        });
-
-        // Watch for new elements anywhere in the page
-        this.observer.observe(document.body, {
-            childList: true,
-            subtree: true
-        });
+        );
 
         // Process any existing items on page
         this.processAlchemyItems();
@@ -143,9 +131,10 @@ class AlchemyItemDimming {
      * Disable the feature
      */
     disable() {
-        if (this.observer) {
-            this.observer.disconnect();
-            this.observer = null;
+        // Unregister from centralized observer
+        if (this.unregisterObserver) {
+            this.unregisterObserver();
+            this.unregisterObserver = null;
         }
 
         // Remove all dimming effects

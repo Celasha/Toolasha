@@ -27,6 +27,9 @@ class ExpectedValueCalculator {
 
         // Flag to track if initialized
         this.isInitialized = false;
+
+        // Retry handler reference for cleanup
+        this.retryHandler = null;
     }
 
     /**
@@ -35,8 +38,20 @@ class ExpectedValueCalculator {
      */
     async initialize() {
         if (!dataManager.getInitClientData()) {
-            console.warn('[ExpectedValueCalculator] Init data not available');
+            // Init data not yet available - set up retry on next character update
+            if (!this.retryHandler) {
+                this.retryHandler = () => {
+                    this.initialize(); // Retry initialization
+                };
+                dataManager.on('character_initialized', this.retryHandler);
+            }
             return false;
+        }
+
+        // Data is available - remove retry handler if it exists
+        if (this.retryHandler) {
+            dataManager.off('character_initialized', this.retryHandler);
+            this.retryHandler = null;
         }
 
         // Wait for market data to load

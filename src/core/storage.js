@@ -1,80 +1,189 @@
 /**
- * Storage Wrapper
- * Provides a clean API for persistent storage using GM_getValue/GM_setValue
- * Can be extended to support IndexedDB in the future
+ * Centralized IndexedDB Storage
+ * Replaces GM storage with IndexedDB for better performance and Chromium compatibility
+ * Provides debounced writes to reduce I/O operations
  */
 
-/**
- * Storage class for managing persistent data
- * Currently uses Greasemonkey storage (GM_getValue/GM_setValue)
- */
 class Storage {
     constructor() {
-        // Check if GM functions are available
-        if (typeof GM_getValue === 'undefined' || typeof GM_setValue === 'undefined') {
-            console.error('GM storage functions not available. Storage will not persist.');
-            this.available = false;
-        } else {
+        this.db = null;
+        this.available = false;
+        this.dbName = 'MWIToolsDB';
+        this.dbVersion = 2;
+        this.saveDebounceTimers = new Map(); // Per-key debounce timers
+        this.SAVE_DEBOUNCE_DELAY = 3000; // 3 seconds
+    }
+
+    /**
+     * Initialize the storage system
+     * @returns {Promise<boolean>} Success status
+     */
+    async initialize() {
+        try {
+            await this.openDatabase();
             this.available = true;
+            return true;
+        } catch (error) {
+            console.error('[Storage] Initialization failed:', error);
+            this.available = false;
+            return false;
         }
+    }
+
+    /**
+     * Open IndexedDB database
+     * @returns {Promise<void>}
+     */
+    openDatabase() {
+        return new Promise((resolve, reject) => {
+            const request = indexedDB.open(this.dbName, this.dbVersion);
+
+            request.onerror = () => {
+                console.error('[Storage] Failed to open IndexedDB');
+                reject(request.error);
+            };
+
+            request.onsuccess = () => {
+                this.db = request.result;
+                resolve();
+            };
+
+            request.onupgradeneeded = (event) => {
+                const db = event.target.result;
+
+                // Create settings store if it doesn't exist
+                if (!db.objectStoreNames.contains('settings')) {
+                    db.createObjectStore('settings');
+                }
+
+                // Create rerollSpending store if it doesn't exist (for task reroll tracker)
+                if (!db.objectStoreNames.contains('rerollSpending')) {
+                    db.createObjectStore('rerollSpending');
+                }
+            };
+        });
     }
 
     /**
      * Get a value from storage
      * @param {string} key - Storage key
+     * @param {string} storeName - Object store name (default: 'settings')
      * @param {*} defaultValue - Default value if key doesn't exist
-     * @returns {*} The stored value or default
+     * @returns {Promise<*>} The stored value or default
      */
-    get(key, defaultValue = null) {
-        if (!this.available) {
-            console.warn(`Storage not available, returning default for key: ${key}`);
+    async get(key, storeName = 'settings', defaultValue = null) {
+        if (!this.db) {
+            console.warn(`[Storage] Database not available, returning default for key: ${key}`);
             return defaultValue;
         }
 
-        try {
-            const value = GM_getValue(key, defaultValue);
-            return value;
-        } catch (error) {
-            console.error(`Error reading from storage (key: ${key}):`, error);
-            return defaultValue;
+        return new Promise((resolve, reject) => {
+            try {
+                const transaction = this.db.transaction([storeName], 'readonly');
+                const store = transaction.objectStore(storeName);
+                const request = store.get(key);
+
+                request.onsuccess = () => {
+                    resolve(request.result !== undefined ? request.result : defaultValue);
+                };
+
+                request.onerror = () => {
+                    console.error(`[Storage] Failed to get key ${key}:`, request.error);
+                    resolve(defaultValue);
+                };
+            } catch (error) {
+                console.error(`[Storage] Get transaction failed for key ${key}:`, error);
+                resolve(defaultValue);
+            }
+        });
+    }
+
+    /**
+     * Set a value in storage (debounced by default)
+     * @param {string} key - Storage key
+     * @param {*} value - Value to store
+     * @param {string} storeName - Object store name (default: 'settings')
+     * @param {boolean} immediate - If true, save immediately without debouncing
+     * @returns {Promise<boolean>} Success status
+     */
+    async set(key, value, storeName = 'settings', immediate = false) {
+        if (!this.db) {
+            console.warn(`[Storage] Database not available, cannot save key: ${key}`);
+            return false;
+        }
+
+        if (immediate) {
+            return this._saveToIndexedDB(key, value, storeName);
+        } else {
+            return this._debouncedSave(key, value, storeName);
         }
     }
 
     /**
-     * Set a value in storage
-     * @param {string} key - Storage key
-     * @param {*} value - Value to store
-     * @returns {boolean} Success status
+     * Internal: Save to IndexedDB (immediate)
+     * @private
      */
-    set(key, value) {
-        if (!this.available) {
-            console.warn(`Storage not available, cannot save key: ${key}`);
-            return false;
+    async _saveToIndexedDB(key, value, storeName) {
+        return new Promise((resolve, reject) => {
+            try {
+                const transaction = this.db.transaction([storeName], 'readwrite');
+                const store = transaction.objectStore(storeName);
+                const request = store.put(value, key);
+
+                request.onsuccess = () => {
+                    resolve(true);
+                };
+
+                request.onerror = () => {
+                    console.error(`[Storage] Failed to save key ${key}:`, request.error);
+                    resolve(false);
+                };
+            } catch (error) {
+                console.error(`[Storage] Save transaction failed for key ${key}:`, error);
+                resolve(false);
+            }
+        });
+    }
+
+    /**
+     * Internal: Debounced save
+     * @private
+     */
+    _debouncedSave(key, value, storeName) {
+        const timerKey = `${storeName}:${key}`;
+
+        // Clear existing timer for this key
+        if (this.saveDebounceTimers.has(timerKey)) {
+            clearTimeout(this.saveDebounceTimers.get(timerKey));
         }
 
-        try {
-            GM_setValue(key, value);
-            return true;
-        } catch (error) {
-            console.error(`Error writing to storage (key: ${key}):`, error);
-            return false;
-        }
+        // Return a promise that resolves when save completes
+        return new Promise((resolve) => {
+            const timer = setTimeout(async () => {
+                const success = await this._saveToIndexedDB(key, value, storeName);
+                this.saveDebounceTimers.delete(timerKey);
+                resolve(success);
+            }, this.SAVE_DEBOUNCE_DELAY);
+
+            this.saveDebounceTimers.set(timerKey, timer);
+        });
     }
 
     /**
      * Get a JSON object from storage
      * @param {string} key - Storage key
-     * @param {*} defaultValue - Default value if key doesn't exist or parse fails
-     * @returns {*} The parsed object or default
+     * @param {string} storeName - Object store name (default: 'settings')
+     * @param {*} defaultValue - Default value if key doesn't exist
+     * @returns {Promise<*>} The parsed object or default
      */
-    getJSON(key, defaultValue = null) {
-        const raw = this.get(key, null);
+    async getJSON(key, storeName = 'settings', defaultValue = null) {
+        const raw = await this.get(key, storeName, null);
 
         if (raw === null) {
             return defaultValue;
         }
 
-        // If it's already an object (GM storage can store objects directly in some implementations)
+        // If it's already an object, return it
         if (typeof raw === 'object') {
             return raw;
         }
@@ -83,7 +192,7 @@ class Storage {
         try {
             return JSON.parse(raw);
         } catch (error) {
-            console.error(`Error parsing JSON from storage (key: ${key}):`, error);
+            console.error(`[Storage] Error parsing JSON from storage (key: ${key}):`, error);
             return defaultValue;
         }
     }
@@ -91,56 +200,76 @@ class Storage {
     /**
      * Set a JSON object in storage
      * @param {string} key - Storage key
-     * @param {*} value - Object to store (will be JSON stringified)
-     * @returns {boolean} Success status
+     * @param {*} value - Object to store
+     * @param {string} storeName - Object store name (default: 'settings')
+     * @param {boolean} immediate - If true, save immediately
+     * @returns {Promise<boolean>} Success status
      */
-    setJSON(key, value) {
-        try {
-            // Try to stringify the value
-            const json = JSON.stringify(value);
-            return this.set(key, json);
-        } catch (error) {
-            console.error(`Error stringifying JSON for storage (key: ${key}):`, error);
-            return false;
-        }
+    async setJSON(key, value, storeName = 'settings', immediate = false) {
+        // IndexedDB can store objects directly, no need to stringify
+        return this.set(key, value, storeName, immediate);
     }
 
     /**
      * Delete a key from storage
      * @param {string} key - Storage key to delete
-     * @returns {boolean} Success status
+     * @param {string} storeName - Object store name (default: 'settings')
+     * @returns {Promise<boolean>} Success status
      */
-    delete(key) {
-        if (!this.available) {
-            console.warn(`Storage not available, cannot delete key: ${key}`);
+    async delete(key, storeName = 'settings') {
+        if (!this.db) {
+            console.warn(`[Storage] Database not available, cannot delete key: ${key}`);
             return false;
         }
 
-        try {
-            GM_setValue(key, undefined);
-            return true;
-        } catch (error) {
-            console.error(`Error deleting from storage (key: ${key}):`, error);
-            return false;
-        }
+        return new Promise((resolve, reject) => {
+            try {
+                const transaction = this.db.transaction([storeName], 'readwrite');
+                const store = transaction.objectStore(storeName);
+                const request = store.delete(key);
+
+                request.onsuccess = () => {
+                    resolve(true);
+                };
+
+                request.onerror = () => {
+                    console.error(`[Storage] Failed to delete key ${key}:`, request.error);
+                    resolve(false);
+                };
+            } catch (error) {
+                console.error(`[Storage] Delete transaction failed for key ${key}:`, error);
+                resolve(false);
+            }
+        });
     }
 
     /**
      * Check if a key exists in storage
      * @param {string} key - Storage key to check
-     * @returns {boolean} True if key exists
+     * @param {string} storeName - Object store name (default: 'settings')
+     * @returns {Promise<boolean>} True if key exists
      */
-    has(key) {
-        if (!this.available) {
+    async has(key, storeName = 'settings') {
+        if (!this.db) {
             return false;
         }
 
-        try {
-            const value = GM_getValue(key, '__STORAGE_CHECK__');
-            return value !== '__STORAGE_CHECK__';
-        } catch (error) {
-            console.error(`Error checking storage (key: ${key}):`, error);
-            return false;
+        const value = await this.get(key, storeName, '__STORAGE_CHECK__');
+        return value !== '__STORAGE_CHECK__';
+    }
+
+    /**
+     * Force immediate save of all pending debounced writes
+     */
+    async flushAll() {
+        const timers = Array.from(this.saveDebounceTimers.keys());
+
+        for (const timerKey of timers) {
+            const timer = this.saveDebounceTimers.get(timerKey);
+            if (timer) {
+                clearTimeout(timer);
+                this.saveDebounceTimers.delete(timerKey);
+            }
         }
     }
 }

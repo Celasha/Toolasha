@@ -56,22 +56,16 @@ const CAPE_ITEM_TOKEN_DATA = {
  */
 export async function calculateCombatScore(profileData) {
     try {
-        console.log('[CombatScore] Starting calculation for profile:', profileData.profile?.sharableCharacter?.name);
-
         // 1. Calculate House Score
         const houseResult = calculateHouseScore(profileData);
-        console.log('[CombatScore] House score:', houseResult.score, houseResult);
 
         // 2. Calculate Ability Score
         const abilityResult = calculateAbilityScore(profileData);
-        console.log('[CombatScore] Ability score:', abilityResult.score, abilityResult);
 
         // 3. Calculate Equipment Score
         const equipmentResult = calculateEquipmentScore(profileData);
-        console.log('[CombatScore] Equipment score:', equipmentResult.score, equipmentResult);
 
         const totalScore = houseResult.score + abilityResult.score + equipmentResult.score;
-        console.log('[CombatScore] Total score:', totalScore);
 
         return {
             total: totalScore,
@@ -211,8 +205,6 @@ function calculateEquipmentScore(profileData) {
     let totalValue = 0;
     const breakdown = [];
 
-    console.log('[CombatScore] Calculating equipment score for', Object.keys(equippedItems).length, 'items');
-
     for (const [slot, itemData] of Object.entries(equippedItems)) {
         if (!itemData?.itemHrid) continue;
 
@@ -229,7 +221,6 @@ function calculateEquipmentScore(profileData) {
         const tokenValue = calculateTokenBasedItemValue(itemHrid);
         if (tokenValue > 0) {
             itemCost = tokenValue;
-            console.log('[CombatScore]', itemDetails.name, '- using token-based valuation:', itemCost.toFixed(0));
         } else {
             // Try market price (most items are purchased, not self-enhanced)
             const marketPrice = marketAPI.getPrice(itemHrid, enhancementLevel);
@@ -248,7 +239,6 @@ function calculateEquipmentScore(profileData) {
                 }
 
                 itemCost = (ask + bid) / 2;
-                console.log('[CombatScore]', itemDetails.name, '+' + enhancementLevel, '- using market price:', itemCost.toFixed(0));
             } else if (enhancementLevel > 1) {
                 // No market data or illiquid - calculate enhancement cost
                 const enhancementParams = getEnhancingParams();
@@ -256,7 +246,6 @@ function calculateEquipmentScore(profileData) {
 
                 if (enhancementPath && enhancementPath.optimalStrategy) {
                     itemCost = enhancementPath.optimalStrategy.totalCost;
-                    console.log('[CombatScore]', itemDetails.name, '+' + enhancementLevel, '- using enhancement calculation:', itemCost.toFixed(0));
                 } else {
                     // Fallback to base market price if enhancement calculation fails
                     const basePrice = marketAPI.getPrice(itemHrid, 0);
@@ -272,7 +261,6 @@ function calculateEquipmentScore(profileData) {
                         }
 
                         itemCost = (ask + bid) / 2;
-                        console.log('[CombatScore]', itemDetails.name, '+' + enhancementLevel, '- fallback to base market price:', itemCost.toFixed(0));
                     }
                 }
             } else {
@@ -290,7 +278,6 @@ function calculateEquipmentScore(profileData) {
                     }
 
                     itemCost = (ask + bid) / 2;
-                    console.log('[CombatScore]', itemDetails.name, '- using base market price:', itemCost.toFixed(0));
                 }
             }
         }
@@ -309,8 +296,6 @@ function calculateEquipmentScore(profileData) {
 
     // Convert to score (value / 1 million)
     const score = totalValue / 1_000_000;
-
-    console.log('[CombatScore] Total equipment value:', totalValue, 'Score:', score);
 
     // Sort by value descending
     breakdown.sort((a, b) => parseFloat(b.value) - parseFloat(a.value));

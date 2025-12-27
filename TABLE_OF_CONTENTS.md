@@ -11,8 +11,8 @@ This document provides a detailed breakdown of all major functions in MWITools-2
 ### Settings & Configuration
 | Function | Lines | Description |
 |----------|-------|-------------|
-| `saveSettings()` | 5225-5230 | Save user settings to GM storage |
-| `readSettings()` | 5232-5245 | Load settings from GM storage |
+| `saveSettings()` | 5225-5230 | Save user settings to IndexedDB (async) |
+| `readSettings()` | 5232-5245 | Load settings from IndexedDB (async) |
 | `checkEquipment()` | 5256-5305 | Check for specific equipped items |
 | `notificate()` | 5317-5352 | Send GM notifications |
 
@@ -440,7 +440,7 @@ This document provides a detailed breakdown of all major functions in MWITools-2
 - `GM_addStyle` - CSS injection
 - `GM.xmlHttpRequest` / `GM_xmlhttpRequest` - HTTP requests
 - `GM_notification` - Desktop notifications
-- `GM_getValue` / `GM_setValue` - Persistent storage
+- `IndexedDB` - Persistent storage (async with debounced writes)
 
 ---
 

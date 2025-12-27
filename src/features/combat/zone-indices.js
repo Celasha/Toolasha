@@ -5,17 +5,21 @@
 
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
+import domObserver from '../../core/dom-observer.js';
+
+// Compiled regex pattern (created once, reused for performance)
+const REGEX_COMBAT_TASK = /(?:Kill|Defeat)\s*-\s*(.+)$/;
 
 /**
  * ZoneIndices class manages zone index display on maps and tasks
  */
 class ZoneIndices {
     constructor() {
-        this.observer = null;
+        this.unregisterObserver = null; // Unregister function from centralized observer
         this.isActive = false;
-        this.debounceTimer = null;
-        this.DEBOUNCE_MS = 100; // Wait 100ms after last mutation before processing
         this.monsterZoneCache = null; // Cache monster name -> zone index mapping
+        this.taskMapIndexEnabled = false;
+        this.mapIndexEnabled = false;
     }
 
     /**
@@ -23,47 +27,37 @@ class ZoneIndices {
      */
     initialize() {
         // Check if either feature is enabled
-        const taskMapIndexEnabled = config.getSetting('taskMapIndex');
-        const mapIndexEnabled = config.getSetting('mapIndex');
+        this.taskMapIndexEnabled = config.getSetting('taskMapIndex');
+        this.mapIndexEnabled = config.getSetting('mapIndex');
 
-        if (!taskMapIndexEnabled && !mapIndexEnabled) {
+        if (!this.taskMapIndexEnabled && !this.mapIndexEnabled) {
             return;
         }
 
         // Build monster->zone cache once on initialization
-        if (taskMapIndexEnabled) {
+        if (this.taskMapIndexEnabled) {
             this.buildMonsterZoneCache();
         }
 
-        // Set up MutationObserver to watch for task cards and map buttons
-        this.observer = new MutationObserver((mutations) => {
-            // Debounce to prevent excessive re-runs
-            clearTimeout(this.debounceTimer);
-            this.debounceTimer = setTimeout(() => {
-                for (const mutation of mutations) {
-                    if (mutation.addedNodes.length > 0) {
-                        if (taskMapIndexEnabled) {
-                            this.addTaskIndices();
-                        }
-                        if (mapIndexEnabled) {
-                            this.addMapIndices();
-                        }
-                        break;
-                    }
+        // Register with centralized observer with debouncing enabled
+        this.unregisterObserver = domObserver.register(
+            'ZoneIndices',
+            () => {
+                if (this.taskMapIndexEnabled) {
+                    this.addTaskIndices();
                 }
-            }, this.DEBOUNCE_MS);
-        });
-
-        this.observer.observe(document.body, {
-            childList: true,
-            subtree: true
-        });
+                if (this.mapIndexEnabled) {
+                    this.addMapIndices();
+                }
+            },
+            { debounce: true, debounceDelay: 100 } // Use centralized debouncing
+        );
 
         // Process existing elements
-        if (taskMapIndexEnabled) {
+        if (this.taskMapIndexEnabled) {
             this.addTaskIndices();
         }
-        if (mapIndexEnabled) {
+        if (this.mapIndexEnabled) {
             this.addMapIndices();
         }
 
@@ -141,7 +135,7 @@ class ZoneIndices {
 
             // Extract monster name from task text
             // Format: "Defeat - Jerry" or "Kill - Monster Name"
-            const match = taskText.match(/(?:Kill|Defeat)\s*-\s*(.+)$/);
+            const match = taskText.match(REGEX_COMBAT_TASK);
             if (!match) {
                 continue; // Couldn't parse monster name
             }
@@ -253,15 +247,10 @@ class ZoneIndices {
      * Disable the feature
      */
     disable() {
-        if (this.observer) {
-            this.observer.disconnect();
-            this.observer = null;
-        }
-
-        // Clear debounce timer
-        if (this.debounceTimer) {
-            clearTimeout(this.debounceTimer);
-            this.debounceTimer = null;
+        // Unregister from centralized observer
+        if (this.unregisterObserver) {
+            this.unregisterObserver();
+            this.unregisterObserver = null;
         }
 
         // Remove all added indices

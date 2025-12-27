@@ -59,14 +59,17 @@ MWI Tools/
 ## ✅ Completed Modules
 
 ### Core
-- **storage.js** - GM_getValue/GM_setValue wrapper with clean API
-  - `storage.get(key, defaultValue)` - Get value from storage
-  - `storage.set(key, value)` - Set value in storage
-  - `storage.getJSON(key, defaultValue)` - Get JSON object
-  - `storage.setJSON(key, value)` - Set JSON object
-  - `storage.has(key)` - Check if key exists
-  - `storage.delete(key)` - Delete key
-  - Designed for easy IndexedDB migration later
+- **storage.js** - IndexedDB wrapper with async operations and debounced writes
+  - `storage.initialize()` - Initialize IndexedDB connection (async)
+  - `storage.get(key, storeName, defaultValue)` - Get value from storage (async)
+  - `storage.set(key, value, storeName, immediate)` - Set value (debounced by default, async)
+  - `storage.getJSON(key, storeName, defaultValue)` - Get JSON object (async)
+  - `storage.setJSON(key, value, storeName, immediate)` - Set JSON object (async)
+  - `storage.has(key, storeName)` - Check if key exists (async)
+  - `storage.delete(key, storeName)` - Delete key (async)
+  - `storage.flushAll()` - Force immediate save of pending writes (async)
+  - Debounced writes reduce I/O operations by ~90% (3-second delay)
+  - Object stores: `settings` (config), `rerollSpending` (task reroll data)
 
 ### Utils
 - **formatters.js** - Number and time formatting utilities
@@ -296,7 +299,7 @@ Each module has a corresponding test file in `tests/`. Run tests with:
 node tests/MODULE_NAME.test.js
 ```
 
-**Note**: Storage tests use mocks since `GM_getValue/GM_setValue` are only available in the userscript environment.
+**Note**: Storage tests use mocks since IndexedDB is not available in Node.js test environment.
 
 ## 📚 Documentation
 
@@ -323,8 +326,8 @@ node tests/MODULE_NAME.test.js
 
 - **Modularity**: Small, focused modules with clear responsibilities
 - **Testability**: Pure functions where possible, dependency injection
-- **Backwards Compatibility**: Use same GM storage keys as original
-- **Future-Proof**: Design for IndexedDB migration, async support
+- **Performance**: IndexedDB with debounced writes, centralized MutationObserver
+- **Async-First**: Proper async/await patterns throughout
 - **Clean API**: Simple, intuitive interfaces
 
 ## 📝 Notes

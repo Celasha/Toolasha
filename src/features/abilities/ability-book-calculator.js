@@ -9,13 +9,14 @@ import dataManager from '../../core/data-manager.js';
 import marketAPI from '../../api/marketplace.js';
 import { numberFormatter } from '../../utils/formatters.js';
 import dom from '../../utils/dom.js';
+import domObserver from '../../core/dom-observer.js';
 
 /**
  * AbilityBookCalculator class handles ability book calculations in Item Dictionary
  */
 class AbilityBookCalculator {
     constructor() {
-        this.observer = null;
+        this.unregisterObserver = null; // Unregister function from centralized observer
         this.isActive = false;
     }
 
@@ -28,47 +29,14 @@ class AbilityBookCalculator {
             return;
         }
 
-        // Wait for game page to load
-        this.waitForGamePage();
-    }
-
-    /**
-     * Wait for game page element
-     */
-    waitForGamePage() {
-        const targetNode = document.querySelector('div.GamePage_gamePage__ixiPl');
-
-        if (targetNode) {
-            this.setupObserver(targetNode);
-        } else {
-            setTimeout(() => this.waitForGamePage(), 200);
-        }
-    }
-
-    /**
-     * Set up MutationObserver to watch for Item Dictionary modal
-     * @param {Element} targetNode - Game page element to observe
-     */
-    setupObserver(targetNode) {
-        this.observer = new MutationObserver((mutations) => {
-            for (const mutation of mutations) {
-                for (const added of mutation.addedNodes) {
-                    // Check if it's a modal with Item Dictionary content
-                    if (added?.classList?.contains('Modal_modalContainer__3B80m')) {
-                        const dictContent = added.querySelector('div.ItemDictionary_modalContent__WvEBY');
-                        if (dictContent) {
-                            this.handleItemDictionary(dictContent);
-                        }
-                    }
-                }
+        // Register with centralized observer to watch for Item Dictionary modal
+        this.unregisterObserver = domObserver.onClass(
+            'AbilityBookCalculator',
+            'ItemDictionary_modalContent__WvEBY',
+            (dictContent) => {
+                this.handleItemDictionary(dictContent);
             }
-        });
-
-        this.observer.observe(targetNode, {
-            attributes: false,
-            childList: true,
-            subtree: true
-        });
+        );
 
         this.isActive = true;
     }
@@ -142,19 +110,19 @@ class AbilityBookCalculator {
      * @returns {Object} {level, xp}
      */
     getCurrentAbilityData(abilityHrid) {
-        const gameData = dataManager.getInitClientData();
-        if (!gameData) return { level: 0, xp: 0 };
+        // Get character abilities from live character data (NOT static game data)
+        const characterData = dataManager.characterData;
+        if (!characterData?.characterAbilities) {
+            return { level: 0, xp: 0 };
+        }
 
-        // Get character abilities from game data
-        const characterAbilities = gameData.characterAbilities || {};
-
-        for (const ability of Object.values(characterAbilities)) {
-            if (ability.abilityHrid === abilityHrid) {
-                return {
-                    level: ability.level || 0,
-                    xp: ability.experience || 0
-                };
-            }
+        // characterAbilities is an ARRAY of ability objects
+        const ability = characterData.characterAbilities.find(a => a.abilityHrid === abilityHrid);
+        if (ability) {
+            return {
+                level: ability.level || 0,
+                xp: ability.experience || 0
+            };
         }
 
         return { level: 0, xp: 0 };
@@ -229,6 +197,9 @@ class AbilityBookCalculator {
         );
 
         calculatorDiv.innerHTML = `
+            <div style="margin-bottom: 8px; font-size: 0.95em;">
+                <strong>Current level:</strong> ${currentLevel}
+            </div>
             <div style="margin-bottom: 8px;">
                 <label for="tillLevelInput">To level: </label>
                 <input
@@ -300,9 +271,10 @@ class AbilityBookCalculator {
      * Disable the feature
      */
     disable() {
-        if (this.observer) {
-            this.observer.disconnect();
-            this.observer = null;
+        // Unregister from centralized observer
+        if (this.unregisterObserver) {
+            this.unregisterObserver();
+            this.unregisterObserver = null;
         }
         this.isActive = false;
     }

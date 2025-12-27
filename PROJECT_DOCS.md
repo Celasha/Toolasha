@@ -371,7 +371,7 @@ See [CHANGELOG.md](CHANGELOG.md) for version history.
 - **GM_addStyle** - Custom CSS injection
 - **GM.xmlHttpRequest** / **GM_xmlhttpRequest** - Market API fetching
 - **GM_notification** - Desktop notifications
-- **GM_getValue** / **GM_setValue** - Persistent storage
+- **IndexedDB** - Persistent storage (async with debounced writes)
 - **MutationObserver** - DOM change monitoring
 - **WebSocket** - Game communication interception
 
@@ -406,7 +406,8 @@ mwi-tools/
 │   ├── config.js           # Settings, constants, localization
 │   ├── websocket.js        # WebSocket hooking and message handling
 │   ├── data-manager.js     # Game data storage and access
-│   └── storage.js          # GM_getValue/setValue wrapper
+│   ├── dom-observer.js     # Centralized MutationObserver system
+│   └── storage.js          # IndexedDB wrapper with debounced writes
 │
 ├── api/
 │   ├── market-api.js       # Market data fetching and caching
@@ -469,7 +470,7 @@ mwi-tools/
 1. Extract configuration and settings system
 2. Separate WebSocket hooking logic
 3. Create data manager for game state
-4. Build storage wrapper
+4. Build IndexedDB storage wrapper with async operations
 
 ### Phase 2: Utility Separation
 1. Number/time formatters

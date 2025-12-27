@@ -430,15 +430,23 @@ export function buildEnhancementTooltipHTML(enhancementData) {
     html += '</div>';
 
     // Time estimate
-    const hours = optimalStrategy.totalTime / 3600;
-    if (hours < 1) {
-        const minutes = Math.round(hours * 60);
+    const totalSeconds = optimalStrategy.totalTime;
+
+    if (totalSeconds < 60) {
+        // Less than 1 minute: show seconds
+        html += '<div style="margin-top: 4px;">Time: ~' + Math.round(totalSeconds) + ' seconds</div>';
+    } else if (totalSeconds < 3600) {
+        // Less than 1 hour: show minutes
+        const minutes = Math.round(totalSeconds / 60);
         html += '<div style="margin-top: 4px;">Time: ~' + minutes + ' minutes</div>';
-    } else if (hours < 24) {
-        html += '<div style="margin-top: 4px;">Time: ~' + hours.toFixed(1) + ' hours</div>';
+    } else if (totalSeconds < 86400) {
+        // Less than 1 day: show hours
+        const hours = (totalSeconds / 3600).toFixed(1);
+        html += '<div style="margin-top: 4px;">Time: ~' + hours + ' hours</div>';
     } else {
-        const days = hours / 24;
-        html += '<div style="margin-top: 4px;">Time: ~' + days.toFixed(1) + ' days</div>';
+        // 1 day or more: show days
+        const days = (totalSeconds / 86400).toFixed(1);
+        html += '<div style="margin-top: 4px;">Time: ~' + days + ' days</div>';
     }
 
     html += '</div>'; // Close margin-left div

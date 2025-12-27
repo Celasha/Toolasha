@@ -33,7 +33,7 @@ class MarketAPI {
 
         // Check cache first (unless force fetch)
         if (!forceFetch) {
-            const cached = this.getCachedData();
+            const cached = await this.getCachedData();
             if (cached) {
                 this.marketData = cached.data;
                 this.lastFetchTimestamp = cached.timestamp;
@@ -57,7 +57,7 @@ class MarketAPI {
         }
 
         // Fallback: Try to use expired cache
-        const expiredCache = storage.getJSON(this.CACHE_KEY_DATA, null);
+        const expiredCache = await storage.getJSON(this.CACHE_KEY_DATA, 'settings', null);
         if (expiredCache) {
             console.warn('[MarketAPI] Using expired cache as fallback');
             this.marketData = expiredCache.marketData;
@@ -98,11 +98,11 @@ class MarketAPI {
 
     /**
      * Get cached data if valid
-     * @returns {Object|null} { data, timestamp } or null if invalid/expired
+     * @returns {Promise<Object|null>} { data, timestamp } or null if invalid/expired
      */
-    getCachedData() {
-        const cachedTimestamp = storage.get(this.CACHE_KEY_TIMESTAMP, null);
-        const cachedData = storage.getJSON(this.CACHE_KEY_DATA, null);
+    async getCachedData() {
+        const cachedTimestamp = await storage.get(this.CACHE_KEY_TIMESTAMP, 'settings', null);
+        const cachedData = await storage.getJSON(this.CACHE_KEY_DATA, 'settings', null);
 
         if (!cachedTimestamp || !cachedData) {
             return null;
@@ -127,8 +127,8 @@ class MarketAPI {
      * @param {Object} data - API response to cache
      */
     cacheData(data) {
-        storage.setJSON(this.CACHE_KEY_DATA, data);
-        storage.set(this.CACHE_KEY_TIMESTAMP, Date.now());
+        storage.setJSON(this.CACHE_KEY_DATA, data, 'settings');
+        storage.set(this.CACHE_KEY_TIMESTAMP, Date.now(), 'settings');
     }
 
     /**

@@ -184,9 +184,14 @@ async function calculateGatheringTaskProfit(actionHrid, quantity) {
             quantity,
             perAction: profitPerAction
         },
-        // Include data for time calculation
+        // Include detailed data for expandable display
         details: {
-            actionsPerHour: profitData.actionsPerHour
+            actionsPerHour: profitData.actionsPerHour,
+            baseOutputs: profitData.baseOutputs,
+            bonusRevenue: profitData.bonusRevenue,
+            processingConversions: profitData.processingConversions,
+            processingRevenueBonus: profitData.processingRevenueBonus,
+            efficiencyMultiplier: profitData.efficiencyMultiplier
         }
     };
 }

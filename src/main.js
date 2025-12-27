@@ -31,10 +31,6 @@ import taskRerollTracker from './features/tasks/task-reroll-tracker.js';
 import * as enhancementGearDetector from './utils/enhancement-gear-detector.js';
 import { getEnhancingParams } from './utils/enhancement-config.js';
 import * as enhancementCalculator from './utils/enhancement-calculator.js';
-import TaskRerollDiagnostic from '../diagnostics/task-reroll-diagnostic.js';
-// Debug utilities - only available via window.MWITools, not auto-run
-// import * as gameMechanicsAudit from './utils/game-mechanics-audit.js';
-// import { debugEnhancementSpeed } from './utils/debug-enhancement-speed.js';
 
 // CRITICAL: Install WebSocket hook FIRST, before game connects
 webSocketHook.install();
@@ -42,30 +38,31 @@ webSocketHook.install();
 // CRITICAL: Start centralized DOM observer SECOND, before features initialize
 domObserver.start();
 
-// Initialize Data Manager after a delay (let game load localStorageUtil)
-setTimeout(() => {
-    dataManager.initialize();
-}, 1000);
+// Initialize storage and config THIRD (async)
+(async () => {
+    try {
+        // Initialize storage (opens IndexedDB)
+        await storage.initialize();
 
-// Test core modules
-try {
-    // Test formatters
-    numberFormatter(1500);
-    timeReadable(3661);
+        // Initialize config (loads settings from storage)
+        await config.initialize();
 
-    // Test storage
-    storage.set('test_key', 'test_value');
-    storage.getJSON('test_json');
+        console.log('✅ Storage and config initialized');
 
-    // Test config
-    config.getSetting('totalActionTime');
+        // Add beforeunload handler to flush all pending writes
+        window.addEventListener('beforeunload', () => {
+            storage.flushAll();
+        });
 
-    // Test utilities
-    efficiency.calculateEfficiency(150);
-    dom.createColoredText('Test', 'main');
-} catch (error) {
-    console.error('❌ Module test failed:', error);
-}
+        // Initialize Data Manager immediately
+        // Don't wait for localStorageUtil - it handles missing data gracefully
+        dataManager.initialize();
+    } catch (error) {
+        console.error('❌ Storage/config initialization failed:', error);
+        // Initialize anyway
+        dataManager.initialize();
+    }
+})();
 
 dataManager.on('character_initialized', (data) => {
     // Initialize market features after character data loads
@@ -85,7 +82,7 @@ dataManager.on('character_initialized', (data) => {
             zoneIndices.initialize();
             combatScore.initialize();
             taskProfitDisplay.initialize();
-            taskRerollTracker.initialize();
+            await taskRerollTracker.initialize(); // Now async with IndexedDB
         } catch (error) {
             console.error('❌ Feature initialization failed:', error);
         }
@@ -95,9 +92,6 @@ dataManager.on('character_initialized', (data) => {
 // Expose modules to window for debugging/testing
 // Use unsafeWindow for userscript managers (Tampermonkey/Violentmonkey)
 const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
-
-// Create diagnostic instance
-const taskRerollDiagnostic = new TaskRerollDiagnostic();
 
 targetWindow.MWITools = {
     dataManager,
@@ -122,15 +116,5 @@ targetWindow.MWITools = {
     enhancementGearDetector,
     getEnhancingParams,
     enhancementCalculator,
-    // Diagnostic tools
-    diagnostics: {
-        taskReroll: taskRerollDiagnostic,
-        // Convenience methods
-        startTaskRerollDiagnostic: () => taskRerollDiagnostic.start(),
-        stopTaskRerollDiagnostic: () => taskRerollDiagnostic.stop()
-    },
-    // Debug utilities available manually via console
-    // gameMechanicsAudit,
-    // debugEnhancementSpeed,
     version: '0.4.5'
 };

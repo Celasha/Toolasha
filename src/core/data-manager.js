@@ -27,24 +27,53 @@ class DataManager {
         // Event listeners
         this.eventListeners = new Map();
 
+        // Retry interval for loading static game data
+        this.loadRetryInterval = null;
+
         // Setup WebSocket message handlers
         this.setupMessageHandlers();
     }
 
     /**
      * Initialize the Data Manager
-     * Call this after game loads
+     * Call this after game loads (or immediately - will retry if needed)
      */
     initialize() {
-        // Load static game data using official API
+        // Try to load static game data using official API
+        const success = this.tryLoadStaticData();
+
+        // If failed, set up retry polling
+        if (!success && !this.loadRetryInterval) {
+            this.loadRetryInterval = setInterval(() => {
+                if (this.tryLoadStaticData()) {
+                    // Success! Stop retrying
+                    clearInterval(this.loadRetryInterval);
+                    this.loadRetryInterval = null;
+                }
+            }, 500); // Retry every 500ms
+        }
+    }
+
+    /**
+     * Attempt to load static game data
+     * @returns {boolean} True if successful, false if needs retry
+     * @private
+     */
+    tryLoadStaticData() {
         try {
-            if (typeof localStorageUtil !== 'undefined') {
-                this.initClientData = localStorageUtil.getInitClientData();
-            } else {
-                console.warn('[Data Manager] localStorageUtil not available yet');
+            if (typeof localStorageUtil !== 'undefined' &&
+                typeof localStorageUtil.getInitClientData === 'function') {
+                const data = localStorageUtil.getInitClientData();
+                if (data && Object.keys(data).length > 0) {
+                    this.initClientData = data;
+                    console.log('✅ Static game data loaded');
+                    return true;
+                }
             }
+            return false;
         } catch (error) {
             console.error('[Data Manager] Failed to load init_client_data:', error);
+            return false;
         }
     }
 

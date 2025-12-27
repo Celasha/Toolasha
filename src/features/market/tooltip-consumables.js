@@ -8,13 +8,14 @@ import marketAPI from '../../api/marketplace.js';
 import dataManager from '../../core/data-manager.js';
 import { numberFormatter } from '../../utils/formatters.js';
 import dom from '../../utils/dom.js';
+import domObserver from '../../core/dom-observer.js';
 
 /**
  * TooltipConsumables class handles injecting consumable stats into item tooltips
  */
 class TooltipConsumables {
     constructor() {
-        this.observer = null;
+        this.unregisterObserver = null;
         this.isActive = false;
     }
 
@@ -35,7 +36,7 @@ class TooltipConsumables {
         // Add CSS to prevent tooltip cutoff (if not already added)
         this.addTooltipStyles();
 
-        // Set up MutationObserver to watch for tooltips
+        // Register with centralized DOM observer
         this.setupObserver();
 
     }
@@ -89,25 +90,17 @@ class TooltipConsumables {
     }
 
     /**
-     * Set up MutationObserver to watch for tooltip elements
+     * Set up observer to watch for tooltip elements
      */
     setupObserver() {
-        this.observer = new MutationObserver((mutations) => {
-            for (const mutation of mutations) {
-                for (const added of mutation.addedNodes) {
-                    // Check if it's a tooltip element
-                    if (added.nodeType === Node.ELEMENT_NODE &&
-                        added.classList?.contains('MuiTooltip-popper')) {
-                        this.handleTooltip(added);
-                    }
-                }
+        // Register with centralized DOM observer to watch for tooltip poppers
+        this.unregisterObserver = domObserver.onClass(
+            'TooltipConsumables',
+            'MuiTooltip-popper',
+            (tooltipElement) => {
+                this.handleTooltip(tooltipElement);
             }
-        });
-
-        this.observer.observe(document.body, {
-            childList: true,
-            subtree: false
-        });
+        );
 
         this.isActive = true;
     }
@@ -311,9 +304,9 @@ class TooltipConsumables {
      * Disable the feature
      */
     disable() {
-        if (this.observer) {
-            this.observer.disconnect();
-            this.observer = null;
+        if (this.unregisterObserver) {
+            this.unregisterObserver();
+            this.unregisterObserver = null;
         }
 
         this.isActive = false;

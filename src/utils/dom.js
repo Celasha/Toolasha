@@ -5,6 +5,9 @@
 
 import config from '../core/config.js';
 
+// Compiled regex pattern (created once, reused for performance)
+const REGEX_TRANSFORM3D = /translate3d\(([^,]+),\s*([^,]+),\s*([^)]+)\)/;
+
 /**
  * Wait for an element to appear in the DOM
  * @param {string} selector - CSS selector
@@ -243,7 +246,7 @@ export function fixTooltipOverflow(tooltipElement) {
 
                 if (transformString) {
                     // Parse transform3d(x, y, z)
-                    const match = transformString.match(/translate3d\(([^,]+),\s*([^,]+),\s*([^)]+)\)/);
+                    const match = transformString.match(REGEX_TRANSFORM3D);
 
                     if (match) {
                         const x = match[1];

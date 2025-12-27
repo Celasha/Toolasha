@@ -12,13 +12,20 @@ import { getEnhancingParams } from '../../utils/enhancement-config.js';
 import { calculateEnhancementPath, buildEnhancementTooltipHTML } from '../enhancement/tooltip-enhancement.js';
 import { numberFormatter, formatKMB } from '../../utils/formatters.js';
 import dom from '../../utils/dom.js';
+import domObserver from '../../core/dom-observer.js';
+
+// Compiled regex patterns (created once, reused for performance)
+const REGEX_ENHANCEMENT_LEVEL = /\+(\d+)$/;
+const REGEX_ENHANCEMENT_STRIP = /\s*\+\d+$/;
+const REGEX_AMOUNT = /x([\d,]+)|Amount:\s*([\d,]+)/i;
+const REGEX_COMMA = /,/g;
 
 /**
  * TooltipPrices class handles injecting market prices into item tooltips
  */
 class TooltipPrices {
     constructor() {
-        this.observer = null;
+        this.unregisterObserver = null;
         this.isActive = false;
     }
 
@@ -39,7 +46,7 @@ class TooltipPrices {
         // Add CSS to prevent tooltip cutoff
         this.addTooltipStyles();
 
-        // Set up MutationObserver to watch for tooltips
+        // Register with centralized DOM observer
         this.setupObserver();
 
     }
@@ -93,25 +100,17 @@ class TooltipPrices {
     }
 
     /**
-     * Set up MutationObserver to watch for tooltip elements
+     * Set up observer to watch for tooltip elements
      */
     setupObserver() {
-        this.observer = new MutationObserver((mutations) => {
-            for (const mutation of mutations) {
-                for (const added of mutation.addedNodes) {
-                    // Check if it's a tooltip element
-                    if (added.nodeType === Node.ELEMENT_NODE &&
-                        added.classList?.contains('MuiTooltip-popper')) {
-                        this.handleTooltip(added);
-                    }
-                }
+        // Register with centralized DOM observer to watch for tooltip poppers
+        this.unregisterObserver = domObserver.onClass(
+            'TooltipPrices',
+            'MuiTooltip-popper',
+            (tooltipElement) => {
+                this.handleTooltip(tooltipElement);
             }
-        });
-
-        this.observer.observe(document.body, {
-            childList: true,
-            subtree: false
-        });
+        );
 
         this.isActive = true;
     }
@@ -210,7 +209,7 @@ class TooltipPrices {
         const itemName = nameElement.textContent.trim();
 
         // Match "+X" at end of name
-        const match = itemName.match(/\+(\d+)$/);
+        const match = itemName.match(REGEX_ENHANCEMENT_LEVEL);
         if (match) {
             return parseInt(match[1], 10);
         }
@@ -268,7 +267,7 @@ class TooltipPrices {
 
         // Strip enhancement level (e.g., "+10" from "Griffin Bulwark +10")
         // This is critical - enhanced items need to lookup the base item
-        itemName = itemName.replace(/\s*\+\d+$/, '');
+        itemName = itemName.replace(REGEX_ENHANCEMENT_STRIP, '');
 
         // Look up item by name in game data
         const initData = dataManager.getInitClientData();
@@ -294,11 +293,11 @@ class TooltipPrices {
     extractItemAmount(tooltipElement) {
         // Look for amount text in tooltip (e.g., "x5", "Amount: 5", "Amount: 4,900")
         const text = tooltipElement.textContent;
-        const match = text.match(/x([\d,]+)|Amount:\s*([\d,]+)/i);
+        const match = text.match(REGEX_AMOUNT);
 
         if (match) {
             // Strip commas before parsing
-            const amountStr = (match[1] || match[2]).replace(/,/g, '');
+            const amountStr = (match[1] || match[2]).replace(REGEX_COMMA, '');
             return parseInt(amountStr, 10);
         }
 
@@ -505,9 +504,9 @@ class TooltipPrices {
      * Disable the feature
      */
     disable() {
-        if (this.observer) {
-            this.observer.disconnect();
-            this.observer = null;
+        if (this.unregisterObserver) {
+            this.unregisterObserver();
+            this.unregisterObserver = null;
         }
 
         this.isActive = false;

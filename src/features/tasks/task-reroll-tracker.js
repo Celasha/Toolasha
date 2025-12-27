@@ -6,34 +6,48 @@
 import { numberFormatter } from '../../utils/formatters.js';
 import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
+import storage from '../../core/storage.js';
 
 class TaskRerollTracker {
     constructor() {
         this.rerollSpending = new Map(); // key: slotIndex, value: { goldSpent: total, cowbellSpent: total }
+        this.taskIdentities = new Map(); // key: slotIndex, value: "description|quantity" for tracking task identity
+        this.previousTaskCount = 0; // Track task count to detect deletions/completions
         this.unregisterHandlers = []; // Store unregister functions
         this.isInitialized = false;
         this.isUpdatingAllDisplays = false; // Guard flag to prevent double updates
     }
 
     /**
-     * Initialize the tracker
+     * Initialize the tracker (async to load from IndexedDB)
      */
-    initialize() {
+    async initialize() {
         if (this.isInitialized) return;
 
-        // Load saved spending data from localStorage
-        this.loadFromLocalStorage();
+        try {
+            // Load saved spending data from centralized storage
+            await this.loadFromStorage();
 
-        // Register with centralized DOM observer
-        this.registerObservers();
+            // Register with centralized DOM observer
+            this.registerObservers();
 
-        // Add initial displays to existing tasks
-        this.updateAllTaskDisplays();
+            // Add initial displays to existing tasks
+            this.updateAllTaskDisplays();
 
-        // Attach listeners to any reroll containers already in the DOM
-        this.attachExistingRerollListeners();
+            // Attach listeners to any reroll containers already in the DOM
+            this.attachExistingRerollListeners();
 
-        this.isInitialized = true;
+            // Add beforeunload handler to force immediate save when page closes
+            window.addEventListener('beforeunload', () => {
+                this.forceSave();
+            });
+
+            this.isInitialized = true;
+        } catch (error) {
+            console.error('[Task Reroll Tracker] Initialization failed:', error);
+            // Fall back to in-memory only if storage fails
+            this.isInitialized = true;
+        }
     }
 
     /**
@@ -56,31 +70,35 @@ class TaskRerollTracker {
     }
 
     /**
-     * Load spending data from localStorage
+     * Load spending data from storage
+     * @returns {Promise<void>}
      */
-    loadFromLocalStorage() {
+    async loadFromStorage() {
         try {
-            const saved = localStorage.getItem('mwi_reroll_spending');
-            if (saved) {
-                const data = JSON.parse(saved);
+            const data = await storage.get('spending_data', 'rerollSpending', null);
+            if (data) {
                 this.rerollSpending = new Map(data);
             }
         } catch (error) {
-            console.error('[Task Reroll Tracker] Failed to load from localStorage:', error);
+            console.error('[Task Reroll Tracker] Failed to load from storage:', error);
             this.rerollSpending = new Map();
         }
     }
 
     /**
-     * Save spending data to localStorage
+     * Save spending data to storage (debounced)
      */
-    saveToLocalStorage() {
-        try {
-            const data = Array.from(this.rerollSpending.entries());
-            localStorage.setItem('mwi_reroll_spending', JSON.stringify(data));
-        } catch (error) {
-            console.error('[Task Reroll Tracker] Failed to save to localStorage:', error);
-        }
+    saveToStorage() {
+        const data = Array.from(this.rerollSpending.entries());
+        storage.set('spending_data', data, 'rerollSpending'); // Debounced by default
+    }
+
+    /**
+     * Force immediate save (used on page unload)
+     */
+    forceSave() {
+        const data = Array.from(this.rerollSpending.entries());
+        storage.set('spending_data', data, 'rerollSpending', true); // Immediate save
     }
 
     /**
@@ -93,6 +111,7 @@ class TaskRerollTracker {
             'TasksPanel_taskList',
             () => {
                 this.updateAllTaskDisplays();
+                this.snapshotTaskIdentities(); // Initial snapshot
             }
         );
         this.unregisterHandlers.push(unregisterTaskList);
@@ -106,6 +125,16 @@ class TaskRerollTracker {
             }
         );
         this.unregisterHandlers.push(unregisterReroll);
+
+        // Watch for task changes (additions, removals, rerolls)
+        const unregisterTaskChanges = domObserver.onClass(
+            'TaskRerollTracker-TaskChanges',
+            'RandomTask_randomTask',
+            () => {
+                this.handleTaskChange();
+            }
+        );
+        this.unregisterHandlers.push(unregisterTaskChanges);
     }
 
     /**
@@ -191,8 +220,8 @@ class TaskRerollTracker {
             spending.cowbellSpent += cost;
         }
 
-        // Save to localStorage after recording
-        this.saveToLocalStorage();
+        // Debounced save to storage (waits 3 seconds of inactivity)
+        this.saveToStorage();
     }
 
     /**
@@ -274,11 +303,119 @@ class TaskRerollTracker {
     }
 
     /**
+     * Handle task changes (detect rerolls vs deletions/completions)
+     */
+    handleTaskChange() {
+        const currentCount = document.querySelectorAll('[class*="RandomTask_randomTask"]').length;
+
+        if (currentCount < this.previousTaskCount) {
+            // Task count decreased = deletion or completion
+            this.handleTaskRemoval();
+        } else if (currentCount > 0) {
+            // Task count same or increased = reroll or new task
+            // Just update identities snapshot for next comparison
+            this.snapshotTaskIdentities();
+        }
+
+        this.previousTaskCount = currentCount;
+    }
+
+    /**
+     * Snapshot current task identities for tracking
+     */
+    snapshotTaskIdentities() {
+        this.taskIdentities.clear();
+
+        const taskList = document.querySelector('[class*="TasksPanel_taskList"]');
+        if (!taskList) return;
+
+        const allTasks = taskList.querySelectorAll('[class*="RandomTask_randomTask"]');
+        allTasks.forEach((task, slot) => {
+            const taskKey = this.getTaskKey(task);
+            if (taskKey) {
+                this.taskIdentities.set(slot, taskKey);
+            }
+        });
+
+        this.previousTaskCount = allTasks.length;
+    }
+
+    /**
+     * Handle task removal - preserve costs for remaining tasks
+     */
+    handleTaskRemoval() {
+        // Build map of task identities to their costs
+        const costsByIdentity = new Map();
+        for (const [slot, taskKey] of this.taskIdentities.entries()) {
+            const costs = this.rerollSpending.get(slot);
+            if (costs) {
+                costsByIdentity.set(taskKey, costs);
+            }
+        }
+
+        // Build new cost map based on current tasks
+        const newCosts = new Map();
+        const taskList = document.querySelector('[class*="TasksPanel_taskList"]');
+        if (taskList) {
+            const allTasks = taskList.querySelectorAll('[class*="RandomTask_randomTask"]');
+            allTasks.forEach((task, newSlot) => {
+                const taskKey = this.getTaskKey(task);
+
+                // If this task existed before, keep its costs
+                if (taskKey && costsByIdentity.has(taskKey)) {
+                    newCosts.set(newSlot, costsByIdentity.get(taskKey));
+                }
+                // If it's a new task, it starts at 0 (not in map)
+            });
+        }
+
+        // Replace cost map
+        this.rerollSpending = newCosts;
+
+        // Update identities for next comparison
+        this.snapshotTaskIdentities();
+
+        // Update displays
+        this.updateAllTaskDisplays();
+
+        // Save to storage
+        this.saveToStorage();
+    }
+
+    /**
+     * Extract task identity key from DOM element
+     * @param {Element} taskElement - Task DOM element
+     * @returns {string|null} Task key as "description|quantity"
+     */
+    getTaskKey(taskElement) {
+        const nameEl = taskElement.querySelector('[class*="RandomTask_name"]');
+        const description = nameEl ? nameEl.textContent.trim() : '';
+
+        if (!description) return null;
+
+        // Get quantity from progress text
+        const progressDivs = taskElement.querySelectorAll('div');
+        let quantity = 0;
+        for (const div of progressDivs) {
+            const text = div.textContent.trim();
+            if (text.startsWith('Progress:')) {
+                const match = text.match(/Progress:\s*\d+\s*\/\s*(\d+)/);
+                if (match) {
+                    quantity = parseInt(match[1]);
+                    break;
+                }
+            }
+        }
+
+        return `${description}|${quantity}`;
+    }
+
+    /**
      * Reset reroll spending for a task slot
      */
     resetSlot(slotIndex) {
         this.rerollSpending.delete(slotIndex);
-        this.saveToLocalStorage();
+        this.saveToStorage();
     }
 
     /**
@@ -286,7 +423,7 @@ class TaskRerollTracker {
      */
     resetAll() {
         this.rerollSpending.clear();
-        this.saveToLocalStorage();
+        this.saveToStorage();
         this.updateAllTaskDisplays();
     }
 }
