@@ -87,21 +87,26 @@ class HouseCostDisplay {
             return;
         }
 
-        // Find all individual item requirement cells
-        const costItems = itemRequirementsGrid.querySelectorAll('[class*="HousePanel_itemRequirementCell"]');
-        if (costItems.length === 0) {
-            console.warn('[House Cost Display] No item requirement cells found');
+        // Find all item containers (these have the icons)
+        const itemContainers = itemRequirementsGrid.querySelectorAll('[class*="Item_itemContainer"]');
+        if (itemContainers.length === 0) {
+            console.warn('[House Cost Display] No item containers found');
             return;
         }
 
-        for (const costItem of costItems) {
-            // Find item image to identify the item
-            const img = costItem.querySelector('img');
-            if (!img || !img.src) continue;
+        for (const itemContainer of itemContainers) {
+            // Game uses SVG sprites, not img tags
+            const svg = itemContainer.querySelector('svg');
+            if (!svg) continue;
 
-            // Extract item HRID from image src (e.g., /items/lumber)
-            const itemHrid = this.extractItemHridFromImage(img.src);
-            if (!itemHrid) continue;
+            // Extract item name from href (e.g., #lumber -> lumber)
+            const useElement = svg.querySelector('use');
+            const hrefValue = useElement?.getAttribute('href') || '';
+            const itemName = hrefValue.split('#')[1];
+            if (!itemName) continue;
+
+            // Convert to item HRID
+            const itemHrid = `/items/${itemName}`;
 
             // Find matching material in costData
             let materialData;
@@ -118,73 +123,57 @@ class HouseCostDisplay {
 
             if (!materialData) continue;
 
-            // Add pricing info to this item
-            this.addPricingToItem(costItem, materialData);
+            // Skip coins (no pricing needed)
+            if (materialData.itemHrid === '/items/coin') continue;
+
+            // Add pricing as a new grid cell to the right
+            this.addPricingCell(itemRequirementsGrid, itemContainer, materialData);
         }
     }
 
     /**
-     * Extract item HRID from image source
-     * @param {string} imgSrc - Image source URL
-     * @returns {string|null} Item HRID
-     */
-    extractItemHridFromImage(imgSrc) {
-        // Image URLs are like: https://cdn.milkywayidle.com/items/lumber.png
-        // or: /game_data/items/lumber.png
-        const match = imgSrc.match(/\/items\/([^.]+)\.png/);
-        if (match) {
-            return `/items/${match[1]}`;
-        }
-        return null;
-    }
-
-    /**
-     * Add pricing information to a native cost item
-     * @param {Element} costItem - Native cost item element
+     * Add pricing as a new grid cell to the right of the item
+     * @param {Element} grid - The requirements grid
+     * @param {Element} itemContainer - The item icon container
      * @param {Object} materialData - Material data with pricing
      */
-    addPricingToItem(costItem, materialData) {
+    addPricingCell(grid, itemContainer, materialData) {
         // Check if already augmented
-        if (costItem.querySelector('.mwi-house-pricing')) return;
+        const nextSibling = itemContainer.nextElementSibling;
+        if (nextSibling?.classList.contains('mwi-house-pricing')) {
+            return;
+        }
 
         const inventoryCount = houseCostCalculator.getInventoryCount(materialData.itemHrid);
         const hasEnough = inventoryCount >= materialData.count;
 
-        // Create pricing info element
-        const pricingDiv = document.createElement('div');
-        pricingDiv.className = 'mwi-house-pricing';
-        pricingDiv.style.cssText = `
-            margin-top: 4px;
-            font-size: 0.75rem;
+        // Find the input count cell (3rd cell after icon: icon -> inventory -> input)
+        let inputCell = itemContainer.nextElementSibling?.nextElementSibling;
+
+        // Create pricing cell
+        const pricingCell = document.createElement('span');
+        pricingCell.className = 'mwi-house-pricing HousePanel_itemRequirementCell__3hSBN';
+        pricingCell.style.cssText = `
             display: flex;
             flex-direction: column;
-            gap: 2px;
+            justify-content: center;
+            font-size: 0.75rem;
+            color: ${config.SCRIPT_COLOR_MAIN};
+            text-align: right;
         `;
 
-        // Skip price line for coins
-        if (materialData.itemHrid !== '/items/coin') {
-            // Price per item line
-            const priceLine = document.createElement('div');
-            priceLine.style.cssText = `color: ${config.SCRIPT_COLOR_SECONDARY};`;
-            priceLine.textContent = `@ ${numberFormatter(materialData.marketPrice)} ea`;
-            pricingDiv.appendChild(priceLine);
+        pricingCell.innerHTML = `
+            <div style="color: ${config.SCRIPT_COLOR_SECONDARY};">@ ${numberFormatter(materialData.marketPrice)}</div>
+            <div style="color: ${config.SCRIPT_COLOR_MAIN}; font-weight: bold;">= ${numberFormatter(materialData.totalValue)}</div>
+            <div style="color: ${hasEnough ? '#4ade80' : '#f87171'};">${hasEnough ? '✓' : '✗'} ${numberFormatter(inventoryCount)}</div>
+        `;
 
-            // Total cost line
-            const totalLine = document.createElement('div');
-            totalLine.style.cssText = `color: ${config.SCRIPT_COLOR_MAIN};`;
-            totalLine.textContent = `= ${numberFormatter(materialData.totalValue)}`;
-            pricingDiv.appendChild(totalLine);
-
-            // Inventory status line
-            const inventoryLine = document.createElement('div');
-            inventoryLine.style.cssText = `color: ${hasEnough ? '#4ade80' : '#f87171'};`;
-            inventoryLine.textContent = hasEnough
-                ? `✓ Have ${numberFormatter(inventoryCount)}`
-                : `✗ Have ${numberFormatter(inventoryCount)}`;
-            pricingDiv.appendChild(inventoryLine);
+        // Insert after the input cell
+        if (inputCell && inputCell.nextSibling) {
+            grid.insertBefore(pricingCell, inputCell.nextSibling);
+        } else if (inputCell) {
+            inputCell.after(pricingCell);
         }
-
-        costItem.appendChild(pricingDiv);
     }
 
     /**
