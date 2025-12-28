@@ -162,6 +162,65 @@ class WebSocketHook {
     }
 
     /**
+     * Capture init_client_data from localStorage (fallback method)
+     * Called periodically since it may not come through WebSocket
+     */
+    captureClientDataFromLocalStorage() {
+        try {
+            if (typeof GM_setValue === 'undefined') {
+                return;
+            }
+
+            const initClientData = localStorage.getItem('initClientData');
+            if (!initClientData) {
+                // Try again in 2 seconds
+                setTimeout(() => this.captureClientDataFromLocalStorage(), 2000);
+                return;
+            }
+
+            let clientDataStr = initClientData;
+            let isCompressed = false;
+
+            // Check if compressed
+            try {
+                JSON.parse(initClientData);
+            } catch (e) {
+                isCompressed = true;
+            }
+
+            // Decompress if needed
+            if (isCompressed) {
+                if (typeof window.LZString === 'undefined' && typeof LZString === 'undefined') {
+                    // LZString not loaded yet, try again later
+                    setTimeout(() => this.captureClientDataFromLocalStorage(), 500);
+                    return;
+                }
+
+                try {
+                    const LZ = window.LZString || LZString;
+                    clientDataStr = LZ.decompressFromUTF16(initClientData);
+                } catch (e) {
+                    setTimeout(() => this.captureClientDataFromLocalStorage(), 2000);
+                    return;
+                }
+            }
+
+            // Parse and save
+            try {
+                const clientDataObj = JSON.parse(clientDataStr);
+                if (clientDataObj?.type === 'init_client_data') {
+                    GM_setValue('toolasha_init_client_data', clientDataStr);
+                    console.log('[Toolasha] Client data captured from localStorage');
+                }
+            } catch (e) {
+                setTimeout(() => this.captureClientDataFromLocalStorage(), 2000);
+            }
+        } catch (error) {
+            console.error('[WebSocket] Failed to capture client data from localStorage:', error);
+        }
+    }
+
+    /**
      * Register a handler for a specific message type
      * @param {string} messageType - Message type to handle (e.g., "init_character_data")
      * @param {Function} handler - Function to call when message received

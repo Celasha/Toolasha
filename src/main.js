@@ -64,6 +64,9 @@ if (isCombatSimulatorPage()) {
     // CRITICAL: Start centralized DOM observer SECOND, before features initialize
     domObserver.start();
 
+    // Start capturing client data from localStorage (for Combat Sim export)
+    webSocketHook.captureClientDataFromLocalStorage();
+
     // Initialize storage and config THIRD (async)
     (async () => {
         try {
