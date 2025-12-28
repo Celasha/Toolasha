@@ -24,6 +24,7 @@ import quickInputButtons from './features/actions/quick-input-buttons.js';
 import abilityBookCalculator from './features/abilities/ability-book-calculator.js';
 import equipmentLevelDisplay from './features/ui/equipment-level-display.js';
 import alchemyItemDimming from './features/ui/alchemy-item-dimming.js';
+import skillExperiencePercentage from './features/ui/skill-experience-percentage.js';
 import zoneIndices from './features/combat/zone-indices.js';
 import combatScore from './features/profile/combat-score.js';
 import taskProfitDisplay from './features/tasks/task-profit-display.js';
@@ -108,6 +109,9 @@ dataManager.on('character_initialized', (data) => {
             }
             if (config.isFeatureEnabled('alchemyItemDimming')) {
                 alchemyItemDimming.initialize();
+            }
+            if (config.isFeatureEnabled('skillExperiencePercentage')) {
+                skillExperiencePercentage.initialize();
             }
 
             // Task features

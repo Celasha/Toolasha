@@ -358,6 +358,13 @@ class Config {
                 description: 'Dims items requiring higher Alchemy level',
                 settingKey: 'alchemyItemDimming'
             },
+            skillExperiencePercentage: {
+                enabled: true,
+                name: 'Skill Experience Percentage',
+                category: 'UI',
+                description: 'Shows XP progress percentage in left sidebar',
+                settingKey: 'expPercentage'
+            },
 
             // Task Features
             taskProfitDisplay: {
@@ -432,8 +439,8 @@ class Config {
      */
     applyColorSettings() {
         if (this.settingsMap.useOrangeAsMainColor.isTrue) {
-            this.SCRIPT_COLOR_MAIN = "orange";
-            this.SCRIPT_COLOR_TOOLTIP = "#804600";
+            this.SCRIPT_COLOR_MAIN = "gold";
+            this.SCRIPT_COLOR_TOOLTIP = "#806B00";
         }
     }
 
