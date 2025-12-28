@@ -440,6 +440,13 @@ class Config {
                 category: 'Economy',
                 description: 'Shows detailed networth breakdown below inventory',
                 settingKey: 'invWorth'
+            },
+            inventorySort: {
+                enabled: true,
+                name: 'Inventory Sort',
+                category: 'Economy',
+                description: 'Sorts inventory by Ask/Bid price with optional stack value badges',
+                settingKey: 'invSort'
             }
         };
 
