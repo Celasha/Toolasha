@@ -201,8 +201,13 @@ export async function calculateNetworth() {
         return createEmptyNetworthData();
     }
 
-    // Check market data and invalidate cache if needed
-    const marketData = await marketAPI.getMarketData();
+    // Fetch market data and invalidate cache if needed
+    const marketData = await marketAPI.fetch();
+    if (!marketData) {
+        console.error('[Networth] Failed to fetch market data');
+        return createEmptyNetworthData();
+    }
+
     networthCache.checkAndInvalidate(marketData);
 
     const characterItems = gameData.characterItems || [];
