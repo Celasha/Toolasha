@@ -6,7 +6,7 @@
 import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
 import marketAPI from '../../api/marketplace.js';
-import { networthFormatter } from '../../utils/formatters.js';
+import { formatKMB } from '../../utils/formatters.js';
 import dataManager from '../../core/data-manager.js';
 
 /**
@@ -57,7 +57,43 @@ class InventorySort {
         );
         this.unregisterHandlers.push(unregister);
 
+        // Listen for market data updates to refresh badges
+        this.setupMarketDataListener();
+
         console.log('[InventorySort] Initialized');
+    }
+
+    /**
+     * Setup listener for market data updates
+     */
+    setupMarketDataListener() {
+        // If market data isn't loaded yet, retry periodically
+        if (!marketAPI.isLoaded()) {
+            console.log('[InventorySort] Market data not loaded yet, will retry...');
+
+            let retryCount = 0;
+            const maxRetries = 10;
+            const retryInterval = 500; // 500ms between retries
+
+            const retryCheck = setInterval(() => {
+                retryCount++;
+
+                if (marketAPI.isLoaded()) {
+                    console.log('[InventorySort] Market data now available, refreshing inventory');
+                    clearInterval(retryCheck);
+
+                    // Refresh if inventory is still open
+                    if (this.currentInventoryElem) {
+                        this.applyCurrentSort();
+                    }
+                } else if (retryCount >= maxRetries) {
+                    console.warn('[InventorySort] Market data still not available after', maxRetries, 'retries');
+                    clearInterval(retryCheck);
+                }
+            }, retryInterval);
+        } else {
+            console.log('[InventorySort] Market data already loaded');
+        }
     }
 
     /**
@@ -249,7 +285,12 @@ class InventorySort {
      */
     calculateItemPrices(itemElems) {
         const gameData = dataManager.getInitClientData();
-        if (!gameData) return;
+        if (!gameData) {
+            console.warn('[InventorySort] Game data not available yet');
+            return;
+        }
+
+        let marketDataMissing = false;
 
         for (const itemElem of itemElems) {
             // Get item HRID from SVG aria-label
@@ -275,6 +316,7 @@ class InventorySort {
             if (!marketPrice) {
                 itemElem.dataset.askValue = 0;
                 itemElem.dataset.bidValue = 0;
+                marketDataMissing = true;
                 continue;
             }
 
@@ -284,6 +326,10 @@ class InventorySort {
 
             itemElem.dataset.askValue = askPrice * itemCount;
             itemElem.dataset.bidValue = bidPrice * itemCount;
+        }
+
+        if (marketDataMissing) {
+            console.warn('[InventorySort] Some items missing market data - prices may be incomplete');
         }
     }
 
@@ -354,7 +400,7 @@ class InventorySort {
             text-align: left;
             pointer-events: none;
         `;
-        badge.textContent = networthFormatter(Math.round(stackValue));
+        badge.textContent = formatKMB(Math.round(stackValue), 0);
 
         // Insert into item
         const itemInner = itemElem.querySelector('.Item_item__2De2O');
