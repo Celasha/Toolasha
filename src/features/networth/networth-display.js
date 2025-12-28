@@ -7,7 +7,7 @@
 
 import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
-import { numberFormatter } from '../../utils/formatters.js';
+import { coinFormatter } from '../../utils/formatters.js';
 
 /**
  * Header Display Component
@@ -82,8 +82,8 @@ class NetworthHeaderDisplay {
         }
 
         const { currentAssets } = networthData;
-        const askFormatted = numberFormatter(Math.round(currentAssets.ask));
-        const bidFormatted = numberFormatter(Math.round(currentAssets.bid));
+        const askFormatted = coinFormatter(Math.round(currentAssets.ask));
+        const bidFormatted = coinFormatter(Math.round(currentAssets.bid));
 
         this.container.textContent = `Current Assets: ${askFormatted} / ${bidFormatted}`;
     }
@@ -185,7 +185,7 @@ class NetworthInventoryDisplay {
             return;
         }
 
-        const totalNetworth = numberFormatter(Math.round(networthData.totalNetworth));
+        const totalNetworth = coinFormatter(Math.round(networthData.totalNetworth));
 
         this.container.innerHTML = `
             <div style="cursor: pointer; font-weight: bold;" id="mwi-networth-toggle">
@@ -194,22 +194,22 @@ class NetworthInventoryDisplay {
             <div id="mwi-networth-details" style="display: none; margin-left: 20px;">
                 <!-- Current Assets -->
                 <div style="cursor: pointer; margin-top: 8px;" id="mwi-current-assets-toggle">
-                    + Current Assets: ${numberFormatter(Math.round(networthData.currentAssets.ask))}
+                    + Current Assets: ${coinFormatter(Math.round(networthData.currentAssets.ask))}
                 </div>
                 <div id="mwi-current-assets-details" style="display: none; margin-left: 20px;">
-                    <div>Equipment value: ${numberFormatter(Math.round(networthData.currentAssets.equipped.ask))}</div>
-                    <div>Inventory value: ${numberFormatter(Math.round(networthData.currentAssets.inventory.ask))}</div>
-                    <div>Market listings: ${numberFormatter(Math.round(networthData.currentAssets.listings.ask))}</div>
+                    <div>Equipment value: ${coinFormatter(Math.round(networthData.currentAssets.equipped.ask))}</div>
+                    <div>Inventory value: ${coinFormatter(Math.round(networthData.currentAssets.inventory.ask))}</div>
+                    <div>Market listings: ${coinFormatter(Math.round(networthData.currentAssets.listings.ask))}</div>
                 </div>
 
                 <!-- Fixed Assets -->
                 <div style="cursor: pointer; margin-top: 8px;" id="mwi-fixed-assets-toggle">
-                    + Fixed Assets: ${numberFormatter(Math.round(networthData.fixedAssets.total))}
+                    + Fixed Assets: ${coinFormatter(Math.round(networthData.fixedAssets.total))}
                 </div>
                 <div id="mwi-fixed-assets-details" style="display: none; margin-left: 20px;">
                     <!-- Houses -->
                     <div style="cursor: pointer; margin-top: 4px;" id="mwi-houses-toggle">
-                        + Houses: ${numberFormatter(Math.round(networthData.fixedAssets.houses.totalCost))}
+                        + Houses: ${coinFormatter(Math.round(networthData.fixedAssets.houses.totalCost))}
                     </div>
                     <div id="mwi-houses-breakdown" style="display: none; margin-left: 20px; font-size: 0.8rem; color: #bbb;">
                         ${this.renderHousesBreakdown(networthData.fixedAssets.houses.breakdown)}
@@ -217,12 +217,12 @@ class NetworthInventoryDisplay {
 
                     <!-- Abilities -->
                     <div style="cursor: pointer; margin-top: 4px;" id="mwi-abilities-toggle">
-                        + Abilities: ${numberFormatter(Math.round(networthData.fixedAssets.abilities.totalCost))}
+                        + Abilities: ${coinFormatter(Math.round(networthData.fixedAssets.abilities.totalCost))}
                     </div>
                     <div id="mwi-abilities-details" style="display: none; margin-left: 20px;">
                         <!-- Equipped Abilities -->
                         <div style="cursor: pointer; margin-top: 4px;" id="mwi-equipped-abilities-toggle">
-                            + Equipped (5): ${numberFormatter(Math.round(networthData.fixedAssets.abilities.equippedCost))}
+                            + Equipped (5): ${coinFormatter(Math.round(networthData.fixedAssets.abilities.equippedCost))}
                         </div>
                         <div id="mwi-equipped-abilities-breakdown" style="display: none; margin-left: 20px; font-size: 0.8rem; color: #bbb;">
                             ${this.renderAbilitiesBreakdown(networthData.fixedAssets.abilities.equippedBreakdown)}
@@ -231,7 +231,7 @@ class NetworthInventoryDisplay {
                         <!-- Other Abilities -->
                         ${networthData.fixedAssets.abilities.otherBreakdown.length > 0 ? `
                             <div style="cursor: pointer; margin-top: 4px;" id="mwi-other-abilities-toggle">
-                                + Other Abilities: ${numberFormatter(Math.round(networthData.fixedAssets.abilities.totalCost - networthData.fixedAssets.abilities.equippedCost))}
+                                + Other Abilities: ${coinFormatter(Math.round(networthData.fixedAssets.abilities.totalCost - networthData.fixedAssets.abilities.equippedCost))}
                             </div>
                             <div id="mwi-other-abilities-breakdown" style="display: none; margin-left: 20px; font-size: 0.8rem; color: #bbb;">
                                 ${this.renderAbilitiesBreakdown(networthData.fixedAssets.abilities.otherBreakdown)}
@@ -257,7 +257,7 @@ class NetworthInventoryDisplay {
         }
 
         return breakdown.map(house =>
-            `<div>${house.name} ${house.level}: ${numberFormatter(Math.round(house.cost))}</div>`
+            `<div>${house.name} ${house.level}: ${coinFormatter(Math.round(house.cost))}</div>`
         ).join('');
     }
 
@@ -272,7 +272,7 @@ class NetworthInventoryDisplay {
         }
 
         return breakdown.map(ability =>
-            `<div>${ability.name}: ${numberFormatter(Math.round(ability.cost))}</div>`
+            `<div>${ability.name}: ${coinFormatter(Math.round(ability.cost))}</div>`
         ).join('');
     }
 
@@ -285,42 +285,42 @@ class NetworthInventoryDisplay {
         this.setupToggle(
             'mwi-networth-toggle',
             'mwi-networth-details',
-            `Total Networth: ${numberFormatter(Math.round(networthData.totalNetworth))}`
+            `Total Networth: ${coinFormatter(Math.round(networthData.totalNetworth))}`
         );
 
         // Current assets toggle
         this.setupToggle(
             'mwi-current-assets-toggle',
             'mwi-current-assets-details',
-            `Current Assets: ${numberFormatter(Math.round(networthData.currentAssets.ask))}`
+            `Current Assets: ${coinFormatter(Math.round(networthData.currentAssets.ask))}`
         );
 
         // Fixed assets toggle
         this.setupToggle(
             'mwi-fixed-assets-toggle',
             'mwi-fixed-assets-details',
-            `Fixed Assets: ${numberFormatter(Math.round(networthData.fixedAssets.total))}`
+            `Fixed Assets: ${coinFormatter(Math.round(networthData.fixedAssets.total))}`
         );
 
         // Houses toggle
         this.setupToggle(
             'mwi-houses-toggle',
             'mwi-houses-breakdown',
-            `Houses: ${numberFormatter(Math.round(networthData.fixedAssets.houses.totalCost))}`
+            `Houses: ${coinFormatter(Math.round(networthData.fixedAssets.houses.totalCost))}`
         );
 
         // Abilities toggle
         this.setupToggle(
             'mwi-abilities-toggle',
             'mwi-abilities-details',
-            `Abilities: ${numberFormatter(Math.round(networthData.fixedAssets.abilities.totalCost))}`
+            `Abilities: ${coinFormatter(Math.round(networthData.fixedAssets.abilities.totalCost))}`
         );
 
         // Equipped abilities toggle
         this.setupToggle(
             'mwi-equipped-abilities-toggle',
             'mwi-equipped-abilities-breakdown',
-            `Equipped (5): ${numberFormatter(Math.round(networthData.fixedAssets.abilities.equippedCost))}`
+            `Equipped (5): ${coinFormatter(Math.round(networthData.fixedAssets.abilities.equippedCost))}`
         );
 
         // Other abilities toggle (if exists)
@@ -328,7 +328,7 @@ class NetworthInventoryDisplay {
             this.setupToggle(
                 'mwi-other-abilities-toggle',
                 'mwi-other-abilities-breakdown',
-                `Other Abilities: ${numberFormatter(Math.round(networthData.fixedAssets.abilities.totalCost - networthData.fixedAssets.abilities.equippedCost))}`
+                `Other Abilities: ${coinFormatter(Math.round(networthData.fixedAssets.abilities.totalCost - networthData.fixedAssets.abilities.equippedCost))}`
             );
         }
     }
