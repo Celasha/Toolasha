@@ -106,12 +106,13 @@ function importDataToSimulator(button) {
             return;
         }
 
-        const { exportObj, playerIDs, importedPlayerPositions, zone, isZoneDungeon, isParty } = exportData;
+        const { exportObj, playerIDs, importedPlayerPositions, zone, isZoneDungeon, difficultyTier, isParty } = exportData;
 
         console.log('[Toolasha Combat Sim] Export data:', {
             playerIDs,
             zone,
             isZoneDungeon,
+            difficultyTier,
             isParty
         });
 
@@ -156,6 +157,16 @@ function importDataToSimulator(button) {
             if (zone) {
                 selectZone(zone, isZoneDungeon);
             }
+
+            // Step 5.5: Set difficulty tier
+            setTimeout(() => {
+                const difficultyInput = document.querySelector('input#inputDifficulty');
+                if (difficultyInput) {
+                    difficultyInput.value = difficultyTier;
+                    difficultyInput.dispatchEvent(new Event('change'));
+                    console.log('[Toolasha Combat Sim] Difficulty tier set:', difficultyTier);
+                }
+            }, 150); // Small delay after zone selection
 
             // Step 6: Enable/disable player checkboxes
             for (let i = 0; i < 5; i++) {

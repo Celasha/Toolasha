@@ -368,6 +368,7 @@ export function constructExportObject() {
     const importedPlayerPositions = [false, false, false, false, false];
     let zone = '/actions/combat/fly';
     let isZoneDungeon = false;
+    let difficultyTier = 0;
     let isParty = false;
 
     // Check if in party
@@ -381,10 +382,11 @@ export function constructExportObject() {
         playerIDs[0] = characterObj.character?.name || 'Player 1';
         importedPlayerPositions[0] = true;
 
-        // Get current combat zone
+        // Get current combat zone and tier
         for (const action of characterObj.characterActions || []) {
             if (action && action.actionHrid.includes('/actions/combat/')) {
                 zone = action.actionHrid;
+                difficultyTier = action.difficultyTier || 0;
                 isZoneDungeon = clientObj?.actionDetailMap?.[action.actionHrid]?.combatZoneInfo?.isDungeon || false;
                 break;
             }
@@ -418,8 +420,9 @@ export function constructExportObject() {
             }
         }
 
-        // Get party zone
+        // Get party zone and tier
         zone = characterObj.partyInfo?.party?.actionHrid || '/actions/combat/fly';
+        difficultyTier = characterObj.partyInfo?.party?.difficultyTier || 0;
         isZoneDungeon = clientObj?.actionDetailMap?.[zone]?.combatZoneInfo?.isDungeon || false;
     }
 
@@ -429,6 +432,7 @@ export function constructExportObject() {
         importedPlayerPositions,
         zone,
         isZoneDungeon,
+        difficultyTier,
         isParty
     };
 }
