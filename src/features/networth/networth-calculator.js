@@ -338,13 +338,8 @@ export async function calculateNetworth() {
         inventoryBreakdown.push(itemData);
 
         // Categorize item
-        const categoryHrids = itemDetails?.itemCategoryHrids || [];
-        // Use first category, or "Other" if none
-        const primaryCategory = categoryHrids.length > 0
-            ? categoryHrids[0]
-            : '/item_categories/other';
-
-        const categoryName = gameData.itemCategoryDetailMap?.[primaryCategory]?.name || 'Other';
+        const categoryHrid = itemDetails?.categoryHrid || '/item_categories/other';
+        const categoryName = gameData.itemCategoryDetailMap?.[categoryHrid]?.name || 'Other';
 
         if (!inventoryByCategory[categoryName]) {
             inventoryByCategory[categoryName] = {
