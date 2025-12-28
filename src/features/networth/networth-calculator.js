@@ -198,6 +198,7 @@ export function calculateAllAbilitiesCost(characterAbilities, equippedAbilities)
 export async function calculateNetworth() {
     const gameData = dataManager.getInitClientData();
     if (!gameData) {
+        console.error('[Networth] No game data available');
         return createEmptyNetworthData();
     }
 
@@ -208,6 +209,7 @@ export async function calculateNetworth() {
         return createEmptyNetworthData();
     }
 
+    console.log('[Networth] Market data loaded, items count:', Object.keys(marketData).length);
     networthCache.checkAndInvalidate(marketData);
 
     const characterItems = gameData.characterItems || [];
@@ -215,6 +217,20 @@ export async function calculateNetworth() {
     const characterHouseRooms = gameData.characterHouseRoomMap || {};
     const characterAbilities = gameData.characterAbilities || [];
     const equippedAbilities = gameData.equippedAbilities || [];
+
+    console.log('[Networth] Character data:', {
+        items: characterItems.length,
+        listings: marketListings.length,
+        houses: Object.keys(characterHouseRooms).length,
+        abilities: characterAbilities.length
+    });
+
+    // Test sample price to verify market data is working
+    if (characterItems.length > 0) {
+        const sampleItem = characterItems[0];
+        const samplePrice = marketAPI.getPrice(sampleItem.itemHrid, sampleItem.enhancementLevel || 0);
+        console.log('[Networth] Sample price check:', sampleItem.itemHrid, 'level', sampleItem.enhancementLevel || 0, '→', samplePrice);
+    }
 
     // Calculate equipped items value
     let equippedAsk = 0;
