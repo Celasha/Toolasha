@@ -1,7 +1,7 @@
 {
-  "name": "mwitools-refactor",
+  "name": "toolasha",
   "version": "0.4.5",
-  "description": "Refactored MWI Tools userscript",
+  "description": "Toolasha - Enhanced tools for Milky Way Idle",
   "type": "module",
   "scripts": {
     "build": "rollup -c",

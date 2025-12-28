@@ -14,9 +14,9 @@ const userscriptHeader = readFileSync(join(__dirname, 'userscript-header.txt'), 
 export default {
   input: 'src/main.js',
   output: {
-    file: 'dist/MWITools-refactor.user.js',
+    file: 'dist/Toolasha.user.js',
     format: 'iife',
-    name: 'MWITools',
+    name: 'Toolasha',
     banner: userscriptHeader,
     // Wrap everything in an immediately invoked function
     intro: '(function() {\n"use strict";\n',

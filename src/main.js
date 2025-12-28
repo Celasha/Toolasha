@@ -136,7 +136,7 @@ dataManager.on('character_initialized', (data) => {
 // Use unsafeWindow for userscript managers (Tampermonkey/Violentmonkey)
 const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
-targetWindow.MWITools = {
+targetWindow.Toolasha = {
     dataManager,
     domObserver, // Expose centralized observer for debugging
     profitCalculator,

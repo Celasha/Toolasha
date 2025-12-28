@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         MWITools - Refactored
+// @name         Toolasha
 // @namespace    http://tampermonkey.net/
 // @version      0.4.5
-// @description  Tools for MilkyWayIdle. Shows total action time. Shows market prices. Shows action number quick inputs. Shows how many actions are needed to reach certain skill level. Shows skill exp percentages. Shows total networth. Shows combat summary. Shows combat maps index. Shows item level on item icons. Shows how many ability books are needed to reach certain level. Shows market equipment filters.
+// @description  Toolasha - Enhanced tools for Milky Way Idle. Shows total action time, market prices, action inputs, skill requirements, exp percentages, networth, combat summary, map indices, item levels, ability book requirements, and market filters.
 // @author       Original: bot7420, updated by: Celasha and Claude
 // @license      CC-BY-NC-SA-4.0
 // @match        https://www.milkywayidle.com/*
