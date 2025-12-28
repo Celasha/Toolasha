@@ -339,13 +339,19 @@ class InventorySort {
      * @param {string} mode - 'ask' or 'bid'
      */
     sortItemsByPrice(itemElems, mode) {
-        for (const itemElem of itemElems) {
-            const stackValue = parseFloat(itemElem.dataset[mode + 'Value']) || 0;
+        // Convert NodeList to array with values
+        const items = Array.from(itemElems).map(elem => ({
+            elem,
+            value: parseFloat(elem.dataset[mode + 'Value']) || 0
+        }));
 
-            // Set order (negative for descending sort)
-            // Use Math.round to ensure integer values for CSS order
-            itemElem.style.order = stackValue > 0 ? Math.round(-stackValue) : 0;
-        }
+        // Sort by value descending (highest first)
+        items.sort((a, b) => b.value - a.value);
+
+        // Assign sequential order values (0, 1, 2, 3...)
+        items.forEach((item, index) => {
+            item.elem.style.order = index;
+        });
     }
 
     /**
