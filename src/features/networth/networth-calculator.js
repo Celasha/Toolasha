@@ -196,7 +196,7 @@ export function calculateAllAbilitiesCost(characterAbilities, equippedAbilities)
  * @returns {Promise<Object>} Networth data with breakdowns
  */
 export async function calculateNetworth() {
-    const gameData = dataManager.getInitClientData();
+    const gameData = dataManager.getCombinedData();
     if (!gameData) {
         console.error('[Networth] No game data available');
         return createEmptyNetworthData();

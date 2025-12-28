@@ -236,6 +236,27 @@ class DataManager {
     }
 
     /**
+     * Get combined game data (static + character)
+     * Used for features that need both static data and player data
+     * @returns {Object} Combined data object
+     */
+    getCombinedData() {
+        if (!this.initClientData) {
+            return null;
+        }
+
+        return {
+            ...this.initClientData,
+            // Character-specific data
+            characterItems: this.characterItems || [],
+            myMarketListings: this.characterData?.myMarketListings || [],
+            characterHouseRoomMap: Object.fromEntries(this.characterHouseRooms),
+            characterAbilities: this.characterData?.characterAbilities || [],
+            equippedAbilities: this.characterData?.equippedAbilities || []
+        };
+    }
+
+    /**
      * Get item details by HRID
      * @param {string} itemHrid - Item HRID (e.g., "/items/cheese")
      * @returns {Object|null} Item details
