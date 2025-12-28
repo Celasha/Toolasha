@@ -73,7 +73,6 @@ class HousePanelObserver {
         const houseRoomHrid = this.identifyRoomFromModal(modalContent);
 
         if (!houseRoomHrid) {
-            console.warn('[House Panel Observer] Could not identify room from modal');
             return;
         }
 
@@ -81,7 +80,6 @@ class HousePanelObserver {
         const costsSection = modalContent.querySelector('[class*="HousePanel_costs"]');
 
         if (!costsSection) {
-            console.warn('[House Panel Observer] Could not find costs section');
             return;
         }
 

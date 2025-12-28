@@ -130,3 +130,69 @@ export function formatKMB(num, decimals = 1) {
         return sign + absNum.toFixed(0);
     }
 }
+
+/**
+ * Format numbers using game-style coin notation (4-digit maximum display)
+ * @param {number} num - The number to format
+ * @returns {string} Formatted number (e.g., "999", "1,000", "10K", "9,999K", "10M")
+ *
+ * Game formatting rules (4-digit bounded notation):
+ * - 0-999: Raw number (no formatting)
+ * - 1,000-9,999: Comma format
+ * - 10,000-9,999,999: K suffix (10K to 9,999K)
+ * - 10,000,000-9,999,999,999: M suffix (10M to 9,999M)
+ * - 10,000,000,000-9,999,999,999,999: B suffix (10B to 9,999B)
+ * - 10,000,000,000,000+: T suffix (10T+)
+ *
+ * Key rule: Display never exceeds 4 numeric digits. When a 5th digit is needed,
+ * promote to the next unit (K→M→B→T).
+ *
+ * @example
+ * coinFormatter(999) // "999"
+ * coinFormatter(1000) // "1,000"
+ * coinFormatter(9999) // "9,999"
+ * coinFormatter(10000) // "10K"
+ * coinFormatter(999999) // "999K"
+ * coinFormatter(1000000) // "1,000K"
+ * coinFormatter(9999999) // "9,999K"
+ * coinFormatter(10000000) // "10M"
+ */
+export function coinFormatter(num) {
+    if (num === null || num === undefined) {
+        return null;
+    }
+
+    const absNum = Math.abs(num);
+    const sign = num < 0 ? '-' : '';
+
+    // 0-999: raw number
+    if (absNum < 1000) {
+        return sign + Math.floor(absNum).toString();
+    }
+    // 1,000-9,999: comma format
+    if (absNum < 10000) {
+        return sign + new Intl.NumberFormat().format(Math.floor(absNum));
+    }
+    // 10K-9,999K (10,000 to 9,999,999)
+    if (absNum < 10000000) {
+        const val = Math.floor(absNum / 1000);
+        const formatted = val >= 1000 ? new Intl.NumberFormat().format(val) : val;
+        return sign + formatted + 'K';
+    }
+    // 10M-9,999M (10,000,000 to 9,999,999,999)
+    if (absNum < 10000000000) {
+        const val = Math.floor(absNum / 1000000);
+        const formatted = val >= 1000 ? new Intl.NumberFormat().format(val) : val;
+        return sign + formatted + 'M';
+    }
+    // 10B-9,999B (10,000,000,000 to 9,999,999,999,999)
+    if (absNum < 10000000000000) {
+        const val = Math.floor(absNum / 1000000000);
+        const formatted = val >= 1000 ? new Intl.NumberFormat().format(val) : val;
+        return sign + formatted + 'B';
+    }
+    // 10T+ (10,000,000,000,000+)
+    const val = Math.floor(absNum / 1000000000000);
+    const formatted = val >= 1000 ? new Intl.NumberFormat().format(val) : val;
+    return sign + formatted + 'T';
+}

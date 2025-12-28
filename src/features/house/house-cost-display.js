@@ -5,7 +5,7 @@
 
 import houseCostCalculator from './house-cost-calculator.js';
 import config from '../../core/config.js';
-import { numberFormatter } from '../../utils/formatters.js';
+import { numberFormatter, coinFormatter } from '../../utils/formatters.js';
 import { createCollapsibleSection } from '../../utils/ui-components.js';
 
 class HouseCostDisplay {
@@ -61,7 +61,7 @@ class HouseCostDisplay {
             this.currentModalContent = modalContent;
 
         } catch (error) {
-            console.error('[House Cost Display] Failed to augment costs:', error);
+            // Silently fail - augmentation is optional
         }
     }
 
@@ -89,7 +89,6 @@ class HouseCostDisplay {
         // Find the item requirements grid container
         const itemRequirementsGrid = costsSection.querySelector('[class*="HousePanel_itemRequirements"]');
         if (!itemRequirementsGrid) {
-            console.warn('[House Cost Display] Could not find item requirements grid');
             return;
         }
 
@@ -97,7 +96,6 @@ class HouseCostDisplay {
         // Native grid is: icon | inventory count | input count
         // We want: icon | inventory count | input count | pricing
         const currentGridStyle = window.getComputedStyle(itemRequirementsGrid).gridTemplateColumns;
-        console.log('[House Cost Display] Current grid columns:', currentGridStyle);
 
         // Add a 4th column for pricing (auto width)
         itemRequirementsGrid.style.gridTemplateColumns = currentGridStyle + ' auto';
@@ -105,7 +103,6 @@ class HouseCostDisplay {
         // Find all item containers (these have the icons)
         const itemContainers = itemRequirementsGrid.querySelectorAll('[class*="Item_itemContainer"]');
         if (itemContainers.length === 0) {
-            console.warn('[House Cost Display] No item containers found');
             return;
         }
 
@@ -178,6 +175,7 @@ class HouseCostDisplay {
 
         const inventoryCount = houseCostCalculator.getInventoryCount(materialData.itemHrid);
         const hasEnough = inventoryCount >= materialData.count;
+        const amountNeeded = Math.max(0, materialData.count - inventoryCount);
 
         // Create pricing cell
         const pricingCell = document.createElement('span');
@@ -194,9 +192,9 @@ class HouseCostDisplay {
         `;
 
         pricingCell.innerHTML = `
-            <span style="color: ${config.SCRIPT_COLOR_SECONDARY};">@ ${numberFormatter(materialData.marketPrice)}</span>
-            <span style="color: ${config.SCRIPT_COLOR_MAIN}; font-weight: bold;">= ${numberFormatter(materialData.totalValue)}</span>
-            <span style="color: ${hasEnough ? '#4ade80' : '#f87171'};">${hasEnough ? '✓' : '✗'} ${numberFormatter(inventoryCount)}</span>
+            <span style="color: ${config.SCRIPT_COLOR_SECONDARY};">@ ${coinFormatter(materialData.marketPrice)}</span>
+            <span style="color: ${config.SCRIPT_COLOR_MAIN}; font-weight: bold;">= ${coinFormatter(materialData.totalValue)}</span>
+            <span style="color: ${hasEnough ? '#4ade80' : '#f87171'}; margin-left: auto; text-align: right;">${coinFormatter(amountNeeded)}</span>
         `;
 
         // Insert immediately after the item badge
@@ -220,7 +218,7 @@ class HouseCostDisplay {
             color: ${config.SCRIPT_COLOR_MAIN};
             text-align: center;
         `;
-        totalDiv.textContent = `Total Market Value: ${numberFormatter(costData.totalValue)}`;
+        totalDiv.textContent = `Total Market Value: ${coinFormatter(costData.totalValue)}`;
         costsSection.appendChild(totalDiv);
     }
 
@@ -234,8 +232,8 @@ class HouseCostDisplay {
         const section = document.createElement('div');
         section.className = 'mwi-house-to-level';
         section.style.cssText = `
-            margin-top: 16px;
-            padding: 12px;
+            margin-top: 8px;
+            padding: 8px;
             background: rgba(0, 0, 0, 0.3);
             border-radius: 8px;
             border: 1px solid ${config.SCRIPT_COLOR_SECONDARY};
@@ -278,11 +276,9 @@ class HouseCostDisplay {
             dropdown.appendChild(option);
         }
 
-        // Default to level 5 or max available
-        const defaultLevel = Math.min(5, 8);
-        if (defaultLevel > currentLevel + 1) {
-            dropdown.value = defaultLevel;
-        }
+        // Default to next level (currentLevel + 2)
+        const defaultLevel = currentLevel + 2;
+        dropdown.value = defaultLevel;
 
         headerRow.appendChild(label);
         headerRow.appendChild(dropdown);
@@ -294,6 +290,7 @@ class HouseCostDisplay {
         costContainer.style.cssText = `
             font-size: 0.875rem;
             margin-top: 8px;
+            text-align: left;
         `;
         section.appendChild(costContainer);
 
@@ -320,28 +317,28 @@ class HouseCostDisplay {
 
         const costData = await houseCostCalculator.calculateCumulativeCost(houseRoomHrid, currentLevel, targetLevel);
 
-        // Compact material list matching top format
+        // Compact material list as a unified grid
         const materialsList = document.createElement('div');
         materialsList.style.cssText = `
-            display: flex;
-            flex-direction: column;
-            gap: 2px;
+            display: grid;
+            grid-template-columns: auto auto auto auto auto;
+            align-items: center;
+            gap: 2px 8px;
+            line-height: 1.2;
         `;
 
         // Coins first
         if (costData.coins > 0) {
-            const coinRow = this.createCompactMaterialRow({
+            this.appendMaterialCells(materialsList, {
                 itemHrid: '/items/coin',
                 count: costData.coins,
                 totalValue: costData.coins
             });
-            materialsList.appendChild(coinRow);
         }
 
         // Materials
         for (const material of costData.materials) {
-            const row = this.createCompactMaterialRow(material);
-            materialsList.appendChild(row);
+            this.appendMaterialCells(materialsList, material);
         }
 
         container.appendChild(materialsList);
@@ -349,84 +346,90 @@ class HouseCostDisplay {
         // Total
         const totalDiv = document.createElement('div');
         totalDiv.style.cssText = `
-            margin-top: 8px;
-            padding-top: 8px;
-            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 2px solid ${config.SCRIPT_COLOR_MAIN};
             font-weight: bold;
+            font-size: 1rem;
             color: ${config.SCRIPT_COLOR_MAIN};
             text-align: center;
         `;
-        totalDiv.textContent = `Total: ${numberFormatter(costData.totalValue)}`;
+        totalDiv.textContent = `Total Market Value: ${coinFormatter(costData.totalValue)}`;
         container.appendChild(totalDiv);
     }
 
     /**
-     * Create compact material row matching top section format
+     * Append material cells directly to grid (5 cells per material)
+     * @param {Element} grid - The grid container
      * @param {Object} material - Material data
-     * @returns {HTMLElement} Row element
      */
-    createCompactMaterialRow(material) {
+    appendMaterialCells(grid, material) {
         const itemName = houseCostCalculator.getItemName(material.itemHrid);
         const inventoryCount = houseCostCalculator.getInventoryCount(material.itemHrid);
         const hasEnough = inventoryCount >= material.count;
+        const amountNeeded = Math.max(0, material.count - inventoryCount);
+        const isCoin = material.itemHrid === '/items/coin';
 
-        // Create a row that mimics the construction costs format
-        const row = document.createElement('div');
-        row.style.cssText = `
-            display: grid;
-            grid-template-columns: auto auto auto auto;
-            align-items: center;
-            gap: 8px;
-            margin: 4px 0;
-        `;
-
-        // Inventory / Required
+        // Cell 1: Inventory / Required (right-aligned)
         const countsSpan = document.createElement('span');
         countsSpan.style.cssText = `
             color: ${hasEnough ? 'white' : '#f87171'};
             text-align: right;
         `;
-        countsSpan.textContent = `${numberFormatter(inventoryCount)} / ${numberFormatter(material.count)}`;
+        countsSpan.textContent = `${coinFormatter(inventoryCount)} / ${coinFormatter(material.count)}`;
+        grid.appendChild(countsSpan);
 
-        // Item badge (mimicking the game's item badges)
-        const badgeSpan = document.createElement('span');
-        badgeSpan.style.cssText = `
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-            padding: 4px 8px;
-            background: rgba(0, 0, 0, 0.3);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            border-radius: 4px;
+        // Cell 2: Item name (left-aligned)
+        const nameSpan = document.createElement('span');
+        nameSpan.style.cssText = `
             color: white;
+            text-align: left;
         `;
-        badgeSpan.textContent = itemName;
+        nameSpan.textContent = itemName;
+        grid.appendChild(nameSpan);
 
-        // Pricing info (only for non-coins)
-        const pricingSpan = document.createElement('span');
-        if (material.itemHrid !== '/items/coin') {
-            pricingSpan.style.cssText = `
-                display: flex;
-                gap: 8px;
+        // Cell 3: @ price (left-aligned) - empty for coins
+        const priceSpan = document.createElement('span');
+        if (!isCoin) {
+            priceSpan.style.cssText = `
+                color: ${config.SCRIPT_COLOR_SECONDARY};
                 font-size: 0.75rem;
-                white-space: nowrap;
+                text-align: left;
             `;
-            pricingSpan.innerHTML = `
-                <span style="color: ${config.SCRIPT_COLOR_SECONDARY};">@ ${numberFormatter(material.marketPrice)}</span>
-                <span style="color: ${config.SCRIPT_COLOR_MAIN}; font-weight: bold;">= ${numberFormatter(material.totalValue)}</span>
-                <span style="color: ${hasEnough ? '#4ade80' : '#f87171'};">${hasEnough ? '✓' : '✗'} ${numberFormatter(inventoryCount)}</span>
-            `;
+            priceSpan.textContent = `@ ${coinFormatter(material.marketPrice)}`;
         }
+        grid.appendChild(priceSpan);
 
-        // Empty span for grid alignment
-        const emptySpan = document.createElement('span');
+        // Cell 4: = total (left-aligned) - show coin total for coins
+        const totalSpan = document.createElement('span');
+        if (isCoin) {
+            totalSpan.style.cssText = `
+                color: ${config.SCRIPT_COLOR_MAIN};
+                font-weight: bold;
+                font-size: 0.75rem;
+                text-align: left;
+            `;
+            totalSpan.textContent = `= ${coinFormatter(material.totalValue)}`;
+        } else {
+            totalSpan.style.cssText = `
+                color: ${config.SCRIPT_COLOR_MAIN};
+                font-weight: bold;
+                font-size: 0.75rem;
+                text-align: left;
+            `;
+            totalSpan.textContent = `= ${coinFormatter(material.totalValue)}`;
+        }
+        grid.appendChild(totalSpan);
 
-        row.appendChild(countsSpan);
-        row.appendChild(badgeSpan);
-        row.appendChild(pricingSpan);
-        row.appendChild(emptySpan);
-
-        return row;
+        // Cell 5: Amount needed (right-aligned)
+        const neededSpan = document.createElement('span');
+        neededSpan.style.cssText = `
+            color: ${hasEnough ? '#4ade80' : '#f87171'};
+            font-size: 0.75rem;
+            text-align: right;
+        `;
+        neededSpan.textContent = coinFormatter(amountNeeded);
+        grid.appendChild(neededSpan);
     }
 
     /**
