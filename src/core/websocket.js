@@ -131,6 +131,31 @@ class WebSocketHook {
                 GM_setValue('toolasha_new_battle', message);
                 console.log('[Toolasha] Battle data saved for Combat Sim export');
             }
+
+            // Save profile shares (when opening party member profiles)
+            if (messageType === 'profile_shared') {
+                const parsed = JSON.parse(message);
+                let profileList = JSON.parse(GM_getValue('toolasha_profile_export_list', '[]'));
+
+                // Extract character info
+                parsed.characterID = parsed.profile.characterSkills[0].characterID;
+                parsed.characterName = parsed.profile.sharableCharacter.name;
+                parsed.timestamp = Date.now();
+
+                // Remove old entry for same character
+                profileList = profileList.filter(p => p.characterID !== parsed.characterID);
+
+                // Add to front of list
+                profileList.unshift(parsed);
+
+                // Keep only last 20 profiles
+                if (profileList.length > 20) {
+                    profileList.pop();
+                }
+
+                GM_setValue('toolasha_profile_export_list', JSON.stringify(profileList));
+                console.log('[Toolasha] Profile saved for Combat Sim export:', parsed.characterName);
+            }
         } catch (error) {
             console.error('[WebSocket] Failed to save Combat Sim data:', error);
         }
