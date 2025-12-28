@@ -76,6 +76,9 @@ class WebSocketHook {
             const data = JSON.parse(message);
             const messageType = data.type;
 
+            // Save critical data to GM storage for Combat Sim export
+            this.saveCombatSimData(messageType, message);
+
             // Call registered handlers for this message type
             const handlers = this.messageHandlers.get(messageType) || [];
             for (const handler of handlers) {
@@ -97,6 +100,39 @@ class WebSocketHook {
             }
         } catch (error) {
             console.error('[WebSocket] Failed to process message:', error);
+        }
+    }
+
+    /**
+     * Save character/battle data for Combat Simulator export
+     * @param {string} messageType - Message type
+     * @param {string} message - Raw message JSON string
+     */
+    saveCombatSimData(messageType, message) {
+        try {
+            if (typeof GM_setValue === 'undefined') {
+                return; // GM functions not available
+            }
+
+            // Save full character data (on login/refresh)
+            if (messageType === 'init_character_data') {
+                GM_setValue('toolasha_init_character_data', message);
+                console.log('[Toolasha] Character data saved for Combat Sim export');
+            }
+
+            // Save client data (for ability special detection)
+            if (messageType === 'init_client_data') {
+                GM_setValue('toolasha_init_client_data', message);
+                console.log('[Toolasha] Client data saved for Combat Sim export');
+            }
+
+            // Save battle data including party members (on combat start)
+            if (messageType === 'new_battle') {
+                GM_setValue('toolasha_new_battle', message);
+                console.log('[Toolasha] Battle data saved for Combat Sim export');
+            }
+        } catch (error) {
+            console.error('[WebSocket] Failed to save Combat Sim data:', error);
         }
     }
 

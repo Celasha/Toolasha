@@ -34,150 +34,174 @@ import networthFeature from './features/networth/index.js';
 import * as enhancementGearDetector from './utils/enhancement-gear-detector.js';
 import { getEnhancingParams } from './utils/enhancement-config.js';
 import * as enhancementCalculator from './utils/enhancement-calculator.js';
+import * as combatSimIntegration from './features/combat/combat-sim-integration.js';
 
-// CRITICAL: Install WebSocket hook FIRST, before game connects
-webSocketHook.install();
+/**
+ * Detect if running on Combat Simulator page
+ * @returns {boolean} True if on Combat Simulator
+ */
+function isCombatSimulatorPage() {
+    const url = window.location.href;
+    // Only work on test Combat Simulator for now
+    return url.includes('shykai.github.io/MWICombatSimulatorTest/dist/');
+}
 
-// CRITICAL: Start centralized DOM observer SECOND, before features initialize
-domObserver.start();
+// === COMBAT SIMULATOR PAGE ===
+if (isCombatSimulatorPage()) {
+    console.log('[Toolasha] Detected Combat Simulator page');
 
-// Initialize storage and config THIRD (async)
-(async () => {
-    try {
-        // Initialize storage (opens IndexedDB)
-        await storage.initialize();
+    // Initialize combat sim integration only
+    combatSimIntegration.initialize();
 
-        // Initialize config (loads settings from storage)
-        await config.initialize();
+    // Skip all other initialization
+} else {
+    // === GAME PAGE ===
+    console.log('[Toolasha] Detected game page');
 
-        console.log('✅ Storage and config initialized');
+    // CRITICAL: Install WebSocket hook FIRST, before game connects
+    webSocketHook.install();
 
-        // Add beforeunload handler to flush all pending writes
-        window.addEventListener('beforeunload', () => {
-            storage.flushAll();
-        });
+    // CRITICAL: Start centralized DOM observer SECOND, before features initialize
+    domObserver.start();
 
-        // Initialize Data Manager immediately
-        // Don't wait for localStorageUtil - it handles missing data gracefully
-        dataManager.initialize();
-    } catch (error) {
-        console.error('❌ Storage/config initialization failed:', error);
-        // Initialize anyway
-        dataManager.initialize();
-    }
-})();
-
-dataManager.on('character_initialized', (data) => {
-    // Initialize market features after character data loads
-    setTimeout(async () => {
+    // Initialize storage and config THIRD (async)
+    (async () => {
         try {
-            // Market features
-            if (config.isFeatureEnabled('tooltipPrices')) {
-                await tooltipPrices.initialize();
-            }
-            if (config.isFeatureEnabled('expectedValueCalculator')) {
-                await expectedValueCalculator.initialize();
-            }
-            if (config.isFeatureEnabled('tooltipConsumables')) {
-                await tooltipConsumables.initialize();
-            }
+            // Initialize storage (opens IndexedDB)
+            await storage.initialize();
 
-            // Action features
-            if (config.isFeatureEnabled('actionPanelProfit')) {
-                initActionPanelObserver();
-            }
-            if (config.isFeatureEnabled('actionTimeDisplay')) {
-                actionTimeDisplay.initialize();
-            }
-            if (config.isFeatureEnabled('quickInputButtons')) {
-                quickInputButtons.initialize();
-            }
+            // Initialize config (loads settings from storage)
+            await config.initialize();
 
-            // Combat features
-            if (config.isFeatureEnabled('abilityBookCalculator')) {
-                abilityBookCalculator.initialize();
-            }
-            if (config.isFeatureEnabled('zoneIndices')) {
-                zoneIndices.initialize();
-            }
-            if (config.isFeatureEnabled('combatScore')) {
-                combatScore.initialize();
-            }
+            console.log('✅ Storage and config initialized');
 
-            // UI features
-            if (config.isFeatureEnabled('equipmentLevelDisplay')) {
-                equipmentLevelDisplay.initialize();
-            }
-            if (config.isFeatureEnabled('alchemyItemDimming')) {
-                alchemyItemDimming.initialize();
-            }
-            if (config.isFeatureEnabled('skillExperiencePercentage')) {
-                skillExperiencePercentage.initialize();
-            }
+            // Add beforeunload handler to flush all pending writes
+            window.addEventListener('beforeunload', () => {
+                storage.flushAll();
+            });
 
-            // Task features
-            if (config.isFeatureEnabled('taskProfitDisplay')) {
-                taskProfitDisplay.initialize();
-            }
-            if (config.isFeatureEnabled('taskRerollTracker')) {
-                await taskRerollTracker.initialize();
-            }
-
-            // House features
-            if (config.isFeatureEnabled('houseCostDisplay')) {
-                await housePanelObserver.initialize();
-            }
-
-            // Economy features
-            if (config.isFeatureEnabled('networth') || config.isFeatureEnabled('inventorySummary')) {
-                await networthFeature.initialize();
-            }
+            // Initialize Data Manager immediately
+            // Don't wait for localStorageUtil - it handles missing data gracefully
+            dataManager.initialize();
         } catch (error) {
-            console.error('❌ Feature initialization failed:', error);
+            console.error('❌ Storage/config initialization failed:', error);
+            // Initialize anyway
+            dataManager.initialize();
         }
-    }, 1000);
-});
+    })();
 
-// Expose modules to window for debugging/testing
-// Use unsafeWindow for userscript managers (Tampermonkey/Violentmonkey)
-const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+    dataManager.on('character_initialized', (data) => {
+        // Initialize market features after character data loads
+        setTimeout(async () => {
+            try {
+                // Market features
+                if (config.isFeatureEnabled('tooltipPrices')) {
+                    await tooltipPrices.initialize();
+                }
+                if (config.isFeatureEnabled('expectedValueCalculator')) {
+                    await expectedValueCalculator.initialize();
+                }
+                if (config.isFeatureEnabled('tooltipConsumables')) {
+                    await tooltipConsumables.initialize();
+                }
 
-targetWindow.Toolasha = {
-    dataManager,
-    domObserver, // Expose centralized observer for debugging
-    profitCalculator,
-    gatheringProfitCalculator: { calculateGatheringProfit },
-    productionProfitCalculator: { calculateProductionProfit },
-    expectedValueCalculator,
-    marketAPI,
-    config,
-    storage,
-    websocket: webSocketHook, // Expose websocket for diagnostics
-    actionTimeDisplay,
-    quickInputButtons,
-    abilityBookCalculator,
-    equipmentLevelDisplay,
-    alchemyItemDimming,
-    zoneIndices,
-    combatScore,
-    taskProfitDisplay,
-    taskRerollTracker,
-    housePanelObserver,
-    networthFeature,
-    enhancementGearDetector,
-    getEnhancingParams,
-    enhancementCalculator,
+                // Action features
+                if (config.isFeatureEnabled('actionPanelProfit')) {
+                    initActionPanelObserver();
+                }
+                if (config.isFeatureEnabled('actionTimeDisplay')) {
+                    actionTimeDisplay.initialize();
+                }
+                if (config.isFeatureEnabled('quickInputButtons')) {
+                    quickInputButtons.initialize();
+                }
 
-    // Feature toggle API
-    features: {
-        list: () => config.getFeaturesByCategory(),
-        enable: (key) => config.setFeatureEnabled(key, true),
-        disable: (key) => config.setFeatureEnabled(key, false),
-        toggle: (key) => config.toggleFeature(key),
-        status: (key) => config.isFeatureEnabled(key),
-        info: (key) => config.getFeatureInfo(key),
-        keys: () => config.getFeatureKeys()
-    },
+                // Combat features
+                if (config.isFeatureEnabled('abilityBookCalculator')) {
+                    abilityBookCalculator.initialize();
+                }
+                if (config.isFeatureEnabled('zoneIndices')) {
+                    zoneIndices.initialize();
+                }
+                if (config.isFeatureEnabled('combatScore')) {
+                    combatScore.initialize();
+                }
 
-    version: '0.4.5'
-};
+                // UI features
+                if (config.isFeatureEnabled('equipmentLevelDisplay')) {
+                    equipmentLevelDisplay.initialize();
+                }
+                if (config.isFeatureEnabled('alchemyItemDimming')) {
+                    alchemyItemDimming.initialize();
+                }
+                if (config.isFeatureEnabled('skillExperiencePercentage')) {
+                    skillExperiencePercentage.initialize();
+                }
+
+                // Task features
+                if (config.isFeatureEnabled('taskProfitDisplay')) {
+                    taskProfitDisplay.initialize();
+                }
+                if (config.isFeatureEnabled('taskRerollTracker')) {
+                    await taskRerollTracker.initialize();
+                }
+
+                // House features
+                if (config.isFeatureEnabled('houseCostDisplay')) {
+                    await housePanelObserver.initialize();
+                }
+
+                // Economy features
+                if (config.isFeatureEnabled('networth') || config.isFeatureEnabled('inventorySummary')) {
+                    await networthFeature.initialize();
+                }
+            } catch (error) {
+                console.error('❌ Feature initialization failed:', error);
+            }
+        }, 1000);
+    });
+
+    // Expose modules to window for debugging/testing
+    // Use unsafeWindow for userscript managers (Tampermonkey/Violentmonkey)
+    const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+
+    targetWindow.Toolasha = {
+        dataManager,
+        domObserver, // Expose centralized observer for debugging
+        profitCalculator,
+        gatheringProfitCalculator: { calculateGatheringProfit },
+        productionProfitCalculator: { calculateProductionProfit },
+        expectedValueCalculator,
+        marketAPI,
+        config,
+        storage,
+        websocket: webSocketHook, // Expose websocket for diagnostics
+        actionTimeDisplay,
+        quickInputButtons,
+        abilityBookCalculator,
+        equipmentLevelDisplay,
+        alchemyItemDimming,
+        zoneIndices,
+        combatScore,
+        taskProfitDisplay,
+        taskRerollTracker,
+        housePanelObserver,
+        networthFeature,
+        enhancementGearDetector,
+        getEnhancingParams,
+        enhancementCalculator,
+
+        // Feature toggle API
+        features: {
+            list: () => config.getFeaturesByCategory(),
+            enable: (key) => config.setFeatureEnabled(key, true),
+            disable: (key) => config.setFeatureEnabled(key, false),
+            toggle: (key) => config.toggleFeature(key),
+            status: (key) => config.isFeatureEnabled(key),
+            info: (key) => config.getFeatureInfo(key),
+            keys: () => config.getFeatureKeys()
+        },
+
+        version: '0.4.5'
+    };
+}
