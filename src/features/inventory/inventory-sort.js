@@ -228,7 +228,7 @@ class InventorySort {
             if (this.currentMode === 'none') {
                 // Reset to default order
                 itemElems.forEach(itemElem => {
-                    itemElem.style.order = '0';
+                    itemElem.style.order = 0;
                 });
             } else {
                 // Sort by price
@@ -271,20 +271,21 @@ class InventorySort {
             // Get market price
             const marketPrice = marketAPI.getPrice(itemHrid, 0);
             if (!marketPrice) {
-                itemElem.style.order = '0';
+                itemElem.style.order = 0;
                 continue;
             }
 
             const price = mode === 'ask' ? marketPrice.ask : marketPrice.bid;
             if (price <= 0) {
-                itemElem.style.order = '0';
+                itemElem.style.order = 0;
                 continue;
             }
 
             const stackValue = price * itemCount;
 
             // Set order (negative for descending sort)
-            itemElem.style.order = -stackValue;
+            // Use Math.round to ensure integer values for CSS order
+            itemElem.style.order = Math.round(-stackValue);
 
             // Store value for badge rendering
             itemElem.dataset.stackValue = stackValue;
