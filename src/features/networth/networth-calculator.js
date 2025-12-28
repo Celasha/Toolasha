@@ -14,6 +14,7 @@ import { calculateAbilityCost } from '../../utils/ability-cost-calculator.js';
 import { calculateHouseBuildCost } from '../../utils/house-cost-calculator.js';
 import { calculateEnhancementPath } from '../enhancement/tooltip-enhancement.js';
 import { getEnhancingParams } from '../../utils/enhancement-config.js';
+import { calculateTaskTokenValue } from '../tasks/task-profit-calculator.js';
 import config from '../../core/config.js';
 import networthCache from './networth-cache.js';
 
@@ -72,6 +73,12 @@ export async function calculateItemValue(item, useAsk = true) {
  * @returns {number} Price per item
  */
 function getMarketPrice(itemHrid, enhancementLevel, useAsk) {
+    // Special handling for currencies
+    const currencyValue = calculateCurrencyValue(itemHrid);
+    if (currencyValue !== null) {
+        return currencyValue;
+    }
+
     const prices = marketAPI.getPrice(itemHrid, enhancementLevel);
 
     // If no market data, try crafting cost as fallback
@@ -95,6 +102,43 @@ function getMarketPrice(itemHrid, enhancementLevel, useAsk) {
     }
 
     return useAsk ? ask : bid;
+}
+
+/**
+ * Calculate value for currency items
+ * @param {string} itemHrid - Item HRID
+ * @returns {number|null} Currency value per unit, or null if not a currency
+ */
+function calculateCurrencyValue(itemHrid) {
+    // Coins: Face value (1 coin = 1 value)
+    if (itemHrid === '/items/coin') {
+        return 1;
+    }
+
+    // Cowbells: Market value of Bag of 10 Cowbells / 10
+    if (itemHrid === '/items/cowbell') {
+        const bagPrice = marketAPI.getPrice('/items/bag_of_10_cowbells', 0);
+        if (bagPrice && bagPrice.ask > 0) {
+            return bagPrice.ask / 10;
+        }
+        // Fallback: vendor value
+        return 100000;
+    }
+
+    // Task Tokens: Expected value from Task Shop chests
+    if (itemHrid === '/items/task_token') {
+        const tokenData = calculateTaskTokenValue();
+        if (tokenData && tokenData.tokenValue > 0) {
+            return tokenData.tokenValue;
+        }
+        // Fallback if market data not loaded: 30K (approximate)
+        return 30000;
+    }
+
+    // Dungeon tokens: Not yet implemented (return null to fall through)
+    // Will be added later when user provides valuation idea
+
+    return null; // Not a currency
 }
 
 /**
