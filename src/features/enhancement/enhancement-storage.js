@@ -7,7 +7,7 @@ import storage from '../../core/storage.js';
 
 const STORAGE_KEY = 'enhancementTracker_sessions';
 const CURRENT_SESSION_KEY = 'enhancementTracker_currentSession';
-const STORAGE_STORE = 'features';
+const STORAGE_STORE = 'settings'; // Use existing 'settings' store
 
 /**
  * Save all sessions to storage
