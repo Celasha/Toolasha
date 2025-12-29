@@ -92,9 +92,6 @@ async function handleEnhancementStart(action) {
             return;
         }
 
-        // Check if auto-start is enabled
-        const autoStart = config.getSetting('enhancementTracker_autoStart');
-
         // Get target level from game UI (what the user set in the enhancement slider)
         // If not available, default to +5
         const targetLevel = action.enhancingMaxLevel || Math.min(currentLevel + 5, 20);
@@ -129,10 +126,8 @@ async function handleEnhancementStart(action) {
             await enhancementTracker.finalizeCurrentSession();
         }
 
-        // Priority 4: Start new session if auto-start enabled
-        if (autoStart) {
-            await enhancementTracker.startSession(itemHrid, currentLevel, targetLevel, protectFrom);
-        }
+        // Priority 4: Always start new session when tracker is enabled
+        await enhancementTracker.startSession(itemHrid, currentLevel, targetLevel, protectFrom);
 
     } catch (error) {
     }
@@ -298,13 +293,10 @@ async function handleEnhancementResult(action, data) {
                 }
                 // Otherwise, started at same level (e.g., 0→0 failure, or protected failure)
 
-
-                const autoStart = config.getSetting('enhancementTracker_autoStart');
-                if (autoStart) {
-                    const targetLevel = action.enhancingMaxLevel || Math.min(newLevel + 5, 20);
-                    await enhancementTracker.startSession(itemHrid, startLevel, targetLevel, protectFrom);
-                    currentSession = enhancementTracker.getCurrentSession();
-                }
+                // Always start new session when tracker is enabled
+                const targetLevel = action.enhancingMaxLevel || Math.min(newLevel + 5, 20);
+                await enhancementTracker.startSession(itemHrid, startLevel, targetLevel, protectFrom);
+                currentSession = enhancementTracker.getCurrentSession();
 
                 if (!currentSession) {
                     return;
