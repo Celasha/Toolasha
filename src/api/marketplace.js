@@ -4,6 +4,7 @@
  */
 
 import storage from '../core/storage.js';
+import networkAlert from '../features/market/network-alert.js';
 
 /**
  * MarketAPI class handles fetching and caching market price data
@@ -37,6 +38,8 @@ class MarketAPI {
             if (cached) {
                 this.marketData = cached.data;
                 this.lastFetchTimestamp = cached.timestamp;
+                // Hide alert on successful cache load
+                networkAlert.hide();
                 return this.marketData;
             }
         }
@@ -50,6 +53,8 @@ class MarketAPI {
                 this.cacheData(response);
                 this.marketData = response.marketData;
                 this.lastFetchTimestamp = response.timestamp;
+                // Hide alert on successful fetch
+                networkAlert.hide();
                 return this.marketData;
             }
         } catch (error) {
@@ -62,11 +67,14 @@ class MarketAPI {
             console.warn('[MarketAPI] Using expired cache as fallback');
             this.marketData = expiredCache.marketData;
             this.lastFetchTimestamp = expiredCache.timestamp;
+            // Show alert when using expired cache
+            networkAlert.show('⚠️ Using outdated market data');
             return this.marketData;
         }
 
-        // Total failure
+        // Total failure - show alert
         console.error('[MarketAPI] ❌ No market data available');
+        networkAlert.show('⚠️ Market data unavailable');
         return null;
     }
 

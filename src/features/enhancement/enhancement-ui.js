@@ -7,6 +7,7 @@
 import enhancementTracker from './enhancement-tracker.js';
 import { SessionState, getSessionDuration } from './enhancement-session.js';
 import dataManager from '../../core/data-manager.js';
+import config from '../../core/config.js';
 
 // UI Style Constants (matching Ultimate Enhancement Tracker)
 const STYLE = {
@@ -65,6 +66,8 @@ class EnhancementUI {
         this.currentViewingIndex = 0; // Index in sessions array
         this.updateDebounce = null;
         this.isDragging = false;
+        this.screenObserver = null;
+        this.isOnEnhancingScreen = false;
     }
 
     /**
@@ -74,6 +77,9 @@ class EnhancementUI {
         this.createFloatingUI();
         this.updateUI();
 
+        // Set up screen observer for visibility control
+        this.setupScreenObserver();
+
         // Update UI every second during active sessions
         setInterval(() => {
             const session = this.getCurrentSession();
@@ -81,6 +87,65 @@ class EnhancementUI {
                 this.updateUI();
             }
         }, 1000);
+    }
+
+    /**
+     * Set up screen observer to detect Enhancing screen
+     */
+    setupScreenObserver() {
+        // Check if setting is enabled
+        if (!config.getSetting('enhancementTracker_showOnlyOnEnhancingScreen')) {
+            // Setting is disabled, always show tracker
+            this.isOnEnhancingScreen = true;
+            this.show();
+            return;
+        }
+
+        // Initial check and set visibility
+        this.checkEnhancingScreen();
+        this.updateVisibility(); // Always set initial visibility
+
+        // Set up MutationObserver to detect screen changes
+        this.screenObserver = new MutationObserver(() => {
+            this.checkEnhancingScreen();
+        });
+
+        this.screenObserver.observe(document.body, {
+            childList: true,
+            subtree: true
+        });
+    }
+
+    /**
+     * Check if currently on Enhancing screen
+     */
+    checkEnhancingScreen() {
+        const enhancingPanel = document.querySelector('div.SkillActionDetail_enhancingComponent__17bOx');
+        const wasOnEnhancingScreen = this.isOnEnhancingScreen;
+        this.isOnEnhancingScreen = !!enhancingPanel;
+
+        // Only update visibility if screen state changed
+        if (wasOnEnhancingScreen !== this.isOnEnhancingScreen) {
+            this.updateVisibility();
+        }
+    }
+
+    /**
+     * Update visibility based on screen state and settings
+     */
+    updateVisibility() {
+        const showOnlyOnEnhancingScreen = config.getSetting('enhancementTracker_showOnlyOnEnhancingScreen');
+
+        if (!showOnlyOnEnhancingScreen) {
+            // Setting is disabled, always show
+            this.show();
+        } else if (this.isOnEnhancingScreen) {
+            // On Enhancing screen, show
+            this.show();
+        } else {
+            // Not on Enhancing screen, hide
+            this.hide();
+        }
     }
 
     /**

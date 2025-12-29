@@ -5,6 +5,7 @@
  * Shows expected attempts, time, and protection items needed.
  */
 
+import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import { getEnhancingParams } from '../../utils/enhancement-config.js';
 import { calculateEnhancement, calculatePerActionTime } from '../../utils/enhancement-calculator.js';
@@ -74,6 +75,16 @@ function getProtectionItemFromUI(panel) {
  */
 export async function displayEnhancementStats(panel, itemHrid) {
     try {
+        // Check if feature is enabled
+        if (!config.getSetting('enhanceSim')) {
+            // Remove existing calculator if present
+            const existing = panel.querySelector('#mwi-enhancement-stats');
+            if (existing) {
+                existing.remove();
+            }
+            return;
+        }
+
         // Get game data
         const gameData = dataManager.getInitClientData();
 
@@ -396,24 +407,34 @@ function formatEnhancementDisplay(panel, params, perActionTime, itemDetails, pro
 
     // Calculate total speed (includes level advantage if applicable)
     let totalSpeed = params.speedBonus;
+    let speedLevelAdvantage = 0;
     if (params.enhancingLevel > itemDetails.itemLevel) {
-        const levelAdvantage = params.enhancingLevel - itemDetails.itemLevel;
-        totalSpeed += levelAdvantage;
+        speedLevelAdvantage = params.enhancingLevel - itemDetails.itemLevel;
+        totalSpeed += speedLevelAdvantage;
+    }
+
+    if (totalSpeed > 0) {
         lines.push(`<div style="color: #88ccff;"><span style="color: #888;">Speed:</span> +${totalSpeed.toFixed(1)}%</div>`);
-        lines.push(`<div style="color: #aaddff; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">Level advantage:</span> +${levelAdvantage.toFixed(1)}%</div>`);
-    } else {
-        lines.push(`<div style="color: #88ccff;"><span style="color: #888;">Speed:</span> +${params.speedBonus.toFixed(1)}%</div>`);
-    }
 
-    // Show community buff breakdown if active
-    if (params.communitySpeedBonus > 0) {
-        lines.push(`<div style="color: #aaddff; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">Community T${params.communityBuffLevel}:</span> +${params.communitySpeedBonus.toFixed(1)}%</div>`);
-    }
-
-    // Show tea speed bonus if active
-    if (params.teaSpeedBonus > 0) {
-        const teaName = params.teas.ultraEnhancing ? 'Ultra' : params.teas.superEnhancing ? 'Super' : 'Enhancing';
-        lines.push(`<div style="color: #aaddff; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">${teaName} Tea:</span> +${params.teaSpeedBonus.toFixed(1)}%</div>`);
+        // Show breakdown: equipment + house + community + tea + level advantage
+        if (params.equipmentSpeedBonus > 0) {
+            lines.push(`<div style="color: #aaddff; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">Equipment:</span> +${params.equipmentSpeedBonus.toFixed(1)}%</div>`);
+        }
+        if (params.houseSpeedBonus > 0) {
+            lines.push(`<div style="color: #aaddff; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">House (Observatory):</span> +${params.houseSpeedBonus.toFixed(1)}%</div>`);
+        }
+        if (params.communitySpeedBonus > 0) {
+            lines.push(`<div style="color: #aaddff; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">Community T${params.communityBuffLevel}:</span> +${params.communitySpeedBonus.toFixed(1)}%</div>`);
+        }
+        if (params.teaSpeedBonus > 0) {
+            const teaName = params.teas.ultraEnhancing ? 'Ultra' : params.teas.superEnhancing ? 'Super' : 'Enhancing';
+            lines.push(`<div style="color: #aaddff; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">${teaName} Tea:</span> +${params.teaSpeedBonus.toFixed(1)}%</div>`);
+        }
+        if (speedLevelAdvantage > 0) {
+            lines.push(`<div style="color: #aaddff; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">Level advantage:</span> +${speedLevelAdvantage.toFixed(1)}%</div>`);
+        }
+    } else if (totalSpeed === 0 && speedLevelAdvantage === 0) {
+        lines.push(`<div style="color: #88ccff;"><span style="color: #888;">Speed:</span> +0.0%</div>`);
     }
 
     if (params.teas.blessed) {

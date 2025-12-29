@@ -12,6 +12,7 @@ import dataManager from './core/data-manager.js';
 import dom from './utils/dom.js';
 import * as efficiency from './utils/efficiency.js';
 import marketAPI from './api/marketplace.js';
+import networkAlert from './features/market/network-alert.js';
 import tooltipPrices from './features/market/tooltip-prices.js';
 import tooltipConsumables from './features/market/tooltip-consumables.js';
 import profitCalculator from './features/market/profit-calculator.js';
@@ -68,6 +69,9 @@ if (isCombatSimulatorPage()) {
 
     // CRITICAL: Start centralized DOM observer SECOND, before features initialize
     domObserver.start();
+
+    // Initialize network alert (must be early, before market features)
+    networkAlert.initialize();
 
     // Start capturing client data from localStorage (for Combat Sim export)
     webSocketHook.captureClientDataFromLocalStorage();

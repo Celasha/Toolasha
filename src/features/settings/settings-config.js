@@ -8,18 +8,6 @@ export const settingsGroups = {
         title: 'General Settings',
         icon: '⚙️',
         settings: {
-            useOrangeAsMainColor: {
-                id: 'useOrangeAsMainColor',
-                label: 'Use orange as the main color for the script',
-                type: 'checkbox',
-                default: true
-            },
-            ThirdPartyLinks: {
-                id: 'ThirdPartyLinks',
-                label: 'Show links to 3rd-party websites in left sidebar',
-                type: 'checkbox',
-                default: true
-            },
             networkAlert: {
                 id: 'networkAlert',
                 label: 'Show alert when market price data cannot be fetched',
@@ -47,7 +35,7 @@ export const settingsGroups = {
             },
             actionPanel_totalTime_quickInputs: {
                 id: 'actionPanel_totalTime_quickInputs',
-                label: 'Action panel: Quick input buttons (Max, ÷2, ÷10, etc.)',
+                label: 'Action panel: Quick input buttons (hours, count presets, Max)',
                 type: 'checkbox',
                 default: true,
                 dependencies: ['actionPanel_totalTime']
@@ -188,21 +176,21 @@ export const settingsGroups = {
                 label: 'Ultra Enhancing Tea active',
                 type: 'checkbox',
                 default: true,
-                help: 'Provides +12 skill levels'
+                help: 'Provides +8 base skill levels (scales with drink concentration)'
             },
             enhanceSim_superEnhancingTea: {
                 id: 'enhanceSim_superEnhancingTea',
                 label: 'Super Enhancing Tea active',
                 type: 'checkbox',
                 default: false,
-                help: 'Ultra is better'
+                help: 'Provides +6 base skill levels (Ultra is better)'
             },
             enhanceSim_enhancingTea: {
                 id: 'enhanceSim_enhancingTea',
                 label: 'Enhancing Tea active',
                 type: 'checkbox',
                 default: false,
-                help: 'Ultra is better'
+                help: 'Provides +3 base skill levels (Ultra is better)'
             },
             enhanceSim_drinkConcentration: {
                 id: 'enhanceSim_drinkConcentration',
@@ -229,12 +217,13 @@ export const settingsGroups = {
                 requiresRefresh: true,
                 help: 'Track enhancement attempts, costs, and statistics'
             },
-            enhancementTracker_autoStart: {
-                id: 'enhancementTracker_autoStart',
-                label: 'Auto-start tracking on first enhancement',
+            enhancementTracker_showOnlyOnEnhancingScreen: {
+                id: 'enhancementTracker_showOnlyOnEnhancingScreen',
+                label: 'Show tracker only on Enhancing screen',
                 type: 'checkbox',
-                default: true,
-                dependencies: ['enhancementTracker']
+                default: false,
+                dependencies: ['enhancementTracker'],
+                help: 'Hide tracker when not on the Enhancing screen'
             }
         }
     },
@@ -266,7 +255,7 @@ export const settingsGroups = {
             },
             invSort_showBadges: {
                 id: 'invSort_showBadges',
-                label: 'Show stack value badges on sorted items',
+                label: 'Show stack value badges on items',
                 type: 'checkbox',
                 default: false,
                 dependencies: ['invSort']
@@ -285,63 +274,26 @@ export const settingsGroups = {
         }
     },
 
-    combat: {
-        title: 'Combat Features',
-        icon: '⚔️',
+    skills: {
+        title: 'Skills',
+        icon: '📚',
         settings: {
-            profileBuildScore: {
-                id: 'profileBuildScore',
-                label: 'Profile panel: Show build score',
-                type: 'checkbox',
-                default: true
-            },
-            combatScore: {
-                id: 'combatScore',
-                label: 'Profile panel: Show combat readiness score',
-                type: 'checkbox',
-                default: true
-            },
-            battlePanel: {
-                id: 'battlePanel',
-                label: 'Battle info panel: Encounters/hour, revenue, exp',
-                type: 'checkbox',
-                default: true
-            },
-            showDamage: {
-                id: 'showDamage',
-                label: 'Show DPS below player avatar during combat',
-                type: 'checkbox',
-                default: true
-            },
-            showDamageGraph: {
-                id: 'showDamageGraph',
-                label: 'Show DPS chart (floating window)',
-                type: 'checkbox',
-                default: true,
-                dependencies: ['showDamage']
-            },
-            damageGraphTransparentBackground: {
-                id: 'damageGraphTransparentBackground',
-                label: 'DPS chart: Transparent and blur background',
-                type: 'checkbox',
-                default: true,
-                dependencies: ['showDamageGraph']
-            },
             skillbook: {
                 id: 'skillbook',
                 label: 'Skill books: Show books needed to reach target level',
                 type: 'checkbox',
                 default: true
-            },
-            mapIndex: {
-                id: 'mapIndex',
-                label: 'Combat zones: Show zone index numbers',
-                type: 'checkbox',
-                default: true
-            },
-            checkEquipment: {
-                id: 'checkEquipment',
-                label: 'Alert when using wrong equipment for current activity',
+            }
+        }
+    },
+
+    combat: {
+        title: 'Combat Features',
+        icon: '⚔️',
+        settings: {
+            combatScore: {
+                id: 'combatScore',
+                label: 'Profile panel: Show gear score',
                 type: 'checkbox',
                 default: true
             }
@@ -390,6 +342,12 @@ export const settingsGroups = {
                 default: true,
                 dependencies: ['itemIconLevel']
             },
+            mapIndex: {
+                id: 'mapIndex',
+                label: 'Combat zones: Show zone index numbers',
+                type: 'checkbox',
+                default: true
+            },
             alchemyItemDimming: {
                 id: 'alchemyItemDimming',
                 label: 'Alchemy panel: Dim items requiring higher level',
@@ -400,13 +358,15 @@ export const settingsGroups = {
                 id: 'marketFilter',
                 label: 'Marketplace: Filter by level, class, slot',
                 type: 'checkbox',
-                default: true
+                default: true,
+                notImplemented: true
             },
             fillMarketOrderPrice: {
                 id: 'fillMarketOrderPrice',
                 label: 'Auto-fill marketplace orders with optimal price',
                 type: 'checkbox',
-                default: true
+                default: true,
+                notImplemented: true
             }
         }
     },
@@ -433,7 +393,8 @@ export const settingsGroups = {
                 label: 'Browser notification when action queue is empty',
                 type: 'checkbox',
                 default: false,
-                help: 'Only works when the game page is open'
+                help: 'Only works when the game page is open',
+                notImplemented: true
             }
         }
     }

@@ -171,6 +171,8 @@ function getAutoDetectedParams() {
         equipmentExperience: gear.experienceBonus,        // For display
         equipmentSuccessBonus: equipmentSuccessBonus,     // For display
         houseSuccessBonus: houseSuccessBonus,             // For display
+        equipmentSpeedBonus: gear.speedBonus,             // For display
+        houseSpeedBonus: houseSpeedBonus,                 // For display
     };
 }
 
@@ -184,26 +186,55 @@ function getManualParams() {
         return config.getSettingValue(key, defaultValue);
     };
 
+    const houseLevel = getValue('enhanceSim_houseLevel', 6);
+    const teas = {
+        enhancing: getValue('enhanceSim_enhancingTea', false),
+        superEnhancing: getValue('enhanceSim_superEnhancingTea', false),
+        ultraEnhancing: getValue('enhanceSim_ultraEnhancingTea', true),
+        blessed: getValue('enhanceSim_blessedTea', true),
+    };
+
+    // Calculate tea bonuses
+    const teaLevelBonus = teas.ultraEnhancing ? 8 : teas.superEnhancing ? 6 : teas.enhancing ? 3 : 0;
+    const teaSpeedBonus = teas.ultraEnhancing ? 6 : teas.superEnhancing ? 4 : teas.enhancing ? 2 : 0;
+
+    // Calculate house bonuses
+    const houseSpeedBonus = houseLevel * 1.0;  // 1% per level
+    const houseSuccessBonus = houseLevel * 0.05;  // 0.05% per level
+
+    // Get community buffs
+    const communityBuffLevel = dataManager.getCommunityBuffLevel('/community_buff_types/enhancing_speed');
+    const communitySpeedBonus = communityBuffLevel > 0 ? 20 + (communityBuffLevel - 1) * 0.5 : 0;
+
+    // Equipment speed is whatever's left after house/community/tea
+    const totalSpeed = getValue('enhanceSim_speedBonus', 0);
+    const equipmentSpeedBonus = Math.max(0, totalSpeed - houseSpeedBonus - communitySpeedBonus - teaSpeedBonus);
+
+    const toolBonusEquipment = getValue('enhanceSim_toolBonus', 19.35);
+    const totalToolBonus = toolBonusEquipment + houseSuccessBonus;
+
     return {
-        enhancingLevel: getValue('enhanceSim_enhancingLevel', 125),
-        houseLevel: getValue('enhanceSim_houseLevel', 6),
-        toolBonus: getValue('enhanceSim_toolBonus', 19.35),
-        speedBonus: getValue('enhanceSim_speedBonus', 0),
+        enhancingLevel: getValue('enhanceSim_enhancingLevel', 125) + teaLevelBonus,
+        houseLevel: houseLevel,
+        toolBonus: totalToolBonus,  // Total = equipment + house
+        speedBonus: totalSpeed,
         rareFindBonus: getValue('enhanceSim_rareFindBonus', 0),
         experienceBonus: getValue('enhanceSim_experienceBonus', 0),
         guzzlingBonus: 1 + getValue('enhanceSim_drinkConcentration', 10.32) / 100,
-        teas: {
-            enhancing: getValue('enhanceSim_enhancingTea', false),
-            superEnhancing: getValue('enhanceSim_superEnhancingTea', false),
-            ultraEnhancing: getValue('enhanceSim_ultraEnhancingTea', true),
-            blessed: getValue('enhanceSim_blessedTea', true),
-        },
+        teas: teas,
 
-        // No display info for manual mode
+        // Display info for manual mode
         toolSlot: null,
         bodySlot: null,
         legsSlot: null,
         handsSlot: null,
-        detectedTeaBonus: 0,
+        detectedTeaBonus: teaLevelBonus,
+        communityBuffLevel: communityBuffLevel,
+        communitySpeedBonus: communitySpeedBonus,
+        teaSpeedBonus: teaSpeedBonus,
+        equipmentSpeedBonus: equipmentSpeedBonus,
+        houseSpeedBonus: houseSpeedBonus,
+        equipmentSuccessBonus: toolBonusEquipment,  // Just equipment
+        houseSuccessBonus: houseSuccessBonus,
     };
 }

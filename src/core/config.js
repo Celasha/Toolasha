@@ -46,7 +46,7 @@ class Config {
             },
             actionPanel_totalTime_quickInputs: {
                 id: "actionPanel_totalTime_quickInputs",
-                desc: "Action panel: Quick input numbers. [Depends on the previous selection]",
+                desc: "Action panel: Quick input buttons (hours, count presets, Max). [Depends on the previous selection]",
                 isTrue: true,
             },
             actionPanel_foragingTotal: {
@@ -71,13 +71,8 @@ class Config {
             },
             invSort_showBadges: {
                 id: "invSort_showBadges",
-                desc: "Inventory: Show stack value on sorted items. [Depends on the previous selection]",
+                desc: "Inventory: Show stack value badges on items. [Depends on the previous selection]",
                 isTrue: false,
-            },
-            profileBuildScore: {
-                id: "profileBuildScore",
-                desc: "Profile panel: Build score.",
-                isTrue: true,
             },
             itemTooltip_prices: {
                 id: "itemTooltip_prices",
@@ -136,17 +131,17 @@ class Config {
             },
             enhanceSim_ultraEnhancingTea: {
                 id: "enhanceSim_ultraEnhancingTea",
-                desc: "Ultra Enhancing Tea active (default: true - provides +12 skill levels).",
+                desc: "Ultra Enhancing Tea active (default: true - provides +8 base skill levels, scales with drink concentration).",
                 isTrue: true,
             },
             enhanceSim_superEnhancingTea: {
                 id: "enhanceSim_superEnhancingTea",
-                desc: "Super Enhancing Tea active (default: false - Ultra is better).",
+                desc: "Super Enhancing Tea active (default: false - provides +6 base skill levels, Ultra is better).",
                 isTrue: false,
             },
             enhanceSim_enhancingTea: {
                 id: "enhanceSim_enhancingTea",
-                desc: "Enhancing Tea active (default: false - Ultra is better).",
+                desc: "Enhancing Tea active (default: false - provides +3 base skill levels, Ultra is better).",
                 isTrue: false,
             },
             enhanceSim_drinkConcentration: {
@@ -216,7 +211,7 @@ class Config {
             },
             combatScore: {
                 id: "combatScore",
-                desc: "Profile panel: Combat readiness score based on houses, abilities, and equipment.",
+                desc: "Profile panel: Gear score based on houses, abilities, and equipment.",
                 isTrue: true,
             },
             taskProfitCalculator: {
@@ -279,10 +274,10 @@ class Config {
                 desc: "Enhancement: Track enhancement attempts, costs, and statistics across multiple sessions.",
                 isTrue: false,
             },
-            enhancementTracker_autoStart: {
-                id: "enhancementTracker_autoStart",
-                desc: "Enhancement: Automatically start tracking when beginning enhancement. [Depends on the previous selection]",
-                isTrue: true,
+            enhancementTracker_showOnlyOnEnhancingScreen: {
+                id: "enhancementTracker_showOnlyOnEnhancingScreen",
+                desc: "Enhancement Tracker: Show tracker only on Enhancing screen (hides when viewing other screens).",
+                isTrue: false,
             },
         };
 
@@ -366,17 +361,10 @@ class Config {
             },
             combatScore: {
                 enabled: true,
-                name: 'Profile Combat Score',
+                name: 'Profile Gear Score',
                 category: 'Combat',
-                description: 'Shows total combat power on profile',
+                description: 'Shows gear score on profile',
                 settingKey: 'combatScore'
-            },
-            buildScore: {
-                enabled: true,
-                name: 'Profile Build Score',
-                category: 'Combat',
-                description: 'Shows character build score (same as Combat Score, alternate name)',
-                settingKey: 'profileBuildScore'
             },
             combatSimIntegration: {
                 enabled: true,
@@ -467,7 +455,7 @@ class Config {
                 enabled: false,
                 name: 'Inventory Sort Price Badges',
                 category: 'Economy',
-                description: 'Shows stack value on sorted items',
+                description: 'Shows stack value badges on items',
                 settingKey: 'invSort_showBadges'
             },
 
@@ -517,10 +505,10 @@ class Config {
     }
 
     /**
-     * Save settings to storage (debounced)
+     * Save settings to storage (immediately)
      */
     saveSettings() {
-        storage.setJSON('script_settingsMap', this.settingsMap, 'settings');
+        storage.setJSON('script_settingsMap', this.settingsMap, 'settings', true);
     }
 
     /**

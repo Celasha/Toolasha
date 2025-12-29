@@ -1,6 +1,6 @@
 /**
  * Combat Score Calculator
- * Calculates player combat readiness score based on:
+ * Calculates player gear score based on:
  * - House Score: Cost of battle houses
  * - Ability Score: Cost to reach current ability levels
  * - Equipment Score: Cost to enhance equipped items

@@ -1,6 +1,6 @@
 /**
  * Combat Score Display
- * Shows player combat readiness score in a floating panel next to profile modal
+ * Shows player gear score in a floating panel next to profile modal
  */
 
 import config from '../../core/config.js';
