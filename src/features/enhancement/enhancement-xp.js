@@ -23,13 +23,13 @@ function getBaseItemLevel(itemHrid) {
 
 /**
  * Get wisdom buff percentage from all sources
- * Matches Ultimate Enhancement Tracker's approach - reads from init_character_data
+ * Reads from dataManager.characterData (NOT localStorage)
  * @returns {number} Wisdom buff as decimal (e.g., 0.20 for 20%)
  */
 function getWisdomBuff() {
     try {
-        // Read directly from localStorage like Ultimate Tracker does
-        const charData = JSON.parse(localStorage.getItem('init_character_data'));
+        // Use dataManager for character data (NOT localStorage)
+        const charData = dataManager.characterData;
         if (!charData) return 0;
 
         let totalFlatBoost = 0;
@@ -153,7 +153,8 @@ export function calculateAdjustedAttemptCount(session) {
  */
 export function calculateEnhancementPredictions(itemHrid, startLevel, targetLevel, protectFrom) {
     try {
-        const charData = JSON.parse(localStorage.getItem('init_character_data'));
+        // Use dataManager for character data (NOT localStorage)
+        const charData = dataManager.characterData;
         const gameData = dataManager.getInitClientData();
 
         if (!charData || !gameData) {
