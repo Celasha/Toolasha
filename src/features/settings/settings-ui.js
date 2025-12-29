@@ -21,11 +21,15 @@ class SettingsUI {
      * Initialize the settings UI
      */
     async initialize() {
+        console.log('[Toolasha Settings] Initializing...');
+
         // Inject CSS styles
         this.injectStyles();
+        console.log('[Toolasha Settings] CSS injected');
 
         // Load current settings
         this.currentSettings = await settingsStorage.loadSettings();
+        console.log('[Toolasha Settings] Settings loaded:', Object.keys(this.currentSettings).length, 'settings');
 
         // Wait for game's settings panel to load
         this.observeSettingsPanel();
@@ -43,36 +47,81 @@ class SettingsUI {
 
     /**
      * Observe for game's settings panel
+     * Uses MutationObserver to detect when settings panel appears
      */
     observeSettingsPanel() {
-        this.settingsObserver = new MutationObserver(() => {
-            // Look for settings panel container
-            const settingsContainer = document.querySelector('[class*="SettingsPanel_container"]');
+        // Watch for settings panel to be added to DOM
+        const observer = new MutationObserver((mutations) => {
+            // Look for the settings tabs container
+            const tabsContainer = document.querySelector('div[class*="SettingsPanel_tabsComponentContainer"]');
 
-            if (settingsContainer && !this.settingsPanel) {
-                // Found the settings panel - inject our tab
-                this.injectSettingsTab();
-                // Stop observing once injected
-                this.settingsObserver.disconnect();
+            if (tabsContainer) {
+                // Check if our tab already exists before injecting
+                if (!tabsContainer.querySelector('#toolasha-settings-tab')) {
+                    console.log('[Toolasha Settings] Settings panel detected, injecting tab...');
+                    this.injectSettingsTab();
+                }
+                // Keep observer running - panel might be removed/re-added if user navigates away and back
             }
         });
 
-        this.settingsObserver.observe(document.body, {
-            childList: true,
-            subtree: true
-        });
+        // Observe the main game panel for changes
+        const gamePanel = document.querySelector('div[class*="GamePage_gamePanel"]');
+        if (gamePanel) {
+            observer.observe(gamePanel, {
+                childList: true,
+                subtree: true
+            });
+            console.log('[Toolasha Settings] Observing for settings panel...');
+        } else {
+            console.warn('[Toolasha Settings] Could not find game panel to observe');
+        }
+
+        // Store observer reference
+        this.settingsObserver = observer;
+
+        // Also check immediately in case settings is already open
+        const existingTabsContainer = document.querySelector('div[class*="SettingsPanel_tabsComponentContainer"]');
+        if (existingTabsContainer) {
+            // Check if our tab already exists
+            if (!existingTabsContainer.querySelector('#toolasha-settings-tab')) {
+                console.log('[Toolasha Settings] Settings panel already exists, injecting...');
+                this.injectSettingsTab();
+            }
+        }
     }
 
     /**
      * Inject Toolasha settings tab into game's settings panel
      */
     injectSettingsTab() {
-        // Find tab containers
-        const tabsContainer = document.querySelector('[class*="TabPanel_tabs"]');
-        const tabPanelsContainer = document.querySelector('[class*="TabPanel_tabPanels"]');
+        console.log('[Toolasha Settings] Attempting to inject settings tab...');
+
+        // Find tabs container (MWIt-E approach)
+        const tabsComponentContainer = document.querySelector('div[class*="SettingsPanel_tabsComponentContainer"]');
+
+        if (!tabsComponentContainer) {
+            console.warn('[Toolasha Settings] Could not find tabsComponentContainer');
+            return;
+        }
+
+        // Find the MUI tabs flexContainer
+        const tabsContainer = tabsComponentContainer.querySelector('[class*="MuiTabs-flexContainer"]');
+        const tabPanelsContainer = tabsComponentContainer.querySelector('[class*="TabsComponent_tabPanelsContainer"]');
+
+        console.log('[Toolasha Settings] Found containers:', {
+            tabsContainer: !!tabsContainer,
+            tabPanelsContainer: !!tabPanelsContainer
+        });
 
         if (!tabsContainer || !tabPanelsContainer) {
-            console.warn('[Toolasha Settings] Could not find tab containers');
+            console.warn('[Toolasha Settings] Could not find tabs or panels container');
+            return;
+        }
+
+        // Check if already injected
+        if (tabsContainer.querySelector('#toolasha-settings-tab')) {
+            console.log('[Toolasha Settings] Already injected, skipping');
             return;
         }
 
@@ -188,6 +237,11 @@ class SettingsUI {
         if (settingDef.dependencies && settingDef.dependencies.length > 0) {
             div.classList.add('has-dependency');
             div.dataset.dependencies = settingDef.dependencies.join(',');
+        }
+
+        // Add not-implemented class for red text
+        if (settingDef.notImplemented) {
+            div.classList.add('not-implemented');
         }
 
         // Create label

@@ -1,59 +1,53 @@
 /* Toolasha Settings UI Styles
- * Based on MWITools Extended styling
+ * Modern, compact design
  */
 
 /* CSS Variables */
 :root {
-    --toolasha-accent: rgb(25, 118, 210);
-    --toolasha-accent-hover: rgb(30, 136, 229);
+    --toolasha-accent: #5b8def;
+    --toolasha-accent-hover: #7aa3f3;
+    --toolasha-accent-dim: rgba(91, 141, 239, 0.15);
     --toolasha-secondary: #8A2BE2;
-    --toolasha-text: #E6E6FA;
-    --toolasha-off: rgba(60, 60, 80, 0.5);
-    --toolasha-glow: rgba(156, 220, 255, 0.4);
+    --toolasha-text: rgba(255, 255, 255, 0.9);
+    --toolasha-text-dim: rgba(255, 255, 255, 0.5);
+    --toolasha-bg: rgba(20, 25, 35, 0.6);
+    --toolasha-border: rgba(91, 141, 239, 0.2);
+    --toolasha-toggle-off: rgba(100, 100, 120, 0.4);
+    --toolasha-toggle-on: var(--toolasha-accent);
 }
 
 /* Settings Card Container */
 .toolasha-settings-card {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
-    padding: 20px 24px;
-    font-size: 14px;
-    line-height: 1.5;
-    margin-top: 16px;
+    display: flex;
+    flex-direction: column;
+    padding: 12px 16px;
+    font-size: 12px;
+    line-height: 1.3;
     color: var(--toolasha-text);
     position: relative;
     overflow-y: auto;
-    flex-wrap: wrap;
     gap: 6px;
-    align-items: stretch;
     max-height: calc(100vh - 250px);
 }
 
 /* Top gradient line */
 .toolasha-settings-card::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 1px;
-    background: linear-gradient(90deg, transparent, var(--toolasha-accent), transparent);
+    display: none;
 }
 
 /* Scrollbar styling */
 .toolasha-settings-card::-webkit-scrollbar {
-    width: 8px;
+    width: 6px;
 }
 
 .toolasha-settings-card::-webkit-scrollbar-track {
-    background: rgba(30, 30, 60, 0.5);
-    border-radius: 4px;
+    background: transparent;
 }
 
 .toolasha-settings-card::-webkit-scrollbar-thumb {
     background: var(--toolasha-accent);
-    border-radius: 4px;
-    opacity: 0.7;
+    border-radius: 3px;
+    opacity: 0.5;
 }
 
 .toolasha-settings-card::-webkit-scrollbar-thumb:hover {
@@ -62,17 +56,17 @@
 
 /* Section Headers */
 .toolasha-settings-card h3 {
-    grid-column: 1 / -1;
-    margin: 20px 0 12px 0;
+    margin: 10px 0 4px 0;
     color: var(--toolasha-accent);
     font-weight: 600;
-    text-shadow: 0 0 8px var(--toolasha-glow);
-    font-size: 18px;
+    font-size: 13px;
     display: flex;
     align-items: center;
-    gap: 8px;
-    border-bottom: 1px solid rgba(156, 220, 255, 0.2);
-    padding-bottom: 8px;
+    gap: 6px;
+    border-bottom: 1px solid var(--toolasha-border);
+    padding-bottom: 3px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
 }
 
 .toolasha-settings-card h3:first-child {
@@ -80,7 +74,7 @@
 }
 
 .toolasha-settings-card h3 .icon {
-    font-size: 20px;
+    font-size: 14px;
 }
 
 /* Individual Setting Row */
@@ -88,30 +82,47 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 16px;
-    margin: 4px 4px;
-    padding: 8px 8px;
-    border-bottom: 1px solid rgba(156, 220, 255, 0.1);
-    min-height: 42px;
+    gap: 10px;
+    margin: 0;
+    padding: 6px 8px;
+    background: var(--toolasha-bg);
+    border: 1px solid var(--toolasha-border);
+    border-radius: 4px;
+    min-height: unset;
+    transition: all 0.2s ease;
+}
+
+.toolasha-setting:hover {
+    background: rgba(30, 35, 45, 0.7);
+    border-color: var(--toolasha-accent);
 }
 
 .toolasha-setting.disabled {
-    opacity: 0.4;
+    opacity: 0.3;
     pointer-events: none;
+}
+
+.toolasha-setting.not-implemented .toolasha-setting-label {
+    color: #ff6b6b;
+}
+
+.toolasha-setting.not-implemented .toolasha-setting-help {
+    color: rgba(255, 107, 107, 0.7);
 }
 
 .toolasha-setting-label {
     text-align: left;
     flex: 1;
-    margin-right: 16px;
-    line-height: 1.4;
+    margin-right: 10px;
+    line-height: 1.3;
+    font-size: 12px;
 }
 
 .toolasha-setting-help {
     display: block;
-    font-size: 11px;
-    color: rgba(230, 230, 250, 0.6);
-    margin-top: 4px;
+    font-size: 10px;
+    color: var(--toolasha-text-dim);
+    margin-top: 2px;
     font-style: italic;
 }
 
@@ -119,13 +130,13 @@
     flex-shrink: 0;
 }
 
-/* Toggle Switch (Checkbox) */
+/* Modern Toggle Switch */
 .toolasha-switch {
     position: relative;
-    width: 48px;
-    height: 26px;
+    width: 38px;
+    height: 20px;
     flex-shrink: 0;
-    box-sizing: border-box !important;
+    display: inline-block;
 }
 
 .toolasha-switch input {
@@ -141,98 +152,102 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background: var(--toolasha-off);
-    border-radius: 34px;
+    background: var(--toolasha-toggle-off);
+    border-radius: 20px;
     cursor: pointer;
-    transition: all 0.3s ease;
-    border: 1px solid rgba(156, 220, 255, 0.2);
-    box-sizing: border-box !important;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    border: 2px solid transparent;
 }
 
 .toolasha-slider:before {
     content: "";
     position: absolute;
-    height: 20px;
-    width: 20px;
-    left: 3px;
+    height: 12px;
+    width: 12px;
+    left: 2px;
     bottom: 2px;
-    background: linear-gradient(135deg, #ffffff, #f0f0f0);
+    background: white;
     border-radius: 50%;
-    transition: all 0.3s ease;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-    box-sizing: border-box !important;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
 .toolasha-switch input:checked + .toolasha-slider {
-    background: var(--toolasha-accent);
-    border-color: var(--toolasha-accent);
-    box-shadow: 0 0 12px var(--toolasha-accent);
+    background: var(--toolasha-toggle-on);
+    border-color: var(--toolasha-accent-hover);
+    box-shadow: 0 0 6px var(--toolasha-accent-dim);
 }
 
 .toolasha-switch input:checked + .toolasha-slider:before {
-    transform: translateX(22px);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+    transform: translateX(18px);
+}
+
+.toolasha-switch:hover .toolasha-slider {
+    border-color: var(--toolasha-accent);
 }
 
 /* Text Input */
 .toolasha-text-input {
-    padding: 8px 12px;
-    border: 1px solid rgba(156, 220, 255, 0.3);
-    border-radius: 4px;
+    padding: 5px 8px;
+    border: 1px solid var(--toolasha-border);
+    border-radius: 3px;
     background: rgba(0, 0, 0, 0.3);
     color: var(--toolasha-text);
-    min-width: 120px;
-    font-size: 14px;
+    min-width: 100px;
+    font-size: 12px;
+    transition: all 0.2s ease;
 }
 
 .toolasha-text-input:focus {
     outline: none;
     border-color: var(--toolasha-accent);
-    box-shadow: 0 0 8px rgba(156, 220, 255, 0.3);
+    box-shadow: 0 0 0 2px var(--toolasha-accent-dim);
 }
 
 /* Number Input */
 .toolasha-number-input {
-    padding: 8px 12px;
-    border: 1px solid rgba(156, 220, 255, 0.3);
-    border-radius: 4px;
+    padding: 5px 8px;
+    border: 1px solid var(--toolasha-border);
+    border-radius: 3px;
     background: rgba(0, 0, 0, 0.3);
     color: var(--toolasha-text);
-    min-width: 100px;
-    font-size: 14px;
+    min-width: 80px;
+    font-size: 12px;
+    transition: all 0.2s ease;
 }
 
 .toolasha-number-input:focus {
     outline: none;
     border-color: var(--toolasha-accent);
-    box-shadow: 0 0 8px rgba(156, 220, 255, 0.3);
+    box-shadow: 0 0 0 2px var(--toolasha-accent-dim);
 }
 
 /* Select Dropdown */
 .toolasha-select-input {
-    padding: 8px 12px;
-    border: 1px solid rgba(156, 220, 255, 0.3);
-    border-radius: 4px;
+    padding: 5px 8px;
+    border: 1px solid var(--toolasha-border);
+    border-radius: 3px;
     background: rgba(0, 0, 0, 0.3);
     color: var(--toolasha-accent);
-    font-weight: bold;
-    min-width: 180px;
+    font-weight: 600;
+    min-width: 150px;
     cursor: pointer;
-    font-size: 14px;
+    font-size: 12px;
     -webkit-appearance: none;
     -moz-appearance: none;
     appearance: none;
-    background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20width%3D%2220%22%20height%3D%2220%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cpath%20d%3D%22M5%207l5%205%205-5z%22%20fill%3D%22%231976d2%22%2F%3E%3C%2Fsvg%3E');
+    background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20width%3D%2220%22%20height%3D%2220%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cpath%20d%3D%22M5%207l5%205%205-5z%22%20fill%3D%22%235b8def%22%2F%3E%3C%2Fsvg%3E');
     background-repeat: no-repeat;
-    background-position: right 8px center;
-    background-size: 16px;
-    padding-right: 32px;
+    background-position: right 6px center;
+    background-size: 14px;
+    padding-right: 28px;
+    transition: all 0.2s ease;
 }
 
 .toolasha-select-input:focus {
     outline: none;
     border-color: var(--toolasha-accent);
-    box-shadow: 0 0 8px rgba(156, 220, 255, 0.3);
+    box-shadow: 0 0 0 2px var(--toolasha-accent-dim);
 }
 
 .toolasha-select-input option {
@@ -244,69 +259,67 @@
 /* Utility Buttons Container */
 .toolasha-utility-buttons {
     display: flex;
-    gap: 12px;
-    margin-top: 20px;
-    padding-top: 20px;
-    border-top: 1px solid rgba(156, 220, 255, 0.2);
-    grid-column: 1 / -1;
+    gap: 8px;
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid var(--toolasha-border);
+    flex-wrap: wrap;
 }
 
 .toolasha-utility-button {
     background: linear-gradient(135deg, var(--toolasha-secondary), #6A1B9A);
     border: 1px solid rgba(138, 43, 226, 0.4);
     color: #ffffff;
-    padding: 10px 20px;
-    border-radius: 8px;
-    font-size: 13px;
+    padding: 6px 12px;
+    border-radius: 4px;
+    font-size: 11px;
     font-weight: 600;
     cursor: pointer;
-    transition: all 0.3s ease;
-    text-shadow: 0 0 4px rgba(138, 43, 226, 0.6);
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+    transition: all 0.2s ease;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
 .toolasha-utility-button:hover {
     background: linear-gradient(135deg, #9A4BCF, var(--toolasha-secondary));
-    box-shadow: 0 0 12px rgba(138, 43, 226, 0.4), 0 4px 8px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 0 10px rgba(138, 43, 226, 0.3);
     transform: translateY(-1px);
 }
 
 .toolasha-utility-button:active {
     transform: translateY(0);
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
 }
 
 /* Refresh Notice */
 .toolasha-refresh-notice {
-    grid-column: 1 / -1;
     background: rgba(255, 152, 0, 0.1);
     border: 1px solid rgba(255, 152, 0, 0.3);
-    border-radius: 8px;
-    padding: 12px 16px;
-    margin-top: 12px;
+    border-radius: 4px;
+    padding: 8px 12px;
+    margin-top: 10px;
     color: #ffa726;
-    font-size: 13px;
+    font-size: 11px;
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
 }
 
 .toolasha-refresh-notice::before {
     content: "⚠️";
-    font-size: 18px;
+    font-size: 14px;
 }
 
 /* Dependency Indicator */
 .toolasha-setting.has-dependency::before {
     content: "↳";
     position: absolute;
-    left: 4px;
-    color: rgba(156, 220, 255, 0.4);
-    font-size: 16px;
+    left: -4px;
+    color: var(--toolasha-accent);
+    font-size: 14px;
+    opacity: 0.5;
 }
 
 .toolasha-setting.has-dependency {
-    padding-left: 24px;
+    margin-left: 16px;
     position: relative;
 }
 
