@@ -180,11 +180,9 @@ class TaskRerollTracker {
             const currency = this.getCurrencyFromButton(button);
             if (!currency) return;
 
-            // Note: Not using { once: true } because the reroll container is reused (hidden/shown)
-            // rather than removed/recreated, so we need persistent listeners
+            // Use capturing phase and immediately defer all work
             button.addEventListener('click', () => {
-                // Parse cost from button at click time (not when listener attached)
-                // because the cost changes each reroll (1→2→4→8...)
+                // Capture cost immediately (synchronously) before button text changes
                 const buttonText = button.textContent || '';
                 const costMatch = buttonText.match(/([\d.]+)\s*([KM])?/);
 
@@ -204,22 +202,28 @@ class TaskRerollTracker {
 
                 if (!cost) return;
 
-                // Record spending immediately
-                this.recordSpending(slotIndex, currency, cost);
-
-                // Defer display update to avoid blocking game UI
-                // Use longer delay to let game finish its reroll animation
-                setTimeout(() => {
+                // Defer ALL work to next event loop to avoid blocking game UI
+                queueMicrotask(() => {
                     try {
-                        const taskElement = container.closest('[class*="RandomTask_randomTask"]');
-                        if (taskElement && document.body.contains(taskElement)) {
-                            this.updateTaskDisplay(taskElement, slotIndex);
-                        }
+                        // Record spending
+                        this.recordSpending(slotIndex, currency, cost);
+
+                        // Defer display update even further
+                        setTimeout(() => {
+                            try {
+                                const taskElement = container.closest('[class*="RandomTask_randomTask"]');
+                                if (taskElement && document.body.contains(taskElement)) {
+                                    this.updateTaskDisplay(taskElement, slotIndex);
+                                }
+                            } catch (error) {
+                                console.error('[Task Reroll Tracker] Error updating display:', error);
+                            }
+                        }, 500);
                     } catch (error) {
-                        console.error('[Task Reroll Tracker] Error updating display:', error);
+                        console.error('[Task Reroll Tracker] Error recording spending:', error);
                     }
-                }, 500);
-            });
+                });
+            }, { passive: true }); // Passive listener to avoid blocking
         });
     }
 
