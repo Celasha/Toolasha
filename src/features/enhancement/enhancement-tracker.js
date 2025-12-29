@@ -15,6 +15,8 @@ import {
     addProtectionCost,
     finalizeSession,
     sessionMatches,
+    canExtendSession,
+    extendSession,
     validateSession,
     SessionState
 } from './enhancement-session.js';
@@ -122,11 +124,12 @@ class EnhancementTracker {
      * @param {string} itemHrid - Item HRID
      * @param {number} currentLevel - Current enhancement level
      * @param {number} targetLevel - Target level
+     * @param {number} protectFrom - Protection level
      * @returns {string|null} Session ID if found, null otherwise
      */
-    findMatchingSession(itemHrid, currentLevel, targetLevel) {
+    findMatchingSession(itemHrid, currentLevel, targetLevel, protectFrom = 0) {
         for (const [sessionId, session] of Object.entries(this.sessions)) {
-            if (sessionMatches(session, itemHrid, currentLevel, targetLevel)) {
+            if (sessionMatches(session, itemHrid, currentLevel, targetLevel, protectFrom)) {
                 console.log('[Enhancement Tracker] Found matching session:', sessionId);
                 return sessionId;
             }
@@ -162,6 +165,53 @@ class EnhancementTracker {
     }
 
     /**
+     * Find a completed session that can be extended
+     * @param {string} itemHrid - Item HRID
+     * @param {number} currentLevel - Current enhancement level
+     * @returns {string|null} Session ID if found, null otherwise
+     */
+    findExtendableSession(itemHrid, currentLevel) {
+        for (const [sessionId, session] of Object.entries(this.sessions)) {
+            if (canExtendSession(session, itemHrid, currentLevel)) {
+                console.log('[Enhancement Tracker] Found extendable session:', sessionId);
+                return sessionId;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Extend a completed session to a new target level
+     * @param {string} sessionId - Session ID to extend
+     * @param {number} newTargetLevel - New target level
+     * @returns {Promise<boolean>} True if extended successfully
+     */
+    async extendSessionTarget(sessionId, newTargetLevel) {
+        if (!this.sessions[sessionId]) {
+            console.warn('[Enhancement Tracker] Session not found:', sessionId);
+            return false;
+        }
+
+        const session = this.sessions[sessionId];
+
+        // Can only extend completed sessions
+        if (session.state !== SessionState.COMPLETED) {
+            console.warn('[Enhancement Tracker] Cannot extend non-completed session:', session.state);
+            return false;
+        }
+
+        extendSession(session, newTargetLevel);
+        this.currentSessionId = sessionId;
+
+        await saveSessions(this.sessions);
+        await saveCurrentSessionId(sessionId);
+
+        console.log('[Enhancement Tracker] Extended session:', sessionId, 'New target:', newTargetLevel);
+        return true;
+    }
+
+    /**
      * Get current active session
      * @returns {Object|null} Current session or null
      */
@@ -193,20 +243,21 @@ class EnhancementTracker {
 
     /**
      * Record a successful enhancement attempt
+     * @param {number} previousLevel - Level before success
      * @param {number} newLevel - New level after success
      * @returns {Promise<void>}
      */
-    async recordSuccess(newLevel) {
+    async recordSuccess(previousLevel, newLevel) {
         const session = this.getCurrentSession();
         if (!session) {
             console.warn('[Enhancement Tracker] No active session');
             return;
         }
 
-        recordSuccess(session, newLevel);
+        recordSuccess(session, previousLevel, newLevel);
         await saveSessions(this.sessions);
 
-        console.log('[Enhancement Tracker] Recorded success:', session.currentLevel - 1, '→', newLevel);
+        console.log('[Enhancement Tracker] Recorded success:', previousLevel, '→', newLevel);
 
         // Check if target reached
         if (session.state === SessionState.COMPLETED) {
@@ -218,19 +269,20 @@ class EnhancementTracker {
 
     /**
      * Record a failed enhancement attempt
+     * @param {number} previousLevel - Level that failed
      * @returns {Promise<void>}
      */
-    async recordFailure() {
+    async recordFailure(previousLevel) {
         const session = this.getCurrentSession();
         if (!session) {
             console.warn('[Enhancement Tracker] No active session');
             return;
         }
 
-        recordFailure(session);
+        recordFailure(session, previousLevel);
         await saveSessions(this.sessions);
 
-        console.log('[Enhancement Tracker] Recorded failure at level', session.currentLevel);
+        console.log('[Enhancement Tracker] Recorded failure at level', previousLevel);
     }
 
     /**
@@ -270,17 +322,18 @@ class EnhancementTracker {
 
     /**
      * Track protection item cost for current session
+     * @param {string} protectionItemHrid - Protection item HRID
      * @param {number} cost - Protection item cost
      * @returns {Promise<void>}
      */
-    async trackProtectionCost(cost) {
+    async trackProtectionCost(protectionItemHrid, cost) {
         const session = this.getCurrentSession();
         if (!session) return;
 
-        addProtectionCost(session, cost);
+        addProtectionCost(session, protectionItemHrid, cost);
         await saveSessions(this.sessions);
 
-        console.log('[Enhancement Tracker] Added protection cost:', cost);
+        console.log('[Enhancement Tracker] Added protection cost:', protectionItemHrid, cost);
     }
 
     /**
@@ -298,6 +351,14 @@ class EnhancementTracker {
      */
     getSession(sessionId) {
         return this.sessions[sessionId] || null;
+    }
+
+    /**
+     * Save sessions to storage (can be called directly)
+     * @returns {Promise<void>}
+     */
+    async saveSessions() {
+        await saveSessions(this.sessions);
     }
 
     /**

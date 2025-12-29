@@ -8,7 +8,7 @@ class Storage {
     constructor() {
         this.db = null;
         this.available = false;
-        this.dbName = 'MWIToolsDB';
+        this.dbName = 'ToolashaDB';
         this.dbVersion = 2;
         this.saveDebounceTimers = new Map(); // Per-key debounce timers
         this.SAVE_DEBOUNCE_DELAY = 3000; // 3 seconds

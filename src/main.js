@@ -33,6 +33,8 @@ import housePanelObserver from './features/house/house-panel-observer.js';
 import networthFeature from './features/networth/index.js';
 import inventorySort from './features/inventory/inventory-sort.js';
 import enhancementTracker from './features/enhancement/enhancement-tracker.js';
+import { setupEnhancementHandlers } from './features/enhancement/enhancement-handlers.js';
+import enhancementUI from './features/enhancement/enhancement-ui.js';
 import * as enhancementGearDetector from './utils/enhancement-gear-detector.js';
 import { getEnhancingParams } from './utils/enhancement-config.js';
 import * as enhancementCalculator from './utils/enhancement-calculator.js';
@@ -167,6 +169,10 @@ if (isCombatSimulatorPage()) {
                 // Enhancement features
                 if (config.isFeatureEnabled('enhancementTracker')) {
                     await enhancementTracker.initialize();
+                    // Setup WebSocket event handlers for automatic tracking
+                    setupEnhancementHandlers();
+                    // Initialize floating UI panel
+                    enhancementUI.initialize();
                 }
             } catch (error) {
                 console.error('❌ Feature initialization failed:', error);

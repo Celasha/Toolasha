@@ -16,7 +16,7 @@ const STORAGE_STORE = 'settings'; // Use existing 'settings' store
  */
 export async function saveSessions(sessions) {
     try {
-        await storage.setJSON(STORAGE_KEY, sessions, STORAGE_STORE);
+        await storage.setJSON(STORAGE_KEY, sessions, STORAGE_STORE, true); // immediate=true for rapid updates
         console.log('[Enhancement Storage] Saved', Object.keys(sessions).length, 'sessions');
     } catch (error) {
         console.error('[Enhancement Storage] Failed to save sessions:', error);
@@ -46,7 +46,7 @@ export async function loadSessions() {
  */
 export async function saveCurrentSessionId(sessionId) {
     try {
-        await storage.set(CURRENT_SESSION_KEY, sessionId, STORAGE_STORE);
+        await storage.set(CURRENT_SESSION_KEY, sessionId, STORAGE_STORE, true); // immediate=true for rapid updates
     } catch (error) {
         console.error('[Enhancement Storage] Failed to save current session ID:', error);
     }

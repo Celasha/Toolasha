@@ -41,26 +41,40 @@ export function createSession(itemHrid, itemName, startLevel, targetLevel, prote
         lastUpdateTime: now,
         endTime: null,
 
+        // Last attempt tracking (for detecting success/failure)
+        lastAttempt: {
+            attemptNumber: 0,
+            level: startLevel,
+            timestamp: now
+        },
+
         // Attempt tracking (per level)
-        // Format: { 1: { success: 5, fail: 3 }, 2: { success: 4, fail: 7 }, ... }
+        // Format: { 1: { success: 5, fail: 3, successRate: 0.625 }, ... }
         attemptsPerLevel: {},
 
         // Cost tracking
         materialCosts: {}, // Format: { itemHrid: { count: 10, totalCost: 50000 } }
         coinCost: 0,
+        coinCount: 0, // Track number of times coins were spent
         protectionCost: 0,
+        protectionCount: 0,
+        protectionItemHrid: null, // Track which protection item is being used
         totalCost: 0,
 
         // Statistics
         totalAttempts: 0,
         totalSuccesses: 0,
         totalFailures: 0,
+        totalXP: 0, // Total XP gained from enhancements
         longestSuccessStreak: 0,
         longestFailureStreak: 0,
         currentStreak: { type: null, count: 0 }, // 'success' or 'fail'
 
         // Milestones reached
-        milestonesReached: [] // [5, 10, 15, 20]
+        milestonesReached: [], // [5, 10, 15, 20]
+
+        // Enhancement predictions (optional - calculated at session start)
+        predictions: null // { expectedAttempts, expectedProtections, ... }
     };
 }
 
@@ -73,26 +87,42 @@ export function initializeLevelTracking(session, level) {
     if (!session.attemptsPerLevel[level]) {
         session.attemptsPerLevel[level] = {
             success: 0,
-            fail: 0
+            fail: 0,
+            successRate: 0
         };
     }
 }
 
 /**
+ * Update success rate for a level
+ * @param {Object} session - Session object
+ * @param {number} level - Enhancement level
+ */
+export function updateSuccessRate(session, level) {
+    const levelData = session.attemptsPerLevel[level];
+    if (!levelData) return;
+
+    const total = levelData.success + levelData.fail;
+    levelData.successRate = total > 0 ? levelData.success / total : 0;
+}
+
+/**
  * Record a successful enhancement attempt
  * @param {Object} session - Session object
+ * @param {number} previousLevel - Level before enhancement (level that succeeded)
  * @param {number} newLevel - New level after success
  */
-export function recordSuccess(session, newLevel) {
-    const previousLevel = session.currentLevel;
-
-    // Initialize tracking if needed
+export function recordSuccess(session, previousLevel, newLevel) {
+    // Initialize tracking if needed for the level that succeeded
     initializeLevelTracking(session, previousLevel);
 
-    // Record success
+    // Record success at the level we enhanced FROM
     session.attemptsPerLevel[previousLevel].success++;
     session.totalAttempts++;
     session.totalSuccesses++;
+
+    // Update success rate for this level
+    updateSuccessRate(session, previousLevel);
 
     // Update current level
     session.currentLevel = newLevel;
@@ -126,17 +156,19 @@ export function recordSuccess(session, newLevel) {
 /**
  * Record a failed enhancement attempt
  * @param {Object} session - Session object
+ * @param {number} previousLevel - Level that failed (level we tried to enhance from)
  */
-export function recordFailure(session) {
-    const level = session.currentLevel;
+export function recordFailure(session, previousLevel) {
+    // Initialize tracking if needed for the level that failed
+    initializeLevelTracking(session, previousLevel);
 
-    // Initialize tracking if needed
-    initializeLevelTracking(session, level);
-
-    // Record failure
-    session.attemptsPerLevel[level].fail++;
+    // Record failure at the level we enhanced FROM
+    session.attemptsPerLevel[previousLevel].fail++;
     session.totalAttempts++;
     session.totalFailures++;
+
+    // Update success rate for this level
+    updateSuccessRate(session, previousLevel);
 
     // Update streaks
     if (session.currentStreak.type === 'fail') {
@@ -182,16 +214,25 @@ export function addMaterialCost(session, itemHrid, count, unitCost) {
  */
 export function addCoinCost(session, amount) {
     session.coinCost += amount;
+    session.coinCount += 1;
     recalculateTotalCost(session);
 }
 
 /**
  * Add protection item cost to session
  * @param {Object} session - Session object
+ * @param {string} protectionItemHrid - Protection item HRID
  * @param {number} cost - Protection item cost
  */
-export function addProtectionCost(session, cost) {
+export function addProtectionCost(session, protectionItemHrid, cost) {
     session.protectionCost += cost;
+    session.protectionCount += 1;
+
+    // Store the protection item HRID if not already set
+    if (!session.protectionItemHrid) {
+        session.protectionItemHrid = protectionItemHrid;
+    }
+
     recalculateTotalCost(session);
 }
 
@@ -280,15 +321,64 @@ export function archiveSession(session) {
  * @param {string} itemHrid - Item HRID
  * @param {number} currentLevel - Current enhancement level
  * @param {number} targetLevel - Target level
+ * @param {number} protectFrom - Protection level
  * @returns {boolean} True if session matches
  */
-export function sessionMatches(session, itemHrid, currentLevel, targetLevel) {
-    return (
-        session.itemHrid === itemHrid &&
-        session.currentLevel === currentLevel &&
-        session.targetLevel === targetLevel &&
-        session.state === SessionState.TRACKING
-    );
+export function sessionMatches(session, itemHrid, currentLevel, targetLevel, protectFrom = 0) {
+    // Must be same item
+    if (session.itemHrid !== itemHrid) return false;
+
+    // Can only resume tracking sessions (not completed/archived)
+    if (session.state !== SessionState.TRACKING) return false;
+
+    // Must match protection settings exactly (Ultimate Tracker requirement)
+    if (session.protectFrom !== protectFrom) return false;
+
+    // Must match target level exactly (Ultimate Tracker requirement)
+    if (session.targetLevel !== targetLevel) return false;
+
+    // Must match current level (with small tolerance for out-of-order events)
+    const levelDiff = Math.abs(session.currentLevel - currentLevel);
+    if (levelDiff <= 1) {
+        return true;
+    }
+
+    return false;
+}
+
+/**
+ * Check if a completed session can be extended
+ * @param {Object} session - Session object
+ * @param {string} itemHrid - Item HRID
+ * @param {number} currentLevel - Current enhancement level
+ * @returns {boolean} True if session can be extended
+ */
+export function canExtendSession(session, itemHrid, currentLevel) {
+    // Must be same item
+    if (session.itemHrid !== itemHrid) return false;
+
+    // Must be completed
+    if (session.state !== SessionState.COMPLETED) return false;
+
+    // Current level should match where session ended (or close)
+    const levelDiff = Math.abs(session.currentLevel - currentLevel);
+    if (levelDiff <= 1) {
+        return true;
+    }
+
+    return false;
+}
+
+/**
+ * Extend a completed session to a new target level
+ * @param {Object} session - Session object
+ * @param {number} newTargetLevel - New target level
+ */
+export function extendSession(session, newTargetLevel) {
+    session.state = SessionState.TRACKING;
+    session.targetLevel = newTargetLevel;
+    session.endTime = null;
+    session.lastUpdateTime = Date.now();
 }
 
 /**
