@@ -219,6 +219,11 @@ class Config {
                 desc: "Task panel: Show total profit for gathering and production tasks (rewards + action profit).",
                 isTrue: true,
             },
+            taskRerollTracker: {
+                id: "taskRerollTracker",
+                desc: "Task panel: Track task reroll costs (EXPERIMENTAL - may cause UI freezing).",
+                isTrue: false,
+            },
             houseUpgradeCosts: {
                 id: "houseUpgradeCosts",
                 desc: "House panel: Show upgrade costs with market prices, inventory comparison, and cumulative costs to target level.",
@@ -413,11 +418,11 @@ class Config {
                 settingKey: 'taskProfitCalculator'
             },
             taskRerollTracker: {
-                enabled: true,
+                enabled: false,
                 name: 'Task Reroll Tracker',
                 category: 'Tasks',
                 description: 'Tracks reroll costs and history',
-                settingKey: null // New feature, no legacy setting
+                settingKey: 'taskRerollTracker'
             },
 
             // House Features

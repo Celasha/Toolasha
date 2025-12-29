@@ -310,6 +310,14 @@ export const settingsGroups = {
                 type: 'checkbox',
                 default: true
             },
+            taskRerollTracker: {
+                id: 'taskRerollTracker',
+                label: 'Track task reroll costs',
+                type: 'checkbox',
+                default: false,
+                requiresRefresh: true,
+                help: 'Tracks how much gold/cowbells spent rerolling each task (EXPERIMENTAL - may cause UI freezing)'
+            },
             taskMapIndex: {
                 id: 'taskMapIndex',
                 label: 'Show combat zone index numbers on tasks',
