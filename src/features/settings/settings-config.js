@@ -1,0 +1,478 @@
+/**
+ * Settings Configuration
+ * Organizes all script settings into logical groups for the settings UI
+ */
+
+export const settingsGroups = {
+    general: {
+        title: 'General Settings',
+        icon: '⚙️',
+        settings: {
+            useOrangeAsMainColor: {
+                id: 'useOrangeAsMainColor',
+                label: 'Use orange as the main color for the script',
+                type: 'checkbox',
+                default: true
+            },
+            ThirdPartyLinks: {
+                id: 'ThirdPartyLinks',
+                label: 'Show links to 3rd-party websites in left sidebar',
+                type: 'checkbox',
+                default: true
+            },
+            networkAlert: {
+                id: 'networkAlert',
+                label: 'Show alert when market price data cannot be fetched',
+                type: 'checkbox',
+                default: true
+            }
+        }
+    },
+
+    actionPanel: {
+        title: 'Action Panel Enhancements',
+        icon: '⚡',
+        settings: {
+            totalActionTime: {
+                id: 'totalActionTime',
+                label: 'Top left: Estimated total time and completion time',
+                type: 'checkbox',
+                default: true
+            },
+            actionPanel_totalTime: {
+                id: 'actionPanel_totalTime',
+                label: 'Action panel: Total time, times to reach target level, exp/hour',
+                type: 'checkbox',
+                default: true
+            },
+            actionPanel_totalTime_quickInputs: {
+                id: 'actionPanel_totalTime_quickInputs',
+                label: 'Action panel: Quick input buttons (Max, ÷2, ÷10, etc.)',
+                type: 'checkbox',
+                default: true,
+                dependencies: ['actionPanel_totalTime']
+            },
+            actionPanel_foragingTotal: {
+                id: 'actionPanel_foragingTotal',
+                label: 'Action panel: Overall profit for multi-outcome foraging',
+                type: 'checkbox',
+                default: true,
+                dependencies: ['actionPanel_totalTime']
+            },
+            actionQueue: {
+                id: 'actionQueue',
+                label: 'Queued actions: Show total time and completion time',
+                type: 'checkbox',
+                default: true
+            }
+        }
+    },
+
+    tooltips: {
+        title: 'Item Tooltip Enhancements',
+        icon: '💬',
+        settings: {
+            itemTooltip_prices: {
+                id: 'itemTooltip_prices',
+                label: 'Show 24-hour average market prices',
+                type: 'checkbox',
+                default: true
+            },
+            itemTooltip_profit: {
+                id: 'itemTooltip_profit',
+                label: 'Show production cost and profit',
+                type: 'checkbox',
+                default: true,
+                dependencies: ['itemTooltip_prices']
+            },
+            itemTooltip_expectedValue: {
+                id: 'itemTooltip_expectedValue',
+                label: 'Show expected value for openable containers',
+                type: 'checkbox',
+                default: true,
+                dependencies: ['itemTooltip_prices']
+            },
+            expectedValue_showDrops: {
+                id: 'expectedValue_showDrops',
+                label: 'Expected value drop display',
+                type: 'select',
+                default: 'All',
+                options: [
+                    { value: 'Top 5', label: 'Top 5' },
+                    { value: 'Top 10', label: 'Top 10' },
+                    { value: 'All', label: 'All Drops' },
+                    { value: 'None', label: 'Summary Only' }
+                ],
+                dependencies: ['itemTooltip_expectedValue']
+            },
+            expectedValue_respectPricingMode: {
+                id: 'expectedValue_respectPricingMode',
+                label: 'Use pricing mode for expected value calculations',
+                type: 'checkbox',
+                default: true,
+                dependencies: ['itemTooltip_expectedValue']
+            },
+            showConsumTips: {
+                id: 'showConsumTips',
+                label: 'HP/MP consumables: Restore speed, cost performance',
+                type: 'checkbox',
+                default: true
+            },
+            enhanceSim: {
+                id: 'enhanceSim',
+                label: 'Show enhancement simulator calculations',
+                type: 'checkbox',
+                default: true
+            }
+        }
+    },
+
+    enhancementSimulator: {
+        title: 'Enhancement Simulator Settings',
+        icon: '✨',
+        settings: {
+            enhanceSim_autoDetect: {
+                id: 'enhanceSim_autoDetect',
+                label: 'Auto-detect your stats (false = use market defaults)',
+                type: 'checkbox',
+                default: false,
+                help: 'Most players should use market defaults to see realistic professional enhancer costs'
+            },
+            enhanceSim_enhancingLevel: {
+                id: 'enhanceSim_enhancingLevel',
+                label: 'Enhancing skill level',
+                type: 'number',
+                default: 125,
+                min: 1,
+                max: 150,
+                help: 'Default: 125 (professional enhancer level)'
+            },
+            enhanceSim_houseLevel: {
+                id: 'enhanceSim_houseLevel',
+                label: 'Observatory house room level',
+                type: 'number',
+                default: 6,
+                min: 0,
+                max: 8,
+                help: 'Default: 6 (realistic market level)'
+            },
+            enhanceSim_toolBonus: {
+                id: 'enhanceSim_toolBonus',
+                label: 'Tool success bonus %',
+                type: 'number',
+                default: 19.35,
+                min: 0,
+                max: 30,
+                step: 0.01,
+                help: 'Default: 19.35 (Celestial Enhancer +10)'
+            },
+            enhanceSim_speedBonus: {
+                id: 'enhanceSim_speedBonus',
+                label: 'Speed bonus %',
+                type: 'number',
+                default: 0,
+                min: 0,
+                max: 50,
+                step: 0.01,
+                help: 'Default: 0 (not critical for cost calculations)'
+            },
+            enhanceSim_blessedTea: {
+                id: 'enhanceSim_blessedTea',
+                label: 'Blessed Tea active',
+                type: 'checkbox',
+                default: true,
+                help: 'Professional enhancers use this to reduce attempts'
+            },
+            enhanceSim_ultraEnhancingTea: {
+                id: 'enhanceSim_ultraEnhancingTea',
+                label: 'Ultra Enhancing Tea active',
+                type: 'checkbox',
+                default: true,
+                help: 'Provides +12 skill levels'
+            },
+            enhanceSim_superEnhancingTea: {
+                id: 'enhanceSim_superEnhancingTea',
+                label: 'Super Enhancing Tea active',
+                type: 'checkbox',
+                default: false,
+                help: 'Ultra is better'
+            },
+            enhanceSim_enhancingTea: {
+                id: 'enhanceSim_enhancingTea',
+                label: 'Enhancing Tea active',
+                type: 'checkbox',
+                default: false,
+                help: 'Ultra is better'
+            },
+            enhanceSim_drinkConcentration: {
+                id: 'enhanceSim_drinkConcentration',
+                label: 'Drink Concentration %',
+                type: 'number',
+                default: 10.32,
+                min: 0,
+                max: 20,
+                step: 0.01,
+                help: 'Default: 10.32 (Guzzling Pouch +10)'
+            }
+        }
+    },
+
+    enhancementTracker: {
+        title: 'Enhancement Tracker',
+        icon: '📊',
+        settings: {
+            enhancementTracker: {
+                id: 'enhancementTracker',
+                label: 'Enable Enhancement Tracker',
+                type: 'checkbox',
+                default: false,
+                requiresRefresh: true,
+                help: 'Track enhancement attempts, costs, and statistics'
+            },
+            enhancementTracker_autoStart: {
+                id: 'enhancementTracker_autoStart',
+                label: 'Auto-start tracking on first enhancement',
+                type: 'checkbox',
+                default: true,
+                dependencies: ['enhancementTracker']
+            }
+        }
+    },
+
+    economy: {
+        title: 'Economy & Inventory',
+        icon: '💰',
+        settings: {
+            networth: {
+                id: 'networth',
+                label: 'Top right: Show current assets (net worth)',
+                type: 'checkbox',
+                default: true,
+                help: 'Enhanced items valued by enhancement simulator'
+            },
+            invWorth: {
+                id: 'invWorth',
+                label: 'Below inventory: Show inventory summary',
+                type: 'checkbox',
+                default: true,
+                dependencies: ['networth']
+            },
+            invSort: {
+                id: 'invSort',
+                label: 'Sort inventory items by value',
+                type: 'checkbox',
+                default: true,
+                dependencies: ['networth']
+            },
+            invSort_showBadges: {
+                id: 'invSort_showBadges',
+                label: 'Show stack value badges on sorted items',
+                type: 'checkbox',
+                default: false,
+                dependencies: ['invSort']
+            },
+            profitCalc_pricingMode: {
+                id: 'profitCalc_pricingMode',
+                label: 'Profit calculation pricing mode',
+                type: 'select',
+                default: 'hybrid',
+                options: [
+                    { value: 'conservative', label: 'Conservative (Ask/Bid - instant trading)' },
+                    { value: 'hybrid', label: 'Hybrid (Ask/Ask - instant buy, patient sell)' },
+                    { value: 'optimistic', label: 'Optimistic (Bid/Ask - patient trading)' }
+                ]
+            }
+        }
+    },
+
+    combat: {
+        title: 'Combat Features',
+        icon: '⚔️',
+        settings: {
+            profileBuildScore: {
+                id: 'profileBuildScore',
+                label: 'Profile panel: Show build score',
+                type: 'checkbox',
+                default: true
+            },
+            combatScore: {
+                id: 'combatScore',
+                label: 'Profile panel: Show combat readiness score',
+                type: 'checkbox',
+                default: true
+            },
+            battlePanel: {
+                id: 'battlePanel',
+                label: 'Battle info panel: Encounters/hour, revenue, exp',
+                type: 'checkbox',
+                default: true
+            },
+            showDamage: {
+                id: 'showDamage',
+                label: 'Show DPS below player avatar during combat',
+                type: 'checkbox',
+                default: true
+            },
+            showDamageGraph: {
+                id: 'showDamageGraph',
+                label: 'Show DPS chart (floating window)',
+                type: 'checkbox',
+                default: true,
+                dependencies: ['showDamage']
+            },
+            damageGraphTransparentBackground: {
+                id: 'damageGraphTransparentBackground',
+                label: 'DPS chart: Transparent and blur background',
+                type: 'checkbox',
+                default: true,
+                dependencies: ['showDamageGraph']
+            },
+            skillbook: {
+                id: 'skillbook',
+                label: 'Skill books: Show books needed to reach target level',
+                type: 'checkbox',
+                default: true
+            },
+            mapIndex: {
+                id: 'mapIndex',
+                label: 'Combat zones: Show zone index numbers',
+                type: 'checkbox',
+                default: true
+            },
+            checkEquipment: {
+                id: 'checkEquipment',
+                label: 'Alert when using wrong equipment for current activity',
+                type: 'checkbox',
+                default: true
+            }
+        }
+    },
+
+    tasks: {
+        title: 'Tasks',
+        icon: '📋',
+        settings: {
+            taskProfitCalculator: {
+                id: 'taskProfitCalculator',
+                label: 'Show total profit for gathering/production tasks',
+                type: 'checkbox',
+                default: true
+            },
+            taskMapIndex: {
+                id: 'taskMapIndex',
+                label: 'Show combat zone index numbers on tasks',
+                type: 'checkbox',
+                default: true
+            }
+        }
+    },
+
+    ui: {
+        title: 'UI Enhancements',
+        icon: '🎨',
+        settings: {
+            expPercentage: {
+                id: 'expPercentage',
+                label: 'Left sidebar: Show skill XP percentages',
+                type: 'checkbox',
+                default: true
+            },
+            itemIconLevel: {
+                id: 'itemIconLevel',
+                label: 'Top right corner of icons: Show equipment level',
+                type: 'checkbox',
+                default: true
+            },
+            showsKeyInfoInIcon: {
+                id: 'showsKeyInfoInIcon',
+                label: 'Top right corner of key icons: Show zone index',
+                type: 'checkbox',
+                default: true,
+                dependencies: ['itemIconLevel']
+            },
+            alchemyItemDimming: {
+                id: 'alchemyItemDimming',
+                label: 'Alchemy panel: Dim items requiring higher level',
+                type: 'checkbox',
+                default: true
+            },
+            marketFilter: {
+                id: 'marketFilter',
+                label: 'Marketplace: Filter by level, class, slot',
+                type: 'checkbox',
+                default: true
+            },
+            fillMarketOrderPrice: {
+                id: 'fillMarketOrderPrice',
+                label: 'Auto-fill marketplace orders with optimal price',
+                type: 'checkbox',
+                default: true
+            }
+        }
+    },
+
+    house: {
+        title: 'House',
+        icon: '🏠',
+        settings: {
+            houseUpgradeCosts: {
+                id: 'houseUpgradeCosts',
+                label: 'Show upgrade costs with market prices and inventory comparison',
+                type: 'checkbox',
+                default: true
+            }
+        }
+    },
+
+    notifications: {
+        title: 'Notifications',
+        icon: '🔔',
+        settings: {
+            notifiEmptyAction: {
+                id: 'notifiEmptyAction',
+                label: 'Browser notification when action queue is empty',
+                type: 'checkbox',
+                default: false,
+                help: 'Only works when the game page is open'
+            }
+        }
+    }
+};
+
+/**
+ * Get all setting IDs in order
+ * @returns {string[]} Array of setting IDs
+ */
+export function getAllSettingIds() {
+    const ids = [];
+    for (const group of Object.values(settingsGroups)) {
+        for (const settingId of Object.keys(group.settings)) {
+            ids.push(settingId);
+        }
+    }
+    return ids;
+}
+
+/**
+ * Get a setting definition by ID
+ * @param {string} settingId - Setting ID
+ * @returns {Object|null} Setting definition or null
+ */
+export function getSettingDefinition(settingId) {
+    for (const group of Object.values(settingsGroups)) {
+        if (group.settings[settingId]) {
+            return group.settings[settingId];
+        }
+    }
+    return null;
+}
+
+/**
+ * Check if a setting has dependencies
+ * @param {string} settingId - Setting ID
+ * @returns {string[]} Array of dependency setting IDs
+ */
+export function getSettingDependencies(settingId) {
+    const def = getSettingDefinition(settingId);
+    return def?.dependencies || [];
+}

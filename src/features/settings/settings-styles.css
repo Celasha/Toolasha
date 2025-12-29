@@ -1,0 +1,320 @@
+/* Toolasha Settings UI Styles
+ * Based on MWITools Extended styling
+ */
+
+/* CSS Variables */
+:root {
+    --toolasha-accent: rgb(25, 118, 210);
+    --toolasha-accent-hover: rgb(30, 136, 229);
+    --toolasha-secondary: #8A2BE2;
+    --toolasha-text: #E6E6FA;
+    --toolasha-off: rgba(60, 60, 80, 0.5);
+    --toolasha-glow: rgba(156, 220, 255, 0.4);
+}
+
+/* Settings Card Container */
+.toolasha-settings-card {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+    padding: 20px 24px;
+    font-size: 14px;
+    line-height: 1.5;
+    margin-top: 16px;
+    color: var(--toolasha-text);
+    position: relative;
+    overflow-y: auto;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: stretch;
+    max-height: calc(100vh - 250px);
+}
+
+/* Top gradient line */
+.toolasha-settings-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--toolasha-accent), transparent);
+}
+
+/* Scrollbar styling */
+.toolasha-settings-card::-webkit-scrollbar {
+    width: 8px;
+}
+
+.toolasha-settings-card::-webkit-scrollbar-track {
+    background: rgba(30, 30, 60, 0.5);
+    border-radius: 4px;
+}
+
+.toolasha-settings-card::-webkit-scrollbar-thumb {
+    background: var(--toolasha-accent);
+    border-radius: 4px;
+    opacity: 0.7;
+}
+
+.toolasha-settings-card::-webkit-scrollbar-thumb:hover {
+    opacity: 1;
+}
+
+/* Section Headers */
+.toolasha-settings-card h3 {
+    grid-column: 1 / -1;
+    margin: 20px 0 12px 0;
+    color: var(--toolasha-accent);
+    font-weight: 600;
+    text-shadow: 0 0 8px var(--toolasha-glow);
+    font-size: 18px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-bottom: 1px solid rgba(156, 220, 255, 0.2);
+    padding-bottom: 8px;
+}
+
+.toolasha-settings-card h3:first-child {
+    margin-top: 0;
+}
+
+.toolasha-settings-card h3 .icon {
+    font-size: 20px;
+}
+
+/* Individual Setting Row */
+.toolasha-setting {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin: 4px 4px;
+    padding: 8px 8px;
+    border-bottom: 1px solid rgba(156, 220, 255, 0.1);
+    min-height: 42px;
+}
+
+.toolasha-setting.disabled {
+    opacity: 0.4;
+    pointer-events: none;
+}
+
+.toolasha-setting-label {
+    text-align: left;
+    flex: 1;
+    margin-right: 16px;
+    line-height: 1.4;
+}
+
+.toolasha-setting-help {
+    display: block;
+    font-size: 11px;
+    color: rgba(230, 230, 250, 0.6);
+    margin-top: 4px;
+    font-style: italic;
+}
+
+.toolasha-setting-input {
+    flex-shrink: 0;
+}
+
+/* Toggle Switch (Checkbox) */
+.toolasha-switch {
+    position: relative;
+    width: 48px;
+    height: 26px;
+    flex-shrink: 0;
+    box-sizing: border-box !important;
+}
+
+.toolasha-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+    position: absolute;
+}
+
+.toolasha-slider {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: var(--toolasha-off);
+    border-radius: 34px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    border: 1px solid rgba(156, 220, 255, 0.2);
+    box-sizing: border-box !important;
+}
+
+.toolasha-slider:before {
+    content: "";
+    position: absolute;
+    height: 20px;
+    width: 20px;
+    left: 3px;
+    bottom: 2px;
+    background: linear-gradient(135deg, #ffffff, #f0f0f0);
+    border-radius: 50%;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    box-sizing: border-box !important;
+}
+
+.toolasha-switch input:checked + .toolasha-slider {
+    background: var(--toolasha-accent);
+    border-color: var(--toolasha-accent);
+    box-shadow: 0 0 12px var(--toolasha-accent);
+}
+
+.toolasha-switch input:checked + .toolasha-slider:before {
+    transform: translateX(22px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+/* Text Input */
+.toolasha-text-input {
+    padding: 8px 12px;
+    border: 1px solid rgba(156, 220, 255, 0.3);
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.3);
+    color: var(--toolasha-text);
+    min-width: 120px;
+    font-size: 14px;
+}
+
+.toolasha-text-input:focus {
+    outline: none;
+    border-color: var(--toolasha-accent);
+    box-shadow: 0 0 8px rgba(156, 220, 255, 0.3);
+}
+
+/* Number Input */
+.toolasha-number-input {
+    padding: 8px 12px;
+    border: 1px solid rgba(156, 220, 255, 0.3);
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.3);
+    color: var(--toolasha-text);
+    min-width: 100px;
+    font-size: 14px;
+}
+
+.toolasha-number-input:focus {
+    outline: none;
+    border-color: var(--toolasha-accent);
+    box-shadow: 0 0 8px rgba(156, 220, 255, 0.3);
+}
+
+/* Select Dropdown */
+.toolasha-select-input {
+    padding: 8px 12px;
+    border: 1px solid rgba(156, 220, 255, 0.3);
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.3);
+    color: var(--toolasha-accent);
+    font-weight: bold;
+    min-width: 180px;
+    cursor: pointer;
+    font-size: 14px;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20width%3D%2220%22%20height%3D%2220%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cpath%20d%3D%22M5%207l5%205%205-5z%22%20fill%3D%22%231976d2%22%2F%3E%3C%2Fsvg%3E');
+    background-repeat: no-repeat;
+    background-position: right 8px center;
+    background-size: 16px;
+    padding-right: 32px;
+}
+
+.toolasha-select-input:focus {
+    outline: none;
+    border-color: var(--toolasha-accent);
+    box-shadow: 0 0 8px rgba(156, 220, 255, 0.3);
+}
+
+.toolasha-select-input option {
+    background: #1a1a2e;
+    color: var(--toolasha-text);
+    padding: 8px;
+}
+
+/* Utility Buttons Container */
+.toolasha-utility-buttons {
+    display: flex;
+    gap: 12px;
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid rgba(156, 220, 255, 0.2);
+    grid-column: 1 / -1;
+}
+
+.toolasha-utility-button {
+    background: linear-gradient(135deg, var(--toolasha-secondary), #6A1B9A);
+    border: 1px solid rgba(138, 43, 226, 0.4);
+    color: #ffffff;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    text-shadow: 0 0 4px rgba(138, 43, 226, 0.6);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+}
+
+.toolasha-utility-button:hover {
+    background: linear-gradient(135deg, #9A4BCF, var(--toolasha-secondary));
+    box-shadow: 0 0 12px rgba(138, 43, 226, 0.4), 0 4px 8px rgba(0, 0, 0, 0.3);
+    transform: translateY(-1px);
+}
+
+.toolasha-utility-button:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+/* Refresh Notice */
+.toolasha-refresh-notice {
+    grid-column: 1 / -1;
+    background: rgba(255, 152, 0, 0.1);
+    border: 1px solid rgba(255, 152, 0, 0.3);
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-top: 12px;
+    color: #ffa726;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.toolasha-refresh-notice::before {
+    content: "⚠️";
+    font-size: 18px;
+}
+
+/* Dependency Indicator */
+.toolasha-setting.has-dependency::before {
+    content: "↳";
+    position: absolute;
+    left: 4px;
+    color: rgba(156, 220, 255, 0.4);
+    font-size: 16px;
+}
+
+.toolasha-setting.has-dependency {
+    padding-left: 24px;
+    position: relative;
+}
+
+/* Tab Panel Override (for game's settings panel) */
+.TabPanel_tabPanel__tXMJF#toolasha-settings {
+    display: block !important;
+}
+
+.TabPanel_tabPanel__tXMJF#toolasha-settings.TabPanel_hidden__26UM3 {
+    display: none !important;
+}

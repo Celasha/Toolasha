@@ -39,6 +39,7 @@ import * as enhancementGearDetector from './utils/enhancement-gear-detector.js';
 import { getEnhancingParams } from './utils/enhancement-config.js';
 import * as enhancementCalculator from './utils/enhancement-calculator.js';
 import * as combatSimIntegration from './features/combat/combat-sim-integration.js';
+import settingsUI from './features/settings/settings-ui.js';
 
 /**
  * Detect if running on Combat Simulator page
@@ -81,6 +82,9 @@ if (isCombatSimulatorPage()) {
             await config.initialize();
 
             console.log('✅ Storage and config initialized');
+
+            // Initialize Settings UI (injects tab into game settings panel)
+            settingsUI.initialize();
 
             // Add beforeunload handler to flush all pending writes
             window.addEventListener('beforeunload', () => {
