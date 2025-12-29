@@ -214,13 +214,10 @@ class ActionTimeDisplay {
             ? (action.maxCount - action.currentCount)
             : Infinity;
 
-        // Calculate total actions needed (accounting for efficiency)
-        // Efficiency repeats the action, so we need fewer queue items
-        const efficiencyMultiplier = 1 + (totalEfficiency / 100);
-        const actualActionsNeeded = remainingActions !== Infinity ? remainingActions / efficiencyMultiplier : Infinity;
-
         // Calculate total time
-        const totalTimeSeconds = actualActionsNeeded * actionTime;
+        // Note: Efficiency does NOT reduce time - it only increases outputs
+        // The queue count represents ACTIONS to perform, not outputs wanted
+        const totalTimeSeconds = remainingActions * actionTime;
 
         // Calculate completion time
         const completionTime = new Date();
@@ -429,10 +426,9 @@ class ActionTimeDisplay {
                     } else {
                         const timeData = this.calculateActionTime(actionDetails);
                         if (timeData) {
-                            const { actionTime, totalEfficiency } = timeData;
-                            const efficiencyMultiplier = 1 + (totalEfficiency / 100);
-                            const actualActionsNeeded = count / efficiencyMultiplier;
-                            const totalTime = actualActionsNeeded * actionTime;
+                            const { actionTime } = timeData;
+                            // Efficiency doesn't affect time - queue count is ACTIONS, not outputs
+                            const totalTime = count * actionTime;
                             accumulatedTime += totalTime;
                         }
                     }
@@ -481,16 +477,15 @@ class ActionTimeDisplay {
                 const timeData = this.calculateActionTime(actionDetails);
                 if (!timeData) continue;
 
-                const { actionTime, totalEfficiency } = timeData;
+                const { actionTime } = timeData;
 
-                // Calculate total time for this action (accounting for efficiency)
+                // Calculate total time for this action
+                // Efficiency doesn't affect time - queue count is ACTIONS, not outputs
                 let totalTime;
                 if (isInfinite) {
                     totalTime = Infinity;
                 } else {
-                    const efficiencyMultiplier = 1 + (totalEfficiency / 100);
-                    const actualActionsNeeded = count / efficiencyMultiplier;
-                    totalTime = actualActionsNeeded * actionTime;
+                    totalTime = count * actionTime;
                     accumulatedTime += totalTime;
                 }
 
