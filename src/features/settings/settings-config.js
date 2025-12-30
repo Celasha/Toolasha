@@ -345,7 +345,7 @@ export const settingsGroups = {
             },
             showsKeyInfoInIcon: {
                 id: 'showsKeyInfoInIcon',
-                label: 'Top right corner of key icons: Show zone index',
+                label: 'Bottom left corner of key icons: Show zone index',
                 type: 'checkbox',
                 default: true,
                 dependencies: ['itemIconLevel']
