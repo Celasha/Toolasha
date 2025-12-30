@@ -11,6 +11,7 @@ import dataManager from './core/data-manager.js';
 import featureRegistry from './core/feature-registry.js';
 import networkAlert from './features/market/network-alert.js';
 import * as combatSimIntegration from './features/combat/combat-sim-integration.js';
+import * as profileExportButton from './features/combat/profile-export-button.js';
 import settingsUI from './features/settings/settings-ui.js';
 
 /**
@@ -43,6 +44,9 @@ if (isCombatSimulatorPage()) {
 
     // Start capturing client data from localStorage (for Combat Sim export)
     webSocketHook.captureClientDataFromLocalStorage();
+
+    // Initialize profile export button (always available)
+    profileExportButton.initialize();
 
     // Initialize storage and config THIRD (async)
     (async () => {
