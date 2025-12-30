@@ -20475,7 +20475,8 @@
                 <span class="icon">${group.icon}</span>
                 ${group.title}
             `;
-                header.addEventListener('click', () => this.toggleGroup(groupContainer));
+                // Bind toggleGroup method to this instance
+                header.addEventListener('click', this.toggleGroup.bind(this, groupContainer));
 
                 // Create content container for this group
                 const content = document.createElement('div');
@@ -20517,7 +20518,7 @@
                     if (collapseIcon) {
                         collapseIcon.style.display = 'inline-block';
 
-                        // Add click handler to toggle dependents
+                        // Add click handler to toggle dependents - bind to preserve this context
                         const labelContainer = setting.querySelector('.toolasha-setting-label-container');
                         labelContainer.style.cursor = 'pointer';
                         labelContainer.addEventListener('click', (e) => {
