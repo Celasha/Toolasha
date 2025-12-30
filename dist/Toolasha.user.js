@@ -12725,9 +12725,16 @@
                 // Add overlay if we have valid text to display
                 if (displayText && !div.querySelector('div.script_itemLevel')) {
                     div.style.position = 'relative';
+
+                    // Position: bottom left for dungeon keys (matches market value style), top right for others
+                    const isDungeonKey = this.isDungeonEntryKey(itemHrid);
+                    const position = isDungeonKey
+                        ? 'bottom: 2px; left: 2px; text-align: left;'
+                        : 'top: 2px; right: 2px; text-align: right;';
+
                     div.insertAdjacentHTML(
                         'beforeend',
-                        `<div class="script_itemLevel" style="z-index: 1; position: absolute; top: 2px; right: 2px; text-align: right; color: ${config.SCRIPT_COLOR_MAIN};">${displayText}</div>`
+                        `<div class="script_itemLevel" style="z-index: 1; position: absolute; ${position} color: ${config.SCRIPT_COLOR_MAIN};">${displayText}</div>`
                     );
                     // Mark as processed
                     this.processedDivs.add(div);
