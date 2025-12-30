@@ -16856,11 +16856,15 @@
 
                 const categoryName = categoryButton.textContent.trim();
 
-                // Skip categories that shouldn't be sorted
+                // Skip categories that shouldn't be sorted or badged
                 const excludedCategories = ['Loots', 'Currencies'];
                 if (excludedCategories.includes(categoryName)) {
                     continue;
                 }
+
+                // Equipment category: only process charms (for badges), don't sort
+                const isEquipmentCategory = categoryName === 'Equipment';
+                const shouldSort = !isEquipmentCategory;
 
                 // Ensure category label stays at top
                 const label = categoryDiv.querySelector('.Inventory_label__XEOAx');
@@ -16871,17 +16875,17 @@
                 // Get all item elements
                 const itemElems = categoryDiv.querySelectorAll('.Item_itemContainer__x7kH1');
 
-                // Always calculate prices (for badges), regardless of sort mode
-                this.calculateItemPrices(itemElems);
+                // Always calculate prices (for badges), filtering to charms only in Equipment category
+                this.calculateItemPrices(itemElems, isEquipmentCategory);
 
-                if (this.currentMode === 'none') {
+                if (shouldSort && this.currentMode !== 'none') {
+                    // Sort by price (skip sorting for Equipment category)
+                    this.sortItemsByPrice(itemElems, this.currentMode);
+                } else {
                     // Reset to default order
                     itemElems.forEach(itemElem => {
                         itemElem.style.order = 0;
                     });
-                } else {
-                    // Sort by price
-                    this.sortItemsByPrice(itemElems, this.currentMode);
                 }
             }
 
@@ -16892,8 +16896,9 @@
         /**
          * Calculate and store prices for all items (for badges and sorting)
          * @param {NodeList} itemElems - Item elements
+         * @param {boolean} isEquipmentCategory - True if processing Equipment category (only charms)
          */
-        calculateItemPrices(itemElems) {
+        calculateItemPrices(itemElems, isEquipmentCategory = false) {
             const gameData = dataManager.getInitClientData();
             if (!gameData) {
                 console.warn('[InventorySort] Game data not available yet');
@@ -16915,6 +16920,18 @@
                 if (!itemHrid) {
                     console.warn('[InventorySort] Could not find HRID for item:', itemName);
                     continue;
+                }
+
+                // In Equipment category, only process charms
+                if (isEquipmentCategory) {
+                    const itemDetails = gameData.itemDetailMap[itemHrid];
+                    const isCharm = itemDetails?.equipmentDetail?.slot === '/equipment_types/charm';
+                    if (!isCharm) {
+                        // Not a charm, skip this equipment item
+                        itemElem.dataset.askValue = 0;
+                        itemElem.dataset.bidValue = 0;
+                        continue;
+                    }
                 }
 
                 // Get item count
