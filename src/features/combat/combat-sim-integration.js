@@ -52,7 +52,8 @@ function injectImportButton(exportButton) {
     // Create import button
     const button = document.createElement('button');
     button.id = 'toolasha-import-button';
-    button.textContent = 'Import from Toolasha';
+    // Include hidden text for JIGS compatibility (JIGS searches for "Import solo/group")
+    button.innerHTML = 'Import from Toolasha<span style="display:none;">Import solo/group</span>';
     button.style.backgroundColor = config.SCRIPT_COLOR_MAIN;
     button.style.color = 'white';
     button.style.padding = '10px 20px';
@@ -98,7 +99,7 @@ function importDataToSimulator(button) {
             button.textContent = 'Error: No character data';
             button.style.backgroundColor = '#dc3545'; // Red
             setTimeout(() => {
-                button.textContent = 'Import from Toolasha';
+                button.innerHTML = 'Import from Toolasha<span style="display:none;">Import solo/group</span>';
                 button.style.backgroundColor = config.SCRIPT_COLOR_MAIN;
             }, 3000);
             console.error('[Toolasha Combat Sim] No export data available');
@@ -218,7 +219,7 @@ function importDataToSimulator(button) {
             button.textContent = '✓ Imported';
             button.style.backgroundColor = '#28a745'; // Green
             setTimeout(() => {
-                button.textContent = 'Import from Toolasha';
+                button.innerHTML = 'Import from Toolasha<span style="display:none;">Import solo/group</span>';
                 button.style.backgroundColor = config.SCRIPT_COLOR_MAIN;
             }, 3000);
 
@@ -230,7 +231,7 @@ function importDataToSimulator(button) {
         button.textContent = 'Import Failed';
         button.style.backgroundColor = '#dc3545'; // Red
         setTimeout(() => {
-            button.textContent = 'Import from Toolasha';
+            button.innerHTML = 'Import from Toolasha<span style="display:none;">Import solo/group</span>';
             button.style.backgroundColor = config.SCRIPT_COLOR_MAIN;
         }, 3000);
     }
