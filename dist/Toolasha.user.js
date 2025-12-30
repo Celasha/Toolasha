@@ -12714,21 +12714,18 @@
                     if (abilityLevelReq && abilityLevelReq.length > 0 && abilityLevelReq[0].level > 0) {
                         displayText = abilityLevelReq[0].level.toString();
                     }
-                } else if (config.getSetting('showsKeyInfoInIcon') && this.isDungeonEntryKey(itemHrid)) {
-                    // Dungeon entry key: Show zone index
-                    const zoneIndex = this.getZoneIndexForDungeonKey(itemHrid);
-                    if (zoneIndex) {
-                        displayText = `Z${zoneIndex}`;
-                    }
+                } else if (config.getSetting('showsKeyInfoInIcon') && this.isKeyOrFragment(itemHrid)) {
+                    // Keys and fragments: Show zone/dungeon info
+                    displayText = this.getKeyDisplayText(itemHrid);
                 }
 
                 // Add overlay if we have valid text to display
                 if (displayText && !div.querySelector('div.script_itemLevel')) {
                     div.style.position = 'relative';
 
-                    // Position: bottom left for dungeon keys (matches market value style), top right for others
-                    const isDungeonKey = this.isDungeonEntryKey(itemHrid);
-                    const position = isDungeonKey
+                    // Position: bottom left for keys/fragments (matches market value style), top right for others
+                    const isKeyOrFragment = this.isKeyOrFragment(itemHrid);
+                    const position = isKeyOrFragment
                         ? 'bottom: 2px; left: 2px; text-align: left;'
                         : 'top: 2px; right: 2px; text-align: right;';
 
@@ -12746,53 +12743,47 @@
         }
 
         /**
-         * Check if item is a dungeon entry key
+         * Check if item is a key or fragment
          * @param {string} itemHrid - Item HRID
-         * @returns {boolean} True if item is a dungeon entry key
+         * @returns {boolean} True if item is a key or fragment
          */
-        isDungeonEntryKey(itemHrid) {
-            const entryKeys = [
-                '/items/chimerical_entry_key',
-                '/items/sinister_entry_key',
-                '/items/enchanted_entry_key',
-                '/items/pirate_entry_key'
-            ];
-            return entryKeys.includes(itemHrid);
+        isKeyOrFragment(itemHrid) {
+            return itemHrid.includes('_key') || itemHrid.includes('_fragment');
         }
 
         /**
-         * Get zone index for a dungeon entry key
-         * @param {string} itemHrid - Dungeon entry key HRID
-         * @returns {number|null} Zone index or null
+         * Get display text for keys and fragments
+         * Uses hardcoded mapping like MWI Tools
+         * @param {string} itemHrid - Key/fragment HRID
+         * @returns {string|null} Display text (e.g., "D1", "Z3", "3.4.5.6") or null
          */
-        getZoneIndexForDungeonKey(itemHrid) {
-            // Map entry keys to dungeon action HRIDs
-            const keyToDungeon = {
-                '/items/chimerical_entry_key': '/actions/combat/chimerical_den',
-                '/items/sinister_entry_key': '/actions/combat/sinister_circus',
-                '/items/enchanted_entry_key': '/actions/combat/enchanted_fortress',
-                '/items/pirate_entry_key': '/actions/combat/pirate_cove'
-            };
+        getKeyDisplayText(itemHrid) {
+            const keyMap = new Map([
+                // Key fragments (zones where they drop)
+                ['/items/blue_key_fragment', 'Z3'],
+                ['/items/green_key_fragment', 'Z4'],
+                ['/items/purple_key_fragment', 'Z5'],
+                ['/items/white_key_fragment', 'Z6'],
+                ['/items/orange_key_fragment', 'Z7'],
+                ['/items/brown_key_fragment', 'Z8'],
+                ['/items/stone_key_fragment', 'Z9'],
+                ['/items/dark_key_fragment', 'Z10'],
+                ['/items/burning_key_fragment', 'Z11'],
 
-            const dungeonHrid = keyToDungeon[itemHrid];
-            if (!dungeonHrid) {
-                return null;
-            }
+                // Entry keys (dungeon identifiers)
+                ['/items/chimerical_entry_key', 'D1'],
+                ['/items/sinister_entry_key', 'D2'],
+                ['/items/enchanted_entry_key', 'D3'],
+                ['/items/pirate_entry_key', 'D4'],
 
-            // Get action details
-            const gameData = dataManager.getInitClientData();
-            if (!gameData) {
-                return null;
-            }
+                // Chest keys (zones where they drop)
+                ['/items/chimerical_chest_key', '3.4.5.6'],
+                ['/items/sinister_chest_key', '5.7.8.10'],
+                ['/items/enchanted_chest_key', '7.8.9.11'],
+                ['/items/pirate_chest_key', '6.9.10.11']
+            ]);
 
-            const action = gameData.actionDetailMap[dungeonHrid];
-            if (!action || !action.category) {
-                return null;
-            }
-
-            // Get zone index from category
-            const category = gameData.actionCategoryDetailMap[action.category];
-            return category?.sortIndex || null;
+            return keyMap.get(itemHrid) || null;
         }
 
         /**
