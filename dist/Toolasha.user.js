@@ -11408,7 +11408,7 @@
          */
         async injectCalculator(panel, abilityData, xpPerBook, itemHrid) {
             // Check if already injected
-            if (panel.querySelector('#tillLevel')) {
+            if (panel.querySelector('.tillLevel')) {
                 return;
             }
 
