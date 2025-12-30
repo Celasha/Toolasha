@@ -479,11 +479,6 @@
                     desc: "Left sidebar: Percentages of exp of the skill levels.",
                     isTrue: true,
                 },
-                battlePanel: {
-                    id: "battlePanel",
-                    desc: "Battle info panel(click on player avatar during combat): Encounters/hour, revenue, exp.",
-                    isTrue: true,
-                },
                 itemIconLevel: {
                     id: "itemIconLevel",
                     desc: "Top right corner of equipment icons: Equipment level.",
@@ -539,11 +534,6 @@
                     desc: "House panel: Show upgrade costs with market prices, inventory comparison, and cumulative costs to target level.",
                     isTrue: true,
                 },
-                ThirdPartyLinks: {
-                    id: "ThirdPartyLinks",
-                    desc: "Left sidebar: Links to 3rd-party websites, script settings.",
-                    isTrue: true,
-                },
                 actionQueue: {
                     id: "actionQueue",
                     desc: "Queued actions panel at the top: Estimated total time and complete time of each queued action.",
@@ -554,11 +544,6 @@
                     desc: "Tooltip of equipment with enhancement level: Enhancing simulator calculations.",
                     isTrue: true,
                 },
-                checkEquipment: {
-                    id: "checkEquipment",
-                    desc: "Top: Alert message when combating with production equipments equipted, or producing when there are unequipted corresponding production equipment in the inventory.",
-                    isTrue: true,
-                },
                 notifiEmptyAction: {
                     id: "notifiEmptyAction",
                     desc: "Browser notification: Action queue is empty. (Works only when the game page is open.)",
@@ -567,21 +552,6 @@
                 fillMarketOrderPrice: {
                     id: "fillMarketOrderPrice",
                     desc: "Automatically input price with the smallest increasement/decreasement when posting marketplace bid/sell orders.",
-                    isTrue: true,
-                },
-                showDamage: {
-                    id: "showDamage",
-                    desc: "Bottom of player avatar during combat: DPS.",
-                    isTrue: true,
-                },
-                showDamageGraph: {
-                    id: "showDamageGraph",
-                    desc: "Floating window during combat: DPS chart. [Depends on the previous selection]",
-                    isTrue: true,
-                },
-                damageGraphTransparentBackground: {
-                    id: "damageGraphTransparentBackground",
-                    desc: "DPS chart transparent and blur background. [Depends on the previous selection]",
                     isTrue: true,
                 },
                 enhancementTracker: {
