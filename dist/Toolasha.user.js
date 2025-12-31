@@ -9950,17 +9950,18 @@
                 return null;
             }
 
-            // Get the text content (format: "#2 Coinify: Foraging Essence\nRepeat ∞ times")
-            const fullText = actionTextContainer.textContent.trim();
+            // The first child div contains the action name: "#3 🧪 Coinify: Foraging Essence"
+            const firstChildDiv = actionTextContainer.querySelector('[class*="QueuedActions_text__"]');
+            if (!firstChildDiv) {
+                return null;
+            }
 
-            // Extract the action name (first line, after the position number)
-            // Format: "#2 🧪 Coinify: Foraging Essence" or "#2 Coinify: Foraging Essence"
-            const lines = fullText.split('\n');
-            const firstLine = lines[0];
+            // Get the text content (format: "#3Coinify: Foraging Essence" - no space after number!)
+            const fullText = firstChildDiv.textContent.trim();
 
-            // Remove position number and icon: "#2 🧪 Coinify: Foraging Essence" → "Coinify: Foraging Essence"
-            // Pattern: Remove "#N " and any emoji/icon characters
-            const actionNameText = firstLine.replace(/^#\d+\s+/, '').replace(/[\u{1F300}-\u{1F9FF}]/gu, '').trim();
+            // Remove position number: "#3Coinify: Foraging Essence" → "Coinify: Foraging Essence"
+            // Note: No space after the number in the actual text
+            const actionNameText = fullText.replace(/^#\d+/, '').trim();
 
             // Parse action name (same logic as main display)
             let actionNameFromDiv, itemNameFromDiv;
