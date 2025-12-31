@@ -9532,6 +9532,7 @@
             this.unregisterQueueObserver = null;
             this.actionNameObserver = null;
             this.queueMenuObserver = null; // Observer for queue menu mutations
+            this.characterInitHandler = null; // Handler for character switch
         }
 
         /**
@@ -9546,6 +9547,14 @@
             const enabled = config.getSettingValue('totalActionTime', true);
             if (!enabled) {
                 return;
+            }
+
+            // Set up handler for character switching
+            if (!this.characterInitHandler) {
+                this.characterInitHandler = () => {
+                    this.handleCharacterSwitch();
+                };
+                dataManager.on('character_initialized', this.characterInitHandler);
             }
 
             // Wait for action name element to exist
@@ -9593,6 +9602,24 @@
                     });
                 }
             );
+        }
+
+        /**
+         * Handle character switch
+         * Clean up old observers and re-initialize for new character's action panel
+         */
+        handleCharacterSwitch() {
+            // Disconnect old action name observer (watching removed element)
+            if (this.actionNameObserver) {
+                this.actionNameObserver.disconnect();
+                this.actionNameObserver = null;
+            }
+
+            // Clear display element reference (already removed from DOM by game)
+            this.displayElement = null;
+
+            // Re-initialize action panel display for new character
+            this.waitForActionPanel();
         }
 
         /**
@@ -10272,6 +10299,12 @@
             if (this.unregisterQueueObserver) {
                 this.unregisterQueueObserver();
                 this.unregisterQueueObserver = null;
+            }
+
+            // Unregister character switch handler
+            if (this.characterInitHandler) {
+                dataManager.off('character_initialized', this.characterInitHandler);
+                this.characterInitHandler = null;
             }
 
             // Clear update timer
