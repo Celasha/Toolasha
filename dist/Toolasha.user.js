@@ -9527,6 +9527,7 @@
             this.updateTimer = null;
             this.unregisterQueueObserver = null;
             this.actionNameObserver = null;
+            this.queueMenuObserver = null; // Observer for queue menu mutations
         }
 
         /**
@@ -9562,6 +9563,30 @@
                 'QueuedActions_queuedActionsEditMenu',
                 (queueMenu) => {
                     this.injectQueueTimes(queueMenu);
+
+                    // Set up mutation observer to watch for queue reordering
+                    if (this.queueMenuObserver) {
+                        this.queueMenuObserver.disconnect();
+                    }
+
+                    this.queueMenuObserver = new MutationObserver(() => {
+                        // Disconnect to prevent infinite loop (our injection triggers mutations)
+                        this.queueMenuObserver.disconnect();
+
+                        // Queue DOM changed (reordering) - re-inject times
+                        this.injectQueueTimes(queueMenu);
+
+                        // Reconnect to continue watching
+                        this.queueMenuObserver.observe(queueMenu, {
+                            childList: true,
+                            subtree: true
+                        });
+                    });
+
+                    this.queueMenuObserver.observe(queueMenu, {
+                        childList: true,
+                        subtree: true
+                    });
                 }
             );
         }
@@ -10057,12 +10082,13 @@
                     if (currentAction) {
                         const actionDetails = dataManager.getActionDetails(currentAction.actionHrid);
                         if (actionDetails) {
-                            const count = currentAction.maxCount - currentAction.currentCount;
-                            const isInfinite = count === 0 || currentAction.actionHrid.includes('/combat/');
+                            // Check if infinite BEFORE calculating count
+                            const isInfinite = !currentAction.hasMaxCount || currentAction.actionHrid.includes('/combat/');
 
                             if (isInfinite) {
                                 hasInfinite = true;
                             } else {
+                                const count = currentAction.maxCount - currentAction.currentCount;
                                 const timeData = this.calculateActionTime(actionDetails);
                                 if (timeData) {
                                     const { actionTime } = timeData;
@@ -10109,12 +10135,17 @@
                         continue;
                     }
 
-                    // Calculate count remaining
-                    const count = actionObj.maxCount - actionObj.currentCount;
-                    const isInfinite = count === 0 || actionObj.actionHrid.includes('/combat/');
+                    // Check if infinite BEFORE calculating count
+                    const isInfinite = !actionObj.hasMaxCount || actionObj.actionHrid.includes('/combat/');
 
                     if (isInfinite) {
                         hasInfinite = true;
+                    }
+
+                    // Only calculate count for finite actions
+                    let count = 0;
+                    if (!isInfinite) {
+                        count = actionObj.maxCount - actionObj.currentCount;
                     }
 
                     // Calculate action time
@@ -10206,6 +10237,12 @@
             if (this.actionNameObserver) {
                 this.actionNameObserver.disconnect();
                 this.actionNameObserver = null;
+            }
+
+            // Disconnect queue menu observer
+            if (this.queueMenuObserver) {
+                this.queueMenuObserver.disconnect();
+                this.queueMenuObserver = null;
             }
 
             // Unregister queue observer
