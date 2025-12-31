@@ -388,21 +388,23 @@ class ActionTimeDisplay {
      */
     injectQueueTimes(queueMenu) {
         try {
-            // Check if already injected
-            if (queueMenu.querySelector('#mwi-queue-total-time')) {
-                return;
-            }
-
             // Get all queued actions
             const currentActions = dataManager.getCurrentActions();
             if (!currentActions || currentActions.length === 0) {
                 return;
             }
 
-            // Find all action divs in the queue
-            const actionDivs = queueMenu.querySelectorAll('[class*="QueuedActions_action"]');
+            // Find all action divs in the queue (individual actions only, not wrapper or text containers)
+            const actionDivs = queueMenu.querySelectorAll('[class^="QueuedActions_action__"]');
             if (actionDivs.length === 0) {
                 return;
+            }
+
+            // Clear all existing time displays to prevent duplicates
+            queueMenu.querySelectorAll('.mwi-queue-action-time').forEach(el => el.remove());
+            const existingTotal = document.querySelector('#mwi-queue-total-time');
+            if (existingTotal) {
+                existingTotal.remove();
             }
 
             let accumulatedTime = 0;
@@ -457,9 +459,13 @@ class ActionTimeDisplay {
                     `;
                     timeDiv.textContent = '[Unknown action]';
 
-                    const firstChild = actionDivs[divIndex].querySelector('div');
-                    if (firstChild) {
-                        firstChild.appendChild(timeDiv);
+                    // Find the actionText container and append inside it
+                    const actionTextContainer = actionDivs[divIndex].querySelector('[class*="QueuedActions_actionText"]');
+                    if (actionTextContainer) {
+                        actionTextContainer.appendChild(timeDiv);
+                    } else {
+                        // Fallback: append to action div
+                        actionDivs[divIndex].appendChild(timeDiv);
                     }
 
                     continue; // Skip time calculation for this action
@@ -518,10 +524,13 @@ class ActionTimeDisplay {
                     timeDiv.textContent = `[${timeStr}]${completionText}`;
                 }
 
-                // Inject into action div (append to first child div)
-                const firstChild = actionDivs[divIndex].querySelector('div');
-                if (firstChild) {
-                    firstChild.appendChild(timeDiv);
+                // Find the actionText container and append inside it
+                const actionTextContainer = actionDivs[divIndex].querySelector('[class*="QueuedActions_actionText"]');
+                if (actionTextContainer) {
+                    actionTextContainer.appendChild(timeDiv);
+                } else {
+                    // Fallback: append to action div
+                    actionDivs[divIndex].appendChild(timeDiv);
                 }
             }
 
