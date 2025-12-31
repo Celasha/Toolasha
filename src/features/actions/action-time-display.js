@@ -32,6 +32,7 @@ class ActionTimeDisplay {
         this.isInitialized = false;
         this.updateTimer = null;
         this.unregisterQueueObserver = null;
+        this.actionNameObserver = null;
     }
 
     /**
@@ -50,10 +51,6 @@ class ActionTimeDisplay {
 
         // Wait for action name element to exist
         this.waitForActionPanel();
-
-        // Listen to action updates
-        dataManager.on('actions_updated', () => this.updateDisplay());
-        dataManager.on('action_completed', () => this.updateDisplay());
 
         // Initialize queue tooltip observer
         this.initializeQueueObserver();
@@ -84,11 +81,29 @@ class ActionTimeDisplay {
 
         if (actionNameElement) {
             this.createDisplayPanel();
+            this.setupActionNameObserver(actionNameElement);
             this.updateDisplay();
         } else {
             // Not found, try again in 200ms
             setTimeout(() => this.waitForActionPanel(), 200);
         }
+    }
+
+    /**
+     * Setup MutationObserver to watch action name changes
+     * @param {HTMLElement} actionNameElement - The action name DOM element
+     */
+    setupActionNameObserver(actionNameElement) {
+        // Watch for text content changes in the action name element
+        this.actionNameObserver = new MutationObserver(() => {
+            this.updateDisplay();
+        });
+
+        this.actionNameObserver.observe(actionNameElement, {
+            childList: true,
+            characterData: true,
+            subtree: true
+        });
     }
 
     /**
@@ -132,15 +147,61 @@ class ActionTimeDisplay {
             return;
         }
 
-        // Get current actions
-        const currentActions = dataManager.getCurrentActions();
-        if (!currentActions || currentActions.length === 0) {
+        // Get current action - read from game UI which is always correct
+        // The game updates the DOM immediately when actions change
+        const actionNameElement = document.querySelector('div.Header_actionName__31-L2');
+        if (!actionNameElement || !actionNameElement.textContent) {
             this.displayElement.innerHTML = '';
             return;
         }
 
-        // Get first action (currently executing)
-        const action = currentActions[0];
+        // Parse action name from DOM
+        // Format can be: "Action Name (#123)", "Action Name (123)", "Action Name: Item (123)", etc.
+        const actionNameText = actionNameElement.textContent.trim();
+
+        // Find the matching action in cache
+        const cachedActions = dataManager.getCurrentActions();
+        let action;
+
+        // Parse the action name, handling special formats like "Coinify: Item Name (count)"
+        const actionNameMatch = actionNameText.match(/^(.+?)(?:\s*\(#?\d+\))?$/);
+        const fullNameFromDom = actionNameMatch ? actionNameMatch[1].trim() : actionNameText;
+
+        // Check if this is a format like "Coinify: Item Name"
+        let actionNameFromDom, itemNameFromDom;
+        if (fullNameFromDom.includes(':')) {
+            const parts = fullNameFromDom.split(':');
+            actionNameFromDom = parts[0].trim();
+            itemNameFromDom = parts.slice(1).join(':').trim(); // Handle multiple colons
+        } else {
+            actionNameFromDom = fullNameFromDom;
+            itemNameFromDom = null;
+        }
+
+        // Match action from cache
+        action = cachedActions.find(a => {
+            const actionDetails = dataManager.getActionDetails(a.actionHrid);
+            if (!actionDetails || actionDetails.name !== actionNameFromDom) {
+                return false;
+            }
+
+            // If there's an item name (like "Foraging Essence" from "Coinify: Foraging Essence"),
+            // we need to match on primaryItemHash
+            if (itemNameFromDom && a.primaryItemHash) {
+                // Convert display name to item HRID format (lowercase with underscores)
+                const itemHrid = '/items/' + itemNameFromDom.toLowerCase().replace(/\s+/g, '_');
+                return a.primaryItemHash.includes(itemHrid);
+            }
+
+            // No item name specified, just match on action name
+            return true;
+        });
+
+        if (!action) {
+            this.displayElement.innerHTML = '';
+            return;
+        }
+
         const actionDetails = dataManager.getActionDetails(action.actionHrid);
         if (!actionDetails) {
             return;
@@ -564,6 +625,12 @@ class ActionTimeDisplay {
      * Disable the action time display (cleanup)
      */
     disable() {
+        // Disconnect action name observer
+        if (this.actionNameObserver) {
+            this.actionNameObserver.disconnect();
+            this.actionNameObserver = null;
+        }
+
         // Unregister queue observer
         if (this.unregisterQueueObserver) {
             this.unregisterQueueObserver();
@@ -581,10 +648,6 @@ class ActionTimeDisplay {
             this.displayElement.parentNode.removeChild(this.displayElement);
             this.displayElement = null;
         }
-
-        // Remove event listeners (DataManager cleanup)
-        dataManager.off('actions_updated');
-        dataManager.off('action_completed');
 
         this.isInitialized = false;
     }
