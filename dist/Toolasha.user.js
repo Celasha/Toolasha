@@ -9678,6 +9678,10 @@
             // Format can be: "Action Name (#123)", "Action Name (123)", "Action Name: Item (123)", etc.
             const actionNameText = actionNameElement.textContent.trim();
 
+            // Extract inventory count from parentheses (e.g., "Coinify: Item (4312)" -> 4312)
+            const inventoryCountMatch = actionNameText.match(/\((\d+)\)$/);
+            const inventoryCount = inventoryCountMatch ? parseInt(inventoryCountMatch[1]) : null;
+
             // Find the matching action in cache
             const cachedActions = dataManager.getCurrentActions();
             let action;
@@ -9787,12 +9791,26 @@
             );
 
             // Get queue size for display (total queued, doesn't change)
-            const queueSizeDisplay = action.hasMaxCount ? action.maxCount : Infinity;
+            // For infinite actions with inventory count, use that; otherwise use maxCount or Infinity
+            let queueSizeDisplay;
+            if (action.hasMaxCount) {
+                queueSizeDisplay = action.maxCount;
+            } else if (inventoryCount !== null) {
+                queueSizeDisplay = inventoryCount;
+            } else {
+                queueSizeDisplay = Infinity;
+            }
 
             // Get remaining actions for time calculation
-            const remainingActions = action.hasMaxCount
-                ? (action.maxCount - action.currentCount)
-                : Infinity;
+            // For infinite actions, use inventory count if available
+            let remainingActions;
+            if (action.hasMaxCount) {
+                remainingActions = action.maxCount - action.currentCount;
+            } else if (inventoryCount !== null) {
+                remainingActions = inventoryCount - action.currentCount;
+            } else {
+                remainingActions = Infinity;
+            }
 
             // Calculate total time
             // Note: Efficiency does NOT reduce time - it only increases outputs
@@ -9853,14 +9871,15 @@
             lines.push(`<span style="color: var(--text-color-primary, #fff);">${actionName}</span>`);
 
             // Queue size (with thousand separators)
-            if (action.hasMaxCount) {
+            if (queueSizeDisplay !== Infinity) {
                 lines.push(` <span style="color: var(--text-color-secondary, #888);">(${queueSizeDisplay.toLocaleString()} queued)</span>`);
             } else {
                 lines.push(` <span style="color: var(--text-color-secondary, #888);">(∞)</span>`);
             }
 
-            // Only show time info if we have a finite queue
-            if (action.hasMaxCount) {
+            // Show time info if we have a finite number of remaining actions
+            // This includes both finite actions (hasMaxCount) and infinite actions with inventory count
+            if (remainingActions !== Infinity && !isNaN(remainingActions) && remainingActions > 0) {
                 lines.push('<br>');
 
                 // Time per action and actions/hour on same line (simplified - no percentages)
