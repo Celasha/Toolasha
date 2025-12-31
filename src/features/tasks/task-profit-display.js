@@ -23,6 +23,7 @@ class TaskProfitDisplay {
         this.isActive = false;
         this.unregisterHandlers = []; // Store unregister functions
         this.retryHandler = null; // Retry handler reference for cleanup
+        this.marketDataRetryHandler = null; // Market data retry handler
         this.pendingTaskNodes = new Set(); // Track task nodes waiting for data
         this.eventListeners = new WeakMap(); // Store listeners for cleanup
     }
@@ -44,6 +45,15 @@ class TaskProfitDisplay {
                 };
                 dataManager.on('character_initialized', this.retryHandler);
             }
+        }
+
+        // Set up retry handler for when market data loads
+        if (!this.marketDataRetryHandler) {
+            this.marketDataRetryHandler = () => {
+                // Retry all pending task nodes when market data becomes available
+                this.retryPendingTasks();
+            };
+            dataManager.on('expected_value_initialized', this.marketDataRetryHandler);
         }
 
         // Register WebSocket listener for task updates
@@ -217,6 +227,18 @@ class TaskProfitDisplay {
                 if (actionNode) {
                     actionNode.appendChild(combatMarker);
                 }
+                return;
+            }
+
+            // Handle market data not loaded - add to pending queue
+            if (profitData.error === 'Market data not loaded' ||
+                (profitData.rewards && profitData.rewards.error === 'Market data not loaded')) {
+
+                // Add to pending queue
+                this.pendingTaskNodes.add(taskNode);
+
+                // Show loading state instead of error
+                this.displayLoadingState(taskNode, taskData);
                 return;
             }
 
@@ -663,6 +685,33 @@ class TaskProfitDisplay {
     }
 
     /**
+     * Display loading state while waiting for market data
+     * @param {Element} taskNode - Task card DOM element
+     * @param {Object} taskData - Task data for reroll detection
+     */
+    displayLoadingState(taskNode, taskData) {
+        const actionNode = taskNode.querySelector(GAME.TASK_ACTION);
+        if (!actionNode) return;
+
+        // Create loading container
+        const loadingContainer = document.createElement('div');
+        loadingContainer.className = 'mwi-task-profit mwi-task-profit-loading';
+        loadingContainer.style.cssText = `
+            margin-top: 4px;
+            font-size: 0.75rem;
+            color: #888;
+            font-style: italic;
+        `;
+        loadingContainer.textContent = '⏳ Loading market data...';
+
+        // Store task key for reroll detection
+        const taskKey = `${taskData.description}|${taskData.quantity}`;
+        loadingContainer.dataset.taskKey = taskKey;
+
+        actionNode.appendChild(loadingContainer);
+    }
+
+    /**
      * Disable the feature
      */
     disable() {
@@ -670,10 +719,15 @@ class TaskProfitDisplay {
         this.unregisterHandlers.forEach(unregister => unregister());
         this.unregisterHandlers = [];
 
-        // Unregister retry handler
+        // Unregister retry handlers
         if (this.retryHandler) {
             dataManager.off('character_initialized', this.retryHandler);
             this.retryHandler = null;
+        }
+
+        if (this.marketDataRetryHandler) {
+            dataManager.off('expected_value_initialized', this.marketDataRetryHandler);
+            this.marketDataRetryHandler = null;
         }
 
         // Clear pending tasks

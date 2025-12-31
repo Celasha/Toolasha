@@ -63,6 +63,10 @@ class ExpectedValueCalculator {
         this.calculateNestedContainers();
 
         this.isInitialized = true;
+
+        // Notify listeners that calculator is ready
+        dataManager.emit('expected_value_initialized', { timestamp: Date.now() });
+
         return true;
     }
 
