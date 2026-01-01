@@ -16936,7 +16936,6 @@
             this.unregisterHandlers = [];
             this.controlsContainer = null;
             this.currentInventoryElem = null;
-            this.itemsUpdatedHandler = null; // Handler for inventory updates
         }
 
         /**
@@ -16975,13 +16974,13 @@
             );
             this.unregisterHandlers.push(unregister);
 
-            // Watch for any DOM changes to re-apply badges (handles tooltip open/close)
+            // Watch for any DOM changes to re-calculate prices and badges
             const badgeRefreshUnregister = domObserver.register(
                 'InventorySort-BadgeRefresh',
                 () => {
-                    // Only refresh if inventory is currently visible and badges are enabled
-                    if (this.currentInventoryElem && config.getSetting('invSort_showBadges')) {
-                        this.updatePriceBadges();
+                    // Only refresh if inventory is currently visible
+                    if (this.currentInventoryElem) {
+                        this.applyCurrentSort();
                     }
                 },
                 { debounce: true, debounceDelay: 100 }
@@ -16990,9 +16989,6 @@
 
             // Listen for market data updates to refresh badges
             this.setupMarketDataListener();
-
-            // Listen for inventory updates (new items, quantity changes)
-            this.setupInventoryUpdateListener();
 
         }
 
@@ -17022,21 +17018,6 @@
                         clearInterval(retryCheck);
                     }
                 }, retryInterval);
-            }
-        }
-
-        /**
-         * Setup listener for inventory updates (new items, quantity changes)
-         */
-        setupInventoryUpdateListener() {
-            if (!this.itemsUpdatedHandler) {
-                this.itemsUpdatedHandler = () => {
-                    // Only refresh if inventory is currently visible
-                    if (this.currentInventoryElem && document.body.contains(this.currentInventoryElem)) {
-                        this.applyCurrentSort();
-                    }
-                };
-                dataManager.on('items_updated', this.itemsUpdatedHandler);
             }
         }
 
@@ -17444,12 +17425,6 @@
             // Remove all badges
             const badges = document.querySelectorAll('.mwi-stack-price');
             badges.forEach(badge => badge.remove());
-
-            // Unregister inventory update listener
-            if (this.itemsUpdatedHandler) {
-                dataManager.off('items_updated', this.itemsUpdatedHandler);
-                this.itemsUpdatedHandler = null;
-            }
 
             // Unregister observers
             this.unregisterHandlers.forEach(unregister => unregister());
