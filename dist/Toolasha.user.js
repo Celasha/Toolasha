@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.4.78
+// @version      0.4.79
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
 // @author       Celasha and Claude, thank you to bot7420, DrDucky, Frotty, Truth_Light, AlphB for providing the basis for a lot of this. Thank you to Miku, Orvel, Jigglymoose, Incinarator, Knerd, and others for their time and help. Special thanks to Zaeter for the name. 
 // @license      CC-BY-NC-SA-4.0
@@ -11586,7 +11586,6 @@
             const breakdown = {
                 equipment: [],
                 tool: [],
-                house: [],
                 consumables: [],
                 total: 0
             };
@@ -11595,7 +11594,7 @@
             const equipment = dataManager.getEquipment();
             for (const [slot, item] of Object.entries(equipment)) {
                 if (!item) continue;
-                
+
                 const itemData = dataManager.getItemData(item.itemHrid);
                 if (!itemData?.equipmentDetail?.noncombatStats?.skillingSpeed) continue;
 
@@ -11619,13 +11618,6 @@
             if (toolSpeed.speed > 0) {
                 breakdown.tool.push(toolSpeed);
                 breakdown.total += toolSpeed.totalSpeed;
-            }
-
-            // House rooms
-            const houseSpeed = this.getHouseSpeed(actionData);
-            if (houseSpeed.speed > 0) {
-                breakdown.house.push(houseSpeed);
-                breakdown.total += houseSpeed.speed;
             }
 
             // Consumables (teas)
@@ -11707,88 +11699,23 @@
          */
         getSpeedStatForAction(actionType) {
             const mapping = {
+                // Gathering skills
                 '/action_types/woodcutting': 'woodcuttingSpeed',
-                '/action_types/mining': 'miningSpeed',
                 '/action_types/foraging': 'foragingSpeed',
                 '/action_types/milking': 'milkingSpeed',
-                '/action_types/fishing': 'fishingSpeed'
+                // Production skills
+                '/action_types/brewing': 'brewingSpeed',
+                '/action_types/cheesesmithing': 'cheesesmithingSpeed',
+                '/action_types/cooking': 'cookingSpeed',
+                '/action_types/crafting': 'craftingSpeed',
+                '/action_types/tailoring': 'tailoringSpeed',
+                '/action_types/alchemy': 'alchemySpeed'
             };
             return mapping[actionType] || null;
         }
 
         /**
-         * Get house room speed bonus
-         * @param {Object} actionData - Action data
-         * @returns {Object} House speed info
-         */
-        getHouseSpeed(actionData) {
-            const rooms = dataManager.getHouseRooms();
-            if (!rooms) return { speed: 0 };
-
-            // Map action types to room types
-            const actionType = actionData.type;
-            const roomType = this.getRoomTypeForAction(actionType);
-            
-            if (!roomType) return { speed: 0 };
-
-            const room = rooms[roomType];
-            if (!room) return { speed: 0 };
-
-            const roomLevel = room.level || 0;
-            const speedPerLevel = 1.0; // 1% per level for non-combat rooms
-            const speed = roomLevel * speedPerLevel;
-
-            return {
-                name: this.getRoomName(roomType),
-                level: roomLevel,
-                speed: speed
-            };
-        }
-
-        /**
-         * Get room type for an action
-         * @param {string} actionType - Action type HRID
-         * @returns {string|null} Room type HRID
-         */
-        getRoomTypeForAction(actionType) {
-            const mapping = {
-                '/action_types/woodcutting': '/house_rooms/woodcutting',
-                '/action_types/mining': '/house_rooms/mining',
-                '/action_types/foraging': '/house_rooms/foraging',
-                '/action_types/milking': '/house_rooms/milking',
-                '/action_types/fishing': '/house_rooms/fishing',
-                '/action_types/cheesesmithing': '/house_rooms/cheesesmithing',
-                '/action_types/crafting': '/house_rooms/crafting',
-                '/action_types/tailoring': '/house_rooms/tailoring',
-                '/action_types/cooking': '/house_rooms/cooking',
-                '/action_types/brewing': '/house_rooms/brewing'
-            };
-            return mapping[actionType] || null;
-        }
-
-        /**
-         * Get room name from room type
-         * @param {string} roomType - Room type HRID
-         * @returns {string} Room name
-         */
-        getRoomName(roomType) {
-            const names = {
-                '/house_rooms/woodcutting': 'Woodcutting Room',
-                '/house_rooms/mining': 'Mining Room',
-                '/house_rooms/foraging': 'Foraging Room',
-                '/house_rooms/milking': 'Milking Room',
-                '/house_rooms/fishing': 'Fishing Room',
-                '/house_rooms/cheesesmithing': 'Cheesesmithing Room',
-                '/house_rooms/crafting': 'Crafting Room',
-                '/house_rooms/tailoring': 'Tailoring Room',
-                '/house_rooms/cooking': 'Cooking Room',
-                '/house_rooms/brewing': 'Brewing Room'
-            };
-            return names[roomType] || 'Unknown Room';
-        }
-
-        /**
-         * Get consumable speed bonuses
+         * Get consumable speed bonuses (Enhancing Teas only)
          * @param {Object} actionData - Action data
          * @returns {Array} Consumable speed info
          */
@@ -11796,11 +11723,48 @@
             const drinkSlots = dataManager.getDrinkSlots();
             if (!drinkSlots) return [];
 
+            const actionType = actionData.type;
             const consumables = [];
-            
-            // Check all drink slots for speed buffs
-            // This would need to check active buffs - placeholder for now
-            // TODO: Implement actual consumable speed detection
+
+            // Only Enhancing is relevant (all actions except combat)
+            if (actionType === '/action_types/combat') {
+                return consumables;
+            }
+
+            // Get drink concentration bonus from Guzzling Pouch
+            const equipment = dataManager.getEquipment();
+            let drinkConcentration = 0;
+            for (const [slot, item] of Object.entries(equipment)) {
+                if (!item) continue;
+                const itemData = dataManager.getItemData(item.itemHrid);
+                if (itemData?.equipmentDetail?.noncombatStats?.drinkConcentration) {
+                    const baseDrinkConc = itemData.equipmentDetail.noncombatStats.drinkConcentration;
+                    const enhancementBonus = this.getEnhancementBonus(item, itemData);
+                    drinkConcentration += baseDrinkConc * (1 + enhancementBonus);
+                }
+            }
+
+            // Check drink slots for Enhancing Teas with action_speed buff
+            const enhancingTeas = {
+                '/items/enhancing_tea': { name: 'Enhancing Tea', baseSpeed: 0.02 },
+                '/items/super_enhancing_tea': { name: 'Super Enhancing Tea', baseSpeed: 0.04 },
+                '/items/ultra_enhancing_tea': { name: 'Ultra Enhancing Tea', baseSpeed: 0.06 }
+            };
+
+            for (const drink of drinkSlots) {
+                if (!drink || !drink.itemHrid) continue;
+
+                const teaInfo = enhancingTeas[drink.itemHrid];
+                if (teaInfo) {
+                    const scaledSpeed = teaInfo.baseSpeed * (1 + drinkConcentration);
+                    consumables.push({
+                        name: teaInfo.name,
+                        baseSpeed: teaInfo.baseSpeed * 100,
+                        drinkConcentration: drinkConcentration * 100,
+                        speed: scaledSpeed * 100
+                    });
+                }
+            }
 
             return consumables;
         }
@@ -11880,10 +11844,6 @@
                 content.appendChild(this.createSourceSection('Tool', breakdown.tool));
             }
 
-            if (breakdown.house.length > 0) {
-                content.appendChild(this.createSourceSection('House', breakdown.house));
-            }
-
             if (breakdown.consumables.length > 0) {
                 content.appendChild(this.createSourceSection('Consumables', breakdown.consumables));
             } else {
@@ -11927,7 +11887,7 @@
         }
 
         /**
-         * Create a source section (Equipment, Tool, House, Consumables)
+         * Create a source section (Equipment, Tool, Consumables)
          * @param {string} categoryName - Category name
          * @param {Array} items - Items in this category
          * @returns {HTMLElement} Source section element
@@ -11944,18 +11904,27 @@
             items.forEach((item, index) => {
                 const isLast = index === items.length - 1;
                 const prefix = isLast ? '    └─ ' : '    ├─ ';
-                
+
                 const itemLine = document.createElement('div');
                 itemLine.style.marginLeft = '8px';
-                
+
                 let text = `${prefix}${item.name}`;
                 if (item.enhancement > 0) {
                     text += ` +${item.enhancement}`;
                 }
-                text += `: +${item.totalSpeed.toFixed(1)}%`;
-                
+
+                // Speed display varies by source type
+                if (item.speed !== undefined) {
+                    text += `: +${item.speed.toFixed(1)}%`;
+                } else if (item.totalSpeed !== undefined) {
+                    text += `: +${item.totalSpeed.toFixed(1)}%`;
+                }
+
+                // Additional info
                 if (item.baseSpeed && item.enhancementBonus > 0) {
                     text += ` (${item.baseSpeed.toFixed(1)}% base × ${(1 + item.enhancementBonus / 100).toFixed(2)})`;
+                } else if (item.baseSpeed && item.drinkConcentration > 0) {
+                    text += ` (${item.baseSpeed.toFixed(1)}% base × ${(1 + item.drinkConcentration / 100).toFixed(2)})`;
                 } else if (item.level) {
                     text += ` (Level ${item.level})`;
                 }
