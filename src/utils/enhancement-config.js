@@ -210,7 +210,7 @@ function getManualParams() {
     const totalSpeed = getValue('enhanceSim_speedBonus', 0);
     const equipmentSpeedBonus = Math.max(0, totalSpeed - houseSpeedBonus - communitySpeedBonus - teaSpeedBonus);
 
-    const toolBonusEquipment = getValue('enhanceSim_toolBonus', 19.35);
+    const toolBonusEquipment = getValue('enhanceSim_toolBonus', 5.42);
     const totalToolBonus = toolBonusEquipment + houseSuccessBonus;
 
     return {

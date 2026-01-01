@@ -116,8 +116,8 @@ class Config {
             },
             enhanceSim_toolBonus: {
                 id: "enhanceSim_toolBonus",
-                desc: "Tool success bonus percentage (default: 19.35 = Celestial Enhancer +10).",
-                value: 19.35,
+                desc: "Tool success bonus percentage (default: 5.42 = Celestial Enhancer +10).",
+                value: 5.42,
             },
             enhanceSim_speedBonus: {
                 id: "enhanceSim_speedBonus",

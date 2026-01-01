@@ -148,11 +148,11 @@ export const settingsGroups = {
                 id: 'enhanceSim_toolBonus',
                 label: 'Tool success bonus %',
                 type: 'number',
-                default: 19.35,
+                default: 5.42,
                 min: 0,
                 max: 30,
                 step: 0.01,
-                help: 'Default: 19.35 (Celestial Enhancer +10)'
+                help: 'Default: 5.42 (Celestial Enhancer +10)'
             },
             enhanceSim_speedBonus: {
                 id: 'enhanceSim_speedBonus',
