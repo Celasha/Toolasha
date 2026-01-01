@@ -17,7 +17,13 @@ class ActionSpeedBreakdown {
      * Initialize the action speed breakdown feature
      */
     initialize() {
-        if (!config.getSetting('actionPanel_speedBreakdown')) {
+        console.log('[ActionSpeedBreakdown] Initializing...');
+
+        const setting = config.getSetting('actionPanel_speedBreakdown');
+        console.log('[ActionSpeedBreakdown] Setting value:', setting);
+
+        if (!setting) {
+            console.log('[ActionSpeedBreakdown] Feature disabled by setting');
             return;
         }
 
@@ -26,11 +32,14 @@ class ActionSpeedBreakdown {
             'ActionSpeedBreakdown',
             'div[class*="SkillActionDetail_skillActionDetail"]',
             (actionPanel) => {
+                console.log('[ActionSpeedBreakdown] Observer triggered! Panel detected:', actionPanel);
                 this.injectSpeedBreakdown(actionPanel);
             }
         );
 
+        console.log('[ActionSpeedBreakdown] Observer registered for selector: div[class*="SkillActionDetail_skillActionDetail"]');
         this.isInitialized = true;
+        console.log('[ActionSpeedBreakdown] Initialization complete');
     }
 
     /**
