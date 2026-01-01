@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.4.7
+// @version      0.4.71
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
 // @author       Celasha and Claude, thank you to bot7420, DrDucky, Frotty, Truth_Light, AlphB for providing the basis for a lot of this. Thank you to Miku, Orvel, Jigglymoose, Incinarator, Knerd, and others for their time and help. Special thanks to Zaeter for the name. 
 // @license      CC-BY-NC-SA-4.0
@@ -426,8 +426,8 @@
                 },
                 enhanceSim_toolBonus: {
                     id: "enhanceSim_toolBonus",
-                    desc: "Tool success bonus percentage (default: 19.35 = Celestial Enhancer +10).",
-                    value: 19.35,
+                    desc: "Tool success bonus percentage (default: 5.42 = Celestial Enhancer +10).",
+                    value: 5.42,
                 },
                 enhanceSim_speedBonus: {
                     id: "enhanceSim_speedBonus",
@@ -4868,7 +4868,7 @@
         const totalSpeed = getValue('enhanceSim_speedBonus', 0);
         const equipmentSpeedBonus = Math.max(0, totalSpeed - houseSpeedBonus - communitySpeedBonus - teaSpeedBonus);
 
-        const toolBonusEquipment = getValue('enhanceSim_toolBonus', 19.35);
+        const toolBonusEquipment = getValue('enhanceSim_toolBonus', 5.42);
         const totalToolBonus = toolBonusEquipment + houseSuccessBonus;
 
         return {
@@ -21004,11 +21004,11 @@
                     id: 'enhanceSim_toolBonus',
                     label: 'Tool success bonus %',
                     type: 'number',
-                    default: 19.35,
+                    default: 5.42,
                     min: 0,
                     max: 30,
                     step: 0.01,
-                    help: 'Default: 19.35 (Celestial Enhancer +10)'
+                    help: 'Default: 5.42 (Celestial Enhancer +10)'
                 },
                 enhanceSim_speedBonus: {
                     id: 'enhanceSim_speedBonus',
