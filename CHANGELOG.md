@@ -417,6 +417,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+#### **Auto-Fill Market Price - Duplicate Click Prevention**
+
+**BUG FIX:** Fixed auto-fill order tool clicking increment/decrement buttons multiple times when opening marketplace order modals.
+
+- **Root Cause:**
+  - `dom-observer.js` `onClass()` method fires multiple callbacks for same modal
+  - When React adds parent container → searches descendants → finds modal → callback fires
+  - When React adds modal content → searches again → finds same modal still in DOM → callback fires again
+  - Multiple nested `Modal_modalContainer` divs in structure → each triggers callback
+  - `auto-fill-price.js` had no duplicate prevention mechanism
+  - **Result:** `handleOrderModal()` called 2-4 times per modal open
+
+- **Symptoms:**
+  - Price incremented/decremented multiple times (2-4 clicks instead of 1)
+  - Users reported unpredictable price adjustments
+  - Inconsistent behavior depending on React render timing
+
+- **Fix Implementation:**
+  - Added `processedModals` WeakSet to track already-processed modals
+  - Check if modal already processed at start of `handleOrderModal()`
+  - Mark modal as processed before executing any logic
+  - Pattern matches other features (equipment-level-display, alchemy-item-dimming)
+
+- **Files Modified:**
+  - `src/features/market/auto-fill-price.js` (lines 15, 65-69)
+    - Added `this.processedModals = new WeakSet()` in constructor
+    - Added duplicate check: `if (this.processedModals.has(modal)) return;`
+    - Added tracking: `this.processedModals.add(modal);`
+
+**Result:** Each marketplace order modal is now processed exactly once, ensuring price adjustments happen reliably with a single click.
+
 #### **Production Profit Calculator - Bonus Revenue Integration**
 
 **BUG FIX:** Fixed discrepancy between item tooltip and action panel profitability displays caused by bonus revenue not being included in core profit calculation.

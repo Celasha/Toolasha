@@ -12,6 +12,7 @@ class AutoFillPrice {
     constructor() {
         this.isActive = false;
         this.unregisterHandlers = [];
+        this.processedModals = new WeakSet(); // Track processed modals to prevent duplicates
     }
 
     /**
@@ -61,6 +62,12 @@ class AutoFillPrice {
      * @param {HTMLElement} modal - Modal container element
      */
     handleOrderModal(modal) {
+        // Prevent duplicate processing (dom-observer can fire multiple times for same modal)
+        if (this.processedModals.has(modal)) {
+            return;
+        }
+        this.processedModals.add(modal);
+
         // Find the "Best Price" button/label
         const bestPriceLabel = modal.querySelector('span[class*="MarketplacePanel_bestPrice"]');
         if (!bestPriceLabel) {
