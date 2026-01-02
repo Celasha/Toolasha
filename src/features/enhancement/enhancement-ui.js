@@ -105,15 +105,25 @@ class EnhancementUI {
         this.checkEnhancingScreen();
         this.updateVisibility(); // Always set initial visibility
 
-        // Set up MutationObserver to detect screen changes
-        this.screenObserver = new MutationObserver(() => {
-            this.checkEnhancingScreen();
-        });
+        // Wait for document.body before observing
+        const startObserver = () => {
+            if (!document.body) {
+                setTimeout(startObserver, 10);
+                return;
+            }
 
-        this.screenObserver.observe(document.body, {
-            childList: true,
-            subtree: true
-        });
+            // Set up MutationObserver to detect screen changes
+            this.screenObserver = new MutationObserver(() => {
+                this.checkEnhancingScreen();
+            });
+
+            this.screenObserver.observe(document.body, {
+                childList: true,
+                subtree: true
+            });
+        };
+
+        startObserver();
     }
 
     /**

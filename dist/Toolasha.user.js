@@ -1289,33 +1289,44 @@
         start() {
             if (this.isObserving) return;
 
-            this.observer = new MutationObserver((mutations) => {
-                for (const mutation of mutations) {
-                    for (const node of mutation.addedNodes) {
-                        if (node.nodeType !== Node.ELEMENT_NODE) continue;
-
-                        // Dispatch to all registered handlers
-                        this.handlers.forEach(handler => {
-                            try {
-                                if (handler.debounce) {
-                                    this.debouncedCallback(handler, node, mutation);
-                                } else {
-                                    handler.callback(node, mutation);
-                                }
-                            } catch (error) {
-                                console.error(`[DOM Observer] Handler error (${handler.name}):`, error);
-                            }
-                        });
-                    }
+            // Wait for document.body to exist (critical for @run-at document-start)
+            const startObserver = () => {
+                if (!document.body) {
+                    // Body doesn't exist yet, wait and try again
+                    setTimeout(startObserver, 10);
+                    return;
                 }
-            });
 
-            this.observer.observe(document.body, {
-                childList: true,
-                subtree: true
-            });
+                this.observer = new MutationObserver((mutations) => {
+                    for (const mutation of mutations) {
+                        for (const node of mutation.addedNodes) {
+                            if (node.nodeType !== Node.ELEMENT_NODE) continue;
 
-            this.isObserving = true;
+                            // Dispatch to all registered handlers
+                            this.handlers.forEach(handler => {
+                                try {
+                                    if (handler.debounce) {
+                                        this.debouncedCallback(handler, node, mutation);
+                                    } else {
+                                        handler.callback(node, mutation);
+                                    }
+                                } catch (error) {
+                                    console.error(`[DOM Observer] Handler error (${handler.name}):`, error);
+                                }
+                            });
+                        }
+                    }
+                });
+
+                this.observer.observe(document.body, {
+                    childList: true,
+                    subtree: true
+                });
+
+                this.isObserving = true;
+            };
+
+            startObserver();
         }
 
         /**
@@ -9258,12 +9269,22 @@
             }
         });
 
-        panelObserver.observe(document.body, {
-            childList: true,
-            subtree: true,  // Watch entire tree, not just direct children
-            attributes: true,  // Watch for attribute changes (all attributes)
-            attributeOldValue: true  // Track old values
-        });
+        // Wait for document.body before observing
+        const startObserver = () => {
+            if (!document.body) {
+                setTimeout(startObserver, 10);
+                return;
+            }
+
+            panelObserver.observe(document.body, {
+                childList: true,
+                subtree: true,  // Watch entire tree, not just direct children
+                attributes: true,  // Watch for attribute changes (all attributes)
+                attributeOldValue: true  // Track old values
+            });
+        };
+
+        startObserver();
     }
 
     /**
@@ -9752,8 +9773,8 @@
          * Wait for action panel to exist in DOM
          */
         async waitForActionPanel() {
-            // Try to find action name element
-            const actionNameElement = document.querySelector('div.Header_actionName__31-L2');
+            // Try to find action name element (use wildcard for hash-suffixed class)
+            const actionNameElement = document.querySelector('div[class*="Header_actionName"]');
 
             if (actionNameElement) {
                 this.createDisplayPanel();
@@ -9790,8 +9811,8 @@
                 return; // Already created
             }
 
-            // Find the action name container
-            const actionNameContainer = document.querySelector('div.Header_actionName__31-L2');
+            // Find the action name container (use wildcard for hash-suffixed class)
+            const actionNameContainer = document.querySelector('div[class*="Header_actionName"]');
             if (!actionNameContainer) {
                 return;
             }
@@ -10764,27 +10785,47 @@
          * Start MutationObserver to detect action panels
          */
         startObserving() {
-            this.observer = new MutationObserver((mutations) => {
-                for (const mutation of mutations) {
-                    for (const node of mutation.addedNodes) {
-                        if (node.nodeType !== Node.ELEMENT_NODE) continue;
+            // Wait for document.body to exist (critical for @run-at document-start)
+            const startObserver = () => {
+                if (!document.body) {
+                    setTimeout(startObserver, 10);
+                    return;
+                }
 
-                        // Look for main action detail panel (not sub-elements)
-                        const actionPanel = node.querySelector?.('[class*="SkillActionDetail_skillActionDetail"]');
-                        if (actionPanel) {
-                            this.injectButtons(actionPanel);
-                        } else if (node.className && typeof node.className === 'string' &&
-                                   node.className.includes('SkillActionDetail_skillActionDetail')) {
-                            this.injectButtons(node);
+                this.observer = new MutationObserver((mutations) => {
+                    for (const mutation of mutations) {
+                        for (const node of mutation.addedNodes) {
+                            if (node.nodeType !== Node.ELEMENT_NODE) continue;
+
+                            // Look for main action detail panel (not sub-elements)
+                            const actionPanel = node.querySelector?.('[class*="SkillActionDetail_skillActionDetail"]');
+                            if (actionPanel) {
+                                console.log('[Quick Input Buttons] Found new action panel via observer');
+                                this.injectButtons(actionPanel);
+                            } else if (node.className && typeof node.className === 'string' &&
+                                       node.className.includes('SkillActionDetail_skillActionDetail')) {
+                                console.log('[Quick Input Buttons] Found new action panel via observer (direct)');
+                                this.injectButtons(node);
+                            }
                         }
                     }
-                }
-            });
+                });
 
-            this.observer.observe(document.body, {
-                childList: true,
-                subtree: true
-            });
+                this.observer.observe(document.body, {
+                    childList: true,
+                    subtree: true
+                });
+
+                // Check for existing action panels that may already be open
+                const existingPanels = document.querySelectorAll('[class*="SkillActionDetail_skillActionDetail"]');
+                console.log('[Quick Input Buttons] Checking for existing panels, found:', existingPanels.length);
+                existingPanels.forEach(panel => {
+                    console.log('[Quick Input Buttons] Injecting into existing panel');
+                    this.injectButtons(panel);
+                });
+            };
+
+            startObserver();
         }
 
         /**
@@ -10795,16 +10836,12 @@
             try {
                 // Check if already injected
                 if (panel.querySelector('.mwi-collapsible-section')) {
+                    console.log('[Quick Input Buttons] Already injected, skipping');
                     return;
                 }
 
-                // Cache game data once for all method calls
-                const gameData = dataManager.getInitClientData();
-                if (!gameData) {
-                    return;
-                }
-
-                // Find the number input field
+                // Find the number input field first to skip panels that don't have queue inputs
+                // (Enhancing, Alchemy, etc.)
                 let numberInput = panel.querySelector('input[type="number"]');
                 if (!numberInput) {
                     // Try finding input within maxActionCountInput container
@@ -10814,18 +10851,29 @@
                     }
                 }
                 if (!numberInput) {
+                    // This is a panel type that doesn't have queue inputs (Enhancing, Alchemy, etc.)
+                    // Skip silently - not an error, just not applicable
+                    return;
+                }
+
+                // Cache game data once for all method calls
+                const gameData = dataManager.getInitClientData();
+                if (!gameData) {
+                    console.warn('[Quick Input Buttons] No game data available');
                     return;
                 }
 
                 // Get action details for time-based calculations
                 const actionNameElement = panel.querySelector('[class*="SkillActionDetail_name"]');
                 if (!actionNameElement) {
+                    console.warn('[Quick Input Buttons] No action name element found');
                     return;
                 }
 
                 const actionName = actionNameElement.textContent.trim();
                 const actionDetails = this.getActionDetailsByName(actionName, gameData);
                 if (!actionDetails) {
+                    console.warn('[Quick Input Buttons] No action details found for:', actionName);
                     return;
                 }
 
@@ -11119,6 +11167,8 @@
                 if (levelProgressSection) {
                     speedSection.insertAdjacentElement('afterend', levelProgressSection);
                 }
+
+                console.log('[Quick Input Buttons] Successfully injected buttons for:', actionName);
 
             } catch (error) {
                 console.error('[MWI Tools] Error injecting quick input buttons:', error);
@@ -13029,6 +13079,12 @@
          * @param {Element} modal - Modal container element
          */
         setupCleanupObserver(panel, modal) {
+            // Defensive check for document.body
+            if (!document.body) {
+                console.warn('[Combat Score] document.body not available for cleanup observer');
+                return;
+            }
+
             const cleanupObserver = new MutationObserver(() => {
                 if (!document.body.contains(modal) || !document.querySelector('div.SharableProfile_overviewTab__W4dCV')) {
                     panel.remove();
@@ -18773,15 +18829,25 @@
             this.checkEnhancingScreen();
             this.updateVisibility(); // Always set initial visibility
 
-            // Set up MutationObserver to detect screen changes
-            this.screenObserver = new MutationObserver(() => {
-                this.checkEnhancingScreen();
-            });
+            // Wait for document.body before observing
+            const startObserver = () => {
+                if (!document.body) {
+                    setTimeout(startObserver, 10);
+                    return;
+                }
 
-            this.screenObserver.observe(document.body, {
-                childList: true,
-                subtree: true
-            });
+                // Set up MutationObserver to detect screen changes
+                this.screenObserver = new MutationObserver(() => {
+                    this.checkEnhancingScreen();
+                });
+
+                this.screenObserver.observe(document.body, {
+                    childList: true,
+                    subtree: true
+                });
+            };
+
+            startObserver();
         }
 
         /**
@@ -20041,13 +20107,24 @@
             initialize: () => quickInputButtons.initialize(),
             async: false,
             healthCheck: () => {
-                // Check if quick input buttons exist on any action panel
-                const actionPanel = document.querySelector('[class*="SkillActionDetail_skillActionDetail"]');
-                if (!actionPanel) return null; // No action panel open, can't verify
+                // Find action panels that have queue inputs (excludes Enhancing, Alchemy, etc.)
+                const actionPanels = document.querySelectorAll('[class*="SkillActionDetail_skillActionDetail"]');
 
-                // Look for our injected buttons or collapsible sections
-                const buttons = actionPanel.querySelector('.mwi-quick-input-btn');
-                const sections = actionPanel.querySelector('.mwi-collapsible-section');
+                // Find panels with number inputs (regular gathering/production actions)
+                const panelsWithInputs = Array.from(actionPanels).filter(panel => {
+                    const hasInput = !!panel.querySelector('input[type="number"]');
+                    const hasInputContainer = !!panel.querySelector('[class*="maxActionCountInput"]');
+                    return hasInput || hasInputContainer;
+                });
+
+                if (panelsWithInputs.length === 0) {
+                    return null; // No applicable panels open, can't verify
+                }
+
+                // Check first applicable panel for our buttons
+                const panel = panelsWithInputs[0];
+                const buttons = panel.querySelector('.mwi-quick-input-btn');
+                const sections = panel.querySelector('.mwi-collapsible-section');
                 return !!(buttons || sections);
             }
         },
@@ -21810,47 +21887,57 @@
             // Watch for settings panel to be added to DOM
             let isInjecting = false; // Prevent re-entrant observer calls
 
-            const observer = new MutationObserver((mutations) => {
-                if (isInjecting) return; // Prevent observer loop
-
-                // Look for the settings tabs container
-                const tabsContainer = document.querySelector('div[class*="SettingsPanel_tabsComponentContainer"]');
-
-                if (tabsContainer) {
-                    // Check if our tab already exists before injecting
-                    if (!tabsContainer.querySelector('#toolasha-settings-tab')) {
-                        isInjecting = true;
-                        this.injectSettingsTab();
-                        isInjecting = false;
-                    }
-                    // Keep observer running - panel might be removed/re-added if user navigates away and back
+            // Wait for DOM to be ready before observing
+            const startObserver = () => {
+                if (!document.body) {
+                    setTimeout(startObserver, 10);
+                    return;
                 }
-            });
 
-            // Observe the main game panel for changes
-            const gamePanel = document.querySelector('div[class*="GamePage_gamePanel"]');
-            if (gamePanel) {
-                observer.observe(gamePanel, {
-                    childList: true,
-                    subtree: true
+                const observer = new MutationObserver((mutations) => {
+                    if (isInjecting) return; // Prevent observer loop
+
+                    // Look for the settings tabs container
+                    const tabsContainer = document.querySelector('div[class*="SettingsPanel_tabsComponentContainer"]');
+
+                    if (tabsContainer) {
+                        // Check if our tab already exists before injecting
+                        if (!tabsContainer.querySelector('#toolasha-settings-tab')) {
+                            isInjecting = true;
+                            this.injectSettingsTab();
+                            isInjecting = false;
+                        }
+                        // Keep observer running - panel might be removed/re-added if user navigates away and back
+                    }
                 });
-            } else {
-                // Fallback: observe entire body if game panel not found (Firefox timing issue)
-                console.warn('[Toolasha Settings] Could not find game panel, observing body instead');
-                observer.observe(document.body, {
-                    childList: true,
-                    subtree: true
-                });
-            }
 
-            // Store observer reference
-            this.settingsObserver = observer;
+                // Observe the main game panel for changes
+                const gamePanel = document.querySelector('div[class*="GamePage_gamePanel"]');
+                if (gamePanel) {
+                    observer.observe(gamePanel, {
+                        childList: true,
+                        subtree: true
+                    });
+                } else {
+                    // Fallback: observe entire body if game panel not found (Firefox timing issue)
+                    console.warn('[Toolasha Settings] Could not find game panel, observing body instead');
+                    observer.observe(document.body, {
+                        childList: true,
+                        subtree: true
+                    });
+                }
 
-            // Also check immediately in case settings is already open
-            const existingTabsContainer = document.querySelector('div[class*="SettingsPanel_tabsComponentContainer"]');
-            if (existingTabsContainer && !existingTabsContainer.querySelector('#toolasha-settings-tab')) {
-                this.injectSettingsTab();
-            }
+                // Store observer reference
+                this.settingsObserver = observer;
+
+                // Also check immediately in case settings is already open
+                const existingTabsContainer = document.querySelector('div[class*="SettingsPanel_tabsComponentContainer"]');
+                if (existingTabsContainer && !existingTabsContainer.querySelector('#toolasha-settings-tab')) {
+                    this.injectSettingsTab();
+                }
+            };
+
+            startObserver();
         }
 
         /**

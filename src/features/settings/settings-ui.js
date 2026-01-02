@@ -54,47 +54,57 @@ class SettingsUI {
         // Watch for settings panel to be added to DOM
         let isInjecting = false; // Prevent re-entrant observer calls
 
-        const observer = new MutationObserver((mutations) => {
-            if (isInjecting) return; // Prevent observer loop
-
-            // Look for the settings tabs container
-            const tabsContainer = document.querySelector('div[class*="SettingsPanel_tabsComponentContainer"]');
-
-            if (tabsContainer) {
-                // Check if our tab already exists before injecting
-                if (!tabsContainer.querySelector('#toolasha-settings-tab')) {
-                    isInjecting = true;
-                    this.injectSettingsTab();
-                    isInjecting = false;
-                }
-                // Keep observer running - panel might be removed/re-added if user navigates away and back
+        // Wait for DOM to be ready before observing
+        const startObserver = () => {
+            if (!document.body) {
+                setTimeout(startObserver, 10);
+                return;
             }
-        });
 
-        // Observe the main game panel for changes
-        const gamePanel = document.querySelector('div[class*="GamePage_gamePanel"]');
-        if (gamePanel) {
-            observer.observe(gamePanel, {
-                childList: true,
-                subtree: true
+            const observer = new MutationObserver((mutations) => {
+                if (isInjecting) return; // Prevent observer loop
+
+                // Look for the settings tabs container
+                const tabsContainer = document.querySelector('div[class*="SettingsPanel_tabsComponentContainer"]');
+
+                if (tabsContainer) {
+                    // Check if our tab already exists before injecting
+                    if (!tabsContainer.querySelector('#toolasha-settings-tab')) {
+                        isInjecting = true;
+                        this.injectSettingsTab();
+                        isInjecting = false;
+                    }
+                    // Keep observer running - panel might be removed/re-added if user navigates away and back
+                }
             });
-        } else {
-            // Fallback: observe entire body if game panel not found (Firefox timing issue)
-            console.warn('[Toolasha Settings] Could not find game panel, observing body instead');
-            observer.observe(document.body, {
-                childList: true,
-                subtree: true
-            });
-        }
 
-        // Store observer reference
-        this.settingsObserver = observer;
+            // Observe the main game panel for changes
+            const gamePanel = document.querySelector('div[class*="GamePage_gamePanel"]');
+            if (gamePanel) {
+                observer.observe(gamePanel, {
+                    childList: true,
+                    subtree: true
+                });
+            } else {
+                // Fallback: observe entire body if game panel not found (Firefox timing issue)
+                console.warn('[Toolasha Settings] Could not find game panel, observing body instead');
+                observer.observe(document.body, {
+                    childList: true,
+                    subtree: true
+                });
+            }
 
-        // Also check immediately in case settings is already open
-        const existingTabsContainer = document.querySelector('div[class*="SettingsPanel_tabsComponentContainer"]');
-        if (existingTabsContainer && !existingTabsContainer.querySelector('#toolasha-settings-tab')) {
-            this.injectSettingsTab();
-        }
+            // Store observer reference
+            this.settingsObserver = observer;
+
+            // Also check immediately in case settings is already open
+            const existingTabsContainer = document.querySelector('div[class*="SettingsPanel_tabsComponentContainer"]');
+            if (existingTabsContainer && !existingTabsContainer.querySelector('#toolasha-settings-tab')) {
+                this.injectSettingsTab();
+            }
+        };
+
+        startObserver();
     }
 
     /**

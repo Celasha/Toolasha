@@ -104,13 +104,24 @@ const featureRegistry = [
         initialize: () => quickInputButtons.initialize(),
         async: false,
         healthCheck: () => {
-            // Check if quick input buttons exist on any action panel
-            const actionPanel = document.querySelector('[class*="SkillActionDetail_skillActionDetail"]');
-            if (!actionPanel) return null; // No action panel open, can't verify
+            // Find action panels that have queue inputs (excludes Enhancing, Alchemy, etc.)
+            const actionPanels = document.querySelectorAll('[class*="SkillActionDetail_skillActionDetail"]');
 
-            // Look for our injected buttons or collapsible sections
-            const buttons = actionPanel.querySelector('.mwi-quick-input-btn');
-            const sections = actionPanel.querySelector('.mwi-collapsible-section');
+            // Find panels with number inputs (regular gathering/production actions)
+            const panelsWithInputs = Array.from(actionPanels).filter(panel => {
+                const hasInput = !!panel.querySelector('input[type="number"]');
+                const hasInputContainer = !!panel.querySelector('[class*="maxActionCountInput"]');
+                return hasInput || hasInputContainer;
+            });
+
+            if (panelsWithInputs.length === 0) {
+                return null; // No applicable panels open, can't verify
+            }
+
+            // Check first applicable panel for our buttons
+            const panel = panelsWithInputs[0];
+            const buttons = panel.querySelector('.mwi-quick-input-btn');
+            const sections = panel.querySelector('.mwi-collapsible-section');
             return !!(buttons || sections);
         }
     },

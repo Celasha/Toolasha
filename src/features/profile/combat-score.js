@@ -290,6 +290,12 @@ class CombatScore {
      * @param {Element} modal - Modal container element
      */
     setupCleanupObserver(panel, modal) {
+        // Defensive check for document.body
+        if (!document.body) {
+            console.warn('[Combat Score] document.body not available for cleanup observer');
+            return;
+        }
+
         const cleanupObserver = new MutationObserver(() => {
             if (!document.body.contains(modal) || !document.querySelector('div.SharableProfile_overviewTab__W4dCV')) {
                 panel.remove();

@@ -128,8 +128,8 @@ class ActionTimeDisplay {
      * Wait for action panel to exist in DOM
      */
     async waitForActionPanel() {
-        // Try to find action name element
-        const actionNameElement = document.querySelector('div.Header_actionName__31-L2');
+        // Try to find action name element (use wildcard for hash-suffixed class)
+        const actionNameElement = document.querySelector('div[class*="Header_actionName"]');
 
         if (actionNameElement) {
             this.createDisplayPanel();
@@ -166,8 +166,8 @@ class ActionTimeDisplay {
             return; // Already created
         }
 
-        // Find the action name container
-        const actionNameContainer = document.querySelector('div.Header_actionName__31-L2');
+        // Find the action name container (use wildcard for hash-suffixed class)
+        const actionNameContainer = document.querySelector('div[class*="Header_actionName"]');
         if (!actionNameContainer) {
             return;
         }

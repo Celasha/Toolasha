@@ -21,33 +21,44 @@ class DOMObserver {
     start() {
         if (this.isObserving) return;
 
-        this.observer = new MutationObserver((mutations) => {
-            for (const mutation of mutations) {
-                for (const node of mutation.addedNodes) {
-                    if (node.nodeType !== Node.ELEMENT_NODE) continue;
-
-                    // Dispatch to all registered handlers
-                    this.handlers.forEach(handler => {
-                        try {
-                            if (handler.debounce) {
-                                this.debouncedCallback(handler, node, mutation);
-                            } else {
-                                handler.callback(node, mutation);
-                            }
-                        } catch (error) {
-                            console.error(`[DOM Observer] Handler error (${handler.name}):`, error);
-                        }
-                    });
-                }
+        // Wait for document.body to exist (critical for @run-at document-start)
+        const startObserver = () => {
+            if (!document.body) {
+                // Body doesn't exist yet, wait and try again
+                setTimeout(startObserver, 10);
+                return;
             }
-        });
 
-        this.observer.observe(document.body, {
-            childList: true,
-            subtree: true
-        });
+            this.observer = new MutationObserver((mutations) => {
+                for (const mutation of mutations) {
+                    for (const node of mutation.addedNodes) {
+                        if (node.nodeType !== Node.ELEMENT_NODE) continue;
 
-        this.isObserving = true;
+                        // Dispatch to all registered handlers
+                        this.handlers.forEach(handler => {
+                            try {
+                                if (handler.debounce) {
+                                    this.debouncedCallback(handler, node, mutation);
+                                } else {
+                                    handler.callback(node, mutation);
+                                }
+                            } catch (error) {
+                                console.error(`[DOM Observer] Handler error (${handler.name}):`, error);
+                            }
+                        });
+                    }
+                }
+            });
+
+            this.observer.observe(document.body, {
+                childList: true,
+                subtree: true
+            });
+
+            this.isObserving = true;
+        };
+
+        startObserver();
     }
 
     /**

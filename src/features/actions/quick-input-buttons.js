@@ -49,27 +49,47 @@ class QuickInputButtons {
      * Start MutationObserver to detect action panels
      */
     startObserving() {
-        this.observer = new MutationObserver((mutations) => {
-            for (const mutation of mutations) {
-                for (const node of mutation.addedNodes) {
-                    if (node.nodeType !== Node.ELEMENT_NODE) continue;
+        // Wait for document.body to exist (critical for @run-at document-start)
+        const startObserver = () => {
+            if (!document.body) {
+                setTimeout(startObserver, 10);
+                return;
+            }
 
-                    // Look for main action detail panel (not sub-elements)
-                    const actionPanel = node.querySelector?.('[class*="SkillActionDetail_skillActionDetail"]');
-                    if (actionPanel) {
-                        this.injectButtons(actionPanel);
-                    } else if (node.className && typeof node.className === 'string' &&
-                               node.className.includes('SkillActionDetail_skillActionDetail')) {
-                        this.injectButtons(node);
+            this.observer = new MutationObserver((mutations) => {
+                for (const mutation of mutations) {
+                    for (const node of mutation.addedNodes) {
+                        if (node.nodeType !== Node.ELEMENT_NODE) continue;
+
+                        // Look for main action detail panel (not sub-elements)
+                        const actionPanel = node.querySelector?.('[class*="SkillActionDetail_skillActionDetail"]');
+                        if (actionPanel) {
+                            console.log('[Quick Input Buttons] Found new action panel via observer');
+                            this.injectButtons(actionPanel);
+                        } else if (node.className && typeof node.className === 'string' &&
+                                   node.className.includes('SkillActionDetail_skillActionDetail')) {
+                            console.log('[Quick Input Buttons] Found new action panel via observer (direct)');
+                            this.injectButtons(node);
+                        }
                     }
                 }
-            }
-        });
+            });
 
-        this.observer.observe(document.body, {
-            childList: true,
-            subtree: true
-        });
+            this.observer.observe(document.body, {
+                childList: true,
+                subtree: true
+            });
+
+            // Check for existing action panels that may already be open
+            const existingPanels = document.querySelectorAll('[class*="SkillActionDetail_skillActionDetail"]');
+            console.log('[Quick Input Buttons] Checking for existing panels, found:', existingPanels.length);
+            existingPanels.forEach(panel => {
+                console.log('[Quick Input Buttons] Injecting into existing panel');
+                this.injectButtons(panel);
+            });
+        };
+
+        startObserver();
     }
 
     /**
@@ -80,16 +100,12 @@ class QuickInputButtons {
         try {
             // Check if already injected
             if (panel.querySelector('.mwi-collapsible-section')) {
+                console.log('[Quick Input Buttons] Already injected, skipping');
                 return;
             }
 
-            // Cache game data once for all method calls
-            const gameData = dataManager.getInitClientData();
-            if (!gameData) {
-                return;
-            }
-
-            // Find the number input field
+            // Find the number input field first to skip panels that don't have queue inputs
+            // (Enhancing, Alchemy, etc.)
             let numberInput = panel.querySelector('input[type="number"]');
             if (!numberInput) {
                 // Try finding input within maxActionCountInput container
@@ -99,18 +115,29 @@ class QuickInputButtons {
                 }
             }
             if (!numberInput) {
+                // This is a panel type that doesn't have queue inputs (Enhancing, Alchemy, etc.)
+                // Skip silently - not an error, just not applicable
+                return;
+            }
+
+            // Cache game data once for all method calls
+            const gameData = dataManager.getInitClientData();
+            if (!gameData) {
+                console.warn('[Quick Input Buttons] No game data available');
                 return;
             }
 
             // Get action details for time-based calculations
             const actionNameElement = panel.querySelector('[class*="SkillActionDetail_name"]');
             if (!actionNameElement) {
+                console.warn('[Quick Input Buttons] No action name element found');
                 return;
             }
 
             const actionName = actionNameElement.textContent.trim();
             const actionDetails = this.getActionDetailsByName(actionName, gameData);
             if (!actionDetails) {
+                console.warn('[Quick Input Buttons] No action details found for:', actionName);
                 return;
             }
 
@@ -404,6 +431,8 @@ class QuickInputButtons {
             if (levelProgressSection) {
                 speedSection.insertAdjacentElement('afterend', levelProgressSection);
             }
+
+            console.log('[Quick Input Buttons] Successfully injected buttons for:', actionName);
 
         } catch (error) {
             console.error('[MWI Tools] Error injecting quick input buttons:', error);

@@ -195,12 +195,22 @@ function setupMutationObserver() {
         }
     });
 
-    panelObserver.observe(document.body, {
-        childList: true,
-        subtree: true,  // Watch entire tree, not just direct children
-        attributes: true,  // Watch for attribute changes (all attributes)
-        attributeOldValue: true  // Track old values
-    });
+    // Wait for document.body before observing
+    const startObserver = () => {
+        if (!document.body) {
+            setTimeout(startObserver, 10);
+            return;
+        }
+
+        panelObserver.observe(document.body, {
+            childList: true,
+            subtree: true,  // Watch entire tree, not just direct children
+            attributes: true,  // Watch for attribute changes (all attributes)
+            attributeOldValue: true  // Track old values
+        });
+    };
+
+    startObserver();
 }
 
 /**
