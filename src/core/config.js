@@ -229,11 +229,6 @@ class Config {
                 desc: "Queued actions panel at the top: Estimated total time and complete time of each queued action.",
                 isTrue: true,
             },
-            actionPanel_speedBreakdown: {
-                id: "actionPanel_speedBreakdown",
-                desc: "Action panel: Show detailed action speed breakdown by source (equipment, tool, consumables).",
-                isTrue: true,
-            },
             enhanceSim: {
                 id: "enhanceSim",
                 desc: "Tooltip of equipment with enhancement level: Enhancing simulator calculations.",

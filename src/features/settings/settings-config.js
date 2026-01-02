@@ -52,13 +52,6 @@ export const settingsGroups = {
                 label: 'Queued actions: Show total time and completion time',
                 type: 'checkbox',
                 default: true
-            },
-            actionPanel_speedBreakdown: {
-                id: 'actionPanel_speedBreakdown',
-                label: 'Action panel: Show detailed action speed breakdown',
-                type: 'checkbox',
-                default: true,
-                help: 'Shows breakdown of action speed by source (equipment, tool, house, consumables)'
             }
         }
     },

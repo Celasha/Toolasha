@@ -13,7 +13,7 @@
  */
 
 import dataManager from '../../core/data-manager.js';
-import { parseEquipmentSpeedBonuses, parseEquipmentEfficiencyBonuses } from '../../utils/equipment-parser.js';
+import { parseEquipmentSpeedBonuses, parseEquipmentEfficiencyBonuses, debugEquipmentSpeedBonuses } from '../../utils/equipment-parser.js';
 import { parseTeaEfficiency, parseTeaEfficiencyBreakdown, getDrinkConcentration, parseActionLevelBonus, parseActionLevelBonusBreakdown, parseArtisanBonus } from '../../utils/tea-parser.js';
 import { calculateHouseEfficiency } from '../../utils/house-efficiency.js';
 import { stackAdditive } from '../../utils/efficiency.js';
@@ -150,6 +150,27 @@ class QuickInputButtons {
                 speedLines.push(`Speed: +${(speedBonus * 100).toFixed(1)}% | ${(3600 / actionTime).toFixed(0)}/hr`);
             } else {
                 speedLines.push(`${(3600 / actionTime).toFixed(0)}/hr`);
+            }
+
+            // Add speed breakdown
+            const speedBreakdown = this.calculateSpeedBreakdown(actionDetails, equipment, itemDetailMap);
+            if (speedBreakdown.total > 0) {
+                // Equipment and tools (combined from debugEquipmentSpeedBonuses)
+                for (const item of speedBreakdown.equipmentAndTools) {
+                    const enhText = item.enhancementLevel > 0 ? ` +${item.enhancementLevel}` : '';
+                    const detailText = item.enhancementBonus > 0 ?
+                        ` (${(item.baseBonus * 100).toFixed(1)}% + ${(item.enhancementBonus * item.enhancementLevel * 100).toFixed(1)}%)` :
+                        '';
+                    speedLines.push(`  - ${item.itemName}${enhText}: +${(item.scaledBonus * 100).toFixed(1)}%${detailText}`);
+                }
+
+                // Consumables
+                for (const item of speedBreakdown.consumables) {
+                    const detailText = item.drinkConcentration > 0 ?
+                        ` (${item.baseSpeed.toFixed(1)}% × ${(1 + item.drinkConcentration / 100).toFixed(2)})` :
+                        '';
+                    speedLines.push(`  - ${item.name}: +${item.speed.toFixed(1)}%${detailText}`);
+                }
             }
 
             // Add Efficiency breakdown
@@ -551,6 +572,94 @@ class QuickInputButtons {
         const level = room?.level || 0;
 
         return `${roomName} level ${level}`;
+    }
+
+    /**
+     * Calculate speed breakdown from all sources
+     * @param {Object} actionData - Action data
+     * @param {Map} equipment - Equipment map
+     * @param {Object} itemDetailMap - Item detail map from game data
+     * @returns {Object} Speed breakdown by source
+     */
+    calculateSpeedBreakdown(actionData, equipment, itemDetailMap) {
+        const breakdown = {
+            equipmentAndTools: [],
+            consumables: [],
+            total: 0
+        };
+
+        // Get all equipment speed bonuses using the existing parser
+        const allSpeedBonuses = debugEquipmentSpeedBonuses(equipment, itemDetailMap);
+
+        // Determine which speed types are relevant for this action
+        const actionType = actionData.type;
+        const skillName = actionType.replace('/action_types/', '');
+        const skillSpecificSpeed = skillName + 'Speed';
+
+        // Filter for relevant speeds (skill-specific or generic skillingSpeed)
+        const relevantSpeeds = allSpeedBonuses.filter(item => {
+            return item.speedType === skillSpecificSpeed || item.speedType === 'skillingSpeed';
+        });
+
+        // Add to breakdown
+        for (const item of relevantSpeeds) {
+            breakdown.equipmentAndTools.push(item);
+            breakdown.total += item.scaledBonus * 100; // Convert to percentage
+        }
+
+        // Consumables (teas)
+        const consumableSpeed = this.getConsumableSpeed(actionData, equipment, itemDetailMap);
+        breakdown.consumables = consumableSpeed;
+        breakdown.total += consumableSpeed.reduce((sum, c) => sum + c.speed, 0);
+
+        return breakdown;
+    }
+
+    /**
+     * Get consumable speed bonuses (Enhancing Teas only)
+     * @param {Object} actionData - Action data
+     * @param {Map} equipment - Equipment map
+     * @param {Object} itemDetailMap - Item detail map
+     * @returns {Array} Consumable speed info
+     */
+    getConsumableSpeed(actionData, equipment, itemDetailMap) {
+        const actionType = actionData.type;
+        const drinkSlots = dataManager.getActionDrinkSlots(actionType);
+        if (!drinkSlots || drinkSlots.length === 0) return [];
+
+        const consumables = [];
+
+        // Only Enhancing is relevant (all actions except combat)
+        if (actionType === '/action_types/combat') {
+            return consumables;
+        }
+
+        // Get drink concentration using existing utility
+        const drinkConcentration = getDrinkConcentration(equipment, itemDetailMap);
+
+        // Check drink slots for Enhancing Teas
+        const enhancingTeas = {
+            '/items/enhancing_tea': { name: 'Enhancing Tea', baseSpeed: 0.02 },
+            '/items/super_enhancing_tea': { name: 'Super Enhancing Tea', baseSpeed: 0.04 },
+            '/items/ultra_enhancing_tea': { name: 'Ultra Enhancing Tea', baseSpeed: 0.06 }
+        };
+
+        for (const drink of drinkSlots) {
+            if (!drink || !drink.itemHrid) continue;
+
+            const teaInfo = enhancingTeas[drink.itemHrid];
+            if (teaInfo) {
+                const scaledSpeed = teaInfo.baseSpeed * (1 + drinkConcentration);
+                consumables.push({
+                    name: teaInfo.name,
+                    baseSpeed: teaInfo.baseSpeed * 100,
+                    drinkConcentration: drinkConcentration * 100,
+                    speed: scaledSpeed * 100
+                });
+            }
+        }
+
+        return consumables;
     }
 
     /**

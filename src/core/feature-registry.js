@@ -14,7 +14,6 @@ import autoFillPrice from '../features/market/auto-fill-price.js';
 import { initActionPanelObserver } from '../features/actions/panel-observer.js';
 import actionTimeDisplay from '../features/actions/action-time-display.js';
 import quickInputButtons from '../features/actions/quick-input-buttons.js';
-import actionSpeedBreakdown from '../features/actions/action-speed-breakdown.js';
 import abilityBookCalculator from '../features/abilities/ability-book-calculator.js';
 import zoneIndices from '../features/combat/zone-indices.js';
 import combatScore from '../features/profile/combat-score.js';
@@ -112,22 +111,6 @@ const featureRegistry = [
             // Look for our injected button container
             const buttons = actionPanel.querySelector('.mwi-quick-input-buttons');
             return !!buttons;
-        }
-    },
-    {
-        key: 'actionPanel_speedBreakdown',
-        name: 'Action Speed Breakdown',
-        category: 'Actions',
-        initialize: () => actionSpeedBreakdown.initialize(),
-        async: false,
-        healthCheck: () => {
-            // Check if speed breakdown exists on any action panel
-            const actionPanel = document.querySelector('[class*="SkillActionDetail_skillActionDetail"]');
-            if (!actionPanel) return null; // No action panel open, can't verify
-
-            // Look for our injected speed breakdown
-            const breakdown = actionPanel.querySelector('.mwi-speed-breakdown');
-            return !!breakdown;
         }
     },
 
