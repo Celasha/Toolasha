@@ -20,8 +20,6 @@
 // @require      https://cdn.jsdelivr.net/npm/chart.js@3.7.0/dist/chart.min.js
 // @require      https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0/dist/chartjs-plugin-datalabels.min.js
 // @require      https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js
-// @downloadURL https://update.greasyfork.org/scripts/494467/MWITools.user.js
-// @updateURL https://update.greasyfork.org/scripts/494467/MWITools.meta.js
 // ==/UserScript==
 // Note: GM_getValue/GM_setValue removed - now using IndexedDB for storage
 
