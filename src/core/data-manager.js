@@ -53,17 +53,36 @@ class DataManager {
             }, 500); // Retry every 500ms
         }
 
-        // FALLBACK: Check if character is already loaded (Firefox race condition fix)
-        // On Firefox, init_character_data may fire before our WebSocket hook is ready
-        // If character data exists in localStorage, manually trigger initialization
-        setTimeout(() => {
-            if (!this.characterData && typeof localStorageUtil !== 'undefined') {
+        // FALLBACK: Continuous polling for missed init_character_data (Firefox/timing race condition fix)
+        // If WebSocket message was missed (hook installed too late), poll localStorage for character data
+        let fallbackAttempts = 0;
+        const maxAttempts = 20; // Poll for up to 10 seconds (20 × 500ms)
+
+        const fallbackInterval = setInterval(() => {
+            fallbackAttempts++;
+
+            // Stop if character data received via WebSocket
+            if (this.characterData) {
+                console.log('[DataManager] Character data received via WebSocket, stopping fallback polling');
+                clearInterval(fallbackInterval);
+                return;
+            }
+
+            // Give up after max attempts
+            if (fallbackAttempts >= maxAttempts) {
+                console.warn('[DataManager] Fallback polling timeout after', maxAttempts, 'attempts (10 seconds)');
+                clearInterval(fallbackInterval);
+                return;
+            }
+
+            // Try to load from localStorage
+            if (typeof localStorageUtil !== 'undefined') {
                 try {
-                    // Try to get character info from localStorage directly
                     const rawData = localStorage.getItem('character');
                     if (rawData) {
                         const characterData = JSON.parse(LZString.decompressFromUTF16(rawData));
                         if (characterData && characterData.characterSkills) {
+                            console.log('[DataManager] Fallback: Found character data in localStorage after', fallbackAttempts, 'attempts');
                             console.log('[DataManager] Detected missed init_character_data, manually triggering initialization');
 
                             // Populate data manager with existing character data
@@ -83,13 +102,16 @@ class DataManager {
 
                             // Fire character_initialized event
                             this.emit('character_initialized', characterData);
+
+                            // Stop polling
+                            clearInterval(fallbackInterval);
                         }
                     }
                 } catch (error) {
-                    console.warn('[DataManager] Fallback initialization failed:', error);
+                    console.warn('[DataManager] Fallback initialization attempt', fallbackAttempts, 'failed:', error);
                 }
             }
-        }, 2000); // Wait 2 seconds for normal WebSocket message, then check
+        }, 500); // Check every 500ms
     }
 
     /**

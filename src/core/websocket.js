@@ -22,6 +22,8 @@ class WebSocketHook {
             return;
         }
 
+        console.log('[WebSocket Hook] Installing hook at:', new Date().toISOString());
+
         // Get the original data property getter
         const dataProperty = Object.getOwnPropertyDescriptor(MessageEvent.prototype, "data");
         this.originalGet = dataProperty.get;
@@ -65,6 +67,7 @@ class WebSocketHook {
         Object.defineProperty(MessageEvent.prototype, "data", dataProperty);
 
         this.isHooked = true;
+        console.log('[WebSocket Hook] Hook successfully installed');
     }
 
     /**
@@ -117,7 +120,7 @@ class WebSocketHook {
             // Save full character data (on login/refresh)
             if (messageType === 'init_character_data') {
                 GM_setValue('toolasha_init_character_data', message);
-                console.log('[Toolasha] Character data saved for Combat Sim export');
+                console.log('[WebSocket Hook] init_character_data received and saved at:', new Date().toISOString());
             }
 
             // Save client data (for ability special detection)
