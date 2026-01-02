@@ -391,7 +391,7 @@ class TooltipPrices {
             html += '<div style="font-size: 0.9em; margin-left: 8px;">';
 
             const profitPerDay = profitData.profitPerHour * 24;
-            const profitColor = profitData.profitPerHour >= 0 ? '#059669' : '#f87171'; // darker emerald if positive, red if negative
+            const profitColor = profitData.profitPerHour >= 0 ? '#047857' : '#f87171'; // darker emerald if positive, red if negative
 
             html += `<div style="color: ${profitColor}; font-weight: bold;">Net: ${numberFormatter(profitData.profitPerHour)}/hr (${formatKMB(profitPerDay)}/day)</div>`;
         } else {
@@ -446,7 +446,7 @@ class TooltipPrices {
         html += '<div style="font-size: 0.9em; margin-left: 8px;">';
 
         // Expected value (simple display)
-        html += `<div style="color: lime; font-weight: bold;">Expected Return: ${numberFormatter(evData.expectedValue)}</div>`;
+        html += `<div style="color: #047857; font-weight: bold;">Expected Return: ${numberFormatter(evData.expectedValue)}</div>`;
 
         html += '</div>'; // Close summary section
 

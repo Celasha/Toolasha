@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.4.83
+// @version      0.4.831
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
 // @author       Celasha and Claude, thank you to bot7420, DrDucky, Frotty, Truth_Light, AlphB for providing the basis for a lot of this. Thank you to Miku, Orvel, Jigglymoose, Incinarator, Knerd, and others for their time and help. Special thanks to Zaeter for the name. 
 // @license      CC-BY-NC-SA-4.0
@@ -6389,7 +6389,7 @@
                 html += '<div style="font-size: 0.9em; margin-left: 8px;">';
 
                 const profitPerDay = profitData.profitPerHour * 24;
-                const profitColor = profitData.profitPerHour >= 0 ? '#059669' : '#f87171'; // darker emerald if positive, red if negative
+                const profitColor = profitData.profitPerHour >= 0 ? '#047857' : '#f87171'; // darker emerald if positive, red if negative
 
                 html += `<div style="color: ${profitColor}; font-weight: bold;">Net: ${numberFormatter(profitData.profitPerHour)}/hr (${formatKMB(profitPerDay)}/day)</div>`;
             } else {
@@ -6444,7 +6444,7 @@
             html += '<div style="font-size: 0.9em; margin-left: 8px;">';
 
             // Expected value (simple display)
-            html += `<div style="color: lime; font-weight: bold;">Expected Return: ${numberFormatter(evData.expectedValue)}</div>`;
+            html += `<div style="color: #047857; font-weight: bold;">Expected Return: ${numberFormatter(evData.expectedValue)}</div>`;
 
             html += '</div>'; // Close summary section
 
@@ -10905,6 +10905,10 @@
                     return;
                 }
 
+                // Check if this action has normal XP gain (skip speed section for combat)
+                const experienceGain = actionDetails.experienceGain;
+                const hasNormalXP = experienceGain && experienceGain.skillHrid && experienceGain.value > 0;
+
                 // Calculate action duration and efficiency
                 const { actionTime, totalEfficiency, efficiencyBreakdown } = this.calculateActionMetrics(actionDetails, gameData);
                 const efficiencyMultiplier = 1 + (totalEfficiency / 100);
@@ -10927,8 +10931,11 @@
                     itemDetailMap
                 );
 
-                // ===== SECTION 1: Action Speed & Time =====
-                const speedContent = document.createElement('div');
+                // ===== SECTION 1: Action Speed & Time (Skip for combat) =====
+                let speedSection = null;
+
+                if (hasNormalXP) {
+                    const speedContent = document.createElement('div');
                 speedContent.style.cssText = `
                 color: var(--text-color-secondary, #888);
                 font-size: 0.9em;
@@ -11134,6 +11141,7 @@
 
                 // Initial update with enhanced version
                 enhancedUpdateTotalTime();
+                } // End hasNormalXP check - speedSection only created for non-combat
 
                 // ===== SECTION 2: Level Progress =====
                 const levelProgressSection = this.createLevelProgressSection(
@@ -11190,11 +11198,14 @@
 
                 queueContent.appendChild(document.createTextNode(' times'));
 
-                // Insert sections: inputContainer -> queueContent -> speedSection -> levelProgressSection
+                // Insert sections: inputContainer -> queueContent -> speedSection (if exists) -> levelProgressSection
                 inputContainer.insertAdjacentElement('afterend', queueContent);
-                queueContent.insertAdjacentElement('afterend', speedSection);
-                if (levelProgressSection) {
-                    speedSection.insertAdjacentElement('afterend', levelProgressSection);
+
+                if (speedSection) ; else {
+                    // No speedSection for combat - insert levelProgressSection directly after queueContent
+                    if (levelProgressSection) {
+                        queueContent.insertAdjacentElement('afterend', levelProgressSection);
+                    }
                 }
 
             } catch (error) {
@@ -23321,7 +23332,7 @@
         const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
         targetWindow.Toolasha = {
-            version: '0.4.83',
+            version: '0.4.831',
 
             // Feature toggle API (for users to manage settings via console)
             features: {

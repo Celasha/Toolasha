@@ -136,6 +136,10 @@ class QuickInputButtons {
                 return;
             }
 
+            // Check if this action has normal XP gain (skip speed section for combat)
+            const experienceGain = actionDetails.experienceGain;
+            const hasNormalXP = experienceGain && experienceGain.skillHrid && experienceGain.value > 0;
+
             // Calculate action duration and efficiency
             const { actionTime, totalEfficiency, efficiencyBreakdown } = this.calculateActionMetrics(actionDetails, gameData);
             const efficiencyMultiplier = 1 + (totalEfficiency / 100);
@@ -158,8 +162,11 @@ class QuickInputButtons {
                 itemDetailMap
             );
 
-            // ===== SECTION 1: Action Speed & Time =====
-            const speedContent = document.createElement('div');
+            // ===== SECTION 1: Action Speed & Time (Skip for combat) =====
+            let speedSection = null;
+
+            if (hasNormalXP) {
+                const speedContent = document.createElement('div');
             speedContent.style.cssText = `
                 color: var(--text-color-secondary, #888);
                 font-size: 0.9em;
@@ -365,6 +372,7 @@ class QuickInputButtons {
 
             // Initial update with enhanced version
             enhancedUpdateTotalTime();
+            } // End hasNormalXP check - speedSection only created for non-combat
 
             // ===== SECTION 2: Level Progress =====
             const levelProgressSection = this.createLevelProgressSection(
@@ -421,11 +429,19 @@ class QuickInputButtons {
 
             queueContent.appendChild(document.createTextNode(' times'));
 
-            // Insert sections: inputContainer -> queueContent -> speedSection -> levelProgressSection
+            // Insert sections: inputContainer -> queueContent -> speedSection (if exists) -> levelProgressSection
             inputContainer.insertAdjacentElement('afterend', queueContent);
-            queueContent.insertAdjacentElement('afterend', speedSection);
-            if (levelProgressSection) {
-                speedSection.insertAdjacentElement('afterend', levelProgressSection);
+
+            if (speedSection) {
+                queueContent.insertAdjacentElement('afterend', speedSection);
+                if (levelProgressSection) {
+                    speedSection.insertAdjacentElement('afterend', levelProgressSection);
+                }
+            } else {
+                // No speedSection for combat - insert levelProgressSection directly after queueContent
+                if (levelProgressSection) {
+                    queueContent.insertAdjacentElement('afterend', levelProgressSection);
+                }
             }
 
         } catch (error) {
