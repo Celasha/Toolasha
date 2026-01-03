@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.4.840
+// @version      0.4.841
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
 // @author       Celasha and Claude, thank you to bot7420, DrDucky, Frotty, Truth_Light, AlphB for providing the basis for a lot of this. Thank you to Miku, Orvel, Jigglymoose, Incinarator, Knerd, and others for their time and help. Special thanks to Zaeter for the name. 
 // @license      CC-BY-NC-SA-4.0
@@ -9921,6 +9921,15 @@
             // Format can be: "Action Name (#123)", "Action Name (123)", "Action Name: Item (123)", etc.
             // First, strip any stats we previously appended
             const actionNameText = this.getCleanActionName(actionNameElement);
+
+            // Check if no action is running ("Doing nothing...")
+            if (actionNameText.includes('Doing nothing')) {
+                this.displayElement.innerHTML = '';
+                this.clearAppendedStats(actionNameElement);
+                // Reconnect observer
+                this.reconnectActionNameObserver(actionNameElement);
+                return;
+            }
 
             // Extract inventory count from parentheses (e.g., "Coinify: Item (4312)" -> 4312)
             const inventoryCountMatch = actionNameText.match(/\((\d+)\)$/);
@@ -23497,7 +23506,7 @@
         const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
         targetWindow.Toolasha = {
-            version: '0.4.840',
+            version: '0.4.841',
 
             // Feature toggle API (for users to manage settings via console)
             features: {

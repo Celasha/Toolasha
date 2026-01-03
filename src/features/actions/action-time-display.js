@@ -225,6 +225,15 @@ class ActionTimeDisplay {
         // First, strip any stats we previously appended
         const actionNameText = this.getCleanActionName(actionNameElement);
 
+        // Check if no action is running ("Doing nothing...")
+        if (actionNameText.includes('Doing nothing')) {
+            this.displayElement.innerHTML = '';
+            this.clearAppendedStats(actionNameElement);
+            // Reconnect observer
+            this.reconnectActionNameObserver(actionNameElement);
+            return;
+        }
+
         // Extract inventory count from parentheses (e.g., "Coinify: Item (4312)" -> 4312)
         const inventoryCountMatch = actionNameText.match(/\((\d+)\)$/);
         const inventoryCount = inventoryCountMatch ? parseInt(inventoryCountMatch[1]) : null;
