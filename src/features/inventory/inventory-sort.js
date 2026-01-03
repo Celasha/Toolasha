@@ -403,7 +403,26 @@ class InventorySort {
         if (!this.currentInventoryElem) return;
 
         const itemElems = this.currentInventoryElem.querySelectorAll('[class*="Item_itemContainer"]');
-        const showBadges = config.getSetting('invSort_showBadges');
+
+        // Determine if badges should be shown and which value to use
+        let showBadges = false;
+        let badgeValueKey = null;
+
+        if (this.currentMode === 'none') {
+            // When sort mode is 'none', check invSort_badgesOnNone setting
+            const badgesOnNone = config.getSettingValue('invSort_badgesOnNone', 'None');
+            if (badgesOnNone !== 'None') {
+                showBadges = true;
+                badgeValueKey = badgesOnNone.toLowerCase() + 'Value'; // 'askValue' or 'bidValue'
+            }
+        } else {
+            // When sort mode is 'ask' or 'bid', check invSort_showBadges setting
+            const showBadgesSetting = config.getSetting('invSort_showBadges');
+            if (showBadgesSetting) {
+                showBadges = true;
+                badgeValueKey = this.currentMode + 'Value'; // 'askValue' or 'bidValue'
+            }
+        }
 
         for (const itemElem of itemElems) {
             // Remove existing badge
@@ -412,11 +431,9 @@ class InventorySort {
                 existingBadge.remove();
             }
 
-            // Show badges if enabled AND not in 'none' mode
-            if (showBadges && this.currentMode !== 'none') {
-                // Use current sort mode's value
-                const valueKey = this.currentMode + 'Value';
-                const stackValue = parseFloat(itemElem.dataset[valueKey]) || 0;
+            // Show badges if enabled
+            if (showBadges && badgeValueKey) {
+                const stackValue = parseFloat(itemElem.dataset[badgeValueKey]) || 0;
 
                 if (stackValue > 0) {
                     this.renderPriceBadge(itemElem, stackValue);

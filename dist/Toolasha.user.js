@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.4.833
+// @version      0.4.834
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
 // @author       Celasha and Claude, thank you to bot7420, DrDucky, Frotty, Truth_Light, AlphB for providing the basis for a lot of this. Thank you to Miku, Orvel, Jigglymoose, Incinarator, Knerd, and others for their time and help. Special thanks to Zaeter for the name. 
 // @license      CC-BY-NC-SA-4.0
@@ -383,6 +383,12 @@
                     id: "invSort_showBadges",
                     desc: "Inventory: Show stack value badges on items. [Depends on the previous selection]",
                     isTrue: false,
+                },
+                invSort_badgesOnNone: {
+                    id: "invSort_badgesOnNone",
+                    desc: "Inventory: Badge type to show when 'None' sort is selected.",
+                    options: ['None', 'Ask', 'Bid'],
+                    default: 'None'
                 },
                 itemTooltip_prices: {
                     id: "itemTooltip_prices",
@@ -18831,7 +18837,26 @@
             if (!this.currentInventoryElem) return;
 
             const itemElems = this.currentInventoryElem.querySelectorAll('[class*="Item_itemContainer"]');
-            const showBadges = config.getSetting('invSort_showBadges');
+
+            // Determine if badges should be shown and which value to use
+            let showBadges = false;
+            let badgeValueKey = null;
+
+            if (this.currentMode === 'none') {
+                // When sort mode is 'none', check invSort_badgesOnNone setting
+                const badgesOnNone = config.getSettingValue('invSort_badgesOnNone', 'None');
+                if (badgesOnNone !== 'None') {
+                    showBadges = true;
+                    badgeValueKey = badgesOnNone.toLowerCase() + 'Value'; // 'askValue' or 'bidValue'
+                }
+            } else {
+                // When sort mode is 'ask' or 'bid', check invSort_showBadges setting
+                const showBadgesSetting = config.getSetting('invSort_showBadges');
+                if (showBadgesSetting) {
+                    showBadges = true;
+                    badgeValueKey = this.currentMode + 'Value'; // 'askValue' or 'bidValue'
+                }
+            }
 
             for (const itemElem of itemElems) {
                 // Remove existing badge
@@ -18840,11 +18865,9 @@
                     existingBadge.remove();
                 }
 
-                // Show badges if enabled AND not in 'none' mode
-                if (showBadges && this.currentMode !== 'none') {
-                    // Use current sort mode's value
-                    const valueKey = this.currentMode + 'Value';
-                    const stackValue = parseFloat(itemElem.dataset[valueKey]) || 0;
+                // Show badges if enabled
+                if (showBadges && badgeValueKey) {
+                    const stackValue = parseFloat(itemElem.dataset[badgeValueKey]) || 0;
 
                     if (stackValue > 0) {
                         this.renderPriceBadge(itemElem, stackValue);
@@ -22165,9 +22188,17 @@
                 },
                 invSort_showBadges: {
                     id: 'invSort_showBadges',
-                    label: 'Show stack value badges on items',
+                    label: 'Show stack value badges when sorting by Ask/Bid',
                     type: 'checkbox',
                     default: false,
+                    dependencies: ['invSort']
+                },
+                invSort_badgesOnNone: {
+                    id: 'invSort_badgesOnNone',
+                    label: 'Badge type when "None" sort is selected',
+                    type: 'select',
+                    default: 'None',
+                    options: ['None', 'Ask', 'Bid'],
                     dependencies: ['invSort']
                 },
                 profitCalc_pricingMode: {
@@ -22393,7 +22424,7 @@
          * @returns {Promise<void>}
          */
         async saveSettings(settings) {
-            await storage.setJSON(this.storageKey, settings, this.storageArea);
+            await storage.setJSON(this.storageKey, settings, this.storageArea, true);
         }
 
         /**
@@ -23375,7 +23406,7 @@
         const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
         targetWindow.Toolasha = {
-            version: '0.4.833',
+            version: '0.4.834',
 
             // Feature toggle API (for users to manage settings via console)
             features: {

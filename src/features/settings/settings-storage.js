@@ -78,7 +78,7 @@ class SettingsStorage {
      * @returns {Promise<void>}
      */
     async saveSettings(settings) {
-        await storage.setJSON(this.storageKey, settings, this.storageArea);
+        await storage.setJSON(this.storageKey, settings, this.storageArea, true);
     }
 
     /**

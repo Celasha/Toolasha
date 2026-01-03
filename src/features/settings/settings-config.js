@@ -255,9 +255,17 @@ export const settingsGroups = {
             },
             invSort_showBadges: {
                 id: 'invSort_showBadges',
-                label: 'Show stack value badges on items',
+                label: 'Show stack value badges when sorting by Ask/Bid',
                 type: 'checkbox',
                 default: false,
+                dependencies: ['invSort']
+            },
+            invSort_badgesOnNone: {
+                id: 'invSort_badgesOnNone',
+                label: 'Badge type when "None" sort is selected',
+                type: 'select',
+                default: 'None',
+                options: ['None', 'Ask', 'Bid'],
                 dependencies: ['invSort']
             },
             profitCalc_pricingMode: {

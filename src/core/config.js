@@ -74,6 +74,12 @@ class Config {
                 desc: "Inventory: Show stack value badges on items. [Depends on the previous selection]",
                 isTrue: false,
             },
+            invSort_badgesOnNone: {
+                id: "invSort_badgesOnNone",
+                desc: "Inventory: Badge type to show when 'None' sort is selected.",
+                options: ['None', 'Ask', 'Bid'],
+                default: 'None'
+            },
             itemTooltip_prices: {
                 id: "itemTooltip_prices",
                 desc: "Item tooltip: 24 hours average market price.",
