@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.4.836
+// @version      0.4.837
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
 // @author       Celasha and Claude, thank you to bot7420, DrDucky, Frotty, Truth_Light, AlphB for providing the basis for a lot of this. Thank you to Miku, Orvel, Jigglymoose, Incinarator, Knerd, and others for their time and help. Special thanks to Zaeter for the name. 
 // @license      CC-BY-NC-SA-4.0
@@ -17298,29 +17298,41 @@
 
         // For enhanced items (1+), try market price first, then calculate enhancement cost
         if (enhancementLevel >= 1) {
+            console.log('[Networth] Calculating value for', itemHrid, '+' + enhancementLevel);
+
             // Try market price first
             const marketPrice = getMarketPrice(itemHrid, enhancementLevel, useAsk);
 
             if (marketPrice > 0) {
+                console.log('[Networth] Found market price:', marketPrice);
                 itemValue = marketPrice;
             } else {
+                console.log('[Networth] No market price, checking cache...');
                 // No market data, calculate enhancement cost
                 // Check cache first
                 const cachedCost = networthCache.get(itemHrid, enhancementLevel);
                 if (cachedCost !== null) {
+                    console.log('[Networth] Using cached cost:', cachedCost);
                     itemValue = cachedCost;
                 } else {
+                    console.log('[Networth] Not in cache, calculating fresh...');
                     // Not in cache, calculate
                     const enhancementParams = getEnhancingParams();
                     const enhancementPath = calculateEnhancementPath(itemHrid, enhancementLevel, enhancementParams);
 
+                    console.log('[Networth] Enhancement path for', itemHrid, '+' + enhancementLevel + ':', enhancementPath);
+
                     if (enhancementPath && enhancementPath.optimalStrategy) {
                         itemValue = enhancementPath.optimalStrategy.totalCost;
+                        console.log('[Networth] Using totalCost:', itemValue);
                         // Cache the result
                         networthCache.set(itemHrid, enhancementLevel, itemValue);
                     } else {
                         // Enhancement calculation failed, try base item price
+                        console.warn('[Networth] Enhancement calculation failed for:', itemHrid, '+' + enhancementLevel,
+                            'enhancementPath:', enhancementPath, 'params:', enhancementParams);
                         itemValue = getMarketPrice(itemHrid, 0, useAsk);
+                        console.log('[Networth] Using fallback base price:', itemValue);
                     }
                 }
             }
@@ -17348,21 +17360,25 @@
 
         const prices = marketAPI.getPrice(itemHrid, enhancementLevel);
 
-        // If no market data, try fallbacks
+        // If no market data, try fallbacks (only for base items)
         if (!prices) {
-            // Check if it's an openable container (crates, caches, chests)
-            const itemDetails = dataManager.getItemDetails(itemHrid);
-            if (itemDetails?.isOpenable && expectedValueCalculator.isInitialized) {
-                const evData = expectedValueCalculator.calculateExpectedValue(itemHrid);
-                if (evData && evData.expectedValue > 0) {
-                    return evData.expectedValue;
+            // Only use fallbacks for base items (enhancementLevel = 0)
+            // Enhanced items should calculate via enhancement path, not crafting cost
+            if (enhancementLevel === 0) {
+                // Check if it's an openable container (crates, caches, chests)
+                const itemDetails = dataManager.getItemDetails(itemHrid);
+                if (itemDetails?.isOpenable && expectedValueCalculator.isInitialized) {
+                    const evData = expectedValueCalculator.calculateExpectedValue(itemHrid);
+                    if (evData && evData.expectedValue > 0) {
+                        return evData.expectedValue;
+                    }
                 }
-            }
 
-            // Try crafting cost as fallback
-            const craftingCost = calculateCraftingCost(itemHrid);
-            if (craftingCost > 0) {
-                return craftingCost;
+                // Try crafting cost as fallback
+                const craftingCost = calculateCraftingCost(itemHrid);
+                if (craftingCost > 0) {
+                    return craftingCost;
+                }
             }
             return 0;
         }
@@ -23417,7 +23433,7 @@
         const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
         targetWindow.Toolasha = {
-            version: '0.4.836',
+            version: '0.4.837',
 
             // Feature toggle API (for users to manage settings via console)
             features: {
