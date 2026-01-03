@@ -228,6 +228,7 @@ function calculateDungeonTokenValue(tokenHrid) {
 
 /**
  * Calculate crafting cost for an item (simple version without efficiency bonuses)
+ * Applies Artisan Tea reduction (0.9x) to input materials
  * @param {string} itemHrid - Item HRID
  * @returns {number} Total material cost or 0 if not craftable
  */
@@ -241,25 +242,31 @@ function calculateCraftingCost(itemHrid) {
             for (const output of action.outputItems) {
                 if (output.itemHrid === itemHrid) {
                     // Found the crafting action, calculate material costs
-                    let totalCost = 0;
-
-                    // Check for upgrade item (e.g., Crimson Bulwark → Rainbow Bulwark)
-                    if (action.upgradeItemHrid) {
-                        const upgradePrice = marketAPI.getPrice(action.upgradeItemHrid, 0);
-                        if (upgradePrice) {
-                            totalCost += (upgradePrice.ask || 0);
-                        }
-                    }
+                    let inputCost = 0;
 
                     // Add input items
                     if (action.inputItems && action.inputItems.length > 0) {
                         for (const input of action.inputItems) {
                             const inputPrice = marketAPI.getPrice(input.itemHrid, 0);
                             if (inputPrice) {
-                                totalCost += (inputPrice.ask || 0) * input.count;
+                                inputCost += (inputPrice.ask || 0) * input.count;
                             }
                         }
                     }
+
+                    // Apply Artisan Tea reduction (0.9x) to input materials
+                    inputCost *= 0.9;
+
+                    // Add upgrade item cost (not affected by Artisan Tea)
+                    let upgradeCost = 0;
+                    if (action.upgradeItemHrid) {
+                        const upgradePrice = marketAPI.getPrice(action.upgradeItemHrid, 0);
+                        if (upgradePrice) {
+                            upgradeCost = (upgradePrice.ask || 0);
+                        }
+                    }
+
+                    const totalCost = inputCost + upgradeCost;
 
                     // Divide by output count to get per-item cost
                     return totalCost / (output.count || 1);
