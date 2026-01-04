@@ -651,7 +651,7 @@ function applyPhilosopherMirrorOptimization(strategies, itemHrid, targetLevel, c
             // Calculate consumed item quantities using Fibonacci (Enhancelator approach)
             const n = targetLevel - mirrorStartLevel;
             const numLowerTier = fib(n);           // Quantity of (mirrorStartLevel - 2) items
-            const numUpperTier = fib(n + 1);       // Quantity of (mirrorStartLevel - 1) items
+            const numUpperTier = fib(n + 1) - 1;   // Quantity of (mirrorStartLevel - 1) items (minus 1 for main item)
             const numMirrors = mirrorFib(n);       // Quantity of Philosopher's Mirrors
 
             const lowerTierLevel = mirrorStartLevel - 2;

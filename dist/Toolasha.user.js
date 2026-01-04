@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.4.866
+// @version      0.4.867
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
 // @author       Celasha and Claude, thank you to bot7420, DrDucky, Frotty, Truth_Light, AlphB for providing the basis for a lot of this. Thank you to Miku, Orvel, Jigglymoose, Incinarator, Knerd, and others for their time and help. Special thanks to Zaeter for the name. 
 // @license      CC-BY-NC-SA-4.0
@@ -6449,7 +6449,7 @@
                 // Calculate consumed item quantities using Fibonacci (Enhancelator approach)
                 const n = targetLevel - mirrorStartLevel;
                 const numLowerTier = fib(n);           // Quantity of (mirrorStartLevel - 2) items
-                const numUpperTier = fib(n + 1);       // Quantity of (mirrorStartLevel - 1) items
+                const numUpperTier = fib(n + 1) - 1;   // Quantity of (mirrorStartLevel - 1) items (minus 1 for main item)
                 const numMirrors = mirrorFib(n);       // Quantity of Philosopher's Mirrors
 
                 const lowerTierLevel = mirrorStartLevel - 2;
