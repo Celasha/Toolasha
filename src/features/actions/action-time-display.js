@@ -400,8 +400,8 @@ class ActionTimeDisplay {
             const activeDrinks = dataManager.getActionDrinkSlots(actionDetails.type);
             const artisanBonus = parseArtisanBonus(activeDrinks, itemDetailMap, drinkConcentration);
 
-            // Calculate max actions based on materials (pass the action object for primaryItemHash)
-            materialLimit = this.calculateMaterialLimit(actionDetails, inventory, artisanBonus, action);
+            // Calculate max actions based on materials (pass efficiency to account for free repeat actions)
+            materialLimit = this.calculateMaterialLimit(actionDetails, inventory, artisanBonus, totalEfficiency, action);
         }
 
         // Get queue size for display (total queued, doesn't change)
@@ -614,13 +614,21 @@ class ActionTimeDisplay {
      * @param {Object} actionDetails - Action detail object
      * @param {Array} inventory - Character inventory items
      * @param {number} artisanBonus - Artisan material reduction (0-1 decimal)
+     * @param {number} totalEfficiency - Total efficiency percentage (e.g., 150 for 150%)
      * @param {Object} actionObj - Character action object (for primaryItemHash)
      * @returns {number|null} Max actions possible, or null if unlimited/no materials required
      */
-    calculateMaterialLimit(actionDetails, inventory, artisanBonus, actionObj = null) {
+    calculateMaterialLimit(actionDetails, inventory, artisanBonus, totalEfficiency, actionObj = null) {
         if (!actionDetails || !inventory) {
             return null;
         }
+
+        // Calculate average actions per material-consuming attempt based on efficiency
+        // Efficiency formula: Guaranteed = 1 + floor(eff/100), Chance = eff % 100
+        // Average actions per attempt = 1 + floor(eff/100) + (eff%100)/100
+        const guaranteedActions = 1 + Math.floor(totalEfficiency / 100);
+        const chanceForExtra = totalEfficiency % 100;
+        const avgActionsPerAttempt = guaranteedActions + (chanceForExtra / 100);
 
         // Check for primaryItemHash (Alchemy actions: Coinify, Decompose, Transmute)
         // Format: "characterID::itemLocation::itemHrid::enhancementLevel"
@@ -638,7 +646,16 @@ class ActionTimeDisplay {
                 );
 
                 const availableCount = inventoryItem?.count || 0;
-                return availableCount;
+
+                // Get bulk multiplier from item details (how many items per action)
+                const itemDetails = dataManager.getItemDetails(itemHrid);
+                const bulkMultiplier = itemDetails?.alchemyDetail?.bulkMultiplier || 1;
+
+                // Calculate max attempts (how many times we can perform the action)
+                const maxAttempts = Math.floor(availableCount / bulkMultiplier);
+
+                // Apply efficiency multiplier to get total actions possible
+                return Math.floor(maxAttempts * avgActionsPerAttempt);
             }
         }
 
@@ -666,8 +683,11 @@ class ActionTimeDisplay {
                 // Apply Artisan reduction to required materials
                 const requiredPerAction = inputItem.count * (1 - artisanBonus);
 
-                // Calculate max actions for this material
-                const maxActions = Math.floor(availableCount / requiredPerAction);
+                // Calculate max attempts for this material
+                const maxAttempts = Math.floor(availableCount / requiredPerAction);
+
+                // Apply efficiency multiplier to get total actions possible
+                const maxActions = Math.floor(maxAttempts * avgActionsPerAttempt);
 
                 minLimit = Math.min(minLimit, maxActions);
             }
@@ -681,7 +701,10 @@ class ActionTimeDisplay {
             );
 
             const availableCount = inventoryItem?.count || 0;
-            minLimit = Math.min(minLimit, availableCount);
+
+            // Apply efficiency multiplier to get total actions possible
+            const maxActions = Math.floor(availableCount * avgActionsPerAttempt);
+            minLimit = Math.min(minLimit, maxActions);
         }
 
         return minLimit === Infinity ? null : minLimit;
@@ -843,19 +866,20 @@ class ActionTimeDisplay {
                             const activeDrinks = dataManager.getActionDrinkSlots(actionDetails.type);
                             const artisanBonus = parseArtisanBonus(activeDrinks, itemDetailMap, drinkConcentration);
 
-                            const materialLimit = this.calculateMaterialLimit(actionDetails, inventory, artisanBonus, currentAction);
+                            // Calculate action stats to get efficiency
+                            const timeData = this.calculateActionTime(actionDetails);
+                            if (timeData) {
+                                const { actionTime, totalEfficiency } = timeData;
+                                const materialLimit = this.calculateMaterialLimit(actionDetails, inventory, artisanBonus, totalEfficiency, currentAction);
 
-                            if (materialLimit !== null) {
-                                // Material-limited infinite action - calculate time
-                                const count = materialLimit;
-                                const timeData = this.calculateActionTime(actionDetails);
-                                if (timeData) {
-                                    const { actionTime } = timeData;
+                                if (materialLimit !== null) {
+                                    // Material-limited infinite action - calculate time
+                                    const count = materialLimit;
                                     const totalTime = count * actionTime;
                                     accumulatedTime += totalTime;
                                 }
                             } else {
-                                // Truly infinite (no material limit)
+                                // Could not calculate action time
                                 hasInfinite = true;
                             }
                         } else {
@@ -909,6 +933,12 @@ class ActionTimeDisplay {
                 // Check if infinite BEFORE calculating count
                 const isInfinite = !actionObj.hasMaxCount || actionObj.actionHrid.includes('/combat/');
 
+                // Calculate action time first to get efficiency
+                const timeData = this.calculateActionTime(actionDetails);
+                if (!timeData) continue;
+
+                const { actionTime, totalEfficiency } = timeData;
+
                 // Calculate material limit for infinite actions
                 let materialLimit = null;
                 if (isInfinite) {
@@ -919,7 +949,7 @@ class ActionTimeDisplay {
                     const activeDrinks = dataManager.getActionDrinkSlots(actionDetails.type);
                     const artisanBonus = parseArtisanBonus(activeDrinks, itemDetailMap, drinkConcentration);
 
-                    materialLimit = this.calculateMaterialLimit(actionDetails, inventory, artisanBonus, actionObj);
+                    materialLimit = this.calculateMaterialLimit(actionDetails, inventory, artisanBonus, totalEfficiency, actionObj);
                 }
 
                 // Determine if truly infinite (no material limit)
@@ -936,12 +966,6 @@ class ActionTimeDisplay {
                 } else if (materialLimit !== null) {
                     count = materialLimit;
                 }
-
-                // Calculate action time
-                const timeData = this.calculateActionTime(actionDetails);
-                if (!timeData) continue;
-
-                const { actionTime } = timeData;
 
                 // Calculate total time for this action
                 // Efficiency doesn't affect time - queue count is ACTIONS, not outputs
