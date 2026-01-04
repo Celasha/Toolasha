@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.4.860
+// @version      0.4.861
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
 // @author       Celasha and Claude, thank you to bot7420, DrDucky, Frotty, Truth_Light, AlphB for providing the basis for a lot of this. Thank you to Miku, Orvel, Jigglymoose, Incinarator, Knerd, and others for their time and help. Special thanks to Zaeter for the name. 
 // @license      CC-BY-NC-SA-4.0
@@ -444,6 +444,14 @@
                     label: 'Show enhancement simulator calculations',
                     type: 'checkbox',
                     default: true
+                },
+                enhanceSim_showConsumedItemsDetail: {
+                    id: 'enhanceSim_showConsumedItemsDetail',
+                    label: 'Enhancement tooltips: Show detailed breakdown for consumed items',
+                    type: 'checkbox',
+                    default: false,
+                    help: 'When enabled, shows base/materials/protection breakdown for each consumed item in Philosopher\'s Mirror calculations',
+                    dependencies: ['enhanceSim']
                 }
             }
         },
@@ -6249,6 +6257,95 @@
     }
 
     /**
+     * Build breakdown array for each enhancement level
+     * Similar to buildLevelCostsArray but tracks component costs separately
+     * @private
+     */
+    function buildLevelBreakdownsArray(strategy, itemHrid, targetLevel, config) {
+        const breakdowns = new Array(targetLevel + 1);
+        const gameData = dataManager.getInitClientData();
+        const itemDetails = gameData.itemDetailMap[itemHrid];
+        const itemLevel = itemDetails.itemLevel || 1;
+
+        // Level 0: just base item
+        const baseItemCost = getRealisticBaseItemPrice(itemHrid);
+        breakdowns[0] = {
+            baseCost: baseItemCost,
+            materialCost: 0,
+            protectionCost: 0,
+            consumedItemsCost: 0,
+            philosopherMirrorCost: 0,
+            totalCost: baseItemCost
+        };
+
+        // Calculate per-action material cost (same for all levels)
+        let perActionMaterialCost = 0;
+        if (itemDetails.enhancementCosts) {
+            for (const material of itemDetails.enhancementCosts) {
+                const materialDetail = gameData.itemDetailMap[material.itemHrid];
+                let price;
+
+                // Special case: Trainee charms have fixed 250k price
+                if (material.itemHrid.startsWith('/items/trainee_')) {
+                    price = 250000;
+                } else if (material.itemHrid === '/items/coin') {
+                    price = 1;
+                } else {
+                    const marketPrice = marketAPI.getPrice(material.itemHrid, 0);
+                    if (marketPrice) {
+                        let ask = marketPrice.ask;
+                        let bid = marketPrice.bid;
+                        if (ask > 0 && bid < 0) bid = ask;
+                        if (bid > 0 && ask < 0) ask = bid;
+                        price = ask;
+                    } else {
+                        price = materialDetail?.sellPrice || 0;
+                    }
+                }
+                perActionMaterialCost += price * material.count;
+            }
+        }
+
+        // Get protection price once (reused for all levels)
+        const protectionInfo = getCheapestProtectionPrice(itemHrid);
+        const protectionPrice = protectionInfo.price;
+
+        // Levels 1 through targetLevel: run calculator for each
+        for (let level = 1; level <= targetLevel; level++) {
+            const result = calculateEnhancement({
+                enhancingLevel: config.enhancingLevel,
+                houseLevel: config.houseLevel,
+                toolBonus: config.toolBonus || 0,
+                speedBonus: config.speedBonus || 0,
+                itemLevel,
+                targetLevel: level,
+                protectFrom: Math.min(strategy.protectFrom, level),
+                blessedTea: config.teas.blessed,
+                guzzlingBonus: config.guzzlingBonus
+            });
+
+            // Calculate costs for this level
+            const materialCost = perActionMaterialCost * result.attempts;
+
+            let protectionCost = 0;
+            if (strategy.protectFrom > 0 && result.protectionCount > 0) {
+                protectionCost = protectionPrice * result.protectionCount;
+            }
+
+            breakdowns[level] = {
+                baseCost: baseItemCost,
+                materialCost: materialCost,
+                protectionCost: protectionCost,
+                consumedItemsCost: 0,
+                philosopherMirrorCost: 0,
+                totalCost: baseItemCost + materialCost + protectionCost
+            };
+        }
+
+        return breakdowns;
+    }
+
+    /**
      * Apply Philosopher's Mirror optimization to enhancement strategies
      *
      * Algorithm (matches Enhancelator):
@@ -6280,6 +6377,9 @@
             // Build cost array: cost to reach each level using this strategy
             const levelCosts = buildLevelCostsArray(strategy, itemHrid, targetLevel, config);
 
+            // Build breakdown array: component costs for each level
+            const levelBreakdowns = buildLevelBreakdownsArray(strategy, itemHrid, targetLevel, config);
+
             // Find first level where mirror becomes beneficial (starts at +3)
             let mirrorStartLevel = null;
             for (let level = 3; level <= targetLevel; level++) {
@@ -6294,16 +6394,62 @@
 
             // If mirror is beneficial, apply it from threshold level onward
             if (mirrorStartLevel !== null) {
+                // Apply mirror optimization to costs
                 for (let level = mirrorStartLevel; level <= targetLevel; level++) {
                     levelCosts[level] = levelCosts[level - 2] + levelCosts[level - 1] + mirrorPrice;
                 }
 
+                // Apply mirror optimization to breakdowns
+                for (let level = mirrorStartLevel; level <= targetLevel; level++) {
+                    const breakdown_N_minus_2 = levelBreakdowns[level - 2];
+                    const breakdown_N_minus_1 = levelBreakdowns[level - 1];
+
+                    // For mirror-optimized levels:
+                    // - Base cost: same as main item (only 1 base for main)
+                    // - Materials: same as traditional phase (main item only)
+                    // - Protection: same as traditional phase (main item only)
+                    // - Consumed items: total cost of the (N-1) item
+                    // - Philosopher's Mirror: accumulate mirrors used
+
+                    levelBreakdowns[level] = {
+                        baseCost: levelBreakdowns[0].baseCost, // Just main item's base
+                        materialCost: levelBreakdowns[mirrorStartLevel - 1].materialCost, // Traditional phase only
+                        protectionCost: levelBreakdowns[mirrorStartLevel - 1].protectionCost, // Traditional phase only
+                        consumedItemsCost: breakdown_N_minus_1.totalCost, // Cost of (N-1) consumed item
+                        philosopherMirrorCost: breakdown_N_minus_2.philosopherMirrorCost + breakdown_N_minus_1.philosopherMirrorCost + mirrorPrice,
+                        totalCost: levelCosts[level]
+                    };
+                }
+
+                // Build consumed items array for display
+                const consumedItems = [];
+                for (let level = mirrorStartLevel; level <= targetLevel; level++) {
+                    const consumedLevel = level - 1;
+                    consumedItems.push({
+                        level: consumedLevel,
+                        breakdown: levelBreakdowns[consumedLevel]
+                    });
+                }
+
+                // Count Philosopher's Mirrors used
+                const mirrorCount = targetLevel - mirrorStartLevel + 1;
+
+                // Get final breakdown for target level
+                const finalBreakdown = levelBreakdowns[targetLevel];
+
                 return {
                     ...strategy,
-                    totalCost: levelCosts[targetLevel],
+                    baseCost: finalBreakdown.baseCost,
+                    materialCost: finalBreakdown.materialCost,
+                    protectionCost: finalBreakdown.protectionCost,
+                    consumedItemsCost: finalBreakdown.consumedItemsCost,
+                    philosopherMirrorCost: finalBreakdown.philosopherMirrorCost,
+                    totalCost: finalBreakdown.totalCost,
                     mirrorStartLevel: mirrorStartLevel,
                     usedMirror: true,
-                    traditionalCost: strategy.totalCost
+                    traditionalCost: strategy.totalCost,
+                    consumedItems: consumedItems, // Array of {level, breakdown}
+                    mirrorCount: mirrorCount
                 };
             }
 
@@ -6361,31 +6507,91 @@
 
         // Costs
         html += '<div style="margin-top: 4px;">';
-        html += 'Base Item: ' + numberFormatter(optimalStrategy.baseCost);
-        html += '<br>Materials: ' + numberFormatter(optimalStrategy.materialCost);
 
-        if (optimalStrategy.protectionCost > 0) {
-            let protectionDisplay = numberFormatter(optimalStrategy.protectionCost);
+        // Check if using mirror optimization
+        if (optimalStrategy.usedMirror && optimalStrategy.consumedItems && optimalStrategy.consumedItems.length > 0) {
+            // Mirror-optimized breakdown
+            html += 'Base Item: ' + numberFormatter(optimalStrategy.baseCost);
+            html += '<br>Materials: ' + numberFormatter(optimalStrategy.materialCost);
 
-            // Show protection count and item name if available
-            if (optimalStrategy.protectionCount > 0) {
-                protectionDisplay += ' (' + optimalStrategy.protectionCount.toFixed(1) + '×';
+            if (optimalStrategy.protectionCost > 0) {
+                let protectionDisplay = numberFormatter(optimalStrategy.protectionCost);
 
-                if (optimalStrategy.protectionItemHrid) {
-                    const gameData = dataManager.getInitClientData();
-                    const itemDetails = gameData?.itemDetailMap[optimalStrategy.protectionItemHrid];
-                    if (itemDetails?.name) {
-                        protectionDisplay += ' ' + itemDetails.name;
+                // Show protection count and item name if available
+                if (optimalStrategy.protectionCount > 0) {
+                    protectionDisplay += ' (' + optimalStrategy.protectionCount.toFixed(1) + '×';
+
+                    if (optimalStrategy.protectionItemHrid) {
+                        const gameData = dataManager.getInitClientData();
+                        const itemDetails = gameData?.itemDetailMap[optimalStrategy.protectionItemHrid];
+                        if (itemDetails?.name) {
+                            protectionDisplay += ' ' + itemDetails.name;
+                        }
                     }
+
+                    protectionDisplay += ')';
                 }
 
-                protectionDisplay += ')';
+                html += '<br>Protection: ' + protectionDisplay;
             }
 
-            html += '<br>Protection: ' + protectionDisplay;
+            // Consumed items section
+            html += '<br><br>Consumed Items (Philosopher\'s Mirror):';
+            html += '<div style="margin-left: 12px;">';
+
+            // Calculate consumed items subtotal
+            let consumedSubtotal = 0;
+
+            // Show consumed items in descending order
+            const sortedConsumed = [...optimalStrategy.consumedItems].sort((a, b) => b.level - a.level);
+
+            for (const item of sortedConsumed) {
+                html += '<br>+' + item.level + ' item: ' + numberFormatter(item.breakdown.totalCost);
+                consumedSubtotal += item.breakdown.totalCost;
+            }
+
+            html += '<br><span style="font-weight: bold;">Subtotal: ' + numberFormatter(consumedSubtotal) + '</span>';
+            html += '</div>';
+
+            // Philosopher's Mirror cost
+            if (optimalStrategy.philosopherMirrorCost > 0) {
+                const mirrorPrice = getRealisticBaseItemPrice('/items/philosophers_mirror');
+                html += '<br>Philosopher\'s Mirror: ' + numberFormatter(optimalStrategy.philosopherMirrorCost);
+                if (optimalStrategy.mirrorCount > 0 && mirrorPrice > 0) {
+                    html += ' (' + optimalStrategy.mirrorCount + 'x @ ' + numberFormatter(mirrorPrice) + ' each)';
+                }
+            }
+
+            html += '<br><br><span style="font-weight: bold;">Total: ' + numberFormatter(optimalStrategy.totalCost) + '</span>';
+        } else {
+            // Traditional (non-mirror) breakdown
+            html += 'Base Item: ' + numberFormatter(optimalStrategy.baseCost);
+            html += '<br>Materials: ' + numberFormatter(optimalStrategy.materialCost);
+
+            if (optimalStrategy.protectionCost > 0) {
+                let protectionDisplay = numberFormatter(optimalStrategy.protectionCost);
+
+                // Show protection count and item name if available
+                if (optimalStrategy.protectionCount > 0) {
+                    protectionDisplay += ' (' + optimalStrategy.protectionCount.toFixed(1) + '×';
+
+                    if (optimalStrategy.protectionItemHrid) {
+                        const gameData = dataManager.getInitClientData();
+                        const itemDetails = gameData?.itemDetailMap[optimalStrategy.protectionItemHrid];
+                        if (itemDetails?.name) {
+                            protectionDisplay += ' ' + itemDetails.name;
+                        }
+                    }
+
+                    protectionDisplay += ')';
+                }
+
+                html += '<br>Protection: ' + protectionDisplay;
+            }
+
+            html += '<br><span style="font-weight: bold;">Total: ' + numberFormatter(optimalStrategy.totalCost) + '</span>';
         }
 
-        html += '<br><span style="font-weight: bold;">Total: ' + numberFormatter(optimalStrategy.totalCost) + '</span>';
         html += '</div>';
 
         // Time estimate

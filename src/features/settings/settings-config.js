@@ -133,6 +133,14 @@ export const settingsGroups = {
                 label: 'Show enhancement simulator calculations',
                 type: 'checkbox',
                 default: true
+            },
+            enhanceSim_showConsumedItemsDetail: {
+                id: 'enhanceSim_showConsumedItemsDetail',
+                label: 'Enhancement tooltips: Show detailed breakdown for consumed items',
+                type: 'checkbox',
+                default: false,
+                help: 'When enabled, shows base/materials/protection breakdown for each consumed item in Philosopher\'s Mirror calculations',
+                dependencies: ['enhanceSim']
             }
         }
     },
