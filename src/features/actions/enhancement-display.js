@@ -269,7 +269,7 @@ function generateCostsByLevelTable(panel, params, itemLevel, protectFromLevel, e
     }
 
     // Create scrollable table
-    lines.push('<div style="max-height: 300px; overflow-y: auto;">');
+    lines.push('<div id="mwi-enhancement-table-scroll" style="max-height: 300px; overflow-y: auto;">');
     lines.push('<table style="width: 100%; border-collapse: collapse; font-size: 0.85em;">');
 
     // Get all unique material names
@@ -675,9 +675,14 @@ function injectDisplay(panel, html) {
         }
     }
 
-    // Check if we already added display
+    // Save scroll position before removing existing display
+    let savedScrollTop = 0;
     const existing = panel.querySelector('#mwi-enhancement-stats');
     if (existing) {
+        const scrollContainer = existing.querySelector('#mwi-enhancement-table-scroll');
+        if (scrollContainer) {
+            savedScrollTop = scrollContainer.scrollTop;
+        }
         existing.remove();
     }
 
@@ -698,5 +703,16 @@ function injectDisplay(panel, html) {
     } else {
         // Enhancing panel - append to end
         panel.appendChild(container);
+    }
+
+    // Restore scroll position after DOM insertion
+    if (savedScrollTop > 0) {
+        const newScrollContainer = container.querySelector('#mwi-enhancement-table-scroll');
+        if (newScrollContainer) {
+            // Use requestAnimationFrame to ensure DOM is fully updated
+            requestAnimationFrame(() => {
+                newScrollContainer.scrollTop = savedScrollTop;
+            });
+        }
     }
 }
