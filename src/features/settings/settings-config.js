@@ -278,6 +278,19 @@ export const settingsGroups = {
                     { value: 'hybrid', label: 'Hybrid (Ask/Ask - instant buy, patient sell)' },
                     { value: 'optimistic', label: 'Optimistic (Bid/Ask - patient trading)' }
                 ]
+            },
+            networth_pricingMode: {
+                id: 'networth_pricingMode',
+                label: 'Networth pricing mode',
+                type: 'select',
+                default: 'ask',
+                options: [
+                    { value: 'ask', label: 'Ask (Replacement value - what you\'d pay to rebuy)' },
+                    { value: 'bid', label: 'Bid (Liquidation value - what you\'d get selling now)' },
+                    { value: 'average', label: 'Average (Middle ground between ask and bid)' }
+                ],
+                dependencies: ['networth'],
+                help: 'Choose how to value items in networth calculations. Ask = insurance/replacement cost, Bid = quick-sale value, Average = balanced estimate.'
             }
         }
     },

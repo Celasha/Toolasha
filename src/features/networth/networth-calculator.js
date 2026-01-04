@@ -22,10 +22,10 @@ import networthCache from './networth-cache.js';
 /**
  * Calculate the value of a single item
  * @param {Object} item - Item data {itemHrid, enhancementLevel, count}
- * @param {boolean} useAsk - Use ask prices (true) or bid prices (false)
+ * @param {string} pricingMode - Pricing mode: 'ask', 'bid', or 'average'
  * @returns {number} Total value in coins
  */
-export async function calculateItemValue(item, useAsk = true) {
+export async function calculateItemValue(item, pricingMode = 'ask') {
     const { itemHrid, enhancementLevel = 0, count = 1 } = item;
 
     let itemValue = 0;
@@ -33,7 +33,7 @@ export async function calculateItemValue(item, useAsk = true) {
     // For enhanced items (1+), try market price first, then calculate enhancement cost
     if (enhancementLevel >= 1) {
         // Try market price first
-        const marketPrice = getMarketPrice(itemHrid, enhancementLevel, useAsk);
+        const marketPrice = getMarketPrice(itemHrid, enhancementLevel, pricingMode);
 
         if (marketPrice > 0) {
             itemValue = marketPrice;
@@ -56,13 +56,13 @@ export async function calculateItemValue(item, useAsk = true) {
                     // Enhancement calculation failed, try base item price
                     console.warn('[Networth] Enhancement calculation failed for:', itemHrid, '+' + enhancementLevel,
                         'enhancementPath:', enhancementPath, 'params:', enhancementParams);
-                    itemValue = getMarketPrice(itemHrid, 0, useAsk);
+                    itemValue = getMarketPrice(itemHrid, 0, pricingMode);
                 }
             }
         }
     } else {
         // Unenhanced items: use market price or crafting cost
-        itemValue = getMarketPrice(itemHrid, enhancementLevel, useAsk);
+        itemValue = getMarketPrice(itemHrid, enhancementLevel, pricingMode);
     }
 
     return itemValue * count;
@@ -72,10 +72,10 @@ export async function calculateItemValue(item, useAsk = true) {
  * Get market price for an item
  * @param {string} itemHrid - Item HRID
  * @param {number} enhancementLevel - Enhancement level
- * @param {boolean} useAsk - Use ask price (true) or bid price (false)
+ * @param {string} pricingMode - Pricing mode: 'ask', 'bid', or 'average'
  * @returns {number} Price per item
  */
-function getMarketPrice(itemHrid, enhancementLevel, useAsk) {
+function getMarketPrice(itemHrid, enhancementLevel, pricingMode) {
     // Special handling for currencies
     const currencyValue = calculateCurrencyValue(itemHrid);
     if (currencyValue !== null) {
@@ -118,7 +118,14 @@ function getMarketPrice(itemHrid, enhancementLevel, useAsk) {
         ask = bid;
     }
 
-    return useAsk ? ask : bid;
+    // Return price based on pricing mode
+    if (pricingMode === 'ask') {
+        return ask;
+    } else if (pricingMode === 'bid') {
+        return bid;
+    } else { // 'average'
+        return (ask + bid) / 2;
+    }
 }
 
 /**
@@ -414,6 +421,9 @@ export async function calculateNetworth() {
 
     networthCache.checkAndInvalidate(marketData);
 
+    // Get pricing mode from settings
+    const pricingMode = config.getSetting('networth_pricingMode') || 'ask';
+
     const characterItems = gameData.characterItems || [];
     const marketListings = gameData.myMarketListings || [];
     const characterHouseRooms = gameData.characterHouseRoomMap || {};
@@ -421,18 +431,14 @@ export async function calculateNetworth() {
     const abilityCombatTriggersMap = gameData.abilityCombatTriggersMap || {};
 
     // Calculate equipped items value
-    let equippedAsk = 0;
-    let equippedBid = 0;
+    let equippedValue = 0;
     const equippedBreakdown = [];
 
     for (const item of characterItems) {
         if (item.itemLocationHrid === '/item_locations/inventory') continue;
 
-        const askValue = await calculateItemValue(item, true);
-        const bidValue = await calculateItemValue(item, false);
-
-        equippedAsk += askValue;
-        equippedBid += bidValue;
+        const value = await calculateItemValue(item, pricingMode);
+        equippedValue += value;
 
         // Add to breakdown
         const itemDetails = gameData.itemDetailMap[item.itemHrid];
@@ -443,27 +449,23 @@ export async function calculateNetworth() {
 
         equippedBreakdown.push({
             name: displayName,
-            askValue,
-            bidValue
+            value
         });
     }
 
     // Calculate inventory items value
-    let inventoryAsk = 0;
-    let inventoryBid = 0;
+    let inventoryValue = 0;
     const inventoryBreakdown = [];
     const inventoryByCategory = {};
 
     // Separate ability books for Fixed Assets section
-    let abilityBooksAsk = 0;
-    let abilityBooksBid = 0;
+    let abilityBooksValue = 0;
     const abilityBooksBreakdown = [];
 
     for (const item of characterItems) {
         if (item.itemLocationHrid !== '/item_locations/inventory') continue;
 
-        const askValue = await calculateItemValue(item, true);
-        const bidValue = await calculateItemValue(item, false);
+        const value = await calculateItemValue(item, pricingMode);
 
         // Add to breakdown
         const itemDetails = gameData.itemDetailMap[item.itemHrid];
@@ -474,8 +476,7 @@ export async function calculateNetworth() {
 
         const itemData = {
             name: displayName,
-            askValue,
-            bidValue,
+            value,
             count: item.count
         };
 
@@ -485,13 +486,11 @@ export async function calculateNetworth() {
 
         if (isAbilityBook) {
             // Add to ability books (Fixed Assets)
-            abilityBooksAsk += askValue;
-            abilityBooksBid += bidValue;
+            abilityBooksValue += value;
             abilityBooksBreakdown.push(itemData);
         } else {
             // Add to regular inventory (Current Assets)
-            inventoryAsk += askValue;
-            inventoryBid += bidValue;
+            inventoryValue += value;
             inventoryBreakdown.push(itemData);
 
             // Categorize item
@@ -500,28 +499,25 @@ export async function calculateNetworth() {
             if (!inventoryByCategory[categoryName]) {
                 inventoryByCategory[categoryName] = {
                     items: [],
-                    totalAsk: 0,
-                    totalBid: 0
+                    totalValue: 0
                 };
             }
 
             inventoryByCategory[categoryName].items.push(itemData);
-            inventoryByCategory[categoryName].totalAsk += askValue;
-            inventoryByCategory[categoryName].totalBid += bidValue;
+            inventoryByCategory[categoryName].totalValue += value;
         }
     }
 
     // Sort items within each category by value descending
     for (const category of Object.values(inventoryByCategory)) {
-        category.items.sort((a, b) => b.askValue - a.askValue);
+        category.items.sort((a, b) => b.value - a.value);
     }
 
     // Sort ability books by value descending
-    abilityBooksBreakdown.sort((a, b) => b.askValue - a.askValue);
+    abilityBooksBreakdown.sort((a, b) => b.value - a.value);
 
     // Calculate market listings value
-    let listingsAsk = 0;
-    let listingsBid = 0;
+    let listingsValue = 0;
     const listingsBreakdown = [];
 
     for (const listing of marketListings) {
@@ -533,30 +529,20 @@ export async function calculateNetworth() {
             // Apply marketplace fee (2% for normal items, 18% for cowbells)
             const fee = listing.itemHrid === '/items/bag_of_10_cowbells' ? 0.18 : 0.02;
 
-            const askValue = await calculateItemValue(
+            const value = await calculateItemValue(
                 { itemHrid: listing.itemHrid, enhancementLevel, count: quantity },
-                true
-            );
-            const bidValue = await calculateItemValue(
-                { itemHrid: listing.itemHrid, enhancementLevel, count: quantity },
-                false
+                pricingMode
             );
 
-            listingsAsk += askValue * (1 - fee) + listing.unclaimedCoinCount;
-            listingsBid += bidValue * (1 - fee) + listing.unclaimedCoinCount;
+            listingsValue += value * (1 - fee) + listing.unclaimedCoinCount;
         } else {
             // Buying: value is locked coins + unclaimed items
-            const unclaimedAsk = await calculateItemValue(
+            const unclaimedValue = await calculateItemValue(
                 { itemHrid: listing.itemHrid, enhancementLevel, count: listing.unclaimedItemCount },
-                true
-            );
-            const unclaimedBid = await calculateItemValue(
-                { itemHrid: listing.itemHrid, enhancementLevel, count: listing.unclaimedItemCount },
-                false
+                pricingMode
             );
 
-            listingsAsk += quantity * listing.price + unclaimedAsk;
-            listingsBid += quantity * listing.price + unclaimedBid;
+            listingsValue += quantity * listing.price + unclaimedValue;
         }
     }
 
@@ -566,42 +552,34 @@ export async function calculateNetworth() {
     // Calculate abilities value
     const abilitiesData = calculateAllAbilitiesCost(characterAbilities, abilityCombatTriggersMap);
 
-    // Calculate ability books value (weighted average)
-    const abilityBooksCost = (abilityBooksAsk + abilityBooksBid) / 2;
-
-    // Calculate totals (ability books are Fixed Assets)
-    const totalAsk = equippedAsk + inventoryAsk + listingsAsk + housesData.totalCost + abilitiesData.totalCost + abilityBooksAsk;
-    const totalBid = equippedBid + inventoryBid + listingsBid + housesData.totalCost + abilitiesData.totalCost + abilityBooksBid;
-    const totalNetworth = (totalAsk + totalBid) / 2;
+    // Calculate totals
+    const currentAssetsTotal = equippedValue + inventoryValue + listingsValue;
+    const fixedAssetsTotal = housesData.totalCost + abilitiesData.totalCost + abilityBooksValue;
+    const totalNetworth = currentAssetsTotal + fixedAssetsTotal;
 
     // Sort breakdowns by value descending
-    equippedBreakdown.sort((a, b) => b.askValue - a.askValue);
-    inventoryBreakdown.sort((a, b) => b.askValue - a.askValue);
+    equippedBreakdown.sort((a, b) => b.value - a.value);
+    inventoryBreakdown.sort((a, b) => b.value - a.value);
 
     return {
-        totalAsk,
-        totalBid,
         totalNetworth,
+        pricingMode,
         currentAssets: {
-            ask: equippedAsk + inventoryAsk + listingsAsk,
-            bid: equippedBid + inventoryBid + listingsBid,
-            equipped: { ask: equippedAsk, bid: equippedBid, breakdown: equippedBreakdown },
+            total: currentAssetsTotal,
+            equipped: { value: equippedValue, breakdown: equippedBreakdown },
             inventory: {
-                ask: inventoryAsk,
-                bid: inventoryBid,
+                value: inventoryValue,
                 breakdown: inventoryBreakdown,
                 byCategory: inventoryByCategory
             },
-            listings: { ask: listingsAsk, bid: listingsBid, breakdown: listingsBreakdown }
+            listings: { value: listingsValue, breakdown: listingsBreakdown }
         },
         fixedAssets: {
-            total: housesData.totalCost + abilitiesData.totalCost + abilityBooksCost,
+            total: fixedAssetsTotal,
             houses: housesData,
             abilities: abilitiesData,
             abilityBooks: {
-                totalCost: abilityBooksCost,
-                ask: abilityBooksAsk,
-                bid: abilityBooksBid,
+                totalCost: abilityBooksValue,
                 breakdown: abilityBooksBreakdown
             }
         }
@@ -614,15 +592,13 @@ export async function calculateNetworth() {
  */
 function createEmptyNetworthData() {
     return {
-        totalAsk: 0,
-        totalBid: 0,
         totalNetworth: 0,
+        pricingMode: 'ask',
         currentAssets: {
-            ask: 0,
-            bid: 0,
-            equipped: { ask: 0, bid: 0, breakdown: [] },
-            inventory: { ask: 0, bid: 0, breakdown: [], byCategory: {} },
-            listings: { ask: 0, bid: 0, breakdown: [] }
+            total: 0,
+            equipped: { value: 0, breakdown: [] },
+            inventory: { value: 0, breakdown: [], byCategory: {} },
+            listings: { value: 0, breakdown: [] }
         },
         fixedAssets: {
             total: 0,
@@ -633,6 +609,10 @@ function createEmptyNetworthData() {
                 breakdown: [],
                 equippedBreakdown: [],
                 otherBreakdown: []
+            },
+            abilityBooks: {
+                totalCost: 0,
+                breakdown: []
             }
         }
     };

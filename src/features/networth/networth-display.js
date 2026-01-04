@@ -82,10 +82,9 @@ class NetworthHeaderDisplay {
         }
 
         const { currentAssets } = networthData;
-        const askFormatted = networthFormatter(Math.round(currentAssets.ask));
-        const bidFormatted = networthFormatter(Math.round(currentAssets.bid));
+        const valueFormatted = networthFormatter(Math.round(currentAssets.total));
 
-        this.container.textContent = `Current Assets: ${askFormatted} / ${bidFormatted}`;
+        this.container.textContent = `Current Assets: ${valueFormatted}`;
     }
 
     /**
@@ -223,12 +222,12 @@ class NetworthInventoryDisplay {
             <div id="mwi-networth-details" style="display: none; margin-left: 20px;">
                 <!-- Current Assets -->
                 <div style="cursor: pointer; margin-top: 8px;" id="mwi-current-assets-toggle">
-                    + Current Assets: ${networthFormatter(Math.round((networthData.currentAssets.ask + networthData.currentAssets.bid) / 2))}
+                    + Current Assets: ${networthFormatter(Math.round(networthData.currentAssets.total))}
                 </div>
                 <div id="mwi-current-assets-details" style="display: none; margin-left: 20px;">
                     <!-- Equipment Value -->
                     <div style="cursor: pointer; margin-top: 4px;" id="mwi-equipment-toggle">
-                        + Equipment value: ${networthFormatter(Math.round((networthData.currentAssets.equipped.ask + networthData.currentAssets.equipped.bid) / 2))}
+                        + Equipment value: ${networthFormatter(Math.round(networthData.currentAssets.equipped.value))}
                     </div>
                     <div id="mwi-equipment-breakdown" style="display: none; margin-left: 20px; font-size: 0.8rem; color: #bbb;">
                         ${this.renderEquipmentBreakdown(networthData.currentAssets.equipped.breakdown)}
@@ -236,13 +235,13 @@ class NetworthInventoryDisplay {
 
                     <!-- Inventory Value -->
                     <div style="cursor: pointer; margin-top: 4px;" id="mwi-inventory-toggle">
-                        + Inventory value: ${networthFormatter(Math.round((networthData.currentAssets.inventory.ask + networthData.currentAssets.inventory.bid) / 2))}
+                        + Inventory value: ${networthFormatter(Math.round(networthData.currentAssets.inventory.value))}
                     </div>
                     <div id="mwi-inventory-breakdown" style="display: none; margin-left: 20px;">
                         ${this.renderInventoryBreakdown(networthData.currentAssets.inventory.byCategory)}
                     </div>
 
-                    <div style="margin-top: 4px;">Market listings: ${networthFormatter(Math.round((networthData.currentAssets.listings.ask + networthData.currentAssets.listings.bid) / 2))}</div>
+                    <div style="margin-top: 4px;">Market listings: ${networthFormatter(Math.round(networthData.currentAssets.listings.value))}</div>
                 </div>
 
                 <!-- Fixed Assets -->
@@ -348,7 +347,7 @@ class NetworthInventoryDisplay {
 
     /**
      * Render ability books breakdown HTML
-     * @param {Array} breakdown - Array of {name, askValue, bidValue, count}
+     * @param {Array} breakdown - Array of {name, value, count}
      * @returns {string} HTML string
      */
     renderAbilityBooksBreakdown(breakdown) {
@@ -357,14 +356,13 @@ class NetworthInventoryDisplay {
         }
 
         return breakdown.map(book => {
-            const value = (book.askValue + book.bidValue) / 2;
-            return `<div style="display: block; margin-bottom: 2px;">${book.name} (${book.count}): ${networthFormatter(Math.round(value))}</div>`;
+            return `<div style="display: block; margin-bottom: 2px;">${book.name} (${book.count}): ${networthFormatter(Math.round(book.value))}</div>`;
         }).join('');
     }
 
     /**
      * Render equipment breakdown HTML
-     * @param {Array} breakdown - Array of {name, askValue, bidValue}
+     * @param {Array} breakdown - Array of {name, value}
      * @returns {string} HTML string
      */
     renderEquipmentBreakdown(breakdown) {
@@ -373,7 +371,7 @@ class NetworthInventoryDisplay {
         }
 
         return breakdown.map(item =>
-            `<div style="display: block; margin-bottom: 2px;">${item.name}: ${networthFormatter(Math.round(item.askValue))}</div>`
+            `<div style="display: block; margin-bottom: 2px;">${item.name}: ${networthFormatter(Math.round(item.value))}</div>`
         ).join('');
     }
 
@@ -389,7 +387,7 @@ class NetworthInventoryDisplay {
 
         // Sort categories by total value descending
         const sortedCategories = Object.entries(byCategory)
-            .sort((a, b) => b[1].totalAsk - a[1].totalAsk);
+            .sort((a, b) => b[1].totalValue - a[1].totalValue);
 
         return sortedCategories.map(([categoryName, categoryData]) => {
             const categoryId = `mwi-inventory-${categoryName.toLowerCase().replace(/\s+/g, '-')}`;
@@ -397,11 +395,11 @@ class NetworthInventoryDisplay {
 
             return `
                 <div style="cursor: pointer; margin-top: 4px; font-size: 0.85rem;" id="${categoryToggleId}">
-                    + ${categoryName}: ${networthFormatter(Math.round(categoryData.totalAsk))}
+                    + ${categoryName}: ${networthFormatter(Math.round(categoryData.totalValue))}
                 </div>
                 <div id="${categoryId}" style="display: none; margin-left: 20px; font-size: 0.75rem; color: #999;">
                     ${categoryData.items.map(item =>
-                        `<div style="display: block; margin-bottom: 2px;">${item.name} x${item.count}: ${networthFormatter(Math.round(item.askValue))}</div>`
+                        `<div style="display: block; margin-bottom: 2px;">${item.name} x${item.count}: ${networthFormatter(Math.round(item.value))}</div>`
                     ).join('')}
                 </div>
             `;
@@ -424,21 +422,21 @@ class NetworthInventoryDisplay {
         this.setupToggle(
             'mwi-current-assets-toggle',
             'mwi-current-assets-details',
-            `Current Assets: ${networthFormatter(Math.round((networthData.currentAssets.ask + networthData.currentAssets.bid) / 2))}`
+            `Current Assets: ${networthFormatter(Math.round(networthData.currentAssets.total))}`
         );
 
         // Equipment toggle
         this.setupToggle(
             'mwi-equipment-toggle',
             'mwi-equipment-breakdown',
-            `Equipment value: ${networthFormatter(Math.round((networthData.currentAssets.equipped.ask + networthData.currentAssets.equipped.bid) / 2))}`
+            `Equipment value: ${networthFormatter(Math.round(networthData.currentAssets.equipped.value))}`
         );
 
         // Inventory toggle
         this.setupToggle(
             'mwi-inventory-toggle',
             'mwi-inventory-breakdown',
-            `Inventory value: ${networthFormatter(Math.round((networthData.currentAssets.inventory.ask + networthData.currentAssets.inventory.bid) / 2))}`
+            `Inventory value: ${networthFormatter(Math.round(networthData.currentAssets.inventory.value))}`
         );
 
         // Inventory category toggles
@@ -449,7 +447,7 @@ class NetworthInventoryDisplay {
             this.setupToggle(
                 categoryToggleId,
                 categoryId,
-                `${categoryName}: ${networthFormatter(Math.round(categoryData.totalAsk))}`
+                `${categoryName}: ${networthFormatter(Math.round(categoryData.totalValue))}`
             );
         });
 
@@ -478,7 +476,7 @@ class NetworthInventoryDisplay {
         this.setupToggle(
             'mwi-equipped-abilities-toggle',
             'mwi-equipped-abilities-breakdown',
-            `Equipped (5): ${networthFormatter(Math.round(networthData.fixedAssets.abilities.equippedCost))}`
+            `Equipped (${networthData.fixedAssets.abilities.equippedBreakdown.length}): ${networthFormatter(Math.round(networthData.fixedAssets.abilities.equippedCost))}`
         );
 
         // Other abilities toggle (if exists)
