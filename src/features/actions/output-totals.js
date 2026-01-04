@@ -109,54 +109,48 @@ class OutputTotals {
             return;
         }
 
-        // Find main drop container (same as MWIT-E approach)
+        // Find main drop container - just like MWIT-E
         let dropTable = detailPanel.querySelector('[class*="SkillActionDetail_dropTable"]');
         if (!dropTable) return;
 
         const outputItems = detailPanel.querySelector('[class*="SkillActionDetail_outputItems"]');
         if (outputItems) dropTable = outputItems;
 
-        console.log('[Output Totals] Found main dropTable');
-
-        // Process main outputs
+        // Process main outputs - just like MWIT-E
         this.processDropContainer(dropTable, amount);
 
-        // Process Essences - search the ENTIRE panel, not just dropTable
-        // Essences/Rares are in sibling sections, not children of dropTable
-        const allItems = detailPanel.querySelectorAll('[class*="drop"], [class*="Item"]');
-        console.log('[Output Totals] Searching entire panel,', allItems.length, 'items total');
-        const processedContainers = new Set();
-
-        allItems.forEach((item, index) => {
-            const text = item.innerText?.toLowerCase() || '';
-            console.log(`[Output Totals] Item ${index}:`, item.innerText?.substring(0, 50));
-
-            // Check for essence
-            if (text.includes('essence')) {
-                console.log('[Output Totals] Found essence item!');
-                const parent = item.closest('[class*="SkillActionDetail"]');
-                const container = parent?.parentElement;
-                if (container && !processedContainers.has(container) && !container.querySelector('.mwi-output-total')) {
-                    console.log('[Output Totals] Processing essence container');
-                    this.processDropContainer(container, amount);
-                    processedContainers.add(container);
-                }
-            }
-            // Check for rare (low drop rate, not essence)
-            else if (item.innerText?.includes('%')) {
-                const percentage = item.innerText.match(/([\d\.]+)%/);
-                if (percentage && parseFloat(percentage[1]) < 5) {
-                    console.log('[Output Totals] Found rare item with', percentage[1], '%');
+        // Process Essences - EXACT MWIT-E approach
+        // Search the SAME dropTable for essences
+        const essencesContainer = detailPanel.querySelector('[class*="SkillActionDetail_dropTable"]');
+        if (essencesContainer) {
+            const essenceItems = essencesContainer.querySelectorAll('[class*="drop"], [class*="Item"]');
+            essenceItems.forEach(item => {
+                if (item.innerText.toLowerCase().includes('essence')) {
                     const parent = item.closest('[class*="SkillActionDetail"]');
-                    const container = parent?.parentElement;
-                    if (container && !processedContainers.has(container) && !container.querySelector('.mwi-output-total')) {
-                        console.log('[Output Totals] Processing rare container');
-                        this.processDropContainer(container, amount);
-                        processedContainers.add(container);
+                    if (parent && !parent.querySelector('.mwi-output-total')) {
+                        this.processDropContainer(parent.parentElement, amount);
                     }
                 }
-            }
-        });
+            });
+        }
+
+        // Process Rares - EXACT MWIT-E approach
+        // Search the SAME dropTable for rares
+        const raresContainer = detailPanel.querySelector('[class*="SkillActionDetail_dropTable"]');
+        if (raresContainer) {
+            const rareItems = raresContainer.querySelectorAll('[class*="drop"], [class*="Item"]');
+            rareItems.forEach(item => {
+                if (item.innerText.includes('%') && !item.innerText.toLowerCase().includes('essence')) {
+                    const percentage = item.innerText.match(/([\d\.]+)%/);
+                    if (percentage && parseFloat(percentage[1]) < 5) {
+                        const parent = item.closest('[class*="SkillActionDetail"]');
+                        if (parent && !parent.querySelector('.mwi-output-total')) {
+                            this.processDropContainer(parent.parentElement, amount);
+                        }
+                    }
+                }
+            });
+        }
     }
 
     /**
@@ -168,21 +162,15 @@ class OutputTotals {
         if (!container) return;
 
         const children = Array.from(container.children);
-        console.log('[Output Totals] Processing container with', children.length, 'children');
 
-        children.forEach((child, index) => {
-            console.log(`[Output Totals] Child ${index}:`, child.className, 'text:', child.innerText?.substring(0, 50));
-
+        children.forEach((child) => {
             // Check if this child has multiple drop elements
             const hasDropElements = child.children.length > 1 &&
                                    child.querySelector('[class*="SkillActionDetail_drop"]');
 
-            console.log(`[Output Totals] Child ${index} hasDropElements:`, hasDropElements);
-
             if (hasDropElements) {
                 // Process multiple drop elements (typical for outputs/essences/rares)
                 const dropElements = child.querySelectorAll('[class*="SkillActionDetail_drop"]');
-                console.log(`[Output Totals] Found ${dropElements.length} drop elements`);
                 dropElements.forEach(dropEl => {
                     const clone = this.processChildElement(dropEl, amount);
                     if (clone) {
@@ -191,13 +179,9 @@ class OutputTotals {
                 });
             } else {
                 // Process single element
-                console.log(`[Output Totals] Processing child ${index} as single element`);
                 const clone = this.processChildElement(child, amount);
                 if (clone) {
-                    console.log(`[Output Totals] Created clone for child ${index}`);
                     child.parentNode.insertBefore(clone, child.nextSibling);
-                } else {
-                    console.log(`[Output Totals] No clone created for child ${index}`);
                 }
             }
         });
@@ -210,18 +194,11 @@ class OutputTotals {
      * @returns {HTMLElement|null} Clone element or null
      */
     processChildElement(child, amount) {
-        console.log('[Output Totals] processChildElement called, child:', child.className);
-        console.log('[Output Totals] child.children[0]:', child.children[0]);
-        console.log('[Output Totals] child.children[0]?.innerText:', child.children[0]?.innerText);
-
         // Look for output element (first child with numbers or ranges)
         const hasRange = child.children[0]?.innerText?.includes('-');
         const hasNumbers = child.children[0]?.innerText?.match(/[\d\.]+/);
-        console.log('[Output Totals] hasRange:', hasRange, 'hasNumbers:', hasNumbers);
 
         const outputElement = (hasRange || hasNumbers) ? child.children[0] : null;
-
-        console.log('[Output Totals] outputElement:', outputElement);
 
         if (!outputElement) return null;
 
