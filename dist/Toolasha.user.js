@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.4.859
+// @version      0.4.860
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
 // @author       Celasha and Claude, thank you to bot7420, DrDucky, Frotty, Truth_Light, AlphB for providing the basis for a lot of this. Thank you to Miku, Orvel, Jigglymoose, Incinarator, Knerd, and others for their time and help. Special thanks to Zaeter for the name. 
 // @license      CC-BY-NC-SA-4.0
@@ -10892,28 +10892,8 @@
                 return;
             }
 
-            // Override game's CSS to prevent text truncation
-            // Use setProperty with 'important' to ensure we override game's styles
-            actionNameContainer.style.setProperty('overflow', 'visible', 'important');
-            actionNameContainer.style.setProperty('text-overflow', 'clip', 'important');
-            actionNameContainer.style.setProperty('white-space', 'nowrap', 'important');
-            actionNameContainer.style.setProperty('max-width', 'none', 'important');
-            actionNameContainer.style.setProperty('width', 'auto', 'important');
-            actionNameContainer.style.setProperty('min-width', 'max-content', 'important');
-
-            // Apply to parent chain to ensure no truncation at any level
-            let parent = actionNameContainer.parentElement;
-            let levels = 0;
-            while (parent && levels < 5) {
-                parent.style.setProperty('overflow', 'visible', 'important');
-                parent.style.setProperty('text-overflow', 'clip', 'important');
-                parent.style.setProperty('white-space', 'nowrap', 'important');
-                parent.style.setProperty('max-width', 'none', 'important');
-                parent.style.setProperty('width', 'auto', 'important');
-                parent.style.setProperty('min-width', 'max-content', 'important');
-                parent = parent.parentElement;
-                levels++;
-            }
+            // NOTE: Width overrides are now applied in updateDisplay() after we know if it's combat
+            // This prevents HP/MP bar width issues when loading directly on combat actions
 
             // Create display element
             this.displayElement = document.createElement('div');
