@@ -52,6 +52,20 @@ export const settingsGroups = {
                 label: 'Queued actions: Show total time and completion time',
                 type: 'checkbox',
                 default: true
+            },
+            actionPanel_outputTotals: {
+                id: 'actionPanel_outputTotals',
+                label: 'Action panel: Show total expected outputs below per-action outputs',
+                type: 'checkbox',
+                default: true,
+                help: 'Displays calculated totals when you enter a quantity in the action input'
+            },
+            actionPanel_maxProduceable: {
+                id: 'actionPanel_maxProduceable',
+                label: 'Action panel: Show max produceable count on crafting actions',
+                type: 'checkbox',
+                default: true,
+                help: 'Displays how many items you can make based on current inventory'
             }
         }
     },

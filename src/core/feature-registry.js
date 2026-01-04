@@ -14,6 +14,8 @@ import autoFillPrice from '../features/market/auto-fill-price.js';
 import { initActionPanelObserver } from '../features/actions/panel-observer.js';
 import actionTimeDisplay from '../features/actions/action-time-display.js';
 import quickInputButtons from '../features/actions/quick-input-buttons.js';
+import outputTotals from '../features/actions/output-totals.js';
+import maxProduceable from '../features/actions/max-produceable.js';
 import abilityBookCalculator from '../features/abilities/ability-book-calculator.js';
 import zoneIndices from '../features/combat/zone-indices.js';
 import combatScore from '../features/profile/combat-score.js';
@@ -127,6 +129,42 @@ const featureRegistry = [
             const buttons = panel.querySelector('.mwi-quick-input-btn');
             const sections = panel.querySelector('.mwi-collapsible-section');
             return !!(buttons || sections);
+        }
+    },
+    {
+        key: 'actionPanel_outputTotals',
+        name: 'Output Totals Display',
+        category: 'Actions',
+        initialize: () => outputTotals.initialize(),
+        async: false,
+        healthCheck: () => {
+            // Check if any action detail panels are open with output totals
+            const actionPanels = document.querySelectorAll('[class*="SkillActionDetail_skillActionDetail"]');
+            if (actionPanels.length === 0) {
+                return null; // No panels open, can't verify
+            }
+
+            // Look for our injected total elements
+            const totalElements = document.querySelectorAll('.mwi-output-total');
+            return totalElements.length > 0 || null; // null if panels open but no input entered yet
+        }
+    },
+    {
+        key: 'actionPanel_maxProduceable',
+        name: 'Max Produceable Display',
+        category: 'Actions',
+        initialize: () => maxProduceable.initialize(),
+        async: false,
+        healthCheck: () => {
+            // Check for skill action panels in skill screens
+            const skillPanels = document.querySelectorAll('[class*="SkillAction_skillAction"]');
+            if (skillPanels.length === 0) {
+                return null; // No skill panels visible, can't verify
+            }
+
+            // Look for our injected max produceable displays
+            const maxProduceElements = document.querySelectorAll('.mwi-max-produceable');
+            return maxProduceElements.length > 0 || null; // null if no crafting actions visible
         }
     },
 

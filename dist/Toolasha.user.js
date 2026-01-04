@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.4.855
+// @version      0.4.856
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
 // @author       Celasha and Claude, thank you to bot7420, DrDucky, Frotty, Truth_Light, AlphB for providing the basis for a lot of this. Thank you to Miku, Orvel, Jigglymoose, Incinarator, Knerd, and others for their time and help. Special thanks to Zaeter for the name. 
 // @license      CC-BY-NC-SA-4.0
@@ -363,6 +363,20 @@
                     label: 'Queued actions: Show total time and completion time',
                     type: 'checkbox',
                     default: true
+                },
+                actionPanel_outputTotals: {
+                    id: 'actionPanel_outputTotals',
+                    label: 'Action panel: Show total expected outputs below per-action outputs',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Displays calculated totals when you enter a quantity in the action input'
+                },
+                actionPanel_maxProduceable: {
+                    id: 'actionPanel_maxProduceable',
+                    label: 'Action panel: Show max produceable count on crafting actions',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Displays how many items you can make based on current inventory'
                 }
             }
         },
@@ -13146,6 +13160,526 @@
     const quickInputButtons = new QuickInputButtons();
 
     /**
+     * Output Totals Display Module
+     *
+     * Shows total expected outputs below per-action outputs when user enters
+     * a quantity in the action input box.
+     *
+     * Example:
+     * - Game shows: "Outputs: 1.3 - 3.9 Flax"
+     * - User enters: 100 actions
+     * - Module shows: "130.0 - 390.0" below the per-action output
+     */
+
+
+    class OutputTotals {
+        constructor() {
+            this.observedInputs = new Map(); // input element → cleanup function
+            this.unregisterObserver = null;
+        }
+
+        /**
+         * Initialize the output totals display
+         */
+        initialize() {
+            if (!config.getSetting('actionPanel_outputTotals')) {
+                return;
+            }
+
+            this.setupObserver();
+        }
+
+        /**
+         * Setup DOM observer to watch for action detail panels
+         */
+        setupObserver() {
+            // Watch for action detail panels appearing
+            // The game shows action details when you click an action
+            this.unregisterObserver = domObserver.onClass(
+                'OutputTotals',
+                'SkillActionDetail_skillActionDetail',
+                (detailPanel) => {
+                    this.attachToActionPanel(detailPanel);
+                }
+            );
+        }
+
+        /**
+         * Attach input listener to an action panel
+         * @param {HTMLElement} detailPanel - The action detail panel element
+         */
+        attachToActionPanel(detailPanel) {
+            // Find the input box where user enters action count
+            const inputBox = detailPanel.querySelector('input[type="number"]');
+
+            if (!inputBox) {
+                return;
+            }
+
+            // Avoid duplicate observers
+            if (this.observedInputs.has(inputBox)) {
+                return;
+            }
+
+            // Add input listener
+            const updateHandler = () => {
+                this.updateOutputTotals(detailPanel, inputBox);
+            };
+
+            inputBox.addEventListener('input', updateHandler);
+            inputBox.addEventListener('change', updateHandler);
+
+            // Store cleanup function
+            this.observedInputs.set(inputBox, () => {
+                inputBox.removeEventListener('input', updateHandler);
+                inputBox.removeEventListener('change', updateHandler);
+            });
+
+            // Initial update if there's already a value
+            if (inputBox.value && inputBox.value > 0) {
+                this.updateOutputTotals(detailPanel, inputBox);
+            }
+        }
+
+        /**
+         * Update output totals based on input value
+         * @param {HTMLElement} detailPanel - The action detail panel
+         * @param {HTMLInputElement} inputBox - The action count input
+         */
+        updateOutputTotals(detailPanel, inputBox) {
+            const amount = parseFloat(inputBox.value);
+
+            // Remove existing totals
+            detailPanel.querySelectorAll('.mwi-output-total').forEach(el => el.remove());
+
+            // No amount entered - nothing to calculate
+            if (isNaN(amount) || amount <= 0) {
+                return;
+            }
+
+            // Find all output containers
+            // The game uses different sections for different drop types
+            const outputsSection = detailPanel.querySelector('div[class*="SkillActionDetail_drops"]');
+            const essencesSection = detailPanel.querySelector('div[class*="SkillActionDetail_essences"]');
+            const raresSection = detailPanel.querySelector('div[class*="SkillActionDetail_rares"]');
+
+            // Process each section with appropriate color
+            if (outputsSection) {
+                this.processOutputSection(outputsSection, amount, config.COLOR_INFO);
+            }
+            if (essencesSection) {
+                this.processOutputSection(essencesSection, amount, '#9D4EDD'); // Purple for essences
+            }
+            if (raresSection) {
+                this.processOutputSection(raresSection, amount, config.COLOR_WARNING);
+            }
+        }
+
+        /**
+         * Process a single output section (outputs, essences, or rares)
+         * @param {HTMLElement} section - The section container
+         * @param {number} amount - Number of actions
+         * @param {string} color - Color for the total display
+         */
+        processOutputSection(section, amount, color) {
+            // Find all drop elements within this section
+            const dropElements = section.querySelectorAll('div[class*="SkillActionDetail_drop"]');
+
+            dropElements.forEach(dropElement => {
+                // Find the output text (e.g., "1.3 - 3.9")
+                const outputText = this.extractOutputText(dropElement);
+
+                if (!outputText) {
+                    return;
+                }
+
+                // Find drop rate if present (e.g., "~3%")
+                const dropRate = this.extractDropRate(dropElement);
+
+                // Calculate totals
+                const totalText = this.calculateTotal(outputText, amount, dropRate);
+
+                if (!totalText) {
+                    return;
+                }
+
+                // Create and insert total display
+                const totalElement = this.createTotalElement(totalText, color);
+
+                // Insert after the output text
+                // The first child typically contains the output count/range
+                const firstChild = dropElement.children[0];
+                if (firstChild) {
+                    firstChild.after(totalElement);
+                } else {
+                    dropElement.appendChild(totalElement);
+                }
+            });
+        }
+
+        /**
+         * Extract output text from drop element
+         * @param {HTMLElement} dropElement - The drop element
+         * @returns {string|null} Output text or null
+         */
+        extractOutputText(dropElement) {
+            // The first child typically contains the output count/range
+            const firstChild = dropElement.children[0];
+
+            if (!firstChild) {
+                return null;
+            }
+
+            const text = firstChild.innerText.trim();
+
+            // Check if it looks like an output (contains numbers or ranges)
+            if (text.match(/[\d\.]+(\s*-\s*[\d\.]+)?/)) {
+                return text;
+            }
+
+            return null;
+        }
+
+        /**
+         * Extract drop rate from drop element
+         * @param {HTMLElement} dropElement - The drop element
+         * @returns {number} Drop rate (0.0 to 1.0)
+         */
+        extractDropRate(dropElement) {
+            // Look for percentage text like "~3%" or "3%"
+            const text = dropElement.innerText;
+            const match = text.match(/~?([\d\.]+)%/);
+
+            if (match) {
+                return parseFloat(match[1]) / 100; // Convert 3% to 0.03
+            }
+
+            return 1.0; // Default to 100% (guaranteed drop)
+        }
+
+        /**
+         * Calculate total output
+         * @param {string} outputText - Output text (e.g., "1.3 - 3.9" or "1")
+         * @param {number} amount - Number of actions
+         * @param {number} dropRate - Drop rate (0.0 to 1.0)
+         * @returns {string|null} Formatted total or null
+         */
+        calculateTotal(outputText, amount, dropRate) {
+            // Parse output text
+            // Could be: "1.3 - 3.9" (range) or "1" (single value)
+
+            if (outputText.includes('-')) {
+                // Range output
+                const parts = outputText.split('-');
+                const minOutput = parseFloat(parts[0].trim());
+                const maxOutput = parseFloat(parts[1].trim());
+
+                if (isNaN(minOutput) || isNaN(maxOutput)) {
+                    return null;
+                }
+
+                const expectedMin = (minOutput * amount * dropRate).toFixed(1);
+                const expectedMax = (maxOutput * amount * dropRate).toFixed(1);
+
+                return `${expectedMin} - ${expectedMax}`;
+            } else {
+                // Single value
+                const value = parseFloat(outputText);
+
+                if (isNaN(value)) {
+                    return null;
+                }
+
+                const expectedValue = (value * amount * dropRate).toFixed(1);
+                return expectedValue;
+            }
+        }
+
+        /**
+         * Create total display element
+         * @param {string} totalText - Total text to display
+         * @param {string} color - Color for the text
+         * @returns {HTMLElement} The total element
+         */
+        createTotalElement(totalText, color) {
+            const element = document.createElement('div');
+            element.className = 'mwi-output-total';
+            element.style.cssText = `
+            color: ${color};
+            font-weight: 600;
+            margin-top: 2px;
+            font-size: 0.95em;
+        `;
+            element.textContent = totalText;
+
+            return element;
+        }
+
+        /**
+         * Disable the output totals display
+         */
+        disable() {
+            // Clean up all input observers
+            for (const cleanup of this.observedInputs.values()) {
+                cleanup();
+            }
+            this.observedInputs.clear();
+
+            // Unregister DOM observer
+            if (this.unregisterObserver) {
+                this.unregisterObserver();
+                this.unregisterObserver = null;
+            }
+
+            // Remove all injected elements
+            document.querySelectorAll('.mwi-output-total').forEach(el => el.remove());
+        }
+    }
+
+    // Create and export singleton instance
+    const outputTotals = new OutputTotals();
+
+    /**
+     * Max Produceable Display Module
+     *
+     * Shows maximum craftable quantity on action panels based on current inventory.
+     *
+     * Example:
+     * - Cheesy Sword requires: 10 Cheese, 5 Iron Bar
+     * - Inventory: 120 Cheese, 65 Iron Bar
+     * - Display: "Can produce: 12" (limited by 120/10 = 12)
+     */
+
+
+    class MaxProduceable {
+        constructor() {
+            this.actionElements = new Map(); // actionPanel → {actionHrid, displayElement}
+            this.updateTimer = null;
+            this.unregisterObserver = null;
+        }
+
+        /**
+         * Initialize the max produceable display
+         */
+        initialize() {
+            if (!config.getSetting('actionPanel_maxProduceable')) {
+                return;
+            }
+
+            this.setupObserver();
+            this.startUpdates();
+
+            // Listen for inventory changes
+            dataManager.on('inventory_updated', () => this.updateAllCounts());
+        }
+
+        /**
+         * Setup DOM observer to watch for action panels
+         */
+        setupObserver() {
+            // Watch for skill action panels (in skill screen, not detail modal)
+            this.unregisterObserver = domObserver.onClass(
+                'MaxProduceable',
+                'SkillAction_skillAction',
+                (actionPanel) => {
+                    this.injectMaxProduceable(actionPanel);
+                }
+            );
+        }
+
+        /**
+         * Inject max produceable display into an action panel
+         * @param {HTMLElement} actionPanel - The action panel element
+         */
+        injectMaxProduceable(actionPanel) {
+            // Extract action HRID from panel
+            const actionHrid = this.getActionHridFromPanel(actionPanel);
+
+            if (!actionHrid) {
+                return;
+            }
+
+            const actionDetails = dataManager.getActionDetails(actionHrid);
+
+            // Only show for production actions with inputs
+            if (!actionDetails || !actionDetails.inputItems || actionDetails.inputItems.length === 0) {
+                return;
+            }
+
+            // Check if already injected
+            if (actionPanel.querySelector('.mwi-max-produceable')) {
+                return;
+            }
+
+            // Create display element
+            const display = document.createElement('div');
+            display.className = 'mwi-max-produceable';
+            display.style.cssText = `
+            font-size: 0.85em;
+            margin-top: 4px;
+            padding: 4px 8px;
+            text-align: center;
+            border-top: 1px solid var(--border-color, ${config.COLOR_BORDER});
+        `;
+
+            // Insert at bottom of action panel
+            actionPanel.appendChild(display);
+
+            // Store reference
+            this.actionElements.set(actionPanel, {
+                actionHrid: actionHrid,
+                displayElement: display
+            });
+
+            // Initial update
+            this.updateCount(actionPanel);
+        }
+
+        /**
+         * Extract action HRID from action panel
+         * @param {HTMLElement} actionPanel - The action panel element
+         * @returns {string|null} Action HRID or null
+         */
+        getActionHridFromPanel(actionPanel) {
+            // Try to find action name from panel
+            const nameElement = actionPanel.querySelector('div[class*="SkillAction_name"]');
+
+            if (!nameElement) {
+                return null;
+            }
+
+            const actionName = nameElement.textContent.trim();
+
+            // Look up action by name in game data
+            const initData = dataManager.getInitClientData();
+            if (!initData) {
+                return null;
+            }
+
+            for (const [hrid, action] of Object.entries(initData.actionDetailMap)) {
+                if (action.name === actionName) {
+                    return hrid;
+                }
+            }
+
+            return null;
+        }
+
+        /**
+         * Calculate max produceable count for an action
+         * @param {string} actionHrid - The action HRID
+         * @returns {number|null} Max produceable count or null
+         */
+        calculateMaxProduceable(actionHrid) {
+            const actionDetails = dataManager.getActionDetails(actionHrid);
+            const inventory = dataManager.getInventory();
+
+            if (!actionDetails || !inventory) {
+                return null;
+            }
+
+            // Calculate max crafts per input
+            const maxCraftsPerInput = actionDetails.inputItems.map(input => {
+                const invItem = inventory.find(item =>
+                    item.itemHrid === input.itemHrid &&
+                    item.itemLocationHrid === '/item_locations/inventory'
+                );
+
+                const invCount = invItem?.count || 0;
+                return Math.floor(invCount / input.count);
+            });
+
+            let minCrafts = Math.min(...maxCraftsPerInput);
+
+            // Check upgrade item (e.g., Enhancement Stones)
+            if (actionDetails.upgradeItemHrid) {
+                const upgradeItem = inventory.find(item =>
+                    item.itemHrid === actionDetails.upgradeItemHrid &&
+                    item.itemLocationHrid === '/item_locations/inventory'
+                );
+
+                const upgradeCount = upgradeItem?.count || 0;
+                minCrafts = Math.min(minCrafts, upgradeCount);
+            }
+
+            return minCrafts;
+        }
+
+        /**
+         * Update display count for a single action panel
+         * @param {HTMLElement} actionPanel - The action panel element
+         */
+        updateCount(actionPanel) {
+            const data = this.actionElements.get(actionPanel);
+
+            if (!data) {
+                return;
+            }
+
+            const maxCrafts = this.calculateMaxProduceable(data.actionHrid);
+
+            if (maxCrafts === null) {
+                data.displayElement.style.display = 'none';
+                return;
+            }
+
+            // Color coding
+            let color;
+            if (maxCrafts === 0) {
+                color = config.COLOR_LOSS; // Red - can't craft
+            } else if (maxCrafts < 5) {
+                color = config.COLOR_WARNING; // Orange/yellow - low materials
+            } else {
+                color = config.COLOR_PROFIT; // Green - plenty of materials
+            }
+
+            data.displayElement.style.display = 'block';
+            data.displayElement.innerHTML = `<span style="color: ${color};">Can produce: ${maxCrafts.toLocaleString()}</span>`;
+        }
+
+        /**
+         * Update all counts
+         */
+        updateAllCounts() {
+            for (const actionPanel of this.actionElements.keys()) {
+                this.updateCount(actionPanel);
+            }
+        }
+
+        /**
+         * Start periodic updates
+         */
+        startUpdates() {
+            // Update every 2 seconds
+            this.updateTimer = setInterval(() => {
+                this.updateAllCounts();
+            }, 2000);
+        }
+
+        /**
+         * Disable the max produceable display
+         */
+        disable() {
+            if (this.unregisterObserver) {
+                this.unregisterObserver();
+                this.unregisterObserver = null;
+            }
+
+            if (this.updateTimer) {
+                clearInterval(this.updateTimer);
+                this.updateTimer = null;
+            }
+
+            // Remove all injected elements
+            document.querySelectorAll('.mwi-max-produceable').forEach(el => el.remove());
+            this.actionElements.clear();
+        }
+    }
+
+    // Create and export singleton instance
+    const maxProduceable = new MaxProduceable();
+
+    /**
      * Ability Book Calculator
      * Shows number of books needed to reach target ability level
      * Appears in Item Dictionary when viewing ability books
@@ -22755,6 +23289,42 @@
                 const buttons = panel.querySelector('.mwi-quick-input-btn');
                 const sections = panel.querySelector('.mwi-collapsible-section');
                 return !!(buttons || sections);
+            }
+        },
+        {
+            key: 'actionPanel_outputTotals',
+            name: 'Output Totals Display',
+            category: 'Actions',
+            initialize: () => outputTotals.initialize(),
+            async: false,
+            healthCheck: () => {
+                // Check if any action detail panels are open with output totals
+                const actionPanels = document.querySelectorAll('[class*="SkillActionDetail_skillActionDetail"]');
+                if (actionPanels.length === 0) {
+                    return null; // No panels open, can't verify
+                }
+
+                // Look for our injected total elements
+                const totalElements = document.querySelectorAll('.mwi-output-total');
+                return totalElements.length > 0 || null; // null if panels open but no input entered yet
+            }
+        },
+        {
+            key: 'actionPanel_maxProduceable',
+            name: 'Max Produceable Display',
+            category: 'Actions',
+            initialize: () => maxProduceable.initialize(),
+            async: false,
+            healthCheck: () => {
+                // Check for skill action panels in skill screens
+                const skillPanels = document.querySelectorAll('[class*="SkillAction_skillAction"]');
+                if (skillPanels.length === 0) {
+                    return null; // No skill panels visible, can't verify
+                }
+
+                // Look for our injected max produceable displays
+                const maxProduceElements = document.querySelectorAll('.mwi-max-produceable');
+                return maxProduceElements.length > 0 || null; // null if no crafting actions visible
             }
         },
 
