@@ -2,12 +2,11 @@
  * WebSocket Hook Module
  * Intercepts WebSocket messages from the MWI game server
  *
- * CRITICAL: This hooks MessageEvent.prototype.data - must not break game!
+ * Uses WebSocket constructor wrapper for better performance than MessageEvent.prototype.data hooking
  */
 
 class WebSocketHook {
     constructor() {
-        this.originalGet = null;
         this.isHooked = false;
         this.messageHandlers = new Map();
     }
@@ -24,47 +23,38 @@ class WebSocketHook {
 
         console.log('[WebSocket Hook] Installing hook at:', new Date().toISOString());
 
-        // Get the original data property getter
-        const dataProperty = Object.getOwnPropertyDescriptor(MessageEvent.prototype, "data");
-        this.originalGet = dataProperty.get;
-
-        // Capture hook instance in closure (so hookedGet can access it)
+        // Capture hook instance for listener closure
         const hookInstance = this;
 
-        // Replace with our hooked version
-        // IMPORTANT: Don't use arrow function or bind() - 'this' must be MessageEvent
-        dataProperty.get = function hookedGet() {
-            // 'this' is the MessageEvent instance
-            const socket = this.currentTarget;
+        // Get original WebSocket from unsafeWindow (game's context)
+        const OriginalWebSocket = unsafeWindow.WebSocket;
 
-            // Only hook WebSocket messages
-            if (!(socket instanceof WebSocket)) {
-                return hookInstance.originalGet.call(this);
+        // Create wrapper class
+        class WrappedWebSocket extends OriginalWebSocket {
+            constructor(...args) {
+                super(...args);
+
+                // Only hook MWI game server WebSocket
+                if (this.url.startsWith("wss://api.milkywayidle.com/ws") ||
+                    this.url.startsWith("wss://api-test.milkywayidle.com/ws")) {
+
+                    console.log('[WebSocket Hook] Subscribing to game WebSocket');
+
+                    // Add message listener - fires exactly once per message
+                    this.addEventListener("message", (event) => {
+                        hookInstance.processMessage(event.data);
+                    });
+                }
             }
+        }
 
-            // Only hook MWI game server WebSocket
-            const isMWIWebSocket =
-                socket.url.indexOf("api.milkywayidle.com/ws") > -1 ||
-                socket.url.indexOf("api-test.milkywayidle.com/ws") > -1;
+        // Preserve static properties (required by game's connection health check)
+        WrappedWebSocket.CONNECTING = OriginalWebSocket.CONNECTING;
+        WrappedWebSocket.OPEN = OriginalWebSocket.OPEN;
+        WrappedWebSocket.CLOSED = OriginalWebSocket.CLOSED;
 
-            if (!isMWIWebSocket) {
-                return hookInstance.originalGet.call(this);
-            }
-
-            // Get the original message
-            const message = hookInstance.originalGet.call(this);
-
-            // Anti-loop: Define data property so we don't hook it again
-            Object.defineProperty(this, "data", { value: message });
-
-            // Process the message (doesn't modify it)
-            hookInstance.processMessage(message);
-
-            // Return original message (game continues normally)
-            return message;
-        };
-
-        Object.defineProperty(MessageEvent.prototype, "data", dataProperty);
+        // Replace window.WebSocket in game's context
+        unsafeWindow.WebSocket = WrappedWebSocket;
 
         this.isHooked = true;
         console.log('[WebSocket Hook] Hook successfully installed');
