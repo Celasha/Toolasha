@@ -22,18 +22,14 @@ class SettingsUI {
      * Initialize the settings UI
      */
     async initialize() {
-        console.log('[Toolasha Settings] Initializing...');
-
         // Inject CSS styles
         this.injectStyles();
 
         // Load current settings
         this.currentSettings = await settingsStorage.loadSettings();
-        console.log('[Toolasha Settings] Settings loaded, starting observer');
 
         // Wait for game's settings panel to load
         this.observeSettingsPanel();
-        console.log('[Toolasha Settings] Observer started');
     }
 
     /**

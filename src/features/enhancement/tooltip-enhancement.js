@@ -90,10 +90,6 @@ export function calculateEnhancementPath(itemHrid, currentEnhancementLevel, conf
     const mirrorPrice = getRealisticBaseItemPrice('/items/philosophers_mirror');
     let mirrorStartLevel = null;
 
-    // DEBUG: Log traditional costs before mirror optimization
-    console.log('[Enhancement Debug] Traditional targetCosts (before mirrors):', [...targetCosts]);
-    console.log('[Enhancement Debug] Mirror price:', mirrorPrice);
-
     if (mirrorPrice > 0) {
         for (let level = 3; level <= currentEnhancementLevel; level++) {
             const traditionalCost = targetCosts[level];
@@ -103,15 +99,10 @@ export function calculateEnhancementPath(itemHrid, currentEnhancementLevel, conf
                 if (mirrorStartLevel === null) {
                     mirrorStartLevel = level;
                 }
-                console.log(`[Enhancement Debug] Level +${level}: Mirror beneficial! Traditional: ${traditionalCost}, Mirror: ${mirrorCost}, Savings: ${traditionalCost - mirrorCost}`);
                 targetCosts[level] = mirrorCost;
             }
         }
     }
-
-    // DEBUG: Log final costs after mirror optimization
-    console.log('[Enhancement Debug] Final targetCosts (after mirrors):', [...targetCosts]);
-    console.log('[Enhancement Debug] Mirror start level:', mirrorStartLevel);
 
     // Step 4: Build final result with breakdown
     const finalCost = targetCosts[currentEnhancementLevel];

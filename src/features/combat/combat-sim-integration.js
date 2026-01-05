@@ -80,8 +80,6 @@ function injectImportButton(exportButton) {
 
     // Insert after export button's parent container
     exportButton.parentElement.parentElement.insertAdjacentElement('afterend', container);
-
-    console.log('[Toolasha Combat Sim] Import button injected');
 }
 
 /**
@@ -90,8 +88,6 @@ function injectImportButton(exportButton) {
  */
 function importDataToSimulator(button) {
     try {
-        console.log('[Toolasha Combat Sim] Starting import');
-
         // Get export data from GM storage
         const exportData = constructExportObject();
 
@@ -109,14 +105,6 @@ function importDataToSimulator(button) {
 
         const { exportObj, playerIDs, importedPlayerPositions, zone, isZoneDungeon, difficultyTier, isParty } = exportData;
 
-        console.log('[Toolasha Combat Sim] Export data:', {
-            playerIDs,
-            zone,
-            isZoneDungeon,
-            difficultyTier,
-            isParty
-        });
-
         // Step 1: Switch to Group Combat tab
         const groupTab = document.querySelector('a#group-combat-tab');
         if (groupTab) {
@@ -132,7 +120,6 @@ function importDataToSimulator(button) {
             if (importInput) {
                 // exportObj already has JSON strings for each slot, just stringify once
                 importInput.value = JSON.stringify(exportObj);
-                console.log('[Toolasha Combat Sim] Data filled into import field');
             } else {
                 console.error('[Toolasha Combat Sim] Import input field not found');
             }
@@ -141,7 +128,6 @@ function importDataToSimulator(button) {
             const importButton = document.querySelector('button#buttonImportSet');
             if (importButton) {
                 importButton.click();
-                console.log('[Toolasha Combat Sim] Import button clicked');
             } else {
                 console.error('[Toolasha Combat Sim] Import button not found');
             }
@@ -187,7 +173,6 @@ function importDataToSimulator(button) {
 
                     difficultyElement.dispatchEvent(new Event('change'));
                     difficultyElement.dispatchEvent(new Event('input'));
-                    console.log('[Toolasha Combat Sim] Difficulty tier set to:', tierValue, 'on element:', difficultyElement.tagName);
                 } else {
                     console.warn('[Toolasha Combat Sim] Difficulty element not found');
                 }
@@ -212,7 +197,6 @@ function importDataToSimulator(button) {
             const getPriceButton = document.querySelector('button#buttonGetPrices');
             if (getPriceButton) {
                 getPriceButton.click();
-                console.log('[Toolasha Combat Sim] Refreshing market prices');
             }
 
             // Update button status
@@ -222,8 +206,6 @@ function importDataToSimulator(button) {
                 button.innerHTML = 'Import from Toolasha<span style="display:none;">Import solo/group</span>';
                 button.style.backgroundColor = config.SCRIPT_COLOR_MAIN;
             }, 3000);
-
-            console.log('[Toolasha Combat Sim] Import complete');
         }, 100);
 
     } catch (error) {
@@ -259,7 +241,6 @@ function selectZone(zoneHrid, isDungeon) {
                     if (selectDungeon.options[i].value === zoneHrid) {
                         selectDungeon.options[i].selected = true;
                         selectDungeon.dispatchEvent(new Event('change'));
-                        console.log('[Toolasha Combat Sim] Dungeon selected:', zoneHrid);
                         break;
                     }
                 }
@@ -279,7 +260,6 @@ function selectZone(zoneHrid, isDungeon) {
                     if (selectZone.options[i].value === zoneHrid) {
                         selectZone.options[i].selected = true;
                         selectZone.dispatchEvent(new Event('change'));
-                        console.log('[Toolasha Combat Sim] Zone selected:', zoneHrid);
                         break;
                     }
                 }

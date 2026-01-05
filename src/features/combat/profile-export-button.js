@@ -25,7 +25,6 @@ function waitForProfilePage() {
 
         // Only inject if we're on the profile page AND button doesn't exist yet
         if (profileTab && !document.getElementById('toolasha-profile-export-button')) {
-            console.log('[Profile Export] Profile page detected');
             injectExportButton(profileTab);
         }
     }, 500);
@@ -76,7 +75,6 @@ function injectExportButton(container) {
 
     // Append to container
     container.appendChild(button);
-    console.log('[Profile Export] Button injected');
 }
 
 /**
@@ -85,8 +83,6 @@ function injectExportButton(container) {
  */
 async function handleExport(button) {
     try {
-        console.log('[Profile Export] Starting export');
-
         // Get export data
         const exportData = constructExportObject();
 
@@ -102,9 +98,6 @@ async function handleExport(button) {
         // Copy to clipboard
         const exportString = JSON.stringify(exportData.exportObj);
         await navigator.clipboard.writeText(exportString);
-
-        console.log('[Profile Export] Data copied to clipboard');
-        console.log('[Profile Export] Export data:', exportData);
 
         // Success feedback
         button.textContent = '✓ Copied';

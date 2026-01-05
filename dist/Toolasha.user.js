@@ -5912,10 +5912,6 @@
         const mirrorPrice = getRealisticBaseItemPrice('/items/philosophers_mirror');
         let mirrorStartLevel = null;
 
-        // DEBUG: Log traditional costs before mirror optimization
-        console.log('[Enhancement Debug] Traditional targetCosts (before mirrors):', [...targetCosts]);
-        console.log('[Enhancement Debug] Mirror price:', mirrorPrice);
-
         if (mirrorPrice > 0) {
             for (let level = 3; level <= currentEnhancementLevel; level++) {
                 const traditionalCost = targetCosts[level];
@@ -5925,15 +5921,10 @@
                     if (mirrorStartLevel === null) {
                         mirrorStartLevel = level;
                     }
-                    console.log(`[Enhancement Debug] Level +${level}: Mirror beneficial! Traditional: ${traditionalCost}, Mirror: ${mirrorCost}, Savings: ${traditionalCost - mirrorCost}`);
                     targetCosts[level] = mirrorCost;
                 }
             }
         }
-
-        // DEBUG: Log final costs after mirror optimization
-        console.log('[Enhancement Debug] Final targetCosts (after mirrors):', [...targetCosts]);
-        console.log('[Enhancement Debug] Mirror start level:', mirrorStartLevel);
 
         // Step 4: Build final result with breakdown
         targetCosts[currentEnhancementLevel];
@@ -15379,10 +15370,7 @@
      * @returns {Object} Equipment object or empty object with just type
      */
     function getBestEquipmentForSkill(inventory, gameData, skillName, slotType) {
-        console.log(`[Milkonomy Export] Searching inventory for ${skillName} ${slotType}`);
-
         if (!inventory || !gameData || !gameData.itemDetailMap) {
-            console.log(`  ✗ Missing data`);
             return { type: mapSlotType(slotType) };
         }
 
@@ -15426,8 +15414,6 @@
             matchingItems.sort((a, b) => b.enhancementLevel - a.enhancementLevel);
             const best = matchingItems[0];
 
-            console.log(`  ✓ Found: ${best.name} (${best.hrid}) +${best.enhancementLevel}`);
-
             const equipment = {
                 type: mapSlotType(slotType),
                 hrid: best.hrid
@@ -15442,7 +15428,6 @@
         }
 
         // No matching equipment found
-        console.log(`  ✗ Not found`);
         return { type: mapSlotType(slotType) };
     }
 
@@ -15536,7 +15521,6 @@
                 const noncombatStats = itemDetail.equipmentDetail.noncombatStats;
                 if (!noncombatStats || Object.keys(noncombatStats).length === 0) {
                     // Item has no skilling stats (combat-only like Cheese Buckler) - skip it
-                    console.log(`[Milkonomy Export] Skipping ${itemDetail.name} (${item.itemHrid}) - combat-only item`);
                     continue;
                 }
 
@@ -15585,8 +15569,6 @@
                 console.error('[Milkonomy Export] No game data available');
                 return null;
             }
-
-            console.log('[Milkonomy Export] Inventory size:', inventory.length);
 
             // Character name and color
             const name = characterData.name || 'Player';
@@ -23808,8 +23790,6 @@
 
         // Insert after export button's parent container
         exportButton.parentElement.parentElement.insertAdjacentElement('afterend', container);
-
-        console.log('[Toolasha Combat Sim] Import button injected');
     }
 
     /**
@@ -23818,8 +23798,6 @@
      */
     function importDataToSimulator(button) {
         try {
-            console.log('[Toolasha Combat Sim] Starting import');
-
             // Get export data from GM storage
             const exportData = constructExportObject();
 
@@ -23837,14 +23815,6 @@
 
             const { exportObj, playerIDs, importedPlayerPositions, zone, isZoneDungeon, difficultyTier, isParty } = exportData;
 
-            console.log('[Toolasha Combat Sim] Export data:', {
-                playerIDs,
-                zone,
-                isZoneDungeon,
-                difficultyTier,
-                isParty
-            });
-
             // Step 1: Switch to Group Combat tab
             const groupTab = document.querySelector('a#group-combat-tab');
             if (groupTab) {
@@ -23860,7 +23830,6 @@
                 if (importInput) {
                     // exportObj already has JSON strings for each slot, just stringify once
                     importInput.value = JSON.stringify(exportObj);
-                    console.log('[Toolasha Combat Sim] Data filled into import field');
                 } else {
                     console.error('[Toolasha Combat Sim] Import input field not found');
                 }
@@ -23869,7 +23838,6 @@
                 const importButton = document.querySelector('button#buttonImportSet');
                 if (importButton) {
                     importButton.click();
-                    console.log('[Toolasha Combat Sim] Import button clicked');
                 } else {
                     console.error('[Toolasha Combat Sim] Import button not found');
                 }
@@ -23915,7 +23883,6 @@
 
                         difficultyElement.dispatchEvent(new Event('change'));
                         difficultyElement.dispatchEvent(new Event('input'));
-                        console.log('[Toolasha Combat Sim] Difficulty tier set to:', tierValue, 'on element:', difficultyElement.tagName);
                     } else {
                         console.warn('[Toolasha Combat Sim] Difficulty element not found');
                     }
@@ -23940,7 +23907,6 @@
                 const getPriceButton = document.querySelector('button#buttonGetPrices');
                 if (getPriceButton) {
                     getPriceButton.click();
-                    console.log('[Toolasha Combat Sim] Refreshing market prices');
                 }
 
                 // Update button status
@@ -23950,8 +23916,6 @@
                     button.innerHTML = 'Import from Toolasha<span style="display:none;">Import solo/group</span>';
                     button.style.backgroundColor = config.SCRIPT_COLOR_MAIN;
                 }, 3000);
-
-                console.log('[Toolasha Combat Sim] Import complete');
             }, 100);
 
         } catch (error) {
@@ -23987,7 +23951,6 @@
                         if (selectDungeon.options[i].value === zoneHrid) {
                             selectDungeon.options[i].selected = true;
                             selectDungeon.dispatchEvent(new Event('change'));
-                            console.log('[Toolasha Combat Sim] Dungeon selected:', zoneHrid);
                             break;
                         }
                     }
@@ -24007,7 +23970,6 @@
                         if (selectZone.options[i].value === zoneHrid) {
                             selectZone.options[i].selected = true;
                             selectZone.dispatchEvent(new Event('change'));
-                            console.log('[Toolasha Combat Sim] Zone selected:', zoneHrid);
                             break;
                         }
                     }
@@ -24037,18 +23999,14 @@
          * Initialize the settings UI
          */
         async initialize() {
-            console.log('[Toolasha Settings] Initializing...');
-
             // Inject CSS styles
             this.injectStyles();
 
             // Load current settings
             this.currentSettings = await settingsStorage.loadSettings();
-            console.log('[Toolasha Settings] Settings loaded, starting observer');
 
             // Wait for game's settings panel to load
             this.observeSettingsPanel();
-            console.log('[Toolasha Settings] Observer started');
         }
 
         /**

@@ -122,10 +122,7 @@ function itemHasSkillStats(itemDetail, skillName) {
  * @returns {Object} Equipment object or empty object with just type
  */
 function getBestEquipmentForSkill(inventory, gameData, skillName, slotType) {
-    console.log(`[Milkonomy Export] Searching inventory for ${skillName} ${slotType}`);
-
     if (!inventory || !gameData || !gameData.itemDetailMap) {
-        console.log(`  ✗ Missing data`);
         return { type: mapSlotType(slotType) };
     }
 
@@ -169,8 +166,6 @@ function getBestEquipmentForSkill(inventory, gameData, skillName, slotType) {
         matchingItems.sort((a, b) => b.enhancementLevel - a.enhancementLevel);
         const best = matchingItems[0];
 
-        console.log(`  ✓ Found: ${best.name} (${best.hrid}) +${best.enhancementLevel}`);
-
         const equipment = {
             type: mapSlotType(slotType),
             hrid: best.hrid
@@ -185,7 +180,6 @@ function getBestEquipmentForSkill(inventory, gameData, skillName, slotType) {
     }
 
     // No matching equipment found
-    console.log(`  ✗ Not found`);
     return { type: mapSlotType(slotType) };
 }
 
@@ -279,7 +273,6 @@ function getEquippedItem(equipmentMap, gameData, slotType) {
             const noncombatStats = itemDetail.equipmentDetail.noncombatStats;
             if (!noncombatStats || Object.keys(noncombatStats).length === 0) {
                 // Item has no skilling stats (combat-only like Cheese Buckler) - skip it
-                console.log(`[Milkonomy Export] Skipping ${itemDetail.name} (${item.itemHrid}) - combat-only item`);
                 continue;
             }
 
@@ -328,8 +321,6 @@ export function constructMilkonomyExport() {
             console.error('[Milkonomy Export] No game data available');
             return null;
         }
-
-        console.log('[Milkonomy Export] Inventory size:', inventory.length);
 
         // Character name and color
         const name = characterData.name || 'Player';
