@@ -49,9 +49,25 @@ class WebSocketHook {
         }
 
         // Preserve static properties (required by game's connection health check)
-        WrappedWebSocket.CONNECTING = OriginalWebSocket.CONNECTING;
-        WrappedWebSocket.OPEN = OriginalWebSocket.OPEN;
-        WrappedWebSocket.CLOSED = OriginalWebSocket.CLOSED;
+        // Use Object.defineProperty because class properties are read-only by default
+        Object.defineProperty(WrappedWebSocket, 'CONNECTING', {
+            value: OriginalWebSocket.CONNECTING,
+            writable: false,
+            enumerable: true,
+            configurable: true
+        });
+        Object.defineProperty(WrappedWebSocket, 'OPEN', {
+            value: OriginalWebSocket.OPEN,
+            writable: false,
+            enumerable: true,
+            configurable: true
+        });
+        Object.defineProperty(WrappedWebSocket, 'CLOSED', {
+            value: OriginalWebSocket.CLOSED,
+            writable: false,
+            enumerable: true,
+            configurable: true
+        });
 
         // Replace window.WebSocket in game's context
         unsafeWindow.WebSocket = WrappedWebSocket;
