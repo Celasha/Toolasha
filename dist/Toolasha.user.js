@@ -20023,8 +20023,8 @@
             }
 
             return breakdown.map(house =>
-                `<div style="display: block; margin-bottom: 2px;">${house.name} ${house.level}: ${networthFormatter(Math.round(house.cost))}</div>`
-            ).join('');
+                `<div style="display: block; margin-bottom: 2px; white-space: nowrap;">${house.name} ${house.level}: ${networthFormatter(Math.round(house.cost))}</div>`
+            ).join('\n');
         }
 
         /**
@@ -20038,8 +20038,8 @@
             }
 
             return breakdown.map(ability =>
-                `<div style="display: block; margin-bottom: 2px;">${ability.name}: ${networthFormatter(Math.round(ability.cost))}</div>`
-            ).join('');
+                `<div style="display: block; margin-bottom: 2px; white-space: nowrap;">${ability.name}: ${networthFormatter(Math.round(ability.cost))}</div>`
+            ).join('\n');
         }
 
         /**
@@ -20053,8 +20053,8 @@
             }
 
             return breakdown.map(book => {
-                return `<div style="display: block; margin-bottom: 2px;">${book.name} (${book.count}): ${networthFormatter(Math.round(book.value))}</div>`;
-            }).join('');
+                return `<div style="display: block; margin-bottom: 2px; white-space: nowrap;">${book.name} (${book.count}): ${networthFormatter(Math.round(book.value))}</div>`;
+            }).join('\n');
         }
 
         /**
@@ -20068,8 +20068,8 @@
             }
 
             return breakdown.map(item =>
-                `<div style="display: block; margin-bottom: 2px;">${item.name}: ${networthFormatter(Math.round(item.value))}</div>`
-            ).join('');
+                `<div style="display: block; margin-bottom: 2px; white-space: nowrap;">${item.name}: ${networthFormatter(Math.round(item.value))}</div>`
+            ).join('\n');
         }
 
         /**
@@ -20096,8 +20096,8 @@
                 </div>
                 <div id="${categoryId}" style="display: none; margin-left: 20px; font-size: 0.75rem; color: #999;">
                     ${categoryData.items.map(item =>
-                        `<div style="display: block; margin-bottom: 2px;">${item.name} x${item.count}: ${networthFormatter(Math.round(item.value))}</div>`
-                    ).join('')}
+                        `<div style="display: block; margin-bottom: 2px; white-space: nowrap;">${item.name} x${item.count}: ${networthFormatter(Math.round(item.value))}</div>`
+                    ).join('\n')}
                 </div>
             `;
             }).join('');
