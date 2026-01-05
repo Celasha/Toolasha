@@ -78,6 +78,11 @@ class DataManager {
             // Try to load from localStorage
             if (typeof localStorageUtil !== 'undefined') {
                 try {
+                    // Note: Using manual decompression for localStorage 'character' data as there is no
+                    // official localStorageUtil API for character data (only for initClientData via getInitClientData()).
+                    // This is a fallback when WebSocket init_character_data message is missed.
+                    // WebSocket message: init_character_data (JSON string, not compressed)
+                    // localStorage item: 'character' (LZ-compressed)
                     const rawData = localStorage.getItem('character');
                     if (rawData) {
                         const characterData = JSON.parse(LZString.decompressFromUTF16(rawData));

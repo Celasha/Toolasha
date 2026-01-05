@@ -167,6 +167,7 @@ class WebSocketHook {
     /**
      * Capture init_client_data from localStorage (fallback method)
      * Called periodically since it may not come through WebSocket
+     * Uses official game API to avoid manual decompression
      */
     captureClientDataFromLocalStorage() {
         try {
@@ -174,52 +175,33 @@ class WebSocketHook {
                 return;
             }
 
-            const initClientData = localStorage.getItem('initClientData');
-            if (!initClientData) {
-                // Try again in 2 seconds
+            // Use official game API instead of manual localStorage access
+            if (typeof localStorageUtil === 'undefined' ||
+                typeof localStorageUtil.getInitClientData !== 'function') {
+                // API not ready yet, retry
                 setTimeout(() => this.captureClientDataFromLocalStorage(), 2000);
                 return;
             }
 
-            let clientDataStr = initClientData;
-            let isCompressed = false;
-
-            // Check if compressed
-            try {
-                JSON.parse(initClientData);
-            } catch (e) {
-                isCompressed = true;
-            }
-
-            // Decompress if needed
-            if (isCompressed) {
-                if (typeof window.LZString === 'undefined' && typeof LZString === 'undefined') {
-                    // LZString not loaded yet, try again later
-                    setTimeout(() => this.captureClientDataFromLocalStorage(), 500);
-                    return;
-                }
-
-                try {
-                    const LZ = window.LZString || LZString;
-                    clientDataStr = LZ.decompressFromUTF16(initClientData);
-                } catch (e) {
-                    setTimeout(() => this.captureClientDataFromLocalStorage(), 2000);
-                    return;
-                }
-            }
-
-            // Parse and save
-            try {
-                const clientDataObj = JSON.parse(clientDataStr);
-                if (clientDataObj?.type === 'init_client_data') {
-                    GM_setValue('toolasha_init_client_data', clientDataStr);
-                    console.log('[Toolasha] Client data captured from localStorage');
-                }
-            } catch (e) {
+            // API returns parsed object and handles decompression automatically
+            const clientDataObj = localStorageUtil.getInitClientData();
+            if (!clientDataObj || Object.keys(clientDataObj).length === 0) {
+                // Data not available yet, retry
                 setTimeout(() => this.captureClientDataFromLocalStorage(), 2000);
+                return;
+            }
+
+            // Verify it's init_client_data
+            if (clientDataObj?.type === 'init_client_data') {
+                // Save as JSON string for Combat Sim export
+                const clientDataStr = JSON.stringify(clientDataObj);
+                GM_setValue('toolasha_init_client_data', clientDataStr);
+                console.log('[Toolasha] Client data captured from localStorage via official API');
             }
         } catch (error) {
             console.error('[WebSocket] Failed to capture client data from localStorage:', error);
+            // Retry on error
+            setTimeout(() => this.captureClientDataFromLocalStorage(), 2000);
         }
     }
 
