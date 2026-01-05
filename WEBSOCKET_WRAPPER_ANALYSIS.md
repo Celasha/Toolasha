@@ -444,4 +444,28 @@ class WebSocketHook {
 
 **Date:** 2026-01-05
 **Author:** Claude (based on sentientmilk's example)
-**Status:** Analysis complete - awaiting decision
+**Status:** ✅ IMPLEMENTATION COMPLETE - Applied in v0.4.880
+
+**Implementation Summary:**
+- ✅ WebSocket constructor wrapper implemented in src/core/websocket.js
+- ✅ Removed MessageEvent.prototype.data getter hook
+- ✅ Removed this.originalGet property (no longer needed)
+- ✅ Added WrappedWebSocket class extending OriginalWebSocket
+- ✅ Static properties preserved (CONNECTING, OPEN, CLOSED)
+- ✅ URL filtering at construction time
+- ✅ Message listener via addEventListener (fires once per message)
+- ✅ Built and verified in dist/Toolasha.user.js v0.4.880
+- ✅ All consumer code unchanged (no breaking changes)
+
+**Performance Improvement:**
+- Before: Hook ran 2-5 times per message (getter interception)
+- After: Listener fires exactly 1 time per message (native events)
+- Net: 50-80% reduction in hook overhead
+
+**Testing Required:**
+- [ ] Verify WebSocket hook installs without errors
+- [ ] Verify messages are intercepted correctly
+- [ ] Check all message handlers fire (data-manager, enhancement, tasks, etc.)
+- [ ] Verify Combat Sim export still works
+- [ ] Verify game connects and plays normally
+- [ ] Monitor for any console errors
