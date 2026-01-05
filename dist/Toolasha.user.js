@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.4.869
+// @version      0.4.872
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
 // @author       Celasha and Claude, thank you to bot7420, DrDucky, Frotty, Truth_Light, AlphB for providing the basis for a lot of this. Thank you to Miku, Orvel, Jigglymoose, Incinarator, Knerd, and others for their time and help. Special thanks to Zaeter for the name. 
 // @license      CC-BY-NC-SA-4.0
@@ -5838,7 +5838,10 @@
 
     /**
      * Calculate optimal enhancement path for an item
-     * Tests all protection strategies and finds the cheapest one
+     * Matches Enhancelator's algorithm exactly:
+     * 1. Test all protection strategies for each level
+     * 2. Pick minimum cost for each level (mixed strategies)
+     * 3. Apply mirror optimization to mixed array
      *
      * @param {string} itemHrid - Item HRID (e.g., '/items/cheese_sword')
      * @param {number} currentEnhancementLevel - Current enhancement level (1-20)
@@ -5863,73 +5866,116 @@
             return null;
         }
 
-        // Get enhancement parameters from config
         const itemLevel = itemDetails.itemLevel || 1;
 
-        // Test all protection strategies (2 through target level)
-        const strategies = [];
+        // Step 1: Build 2D matrix like Enhancelator (all_results)
+        // For each target level (1 to currentEnhancementLevel)
+        // Test all protection strategies (0, 2, 3, ..., targetLevel)
+        // Result: allResults[targetLevel][protectFrom] = cost data
 
-        // Strategy 0: Never protect (benchmark)
-        const neverProtect = testProtectionStrategy(
-            currentEnhancementLevel,
-            0, // protectFrom = 0 (never)
-            itemHrid,
-            itemLevel,
-            config
-        );
-        if (neverProtect) {
-            strategies.push({
-                protectFrom: 0,
-                label: 'Never',
-                ...neverProtect
-            });
+        const allResults = [];
+
+        for (let targetLevel = 1; targetLevel <= currentEnhancementLevel; targetLevel++) {
+            const resultsForLevel = [];
+
+            // Test "never protect" (0)
+            const neverProtect = calculateCostForStrategy(itemHrid, targetLevel, 0, itemLevel, config);
+            if (neverProtect) {
+                resultsForLevel.push({ protectFrom: 0, ...neverProtect });
+            }
+
+            // Test all "protect from X" strategies (2 through targetLevel)
+            for (let protectFrom = 2; protectFrom <= targetLevel; protectFrom++) {
+                const result = calculateCostForStrategy(itemHrid, targetLevel, protectFrom, itemLevel, config);
+                if (result) {
+                    resultsForLevel.push({ protectFrom, ...result });
+                }
+            }
+
+            allResults.push(resultsForLevel);
         }
 
-        // Strategies 2 through target level
-        for (let protectFrom = 2; protectFrom <= currentEnhancementLevel; protectFrom++) {
-            const result = testProtectionStrategy(
-                currentEnhancementLevel,
-                protectFrom,
-                itemHrid,
-                itemLevel,
-                config
-            );
+        // Step 2: Build target_costs array (minimum cost for each level)
+        // Like Enhancelator line 451-453
+        const targetCosts = new Array(currentEnhancementLevel + 1);
+        targetCosts[0] = getRealisticBaseItemPrice(itemHrid); // Level 0: base item
 
-            if (result) {
-                strategies.push({
-                    protectFrom,
-                    label: `From +${protectFrom}`,
-                    ...result
-                });
+        for (let level = 1; level <= currentEnhancementLevel; level++) {
+            const resultsForLevel = allResults[level - 1];
+            const minCost = Math.min(...resultsForLevel.map(r => r.totalCost));
+            targetCosts[level] = minCost;
+        }
+
+        // Step 3: Apply Philosopher's Mirror optimization (single pass, in-place)
+        // Like Enhancelator lines 456-465
+        const mirrorPrice = getRealisticBaseItemPrice('/items/philosophers_mirror');
+        let mirrorStartLevel = null;
+
+        if (mirrorPrice > 0) {
+            for (let level = 3; level <= currentEnhancementLevel; level++) {
+                const traditionalCost = targetCosts[level];
+                const mirrorCost = targetCosts[level - 2] + targetCosts[level - 1] + mirrorPrice;
+
+                if (mirrorCost < traditionalCost) {
+                    if (mirrorStartLevel === null) {
+                        mirrorStartLevel = level;
+                    }
+                    targetCosts[level] = mirrorCost;
+                }
             }
         }
 
-        // Find cheapest strategy
-        if (strategies.length === 0) return null;
+        // Step 4: Build final result with breakdown
+        targetCosts[currentEnhancementLevel];
 
-        strategies.sort((a, b) => a.totalCost - b.totalCost);
-
-        // Apply Philosopher's Mirror optimization
-        const mirrorOptimized = applyPhilosopherMirrorOptimization(
-            strategies,
-            itemHrid,
-            currentEnhancementLevel,
-            config
+        // Find which protection strategy was optimal for final level (before mirrors)
+        const finalLevelResults = allResults[currentEnhancementLevel - 1];
+        const optimalTraditional = finalLevelResults.reduce((best, curr) =>
+            curr.totalCost < best.totalCost ? curr : best
         );
+
+        let optimalStrategy;
+
+        if (mirrorStartLevel !== null) {
+            // Mirror was used - build mirror-optimized result
+            optimalStrategy = buildMirrorOptimizedResult(
+                itemHrid,
+                currentEnhancementLevel,
+                mirrorStartLevel,
+                targetCosts,
+                optimalTraditional,
+                mirrorPrice);
+        } else {
+            // No mirror used - return traditional result
+            optimalStrategy = {
+                protectFrom: optimalTraditional.protectFrom,
+                label: optimalTraditional.protectFrom === 0 ? 'Never' : `From +${optimalTraditional.protectFrom}`,
+                expectedAttempts: optimalTraditional.expectedAttempts,
+                totalTime: optimalTraditional.totalTime,
+                baseCost: optimalTraditional.baseCost,
+                materialCost: optimalTraditional.materialCost,
+                protectionCost: optimalTraditional.protectionCost,
+                protectionItemHrid: optimalTraditional.protectionItemHrid,
+                protectionCount: optimalTraditional.protectionCount,
+                totalCost: optimalTraditional.totalCost,
+                usedMirror: false,
+                mirrorStartLevel: null
+            };
+        }
 
         return {
             targetLevel: currentEnhancementLevel,
             itemLevel,
-            optimalStrategy: mirrorOptimized.optimal,
-            allStrategies: mirrorOptimized.strategies
+            optimalStrategy,
+            allStrategies: [optimalStrategy] // Only return optimal
         };
     }
 
     /**
-     * Test a single protection strategy
+     * Calculate cost for a single protection strategy to reach a target level
      * @private
      */
-    function testProtectionStrategy(targetLevel, protectFrom, itemHrid, itemLevel, config) {
+    function calculateCostForStrategy(itemHrid, targetLevel, protectFrom, itemLevel, config) {
         try {
             const params = {
                 enhancingLevel: config.enhancingLevel,
@@ -5946,18 +5992,16 @@
             // Calculate enhancement statistics
             const result = calculateEnhancement(params);
 
-            // Validate result
             if (!result || typeof result.attempts !== 'number' || typeof result.totalTime !== 'number') {
                 console.error('[Enhancement Tooltip] Invalid result from calculateEnhancement:', result);
-                console.error('[Enhancement Tooltip] Input params were:', params);
                 return null;
             }
 
-            // Calculate costs (use full config object, not params)
+            // Calculate costs
             const costs = calculateTotalCost(itemHrid, targetLevel, protectFrom, config);
 
             return {
-                expectedAttempts: result.attempts,  // Rename attempts to expectedAttempts for tooltip display
+                expectedAttempts: result.attempts,
                 totalTime: result.totalTime,
                 ...costs
             };
@@ -5965,6 +6009,73 @@
             console.error('[Enhancement Tooltip] Strategy calculation error:', error);
             return null;
         }
+    }
+
+    /**
+     * Build mirror-optimized result with Fibonacci quantities
+     * @private
+     */
+    function buildMirrorOptimizedResult(itemHrid, targetLevel, mirrorStartLevel, targetCosts, optimalTraditional, mirrorPrice, config) {
+        const gameData = dataManager.getInitClientData();
+        gameData.itemDetailMap[itemHrid];
+
+        // Calculate Fibonacci quantities for consumed items
+        const n = targetLevel - mirrorStartLevel;
+        const numLowerTier = fib(n);           // Quantity of (mirrorStartLevel - 2) items
+        const numUpperTier = fib(n + 1);       // Quantity of (mirrorStartLevel - 1) items
+        const numMirrors = mirrorFib(n);       // Quantity of Philosopher's Mirrors
+
+        const lowerTierLevel = mirrorStartLevel - 2;
+        const upperTierLevel = mirrorStartLevel - 1;
+
+        // Get cost of one item at each level from targetCosts
+        const costLowerTier = targetCosts[lowerTierLevel];
+        const costUpperTier = targetCosts[upperTierLevel];
+
+        // Calculate total costs for consumed items and mirrors
+        const totalLowerTierCost = numLowerTier * costLowerTier;
+        const totalUpperTierCost = numUpperTier * costUpperTier;
+        const totalMirrorsCost = numMirrors * mirrorPrice;
+
+        // Build consumed items array for display
+        const consumedItems = [
+            {
+                level: lowerTierLevel,
+                quantity: numLowerTier,
+                costEach: costLowerTier,
+                totalCost: totalLowerTierCost
+            },
+            {
+                level: upperTierLevel,
+                quantity: numUpperTier,
+                costEach: costUpperTier,
+                totalCost: totalUpperTierCost
+            }
+        ];
+
+        // For mirror phase: ONLY consumed items + mirrors
+        // The consumed item costs from targetCosts already include base/materials/protection
+        // NO separate base/materials/protection for main item!
+
+        return {
+            protectFrom: optimalTraditional.protectFrom,
+            label: optimalTraditional.protectFrom === 0 ? 'Never' : `From +${optimalTraditional.protectFrom}`,
+            expectedAttempts: optimalTraditional.expectedAttempts,
+            totalTime: optimalTraditional.totalTime,
+            baseCost: 0,  // Not applicable for mirror phase
+            materialCost: 0,  // Not applicable for mirror phase
+            protectionCost: 0,  // Not applicable for mirror phase
+            protectionItemHrid: null,
+            protectionCount: 0,
+            consumedItemsCost: totalLowerTierCost + totalUpperTierCost,
+            philosopherMirrorCost: totalMirrorsCost,
+            totalCost: targetCosts[targetLevel],  // Use recursive formula result for consistency
+            mirrorStartLevel: mirrorStartLevel,
+            usedMirror: true,
+            traditionalCost: optimalTraditional.totalCost,
+            consumedItems: consumedItems,
+            mirrorCount: numMirrors
+        };
     }
 
     /**
@@ -6201,174 +6312,6 @@
     }
 
     /**
-     * Build array of costs to reach each enhancement level
-     * Uses multiple calculator runs to get accurate per-level costs
-     *
-     * @param {Object} strategy - Enhancement strategy with protectFrom
-     * @param {string} itemHrid - Item HRID
-     * @param {number} targetLevel - Target enhancement level
-     * @param {Object} config - Enhancement config parameters
-     * @returns {Array} Cost to reach each level [0, 1, 2, ..., targetLevel]
-     */
-    function buildLevelCostsArray(strategy, itemHrid, targetLevel, config) {
-        const costs = new Array(targetLevel + 1);
-        const gameData = dataManager.getInitClientData();
-        const itemDetails = gameData.itemDetailMap[itemHrid];
-        const itemLevel = itemDetails.itemLevel || 1;
-
-        // Level 0: base item cost
-        costs[0] = getRealisticBaseItemPrice(itemHrid);
-
-        // Calculate per-action material cost (same for all levels)
-        let perActionMaterialCost = 0;
-        if (itemDetails.enhancementCosts) {
-            for (const material of itemDetails.enhancementCosts) {
-                const materialDetail = gameData.itemDetailMap[material.itemHrid];
-                let price;
-
-                // Special case: Trainee charms have fixed 250k price
-                if (material.itemHrid.startsWith('/items/trainee_')) {
-                    price = 250000;
-                } else if (material.itemHrid === '/items/coin') {
-                    price = 1;
-                } else {
-                    const marketPrice = marketAPI.getPrice(material.itemHrid, 0);
-                    if (marketPrice) {
-                        let ask = marketPrice.ask;
-                        let bid = marketPrice.bid;
-                        if (ask > 0 && bid < 0) bid = ask;
-                        if (bid > 0 && ask < 0) ask = bid;
-                        price = ask;
-                    } else {
-                        price = materialDetail?.sellPrice || 0;
-                    }
-                }
-                perActionMaterialCost += price * material.count;
-            }
-        }
-
-        // Get protection price once (reused for all levels)
-        const protectionInfo = getCheapestProtectionPrice(itemHrid);
-        const protectionPrice = protectionInfo.price;
-
-        // Levels 1 through targetLevel: run calculator for each
-        for (let level = 1; level <= targetLevel; level++) {
-            const result = calculateEnhancement({
-                enhancingLevel: config.enhancingLevel,
-                houseLevel: config.houseLevel,
-                toolBonus: config.toolBonus || 0,
-                speedBonus: config.speedBonus || 0,
-                itemLevel,
-                targetLevel: level,
-                protectFrom: Math.min(strategy.protectFrom, level),
-                blessedTea: config.teas.blessed,
-                guzzlingBonus: config.guzzlingBonus
-            });
-
-            // Calculate cost to reach this level
-            const materialCost = perActionMaterialCost * result.attempts;
-
-            let protectionCost = 0;
-            if (strategy.protectFrom > 0 && result.protectionCount > 0) {
-                protectionCost = protectionPrice * result.protectionCount;
-            }
-
-            costs[level] = costs[0] + materialCost + protectionCost;
-        }
-
-        return costs;
-    }
-
-    /**
-     * Build breakdown array for each enhancement level
-     * Similar to buildLevelCostsArray but tracks component costs separately
-     * @private
-     */
-    function buildLevelBreakdownsArray(strategy, itemHrid, targetLevel, config) {
-        const breakdowns = new Array(targetLevel + 1);
-        const gameData = dataManager.getInitClientData();
-        const itemDetails = gameData.itemDetailMap[itemHrid];
-        const itemLevel = itemDetails.itemLevel || 1;
-
-        // Level 0: just base item
-        const baseItemCost = getRealisticBaseItemPrice(itemHrid);
-        breakdowns[0] = {
-            baseCost: baseItemCost,
-            materialCost: 0,
-            protectionCost: 0,
-            consumedItemsCost: 0,
-            philosopherMirrorCost: 0,
-            totalCost: baseItemCost
-        };
-
-        // Calculate per-action material cost (same for all levels)
-        let perActionMaterialCost = 0;
-        if (itemDetails.enhancementCosts) {
-            for (const material of itemDetails.enhancementCosts) {
-                const materialDetail = gameData.itemDetailMap[material.itemHrid];
-                let price;
-
-                // Special case: Trainee charms have fixed 250k price
-                if (material.itemHrid.startsWith('/items/trainee_')) {
-                    price = 250000;
-                } else if (material.itemHrid === '/items/coin') {
-                    price = 1;
-                } else {
-                    const marketPrice = marketAPI.getPrice(material.itemHrid, 0);
-                    if (marketPrice) {
-                        let ask = marketPrice.ask;
-                        let bid = marketPrice.bid;
-                        if (ask > 0 && bid < 0) bid = ask;
-                        if (bid > 0 && ask < 0) ask = bid;
-                        price = ask;
-                    } else {
-                        price = materialDetail?.sellPrice || 0;
-                    }
-                }
-                perActionMaterialCost += price * material.count;
-            }
-        }
-
-        // Get protection price once (reused for all levels)
-        const protectionInfo = getCheapestProtectionPrice(itemHrid);
-        const protectionPrice = protectionInfo.price;
-
-        // Levels 1 through targetLevel: run calculator for each
-        for (let level = 1; level <= targetLevel; level++) {
-            const result = calculateEnhancement({
-                enhancingLevel: config.enhancingLevel,
-                houseLevel: config.houseLevel,
-                toolBonus: config.toolBonus || 0,
-                speedBonus: config.speedBonus || 0,
-                itemLevel,
-                targetLevel: level,
-                protectFrom: Math.min(strategy.protectFrom, level),
-                blessedTea: config.teas.blessed,
-                guzzlingBonus: config.guzzlingBonus
-            });
-
-            // Calculate costs for this level
-            const materialCost = perActionMaterialCost * result.attempts;
-
-            let protectionCost = 0;
-            if (strategy.protectFrom > 0 && result.protectionCount > 0) {
-                protectionCost = protectionPrice * result.protectionCount;
-            }
-
-            breakdowns[level] = {
-                baseCost: baseItemCost,
-                materialCost: materialCost,
-                protectionCost: protectionCost,
-                consumedItemsCost: 0,
-                philosopherMirrorCost: 0,
-                totalCost: baseItemCost + materialCost + protectionCost
-            };
-        }
-
-        return breakdowns;
-    }
-
-    /**
      * Fibonacci calculation for item quantities (from Enhancelator)
      * @private
      */
@@ -6391,152 +6334,6 @@
             return 2;
         }
         return mirrorFib(n - 1) + mirrorFib(n - 2) + 1;
-    }
-
-    /**
-     * Apply Philosopher's Mirror optimization to enhancement strategies
-     *
-     * Algorithm (matches Enhancelator):
-     * 1. Build cost array for each level (0 through target)
-     * 2. Find FIRST level where mirror becomes cheaper than traditional
-     * 3. Apply mirror cost formula to that level and all subsequent levels
-     *
-     * Mirror Cost Formula: Cost(N) = Cost(N-2) + Cost(N-1) + Mirror_Price
-     *
-     * @param {Array} strategies - Traditional enhancement strategies
-     * @param {string} itemHrid - Item HRID
-     * @param {number} targetLevel - Target enhancement level
-     * @param {Object} config - Enhancement config parameters
-     * @returns {Object} { optimal, strategies } with mirror optimization applied
-     */
-    function applyPhilosopherMirrorOptimization(strategies, itemHrid, targetLevel, config) {
-        // Get Philosopher's Mirror price
-        const mirrorPrice = getRealisticBaseItemPrice('/items/philosophers_mirror');
-        if (mirrorPrice <= 0) {
-            // Mirror not available - return original strategies
-            return {
-                optimal: strategies[0],
-                strategies: strategies
-            };
-        }
-
-        // Optimize each strategy
-        const optimizedStrategies = strategies.map(strategy => {
-            // Build cost array: cost to reach each level using this strategy
-            const levelCosts = buildLevelCostsArray(strategy, itemHrid, targetLevel, config);
-
-            // Build breakdown array: component costs for each level
-            const levelBreakdowns = buildLevelBreakdownsArray(strategy, itemHrid, targetLevel, config);
-
-            // Find first level where mirror becomes beneficial (starts at +3)
-            let mirrorStartLevel = null;
-            for (let level = 3; level <= targetLevel; level++) {
-                const traditionalCost = levelCosts[level];
-                const mirrorCost = levelCosts[level - 2] + levelCosts[level - 1] + mirrorPrice;
-
-                if (mirrorCost < traditionalCost) {
-                    mirrorStartLevel = level;
-                    break; // Found threshold - all subsequent levels will use mirrors
-                }
-            }
-
-            // If mirror is beneficial, apply it from threshold level onward
-            if (mirrorStartLevel !== null) {
-                // Apply mirror optimization to costs
-                for (let level = mirrorStartLevel; level <= targetLevel; level++) {
-                    levelCosts[level] = levelCosts[level - 2] + levelCosts[level - 1] + mirrorPrice;
-                }
-
-                // Apply mirror optimization to breakdowns
-                for (let level = mirrorStartLevel; level <= targetLevel; level++) {
-                    const breakdown_N_minus_2 = levelBreakdowns[level - 2];
-                    const breakdown_N_minus_1 = levelBreakdowns[level - 1];
-
-                    // For mirror-optimized levels:
-                    // - Base cost: same as main item (only 1 base for main)
-                    // - Materials: same as traditional phase (main item only)
-                    // - Protection: same as traditional phase (main item only)
-                    // - Consumed items: total cost of (N-1) item WITHOUT its mirrors (to avoid double-counting)
-                    // - Philosopher's Mirror: accumulate ALL mirrors (including those in consumed items)
-
-                    levelBreakdowns[level] = {
-                        baseCost: levelBreakdowns[0].baseCost, // Just main item's base
-                        materialCost: levelBreakdowns[mirrorStartLevel - 1].materialCost, // Traditional phase only
-                        protectionCost: levelBreakdowns[mirrorStartLevel - 1].protectionCost, // Traditional phase only
-                        consumedItemsCost: breakdown_N_minus_1.totalCost - breakdown_N_minus_1.philosopherMirrorCost, // Exclude mirrors to avoid double-count
-                        philosopherMirrorCost: breakdown_N_minus_2.philosopherMirrorCost + breakdown_N_minus_1.philosopherMirrorCost + mirrorPrice,
-                        totalCost: levelCosts[level]
-                    };
-                }
-
-                // Calculate consumed item quantities using Fibonacci (Enhancelator approach)
-                const n = targetLevel - mirrorStartLevel;
-                const numLowerTier = fib(n);           // Quantity of (mirrorStartLevel - 2) items
-                const numUpperTier = fib(n + 1) - 1;   // Quantity of (mirrorStartLevel - 1) items (minus 1 for main item)
-                const numMirrors = mirrorFib(n);       // Quantity of Philosopher's Mirrors
-
-                const lowerTierLevel = mirrorStartLevel - 2;
-                const upperTierLevel = mirrorStartLevel - 1;
-
-                // Get cost of one item at each level
-                const costLowerTier = levelBreakdowns[lowerTierLevel].totalCost;
-                const costUpperTier = levelBreakdowns[upperTierLevel].totalCost;
-
-                // Calculate total costs
-                const totalLowerTierCost = numLowerTier * costLowerTier;
-                const totalUpperTierCost = numUpperTier * costUpperTier;
-                const totalMirrorsCost = numMirrors * mirrorPrice;
-
-                // Build consumed items array for display (only two levels)
-                const consumedItems = [
-                    {
-                        level: lowerTierLevel,
-                        quantity: numLowerTier,
-                        costEach: costLowerTier,
-                        totalCost: totalLowerTierCost
-                    },
-                    {
-                        level: upperTierLevel,
-                        quantity: numUpperTier,
-                        costEach: costUpperTier,
-                        totalCost: totalUpperTierCost
-                    }
-                ];
-
-                // Get final breakdown for target level
-                const finalBreakdown = levelBreakdowns[targetLevel];
-
-                return {
-                    ...strategy,
-                    baseCost: finalBreakdown.baseCost,
-                    materialCost: finalBreakdown.materialCost,
-                    protectionCost: finalBreakdown.protectionCost,
-                    consumedItemsCost: totalLowerTierCost + totalUpperTierCost,
-                    philosopherMirrorCost: totalMirrorsCost,
-                    totalCost: finalBreakdown.totalCost,
-                    mirrorStartLevel: mirrorStartLevel,
-                    usedMirror: true,
-                    traditionalCost: strategy.totalCost,
-                    consumedItems: consumedItems, // Array of {level, quantity, costEach, totalCost}
-                    mirrorCount: numMirrors
-                };
-            }
-
-            // Mirror not beneficial for this strategy
-            return {
-                ...strategy,
-                mirrorStartLevel: null,
-                usedMirror: false
-            };
-        });
-
-        // Re-sort by optimized cost
-        optimizedStrategies.sort((a, b) => a.totalCost - b.totalCost);
-
-        return {
-            optimal: optimizedStrategies[0],
-            strategies: optimizedStrategies
-        };
     }
 
     /**
@@ -6580,31 +6377,9 @@
         // Check if using mirror optimization
         if (optimalStrategy.usedMirror && optimalStrategy.consumedItems && optimalStrategy.consumedItems.length > 0) {
             // Mirror-optimized breakdown
-            html += 'Base Item: ' + numberFormatter(optimalStrategy.baseCost);
-            html += '<br>Materials: ' + numberFormatter(optimalStrategy.materialCost);
-
-            if (optimalStrategy.protectionCost > 0) {
-                let protectionDisplay = numberFormatter(optimalStrategy.protectionCost);
-
-                // Show protection count and item name if available
-                if (optimalStrategy.protectionCount > 0) {
-                    protectionDisplay += ' (' + optimalStrategy.protectionCount.toFixed(1) + '×';
-
-                    if (optimalStrategy.protectionItemHrid) {
-                        const gameData = dataManager.getInitClientData();
-                        const itemDetails = gameData?.itemDetailMap[optimalStrategy.protectionItemHrid];
-                        if (itemDetails?.name) {
-                            protectionDisplay += ' ' + itemDetails.name;
-                        }
-                    }
-
-                    protectionDisplay += ')';
-                }
-
-                html += '<br>Protection: ' + protectionDisplay;
-            }
+            // For mirror phase, we ONLY show consumed items and mirrors (no base/materials/protection)
             // Consumed items section (Fibonacci-based quantities)
-            html += '<br>Consumed Items (Philosopher\'s Mirror):';
+            html += 'Consumed Items (Philosopher\'s Mirror):';
             html += '<div style="margin-left: 12px;">';
 
             // Show consumed items in descending order (higher level first), filter out zero quantities
