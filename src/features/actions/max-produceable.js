@@ -28,11 +28,18 @@ class MaxProduceable {
             return;
         }
 
+        console.log('[MaxProduceable] Initializing...');
+
         this.setupObserver();
         this.startUpdates();
 
         // Listen for inventory changes
-        dataManager.on('items_updated', () => this.updateAllCounts());
+        dataManager.on('items_updated', () => {
+            console.log('[MaxProduceable] items_updated event fired - updating all counts');
+            this.updateAllCounts();
+        });
+
+        console.log('[MaxProduceable] Initialized successfully');
     }
 
     /**
@@ -58,6 +65,7 @@ class MaxProduceable {
         const actionHrid = this.getActionHridFromPanel(actionPanel);
 
         if (!actionHrid) {
+            console.log('[MaxProduceable] No action HRID found for panel');
             return;
         }
 
@@ -68,9 +76,12 @@ class MaxProduceable {
             return;
         }
 
+        console.log('[MaxProduceable] Injecting for action:', actionDetails.name, actionHrid);
+
         // Check if already injected
         const existingDisplay = actionPanel.querySelector('.mwi-max-produceable');
         if (existingDisplay) {
+            console.log('[MaxProduceable] Found existing display, re-registering');
             // Re-register existing display (DOM elements may be reused across navigation)
             this.actionElements.set(actionPanel, {
                 actionHrid: actionHrid,
@@ -153,7 +164,11 @@ class MaxProduceable {
         const actionDetails = dataManager.getActionDetails(actionHrid);
         const inventory = dataManager.getInventory();
 
+        console.log('[MaxProduceable] Calculate for', actionHrid);
+        console.log('[MaxProduceable]   Inventory available:', inventory ? `${inventory.length} items` : 'NULL');
+
         if (!actionDetails || !inventory) {
+            console.log('[MaxProduceable]   Returning null (no data)');
             return null;
         }
 
@@ -165,7 +180,11 @@ class MaxProduceable {
             );
 
             const invCount = invItem?.count || 0;
-            return Math.floor(invCount / input.count);
+            const maxCrafts = Math.floor(invCount / input.count);
+
+            console.log('[MaxProduceable]   Input:', input.itemHrid, 'Need:', input.count, 'Have:', invCount, 'Max crafts:', maxCrafts);
+
+            return maxCrafts;
         });
 
         let minCrafts = Math.min(...maxCraftsPerInput);
@@ -178,9 +197,11 @@ class MaxProduceable {
             );
 
             const upgradeCount = upgradeItem?.count || 0;
+            console.log('[MaxProduceable]   Upgrade item:', actionDetails.upgradeItemHrid, 'Have:', upgradeCount);
             minCrafts = Math.min(minCrafts, upgradeCount);
         }
 
+        console.log('[MaxProduceable]   Final max crafts:', minCrafts);
         return minCrafts;
     }
 
@@ -192,12 +213,16 @@ class MaxProduceable {
         const data = this.actionElements.get(actionPanel);
 
         if (!data) {
+            console.log('[MaxProduceable] UpdateCount called but no data in Map for panel');
             return;
         }
+
+        console.log('[MaxProduceable] UpdateCount for:', data.actionHrid);
 
         const maxCrafts = this.calculateMaxProduceable(data.actionHrid);
 
         if (maxCrafts === null) {
+            console.log('[MaxProduceable]   Hiding display (null result)');
             data.displayElement.style.display = 'none';
             return;
         }
@@ -212,6 +237,8 @@ class MaxProduceable {
             color = config.COLOR_PROFIT; // Green - plenty of materials
         }
 
+        console.log('[MaxProduceable]   Showing:', maxCrafts, 'Color:', color);
+
         data.displayElement.style.display = 'block';
         data.displayElement.innerHTML = `<span style="color: ${color};">Can produce: ${maxCrafts.toLocaleString()}</span>`;
     }
@@ -220,15 +247,20 @@ class MaxProduceable {
      * Update all counts
      */
     updateAllCounts() {
+        console.log('[MaxProduceable] UpdateAllCounts - tracking', this.actionElements.size, 'panels');
+
         // Clean up stale references and update valid ones
         for (const actionPanel of [...this.actionElements.keys()]) {
             if (document.body.contains(actionPanel)) {
                 this.updateCount(actionPanel);
             } else {
                 // Panel no longer in DOM, remove from tracking
+                console.log('[MaxProduceable] Removing stale panel from tracking');
                 this.actionElements.delete(actionPanel);
             }
         }
+
+        console.log('[MaxProduceable] After cleanup, tracking', this.actionElements.size, 'panels');
     }
 
     /**
