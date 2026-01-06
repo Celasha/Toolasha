@@ -432,7 +432,6 @@ class InventorySort {
                         bidPrice = enhancementCost;
                     } else {
                         // Enhancement calculation failed, fallback to market price
-                        console.warn('[InventorySort] Enhancement calculation failed for:', itemName, '+' + enhancementLevel);
                         const marketPrice = marketAPI.getPrice(itemHrid, enhancementLevel);
                         if (marketPrice) {
                             askPrice = marketPrice.ask > 0 ? marketPrice.ask : 0;
@@ -465,7 +464,6 @@ class InventorySort {
                             enhancementCost = enhancementPath.optimalStrategy.totalCost;
                             networthCache.set(itemHrid, enhancementLevel, enhancementCost);
                         } else {
-                            console.error('[InventorySort] Enhancement cost calculation failed for:', itemName, '+' + enhancementLevel, itemHrid);
                             enhancementCost = null;
                         }
                     }
