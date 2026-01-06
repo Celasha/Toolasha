@@ -140,7 +140,10 @@ function generateCostsByLevelTable(panel, params, itemLevel, protectFromLevel, e
     const gameData = dataManager.getInitClientData();
 
     lines.push('<div style="margin-top: 12px; background: rgba(0,0,0,0.2); padding: 8px; border-radius: 4px;">');
-    lines.push('<div style="color: #ffa500; font-weight: bold; margin-bottom: 6px; font-size: 0.95em;">Costs by Enhancement Level:</div>');
+    lines.push('<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">');
+    lines.push('<div style="color: #ffa500; font-weight: bold; font-size: 0.95em;">Costs by Enhancement Level:</div>');
+    lines.push('<button id="mwi-expand-costs-table-btn" style="background: rgba(0, 255, 234, 0.1); border: 1px solid #00ffe7; color: #00ffe7; cursor: pointer; font-size: 18px; font-weight: bold; padding: 4px 10px; border-radius: 4px; transition: all 0.15s ease;" title="View full table">⤢</button>');
+    lines.push('</div>');
 
     // Calculate costs for each level
     const costData = [];
@@ -715,4 +718,140 @@ function injectDisplay(panel, html) {
             });
         }
     }
+
+    // Attach event listener to expand costs table button
+    const expandBtn = container.querySelector('#mwi-expand-costs-table-btn');
+    if (expandBtn) {
+        expandBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            showCostsTableModal(container);
+        });
+        expandBtn.addEventListener('mouseenter', () => {
+            expandBtn.style.background = 'rgba(255, 0, 212, 0.2)';
+            expandBtn.style.borderColor = '#ff00d4';
+            expandBtn.style.color = '#ff00d4';
+        });
+        expandBtn.addEventListener('mouseleave', () => {
+            expandBtn.style.background = 'rgba(0, 255, 234, 0.1)';
+            expandBtn.style.borderColor = '#00ffe7';
+            expandBtn.style.color = '#00ffe7';
+        });
+    }
+}
+
+/**
+ * Show costs table in expanded modal overlay
+ * @param {HTMLElement} container - Enhancement stats container with the table
+ */
+function showCostsTableModal(container) {
+    // Clone the table and its container
+    const tableScroll = container.querySelector('#mwi-enhancement-table-scroll');
+    if (!tableScroll) return;
+
+    const table = tableScroll.querySelector('table');
+    if (!table) return;
+
+    // Create backdrop
+    const backdrop = document.createElement('div');
+    backdrop.id = 'mwi-costs-table-backdrop';
+    Object.assign(backdrop.style, {
+        position: 'fixed',
+        top: '0',
+        left: '0',
+        width: '100%',
+        height: '100%',
+        background: 'rgba(0, 0, 0, 0.85)',
+        zIndex: '10002',
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        backdropFilter: 'blur(4px)'
+    });
+
+    // Create modal
+    const modal = document.createElement('div');
+    modal.id = 'mwi-costs-table-modal';
+    Object.assign(modal.style, {
+        background: 'rgba(5, 5, 15, 0.98)',
+        border: '2px solid #00ffe7',
+        borderRadius: '12px',
+        padding: '20px',
+        minWidth: '800px',
+        maxWidth: '95vw',
+        maxHeight: '90vh',
+        overflow: 'auto',
+        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.8)'
+    });
+
+    // Clone and style the table
+    const clonedTable = table.cloneNode(true);
+    clonedTable.style.fontSize = '1em'; // Larger font
+
+    // Update all cell padding for better readability
+    const cells = clonedTable.querySelectorAll('th, td');
+    cells.forEach(cell => {
+        cell.style.padding = '8px 12px';
+    });
+
+    modal.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid rgba(0, 255, 234, 0.4); padding-bottom: 10px;">
+            <h2 style="margin: 0; color: #00ffe7; font-size: 20px;">📊 Costs by Enhancement Level</h2>
+            <button id="mwi-close-costs-modal" style="
+                background: none;
+                border: none;
+                color: #e0f7ff;
+                cursor: pointer;
+                font-size: 28px;
+                padding: 0 8px;
+                line-height: 1;
+                transition: all 0.15s ease;
+            " title="Close">×</button>
+        </div>
+        <div style="color: #9b9bff; font-size: 0.9em; margin-bottom: 15px;">
+            Full breakdown of enhancement costs for all levels
+        </div>
+    `;
+
+    modal.appendChild(clonedTable);
+    backdrop.appendChild(modal);
+    document.body.appendChild(backdrop);
+
+    // Close button handler
+    const closeBtn = modal.querySelector('#mwi-close-costs-modal');
+    if (closeBtn) {
+        closeBtn.addEventListener('click', () => {
+            backdrop.remove();
+        });
+        closeBtn.addEventListener('mouseenter', () => {
+            closeBtn.style.color = '#ff0055';
+        });
+        closeBtn.addEventListener('mouseleave', () => {
+            closeBtn.style.color = '#e0f7ff';
+        });
+    }
+
+    // Backdrop click to close
+    backdrop.addEventListener('click', (e) => {
+        if (e.target === backdrop) {
+            backdrop.remove();
+        }
+    });
+
+    // ESC key to close
+    const escHandler = (e) => {
+        if (e.key === 'Escape') {
+            backdrop.remove();
+            document.removeEventListener('keydown', escHandler);
+        }
+    };
+    document.addEventListener('keydown', escHandler);
+
+    // Remove ESC listener when backdrop is removed
+    const observer = new MutationObserver(() => {
+        if (!document.body.contains(backdrop)) {
+            document.removeEventListener('keydown', escHandler);
+            observer.disconnect();
+        }
+    });
+    observer.observe(document.body, { childList: true });
 }

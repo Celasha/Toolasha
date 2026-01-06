@@ -642,23 +642,6 @@ class EnhancementUI {
             }
         }
 
-        // Attach event listener to expand level table button
-        const expandBtn = document.getElementById('expandLevelTableBtn');
-        if (expandBtn) {
-            expandBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.showLevelTableModal(session);
-            });
-            expandBtn.addEventListener('mouseenter', () => {
-                expandBtn.style.background = 'rgba(255, 0, 212, 0.1)';
-                expandBtn.style.borderColor = STYLE.colors.accent;
-            });
-            expandBtn.addEventListener('mouseleave', () => {
-                expandBtn.style.background = 'none';
-                expandBtn.style.borderColor = STYLE.colors.border;
-            });
-        }
-
         // Update collapsed summary if in collapsed state
         if (this.isCollapsed) {
             this.showCollapsedSummary();
@@ -839,34 +822,19 @@ class EnhancementUI {
         }
 
         return `
-            <div style="position: relative; margin-bottom: 8px;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                    <span style="font-size: 12px; color: ${STYLE.colors.textSecondary}; font-weight: bold;">Level Breakdown</span>
-                    <button id="expandLevelTableBtn" style="
-                        background: none;
-                        border: 1px solid ${STYLE.colors.border};
-                        color: ${STYLE.colors.textPrimary};
-                        cursor: pointer;
-                        font-size: 16px;
-                        padding: 2px 8px;
-                        border-radius: 3px;
-                        transition: ${STYLE.transitions.fast};
-                    " title="View full table">⤢</button>
-                </div>
-                <table style="${compactTableStyle}">
-                    <thead>
-                        <tr>
-                            <th style="${compactHeaderStyle}">Lvl</th>
-                            <th style="${compactHeaderStyle}">Success</th>
-                            <th style="${compactHeaderStyle}">Fail</th>
-                            <th style="${compactHeaderStyle}">%</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${rows}
-                    </tbody>
-                </table>
-            </div>
+            <table style="${compactTableStyle}">
+                <thead>
+                    <tr>
+                        <th style="${compactHeaderStyle}">Lvl</th>
+                        <th style="${compactHeaderStyle}">Success</th>
+                        <th style="${compactHeaderStyle}">Fail</th>
+                        <th style="${compactHeaderStyle}">%</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${rows}
+                </tbody>
+            </table>
         `;
     }
 
@@ -972,155 +940,6 @@ class EnhancementUI {
         } else {
             return `${s}s`;
         }
-    }
-
-    /**
-     * Show level table in expanded modal overlay
-     * @param {Object} session - Session data
-     */
-    showLevelTableModal(session) {
-        const gameData = dataManager.getInitClientData();
-        const itemDetails = gameData?.itemDetailMap?.[session.itemHrid];
-        const itemName = itemDetails?.name || 'Unknown Item';
-
-        // Create backdrop
-        const backdrop = document.createElement('div');
-        backdrop.id = 'enhancementLevelTableBackdrop';
-        Object.assign(backdrop.style, {
-            position: 'fixed',
-            top: '0',
-            left: '0',
-            width: '100%',
-            height: '100%',
-            background: 'rgba(0, 0, 0, 0.8)',
-            zIndex: '10002',
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            backdropFilter: 'blur(4px)'
-        });
-
-        // Create modal
-        const modal = document.createElement('div');
-        modal.id = 'enhancementLevelTableModal';
-        Object.assign(modal.style, {
-            background: STYLE.colors.background,
-            border: `2px solid ${STYLE.colors.primary}`,
-            borderRadius: STYLE.borderRadius.large,
-            padding: '20px',
-            minWidth: '600px',
-            maxWidth: '800px',
-            maxHeight: '80vh',
-            overflow: 'auto',
-            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.8)'
-        });
-
-        // Build modal HTML
-        const levels = Object.keys(session.attemptsPerLevel).sort((a, b) => b - a);
-        let tableRows = '';
-
-        for (const level of levels) {
-            const levelData = session.attemptsPerLevel[level];
-            const rate = (levelData.successRate * 100).toFixed(1);
-            const totalAttempts = levelData.success + levelData.fail;
-            const isCurrent = (parseInt(level) === session.currentLevel);
-
-            const rowStyle = isCurrent ? `
-                background: linear-gradient(90deg, rgba(126, 87, 194, 0.25), rgba(0, 242, 255, 0.1));
-                box-shadow: 0 0 12px rgba(126, 87, 194, 0.5), inset 0 0 6px rgba(0, 242, 255, 0.3);
-                border-left: 3px solid ${STYLE.colors.accent};
-                font-weight: bold;
-            ` : '';
-
-            tableRows += `
-                <tr style="${rowStyle}">
-                    <td style="padding: 8px; border: 1px solid rgba(0, 255, 234, 0.2); text-align: center; font-size: 16px;">${level}</td>
-                    <td style="padding: 8px; border: 1px solid rgba(0, 255, 234, 0.2); text-align: right; font-size: 16px;">${levelData.success}</td>
-                    <td style="padding: 8px; border: 1px solid rgba(0, 255, 234, 0.2); text-align: right; font-size: 16px;">${levelData.fail}</td>
-                    <td style="padding: 8px; border: 1px solid rgba(0, 255, 234, 0.2); text-align: right; font-size: 16px;">${totalAttempts}</td>
-                    <td style="padding: 8px; border: 1px solid rgba(0, 255, 234, 0.2); text-align: right; font-size: 16px;">${rate}%</td>
-                </tr>
-            `;
-        }
-
-        modal.innerHTML = `
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid ${STYLE.colors.border}; padding-bottom: 10px;">
-                <h2 style="margin: 0; color: ${STYLE.colors.primary}; font-size: 20px;">Enhancement Level Breakdown</h2>
-                <button id="closeLevelTableModal" style="
-                    background: none;
-                    border: none;
-                    color: ${STYLE.colors.textPrimary};
-                    cursor: pointer;
-                    font-size: 24px;
-                    padding: 0 8px;
-                    line-height: 1;
-                    transition: ${STYLE.transitions.fast};
-                " title="Close">×</button>
-            </div>
-            <div style="margin-bottom: 15px; color: ${STYLE.colors.textSecondary};">
-                <strong>Item:</strong> ${itemName}
-            </div>
-            <table style="
-                width: 100%;
-                border-collapse: collapse;
-                font-size: 16px;
-            ">
-                <thead>
-                    <tr>
-                        <th style="padding: 10px; background: ${STYLE.colors.headerBg}; border: 1px solid ${STYLE.colors.border}; text-align: center;">Level</th>
-                        <th style="padding: 10px; background: ${STYLE.colors.headerBg}; border: 1px solid ${STYLE.colors.border}; text-align: center;">Success</th>
-                        <th style="padding: 10px; background: ${STYLE.colors.headerBg}; border: 1px solid ${STYLE.colors.border}; text-align: center;">Fail</th>
-                        <th style="padding: 10px; background: ${STYLE.colors.headerBg}; border: 1px solid ${STYLE.colors.border}; text-align: center;">Total</th>
-                        <th style="padding: 10px; background: ${STYLE.colors.headerBg}; border: 1px solid ${STYLE.colors.border}; text-align: center;">Success Rate</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${tableRows}
-                </tbody>
-            </table>
-        `;
-
-        backdrop.appendChild(modal);
-        document.body.appendChild(backdrop);
-
-        // Close button handler
-        const closeBtn = document.getElementById('closeLevelTableModal');
-        if (closeBtn) {
-            closeBtn.addEventListener('click', () => {
-                backdrop.remove();
-            });
-            closeBtn.addEventListener('mouseenter', () => {
-                closeBtn.style.color = STYLE.colors.danger;
-            });
-            closeBtn.addEventListener('mouseleave', () => {
-                closeBtn.style.color = STYLE.colors.textPrimary;
-            });
-        }
-
-        // Backdrop click to close
-        backdrop.addEventListener('click', (e) => {
-            if (e.target === backdrop) {
-                backdrop.remove();
-            }
-        });
-
-        // ESC key to close
-        const escHandler = (e) => {
-            if (e.key === 'Escape') {
-                backdrop.remove();
-                document.removeEventListener('keydown', escHandler);
-            }
-        };
-        document.addEventListener('keydown', escHandler);
-
-        // Remove ESC listener when backdrop is removed
-        const observer = new MutationObserver(() => {
-            if (!document.body.contains(backdrop)) {
-                document.removeEventListener('keydown', escHandler);
-                observer.disconnect();
-            }
-        });
-        observer.observe(document.body, { childList: true });
     }
 
     /**
