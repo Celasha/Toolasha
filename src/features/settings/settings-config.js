@@ -298,6 +298,13 @@ export const settingsGroups = {
                 options: ['None', 'Ask', 'Bid'],
                 dependencies: ['invSort']
             },
+            invSort_sortEquipment: {
+                id: 'invSort_sortEquipment',
+                label: 'Enable sorting for Equipment category',
+                type: 'checkbox',
+                default: false,
+                dependencies: ['invSort']
+            },
             profitCalc_pricingMode: {
                 id: 'profitCalc_pricingMode',
                 label: 'Profit calculation pricing mode',

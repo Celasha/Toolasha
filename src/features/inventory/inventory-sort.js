@@ -8,6 +8,10 @@ import domObserver from '../../core/dom-observer.js';
 import marketAPI from '../../api/marketplace.js';
 import { formatKMB } from '../../utils/formatters.js';
 import dataManager from '../../core/data-manager.js';
+import { calculateEnhancementPath } from '../enhancement/tooltip-enhancement.js';
+import { getEnhancingParams } from '../../utils/enhancement-config.js';
+import networthCache from '../networth/networth-cache.js';
+import expectedValueCalculator from '../market/expected-value-calculator.js';
 
 /**
  * InventorySort class manages inventory sorting and price badges
@@ -19,6 +23,7 @@ class InventorySort {
         this.controlsContainer = null;
         this.currentInventoryElem = null;
         this.warnedItems = new Set(); // Track items we've already warned about
+        this.isCalculating = false; // Guard flag to prevent recursive calls
     }
 
     /**
@@ -242,8 +247,12 @@ class InventorySort {
     /**
      * Apply current sort mode to inventory
      */
-    applyCurrentSort() {
+    async applyCurrentSort() {
         if (!this.currentInventoryElem) return;
+
+        // Prevent recursive calls (guard against DOM observer triggering during calculation)
+        if (this.isCalculating) return;
+        this.isCalculating = true;
 
         const inventoryElem = this.currentInventoryElem;
 
@@ -256,14 +265,18 @@ class InventorySort {
             const categoryName = categoryButton.textContent.trim();
 
             // Skip categories that shouldn't be sorted or badged
-            const excludedCategories = ['Loots', 'Currencies'];
+            const excludedCategories = ['Currencies'];
             if (excludedCategories.includes(categoryName)) {
                 continue;
             }
 
-            // Equipment category: only process charms (for badges), don't sort
+            // Equipment category: check setting for whether to enable sorting
+            // Loots category: always disable sorting (but allow badges)
             const isEquipmentCategory = categoryName === 'Equipment';
-            const shouldSort = !isEquipmentCategory;
+            const isLootsCategory = categoryName === 'Loots';
+            const shouldSort = isLootsCategory
+                ? false
+                : (isEquipmentCategory ? config.getSetting('invSort_sortEquipment') : true);
 
             // Ensure category label stays at top
             const label = categoryDiv.querySelector('[class*="Inventory_label"]');
@@ -274,11 +287,11 @@ class InventorySort {
             // Get all item elements
             const itemElems = categoryDiv.querySelectorAll('[class*="Item_itemContainer"]');
 
-            // Always calculate prices (for badges), filtering to charms only in Equipment category
-            this.calculateItemPrices(itemElems, isEquipmentCategory);
+            // Calculate prices for all items (for badges and sorting)
+            await this.calculateItemPrices(itemElems);
 
             if (shouldSort && this.currentMode !== 'none') {
-                // Sort by price (skip sorting for Equipment category)
+                // Sort by price
                 this.sortItemsByPrice(itemElems, this.currentMode);
             } else {
                 // Reset to default order
@@ -290,19 +303,41 @@ class InventorySort {
 
         // Update price badges (controlled by global setting)
         this.updatePriceBadges();
+
+        // Clear guard flag
+        this.isCalculating = false;
     }
 
     /**
      * Calculate and store prices for all items (for badges and sorting)
      * @param {NodeList} itemElems - Item elements
-     * @param {boolean} isEquipmentCategory - True if processing Equipment category (only charms)
      */
-    calculateItemPrices(itemElems, isEquipmentCategory = false) {
+    async calculateItemPrices(itemElems) {
         const gameData = dataManager.getInitClientData();
         if (!gameData) {
             console.warn('[InventorySort] Game data not available yet');
             return;
         }
+
+        // Get inventory data for enhancement level matching
+        const inventory = dataManager.getInventory();
+        if (!inventory) {
+            console.warn('[InventorySort] Inventory data not available yet');
+            return;
+        }
+
+        // Build lookup map: itemHrid|count -> inventory item
+        const inventoryLookup = new Map();
+        for (const item of inventory) {
+            if (item.itemLocationHrid === '/item_locations/inventory') {
+                const key = `${item.itemHrid}|${item.count}`;
+                inventoryLookup.set(key, item);
+            }
+        }
+
+        // Get settings for high enhancement cost mode
+        const useHighEnhancementCost = config.getSetting('networth_highEnhancementUseCost');
+        const minLevel = config.getSetting('networth_highEnhancementMinLevel') || 13;
 
         let marketDataMissing = false;
 
@@ -321,25 +356,6 @@ class InventorySort {
                 continue;
             }
 
-            // In Equipment category, only process charms
-            if (isEquipmentCategory) {
-                const itemDetails = gameData.itemDetailMap[itemHrid];
-                const isCharm = itemDetails?.equipmentDetail?.type === '/equipment_types/charm';
-                if (!isCharm) {
-                    // Not a charm, skip this equipment item
-                    itemElem.dataset.askValue = 0;
-                    itemElem.dataset.bidValue = 0;
-                    continue;
-                }
-
-                // Skip trainee charms (untradeable, no market data)
-                if (itemHrid.includes('trainee_')) {
-                    itemElem.dataset.askValue = 0;
-                    itemElem.dataset.bidValue = 0;
-                    continue;
-                }
-            }
-
             // Get item count
             const countElem = itemElem.querySelector('[class*="Item_count"]');
             if (!countElem) continue;
@@ -347,32 +363,196 @@ class InventorySort {
             let itemCount = countElem.textContent;
             itemCount = this.parseItemCount(itemCount);
 
-            // Get market price
-            const marketPrice = marketAPI.getPrice(itemHrid, 0);
-            if (!marketPrice) {
-                // Only warn once per item to avoid console spam
-                if (!this.warnedItems.has(itemHrid)) {
-                    console.warn('[InventorySort] No market data for:', itemName, itemHrid);
-                    this.warnedItems.add(itemHrid);
+            // Get item details (reused throughout)
+            const itemDetails = gameData.itemDetailMap[itemHrid];
+
+            // Handle trainee items (untradeable, no market data)
+            if (itemHrid.includes('trainee_')) {
+                // EXCEPTION: Trainee charms should use vendor price
+                const equipmentType = itemDetails?.equipmentDetail?.type;
+                const isCharm = equipmentType === '/equipment_types/charm';
+                const sellPrice = itemDetails?.sellPrice;
+
+                if (isCharm && sellPrice) {
+                    // Use sell price for trainee charms
+                    itemElem.dataset.askValue = sellPrice * itemCount;
+                    itemElem.dataset.bidValue = sellPrice * itemCount;
+                } else {
+                    // Other trainee items (weapons/armor) remain at 0
+                    itemElem.dataset.askValue = 0;
+                    itemElem.dataset.bidValue = 0;
                 }
-                itemElem.dataset.askValue = 0;
-                itemElem.dataset.bidValue = 0;
-                marketDataMissing = true;
                 continue;
             }
 
+            // Handle openable containers (chests, crates, caches)
+            if (itemDetails?.isOpenable && expectedValueCalculator.isInitialized) {
+                const evData = expectedValueCalculator.calculateExpectedValue(itemHrid);
+                if (evData && evData.expectedValue > 0) {
+                    // Use expected value for both ask and bid
+                    itemElem.dataset.askValue = evData.expectedValue * itemCount;
+                    itemElem.dataset.bidValue = evData.expectedValue * itemCount;
+                    continue;
+                }
+            }
+
+            // Match to inventory item to get enhancement level
+            const key = `${itemHrid}|${itemCount}`;
+            const inventoryItem = inventoryLookup.get(key);
+            const enhancementLevel = inventoryItem?.enhancementLevel || 0;
+
+            // Check if item is equipment
+            const isEquipment = itemDetails?.equipmentDetail ? true : false;
+
+            let askPrice = 0;
+            let bidPrice = 0;
+
+            // Determine pricing method
+            if (isEquipment && useHighEnhancementCost && enhancementLevel >= minLevel) {
+                // Use enhancement cost calculation for high-level equipment
+                const cachedCost = networthCache.get(itemHrid, enhancementLevel);
+
+                if (cachedCost !== null) {
+                    // Use cached value for both ask and bid
+                    askPrice = cachedCost;
+                    bidPrice = cachedCost;
+                } else {
+                    // Calculate enhancement cost
+                    const enhancementParams = getEnhancingParams();
+                    const enhancementPath = calculateEnhancementPath(itemHrid, enhancementLevel, enhancementParams);
+
+                    if (enhancementPath && enhancementPath.optimalStrategy) {
+                        const enhancementCost = enhancementPath.optimalStrategy.totalCost;
+
+                        // Cache the result
+                        networthCache.set(itemHrid, enhancementLevel, enhancementCost);
+
+                        // Use enhancement cost for both ask and bid
+                        askPrice = enhancementCost;
+                        bidPrice = enhancementCost;
+                    } else {
+                        // Enhancement calculation failed, fallback to market price
+                        console.warn('[InventorySort] Enhancement calculation failed for:', itemName, '+' + enhancementLevel);
+                        const marketPrice = marketAPI.getPrice(itemHrid, enhancementLevel);
+                        if (marketPrice) {
+                            askPrice = marketPrice.ask > 0 ? marketPrice.ask : 0;
+                            bidPrice = marketPrice.bid > 0 ? marketPrice.bid : 0;
+                        }
+                    }
+                }
+            } else {
+                // Use market price (for non-equipment or low enhancement levels)
+                const marketPrice = marketAPI.getPrice(itemHrid, enhancementLevel);
+
+                // Start with whatever market data exists
+                if (marketPrice) {
+                    askPrice = marketPrice.ask > 0 ? marketPrice.ask : 0;
+                    bidPrice = marketPrice.bid > 0 ? marketPrice.bid : 0;
+                }
+
+                // For enhanced equipment, fill in missing prices with enhancement cost
+                if (isEquipment && enhancementLevel > 0 && (askPrice === 0 || bidPrice === 0)) {
+                    // Check cache first
+                    const cachedCost = networthCache.get(itemHrid, enhancementLevel);
+                    let enhancementCost = cachedCost;
+
+                    if (cachedCost === null) {
+                        // Calculate enhancement cost
+                        const enhancementParams = getEnhancingParams();
+                        const enhancementPath = calculateEnhancementPath(itemHrid, enhancementLevel, enhancementParams);
+
+                        if (enhancementPath && enhancementPath.optimalStrategy) {
+                            enhancementCost = enhancementPath.optimalStrategy.totalCost;
+                            networthCache.set(itemHrid, enhancementLevel, enhancementCost);
+                        } else {
+                            console.error('[InventorySort] Enhancement cost calculation failed for:', itemName, '+' + enhancementLevel, itemHrid);
+                            enhancementCost = null;
+                        }
+                    }
+
+                    // Fill in missing prices
+                    if (enhancementCost !== null) {
+                        if (askPrice === 0) askPrice = enhancementCost;
+                        if (bidPrice === 0) bidPrice = enhancementCost;
+                    }
+                } else if (isEquipment && enhancementLevel === 0 && askPrice === 0 && bidPrice === 0) {
+                    // For unenhanced equipment with no market data, use crafting cost
+                    const craftingCost = this.calculateCraftingCost(itemHrid);
+                    if (craftingCost > 0) {
+                        askPrice = craftingCost;
+                        bidPrice = craftingCost;
+                    } else {
+                        // No crafting recipe found (likely drop-only item)
+                        if (!this.warnedItems.has(itemHrid)) {
+                            console.warn('[InventorySort] No market data or crafting recipe for equipment:', itemName, itemHrid);
+                            this.warnedItems.add(itemHrid);
+                        }
+                    }
+                } else if (!isEquipment && askPrice === 0 && bidPrice === 0) {
+                    // Non-equipment with no market data
+                    if (!this.warnedItems.has(itemHrid)) {
+                        console.warn('[InventorySort] No market data for non-equipment item:', itemName, itemHrid);
+                        this.warnedItems.add(itemHrid);
+                    }
+                    // Leave values at 0 (no badge will be shown)
+                }
+            }
+
             // Store both ask and bid values
-            const askPrice = marketPrice.ask > 0 ? marketPrice.ask : 0;
-            const bidPrice = marketPrice.bid > 0 ? marketPrice.bid : 0;
-
-            // Removed zero-price warning to reduce console spam
-            // Non-zero prices are normal for many items
-
             itemElem.dataset.askValue = askPrice * itemCount;
             itemElem.dataset.bidValue = bidPrice * itemCount;
         }
+    }
 
-        // Summary warning removed - individual items already warn once per session
+    /**
+     * Calculate crafting cost for an item (used for unenhanced equipment with no market data)
+     * @param {string} itemHrid - Item HRID
+     * @returns {number} Total material cost or 0 if not craftable
+     */
+    calculateCraftingCost(itemHrid) {
+        const gameData = dataManager.getInitClientData();
+        if (!gameData) return 0;
+
+        // Find the action that produces this item
+        for (const action of Object.values(gameData.actionDetailMap || {})) {
+            if (action.outputItems) {
+                for (const output of action.outputItems) {
+                    if (output.itemHrid === itemHrid) {
+                        // Found the crafting action, calculate material costs
+                        let inputCost = 0;
+
+                        // Add input items
+                        if (action.inputItems && action.inputItems.length > 0) {
+                            for (const input of action.inputItems) {
+                                const inputPrice = marketAPI.getPrice(input.itemHrid, 0);
+                                if (inputPrice) {
+                                    inputCost += (inputPrice.ask || 0) * input.count;
+                                }
+                            }
+                        }
+
+                        // Apply Artisan Tea reduction (0.9x) to input materials
+                        inputCost *= 0.9;
+
+                        // Add upgrade item cost (not affected by Artisan Tea)
+                        let upgradeCost = 0;
+                        if (action.upgradeItemHrid) {
+                            const upgradePrice = marketAPI.getPrice(action.upgradeItemHrid, 0);
+                            if (upgradePrice) {
+                                upgradeCost = (upgradePrice.ask || 0);
+                            }
+                        }
+
+                        const totalCost = inputCost + upgradeCost;
+
+                        // Divide by output count to get per-item cost
+                        return totalCost / (output.count || 1);
+                    }
+                }
+            }
+        }
+
+        return 0;
     }
 
     /**
