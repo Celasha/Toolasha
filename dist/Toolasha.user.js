@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.4.889
+// @version      0.4.890
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
 // @author       Celasha and Claude, thank you to bot7420, DrDucky, Frotty, Truth_Light, AlphB, and sentientmilk for providing the basis for a lot of this. Thank you to Miku, Orvel, Jigglymoose, Incinarator, Knerd, and others for their time and help. Special thanks to Zaeter for the name. 
 // @license      CC-BY-NC-SA-4.0
@@ -21,7 +21,7 @@
 // @require      https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0/dist/chartjs-plugin-datalabels.min.js
 // @require      https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js
 // ==/UserScript==
-// Note: Combat Sim export data uses GM storage (Tampermonkey) or IndexedDB (Steam). All other data uses IndexedDB.
+// Note: Combat Sim export requires Tampermonkey for cross-domain storage sharing. Not available on Steam.
 
 (function () {
     'use strict';
@@ -1595,7 +1595,6 @@
      * Uses WebSocket constructor wrapper for better performance than MessageEvent.prototype.data hooking
      */
 
-
     class WebSocketHook {
         constructor() {
             this.isHooked = false;
@@ -1607,6 +1606,7 @@
 
         /**
          * Save combat sim export data to appropriate storage
+         * Only saves if script manager is available (cross-domain sharing with Combat Sim)
          * @param {string} key - Storage key
          * @param {string} value - Value to save (JSON string)
          */
@@ -1614,14 +1614,13 @@
             if (this.hasScriptManager) {
                 // Tampermonkey: use GM storage for cross-domain sharing with Combat Sim
                 GM_setValue(key, value);
-            } else {
-                // Steam/standalone: use IndexedDB
-                await storage.save('combat_sim_export', key, value);
             }
+            // Steam/standalone: Skip saving - Combat Sim import not possible without cross-domain storage
         }
 
         /**
          * Load combat sim export data from appropriate storage
+         * Only loads if script manager is available
          * @param {string} key - Storage key
          * @param {string} defaultValue - Default value if not found
          * @returns {string|null} Stored value or default
@@ -1630,11 +1629,9 @@
             if (this.hasScriptManager) {
                 // Tampermonkey: use GM storage
                 return GM_getValue(key, defaultValue);
-            } else {
-                // Steam/standalone: use IndexedDB
-                const value = await storage.load('combat_sim_export', key);
-                return value !== null ? value : defaultValue;
             }
+            // Steam/standalone: No data available (Combat Sim import requires script manager)
+            return defaultValue;
         }
 
         /**

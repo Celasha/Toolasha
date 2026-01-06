@@ -5,8 +5,6 @@
  * Uses WebSocket constructor wrapper for better performance than MessageEvent.prototype.data hooking
  */
 
-import storage from './storage.js';
-
 class WebSocketHook {
     constructor() {
         this.isHooked = false;
@@ -18,6 +16,7 @@ class WebSocketHook {
 
     /**
      * Save combat sim export data to appropriate storage
+     * Only saves if script manager is available (cross-domain sharing with Combat Sim)
      * @param {string} key - Storage key
      * @param {string} value - Value to save (JSON string)
      */
@@ -25,14 +24,13 @@ class WebSocketHook {
         if (this.hasScriptManager) {
             // Tampermonkey: use GM storage for cross-domain sharing with Combat Sim
             GM_setValue(key, value);
-        } else {
-            // Steam/standalone: use IndexedDB
-            await storage.save('combat_sim_export', key, value);
         }
+        // Steam/standalone: Skip saving - Combat Sim import not possible without cross-domain storage
     }
 
     /**
      * Load combat sim export data from appropriate storage
+     * Only loads if script manager is available
      * @param {string} key - Storage key
      * @param {string} defaultValue - Default value if not found
      * @returns {string|null} Stored value or default
@@ -41,11 +39,9 @@ class WebSocketHook {
         if (this.hasScriptManager) {
             // Tampermonkey: use GM storage
             return GM_getValue(key, defaultValue);
-        } else {
-            // Steam/standalone: use IndexedDB
-            const value = await storage.load('combat_sim_export', key);
-            return value !== null ? value : defaultValue;
         }
+        // Steam/standalone: No data available (Combat Sim import requires script manager)
+        return defaultValue;
     }
 
     /**
