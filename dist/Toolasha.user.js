@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.4.885
+// @version      0.4.886
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
 // @author       Celasha and Claude, thank you to bot7420, DrDucky, Frotty, Truth_Light, AlphB, and sentientmilk for providing the basis for a lot of this. Thank you to Miku, Orvel, Jigglymoose, Incinarator, Knerd, and others for their time and help. Special thanks to Zaeter for the name. 
 // @license      CC-BY-NC-SA-4.0
@@ -2235,6 +2235,8 @@
             // Handle items_updated (inventory/equipment changes)
             this.webSocketHook.on('items_updated', (data) => {
                 if (data.endCharacterItems) {
+                    // Update inventory cache with fresh data
+                    this.characterItems = data.endCharacterItems;
                     this.updateEquipmentMap(data.endCharacterItems);
                 }
 

@@ -196,6 +196,8 @@ class DataManager {
         // Handle items_updated (inventory/equipment changes)
         this.webSocketHook.on('items_updated', (data) => {
             if (data.endCharacterItems) {
+                // Update inventory cache with fresh data
+                this.characterItems = data.endCharacterItems;
                 this.updateEquipmentMap(data.endCharacterItems);
             }
 
