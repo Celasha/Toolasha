@@ -121,11 +121,6 @@ class WebSocketHook {
             const data = JSON.parse(message);
             const messageType = data.type;
 
-            // Debug logging for items_updated specifically
-            if (messageType === 'items_updated') {
-                console.log('[WebSocket] items_updated message received, handlers registered:', this.messageHandlers.get(messageType)?.length || 0);
-            }
-
             // Save critical data to GM storage for Combat Sim export
             this.saveCombatSimData(messageType, message);
 

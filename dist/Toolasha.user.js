@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.4.895
+// @version      0.4.896
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
 // @author       Celasha and Claude, thank you to bot7420, DrDucky, Frotty, Truth_Light, AlphB, and sentientmilk for providing the basis for a lot of this. Thank you to Miku, Orvel, Jigglymoose, Incinarator, Knerd, and others for their time and help. Special thanks to Zaeter for the name.
 // @license      CC-BY-NC-SA-4.0
@@ -1717,11 +1717,6 @@
             try {
                 const data = JSON.parse(message);
                 const messageType = data.type;
-
-                // Debug logging for items_updated specifically
-                if (messageType === 'items_updated') {
-                    console.log('[WebSocket] items_updated message received, handlers registered:', this.messageHandlers.get(messageType)?.length || 0);
-                }
 
                 // Save critical data to GM storage for Combat Sim export
                 this.saveCombatSimData(messageType, message);
@@ -18100,6 +18095,7 @@
         async initialize() {
             if (this.isInitialized) return;
 
+            console.log('[TaskRerollTracker] Initializing...');
 
             // Register WebSocket listener
             this.registerWebSocketListeners();
@@ -18108,6 +18104,7 @@
             this.registerDOMObservers();
 
             this.isInitialized = true;
+            console.log('[TaskRerollTracker] Initialized');
         }
 
         /**
@@ -18124,7 +18121,14 @@
          */
         registerWebSocketListeners() {
             const questsHandler = (data) => {
-                if (!data.endCharacterQuests) return;
+                console.log('[TaskRerollTracker] quests_updated message received:', data);
+
+                if (!data.endCharacterQuests) {
+                    console.log('[TaskRerollTracker] No endCharacterQuests in data');
+                    return;
+                }
+
+                console.log('[TaskRerollTracker] Processing', data.endCharacterQuests.length, 'quests');
 
                 // Update our task reroll data from server data
                 for (const quest of data.endCharacterQuests) {
@@ -18137,6 +18141,8 @@
                     });
                 }
 
+                console.log('[TaskRerollTracker] Task data map now has', this.taskRerollData.size, 'entries');
+
                 // Wait for game to update DOM before updating displays
                 setTimeout(() => {
                     this.updateAllTaskDisplays();
@@ -18148,6 +18154,50 @@
             // Store handler for cleanup
             this.unregisterHandlers.push(() => {
                 webSocketHook.off('quests_updated', questsHandler);
+            });
+
+            // Load existing quest data from DataManager (which receives init_character_data early)
+            const initHandler = (data) => {
+                console.log('[TaskRerollTracker] character_initialized event received from DataManager');
+
+                if (!data.characterQuests) {
+                    console.log('[TaskRerollTracker] No characterQuests in data');
+                    return;
+                }
+
+                console.log('[TaskRerollTracker] Loading', data.characterQuests.length, 'quests from character data');
+
+                // Load all quest data into the map
+                for (const quest of data.characterQuests) {
+                    this.taskRerollData.set(quest.id, {
+                        coinRerollCount: quest.coinRerollCount || 0,
+                        cowbellRerollCount: quest.cowbellRerollCount || 0,
+                        monsterHrid: quest.monsterHrid || '',
+                        actionHrid: quest.actionHrid || '',
+                        goalCount: quest.goalCount || 0
+                    });
+                }
+
+                console.log('[TaskRerollTracker] Loaded quest data, map now has', this.taskRerollData.size, 'entries');
+
+                // Wait for DOM to be ready before updating displays
+                setTimeout(() => {
+                    this.updateAllTaskDisplays();
+                }, 500);
+            };
+
+            dataManager.on('character_initialized', initHandler);
+            console.log('[TaskRerollTracker] Registered character_initialized handler with DataManager');
+
+            // Check if character data already loaded (in case we missed the event)
+            if (dataManager.characterData && dataManager.characterData.characterQuests) {
+                console.log('[TaskRerollTracker] Character data already loaded, processing immediately');
+                initHandler(dataManager.characterData);
+            }
+
+            // Store handler for cleanup
+            this.unregisterHandlers.push(() => {
+                dataManager.off('character_initialized', initHandler);
             });
 
         }
@@ -18230,7 +18280,9 @@
             const nameEl = taskElement.querySelector(GAME.TASK_NAME);
             const description = nameEl ? nameEl.textContent.trim() : '';
 
-            if (!description) return null;
+            if (!description) {
+                return null;
+            }
 
             // Get quantity from progress text
             const progressDivs = taskElement.querySelectorAll('div');
@@ -18292,7 +18344,9 @@
             }
 
             const taskData = this.taskRerollData.get(taskId);
-            if (!taskData) return;
+            if (!taskData) {
+                return;
+            }
 
             // Calculate totals
             const goldSpent = this.calculateGoldSpent(taskData.coinRerollCount);
@@ -18344,7 +18398,10 @@
          */
         updateAllTaskDisplays() {
             const taskList = document.querySelector(GAME.TASK_LIST);
-            if (!taskList) return;
+            if (!taskList) {
+                console.log('[TaskRerollTracker] No task list found in DOM');
+                return;
+            }
 
             const allTasks = taskList.querySelectorAll(GAME.TASK_CARD);
             allTasks.forEach((task) => {
