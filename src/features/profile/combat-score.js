@@ -373,7 +373,7 @@ class CombatScore {
         const originalBg = button.style.background;
 
         try {
-            const exportData = constructExportObject();
+            const exportData = await constructExportObject();
             if (!exportData) {
                 button.textContent = '✗ No Data';
                 button.style.background = '${config.COLOR_LOSS}';
@@ -414,7 +414,7 @@ class CombatScore {
         const originalBg = button.style.background;
 
         try {
-            const exportData = constructMilkonomyExport();
+            const exportData = await constructMilkonomyExport();
             if (!exportData) {
                 button.textContent = '✗ No Data';
                 button.style.background = '${config.COLOR_LOSS}';

@@ -4,19 +4,15 @@
  */
 
 import dataManager from '../../core/data-manager.js';
+import webSocketHook from '../../core/websocket.js';
 
 /**
- * Get character data from GM storage
- * @returns {Object|null} Character data or null
+ * Get character data from storage
+ * @returns {Promise<Object|null>} Character data or null
  */
-function getCharacterData() {
+async function getCharacterData() {
     try {
-        if (typeof GM_getValue === 'undefined') {
-            console.error('[Milkonomy Export] GM_getValue not available');
-            return null;
-        }
-
-        const data = GM_getValue('toolasha_init_character_data', null);
+        const data = await webSocketHook.loadFromStorage('toolasha_init_character_data', null);
         if (!data) {
             console.error('[Milkonomy Export] No character data found');
             return null;
@@ -299,9 +295,9 @@ function getEquippedItem(equipmentMap, gameData, slotType) {
  * Construct Milkonomy export object
  * @returns {Object|null} Milkonomy export data or null
  */
-export function constructMilkonomyExport() {
+export async function constructMilkonomyExport() {
     try {
-        const characterData = getCharacterData();
+        const characterData = await getCharacterData();
         if (!characterData) {
             console.error('[Milkonomy Export] No character data available');
             return null;

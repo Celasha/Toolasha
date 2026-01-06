@@ -21,7 +21,7 @@
 // @require      https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0/dist/chartjs-plugin-datalabels.min.js
 // @require      https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js
 // ==/UserScript==
-// Note: GM_getValue/GM_setValue removed - now using IndexedDB for storage
+// Note: Combat Sim export data uses GM storage (Tampermonkey) or IndexedDB (Steam). All other data uses IndexedDB.
 
 (function () {
     'use strict';
@@ -1595,10 +1595,46 @@
      * Uses WebSocket constructor wrapper for better performance than MessageEvent.prototype.data hooking
      */
 
+
     class WebSocketHook {
         constructor() {
             this.isHooked = false;
             this.messageHandlers = new Map();
+            // Detect if userscript manager is present (Tampermonkey, Greasemonkey, etc.)
+            this.hasScriptManager = typeof GM_info !== 'undefined';
+            console.log(`[WebSocket Hook] Script manager detected: ${this.hasScriptManager}`);
+        }
+
+        /**
+         * Save combat sim export data to appropriate storage
+         * @param {string} key - Storage key
+         * @param {string} value - Value to save (JSON string)
+         */
+        async saveToStorage(key, value) {
+            if (this.hasScriptManager) {
+                // Tampermonkey: use GM storage for cross-domain sharing with Combat Sim
+                GM_setValue(key, value);
+            } else {
+                // Steam/standalone: use IndexedDB
+                await storage.save('combat_sim_export', key, value);
+            }
+        }
+
+        /**
+         * Load combat sim export data from appropriate storage
+         * @param {string} key - Storage key
+         * @param {string} defaultValue - Default value if not found
+         * @returns {string|null} Stored value or default
+         */
+        async loadFromStorage(key, defaultValue = null) {
+            if (this.hasScriptManager) {
+                // Tampermonkey: use GM storage
+                return GM_getValue(key, defaultValue);
+            } else {
+                // Steam/standalone: use IndexedDB
+                const value = await storage.load('combat_sim_export', key);
+                return value !== null ? value : defaultValue;
+            }
         }
 
         /**
@@ -1710,34 +1746,30 @@
          * @param {string} messageType - Message type
          * @param {string} message - Raw message JSON string
          */
-        saveCombatSimData(messageType, message) {
+        async saveCombatSimData(messageType, message) {
             try {
-                if (typeof GM_setValue === 'undefined') {
-                    return; // GM functions not available
-                }
-
                 // Save full character data (on login/refresh)
                 if (messageType === 'init_character_data') {
-                    GM_setValue('toolasha_init_character_data', message);
+                    await this.saveToStorage('toolasha_init_character_data', message);
                     console.log('[WebSocket Hook] init_character_data received and saved at:', new Date().toISOString());
                 }
 
                 // Save client data (for ability special detection)
                 if (messageType === 'init_client_data') {
-                    GM_setValue('toolasha_init_client_data', message);
+                    await this.saveToStorage('toolasha_init_client_data', message);
                     console.log('[Toolasha] Client data saved for Combat Sim export');
                 }
 
                 // Save battle data including party members (on combat start)
                 if (messageType === 'new_battle') {
-                    GM_setValue('toolasha_new_battle', message);
+                    await this.saveToStorage('toolasha_new_battle', message);
                     console.log('[Toolasha] Battle data saved for Combat Sim export');
                 }
 
                 // Save profile shares (when opening party member profiles)
                 if (messageType === 'profile_shared') {
                     const parsed = JSON.parse(message);
-                    let profileList = JSON.parse(GM_getValue('toolasha_profile_export_list', '[]'));
+                    let profileList = JSON.parse(await this.loadFromStorage('toolasha_profile_export_list', '[]'));
 
                     // Extract character info
                     parsed.characterID = parsed.profile.characterSkills[0].characterID;
@@ -1755,7 +1787,7 @@
                         profileList.pop();
                     }
 
-                    GM_setValue('toolasha_profile_export_list', JSON.stringify(profileList));
+                    await this.saveToStorage('toolasha_profile_export_list', JSON.stringify(profileList));
                     console.log('[Toolasha] Profile saved for Combat Sim export:', parsed.characterName);
                 }
             } catch (error) {
@@ -1768,12 +1800,8 @@
          * Called periodically since it may not come through WebSocket
          * Uses official game API to avoid manual decompression
          */
-        captureClientDataFromLocalStorage() {
+        async captureClientDataFromLocalStorage() {
             try {
-                if (typeof GM_setValue === 'undefined') {
-                    return;
-                }
-
                 // Use official game API instead of manual localStorage access
                 if (typeof localStorageUtil === 'undefined' ||
                     typeof localStorageUtil.getInitClientData !== 'function') {
@@ -1794,7 +1822,7 @@
                 if (clientDataObj?.type === 'init_client_data') {
                     // Save as JSON string for Combat Sim export
                     const clientDataStr = JSON.stringify(clientDataObj);
-                    GM_setValue('toolasha_init_client_data', clientDataStr);
+                    await this.saveToStorage('toolasha_init_client_data', clientDataStr);
                     console.log('[Toolasha] Client data captured from localStorage via official API');
                 }
             } catch (error) {
@@ -14834,18 +14862,14 @@
      * Exports character data for solo or party simulation testing
      */
 
-    /**
-     * Get saved character data from GM storage
-     * @returns {Object|null} Parsed character data or null
-     */
-    function getCharacterData$1() {
-        try {
-            if (typeof GM_getValue === 'undefined') {
-                console.error('[Combat Sim Export] GM_getValue not available');
-                return null;
-            }
 
-            const data = GM_getValue('toolasha_init_character_data', null);
+    /**
+     * Get saved character data from storage
+     * @returns {Promise<Object|null>} Parsed character data or null
+     */
+    async function getCharacterData$1() {
+        try {
+            const data = await webSocketHook.loadFromStorage('toolasha_init_character_data', null);
             if (!data) {
                 console.error('[Combat Sim Export] No character data found. Please refresh game page.');
                 return null;
@@ -14859,16 +14883,12 @@
     }
 
     /**
-     * Get saved battle data from GM storage
-     * @returns {Object|null} Parsed battle data or null
+     * Get saved battle data from storage
+     * @returns {Promise<Object|null>} Parsed battle data or null
      */
-    function getBattleData() {
+    async function getBattleData() {
         try {
-            if (typeof GM_getValue === 'undefined') {
-                return null;
-            }
-
-            const data = GM_getValue('toolasha_new_battle', null);
+            const data = await webSocketHook.loadFromStorage('toolasha_new_battle', null);
             if (!data) {
                 return null; // No battle data (not in combat or solo)
             }
@@ -14881,16 +14901,12 @@
     }
 
     /**
-     * Get init_client_data from GM storage
-     * @returns {Object|null} Parsed client data or null
+     * Get init_client_data from storage
+     * @returns {Promise<Object|null>} Parsed client data or null
      */
-    function getClientData() {
+    async function getClientData() {
         try {
-            if (typeof GM_getValue === 'undefined') {
-                return null;
-            }
-
-            const data = GM_getValue('toolasha_init_client_data', null);
+            const data = await webSocketHook.loadFromStorage('toolasha_init_client_data', null);
             if (!data) {
                 console.warn('[Combat Sim Export] No client data found');
                 return null;
@@ -14904,16 +14920,12 @@
     }
 
     /**
-     * Get profile export list from GM storage
-     * @returns {Array} List of saved profiles
+     * Get profile export list from storage
+     * @returns {Promise<Array>} List of saved profiles
      */
-    function getProfileList() {
+    async function getProfileList() {
         try {
-            if (typeof GM_getValue === 'undefined') {
-                return [];
-            }
-
-            const data = GM_getValue('toolasha_profile_export_list', '[]');
+            const data = await webSocketHook.loadFromStorage('toolasha_profile_export_list', '[]');
             return JSON.parse(data);
         } catch (error) {
             console.error('[Combat Sim Export] Failed to get profile list:', error);
@@ -15195,15 +15207,15 @@
      * Construct full export object (solo or party)
      * @returns {Object} Export object with player data, IDs, positions, and zone info
      */
-    function constructExportObject() {
-        const characterObj = getCharacterData$1();
+    async function constructExportObject() {
+        const characterObj = await getCharacterData$1();
         if (!characterObj) {
             return null;
         }
 
-        const clientObj = getClientData();
-        const battleObj = getBattleData();
-        const profileList = getProfileList();
+        const clientObj = await getClientData();
+        const battleObj = await getBattleData();
+        const profileList = await getProfileList();
 
         // Blank player template (as string, like MCS)
         const BLANK = '{"player":{"attackLevel":1,"magicLevel":1,"meleeLevel":1,"rangedLevel":1,"defenseLevel":1,"staminaLevel":1,"intelligenceLevel":1,"equipment":[]},"food":{"/action_types/combat":[{"itemHrid":""},{"itemHrid":""},{"itemHrid":""}]},"drinks":{"/action_types/combat":[{"itemHrid":""},{"itemHrid":""},{"itemHrid":""}]},"abilities":[{"abilityHrid":"","level":"1"},{"abilityHrid":"","level":"1"},{"abilityHrid":"","level":"1"},{"abilityHrid":"","level":"1"},{"abilityHrid":"","level":"1"}],"triggerMap":{},"houseRooms":{"/house_rooms/dairy_barn":0,"/house_rooms/garden":0,"/house_rooms/log_shed":0,"/house_rooms/forge":0,"/house_rooms/workshop":0,"/house_rooms/sewing_parlor":0,"/house_rooms/kitchen":0,"/house_rooms/brewery":0,"/house_rooms/laboratory":0,"/house_rooms/observatory":0,"/house_rooms/dining_room":0,"/house_rooms/library":0,"/house_rooms/dojo":0,"/house_rooms/gym":0,"/house_rooms/armory":0,"/house_rooms/archery_range":0,"/house_rooms/mystical_study":0},"achievements":{}}';
@@ -15293,17 +15305,12 @@
 
 
     /**
-     * Get character data from GM storage
-     * @returns {Object|null} Character data or null
+     * Get character data from storage
+     * @returns {Promise<Object|null>} Character data or null
      */
-    function getCharacterData() {
+    async function getCharacterData() {
         try {
-            if (typeof GM_getValue === 'undefined') {
-                console.error('[Milkonomy Export] GM_getValue not available');
-                return null;
-            }
-
-            const data = GM_getValue('toolasha_init_character_data', null);
+            const data = await webSocketHook.loadFromStorage('toolasha_init_character_data', null);
             if (!data) {
                 console.error('[Milkonomy Export] No character data found');
                 return null;
@@ -15586,9 +15593,9 @@
      * Construct Milkonomy export object
      * @returns {Object|null} Milkonomy export data or null
      */
-    function constructMilkonomyExport() {
+    async function constructMilkonomyExport() {
         try {
-            const characterData = getCharacterData();
+            const characterData = await getCharacterData();
             if (!characterData) {
                 console.error('[Milkonomy Export] No character data available');
                 return null;
@@ -16059,7 +16066,7 @@
             const originalBg = button.style.background;
 
             try {
-                const exportData = constructExportObject();
+                const exportData = await constructExportObject();
                 if (!exportData) {
                     button.textContent = '✗ No Data';
                     button.style.background = '${config.COLOR_LOSS}';
@@ -16100,7 +16107,7 @@
             const originalBg = button.style.background;
 
             try {
-                const exportData = constructMilkonomyExport();
+                const exportData = await constructMilkonomyExport();
                 if (!exportData) {
                     button.textContent = '✗ No Data';
                     button.style.background = '${config.COLOR_LOSS}';
@@ -23859,10 +23866,10 @@
      * Import character/party data into simulator
      * @param {Element} button - Button element to update status
      */
-    function importDataToSimulator(button) {
+    async function importDataToSimulator(button) {
         try {
-            // Get export data from GM storage
-            const exportData = constructExportObject();
+            // Get export data from storage
+            const exportData = await constructExportObject();
 
             if (!exportData) {
                 button.textContent = 'Error: No character data';

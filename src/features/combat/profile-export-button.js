@@ -84,7 +84,7 @@ function injectExportButton(container) {
 async function handleExport(button) {
     try {
         // Get export data
-        const exportData = constructExportObject();
+        const exportData = await constructExportObject();
 
         if (!exportData) {
             button.textContent = '✗ No Data';

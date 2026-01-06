@@ -86,10 +86,10 @@ function injectImportButton(exportButton) {
  * Import character/party data into simulator
  * @param {Element} button - Button element to update status
  */
-function importDataToSimulator(button) {
+async function importDataToSimulator(button) {
     try {
-        // Get export data from GM storage
-        const exportData = constructExportObject();
+        // Get export data from storage
+        const exportData = await constructExportObject();
 
         if (!exportData) {
             button.textContent = 'Error: No character data';

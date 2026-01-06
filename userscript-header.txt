@@ -21,4 +21,4 @@
 // @require      https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0/dist/chartjs-plugin-datalabels.min.js
 // @require      https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js
 // ==/UserScript==
-// Note: GM_getValue/GM_setValue removed - now using IndexedDB for storage
+// Note: Combat Sim export data uses GM storage (Tampermonkey) or IndexedDB (Steam). All other data uses IndexedDB.

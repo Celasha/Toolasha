@@ -5,18 +5,15 @@
  * Exports character data for solo or party simulation testing
  */
 
-/**
- * Get saved character data from GM storage
- * @returns {Object|null} Parsed character data or null
- */
-function getCharacterData() {
-    try {
-        if (typeof GM_getValue === 'undefined') {
-            console.error('[Combat Sim Export] GM_getValue not available');
-            return null;
-        }
+import webSocketHook from '../../core/websocket.js';
 
-        const data = GM_getValue('toolasha_init_character_data', null);
+/**
+ * Get saved character data from storage
+ * @returns {Promise<Object|null>} Parsed character data or null
+ */
+async function getCharacterData() {
+    try {
+        const data = await webSocketHook.loadFromStorage('toolasha_init_character_data', null);
         if (!data) {
             console.error('[Combat Sim Export] No character data found. Please refresh game page.');
             return null;
@@ -30,16 +27,12 @@ function getCharacterData() {
 }
 
 /**
- * Get saved battle data from GM storage
- * @returns {Object|null} Parsed battle data or null
+ * Get saved battle data from storage
+ * @returns {Promise<Object|null>} Parsed battle data or null
  */
-function getBattleData() {
+async function getBattleData() {
     try {
-        if (typeof GM_getValue === 'undefined') {
-            return null;
-        }
-
-        const data = GM_getValue('toolasha_new_battle', null);
+        const data = await webSocketHook.loadFromStorage('toolasha_new_battle', null);
         if (!data) {
             return null; // No battle data (not in combat or solo)
         }
@@ -52,16 +45,12 @@ function getBattleData() {
 }
 
 /**
- * Get init_client_data from GM storage
- * @returns {Object|null} Parsed client data or null
+ * Get init_client_data from storage
+ * @returns {Promise<Object|null>} Parsed client data or null
  */
-function getClientData() {
+async function getClientData() {
     try {
-        if (typeof GM_getValue === 'undefined') {
-            return null;
-        }
-
-        const data = GM_getValue('toolasha_init_client_data', null);
+        const data = await webSocketHook.loadFromStorage('toolasha_init_client_data', null);
         if (!data) {
             console.warn('[Combat Sim Export] No client data found');
             return null;
@@ -75,16 +64,12 @@ function getClientData() {
 }
 
 /**
- * Get profile export list from GM storage
- * @returns {Array} List of saved profiles
+ * Get profile export list from storage
+ * @returns {Promise<Array>} List of saved profiles
  */
-function getProfileList() {
+async function getProfileList() {
     try {
-        if (typeof GM_getValue === 'undefined') {
-            return [];
-        }
-
-        const data = GM_getValue('toolasha_profile_export_list', '[]');
+        const data = await webSocketHook.loadFromStorage('toolasha_profile_export_list', '[]');
         return JSON.parse(data);
     } catch (error) {
         console.error('[Combat Sim Export] Failed to get profile list:', error);
@@ -366,15 +351,15 @@ function constructPartyPlayer(profile, clientObj, battleObj) {
  * Construct full export object (solo or party)
  * @returns {Object} Export object with player data, IDs, positions, and zone info
  */
-export function constructExportObject() {
-    const characterObj = getCharacterData();
+export async function constructExportObject() {
+    const characterObj = await getCharacterData();
     if (!characterObj) {
         return null;
     }
 
-    const clientObj = getClientData();
-    const battleObj = getBattleData();
-    const profileList = getProfileList();
+    const clientObj = await getClientData();
+    const battleObj = await getBattleData();
+    const profileList = await getProfileList();
 
     // Blank player template (as string, like MCS)
     const BLANK = '{"player":{"attackLevel":1,"magicLevel":1,"meleeLevel":1,"rangedLevel":1,"defenseLevel":1,"staminaLevel":1,"intelligenceLevel":1,"equipment":[]},"food":{"/action_types/combat":[{"itemHrid":""},{"itemHrid":""},{"itemHrid":""}]},"drinks":{"/action_types/combat":[{"itemHrid":""},{"itemHrid":""},{"itemHrid":""}]},"abilities":[{"abilityHrid":"","level":"1"},{"abilityHrid":"","level":"1"},{"abilityHrid":"","level":"1"},{"abilityHrid":"","level":"1"},{"abilityHrid":"","level":"1"}],"triggerMap":{},"houseRooms":{"/house_rooms/dairy_barn":0,"/house_rooms/garden":0,"/house_rooms/log_shed":0,"/house_rooms/forge":0,"/house_rooms/workshop":0,"/house_rooms/sewing_parlor":0,"/house_rooms/kitchen":0,"/house_rooms/brewery":0,"/house_rooms/laboratory":0,"/house_rooms/observatory":0,"/house_rooms/dining_room":0,"/house_rooms/library":0,"/house_rooms/dojo":0,"/house_rooms/gym":0,"/house_rooms/armory":0,"/house_rooms/archery_range":0,"/house_rooms/mystical_study":0},"achievements":{}}';
