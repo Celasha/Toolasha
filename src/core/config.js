@@ -195,6 +195,28 @@ class Config {
                 description: 'Tracks reroll costs and history',
                 settingKey: 'taskRerollTracker'
             },
+            taskSorter: {
+                enabled: true,
+                name: 'Task Sorting',
+                category: 'Tasks',
+                description: 'Adds button to sort tasks by skill type',
+                settingKey: 'taskSorter'
+            },
+            taskIcons: {
+                enabled: true,
+                name: 'Task Icons',
+                category: 'Tasks',
+                description: 'Shows visual icons on task cards',
+                settingKey: 'taskIcons'
+            },
+            taskIconsDungeons: {
+                enabled: false,
+                name: 'Task Icons - Dungeons',
+                category: 'Tasks',
+                description: 'Shows dungeon icons for combat tasks',
+                settingKey: 'taskIconsDungeons',
+                dependencies: ['taskIcons']
+            },
 
             // House Features
             houseCostDisplay: {

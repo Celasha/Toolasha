@@ -28,22 +28,16 @@ class MaxProduceable {
             return;
         }
 
-        console.log('[MaxProduceable] Initializing...');
-
         this.setupObserver();
 
         // Event-driven updates (no polling needed)
         dataManager.on('items_updated', () => {
-            console.log('[MaxProduceable] items_updated event - updating displays');
             this.updateAllCounts();
         });
 
         dataManager.on('action_completed', () => {
-            console.log('[MaxProduceable] action_completed event - updating displays');
             this.updateAllCounts();
         });
-
-        console.log('[MaxProduceable] Initialized (event-driven mode)');
     }
 
     /**
@@ -173,13 +167,6 @@ class MaxProduceable {
             return null;
         }
 
-        // Debug for Crimson Cheese specifically
-        const isCrimsonCheese = actionHrid === '/actions/cheesesmithing/crimson_cheese';
-        if (isCrimsonCheese) {
-            console.log('[MaxProduceable] Calculating Crimson Cheese:');
-            console.log('[MaxProduceable]   Action requires:', actionDetails.inputItems);
-        }
-
         // Calculate max crafts per input
         const maxCraftsPerInput = actionDetails.inputItems.map(input => {
             const invItem = inventory.find(item =>
@@ -189,10 +176,6 @@ class MaxProduceable {
 
             const invCount = invItem?.count || 0;
             const maxCrafts = Math.floor(invCount / input.count);
-
-            if (isCrimsonCheese) {
-                console.log('[MaxProduceable]   Input:', input.itemHrid, 'need:', input.count, 'have:', invCount, 'max crafts:', maxCrafts);
-            }
 
             return maxCrafts;
         });
@@ -208,14 +191,6 @@ class MaxProduceable {
 
             const upgradeCount = upgradeItem?.count || 0;
             minCrafts = Math.min(minCrafts, upgradeCount);
-
-            if (isCrimsonCheese) {
-                console.log('[MaxProduceable]   Upgrade item:', actionDetails.upgradeItemHrid, 'have:', upgradeCount);
-            }
-        }
-
-        if (isCrimsonCheese) {
-            console.log('[MaxProduceable]   Final result:', minCrafts);
         }
 
         return minCrafts;

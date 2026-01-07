@@ -31,6 +31,7 @@ export const GAME = {
     MAX_ACTION_COUNT_INPUT: '[class*="maxActionCountInput"]',
 
     // Tasks
+    TASK_PANEL: '[class*="TasksPanel_taskSlotCount"]',
     TASK_LIST: '[class*="TasksPanel_taskList"]',
     TASK_CARD: '[class*="RandomTask_randomTask"]',
     TASK_NAME: '[class*="RandomTask_name"]',

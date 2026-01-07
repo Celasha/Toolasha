@@ -24,6 +24,8 @@ import alchemyItemDimming from '../features/ui/alchemy-item-dimming.js';
 import skillExperiencePercentage from '../features/ui/skill-experience-percentage.js';
 import taskProfitDisplay from '../features/tasks/task-profit-display.js';
 import taskRerollTracker from '../features/tasks/task-reroll-tracker.js';
+import taskSorter from '../features/tasks/task-sorter.js';
+import taskIcons from '../features/tasks/task-icons.js';
 import housePanelObserver from '../features/house/house-panel-observer.js';
 import networthFeature from '../features/networth/index.js';
 import inventorySort from '../features/inventory/inventory-sort.js';
@@ -228,6 +230,20 @@ const featureRegistry = [
         category: 'Tasks',
         initialize: () => taskRerollTracker.initialize(),
         async: true
+    },
+    {
+        key: 'taskSorter',
+        name: 'Task Sorting',
+        category: 'Tasks',
+        initialize: () => taskSorter.initialize(),
+        async: false
+    },
+    {
+        key: 'taskIcons',
+        name: 'Task Icons',
+        category: 'Tasks',
+        initialize: () => taskIcons.initialize(),
+        async: false
     },
 
     // House Features
