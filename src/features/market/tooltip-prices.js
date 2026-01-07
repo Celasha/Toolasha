@@ -663,35 +663,29 @@ class TooltipPrices {
             // Check if this action produces our item
             let foundInDrop = false;
             let dropRate = 0;
+            let isSolo = false;
 
-            // Check drop table (zone actions)
+            // Check drop table (both solo and zone actions)
             if (action.dropTable) {
                 for (const drop of action.dropTable) {
                     if (drop.itemHrid === itemHrid) {
                         foundInDrop = true;
                         dropRate = drop.dropRate;
+                        // Solo gathering has 100% drop rate (dropRate === 1)
+                        // Zone gathering has < 100% drop rate
+                        isSolo = (dropRate === 1);
                         break;
                     }
                 }
             }
 
-            // Check rare drop table (rare finds from production actions)
+            // Check rare drop table (rare finds - always zone actions)
             if (!foundInDrop && action.rareDropTable) {
                 for (const drop of action.rareDropTable) {
                     if (drop.itemHrid === itemHrid) {
                         foundInDrop = true;
                         dropRate = drop.dropRate;
-                        break;
-                    }
-                }
-            }
-
-            // Check output items (solo actions) - these have 100% drop rate
-            let isSolo = false;
-            if (action.outputItems) {
-                for (const output of action.outputItems) {
-                    if (output.itemHrid === itemHrid) {
-                        isSolo = true;
+                        isSolo = false; // Rare drops are never solo
                         break;
                     }
                 }
