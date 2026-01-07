@@ -7,11 +7,13 @@ import { GAME } from '../../utils/selectors.js';
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import taskIcons from './task-icons.js';
+import domObserver from '../../core/dom-observer.js';
 
 class TaskSorter {
     constructor() {
         this.initialized = false;
         this.sortButton = null;
+        this.unregisterObserver = null;
 
         // Task type ordering (combat tasks go to bottom)
         this.TASK_ORDER = {
@@ -35,27 +37,24 @@ class TaskSorter {
     initialize() {
         if (this.initialized) return;
 
-        // Wait for DOM to be ready, then add sort button
-        this.waitForTaskPanel();
+        // Use DOM observer to watch for task panel appearing
+        this.watchTaskPanel();
 
         this.initialized = true;
     }
 
     /**
-     * Wait for task panel to appear, then add sort button
+     * Watch for task panel to appear
      */
-    waitForTaskPanel() {
-        const checkPanel = () => {
-            const taskPanelHeader = document.querySelector(GAME.TASK_PANEL);
-            if (taskPanelHeader) {
-                this.addSortButton(taskPanelHeader);
-            } else {
-                // Check again in 100ms
-                setTimeout(checkPanel, 100);
+    watchTaskPanel() {
+        // Register observer for task panel header
+        this.unregisterObserver = domObserver.onSelector(
+            'TaskSorter',
+            GAME.TASK_PANEL,
+            (headerElement) => {
+                this.addSortButton(headerElement);
             }
-        };
-
-        checkPanel();
+        );
     }
 
     /**
@@ -170,6 +169,11 @@ class TaskSorter {
      * Cleanup
      */
     cleanup() {
+        if (this.unregisterObserver) {
+            this.unregisterObserver();
+            this.unregisterObserver = null;
+        }
+
         if (this.sortButton && document.contains(this.sortButton)) {
             this.sortButton.remove();
         }
