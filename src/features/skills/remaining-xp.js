@@ -44,6 +44,26 @@ class RemainingXP {
             }
         );
         this.unregisterObservers.push(unregister);
+
+        // Wait for character data to be loaded before first update
+        const initHandler = () => {
+            // Initial update once character data is ready
+            setTimeout(() => {
+                this.updateAllSkillBars();
+            }, 500);
+        };
+
+        dataManager.on('character_initialized', initHandler);
+
+        // Check if character data already loaded (in case we missed the event)
+        if (dataManager.characterData) {
+            initHandler();
+        }
+
+        // Store handler for cleanup
+        this.unregisterObservers.push(() => {
+            dataManager.off('character_initialized', initHandler);
+        });
     }
 
     /**
@@ -67,12 +87,12 @@ class RemainingXP {
      */
     addRemainingXP(progressBar) {
         try {
-            // Get the skill button container
-            const skillButton = progressBar.closest('[class*="NavigationBar_skillButton"]');
-            if (!skillButton) return;
+            // Get the navigation link container (skill button)
+            const navLink = progressBar.closest('[class*="NavigationBar_navigationLink"]');
+            if (!navLink) return;
 
-            // Find the skill name element
-            const skillNameElement = skillButton.querySelector('[class*="NavigationBar_name"]');
+            // Find the skill name element (label)
+            const skillNameElement = navLink.querySelector('[class*="NavigationBar_label"]');
             if (!skillNameElement) return;
 
             const skillName = skillNameElement.textContent.trim();
@@ -133,7 +153,7 @@ class RemainingXP {
         const skillHrid = `/skills/${skillName.toLowerCase()}`;
 
         // Get character skills data
-        const characterData = dataManager.getCharacterData();
+        const characterData = dataManager.characterData;
         if (!characterData || !characterData.characterSkills) return null;
 
         // Find the skill

@@ -240,14 +240,6 @@ class MaxProduceable {
             return;
         }
 
-        // Find crimson milk in inventory for debugging (only log if changed)
-        const crimsonMilk = inventory.find(item => item.itemHrid === '/items/crimson_milk' && item.itemLocationHrid === '/item_locations/inventory');
-        const newCount = crimsonMilk?.count || 0;
-        if (!this.lastCrimsonMilkCount || this.lastCrimsonMilkCount !== newCount) {
-            console.log('[MaxProduceable] Crimson milk count changed:', this.lastCrimsonMilkCount, '→', newCount);
-            this.lastCrimsonMilkCount = newCount;
-        }
-
         // Clean up stale references and update valid ones
         for (const actionPanel of [...this.actionElements.keys()]) {
             if (document.body.contains(actionPanel)) {

@@ -10,6 +10,7 @@ import profitCalculator from './profit-calculator.js';
 import expectedValueCalculator from './expected-value-calculator.js';
 import { getEnhancingParams } from '../../utils/enhancement-config.js';
 import { calculateEnhancementPath, buildEnhancementTooltipHTML } from '../enhancement/tooltip-enhancement.js';
+import { calculateGatheringProfit } from '../actions/gathering-profit.js';
 import { numberFormatter, formatKMB } from '../../utils/formatters.js';
 import dom from '../../utils/dom.js';
 import domObserver from '../../core/dom-observer.js';
@@ -191,6 +192,14 @@ class TooltipPrices {
             const profitData = await profitCalculator.calculateProfit(itemHrid);
             if (profitData) {
                 this.injectProfitDisplay(tooltipElement, profitData, isCollectionTooltip);
+            }
+        }
+
+        // Check for gathering sources (Foraging, Woodcutting, Milking)
+        if (config.getSetting('itemTooltip_profit') && enhancementLevel === 0) {
+            const gatheringData = await this.findGatheringSources(itemHrid);
+            if (gatheringData && (gatheringData.soloActions.length > 0 || gatheringData.zoneActions.length > 0)) {
+                this.injectGatheringDisplay(tooltipElement, gatheringData, isCollectionTooltip);
             }
         }
 
@@ -622,6 +631,174 @@ class TooltipPrices {
 
         // Insert at the end of the tooltip
         tooltipText.appendChild(evDiv);
+    }
+
+    /**
+     * Find gathering sources for an item
+     * @param {string} itemHrid - Item HRID
+     * @returns {Object|null} { soloActions: [...], zoneActions: [...] }
+     */
+    async findGatheringSources(itemHrid) {
+        const gameData = dataManager.getInitClientData();
+        if (!gameData || !gameData.actionDetailMap) {
+            return null;
+        }
+
+        const GATHERING_TYPES = [
+            '/action_types/foraging',
+            '/action_types/woodcutting',
+            '/action_types/milking'
+        ];
+
+        const soloActions = [];
+        const zoneActions = [];
+
+        // Search through all actions
+        for (const [actionHrid, action] of Object.entries(gameData.actionDetailMap)) {
+            // Skip non-gathering actions
+            if (!GATHERING_TYPES.includes(action.type)) {
+                continue;
+            }
+
+            // Check if this action produces our item
+            let foundInDrop = false;
+            let dropRate = 0;
+
+            // Check drop table (zone actions)
+            if (action.dropTable) {
+                for (const drop of action.dropTable) {
+                    if (drop.itemHrid === itemHrid) {
+                        foundInDrop = true;
+                        dropRate = drop.rate;
+                        break;
+                    }
+                }
+            }
+
+            // Check output items (solo actions) - these have 100% drop rate
+            let isSolo = false;
+            if (action.outputItems) {
+                for (const output of action.outputItems) {
+                    if (output.itemHrid === itemHrid) {
+                        isSolo = true;
+                        break;
+                    }
+                }
+            }
+
+            if (foundInDrop || isSolo) {
+                const actionData = {
+                    actionHrid,
+                    actionName: action.name,
+                    dropRate
+                };
+
+                if (isSolo) {
+                    soloActions.push(actionData);
+                } else {
+                    zoneActions.push(actionData);
+                }
+            }
+        }
+
+        // Only return if we found something
+        if (soloActions.length === 0 && zoneActions.length === 0) {
+            return null;
+        }
+
+        // Calculate profit for solo actions
+        for (const action of soloActions) {
+            const profitData = await calculateGatheringProfit(action.actionHrid);
+            if (profitData) {
+                action.itemsPerHour = profitData.baseOutputs?.[0]?.itemsPerHour || 0;
+                action.profitPerHour = profitData.profitPerHour || 0;
+            }
+        }
+
+        // Calculate items/hr for zone actions (no profit)
+        for (const action of zoneActions) {
+            const profitData = await calculateGatheringProfit(action.actionHrid);
+            if (profitData) {
+                // Find this specific item in the outputs
+                const output = profitData.baseOutputs?.find(o =>
+                    o.itemHrid === itemHrid || o.name === gameData.itemDetailMap[itemHrid]?.name
+                );
+                if (output) {
+                    action.itemsPerHour = output.itemsPerHour || 0;
+                }
+            }
+        }
+
+        return { soloActions, zoneActions };
+    }
+
+    /**
+     * Inject gathering display into tooltip
+     * @param {Element} tooltipElement - Tooltip element
+     * @param {Object} gatheringData - { soloActions: [...], zoneActions: [...] }
+     * @param {boolean} isCollectionTooltip - True if collection tooltip
+     */
+    injectGatheringDisplay(tooltipElement, gatheringData, isCollectionTooltip = false) {
+        // Find the tooltip text container
+        const tooltipText = isCollectionTooltip
+            ? tooltipElement.querySelector('.Collection_tooltipContent__2IcSJ')
+            : tooltipElement.querySelector('.ItemTooltipText_itemTooltipText__zFq3A');
+
+        if (!tooltipText) {
+            return;
+        }
+
+        // Check if we already injected (prevent duplicates)
+        if (tooltipText.querySelector('.market-gathering-injected')) {
+            return;
+        }
+
+        // Create gathering display container
+        const gatheringDiv = dom.createStyledDiv(
+            { color: config.COLOR_TOOLTIP_INFO, marginTop: '8px' },
+            '',
+            'market-gathering-injected'
+        );
+
+        let html = '<div style="border-top: 1px solid rgba(255,255,255,0.2); padding-top: 8px;">';
+        html += '<div style="font-weight: bold; margin-bottom: 4px;">GATHERING</div>';
+
+        // Solo actions section
+        if (gatheringData.soloActions.length > 0) {
+            html += '<div style="font-size: 0.9em; margin-left: 8px; margin-bottom: 6px;">';
+            html += '<div style="font-weight: 500; margin-bottom: 2px;">Solo:</div>';
+
+            for (const action of gatheringData.soloActions) {
+                const itemsPerHourStr = action.itemsPerHour ? Math.round(action.itemsPerHour) : '?';
+                const profitStr = action.profitPerHour ? formatKMB(Math.round(action.profitPerHour)) : '?';
+
+                html += `<div style="margin-left: 8px;">• ${action.actionName}: ${itemsPerHourStr} items/hr | ${profitStr} gold/hr</div>`;
+            }
+
+            html += '</div>';
+        }
+
+        // Zone actions section
+        if (gatheringData.zoneActions.length > 0) {
+            html += '<div style="font-size: 0.9em; margin-left: 8px;">';
+            html += '<div style="font-weight: 500; margin-bottom: 2px;">Also found in:</div>';
+
+            for (const action of gatheringData.zoneActions) {
+                const itemsPerHourStr = action.itemsPerHour ? Math.round(action.itemsPerHour) : '?';
+                const dropRatePercent = (action.dropRate * 100).toFixed(1);
+
+                html += `<div style="margin-left: 8px;">• ${action.actionName}: ${itemsPerHourStr} items/hr (${dropRatePercent}% drop)</div>`;
+            }
+
+            html += '</div>';
+        }
+
+        html += '</div>'; // Close main container
+
+        gatheringDiv.innerHTML = html;
+
+        // Insert at the end of the tooltip
+        tooltipText.appendChild(gatheringDiv);
     }
 
     /**
