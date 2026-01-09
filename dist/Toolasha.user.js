@@ -713,6 +713,14 @@
                     default: true,
                     help: 'Displays how much XP needed to reach the next level under skill progress bars'
                 },
+                skillRemainingXP_blackBorder: {
+                    id: 'skillRemainingXP_blackBorder',
+                    label: 'Remaining XP: Add black text border for better visibility',
+                    type: 'checkbox',
+                    default: true,
+                    dependencies: ['skillRemainingXP'],
+                    help: 'Adds a black outline/shadow to the XP text for better readability against progress bars'
+                },
                 skillbook: {
                     id: 'skillbook',
                     label: 'Skill books: Show books needed to reach target level',
@@ -19756,6 +19764,13 @@
                 const xpDisplay = document.createElement('span');
                 xpDisplay.className = 'mwi-remaining-xp';
                 xpDisplay.textContent = `${numberFormatter(remainingXP)} XP left`;
+
+                // Build style with optional text shadow
+                const useBlackBorder = config.getSetting('skillRemainingXP_blackBorder', true);
+                const textShadow = useBlackBorder
+                    ? 'text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 0 3px #000;'
+                    : '';
+
                 xpDisplay.style.cssText = `
                 font-size: 11px;
                 color: ${config.COLOR_REMAINING_XP};
@@ -19765,6 +19780,7 @@
                 width: 100%;
                 font-weight: 600;
                 pointer-events: none;
+                ${textShadow}
             `;
 
                 // Insert after the progress bar
@@ -28364,7 +28380,7 @@
         const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
         targetWindow.Toolasha = {
-            version: '0.4.908',
+            version: '0.4.909',
 
             // Feature toggle API (for users to manage settings via console)
             features: {

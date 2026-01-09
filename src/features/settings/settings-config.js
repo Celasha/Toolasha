@@ -397,6 +397,14 @@ export const settingsGroups = {
                 default: true,
                 help: 'Displays how much XP needed to reach the next level under skill progress bars'
             },
+            skillRemainingXP_blackBorder: {
+                id: 'skillRemainingXP_blackBorder',
+                label: 'Remaining XP: Add black text border for better visibility',
+                type: 'checkbox',
+                default: true,
+                dependencies: ['skillRemainingXP'],
+                help: 'Adds a black outline/shadow to the XP text for better readability against progress bars'
+            },
             skillbook: {
                 id: 'skillbook',
                 label: 'Skill books: Show books needed to reach target level',

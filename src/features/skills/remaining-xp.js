@@ -133,6 +133,13 @@ class RemainingXP {
             const xpDisplay = document.createElement('span');
             xpDisplay.className = 'mwi-remaining-xp';
             xpDisplay.textContent = `${numberFormatter(remainingXP)} XP left`;
+
+            // Build style with optional text shadow
+            const useBlackBorder = config.getSetting('skillRemainingXP_blackBorder', true);
+            const textShadow = useBlackBorder
+                ? 'text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 0 3px #000;'
+                : '';
+
             xpDisplay.style.cssText = `
                 font-size: 11px;
                 color: ${config.COLOR_REMAINING_XP};
@@ -142,6 +149,7 @@ class RemainingXP {
                 width: 100%;
                 font-weight: 600;
                 pointer-events: none;
+                ${textShadow}
             `;
 
             // Insert after the progress bar
