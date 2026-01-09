@@ -63,6 +63,11 @@ class RequiredMaterials {
                 this.updateRequiredMaterials(panel, inputField.value);
             });
 
+            // Check if input already has a value and display materials
+            if (inputField.value && parseInt(inputField.value) > 0) {
+                this.updateRequiredMaterials(panel, inputField.value);
+            }
+
             // Also listen for button clicks that change the input
             // This catches quick input buttons and Max button
             panel.addEventListener('click', (e) => {
