@@ -473,7 +473,12 @@ class ActionTimeDisplay {
 
         // Time per action and actions/hour
         statsToAppend.push(`${actionTime.toFixed(2)}s/action`);
-        statsToAppend.push(`${actionsPerHour.toFixed(0)}/hr`);
+
+        // Calculate items per hour with efficiency (reuse avgActionsPerAttempt from time calculation above)
+        const itemsPerHour = actionsPerHour * avgActionsPerAttempt;
+
+        // Show both actions/hr and items/hr
+        statsToAppend.push(`${actionsPerHour.toFixed(0)} actions/hr (${itemsPerHour.toFixed(0)} items/hr)`);
 
         // Append to game's div (with marker for cleanup)
         this.appendStatsToActionName(actionNameElement, statsToAppend.join(' · '));

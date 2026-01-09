@@ -6,6 +6,7 @@
 import webSocketHook from '../../core/websocket.js';
 import dungeonTrackerStorage from './dungeon-tracker-storage.js';
 import dataManager from '../../core/data-manager.js';
+import storage from '../../core/storage.js';
 
 class DungeonTracker {
     constructor() {
@@ -15,6 +16,113 @@ class DungeonTracker {
         this.waveTimes = [];
         this.updateCallbacks = [];
         this.pendingDungeonInfo = null; // Store dungeon info before tracking starts
+        this.currentBattleId = null; // Current battle ID for persistence verification
+    }
+
+    /**
+     * Check if an action is a dungeon action
+     * @param {string} actionHrid - Action HRID to check
+     * @returns {boolean} True if action is a dungeon
+     */
+    isDungeonAction(actionHrid) {
+        if (!actionHrid || !actionHrid.startsWith('/actions/combat/')) {
+            return false;
+        }
+
+        const actionDetails = dataManager.getActionDetails(actionHrid);
+        return actionDetails?.combatZoneInfo?.isDungeon === true;
+    }
+
+    /**
+     * Save in-progress run to IndexedDB
+     * @returns {Promise<boolean>} Success status
+     */
+    async saveInProgressRun() {
+        if (!this.isTracking || !this.currentRun || !this.currentBattleId) {
+            return false;
+        }
+
+        const stateToSave = {
+            battleId: this.currentBattleId,
+            dungeonHrid: this.currentRun.dungeonHrid,
+            tier: this.currentRun.tier,
+            startTime: this.currentRun.startTime,
+            currentWave: this.currentRun.currentWave,
+            maxWaves: this.currentRun.maxWaves,
+            wavesCompleted: this.currentRun.wavesCompleted,
+            waveTimes: [...this.waveTimes],
+            waveStartTime: this.waveStartTime?.getTime() || null,
+            lastUpdateTime: Date.now()
+        };
+
+        return storage.setJSON('dungeonTracker_inProgressRun', stateToSave, 'settings', true);
+    }
+
+    /**
+     * Restore in-progress run from IndexedDB
+     * @param {number} currentBattleId - Current battle ID from new_battle message
+     * @returns {Promise<boolean>} True if restored successfully
+     */
+    async restoreInProgressRun(currentBattleId) {
+        const saved = await storage.getJSON('dungeonTracker_inProgressRun', 'settings', null);
+
+        if (!saved) {
+            return false; // No saved state
+        }
+
+        // Verify battleId matches (same run)
+        if (saved.battleId !== currentBattleId) {
+            console.log('[Dungeon Tracker] BattleId mismatch - discarding old run state');
+            await this.clearInProgressRun();
+            return false;
+        }
+
+        // Verify dungeon action is still active
+        const currentActions = dataManager.getCurrentActions();
+        const dungeonAction = currentActions.find(a =>
+            this.isDungeonAction(a.actionHrid) && !a.isDone
+        );
+
+        if (!dungeonAction || dungeonAction.actionHrid !== saved.dungeonHrid) {
+            console.log('[Dungeon Tracker] Dungeon no longer active - discarding old run state');
+            await this.clearInProgressRun();
+            return false;
+        }
+
+        // Check staleness (older than 10 minutes = likely invalid)
+        const age = Date.now() - saved.lastUpdateTime;
+        if (age > 10 * 60 * 1000) {
+            console.log('[Dungeon Tracker] Saved state too old - discarding');
+            await this.clearInProgressRun();
+            return false;
+        }
+
+        // Restore state
+        this.isTracking = true;
+        this.currentBattleId = saved.battleId;
+        this.waveTimes = saved.waveTimes || [];
+        this.waveStartTime = saved.waveStartTime ? new Date(saved.waveStartTime) : null;
+
+        this.currentRun = {
+            dungeonHrid: saved.dungeonHrid,
+            tier: saved.tier,
+            startTime: saved.startTime,
+            currentWave: saved.currentWave,
+            maxWaves: saved.maxWaves,
+            wavesCompleted: saved.wavesCompleted
+        };
+
+        console.log(`[Dungeon Tracker] Restored run state - Wave ${saved.currentWave}/${saved.maxWaves}`);
+        this.notifyUpdate();
+        return true;
+    }
+
+    /**
+     * Clear saved in-progress run from IndexedDB
+     * @returns {Promise<boolean>} Success status
+     */
+    async clearInProgressRun() {
+        return storage.delete('dungeonTracker_inProgressRun', 'settings');
     }
 
     /**
@@ -39,9 +147,8 @@ class DungeonTracker {
         // Check if any dungeon action was added or removed
         if (data.endCharacterActions) {
             for (const action of data.endCharacterActions) {
-                // Check if this is a dungeon action
-                if (action.actionHrid?.startsWith('/actions/combat/') &&
-                    action.wave !== undefined) {
+                // Check if this is a dungeon action using explicit verification
+                if (this.isDungeonAction(action.actionHrid)) {
 
                     if (action.isDone === false) {
                         // Dungeon action added to queue - store info for when new_battle fires
@@ -103,12 +210,26 @@ class DungeonTracker {
             return;
         }
 
+        // Capture battleId for persistence
+        const battleId = data.battleId;
+
         // Wave 0 = first wave = dungeon start
         if (data.wave === 0) {
-            this.startDungeon(data);
+            // Try to restore in-progress run first
+            this.restoreInProgressRun(battleId).then(restored => {
+                if (!restored) {
+                    // No restore or failed restore - start fresh
+                    this.startDungeon(data);
+                }
+            });
         } else if (!this.isTracking) {
-            // Mid-dungeon start - initialize tracking anyway
-            this.startDungeon(data);
+            // Mid-dungeon start - try to restore first
+            this.restoreInProgressRun(battleId).then(restored => {
+                if (!restored) {
+                    // No restore - initialize tracking anyway
+                    this.startDungeon(data);
+                }
+            });
         } else {
             // Subsequent wave (already tracking)
             this.startWave(data);
@@ -126,6 +247,13 @@ class DungeonTracker {
         let maxWaves = null;
 
         if (this.pendingDungeonInfo) {
+            // Verify this is actually a dungeon action before starting tracking
+            if (!this.isDungeonAction(this.pendingDungeonInfo.dungeonHrid)) {
+                console.warn('[Dungeon Tracker] Attempted to track non-dungeon action:', this.pendingDungeonInfo.dungeonHrid);
+                this.pendingDungeonInfo = null;
+                return; // Don't start tracking
+            }
+
             // Use info from actions_updated message
             dungeonHrid = this.pendingDungeonInfo.dungeonHrid;
             tier = this.pendingDungeonInfo.tier;
@@ -140,6 +268,7 @@ class DungeonTracker {
         }
 
         this.isTracking = true;
+        this.currentBattleId = data.battleId; // Store battleId for persistence
         this.waveStartTime = new Date(data.combatStartTime);
         this.waveTimes = [];
 
@@ -153,6 +282,9 @@ class DungeonTracker {
         };
 
         this.notifyUpdate();
+
+        // Save initial state to IndexedDB
+        this.saveInProgressRun();
     }
 
     /**
@@ -169,6 +301,9 @@ class DungeonTracker {
         this.currentRun.currentWave = data.wave;
 
         this.notifyUpdate();
+
+        // Save state after each wave start
+        this.saveInProgressRun();
     }
 
     /**
@@ -182,8 +317,8 @@ class DungeonTracker {
 
         const action = data.endCharacterAction;
 
-        // Only process dungeon actions
-        if (!action.actionHrid || !action.actionHrid.startsWith('/actions/combat/')) {
+        // Verify this is a dungeon action
+        if (!this.isDungeonAction(action.actionHrid)) {
             return;
         }
 
@@ -215,6 +350,9 @@ class DungeonTracker {
         this.currentRun.wavesCompleted = action.wave;
 
         console.log(`[Dungeon Tracker] Wave ${action.wave} completed in ${(waveTime / 1000).toFixed(1)}s`);
+
+        // Save state after wave completion
+        this.saveInProgressRun();
 
         // Check if dungeon is complete
         if (action.isDone) {
@@ -272,6 +410,9 @@ class DungeonTracker {
         // Notify completion
         this.notifyCompletion(completedRun);
 
+        // Clear saved in-progress state
+        await this.clearInProgressRun();
+
         // Reset state
         this.resetTracking();
     }
@@ -285,6 +426,11 @@ class DungeonTracker {
         this.waveStartTime = null;
         this.waveTimes = [];
         this.pendingDungeonInfo = null;
+        this.currentBattleId = null;
+
+        // Clear saved state (fire and forget - don't await)
+        this.clearInProgressRun();
+
         this.notifyUpdate();
     }
 

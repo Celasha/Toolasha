@@ -33,17 +33,18 @@ class RemainingXP {
     }
 
     /**
-     * Watch for skill buttons in the navigation panel
+     * Watch for skill buttons in the navigation panel and other skill displays
      */
     watchSkillButtons() {
-        const unregister = domObserver.onClass(
-            'RemainingXP-SkillBar',
+        // Watch for left navigation bar skills (non-combat skills)
+        const unregisterNav = domObserver.onClass(
+            'RemainingXP-NavSkillBar',
             'NavigationBar_currentExperience',
             () => {
                 this.updateAllSkillBars();
             }
         );
-        this.unregisterObservers.push(unregister);
+        this.unregisterObservers.push(unregisterNav);
 
         // Wait for character data to be loaded before first update
         const initHandler = () => {
@@ -73,8 +74,9 @@ class RemainingXP {
         // Remove any existing XP displays
         document.querySelectorAll('.mwi-remaining-xp').forEach(el => el.remove());
 
-        // Find all skill progress bars
-        const progressBars = document.querySelectorAll('[class*="NavigationBar_currentExperience"]');
+        // Find all skill progress bars (broader selector to catch combat skills too)
+        // Use attribute selector to match any class containing "currentExperience"
+        const progressBars = document.querySelectorAll('[class*="currentExperience"]');
 
         progressBars.forEach(progressBar => {
             this.addRemainingXP(progressBar);
@@ -87,15 +89,38 @@ class RemainingXP {
      */
     addRemainingXP(progressBar) {
         try {
-            // Get the navigation link container (skill button)
+            // Try to find skill name - handle both navigation bar and combat skill displays
+            let skillName = null;
+
+            // Method 1: Navigation bar structure (left nav)
             const navLink = progressBar.closest('[class*="NavigationBar_navigationLink"]');
-            if (!navLink) return;
+            if (navLink) {
+                const skillNameElement = navLink.querySelector('[class*="NavigationBar_label"]');
+                if (skillNameElement) {
+                    skillName = skillNameElement.textContent.trim();
+                }
+            }
 
-            // Find the skill name element (label)
-            const skillNameElement = navLink.querySelector('[class*="NavigationBar_label"]');
-            if (!skillNameElement) return;
+            // Method 2: Check for combat skills by looking at surrounding text
+            // Combat skills might be displayed differently, search parent structure
+            if (!skillName) {
+                // Look for skill name in parent elements or siblings
+                const parent = progressBar.closest('div');
+                if (parent) {
+                    // Search for common combat skill names in the DOM tree
+                    const combatSkills = ['Attack', 'Defense', 'Stamina', 'Intelligence', 'Melee', 'Ranged', 'Magic'];
+                    const textContent = parent.textContent;
 
-            const skillName = skillNameElement.textContent.trim();
+                    for (const skill of combatSkills) {
+                        if (textContent.includes(skill)) {
+                            skillName = skill;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (!skillName) return;
 
             // Calculate remaining XP for this skill
             const remainingXP = this.calculateRemainingXP(skillName);
@@ -104,6 +129,9 @@ class RemainingXP {
             // Find the progress bar container (parent of the progress bar)
             const progressContainer = progressBar.parentNode;
             if (!progressContainer) return;
+
+            // Check if we already added XP display here (prevent duplicates)
+            if (progressContainer.querySelector('.mwi-remaining-xp')) return;
 
             // Create the remaining XP display
             const xpDisplay = document.createElement('span');

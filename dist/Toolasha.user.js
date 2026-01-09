@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.4.905
+// @version      0.4.906
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
-// @author       Celasha and Claude, thank you to bot7420, DrDucky, Frotty, Truth_Light, AlphB, and sentientmilk for providing the basis for a lot of this. Thank you to Miku, Orvel, Jigglymoose, Incinarator, Knerd, and others for their time and help. Special thanks to Zaeter for the name.
+// @author       Celasha and Claude, thank you to bot7420, DrDucky, Frotty, Truth_Light, AlphB, and sentientmilk for providing the basis for a lot of this. Thank you to Miku, Orvel, Jigglymoose, Incinarator, Knerd, and others for their time and help. Thank you to Steez for testing and helping me figure out where I'm wrong! Special thanks to Zaeter for the name.
 // @license      CC-BY-NC-SA-4.0
 // @run-at       document-start
 // @match        https://www.milkywayidle.com/*
@@ -11712,10 +11712,14 @@
                 remainingActions = Infinity;
             }
 
-            // Calculate total time
-            // Note: Efficiency does NOT reduce time - it only increases outputs
-            // The queue count represents ACTIONS to perform, not outputs wanted
-            const totalTimeSeconds = remainingActions * actionTime;
+            // Calculate average actions per attempt from efficiency
+            const guaranteedActions = 1 + Math.floor(totalEfficiency / 100);
+            const chanceForExtra = totalEfficiency % 100;
+            const avgActionsPerAttempt = guaranteedActions + (chanceForExtra / 100);
+
+            // Calculate actual attempts needed (time-consuming operations)
+            const actualAttempts = Math.ceil(remainingActions / avgActionsPerAttempt);
+            const totalTimeSeconds = actualAttempts * actionTime;
 
             // Calculate completion time
             const completionTime = new Date();
@@ -11767,7 +11771,12 @@
 
             // Time per action and actions/hour
             statsToAppend.push(`${actionTime.toFixed(2)}s/action`);
-            statsToAppend.push(`${actionsPerHour.toFixed(0)}/hr`);
+
+            // Calculate items per hour with efficiency (reuse avgActionsPerAttempt from time calculation above)
+            const itemsPerHour = actionsPerHour * avgActionsPerAttempt;
+
+            // Show both actions/hr and items/hr
+            statsToAppend.push(`${actionsPerHour.toFixed(0)} actions/hr (${itemsPerHour.toFixed(0)} items/hr)`);
 
             // Append to game's div (with marker for cleanup)
             this.appendStatsToActionName(actionNameElement, statsToAppend.join(' · '));
@@ -12153,7 +12162,15 @@
                                     if (materialLimit !== null) {
                                         // Material-limited infinite action - calculate time
                                         const count = materialLimit;
-                                        const totalTime = count * actionTime;
+
+                                        // Calculate average actions per attempt from efficiency
+                                        const guaranteedActions = 1 + Math.floor(totalEfficiency / 100);
+                                        const chanceForExtra = totalEfficiency % 100;
+                                        const avgActionsPerAttempt = guaranteedActions + (chanceForExtra / 100);
+
+                                        // Calculate actual attempts needed
+                                        const actualAttempts = Math.ceil(count / avgActionsPerAttempt);
+                                        const totalTime = actualAttempts * actionTime;
                                         accumulatedTime += totalTime;
                                     }
                                 } else {
@@ -12164,8 +12181,16 @@
                                 const count = currentAction.maxCount - currentAction.currentCount;
                                 const timeData = this.calculateActionTime(actionDetails);
                                 if (timeData) {
-                                    const { actionTime } = timeData;
-                                    const totalTime = count * actionTime;
+                                    const { actionTime, totalEfficiency } = timeData;
+
+                                    // Calculate average actions per attempt from efficiency
+                                    const guaranteedActions = 1 + Math.floor(totalEfficiency / 100);
+                                    const chanceForExtra = totalEfficiency % 100;
+                                    const avgActionsPerAttempt = guaranteedActions + (chanceForExtra / 100);
+
+                                    // Calculate actual attempts needed
+                                    const actualAttempts = Math.ceil(count / avgActionsPerAttempt);
+                                    const totalTime = actualAttempts * actionTime;
                                     accumulatedTime += totalTime;
                                 }
                             }
@@ -12246,12 +12271,18 @@
                     }
 
                     // Calculate total time for this action
-                    // Efficiency doesn't affect time - queue count is ACTIONS, not outputs
                     let totalTime;
                     if (isTrulyInfinite) {
                         totalTime = Infinity;
                     } else {
-                        totalTime = count * actionTime;
+                        // Calculate average actions per attempt from efficiency
+                        const guaranteedActions = 1 + Math.floor(totalEfficiency / 100);
+                        const chanceForExtra = totalEfficiency % 100;
+                        const avgActionsPerAttempt = guaranteedActions + (chanceForExtra / 100);
+
+                        // Calculate actual attempts needed
+                        const actualAttempts = Math.ceil(count / avgActionsPerAttempt);
+                        totalTime = actualAttempts * actionTime;
                         accumulatedTime += totalTime;
                     }
 
@@ -19625,17 +19656,18 @@
         }
 
         /**
-         * Watch for skill buttons in the navigation panel
+         * Watch for skill buttons in the navigation panel and other skill displays
          */
         watchSkillButtons() {
-            const unregister = domObserver.onClass(
-                'RemainingXP-SkillBar',
+            // Watch for left navigation bar skills (non-combat skills)
+            const unregisterNav = domObserver.onClass(
+                'RemainingXP-NavSkillBar',
                 'NavigationBar_currentExperience',
                 () => {
                     this.updateAllSkillBars();
                 }
             );
-            this.unregisterObservers.push(unregister);
+            this.unregisterObservers.push(unregisterNav);
 
             // Wait for character data to be loaded before first update
             const initHandler = () => {
@@ -19665,8 +19697,9 @@
             // Remove any existing XP displays
             document.querySelectorAll('.mwi-remaining-xp').forEach(el => el.remove());
 
-            // Find all skill progress bars
-            const progressBars = document.querySelectorAll('[class*="NavigationBar_currentExperience"]');
+            // Find all skill progress bars (broader selector to catch combat skills too)
+            // Use attribute selector to match any class containing "currentExperience"
+            const progressBars = document.querySelectorAll('[class*="currentExperience"]');
 
             progressBars.forEach(progressBar => {
                 this.addRemainingXP(progressBar);
@@ -19679,15 +19712,38 @@
          */
         addRemainingXP(progressBar) {
             try {
-                // Get the navigation link container (skill button)
+                // Try to find skill name - handle both navigation bar and combat skill displays
+                let skillName = null;
+
+                // Method 1: Navigation bar structure (left nav)
                 const navLink = progressBar.closest('[class*="NavigationBar_navigationLink"]');
-                if (!navLink) return;
+                if (navLink) {
+                    const skillNameElement = navLink.querySelector('[class*="NavigationBar_label"]');
+                    if (skillNameElement) {
+                        skillName = skillNameElement.textContent.trim();
+                    }
+                }
 
-                // Find the skill name element (label)
-                const skillNameElement = navLink.querySelector('[class*="NavigationBar_label"]');
-                if (!skillNameElement) return;
+                // Method 2: Check for combat skills by looking at surrounding text
+                // Combat skills might be displayed differently, search parent structure
+                if (!skillName) {
+                    // Look for skill name in parent elements or siblings
+                    const parent = progressBar.closest('div');
+                    if (parent) {
+                        // Search for common combat skill names in the DOM tree
+                        const combatSkills = ['Attack', 'Defense', 'Stamina', 'Intelligence', 'Melee', 'Ranged', 'Magic'];
+                        const textContent = parent.textContent;
 
-                const skillName = skillNameElement.textContent.trim();
+                        for (const skill of combatSkills) {
+                            if (textContent.includes(skill)) {
+                                skillName = skill;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                if (!skillName) return;
 
                 // Calculate remaining XP for this skill
                 const remainingXP = this.calculateRemainingXP(skillName);
@@ -19696,6 +19752,9 @@
                 // Find the progress bar container (parent of the progress bar)
                 const progressContainer = progressBar.parentNode;
                 if (!progressContainer) return;
+
+                // Check if we already added XP display here (prevent duplicates)
+                if (progressContainer.querySelector('.mwi-remaining-xp')) return;
 
                 // Create the remaining XP display
                 const xpDisplay = document.createElement('span');
@@ -25469,6 +25528,113 @@
             this.waveTimes = [];
             this.updateCallbacks = [];
             this.pendingDungeonInfo = null; // Store dungeon info before tracking starts
+            this.currentBattleId = null; // Current battle ID for persistence verification
+        }
+
+        /**
+         * Check if an action is a dungeon action
+         * @param {string} actionHrid - Action HRID to check
+         * @returns {boolean} True if action is a dungeon
+         */
+        isDungeonAction(actionHrid) {
+            if (!actionHrid || !actionHrid.startsWith('/actions/combat/')) {
+                return false;
+            }
+
+            const actionDetails = dataManager.getActionDetails(actionHrid);
+            return actionDetails?.combatZoneInfo?.isDungeon === true;
+        }
+
+        /**
+         * Save in-progress run to IndexedDB
+         * @returns {Promise<boolean>} Success status
+         */
+        async saveInProgressRun() {
+            if (!this.isTracking || !this.currentRun || !this.currentBattleId) {
+                return false;
+            }
+
+            const stateToSave = {
+                battleId: this.currentBattleId,
+                dungeonHrid: this.currentRun.dungeonHrid,
+                tier: this.currentRun.tier,
+                startTime: this.currentRun.startTime,
+                currentWave: this.currentRun.currentWave,
+                maxWaves: this.currentRun.maxWaves,
+                wavesCompleted: this.currentRun.wavesCompleted,
+                waveTimes: [...this.waveTimes],
+                waveStartTime: this.waveStartTime?.getTime() || null,
+                lastUpdateTime: Date.now()
+            };
+
+            return storage.setJSON('dungeonTracker_inProgressRun', stateToSave, 'settings', true);
+        }
+
+        /**
+         * Restore in-progress run from IndexedDB
+         * @param {number} currentBattleId - Current battle ID from new_battle message
+         * @returns {Promise<boolean>} True if restored successfully
+         */
+        async restoreInProgressRun(currentBattleId) {
+            const saved = await storage.getJSON('dungeonTracker_inProgressRun', 'settings', null);
+
+            if (!saved) {
+                return false; // No saved state
+            }
+
+            // Verify battleId matches (same run)
+            if (saved.battleId !== currentBattleId) {
+                console.log('[Dungeon Tracker] BattleId mismatch - discarding old run state');
+                await this.clearInProgressRun();
+                return false;
+            }
+
+            // Verify dungeon action is still active
+            const currentActions = dataManager.getCurrentActions();
+            const dungeonAction = currentActions.find(a =>
+                this.isDungeonAction(a.actionHrid) && !a.isDone
+            );
+
+            if (!dungeonAction || dungeonAction.actionHrid !== saved.dungeonHrid) {
+                console.log('[Dungeon Tracker] Dungeon no longer active - discarding old run state');
+                await this.clearInProgressRun();
+                return false;
+            }
+
+            // Check staleness (older than 10 minutes = likely invalid)
+            const age = Date.now() - saved.lastUpdateTime;
+            if (age > 10 * 60 * 1000) {
+                console.log('[Dungeon Tracker] Saved state too old - discarding');
+                await this.clearInProgressRun();
+                return false;
+            }
+
+            // Restore state
+            this.isTracking = true;
+            this.currentBattleId = saved.battleId;
+            this.waveTimes = saved.waveTimes || [];
+            this.waveStartTime = saved.waveStartTime ? new Date(saved.waveStartTime) : null;
+
+            this.currentRun = {
+                dungeonHrid: saved.dungeonHrid,
+                tier: saved.tier,
+                startTime: saved.startTime,
+                currentWave: saved.currentWave,
+                maxWaves: saved.maxWaves,
+                wavesCompleted: saved.wavesCompleted
+            };
+
+            console.log(`[Dungeon Tracker] Restored run state - Wave ${saved.currentWave}/${saved.maxWaves}`);
+            this.notifyUpdate();
+            return true;
+        }
+
+        /**
+         * Clear saved in-progress run from IndexedDB
+         * @returns {Promise<boolean>} Success status
+         */
+        async clearInProgressRun() {
+            return storage.delete('dungeonTracker_inProgressRun', 'settings');
         }
 
         /**
@@ -25493,9 +25659,8 @@
             // Check if any dungeon action was added or removed
             if (data.endCharacterActions) {
                 for (const action of data.endCharacterActions) {
-                    // Check if this is a dungeon action
-                    if (action.actionHrid?.startsWith('/actions/combat/') &&
-                        action.wave !== undefined) {
+                    // Check if this is a dungeon action using explicit verification
+                    if (this.isDungeonAction(action.actionHrid)) {
 
                         if (action.isDone === false) {
                             // Dungeon action added to queue - store info for when new_battle fires
@@ -25557,12 +25722,26 @@
                 return;
             }
 
+            // Capture battleId for persistence
+            const battleId = data.battleId;
+
             // Wave 0 = first wave = dungeon start
             if (data.wave === 0) {
-                this.startDungeon(data);
+                // Try to restore in-progress run first
+                this.restoreInProgressRun(battleId).then(restored => {
+                    if (!restored) {
+                        // No restore or failed restore - start fresh
+                        this.startDungeon(data);
+                    }
+                });
             } else if (!this.isTracking) {
-                // Mid-dungeon start - initialize tracking anyway
-                this.startDungeon(data);
+                // Mid-dungeon start - try to restore first
+                this.restoreInProgressRun(battleId).then(restored => {
+                    if (!restored) {
+                        // No restore - initialize tracking anyway
+                        this.startDungeon(data);
+                    }
+                });
             } else {
                 // Subsequent wave (already tracking)
                 this.startWave(data);
@@ -25580,6 +25759,13 @@
             let maxWaves = null;
 
             if (this.pendingDungeonInfo) {
+                // Verify this is actually a dungeon action before starting tracking
+                if (!this.isDungeonAction(this.pendingDungeonInfo.dungeonHrid)) {
+                    console.warn('[Dungeon Tracker] Attempted to track non-dungeon action:', this.pendingDungeonInfo.dungeonHrid);
+                    this.pendingDungeonInfo = null;
+                    return; // Don't start tracking
+                }
+
                 // Use info from actions_updated message
                 dungeonHrid = this.pendingDungeonInfo.dungeonHrid;
                 tier = this.pendingDungeonInfo.tier;
@@ -25594,6 +25780,7 @@
             }
 
             this.isTracking = true;
+            this.currentBattleId = data.battleId; // Store battleId for persistence
             this.waveStartTime = new Date(data.combatStartTime);
             this.waveTimes = [];
 
@@ -25607,6 +25794,9 @@
             };
 
             this.notifyUpdate();
+
+            // Save initial state to IndexedDB
+            this.saveInProgressRun();
         }
 
         /**
@@ -25623,6 +25813,9 @@
             this.currentRun.currentWave = data.wave;
 
             this.notifyUpdate();
+
+            // Save state after each wave start
+            this.saveInProgressRun();
         }
 
         /**
@@ -25636,8 +25829,8 @@
 
             const action = data.endCharacterAction;
 
-            // Only process dungeon actions
-            if (!action.actionHrid || !action.actionHrid.startsWith('/actions/combat/')) {
+            // Verify this is a dungeon action
+            if (!this.isDungeonAction(action.actionHrid)) {
                 return;
             }
 
@@ -25669,6 +25862,9 @@
             this.currentRun.wavesCompleted = action.wave;
 
             console.log(`[Dungeon Tracker] Wave ${action.wave} completed in ${(waveTime / 1000).toFixed(1)}s`);
+
+            // Save state after wave completion
+            this.saveInProgressRun();
 
             // Check if dungeon is complete
             if (action.isDone) {
@@ -25726,6 +25922,9 @@
             // Notify completion
             this.notifyCompletion(completedRun);
 
+            // Clear saved in-progress state
+            await this.clearInProgressRun();
+
             // Reset state
             this.resetTracking();
         }
@@ -25739,6 +25938,11 @@
             this.waveStartTime = null;
             this.waveTimes = [];
             this.pendingDungeonInfo = null;
+            this.currentBattleId = null;
+
+            // Clear saved state (fire and forget - don't await)
+            this.clearInProgressRun();
+
             this.notifyUpdate();
         }
 
