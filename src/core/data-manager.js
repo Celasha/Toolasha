@@ -204,6 +204,20 @@ class DataManager {
                 }
             }
 
+            // CRITICAL: Update skill experience from action_completed (this is how XP updates in real-time!)
+            if (data.endCharacterSkills && Array.isArray(data.endCharacterSkills) && this.characterSkills) {
+                for (const updatedSkill of data.endCharacterSkills) {
+                    const skill = this.characterSkills.find(s => s.skillHrid === updatedSkill.skillHrid);
+                    if (skill) {
+                        // Update experience (and level if it changed)
+                        skill.experience = updatedSkill.experience;
+                        if (updatedSkill.level !== undefined) {
+                            skill.level = updatedSkill.level;
+                        }
+                    }
+                }
+            }
+
             this.emit('action_completed', data);
         });
 

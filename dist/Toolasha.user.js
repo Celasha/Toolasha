@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.4.912
+// @version      0.4.913
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
 // @author       Celasha and Claude, thank you to bot7420, DrDucky, Frotty, Truth_Light, AlphB, and sentientmilk for providing the basis for a lot of this. Thank you to Miku, Orvel, Jigglymoose, Incinarator, Knerd, and others for their time and help. Thank you to Steez for testing and helping me figure out where I'm wrong! Special thanks to Zaeter for the name.
 // @license      CC-BY-NC-SA-4.0
@@ -2398,6 +2398,20 @@
                             if (invItem.id === endItem.id) {
                                 invItem.count = endItem.count;
                                 break;
+                            }
+                        }
+                    }
+                }
+
+                // CRITICAL: Update skill experience from action_completed (this is how XP updates in real-time!)
+                if (data.endCharacterSkills && Array.isArray(data.endCharacterSkills) && this.characterSkills) {
+                    for (const updatedSkill of data.endCharacterSkills) {
+                        const skill = this.characterSkills.find(s => s.skillHrid === updatedSkill.skillHrid);
+                        if (skill) {
+                            // Update experience (and level if it changed)
+                            skill.experience = updatedSkill.experience;
+                            if (updatedSkill.level !== undefined) {
+                                skill.level = updatedSkill.level;
                             }
                         }
                     }
@@ -28738,7 +28752,7 @@
         const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
         targetWindow.Toolasha = {
-            version: '0.4.912',
+            version: '0.4.913',
 
             // Feature toggle API (for users to manage settings via console)
             features: {
