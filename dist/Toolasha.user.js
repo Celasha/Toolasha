@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.4.919
+// @version      0.4.920
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
 // @author       Celasha and Claude, thank you to bot7420, DrDucky, Frotty, Truth_Light, AlphB, and sentientmilk for providing the basis for a lot of this. Thank you to Miku, Orvel, Jigglymoose, Incinarator, Knerd, and others for their time and help. Thank you to Steez for testing and helping me figure out where I'm wrong! Special thanks to Zaeter for the name.
 // @license      CC-BY-NC-SA-4.0
@@ -27824,6 +27824,7 @@
             this.isCollapsed = false;
             this.isKeysExpanded = false;
             this.isRunHistoryExpanded = false;
+            this.isChartExpanded = true; // Default: expanded
             this.isDragging = false;
             this.dragOffset = { x: 0, y: 0 };
             this.position = null; // { x, y } or null for default
@@ -27835,6 +27836,9 @@
 
             // Track expanded groups to preserve state across refreshes
             this.expandedGroups = new Set();
+
+            // Chart instance (Chart.js)
+            this.chartInstance = null;
         }
 
         /**
@@ -28150,6 +28154,37 @@
                         <div style="color: #888; font-style: italic; text-align: center; padding: 8px;">No runs yet</div>
                     </div>
                 </div>
+
+                <!-- Run Chart section (collapsible) -->
+                <div style="padding-top: 8px; border-top: 1px solid #444;">
+                    <div id="mwi-dt-chart-header" style="
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                        cursor: pointer;
+                        padding: 4px 0;
+                        margin-bottom: 8px;
+                    ">
+                        <span style="font-size: 12px; font-weight: bold; color: #ccc;">📊 Run Chart <span id="mwi-dt-chart-toggle" style="font-size: 10px;">▼</span></span>
+                        <button id="mwi-dt-chart-popout-btn" style="
+                            background: none;
+                            border: 1px solid #4a9eff;
+                            color: #4a9eff;
+                            cursor: pointer;
+                            font-size: 11px;
+                            padding: 2px 8px;
+                            border-radius: 3px;
+                            font-weight: bold;
+                        " title="Pop out chart">⇱ Pop-out</button>
+                    </div>
+                    <div id="mwi-dt-chart-container" style="
+                        display: block;
+                        height: 300px;
+                        position: relative;
+                    ">
+                        <canvas id="mwi-dt-chart-canvas"></canvas>
+                    </div>
+                </div>
             </div>
         `;
 
@@ -28177,6 +28212,10 @@
             // Setup clear all button
             this.setupClearAll();
 
+            // Setup chart toggle and pop-out
+            this.setupChartToggle();
+            this.setupChartPopout();
+
             // Apply initial collapsed state
             if (this.isCollapsed) {
                 this.applyCollapsedState();
@@ -28190,6 +28229,11 @@
             // Apply initial run history expanded state
             if (this.isRunHistoryExpanded) {
                 this.applyRunHistoryExpandedState();
+            }
+
+            // Apply initial chart expanded state
+            if (this.isChartExpanded) {
+                this.applyChartExpandedState();
             }
         }
 
@@ -28335,6 +28379,7 @@
                     // Clear expanded groups when grouping changes (different group labels)
                     this.expandedGroups.clear();
                     this.updateRunHistory();
+                    this.updateChart();
                 });
             }
 
@@ -28345,6 +28390,7 @@
                     this.filterDungeon = e.target.value;
                     this.saveState();
                     this.updateRunHistory();
+                    this.updateChart();
                 });
             }
 
@@ -28355,6 +28401,7 @@
                     this.filterTeam = e.target.value;
                     this.saveState();
                     this.updateRunHistory();
+                    this.updateChart();
                 });
             }
         }
@@ -28378,6 +28425,504 @@
                     } catch (error) {
                         console.error('[Dungeon Tracker UI] Clear all history error:', error);
                         alert('Failed to clear run history. Check console for details.');
+                    }
+                }
+            });
+        }
+
+        /**
+         * Setup chart toggle
+         */
+        setupChartToggle() {
+            const chartHeader = this.container.querySelector('#mwi-dt-chart-header');
+            if (!chartHeader) return;
+
+            chartHeader.addEventListener('click', (e) => {
+                // Don't toggle if clicking the pop-out button
+                if (e.target.closest('#mwi-dt-chart-popout-btn')) return;
+
+                this.toggleChart();
+            });
+        }
+
+        /**
+         * Setup chart pop-out button
+         */
+        setupChartPopout() {
+            const popoutBtn = this.container.querySelector('#mwi-dt-chart-popout-btn');
+            if (!popoutBtn) return;
+
+            popoutBtn.addEventListener('click', (e) => {
+                e.stopPropagation(); // Prevent toggle
+                this.createChartPopoutModal();
+            });
+        }
+
+        /**
+         * Toggle chart expanded/collapsed
+         */
+        toggleChart() {
+            this.isChartExpanded = !this.isChartExpanded;
+
+            if (this.isChartExpanded) {
+                this.applyChartExpandedState();
+            } else {
+                this.applyChartCollapsedState();
+            }
+
+            this.saveState();
+        }
+
+        /**
+         * Apply chart expanded state
+         */
+        applyChartExpandedState() {
+            const chartContainer = this.container.querySelector('#mwi-dt-chart-container');
+            const toggle = this.container.querySelector('#mwi-dt-chart-toggle');
+
+            if (chartContainer) {
+                chartContainer.style.display = 'block';
+                // Render chart after becoming visible
+                setTimeout(() => this.renderChart(), 100);
+            }
+            if (toggle) toggle.textContent = '▼';
+        }
+
+        /**
+         * Apply chart collapsed state
+         */
+        applyChartCollapsedState() {
+            const chartContainer = this.container.querySelector('#mwi-dt-chart-container');
+            const toggle = this.container.querySelector('#mwi-dt-chart-toggle');
+
+            if (chartContainer) chartContainer.style.display = 'none';
+            if (toggle) toggle.textContent = '▶';
+        }
+
+        /**
+         * Render chart with filtered run data
+         */
+        async renderChart() {
+            const canvas = this.container.querySelector('#mwi-dt-chart-canvas');
+            if (!canvas) return;
+
+            // Get filtered runs based on current filters
+            const allRuns = await dungeonTrackerStorage.getAllRuns();
+            let filteredRuns = allRuns;
+
+            if (this.filterDungeon !== 'all') {
+                filteredRuns = filteredRuns.filter(r => r.dungeonName === this.filterDungeon);
+            }
+            if (this.filterTeam !== 'all') {
+                filteredRuns = filteredRuns.filter(r => r.teamKey === this.filterTeam);
+            }
+
+            if (filteredRuns.length === 0) {
+                // Destroy existing chart
+                if (this.chartInstance) {
+                    this.chartInstance.destroy();
+                    this.chartInstance = null;
+                }
+                return;
+            }
+
+            // Sort by timestamp (oldest to newest)
+            filteredRuns.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+            // Prepare data
+            const labels = filteredRuns.map((_, i) => `Run ${i + 1}`);
+            const durations = filteredRuns.map(r => (r.duration || r.totalTime || 0) / 60000); // Convert to minutes
+
+            // Calculate stats
+            const avgDuration = durations.reduce((a, b) => a + b, 0) / durations.length;
+            const fastestDuration = Math.min(...durations);
+            const slowestDuration = Math.max(...durations);
+
+            // Create datasets
+            const datasets = [
+                {
+                    label: 'Run Times',
+                    data: durations,
+                    borderColor: 'rgb(75, 192, 192)',
+                    backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                    borderWidth: 2,
+                    pointRadius: 3,
+                    pointHoverRadius: 5,
+                    tension: 0.1,
+                    fill: false
+                },
+                {
+                    label: 'Average',
+                    data: new Array(durations.length).fill(avgDuration),
+                    borderColor: 'rgb(255, 159, 64)',
+                    borderWidth: 2,
+                    borderDash: [5, 5],
+                    pointRadius: 0,
+                    tension: 0,
+                    fill: false
+                },
+                {
+                    label: 'Fastest',
+                    data: new Array(durations.length).fill(fastestDuration),
+                    borderColor: 'rgb(75, 192, 75)',
+                    borderWidth: 2,
+                    borderDash: [5, 5],
+                    pointRadius: 0,
+                    tension: 0,
+                    fill: false
+                },
+                {
+                    label: 'Slowest',
+                    data: new Array(durations.length).fill(slowestDuration),
+                    borderColor: 'rgb(255, 99, 132)',
+                    borderWidth: 2,
+                    borderDash: [5, 5],
+                    pointRadius: 0,
+                    tension: 0,
+                    fill: false
+                }
+            ];
+
+            // Destroy existing chart
+            if (this.chartInstance) {
+                this.chartInstance.destroy();
+            }
+
+            // Create new chart
+            const ctx = canvas.getContext('2d');
+            this.chartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: datasets
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false,
+                    },
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top',
+                            labels: {
+                                color: '#ccc',
+                                usePointStyle: true,
+                                padding: 15
+                            },
+                            onClick: (e, legendItem, legend) => {
+                                const index = legendItem.datasetIndex;
+                                const ci = legend.chart;
+                                const meta = ci.getDatasetMeta(index);
+
+                                // Toggle visibility
+                                meta.hidden = meta.hidden === null ? !ci.data.datasets[index].hidden : null;
+                                ci.update();
+                            }
+                        },
+                        title: {
+                            display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const label = context.dataset.label || '';
+                                    const value = context.parsed.y;
+                                    const minutes = Math.floor(value);
+                                    const seconds = Math.floor((value - minutes) * 60);
+                                    return `${label}: ${minutes}m ${seconds}s`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Run Number',
+                                color: '#ccc'
+                            },
+                            ticks: {
+                                color: '#999'
+                            },
+                            grid: {
+                                color: '#333'
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'Duration (minutes)',
+                                color: '#ccc'
+                            },
+                            ticks: {
+                                color: '#999'
+                            },
+                            grid: {
+                                color: '#333'
+                            },
+                            beginAtZero: false
+                        }
+                    }
+                }
+            });
+        }
+
+        /**
+         * Update chart (called when filters change)
+         */
+        async updateChart() {
+            if (this.isChartExpanded) {
+                await this.renderChart();
+            }
+        }
+
+        /**
+         * Create pop-out modal with larger chart
+         */
+        createChartPopoutModal() {
+            // Remove existing modal if any
+            const existingModal = document.getElementById('mwi-dt-chart-modal');
+            if (existingModal) {
+                existingModal.remove();
+            }
+
+            // Create modal container
+            const modal = document.createElement('div');
+            modal.id = 'mwi-dt-chart-modal';
+            modal.style.cssText = `
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 90%;
+            max-width: 1200px;
+            height: 80%;
+            max-height: 700px;
+            background: #1a1a1a;
+            border: 2px solid #555;
+            border-radius: 8px;
+            padding: 20px;
+            z-index: 100000;
+            display: flex;
+            flex-direction: column;
+        `;
+
+            // Create header with close button
+            const header = document.createElement('div');
+            header.style.cssText = `
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        `;
+
+            const title = document.createElement('h3');
+            title.textContent = '📊 Dungeon Run Chart';
+            title.style.cssText = 'color: #ccc; margin: 0; font-size: 18px;';
+
+            const closeBtn = document.createElement('button');
+            closeBtn.textContent = '✕';
+            closeBtn.style.cssText = `
+            background: #a33;
+            color: #fff;
+            border: none;
+            cursor: pointer;
+            font-size: 20px;
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-weight: bold;
+        `;
+            closeBtn.addEventListener('click', () => modal.remove());
+
+            header.appendChild(title);
+            header.appendChild(closeBtn);
+
+            // Create canvas container
+            const canvasContainer = document.createElement('div');
+            canvasContainer.style.cssText = `
+            flex: 1;
+            position: relative;
+            min-height: 0;
+        `;
+
+            const canvas = document.createElement('canvas');
+            canvas.id = 'mwi-dt-chart-modal-canvas';
+            canvasContainer.appendChild(canvas);
+
+            modal.appendChild(header);
+            modal.appendChild(canvasContainer);
+            document.body.appendChild(modal);
+
+            // Render chart in modal
+            this.renderModalChart(canvas);
+
+            // Close on ESC key
+            const escHandler = (e) => {
+                if (e.key === 'Escape') {
+                    modal.remove();
+                    document.removeEventListener('keydown', escHandler);
+                }
+            };
+            document.addEventListener('keydown', escHandler);
+        }
+
+        /**
+         * Render chart in pop-out modal
+         */
+        async renderModalChart(canvas) {
+            // Get filtered runs (same as main chart)
+            const allRuns = await dungeonTrackerStorage.getAllRuns();
+            let filteredRuns = allRuns;
+
+            if (this.filterDungeon !== 'all') {
+                filteredRuns = filteredRuns.filter(r => r.dungeonName === this.filterDungeon);
+            }
+            if (this.filterTeam !== 'all') {
+                filteredRuns = filteredRuns.filter(r => r.teamKey === this.filterTeam);
+            }
+
+            if (filteredRuns.length === 0) return;
+
+            // Sort by timestamp
+            filteredRuns.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+            // Prepare data (same as main chart)
+            const labels = filteredRuns.map((_, i) => `Run ${i + 1}`);
+            const durations = filteredRuns.map(r => (r.duration || r.totalTime || 0) / 60000);
+
+            const avgDuration = durations.reduce((a, b) => a + b, 0) / durations.length;
+            const fastestDuration = Math.min(...durations);
+            const slowestDuration = Math.max(...durations);
+
+            const datasets = [
+                {
+                    label: 'Run Times',
+                    data: durations,
+                    borderColor: 'rgb(75, 192, 192)',
+                    backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                    borderWidth: 2,
+                    pointRadius: 3,
+                    pointHoverRadius: 5,
+                    tension: 0.1,
+                    fill: false
+                },
+                {
+                    label: 'Average',
+                    data: new Array(durations.length).fill(avgDuration),
+                    borderColor: 'rgb(255, 159, 64)',
+                    borderWidth: 2,
+                    borderDash: [5, 5],
+                    pointRadius: 0,
+                    tension: 0,
+                    fill: false
+                },
+                {
+                    label: 'Fastest',
+                    data: new Array(durations.length).fill(fastestDuration),
+                    borderColor: 'rgb(75, 192, 75)',
+                    borderWidth: 2,
+                    borderDash: [5, 5],
+                    pointRadius: 0,
+                    tension: 0,
+                    fill: false
+                },
+                {
+                    label: 'Slowest',
+                    data: new Array(durations.length).fill(slowestDuration),
+                    borderColor: 'rgb(255, 99, 132)',
+                    borderWidth: 2,
+                    borderDash: [5, 5],
+                    pointRadius: 0,
+                    tension: 0,
+                    fill: false
+                }
+            ];
+
+            // Create chart
+            const ctx = canvas.getContext('2d');
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: datasets
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false,
+                    },
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top',
+                            labels: {
+                                color: '#ccc',
+                                usePointStyle: true,
+                                padding: 15,
+                                font: {
+                                    size: 14
+                                }
+                            },
+                            onClick: (e, legendItem, legend) => {
+                                const index = legendItem.datasetIndex;
+                                const ci = legend.chart;
+                                const meta = ci.getDatasetMeta(index);
+
+                                meta.hidden = meta.hidden === null ? !ci.data.datasets[index].hidden : null;
+                                ci.update();
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const label = context.dataset.label || '';
+                                    const value = context.parsed.y;
+                                    const minutes = Math.floor(value);
+                                    const seconds = Math.floor((value - minutes) * 60);
+                                    return `${label}: ${minutes}m ${seconds}s`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Run Number',
+                                color: '#ccc',
+                                font: {
+                                    size: 14
+                                }
+                            },
+                            ticks: {
+                                color: '#999'
+                            },
+                            grid: {
+                                color: '#333'
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'Duration (minutes)',
+                                color: '#ccc',
+                                font: {
+                                    size: 14
+                                }
+                            },
+                            ticks: {
+                                color: '#999'
+                            },
+                            grid: {
+                                color: '#333'
+                            },
+                            beginAtZero: false
+                        }
                     }
                 }
             });
@@ -28594,17 +29139,42 @@
                 progressText.textContent = `${percent}%`;
             }
 
-            // Fetch run statistics - always use dungeonName since backfilled runs use it
+            // Fetch run statistics - respect ALL filters to match chart exactly
             let stats, runHistory, lastRunTime;
 
-            if (run.dungeonName && run.dungeonName !== 'Unknown') {
-                // Query by dungeonName (works for both live tracking and backfilled runs)
-                stats = await dungeonTrackerStorage.getStatsByName(run.dungeonName);
-                const allRuns = await storage.getJSON('allRuns', 'unifiedRuns', []);
-                runHistory = allRuns.filter(r => r.dungeonName === run.dungeonName);
-                lastRunTime = runHistory && runHistory.length > 0 ? (runHistory[0].duration || runHistory[0].totalTime || 0) : 0;
+            // Get all runs and apply filters (EXACT SAME LOGIC as chart)
+            const allRuns = await storage.getJSON('allRuns', 'unifiedRuns', []);
+            runHistory = allRuns;
+
+            // Apply dungeon filter (matches chart line 706-708)
+            if (this.filterDungeon !== 'all') {
+                runHistory = runHistory.filter(r => r.dungeonName === this.filterDungeon);
+            }
+
+            // Apply team filter (matches chart line 709-711)
+            if (this.filterTeam !== 'all') {
+                runHistory = runHistory.filter(r => r.teamKey === this.filterTeam);
+            }
+
+            // Calculate stats from filtered runs
+            if (runHistory.length > 0) {
+                // Sort by timestamp (matches chart line 723)
+                runHistory.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)); // Descending for most recent first
+
+                const durations = runHistory.map(r => r.duration || r.totalTime || 0);
+                const total = durations.reduce((sum, d) => sum + d, 0);
+
+                stats = {
+                    totalRuns: runHistory.length,
+                    avgTime: Math.floor(total / runHistory.length),
+                    fastestTime: Math.min(...durations),
+                    slowestTime: Math.max(...durations),
+                    avgWaveTime: 0 // Not used in UI
+                };
+
+                lastRunTime = durations[0]; // First run after sorting (most recent)
             } else {
-                // No dungeon info available or dungeon name unknown
+                // No runs match filters
                 stats = { totalRuns: 0, avgTime: 0, fastestTime: 0, slowestTime: 0, avgWaveTime: 0 };
                 lastRunTime = 0;
             }
@@ -31058,7 +31628,7 @@
         const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
         targetWindow.Toolasha = {
-            version: '0.4.919',
+            version: '0.4.920',
 
             // Feature toggle API (for users to manage settings via console)
             features: {
