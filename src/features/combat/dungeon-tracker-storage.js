@@ -19,6 +19,7 @@ const DUNGEON_MAX_WAVES = {
 class DungeonTrackerStorage {
     constructor() {
         this.storeName = 'dungeonRuns';
+        this.teamRunsStoreName = 'teamRuns'; // Team-based runs (from backfill)
     }
 
     /**
@@ -250,6 +251,90 @@ class DungeonTrackerStorage {
         }
 
         return results;
+    }
+
+    /**
+     * Get team key from sorted player names
+     * @param {Array<string>} playerNames - Array of player names
+     * @returns {string} Team key (sorted, comma-separated)
+     */
+    getTeamKey(playerNames) {
+        return playerNames.sort().join(',');
+    }
+
+    /**
+     * Save a team-based run (from backfill)
+     * @param {string} teamKey - Team key (sorted player names)
+     * @param {Object} run - Run data
+     * @param {number} run.timestamp - Run start timestamp (ISO string)
+     * @param {number} run.duration - Run duration (ms)
+     * @returns {Promise<boolean>} Success status
+     */
+    async saveTeamRun(teamKey, run) {
+        // Get existing runs for this team
+        const existingRuns = await storage.getJSON(teamKey, this.teamRunsStoreName, []);
+
+        // Check for duplicates
+        const isDuplicate = existingRuns.some(r =>
+            r.timestamp === run.timestamp && r.duration === run.duration
+        );
+
+        if (!isDuplicate) {
+            existingRuns.push(run);
+            return storage.setJSON(teamKey, existingRuns, this.teamRunsStoreName, true);
+        }
+
+        return false;
+    }
+
+    /**
+     * Get team run history
+     * @param {string} teamKey - Team key (sorted player names)
+     * @returns {Promise<Array>} Run history
+     */
+    async getTeamRunHistory(teamKey) {
+        return storage.getJSON(teamKey, this.teamRunsStoreName, []);
+    }
+
+    /**
+     * Get all teams with stored runs
+     * @returns {Promise<Array>} Array of {teamKey, runCount, avgTime, bestTime, worstTime}
+     */
+    async getAllTeamStats() {
+        const results = [];
+
+        // Get all keys from IndexedDB for teamRuns store
+        const allKeys = await storage.getAllKeys(this.teamRunsStoreName);
+
+        for (const teamKey of allKeys) {
+            const runs = await this.getTeamRunHistory(teamKey);
+
+            if (runs.length > 0) {
+                const durations = runs.map(r => r.duration);
+                const avgTime = durations.reduce((a, b) => a + b, 0) / durations.length;
+                const bestTime = Math.min(...durations);
+                const worstTime = Math.max(...durations);
+
+                results.push({
+                    teamKey,
+                    runCount: runs.length,
+                    avgTime,
+                    bestTime,
+                    worstTime
+                });
+            }
+        }
+
+        return results;
+    }
+
+    /**
+     * Clear all team runs for a specific team
+     * @param {string} teamKey - Team key
+     * @returns {Promise<boolean>} Success status
+     */
+    async clearTeamHistory(teamKey) {
+        return storage.delete(teamKey, this.teamRunsStoreName);
     }
 }
 

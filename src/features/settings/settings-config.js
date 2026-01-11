@@ -437,7 +437,21 @@ export const settingsGroups = {
                 label: 'Dungeon Tracker: Real-time progress tracking',
                 type: 'checkbox',
                 default: true,
-                help: 'Shows live dungeon progress in top bar with wave times, statistics, and sends completion summary to party chat'
+                help: 'Tracks dungeon runs with server-validated duration from party messages'
+            },
+            dungeonTrackerUI: {
+                id: 'dungeonTrackerUI',
+                label: '  ├─ Show Dungeon Tracker UI panel',
+                type: 'checkbox',
+                default: true,
+                help: 'Displays dungeon progress panel with wave counter, run history, and statistics'
+            },
+            dungeonTrackerChatAnnotations: {
+                id: 'dungeonTrackerChatAnnotations',
+                label: '  └─ Show run time in party chat',
+                type: 'checkbox',
+                default: true,
+                help: 'Adds colored timer annotations to "Key counts" messages (green if fast, red if slow)'
             },
             combatSummary: {
                 id: 'combatSummary',

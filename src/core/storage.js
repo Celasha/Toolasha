@@ -9,7 +9,7 @@ class Storage {
         this.db = null;
         this.available = false;
         this.dbName = 'ToolashaDB';
-        this.dbVersion = 4; // Bumped for combatExport store
+        this.dbVersion = 5; // Bumped for teamRuns store
         this.saveDebounceTimers = new Map(); // Per-key debounce timers
         this.SAVE_DEBOUNCE_DELAY = 3000; // 3 seconds
     }
@@ -64,6 +64,11 @@ class Storage {
                 // Create dungeonRuns store if it doesn't exist (for dungeon tracker)
                 if (!db.objectStoreNames.contains('dungeonRuns')) {
                     db.createObjectStore('dungeonRuns');
+                }
+
+                // Create teamRuns store if it doesn't exist (for team-based backfill)
+                if (!db.objectStoreNames.contains('teamRuns')) {
+                    db.createObjectStore('teamRuns');
                 }
 
                 // Create combatExport store if it doesn't exist (for combat sim/milkonomy exports)
@@ -266,6 +271,38 @@ class Storage {
 
         const value = await this.get(key, storeName, '__STORAGE_CHECK__');
         return value !== '__STORAGE_CHECK__';
+    }
+
+    /**
+     * Get all keys from a store
+     * @param {string} storeName - Object store name (default: 'settings')
+     * @returns {Promise<Array<string>>} Array of keys
+     */
+    async getAllKeys(storeName = 'settings') {
+        if (!this.db) {
+            console.warn(`[Storage] Database not available, cannot get keys from store: ${storeName}`);
+            return [];
+        }
+
+        return new Promise((resolve, reject) => {
+            try {
+                const transaction = this.db.transaction([storeName], 'readonly');
+                const store = transaction.objectStore(storeName);
+                const request = store.getAllKeys();
+
+                request.onsuccess = () => {
+                    resolve(request.result || []);
+                };
+
+                request.onerror = () => {
+                    console.error(`[Storage] Failed to get all keys from ${storeName}:`, request.error);
+                    resolve([]);
+                };
+            } catch (error) {
+                console.error(`[Storage] GetAllKeys transaction failed for store ${storeName}:`, error);
+                resolve([]);
+            }
+        });
     }
 
     /**
