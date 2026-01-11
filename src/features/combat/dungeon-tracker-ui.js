@@ -607,7 +607,7 @@ class DungeonTrackerUI {
         if (!clearBtn) return;
 
         clearBtn.addEventListener('click', async () => {
-            if (confirm('Delete ALL run history data?\\n\\nThis cannot be undone!')) {
+            if (confirm('Delete ALL run history data?\n\nThis cannot be undone!')) {
                 try {
                     // Clear unified storage completely
                     await storage.setJSON('allRuns', [], 'unifiedRuns', true);
@@ -1777,7 +1777,8 @@ class DungeonTrackerUI {
         runs.forEach((run, index) => {
             const runNumber = runs.length - index;
             const timeStr = this.formatTime(run.duration);
-            const date = new Date(run.timestamp).toLocaleDateString();
+            const dateObj = new Date(run.timestamp);
+            const dateTime = dateObj.toLocaleString();
             const dungeonLabel = run.dungeonName || 'Unknown';
 
             html += `
@@ -1791,7 +1792,7 @@ class DungeonTrackerUI {
                 " data-run-timestamp="${run.timestamp}">
                     <span style="color: #aaa; min-width: 25px;">#${runNumber}</span>
                     <span style="color: #fff; flex: 1; text-align: center;">
-                        ${timeStr} <span style="color: #888; font-size: 9px;">(${date})</span>
+                        ${timeStr} <span style="color: #888; font-size: 9px;">(${dateTime})</span>
                     </span>
                     <span style="color: #888; margin-right: 6px; font-size: 9px;">${dungeonLabel}</span>
                     <button class="mwi-dt-delete-run" style="

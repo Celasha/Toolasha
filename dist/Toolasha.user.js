@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.4.920
+// @version      0.4.921
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
 // @author       Celasha and Claude, thank you to bot7420, DrDucky, Frotty, Truth_Light, AlphB, and sentientmilk for providing the basis for a lot of this. Thank you to Miku, Orvel, Jigglymoose, Incinarator, Knerd, and others for their time and help. Thank you to Steez for testing and helping me figure out where I'm wrong! Special thanks to Zaeter for the name.
 // @license      CC-BY-NC-SA-4.0
@@ -27422,6 +27422,7 @@
         constructor() {
             this.enabled = true;
             this.observer = null;
+            this.lastSeenDungeonName = null; // Cache last known dungeon name
         }
 
         /**
@@ -27523,10 +27524,8 @@
                 let diff = null;
                 let color = null;
 
-                // Find nearest battle_start before this event to get dungeon name
-                const battleStart = events.slice(0, i).reverse()
-                    .find(ev => ev.type === 'battle_start');
-                const dungeonName = battleStart?.dungeonName || 'Unknown';
+                // Get dungeon name with hybrid fallback (handles chat scrolling)
+                const dungeonName = this.getDungeonNameWithFallback(events, i);
 
                 if (next?.type === 'key') {
                     // Calculate duration between consecutive key counts
@@ -27538,7 +27537,7 @@
                     label = this.formatTime(diff);
 
                     // Determine color based on performance using dungeonName
-                    if (dungeonName !== 'Unknown') {
+                    if (dungeonName && dungeonName !== 'Unknown') {
                         const stats = await dungeonTrackerStorage.getStatsByName(dungeonName);
 
                         if (stats.fastestTime > 0 && stats.slowestTime > 0) {
@@ -27610,10 +27609,8 @@
                 let duration = next.timestamp - event.timestamp;
                 if (duration < 0) duration += 24 * 60 * 60 * 1000; // Midnight rollover
 
-                // Find nearest battle_start before this run
-                const battleStart = events.slice(0, i).reverse()
-                    .find(e => e.type === 'battle_start');
-                const dungeonName = battleStart?.dungeonName || 'Unknown';
+                // Get dungeon name with hybrid fallback (handles chat scrolling)
+                const dungeonName = this.getDungeonNameWithFallback(events, i);
 
                 // Get team key
                 const teamKey = dungeonTrackerStorage.getTeamKey(event.team);
@@ -27651,6 +27648,9 @@
                 if (text.includes('Battle started:')) {
                     const dungeonName = text.split('Battle started:')[1]?.split(']')[0]?.trim();
                     if (dungeonName) {
+                        // Cache the dungeon name (survives chat scrolling)
+                        this.lastSeenDungeonName = dungeonName;
+
                         events.push({
                             type: 'battle_start',
                             timestamp,
@@ -27693,6 +27693,36 @@
             }
 
             return events;
+        }
+
+        /**
+         * Get dungeon name with hybrid fallback strategy
+         * Handles chat scrolling by using multiple sources
+         * @param {Array} events - All chat events
+         * @param {number} currentIndex - Current event index
+         * @returns {string} Dungeon name or 'Unknown'
+         */
+        getDungeonNameWithFallback(events, currentIndex) {
+            // 1st priority: Visible "Battle started:" message in chat
+            const battleStart = events.slice(0, currentIndex).reverse()
+                .find(ev => ev.type === 'battle_start');
+            if (battleStart?.dungeonName) {
+                return battleStart.dungeonName;
+            }
+
+            // 2nd priority: Currently active dungeon run
+            const currentRun = dungeonTracker.getCurrentRun();
+            if (currentRun?.dungeonName && currentRun.dungeonName !== 'Unknown') {
+                return currentRun.dungeonName;
+            }
+
+            // 3rd priority: Cached last seen dungeon name
+            if (this.lastSeenDungeonName) {
+                return this.lastSeenDungeonName;
+            }
+
+            // Final fallback
+            return 'Unknown';
         }
 
         /**
@@ -28414,7 +28444,7 @@
             if (!clearBtn) return;
 
             clearBtn.addEventListener('click', async () => {
-                if (confirm('Delete ALL run history data?\\n\\nThis cannot be undone!')) {
+                if (confirm('Delete ALL run history data?\n\nThis cannot be undone!')) {
                     try {
                         // Clear unified storage completely
                         await storage.setJSON('allRuns', [], 'unifiedRuns', true);
@@ -29584,7 +29614,8 @@
             runs.forEach((run, index) => {
                 const runNumber = runs.length - index;
                 const timeStr = this.formatTime(run.duration);
-                const date = new Date(run.timestamp).toLocaleDateString();
+                const dateObj = new Date(run.timestamp);
+                const dateTime = dateObj.toLocaleString();
                 const dungeonLabel = run.dungeonName || 'Unknown';
 
                 html += `
@@ -29598,7 +29629,7 @@
                 " data-run-timestamp="${run.timestamp}">
                     <span style="color: #aaa; min-width: 25px;">#${runNumber}</span>
                     <span style="color: #fff; flex: 1; text-align: center;">
-                        ${timeStr} <span style="color: #888; font-size: 9px;">(${date})</span>
+                        ${timeStr} <span style="color: #888; font-size: 9px;">(${dateTime})</span>
                     </span>
                     <span style="color: #888; margin-right: 6px; font-size: 9px;">${dungeonLabel}</span>
                     <button class="mwi-dt-delete-run" style="
@@ -31628,7 +31659,7 @@
         const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
         targetWindow.Toolasha = {
-            version: '0.4.920',
+            version: '0.4.921',
 
             // Feature toggle API (for users to manage settings via console)
             features: {
