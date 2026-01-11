@@ -290,6 +290,3 @@ class WebSocketHook {
 const webSocketHook = new WebSocketHook();
 
 export default webSocketHook;
-
-// Also export the class for testing
-export { WebSocketHook };

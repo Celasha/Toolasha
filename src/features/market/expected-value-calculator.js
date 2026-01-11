@@ -7,6 +7,8 @@ import config from '../../core/config.js';
 import marketAPI from '../../api/marketplace.js';
 import dataManager from '../../core/data-manager.js';
 import { numberFormatter } from '../../utils/formatters.js';
+import { calculateDungeonTokenValue } from '../../utils/token-valuation.js';
+import { selectPrice } from '../../utils/pricing-helper.js';
 
 /**
  * ExpectedValueCalculator class handles EV calculations for openable containers
@@ -24,6 +26,14 @@ class ExpectedValueCalculator {
         this.COIN_HRID = '/items/coin';
         this.COWBELL_HRID = '/items/cowbell';
         this.COWBELL_BAG_HRID = '/items/bag_of_10_cowbells';
+
+        // Dungeon token HRIDs
+        this.DUNGEON_TOKENS = [
+            '/items/chimerical_token',
+            '/items/sinister_token',
+            '/items/enchanted_token',
+            '/items/pirate_token'
+        ];
 
         // Flag to track if initialized
         this.isInitialized = false;
@@ -157,7 +167,7 @@ class ExpectedValueCalculator {
 
     /**
      * Get price for a drop item
-     * Handles special cases (Coin, Cowbell, nested containers)
+     * Handles special cases (Coin, Cowbell, Dungeon Tokens, nested containers)
      * @param {string} itemHrid - Item HRID
      * @returns {number|null} Price or null if unavailable
      */
@@ -172,17 +182,7 @@ class ExpectedValueCalculator {
             const bagPrice = marketAPI.getPrice(this.COWBELL_BAG_HRID, 0);
             if (bagPrice) {
                 // Respect pricing mode for Cowbell Bag price
-                const pricingMode = config.getSettingValue('profitCalc_pricingMode', 'conservative');
-                const respectPricingMode = config.getSettingValue('expectedValue_respectPricingMode', true);
-
-                let bagValue = 0;
-                if (respectPricingMode) {
-                    // Conservative: Bid (instant sell), Hybrid/Optimistic: Ask (patient sell)
-                    bagValue = pricingMode === 'conservative' ? bagPrice.bid : bagPrice.ask;
-                } else {
-                    // Always use conservative
-                    bagValue = bagPrice.bid;
-                }
+                const bagValue = selectPrice(bagPrice, 'profitCalc_pricingMode', 'expectedValue_respectPricingMode');
 
                 if (bagValue > 0) {
                     // Apply 18% market tax (Cowbell Bag only), then divide by 10
@@ -192,36 +192,24 @@ class ExpectedValueCalculator {
             return null; // No bag price available
         }
 
+        // Special case: Dungeon Tokens (calculate value from shop items)
+        if (this.DUNGEON_TOKENS.includes(itemHrid)) {
+            return calculateDungeonTokenValue(itemHrid, 'profitCalc_pricingMode', 'expectedValue_respectPricingMode');
+        }
+
         // Check if this is a nested container (use cached EV)
         if (this.containerCache.has(itemHrid)) {
             return this.containerCache.get(itemHrid);
         }
 
         // Regular market item - get price based on pricing mode
-        const pricingMode = config.getSettingValue('profitCalc_pricingMode', 'conservative');
-        const respectPricingMode = config.getSettingValue('expectedValue_respectPricingMode', true);
-
-        // Get market price
         const price = marketAPI.getPrice(itemHrid, 0);
         if (!price) {
             return null; // No market data
         }
 
         // Determine which price to use for drop revenue
-        let dropPrice = 0;
-
-        if (respectPricingMode) {
-            // Conservative: Bid (instant sell)
-            // Hybrid/Optimistic: Ask (patient sell)
-            if (pricingMode === 'conservative') {
-                dropPrice = price.bid;
-            } else {
-                dropPrice = price.ask;
-            }
-        } else {
-            // Always use conservative (instant sell)
-            dropPrice = price.bid;
-        }
+        const dropPrice = selectPrice(price, 'profitCalc_pricingMode', 'expectedValue_respectPricingMode');
 
         return dropPrice > 0 ? dropPrice : null;
     }

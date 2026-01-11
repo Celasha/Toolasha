@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.4.918
+// @version      0.4.919
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
 // @author       Celasha and Claude, thank you to bot7420, DrDucky, Frotty, Truth_Light, AlphB, and sentientmilk for providing the basis for a lot of this. Thank you to Miku, Orvel, Jigglymoose, Incinarator, Knerd, and others for their time and help. Thank you to Steez for testing and helping me figure out where I'm wrong! Special thanks to Zaeter for the name.
 // @license      CC-BY-NC-SA-4.0
@@ -41,7 +41,7 @@
             this.db = null;
             this.available = false;
             this.dbName = 'ToolashaDB';
-            this.dbVersion = 5; // Bumped for teamRuns store
+            this.dbVersion = 6; // Bumped for unifiedRuns store
             this.saveDebounceTimers = new Map(); // Per-key debounce timers
             this.SAVE_DEBOUNCE_DELAY = 3000; // 3 seconds
         }
@@ -106,6 +106,11 @@
                     // Create combatExport store if it doesn't exist (for combat sim/milkonomy exports)
                     if (!db.objectStoreNames.contains('combatExport')) {
                         db.createObjectStore('combatExport');
+                    }
+
+                    // Create unifiedRuns store if it doesn't exist (for dungeon tracker unified storage)
+                    if (!db.objectStoreNames.contains('unifiedRuns')) {
+                        db.createObjectStore('unifiedRuns');
                     }
                 };
             });
@@ -4317,6 +4322,125 @@
     }
 
     /**
+     * Token Valuation Utility
+     * Shared logic for calculating dungeon token and task token values
+     */
+
+
+    /**
+     * Calculate dungeon token value based on best shop item value
+     * Uses "best market value per token" approach: finds the shop item with highest (market price / token cost)
+     * @param {string} tokenHrid - Token HRID (e.g., '/items/chimerical_token')
+     * @param {string} pricingModeSetting - Config setting key for pricing mode (default: 'profitCalc_pricingMode')
+     * @param {string} respectModeSetting - Config setting key for respect pricing mode flag (default: 'expectedValue_respectPricingMode')
+     * @returns {number|null} Value per token, or null if no data
+     */
+    function calculateDungeonTokenValue(tokenHrid, pricingModeSetting = 'profitCalc_pricingMode', respectModeSetting = 'expectedValue_respectPricingMode') {
+        const gameData = dataManager.getInitClientData();
+        if (!gameData) return null;
+
+        // Get all shop items for this token type
+        const shopItems = Object.values(gameData.shopItemDetailMap || {}).filter(
+            item => item.costs && item.costs[0]?.itemHrid === tokenHrid
+        );
+
+        if (shopItems.length === 0) return null;
+
+        let bestValuePerToken = 0;
+
+        // For each shop item, calculate market price / token cost
+        for (const shopItem of shopItems) {
+            const itemHrid = shopItem.itemHrid;
+            const tokenCost = shopItem.costs[0].count;
+
+            // Get market price for this item
+            const prices = marketAPI.getPrice(itemHrid, 0);
+            if (!prices) continue;
+
+            // Use pricing mode to determine which price to use
+            const pricingMode = config.getSettingValue(pricingModeSetting, 'conservative');
+            const respectPricingMode = config.getSettingValue(respectModeSetting, true);
+
+            let marketPrice = 0;
+            if (respectPricingMode) {
+                // Conservative: Bid, Hybrid/Optimistic: Ask
+                marketPrice = pricingMode === 'conservative' ? prices.bid : prices.ask;
+            } else {
+                // Always conservative
+                marketPrice = prices.bid;
+            }
+
+            if (marketPrice <= 0) continue;
+
+            // Calculate value per token
+            const valuePerToken = marketPrice / tokenCost;
+
+            // Keep track of best value
+            if (valuePerToken > bestValuePerToken) {
+                bestValuePerToken = valuePerToken;
+            }
+        }
+
+        // Fallback to essence price if no shop items found
+        if (bestValuePerToken === 0) {
+            const essenceMap = {
+                '/items/chimerical_token': '/items/chimerical_essence',
+                '/items/sinister_token': '/items/sinister_essence',
+                '/items/enchanted_token': '/items/enchanted_essence',
+                '/items/pirate_token': '/items/pirate_essence'
+            };
+
+            const essenceHrid = essenceMap[tokenHrid];
+            if (essenceHrid) {
+                const essencePrice = marketAPI.getPrice(essenceHrid, 0);
+                if (essencePrice) {
+                    const pricingMode = config.getSettingValue(pricingModeSetting, 'conservative');
+                    const respectPricingMode = config.getSettingValue(respectModeSetting, true);
+
+                    let marketPrice = 0;
+                    if (respectPricingMode) {
+                        marketPrice = pricingMode === 'conservative' ? essencePrice.bid : essencePrice.ask;
+                    } else {
+                        marketPrice = essencePrice.bid;
+                    }
+
+                    return marketPrice > 0 ? marketPrice : null;
+                }
+            }
+        }
+
+        return bestValuePerToken > 0 ? bestValuePerToken : null;
+    }
+
+    /**
+     * Pricing Helper Utility
+     * Shared logic for selecting market prices based on pricing mode settings
+     */
+
+
+    /**
+     * Select appropriate price from market data based on pricing mode settings
+     * @param {Object} priceData - Market price data with bid/ask properties
+     * @param {string} modeSetting - Config setting key for pricing mode (default: 'profitCalc_pricingMode')
+     * @param {string} respectSetting - Config setting key for respect pricing mode flag (default: 'expectedValue_respectPricingMode')
+     * @returns {number} Selected price (bid or ask)
+     */
+    function selectPrice(priceData, modeSetting = 'profitCalc_pricingMode', respectSetting = 'expectedValue_respectPricingMode') {
+        if (!priceData) return 0;
+
+        const pricingMode = config.getSettingValue(modeSetting, 'conservative');
+        const respectPricingMode = config.getSettingValue(respectSetting, true);
+
+        // If not respecting mode or mode is conservative, always use bid
+        if (!respectPricingMode || pricingMode === 'conservative') {
+            return priceData.bid || 0;
+        }
+
+        // Hybrid/Optimistic: Use ask
+        return priceData.ask || 0;
+    }
+
+    /**
      * Expected Value Calculator Module
      * Calculates expected value for openable containers
      */
@@ -4338,6 +4462,14 @@
             this.COIN_HRID = '/items/coin';
             this.COWBELL_HRID = '/items/cowbell';
             this.COWBELL_BAG_HRID = '/items/bag_of_10_cowbells';
+
+            // Dungeon token HRIDs
+            this.DUNGEON_TOKENS = [
+                '/items/chimerical_token',
+                '/items/sinister_token',
+                '/items/enchanted_token',
+                '/items/pirate_token'
+            ];
 
             // Flag to track if initialized
             this.isInitialized = false;
@@ -4469,7 +4601,7 @@
 
         /**
          * Get price for a drop item
-         * Handles special cases (Coin, Cowbell, nested containers)
+         * Handles special cases (Coin, Cowbell, Dungeon Tokens, nested containers)
          * @param {string} itemHrid - Item HRID
          * @returns {number|null} Price or null if unavailable
          */
@@ -4484,17 +4616,7 @@
                 const bagPrice = marketAPI.getPrice(this.COWBELL_BAG_HRID, 0);
                 if (bagPrice) {
                     // Respect pricing mode for Cowbell Bag price
-                    const pricingMode = config.getSettingValue('profitCalc_pricingMode', 'conservative');
-                    const respectPricingMode = config.getSettingValue('expectedValue_respectPricingMode', true);
-
-                    let bagValue = 0;
-                    if (respectPricingMode) {
-                        // Conservative: Bid (instant sell), Hybrid/Optimistic: Ask (patient sell)
-                        bagValue = pricingMode === 'conservative' ? bagPrice.bid : bagPrice.ask;
-                    } else {
-                        // Always use conservative
-                        bagValue = bagPrice.bid;
-                    }
+                    const bagValue = selectPrice(bagPrice, 'profitCalc_pricingMode', 'expectedValue_respectPricingMode');
 
                     if (bagValue > 0) {
                         // Apply 18% market tax (Cowbell Bag only), then divide by 10
@@ -4504,36 +4626,24 @@
                 return null; // No bag price available
             }
 
+            // Special case: Dungeon Tokens (calculate value from shop items)
+            if (this.DUNGEON_TOKENS.includes(itemHrid)) {
+                return calculateDungeonTokenValue(itemHrid, 'profitCalc_pricingMode', 'expectedValue_respectPricingMode');
+            }
+
             // Check if this is a nested container (use cached EV)
             if (this.containerCache.has(itemHrid)) {
                 return this.containerCache.get(itemHrid);
             }
 
             // Regular market item - get price based on pricing mode
-            const pricingMode = config.getSettingValue('profitCalc_pricingMode', 'conservative');
-            const respectPricingMode = config.getSettingValue('expectedValue_respectPricingMode', true);
-
-            // Get market price
             const price = marketAPI.getPrice(itemHrid, 0);
             if (!price) {
                 return null; // No market data
             }
 
             // Determine which price to use for drop revenue
-            let dropPrice = 0;
-
-            if (respectPricingMode) {
-                // Conservative: Bid (instant sell)
-                // Hybrid/Optimistic: Ask (patient sell)
-                if (pricingMode === 'conservative') {
-                    dropPrice = price.bid;
-                } else {
-                    dropPrice = price.ask;
-                }
-            } else {
-                // Always use conservative (instant sell)
-                dropPrice = price.bid;
-            }
+            const dropPrice = selectPrice(price, 'profitCalc_pricingMode', 'expectedValue_respectPricingMode');
 
             return dropPrice > 0 ? dropPrice : null;
         }
@@ -7343,61 +7453,66 @@
      * @param {Element} tooltipElement - The tooltip popper element
      */
     function fixTooltipOverflow(tooltipElement) {
-        // Use double requestAnimationFrame to ensure MUI positioning is complete
-        // First frame: MUI does initial positioning
-        // Second frame: We check and fix overflow
+        // Use triple requestAnimationFrame to ensure MUI positioning is complete
+        // Frame 1: MUI does initial positioning
+        // Frame 2: Content finishes rendering (especially for long lists)
+        // Frame 3: We check and fix overflow
         requestAnimationFrame(() => {
             requestAnimationFrame(() => {
-                if (!tooltipElement.isConnected) {
-                    return; // Tooltip already removed
-                }
+                requestAnimationFrame(() => {
+                    if (!tooltipElement.isConnected) {
+                        return; // Tooltip already removed
+                    }
 
-                const bBox = tooltipElement.getBoundingClientRect();
-                const viewportHeight = window.innerHeight;
+                    const bBox = tooltipElement.getBoundingClientRect();
+                    const viewportHeight = window.innerHeight;
 
-                // Find the actual tooltip content element (child of popper)
-                const tooltipContent = tooltipElement.querySelector('.MuiTooltip-tooltip');
+                    // Find the actual tooltip content element (child of popper)
+                    const tooltipContent = tooltipElement.querySelector('.MuiTooltip-tooltip');
 
-                // Check if tooltip extends beyond viewport
-                if (bBox.top < 0 || bBox.bottom > viewportHeight) {
-                    // Get current transform
-                    const transformString = tooltipElement.style.transform;
+                    // Check if tooltip extends beyond viewport
+                    if (bBox.top < 0 || bBox.bottom > viewportHeight) {
+                        // Get current transform
+                        const transformString = tooltipElement.style.transform;
 
-                    if (transformString) {
-                        // Parse transform3d(x, y, z)
-                        const match = transformString.match(REGEX_TRANSFORM3D);
+                        if (transformString) {
+                            // Parse transform3d(x, y, z)
+                            const match = transformString.match(REGEX_TRANSFORM3D);
 
-                        if (match) {
-                            const x = match[1];
-                            const currentY = parseFloat(match[2]);
-                            const z = match[3];
+                            if (match) {
+                                const x = match[1];
+                                const currentY = parseFloat(match[2]);
+                                const z = match[3];
 
-                            // Calculate how much to adjust Y
-                            let newY;
+                                // Calculate how much to adjust Y
+                                let newY;
 
-                            if (bBox.height >= viewportHeight - 20) {
-                                // Tooltip is taller than viewport - position at top with small margin
-                                newY = 10;
+                                if (bBox.height >= viewportHeight - 20) {
+                                    // Tooltip is taller than viewport - position at top
+                                    newY = 0;
 
-                                // Force max-height on the tooltip content to enable scrolling
-                                if (tooltipContent) {
-                                    tooltipContent.style.maxHeight = `${viewportHeight - 20}px`;
-                                    tooltipContent.style.overflowY = 'auto';
+                                    // Force max-height on the tooltip content to enable scrolling
+                                    if (tooltipContent) {
+                                        tooltipContent.style.maxHeight = `${viewportHeight - 20}px`;
+                                        tooltipContent.style.overflowY = 'auto';
+                                    }
+                                } else if (bBox.top < 0) {
+                                    // Tooltip extends above viewport - move it down
+                                    newY = currentY - bBox.top;
+                                } else if (bBox.bottom > viewportHeight) {
+                                    // Tooltip extends below viewport - move it up
+                                    newY = currentY - (bBox.bottom - viewportHeight) - 10;
                                 }
-                            } else if (bBox.top < 0) {
-                                // Tooltip extends above viewport - move it down
-                                newY = currentY - bBox.top + 10;
-                            } else if (bBox.bottom > viewportHeight) {
-                                // Tooltip extends below viewport - move it up
-                                newY = currentY - (bBox.bottom - viewportHeight) - 10;
-                            }
 
-                            if (newY !== undefined) {
-                                tooltipElement.style.transform = `translate3d(${x}, ${newY}px, ${z})`;
+                                if (newY !== undefined) {
+                                    // Ensure tooltip never goes above viewport (minimum y=0)
+                                    newY = Math.max(0, newY);
+                                    tooltipElement.style.transform = `translate3d(${x}, ${newY}px, ${z})`;
+                                }
                             }
                         }
                     }
-                }
+                });
             });
         });
     }
@@ -7583,6 +7698,8 @@
                 if (evData) {
                     this.injectExpectedValueDisplay(tooltipElement, evData, isCollectionTooltip);
                 }
+                // Fix tooltip overflow before returning
+                dom.fixTooltipOverflow(tooltipElement);
                 return; // Skip price/profit display for containers
             }
 
@@ -21340,81 +21457,19 @@
         // Dungeon tokens: Best market value per token approach
         // Calculate based on best shop item value (similar to task tokens)
         if (itemHrid === '/items/chimerical_token') {
-            return calculateDungeonTokenValue(itemHrid);
+            return calculateDungeonTokenValue(itemHrid, 'networth_pricingMode', null) || 0;
         }
         if (itemHrid === '/items/sinister_token') {
-            return calculateDungeonTokenValue(itemHrid);
+            return calculateDungeonTokenValue(itemHrid, 'networth_pricingMode', null) || 0;
         }
         if (itemHrid === '/items/enchanted_token') {
-            return calculateDungeonTokenValue(itemHrid);
+            return calculateDungeonTokenValue(itemHrid, 'networth_pricingMode', null) || 0;
         }
         if (itemHrid === '/items/pirate_token') {
-            return calculateDungeonTokenValue(itemHrid);
+            return calculateDungeonTokenValue(itemHrid, 'networth_pricingMode', null) || 0;
         }
 
         return null; // Not a currency
-    }
-
-    /**
-     * Calculate dungeon token value based on best shop item value
-     * Uses "best market value per token" approach: finds the shop item with highest (market price / token cost)
-     * @param {string} tokenHrid - Token HRID (e.g., '/items/chimerical_token')
-     * @returns {number} Value per token, or 0 if no data
-     */
-    function calculateDungeonTokenValue(tokenHrid) {
-        const gameData = dataManager.getInitClientData();
-        if (!gameData) return 0;
-
-        // Get all shop items for this token type
-        const shopItems = Object.values(gameData.shopItemDetailMap || {}).filter(
-            item => item.costs && item.costs[0]?.itemHrid === tokenHrid
-        );
-
-        if (shopItems.length === 0) return 0;
-
-        let bestValuePerToken = 0;
-
-        // For each shop item, calculate market price / token cost
-        for (const shopItem of shopItems) {
-            const itemHrid = shopItem.itemHrid;
-            const tokenCost = shopItem.costs[0].count;
-
-            // Get market price for this item
-            const prices = marketAPI.getPrice(itemHrid, 0);
-            if (!prices) continue;
-
-            // Use ask price if positive, otherwise bid
-            const marketPrice = Math.max(prices.ask || 0, prices.bid || 0);
-            if (marketPrice <= 0) continue;
-
-            // Calculate value per token
-            const valuePerToken = marketPrice / tokenCost;
-
-            // Keep track of best value
-            if (valuePerToken > bestValuePerToken) {
-                bestValuePerToken = valuePerToken;
-            }
-        }
-
-        // Fallback to essence price if no shop items found
-        if (bestValuePerToken === 0) {
-            const essenceMap = {
-                '/items/chimerical_token': '/items/chimerical_essence',
-                '/items/sinister_token': '/items/sinister_essence',
-                '/items/enchanted_token': '/items/enchanted_essence',
-                '/items/pirate_token': '/items/pirate_essence'
-            };
-
-            const essenceHrid = essenceMap[tokenHrid];
-            if (essenceHrid) {
-                const essencePrice = marketAPI.getPrice(essenceHrid, 0);
-                if (essencePrice) {
-                    return Math.max(essencePrice.ask || 0, essencePrice.bid || 0);
-                }
-            }
-        }
-
-        return bestValuePerToken;
     }
 
     /**
@@ -25665,8 +25720,7 @@
 
     class DungeonTrackerStorage {
         constructor() {
-            this.storeName = 'dungeonRuns';
-            this.teamRunsStoreName = 'teamRuns'; // Team-based runs (from backfill)
+            this.unifiedStoreName = 'unifiedRuns'; // Unified storage for all runs
         }
 
         /**
@@ -25712,34 +25766,6 @@
         }
 
         /**
-         * Save a completed dungeon run
-         * @param {Object} run - Run data
-         * @param {string} run.dungeonHrid - Dungeon action HRID
-         * @param {number} run.tier - Difficulty tier
-         * @param {number} run.startTime - Run start timestamp (ms)
-         * @param {number} run.endTime - Run end timestamp (ms)
-         * @param {number} run.totalTime - Total run time (ms)
-         * @param {number} run.avgWaveTime - Average wave time (ms)
-         * @param {number} run.fastestWave - Fastest wave time (ms)
-         * @param {number} run.slowestWave - Slowest wave time (ms)
-         * @param {number} run.wavesCompleted - Number of waves completed
-         * @param {Array<number>} run.waveTimes - Individual wave times (ms)
-         * @returns {Promise<boolean>} Success status
-         */
-        async saveRun(run) {
-            const key = this.getDungeonKey(run.dungeonHrid, run.tier);
-
-            // Get existing runs for this dungeon+tier
-            const existingRuns = await storage.getJSON(key, this.storeName, []);
-
-            // Add new run to front of list
-            existingRuns.unshift(run);
-
-            // Save updated list (no limit - store all runs)
-            return storage.setJSON(key, existingRuns, this.storeName, true);
-        }
-
-        /**
          * Get run history for a dungeon+tier
          * @param {string} dungeonHrid - Dungeon action HRID
          * @param {number} tier - Difficulty tier
@@ -25747,8 +25773,13 @@
          * @returns {Promise<Array>} Run history
          */
         async getRunHistory(dungeonHrid, tier, limit = 0) {
-            const key = this.getDungeonKey(dungeonHrid, tier);
-            const runs = await storage.getJSON(key, this.storeName, []);
+            // Get all runs from unified storage
+            const allRuns = await storage.getJSON('allRuns', this.unifiedStoreName, []);
+
+            // Filter by dungeon HRID and tier
+            const runs = allRuns.filter(r =>
+                r.dungeonHrid === dungeonHrid && r.tier === tier
+            );
 
             if (limit > 0 && runs.length > limit) {
                 return runs.slice(0, limit);
@@ -25783,6 +25814,43 @@
 
             const totalAvgWaveTime = runs.reduce((sum, run) => sum + run.avgWaveTime, 0);
             const avgWaveTime = totalAvgWaveTime / runs.length;
+
+            return {
+                totalRuns: runs.length,
+                avgTime,
+                fastestTime,
+                slowestTime,
+                avgWaveTime
+            };
+        }
+
+        /**
+         * Get statistics for a dungeon by name (for chat-based runs)
+         * @param {string} dungeonName - Dungeon display name
+         * @returns {Promise<Object>} Statistics
+         */
+        async getStatsByName(dungeonName) {
+            const allRuns = await storage.getJSON('allRuns', this.unifiedStoreName, []);
+            const runs = allRuns.filter(r => r.dungeonName === dungeonName);
+
+            if (runs.length === 0) {
+                return {
+                    totalRuns: 0,
+                    avgTime: 0,
+                    fastestTime: 0,
+                    slowestTime: 0,
+                    avgWaveTime: 0
+                };
+            }
+
+            // Use 'duration' field (chat-based) or 'totalTime' field (websocket-based)
+            const durations = runs.map(r => r.duration || r.totalTime || 0);
+            const totalTime = durations.reduce((sum, d) => sum + d, 0);
+            const avgTime = totalTime / runs.length;
+            const fastestTime = Math.min(...durations);
+            const slowestTime = Math.max(...durations);
+
+            const avgWaveTime = runs.reduce((sum, run) => sum + (run.avgWaveTime || 0), 0) / runs.length;
 
             return {
                 totalRuns: runs.length,
@@ -25834,19 +25902,37 @@
          * @returns {Promise<boolean>} Success status
          */
         async deleteRun(dungeonHrid, tier, runIndex) {
-            const key = this.getDungeonKey(dungeonHrid, tier);
-            const runs = await storage.getJSON(key, this.storeName, []);
+            // Get all runs from unified storage
+            const allRuns = await storage.getJSON('allRuns', this.unifiedStoreName, []);
 
-            if (runIndex < 0 || runIndex >= runs.length) {
+            // Filter to this dungeon+tier
+            const dungeonRuns = allRuns.filter(r =>
+                r.dungeonHrid === dungeonHrid && r.tier === tier
+            );
+
+            if (runIndex < 0 || runIndex >= dungeonRuns.length) {
                 console.warn('[Dungeon Tracker Storage] Invalid run index:', runIndex);
                 return false;
             }
 
-            // Remove the run at the specified index
-            runs.splice(runIndex, 1);
+            // Find the run to delete in the full array
+            const runToDelete = dungeonRuns[runIndex];
+            const indexInAllRuns = allRuns.findIndex(r =>
+                r.timestamp === runToDelete.timestamp &&
+                r.dungeonHrid === runToDelete.dungeonHrid &&
+                r.tier === runToDelete.tier
+            );
+
+            if (indexInAllRuns === -1) {
+                console.warn('[Dungeon Tracker Storage] Run not found in unified storage');
+                return false;
+            }
+
+            // Remove the run
+            allRuns.splice(indexInAllRuns, 1);
 
             // Save updated list
-            return storage.setJSON(key, runs, this.storeName, true);
+            return storage.setJSON('allRuns', allRuns, this.unifiedStoreName, true);
         }
 
         /**
@@ -25856,8 +25942,16 @@
          * @returns {Promise<boolean>} Success status
          */
         async clearHistory(dungeonHrid, tier) {
-            const key = this.getDungeonKey(dungeonHrid, tier);
-            return storage.delete(key, this.storeName);
+            // Get all runs from unified storage
+            const allRuns = await storage.getJSON('allRuns', this.unifiedStoreName, []);
+
+            // Filter OUT the runs we want to delete
+            const filteredRuns = allRuns.filter(r =>
+                !(r.dungeonHrid === dungeonHrid && r.tier === tier)
+            );
+
+            // Save back the filtered list
+            return storage.setJSON('allRuns', filteredRuns, this.unifiedStoreName, true);
         }
 
         /**
@@ -25913,34 +26007,80 @@
          * Save a team-based run (from backfill)
          * @param {string} teamKey - Team key (sorted player names)
          * @param {Object} run - Run data
-         * @param {number} run.timestamp - Run start timestamp (ISO string)
+         * @param {string} run.timestamp - Run start timestamp (ISO string)
          * @param {number} run.duration - Run duration (ms)
+         * @param {string} run.dungeonName - Dungeon name (from Phase 2)
          * @returns {Promise<boolean>} Success status
          */
         async saveTeamRun(teamKey, run) {
-            // Get existing runs for this team
-            const existingRuns = await storage.getJSON(teamKey, this.teamRunsStoreName, []);
+            // Get all runs from unified storage
+            const allRuns = await storage.getJSON('allRuns', this.unifiedStoreName, []);
 
-            // Check for duplicates
-            const isDuplicate = existingRuns.some(r =>
-                r.timestamp === run.timestamp && r.duration === run.duration
+            // Check for duplicates (same timestamp, team, and duration)
+            const isDuplicate = allRuns.some(r =>
+                r.timestamp === run.timestamp &&
+                r.teamKey === teamKey &&
+                Math.abs(r.duration - run.duration) < 1000 // Within 1 second
             );
 
             if (!isDuplicate) {
-                existingRuns.push(run);
-                return storage.setJSON(teamKey, existingRuns, this.teamRunsStoreName, true);
+                // Create unified format run
+                const team = teamKey.split(',').sort();
+                const unifiedRun = {
+                    timestamp: run.timestamp,
+                    dungeonName: run.dungeonName || 'Unknown',
+                    dungeonHrid: null,
+                    tier: null,
+                    team: team,
+                    teamKey: teamKey,
+                    duration: run.duration,
+                    validated: true,
+                    source: 'chat',
+                    waveTimes: null,
+                    avgWaveTime: null
+                };
+
+                // Add to front of list (most recent first)
+                allRuns.unshift(unifiedRun);
+
+                // Save to unified storage
+                await storage.setJSON('allRuns', allRuns, this.unifiedStoreName, true);
+
+                return true;
             }
 
             return false;
         }
 
         /**
-         * Get team run history
-         * @param {string} teamKey - Team key (sorted player names)
-         * @returns {Promise<Array>} Run history
+         * Get all runs (unfiltered)
+         * @returns {Promise<Array>} All runs
          */
-        async getTeamRunHistory(teamKey) {
-            return storage.getJSON(teamKey, this.teamRunsStoreName, []);
+        async getAllRuns() {
+            return storage.getJSON('allRuns', this.unifiedStoreName, []);
+        }
+
+        /**
+         * Get runs filtered by dungeon and/or team
+         * @param {Object} filters - Filter options
+         * @param {string} filters.dungeonName - Filter by dungeon name (optional)
+         * @param {string} filters.teamKey - Filter by team key (optional)
+         * @returns {Promise<Array>} Filtered runs
+         */
+        async getFilteredRuns(filters = {}) {
+            const allRuns = await this.getAllRuns();
+
+            let filtered = allRuns;
+
+            if (filters.dungeonName && filters.dungeonName !== 'all') {
+                filtered = filtered.filter(r => r.dungeonName === filters.dungeonName);
+            }
+
+            if (filters.teamKey && filters.teamKey !== 'all') {
+                filtered = filtered.filter(r => r.teamKey === filters.teamKey);
+            }
+
+            return filtered;
         }
 
         /**
@@ -25948,40 +26088,38 @@
          * @returns {Promise<Array>} Array of {teamKey, runCount, avgTime, bestTime, worstTime}
          */
         async getAllTeamStats() {
-            const results = [];
+            // Get all runs from unified storage
+            const allRuns = await storage.getJSON('allRuns', this.unifiedStoreName, []);
 
-            // Get all keys from IndexedDB for teamRuns store
-            const allKeys = await storage.getAllKeys(this.teamRunsStoreName);
+            // Group by teamKey
+            const teamGroups = {};
+            for (const run of allRuns) {
+                if (!run.teamKey) continue; // Skip solo runs (no team)
 
-            for (const teamKey of allKeys) {
-                const runs = await this.getTeamRunHistory(teamKey);
-
-                if (runs.length > 0) {
-                    const durations = runs.map(r => r.duration);
-                    const avgTime = durations.reduce((a, b) => a + b, 0) / durations.length;
-                    const bestTime = Math.min(...durations);
-                    const worstTime = Math.max(...durations);
-
-                    results.push({
-                        teamKey,
-                        runCount: runs.length,
-                        avgTime,
-                        bestTime,
-                        worstTime
-                    });
+                if (!teamGroups[run.teamKey]) {
+                    teamGroups[run.teamKey] = [];
                 }
+                teamGroups[run.teamKey].push(run);
+            }
+
+            // Calculate stats for each team
+            const results = [];
+            for (const [teamKey, runs] of Object.entries(teamGroups)) {
+                const durations = runs.map(r => r.duration);
+                const avgTime = durations.reduce((a, b) => a + b, 0) / durations.length;
+                const bestTime = Math.min(...durations);
+                const worstTime = Math.max(...durations);
+
+                results.push({
+                    teamKey,
+                    runCount: runs.length,
+                    avgTime,
+                    bestTime,
+                    worstTime
+                });
             }
 
             return results;
-        }
-
-        /**
-         * Clear all team runs for a specific team
-         * @param {string} teamKey - Team key
-         * @returns {Promise<boolean>} Success status
-         */
-        async clearTeamHistory(teamKey) {
-            return storage.delete(teamKey, this.teamRunsStoreName);
         }
     }
 
@@ -26015,6 +26153,9 @@
 
             // WebSocket message history (last 100 party messages for reliable timestamp capture)
             this.recentChatMessages = [];
+
+            // Hibernation detection (for UI time label switching)
+            this.hibernationDetected = false;
         }
 
         /**
@@ -26077,7 +26218,8 @@
                 firstKeyCountTimestamp: this.firstKeyCountTimestamp,
                 lastKeyCountTimestamp: this.lastKeyCountTimestamp,
                 battleStartedTimestamp: this.battleStartedTimestamp,
-                keyCountMessages: this.keyCountMessages
+                keyCountMessages: this.keyCountMessages,
+                hibernationDetected: this.hibernationDetected
             };
 
             return storage.setJSON('dungeonTracker_inProgressRun', stateToSave, 'settings', true);
@@ -26134,6 +26276,9 @@
             this.battleStartedTimestamp = saved.battleStartedTimestamp || null;
             this.keyCountMessages = saved.keyCountMessages || [];
 
+            // Restore hibernation detection flag
+            this.hibernationDetected = saved.hibernationDetected || false;
+
             this.currentRun = {
                 dungeonHrid: saved.dungeonHrid,
                 tier: saved.tier,
@@ -26141,7 +26286,8 @@
                 currentWave: saved.currentWave,
                 maxWaves: saved.maxWaves,
                 wavesCompleted: saved.wavesCompleted,
-                keyCountsMap: saved.keyCountsMap || {}
+                keyCountsMap: saved.keyCountsMap || {},
+                hibernationDetected: saved.hibernationDetected || false
             };
 
             this.notifyUpdate();
@@ -26175,8 +26321,36 @@
             // Listen for party chat messages (for server-validated duration and battle started)
             webSocketHook.on('chat_message_received', (data) => this.onChatMessage(data));
 
+            // Setup hibernation detection using Visibility API
+            this.setupHibernationDetection();
+
             // Check for active dungeon on page load and try to restore state
             setTimeout(() => this.checkForActiveDungeon(), 1000);
+        }
+
+        /**
+         * Setup hibernation detection using Visibility API
+         * Detects when computer sleeps/wakes to flag elapsed time as potentially inaccurate
+         */
+        setupHibernationDetection() {
+            let wasHidden = false;
+
+            document.addEventListener('visibilitychange', () => {
+                if (document.hidden) {
+                    // Tab hidden or computer going to sleep
+                    wasHidden = true;
+                } else if (wasHidden && this.isTracking) {
+                    // Tab visible again after being hidden during active run
+                    // Mark hibernation detected (elapsed time may be wrong)
+                    this.hibernationDetected = true;
+                    if (this.currentRun) {
+                        this.currentRun.hibernationDetected = true;
+                    }
+                    this.notifyUpdate();
+                    this.saveInProgressRun(); // Persist flag to IndexedDB
+                    wasHidden = false;
+                }
+            });
         }
 
         /**
@@ -26225,8 +26399,6 @@
                     wavesCompleted: saved.wavesCompleted,
                     keyCountsMap: saved.keyCountsMap || {}
                 };
-
-                console.log('[Dungeon Tracker] Restored on page load - firstTimestamp:', this.firstKeyCountTimestamp, 'lastTimestamp:', this.lastKeyCountTimestamp);
 
                 // Trigger UI update to show immediately
                 this.notifyUpdate();
@@ -26572,14 +26744,8 @@
             // If we already have a lastKeyCountTimestamp, this is the COMPLETION message
             // (The first message sets both first and last to the same value)
             if (this.lastKeyCountTimestamp !== null && timestamp > this.lastKeyCountTimestamp) {
-                console.log('[Dungeon Tracker] Completion key counts detected - completing dungeon');
-
                 // Check for midnight rollover
-                let duration = timestamp - this.firstKeyCountTimestamp;
-                if (duration < 0) {
-                    console.log('[Dungeon Tracker] Midnight rollover detected - adding 24 hours');
-                    duration += 24 * 60 * 60 * 1000;
-                }
+                timestamp - this.firstKeyCountTimestamp;
 
                 // Update last timestamp for duration calculation
                 this.lastKeyCountTimestamp = timestamp;
@@ -26614,11 +26780,7 @@
                     this.lastKeyCountTimestamp = timestamp; // Current message is completion
 
                     // Check for midnight rollover
-                    let duration = timestamp - this.firstKeyCountTimestamp;
-                    if (duration < 0) {
-                        console.log('[Dungeon Tracker] Midnight rollover detected - adding 24 hours');
-                        duration += 24 * 60 * 60 * 1000;
-                    }
+                    timestamp - this.firstKeyCountTimestamp;
 
                     // Update key counts
                     if (this.currentRun) {
@@ -26732,8 +26894,6 @@
          * @param {Object} data - new_battle message data
          */
         startDungeon(data) {
-            console.log('[Dungeon Tracker] startDungeon called, pendingDungeonInfo:', this.pendingDungeonInfo);
-
             // Get dungeon info - prioritize pending info from actions_updated
             let dungeonHrid = null;
             let tier = null;
@@ -26756,13 +26916,10 @@
                     maxWaves = dungeonInfo.maxWaves;
                 }
 
-                console.log('[Dungeon Tracker] Using pending dungeon info:', dungeonHrid, 'T' + tier, maxWaves + ' waves');
-
                 // Clear pending info
                 this.pendingDungeonInfo = null;
             } else {
                 // FALLBACK: Check current actions from dataManager
-                console.log('[Dungeon Tracker] No pending info, checking current actions...');
                 const currentActions = dataManager.getCurrentActions();
                 const dungeonAction = currentActions.find(a =>
                     this.isDungeonAction(a.actionHrid) && !a.isDone
@@ -26776,18 +26933,13 @@
                     if (dungeonInfo) {
                         maxWaves = dungeonInfo.maxWaves;
                     }
-
-                    console.log('[Dungeon Tracker] Found active dungeon from dataManager:', dungeonHrid, 'T' + tier, maxWaves + ' waves');
                 }
             }
 
             // Don't start tracking if we don't have dungeon info (not a dungeon)
             if (!dungeonHrid) {
-                console.log('[Dungeon Tracker] No dungeon info available, not starting tracking');
                 return;
             }
-
-            console.log('[Dungeon Tracker] Starting tracking for', dungeonHrid, 'T' + tier, 'battleId:', data.battleId);
 
             this.isTracking = true;
             this.currentBattleId = data.battleId; // Store battleId for persistence
@@ -26799,16 +26951,18 @@
             this.lastKeyCountTimestamp = null;
             this.keyCountMessages = [];
 
+            // Reset hibernation detection for new run
+            this.hibernationDetected = false;
+
             this.currentRun = {
                 dungeonHrid: dungeonHrid,
                 tier: tier,
                 startTime: this.waveStartTime.getTime(),
                 currentWave: data.wave, // Use actual wave number (1-indexed)
                 maxWaves: maxWaves,
-                wavesCompleted: 0 // No waves completed yet (will update as waves complete)
+                wavesCompleted: 0, // No waves completed yet (will update as waves complete)
+                hibernationDetected: false // Track if computer sleep detected during this run
             };
-
-            console.log('[Dungeon Tracker] Tracking started, currentRun:', this.currentRun);
 
             this.notifyUpdate();
 
@@ -26972,27 +27126,21 @@
                 keyCountMessages: completedKeyCountMessages  // Store key data for history
             };
 
-            console.log('[Dungeon Tracker] Completing dungeon run:', completedRun);
-
-            // Save to storage
-            await dungeonTrackerStorage.saveRun(completedRun);
-
-            // Save team run if we have key count data
-            if (completedKeyCountMessages.length > 0) {
-                // Get player names from last key count message
-                const lastKeyCount = completedKeyCountMessages[completedKeyCountMessages.length - 1];
-                const playerNames = Object.keys(lastKeyCount.keyCountsMap);
-
-                if (playerNames.length > 0) {
-                    const teamKey = dungeonTrackerStorage.getTeamKey(playerNames);
-                    const teamRun = {
-                        timestamp: new Date(completedRunData.startTime).toISOString(),
-                        duration: totalTime
-                    };
-                    await dungeonTrackerStorage.saveTeamRun(teamKey, teamRun);
-                    console.log('[Dungeon Tracker] Saved team run:', teamKey, teamRun);
-                }
-            }
+            // Phase 5: Run history is now built exclusively from party chat messages
+            // by dungeon-tracker-chat-annotations.js (saveRunsFromEvents method).
+            //
+            // This approach uses server-provided chat timestamps instead of wall-clock time,
+            // which prevents hibernation-corrupted durations (e.g., 625-minute runs when
+            // the computer sleeps mid-dungeon).
+            //
+            // WebSocket tracking is still active for live UI features:
+            // - Elapsed time display
+            // - Wave counter
+            // - Progress bar
+            // - Key counts display
+            //
+            // But we NO LONGER save runs to storage from WebSocket events.
+            // Chat message parsing is the single source of truth for historical run data.
 
             // Notify completion
             this.notifyCompletion(completedRun);
@@ -27134,77 +27282,116 @@
         async backfillFromChatHistory() {
             try {
                 const messages = document.querySelectorAll('[class^="ChatMessage_chatMessage"]');
-                const keyCountEvents = [];
+                const events = [];
 
-                // Extract all "Key counts:" messages with timestamps and team composition
+                // Extract all relevant events: key counts, party failed, battle ended, battle started
                 for (const msg of messages) {
                     const text = msg.textContent || '';
 
-                    if (text.includes('Key counts:')) {
-                        // Parse timestamp from message display format: [MM/DD HH:MM:SS]
-                        const timestampMatch = text.match(/\[(\d{1,2}\/\d{1,2})\s+(\d{1,2}):(\d{2}):(\d{2})\s*([AP]M)?\]/);
-                        if (!timestampMatch) continue;
+                    // Parse timestamp from message display format: [MM/DD HH:MM:SS]
+                    const timestampMatch = text.match(/\[(\d{1,2}\/\d{1,2})\s+(\d{1,2}):(\d{2}):(\d{2})\s*([AP]M)?\]/);
+                    if (!timestampMatch) continue;
 
-                        let [, date, hour, min, sec, period] = timestampMatch;
-                        const [month, day] = date.split('/').map(x => parseInt(x, 10));
+                    let [, date, hour, min, sec, period] = timestampMatch;
+                    const [month, day] = date.split('/').map(x => parseInt(x, 10));
 
-                        hour = parseInt(hour, 10);
-                        min = parseInt(min, 10);
-                        sec = parseInt(sec, 10);
+                    hour = parseInt(hour, 10);
+                    min = parseInt(min, 10);
+                    sec = parseInt(sec, 10);
 
-                        // Handle AM/PM if present
-                        if (period === 'PM' && hour < 12) hour += 12;
-                        if (period === 'AM' && hour === 12) hour = 0;
+                    // Handle AM/PM if present
+                    if (period === 'PM' && hour < 12) hour += 12;
+                    if (period === 'AM' && hour === 12) hour = 0;
 
-                        // Create timestamp (assumes current year)
-                        const now = new Date();
-                        const timestamp = new Date(now.getFullYear(), month - 1, day, hour, min, sec, 0);
+                    // Create timestamp (assumes current year)
+                    const now = new Date();
+                    const timestamp = new Date(now.getFullYear(), month - 1, day, hour, min, sec, 0);
 
+                    // Extract "Battle started:" messages
+                    if (text.includes('Battle started:')) {
+                        const dungeonName = text.split('Battle started:')[1]?.split(']')[0]?.trim();
+                        if (dungeonName) {
+                            events.push({
+                                type: 'battle_start',
+                                timestamp,
+                                dungeonName
+                            });
+                        }
+                    }
+                    // Extract "Key counts:" messages
+                    else if (text.includes('Key counts:')) {
                         // Parse team composition from key counts
                         const keyCountsMap = this.parseKeyCountsFromMessage(text);
                         const playerNames = Object.keys(keyCountsMap).sort();
 
                         if (playerNames.length > 0) {
-                            keyCountEvents.push({
+                            events.push({
+                                type: 'key',
                                 timestamp,
                                 team: playerNames,
                                 keyCountsMap
                             });
                         }
                     }
+                    // Extract "Party failed" messages
+                    else if (text.match(/Party failed on wave \d+/)) {
+                        events.push({
+                            type: 'fail',
+                            timestamp
+                        });
+                    }
+                    // Extract "Battle ended:" messages (fled/canceled)
+                    else if (text.includes('Battle ended:')) {
+                        events.push({
+                            type: 'cancel',
+                            timestamp
+                        });
+                    }
                 }
 
                 // Sort events by timestamp
-                keyCountEvents.sort((a, b) => a.timestamp - b.timestamp);
+                events.sort((a, b) => a.timestamp - b.timestamp);
 
-                // Calculate durations from consecutive message pairs
+                // Build runs from events - only count key→key pairs (skip key→fail and key→cancel)
                 let runsAdded = 0;
                 const teamsSet = new Set();
 
-                for (let i = 0; i < keyCountEvents.length - 1; i++) {
-                    const current = keyCountEvents[i];
-                    const next = keyCountEvents[i + 1];
+                for (let i = 0; i < events.length; i++) {
+                    const event = events[i];
+                    if (event.type !== 'key') continue; // Only process key count events
 
-                    // Calculate duration (handle midnight rollover)
-                    let duration = next.timestamp - current.timestamp;
-                    if (duration < 0) {
-                        duration += 24 * 60 * 60 * 1000; // Add 24 hours
+                    const next = events[i + 1];
+                    if (!next) break; // No next event
+
+                    // Only create run if next event is also a key count (successful completion)
+                    if (next.type === 'key') {
+                        // Calculate duration (handle midnight rollover)
+                        let duration = next.timestamp - event.timestamp;
+                        if (duration < 0) {
+                            duration += 24 * 60 * 60 * 1000; // Add 24 hours
+                        }
+
+                        // Find nearest battle_start before this run
+                        const battleStart = events.slice(0, i).reverse().find(e => e.type === 'battle_start');
+                        const dungeonName = battleStart?.dungeonName || 'Unknown';
+
+                        // Get team key
+                        const teamKey = dungeonTrackerStorage.getTeamKey(event.team);
+                        teamsSet.add(teamKey);
+
+                        // Save team run with dungeon name
+                        const run = {
+                            timestamp: event.timestamp.toISOString(),
+                            duration: duration,
+                            dungeonName: dungeonName
+                        };
+
+                        const saved = await dungeonTrackerStorage.saveTeamRun(teamKey, run);
+                        if (saved) {
+                            runsAdded++;
+                        }
                     }
-
-                    // Get team key
-                    const teamKey = dungeonTrackerStorage.getTeamKey(current.team);
-                    teamsSet.add(teamKey);
-
-                    // Save team run
-                    const run = {
-                        timestamp: current.timestamp.toISOString(),
-                        duration: duration
-                    };
-
-                    const saved = await dungeonTrackerStorage.saveTeamRun(teamKey, run);
-                    if (saved) {
-                        runsAdded++;
-                    }
+                    // If next event is 'fail' or 'cancel', skip this key count (not a completed run)
                 }
 
                 return {
@@ -27226,35 +27413,67 @@
 
     /**
      * Dungeon Tracker Chat Annotations
-     * Adds colored timing annotations to party chat messages
+     * Adds colored timer annotations to party chat messages
+     * Handles both real-time (new messages) and batch (historical messages) processing
      */
 
 
-    class DungeonTrackerChat {
+    class DungeonTrackerChatAnnotations {
         constructor() {
-            this.partyMessages = []; // Store last 100 party messages
+            this.enabled = true;
             this.observer = null;
-            this.annotationEnabled = true;
         }
 
         /**
-         * Initialize chat annotations
+         * Initialize chat annotation monitor
          */
         initialize() {
-            console.log('[Dungeon Tracker Chat] Initializing chat annotations...');
-
-            // Start observing for new chat messages
-            this.startChatObserver();
-
-            // Initial annotation of existing messages
-            setTimeout(() => this.annotateAllMessages(), 1500);
+            // Wait for chat to be available
+            this.waitForChat();
         }
 
         /**
-         * Start MutationObserver to watch for new chat messages
+         * Wait for chat to be ready
          */
-        startChatObserver() {
-            const observer = new MutationObserver((mutations) => {
+        waitForChat() {
+            // Start monitoring immediately (doesn't need specific container)
+            this.startMonitoring();
+
+            // Initial annotation of existing messages (batch mode)
+            setTimeout(() => this.annotateAllMessages(), 1500);
+
+            // Also trigger when switching to party chat
+            this.observeTabSwitches();
+        }
+
+        /**
+         * Observe chat tab switches to trigger batch annotation when user views party chat
+         */
+        observeTabSwitches() {
+            // Find all chat tab buttons
+            const tabButtons = document.querySelectorAll('.Chat_tabsComponentContainer__3ZoKe .MuiButtonBase-root');
+
+            for (const button of tabButtons) {
+                if (button.textContent.includes('Party')) {
+                    button.addEventListener('click', () => {
+                        // Delay to let DOM update
+                        setTimeout(() => this.annotateAllMessages(), 300);
+                    });
+                }
+            }
+        }
+
+        /**
+         * Start monitoring chat for new messages
+         */
+        startMonitoring() {
+            // Stop existing observer if any
+            if (this.observer) {
+                this.observer.disconnect();
+            }
+
+            // Create mutation observer to watch for new messages
+            this.observer = new MutationObserver((mutations) => {
                 for (const mutation of mutations) {
                     for (const node of mutation.addedNodes) {
                         if (!(node instanceof HTMLElement)) continue;
@@ -27265,28 +27484,150 @@
 
                         if (!msg) continue;
 
-                        // Annotate the new message
+                        // Re-run batch annotation on any new message (matches working DRT script)
                         setTimeout(() => this.annotateAllMessages(), 100);
                     }
                 }
             });
 
-            observer.observe(document.body, {
+            // Observe entire document body (matches working DRT script)
+            this.observer.observe(document.body, {
                 childList: true,
                 subtree: true
             });
-
-            this.observer = observer;
         }
 
         /**
-         * Check if party chat is currently selected
-         * @returns {boolean} True if party chat is visible
+         * Batch process all chat messages (for historical messages)
+         * Called on page load and when needed
          */
-        isPartySelected() {
-            const selectedTabEl = document.querySelector(`.Chat_tabsComponentContainer__3ZoKe .MuiButtonBase-root[aria-selected="true"]`);
-            const tabsEl = document.querySelector('.Chat_tabsComponentContainer__3ZoKe .TabsComponent_tabPanelsContainer__26mzo');
-            return selectedTabEl && tabsEl && selectedTabEl.textContent.includes('Party') && !tabsEl.classList.contains('TabsComponent_hidden__255ag');
+        async annotateAllMessages() {
+            if (!this.enabled || !config.isFeatureEnabled('dungeonTracker')) {
+                return;
+            }
+
+            const events = this.extractChatEvents();
+
+            // Phase 5: Save runs from chat messages (authoritative source)
+            await this.saveRunsFromEvents(events);
+
+            // Continue with visual annotations
+            const runDurations = [];
+
+            for (let i = 0; i < events.length; i++) {
+                const e = events[i];
+                if (e.type !== 'key') continue;
+
+                const next = events[i + 1];
+                let label = null;
+                let diff = null;
+                let color = null;
+
+                // Find nearest battle_start before this event to get dungeon name
+                const battleStart = events.slice(0, i).reverse()
+                    .find(ev => ev.type === 'battle_start');
+                const dungeonName = battleStart?.dungeonName || 'Unknown';
+
+                if (next?.type === 'key') {
+                    // Calculate duration between consecutive key counts
+                    diff = next.timestamp - e.timestamp;
+                    if (diff < 0) {
+                        diff += 24 * 60 * 60 * 1000; // Handle midnight rollover
+                    }
+
+                    label = this.formatTime(diff);
+
+                    // Determine color based on performance using dungeonName
+                    if (dungeonName !== 'Unknown') {
+                        const stats = await dungeonTrackerStorage.getStatsByName(dungeonName);
+
+                        if (stats.fastestTime > 0 && stats.slowestTime > 0) {
+                            const fastestThreshold = stats.fastestTime * 1.10;
+                            const slowestThreshold = stats.slowestTime * 0.90;
+
+                            if (diff <= fastestThreshold) {
+                                color = config.COLOR_PROFIT || '#5fda5f'; // Green
+                            } else if (diff >= slowestThreshold) {
+                                color = config.COLOR_LOSS || '#ff6b6b'; // Red
+                            } else {
+                                color = '#90ee90'; // Light green (normal)
+                            }
+                        } else {
+                            color = '#90ee90'; // Light green (default)
+                        }
+                    } else {
+                        color = '#90ee90'; // Light green (fallback)
+                    }
+
+                    // Track run durations for average calculation
+                    runDurations.push({
+                        msg: e.msg,
+                        diff,
+                        dungeonName
+                    });
+                } else if (next?.type === 'fail') {
+                    label = 'FAILED';
+                    color = '#ff4c4c'; // Red
+                } else if (next?.type === 'cancel') {
+                    label = 'canceled';
+                    color = '#ffd700'; // Gold
+                }
+
+                if (label) {
+                    // Mark as processed BEFORE inserting (matches working DRT script)
+                    e.msg.dataset.processed = '1';
+
+                    this.insertAnnotation(label, color, e.msg, false);
+
+                    // Add average if this is a successful run
+                    if (diff && dungeonName && dungeonName !== 'Unknown') {
+                        // Get stats for average using dungeonName
+                        const stats = await dungeonTrackerStorage.getStatsByName(dungeonName);
+
+                        if (stats.totalRuns > 1 && stats.avgTime > 0) {
+                            const avgLabel = `Average: ${this.formatTime(stats.avgTime)}`;
+                            this.insertAnnotation(avgLabel, '#deb887', e.msg, true); // Tan color
+                        }
+                    }
+                }
+            }
+        }
+
+        /**
+         * Save runs from chat events to storage (Phase 5: authoritative source)
+         * @param {Array} events - Chat events array
+         */
+        async saveRunsFromEvents(events) {
+            // Build runs from events (only key→key pairs)
+            for (let i = 0; i < events.length; i++) {
+                const event = events[i];
+                if (event.type !== 'key') continue;
+
+                const next = events[i + 1];
+                if (!next || next.type !== 'key') continue; // Only key→key pairs
+
+                // Calculate duration
+                let duration = next.timestamp - event.timestamp;
+                if (duration < 0) duration += 24 * 60 * 60 * 1000; // Midnight rollover
+
+                // Find nearest battle_start before this run
+                const battleStart = events.slice(0, i).reverse()
+                    .find(e => e.type === 'battle_start');
+                const dungeonName = battleStart?.dungeonName || 'Unknown';
+
+                // Get team key
+                const teamKey = dungeonTrackerStorage.getTeamKey(event.team);
+
+                // Create run object
+                const run = {
+                    timestamp: event.timestamp.toISOString(),
+                    duration: duration,
+                    dungeonName: dungeonName
+                };
+
+                // Save team run (includes dungeon name from Phase 2)
+                await dungeonTrackerStorage.saveTeamRun(teamKey, run);
+            }
         }
 
         /**
@@ -27294,30 +27635,33 @@
          * @returns {Array} Array of chat events with timestamps and types
          */
         extractChatEvents() {
-            if (!this.isPartySelected()) {
-                return [];
-            }
-
-            const partyTabI = Array.from(document.querySelectorAll(`.Chat_tabsComponentContainer__3ZoKe .MuiButtonBase-root`))
-                .findIndex((el) => el.textContent.includes('Party'));
-
-            if (partyTabI === -1) {
-                return [];
-            }
-
-            const nodes = [...document.querySelectorAll(`.TabPanel_tabPanel__tXMJF:nth-child(${partyTabI + 1}) .ChatHistory_chatHistory__1EiG3 > [class^="ChatMessage_chatMessage"]`)];
+            // Query ALL chat messages (matches working DRT script - no tab filtering)
+            const nodes = [...document.querySelectorAll('[class^="ChatMessage_chatMessage"]')];
             const events = [];
 
             for (const node of nodes) {
                 // Skip if already processed
-                if (node.dataset.dtProcessed === '1') continue;
+                if (node.dataset.processed === '1') continue;
 
                 const text = node.textContent.trim();
                 const timestamp = this.getTimestampFromMessage(node);
                 if (!timestamp) continue;
 
+                // Battle started message
+                if (text.includes('Battle started:')) {
+                    const dungeonName = text.split('Battle started:')[1]?.split(']')[0]?.trim();
+                    if (dungeonName) {
+                        events.push({
+                            type: 'battle_start',
+                            timestamp,
+                            dungeonName,
+                            msg: node
+                        });
+                    }
+                    node.dataset.processed = '1';
+                }
                 // Key counts message
-                if (text.includes('Key counts:')) {
+                else if (text.includes('Key counts:')) {
                     const team = this.getTeamFromMessage(node);
                     if (!team.length) continue;
 
@@ -27335,7 +27679,7 @@
                         timestamp,
                         msg: node
                     });
-                    node.dataset.dtProcessed = '1';
+                    node.dataset.processed = '1';
                 }
                 // Battle ended (canceled/fled)
                 else if (text.includes('Battle ended:')) {
@@ -27344,16 +27688,7 @@
                         timestamp,
                         msg: node
                     });
-                    node.dataset.dtProcessed = '1';
-                }
-                // Battle started
-                else if (text.includes('Battle started:')) {
-                    events.push({
-                        type: 'start',
-                        timestamp,
-                        msg: node
-                    });
-                    node.dataset.dtProcessed = '1';
+                    node.dataset.processed = '1';
                 }
             }
 
@@ -27361,89 +27696,13 @@
         }
 
         /**
-         * Annotate all chat messages with timing
+         * Check if party chat is currently selected
+         * @returns {boolean} True if party chat is visible
          */
-        annotateAllMessages() {
-            if (!this.annotationEnabled || !this.isPartySelected()) {
-                return;
-            }
-
-            const events = this.extractChatEvents();
-            const runDurations = [];
-
-            for (let i = 0; i < events.length; i++) {
-                const e = events[i];
-                if (e.type !== 'key') continue;
-
-                const next = events[i + 1];
-                let label = null;
-                let diff = null;
-                let color = null;
-
-                if (next?.type === 'key') {
-                    // Calculate duration
-                    diff = next.timestamp - e.timestamp;
-                    if (diff < 0) {
-                        diff += 24 * 60 * 60 * 1000; // Handle midnight rollover
-                    }
-
-                    label = this.formatDuration(diff);
-                    color = '#90ee90'; // Light green
-
-                    // Track run durations for average calculation
-                    runDurations.push({
-                        msg: e.msg,
-                        diff
-                    });
-                } else if (next?.type === 'fail') {
-                    label = 'FAILED';
-                    color = '#ff4c4c'; // Red
-                } else if (next?.type === 'cancel') {
-                    label = 'canceled';
-                    color = '#ffd700'; // Gold
-                }
-
-                if (label) {
-                    e.msg.dataset.dtProcessed = '1';
-                    this.insertDungeonTimer(label, color, e.msg);
-
-                    // Add average if we have multiple runs
-                    if (diff && runDurations.length > 1) {
-                        const avg = runDurations.reduce((sum, r) => sum + r.diff, 0) / runDurations.length;
-                        const avgLabel = `Average: ${this.formatDuration(avg)}`;
-                        this.insertDungeonTimer(avgLabel, '#deb887', e.msg, true); // Tan color
-                    }
-                }
-            }
-        }
-
-        /**
-         * Insert dungeon timer annotation into chat message
-         * @param {string} label - Timer label text
-         * @param {string} color - CSS color for the label
-         * @param {HTMLElement} msg - Message DOM element
-         * @param {boolean} isAverage - Whether this is an average annotation
-         */
-        insertDungeonTimer(label, color, msg, isAverage = false) {
-            // Check if already annotated
-            const existingClass = isAverage ? 'dungeon-timer-avg' : 'dungeon-timer';
-            if (msg.querySelector(`.${existingClass}`)) {
-                return;
-            }
-
-            const spans = msg.querySelectorAll('span');
-            if (spans.length < 2) return;
-
-            const messageSpan = spans[1];
-            const timerSpan = document.createElement('span');
-            timerSpan.textContent = ` [${label}]`;
-            timerSpan.classList.add(existingClass);
-            timerSpan.style.color = color;
-            timerSpan.style.fontSize = '90%';
-            timerSpan.style.fontStyle = 'italic';
-            timerSpan.style.marginLeft = '4px';
-
-            messageSpan.appendChild(timerSpan);
+        isPartySelected() {
+            const selectedTabEl = document.querySelector(`.Chat_tabsComponentContainer__3ZoKe .MuiButtonBase-root[aria-selected="true"]`);
+            const tabsEl = document.querySelector('.Chat_tabsComponentContainer__3ZoKe .TabsComponent_tabPanelsContainer__26mzo');
+            return selectedTabEl && tabsEl && selectedTabEl.textContent.includes('Party') && !tabsEl.classList.contains('TabsComponent_hidden__255ag');
         }
 
         /**
@@ -27483,11 +27742,43 @@
         }
 
         /**
-         * Format duration in milliseconds to "Xm Ys"
-         * @param {number} ms - Duration in milliseconds
-         * @returns {string} Formatted duration
+         * Insert annotation into chat message
+         * @param {string} label - Timer label text
+         * @param {string} color - CSS color for the label
+         * @param {HTMLElement} msg - Message DOM element
+         * @param {boolean} isAverage - Whether this is an average annotation
          */
-        formatDuration(ms) {
+        insertAnnotation(label, color, msg, isAverage = false) {
+            // Check using dataset attribute (matches working DRT script pattern)
+            const datasetKey = isAverage ? 'avgAppended' : 'timerAppended';
+            if (msg.dataset[datasetKey] === '1') {
+                return;
+            }
+
+            const spans = msg.querySelectorAll('span');
+            if (spans.length < 2) return;
+
+            const messageSpan = spans[1];
+            const timerSpan = document.createElement('span');
+            timerSpan.textContent = ` [${label}]`;
+            timerSpan.classList.add(isAverage ? 'dungeon-timer-average' : 'dungeon-timer-annotation');
+            timerSpan.style.color = color;
+            timerSpan.style.fontWeight = isAverage ? 'normal' : 'bold';
+            timerSpan.style.fontStyle = 'italic';
+            timerSpan.style.marginLeft = '4px';
+
+            messageSpan.appendChild(timerSpan);
+
+            // Mark as appended (matches working DRT script)
+            msg.dataset[datasetKey] = '1';
+        }
+
+        /**
+         * Format time in milliseconds to Mm Ss format
+         * @param {number} ms - Time in milliseconds
+         * @returns {string} Formatted time (e.g., "4m 32s")
+         */
+        formatTime(ms) {
             const totalSeconds = Math.floor(ms / 1000);
             const minutes = Math.floor(totalSeconds / 60);
             const seconds = totalSeconds % 60;
@@ -27495,23 +27786,30 @@
         }
 
         /**
-         * Enable or disable chat annotations
-         * @param {boolean} enabled - Whether annotations should be enabled
+         * Enable chat annotations
          */
-        setAnnotationEnabled(enabled) {
-            this.annotationEnabled = enabled;
-            if (!enabled) {
-                // Remove existing annotations
-                document.querySelectorAll('.dungeon-timer, .dungeon-timer-avg').forEach(el => el.remove());
-            } else {
-                // Re-annotate all messages
-                this.annotateAllMessages();
-            }
+        enable() {
+            this.enabled = true;
+        }
+
+        /**
+         * Disable chat annotations
+         */
+        disable() {
+            this.enabled = false;
+        }
+
+        /**
+         * Check if chat annotations are enabled
+         * @returns {boolean} Enabled status
+         */
+        isEnabled() {
+            return this.enabled;
         }
     }
 
     // Create and export singleton instance
-    const dungeonTrackerChat = new DungeonTrackerChat();
+    const dungeonTrackerChatAnnotations = new DungeonTrackerChatAnnotations();
 
     /**
      * Dungeon Tracker UI
@@ -27526,10 +27824,17 @@
             this.isCollapsed = false;
             this.isKeysExpanded = false;
             this.isRunHistoryExpanded = false;
-            this.isTeamHistoryExpanded = false;
             this.isDragging = false;
             this.dragOffset = { x: 0, y: 0 };
             this.position = null; // { x, y } or null for default
+
+            // Phase 4: Grouping and filtering state
+            this.groupBy = 'team'; // 'team' or 'dungeon'
+            this.filterDungeon = 'all'; // 'all' or specific dungeon name
+            this.filterTeam = 'all'; // 'all' or specific team key
+
+            // Track expanded groups to preserve state across refreshes
+            this.expandedGroups = new Set();
         }
 
         /**
@@ -27542,9 +27847,6 @@
             // Create UI elements
             this.createUI();
 
-            // Initialize chat annotations
-            dungeonTrackerChat.initialize();
-
             // Register for dungeon tracker updates
             dungeonTracker.onUpdate((currentRun, completedRun) => {
                 // Check if UI is enabled
@@ -27554,8 +27856,8 @@
                 }
 
                 if (completedRun) {
-                    // Dungeon completed - trigger chat annotation update
-                    setTimeout(() => dungeonTrackerChat.annotateAllMessages(), 200);
+                    // Dungeon completed - trigger chat annotation update and hide UI
+                    setTimeout(() => dungeonTrackerChatAnnotations.annotateAllMessages(), 200);
                     this.hide();
                 } else if (currentRun) {
                     // Dungeon in progress
@@ -27580,8 +27882,12 @@
                 this.isCollapsed = savedState.isCollapsed || false;
                 this.isKeysExpanded = savedState.isKeysExpanded || false;
                 this.isRunHistoryExpanded = savedState.isRunHistoryExpanded || false;
-                this.isTeamHistoryExpanded = savedState.isTeamHistoryExpanded || false;
                 this.position = savedState.position || null;
+
+                // Phase 4: Load grouping/filtering state
+                this.groupBy = savedState.groupBy || 'team';
+                this.filterDungeon = savedState.filterDungeon || 'all';
+                this.filterTeam = savedState.filterTeam || 'all';
             }
         }
 
@@ -27593,8 +27899,11 @@
                 isCollapsed: this.isCollapsed,
                 isKeysExpanded: this.isKeysExpanded,
                 isRunHistoryExpanded: this.isRunHistoryExpanded,
-                isTeamHistoryExpanded: this.isTeamHistoryExpanded,
-                position: this.position
+                position: this.position,
+                // Phase 4: Save grouping/filtering state
+                groupBy: this.groupBy,
+                filterDungeon: this.filterDungeon,
+                filterTeam: this.filterTeam
             }, 'settings', true);
         }
 
@@ -27629,7 +27938,7 @@
                         </span>
                     </div>
                     <div style="flex: 0; padding: 0 10px; white-space: nowrap;">
-                        <span style="font-size: 12px; color: #aaa;">Elapsed: </span>
+                        <span id="mwi-dt-time-label" style="font-size: 12px; color: #aaa;" title="Time since dungeon started">Elapsed: </span>
                         <span id="mwi-dt-current-time" style="font-size: 13px; color: #fff; font-weight: bold;">
                             00:00
                         </span>
@@ -27740,7 +28049,7 @@
                     </div>
                 </div>
 
-                <!-- Run history section -->
+                <!-- Run history section (unified with grouping/filtering) -->
                 <div style="padding-top: 8px; border-top: 1px solid #444;">
                     <div id="mwi-dt-run-history-header" style="
                         display: flex;
@@ -27751,40 +28060,6 @@
                         margin-bottom: 8px;
                     ">
                         <span style="font-size: 12px; font-weight: bold; color: #ccc;">Run History <span id="mwi-dt-run-history-toggle" style="font-size: 10px;">▼</span></span>
-                        <button id="mwi-dt-clear-all" style="
-                            background: none;
-                            border: 1px solid #ff6b6b;
-                            color: #ff6b6b;
-                            cursor: pointer;
-                            font-size: 11px;
-                            padding: 2px 8px;
-                            border-radius: 3px;
-                            font-weight: bold;
-                        " title="Clear all runs">✕ Clear</button>
-                    </div>
-                    <div id="mwi-dt-run-list" style="
-                        display: none;
-                        max-height: 150px;
-                        overflow-y: auto;
-                        font-size: 11px;
-                        color: #ccc;
-                    ">
-                        <!-- Run list populated dynamically -->
-                        <div style="color: #888; font-style: italic; text-align: center; padding: 8px;">No runs yet</div>
-                    </div>
-                </div>
-
-                <!-- Team History section (backfill) -->
-                <div id="mwi-dt-team-history" style="padding-top: 8px; border-top: 1px solid #444;">
-                    <div id="mwi-dt-team-history-header" style="
-                        display: flex;
-                        justify-content: space-between;
-                        align-items: center;
-                        cursor: pointer;
-                        padding: 4px 0;
-                        margin-bottom: 8px;
-                    ">
-                        <span style="font-size: 12px; font-weight: bold; color: #ccc;">Team History <span id="mwi-dt-team-history-toggle" style="font-size: 10px;">▼</span></span>
                         <div style="display: flex; gap: 4px;">
                             <button id="mwi-dt-backfill-btn" style="
                                 background: none;
@@ -27796,7 +28071,7 @@
                                 border-radius: 3px;
                                 font-weight: bold;
                             " title="Scan party chat and import historical runs">⟳ Backfill</button>
-                            <button id="mwi-dt-clear-team" style="
+                            <button id="mwi-dt-clear-all" style="
                                 background: none;
                                 border: 1px solid #ff6b6b;
                                 color: #ff6b6b;
@@ -27805,18 +28080,74 @@
                                 padding: 2px 8px;
                                 border-radius: 3px;
                                 font-weight: bold;
-                            " title="Clear all team history">✕ Clear</button>
+                            " title="Clear all runs">✕ Clear</button>
                         </div>
                     </div>
-                    <div id="mwi-dt-team-list" style="
+
+                    <!-- Grouping and filtering controls -->
+                    <div id="mwi-dt-controls" style="
                         display: none;
-                        max-height: 150px;
+                        padding: 8px 0;
+                        font-size: 11px;
+                        color: #ccc;
+                        border-bottom: 1px solid #444;
+                        margin-bottom: 8px;
+                    ">
+                        <div style="margin-bottom: 6px;">
+                            <label style="margin-right: 6px;">Group by:</label>
+                            <select id="mwi-dt-group-by" style="
+                                background: #333;
+                                color: #fff;
+                                border: 1px solid #555;
+                                border-radius: 3px;
+                                padding: 2px 4px;
+                                font-size: 11px;
+                            ">
+                                <option value="team">Team</option>
+                                <option value="dungeon">Dungeon</option>
+                            </select>
+                        </div>
+                        <div style="display: flex; gap: 12px;">
+                            <div>
+                                <label style="margin-right: 6px;">Dungeon:</label>
+                                <select id="mwi-dt-filter-dungeon" style="
+                                    background: #333;
+                                    color: #fff;
+                                    border: 1px solid #555;
+                                    border-radius: 3px;
+                                    padding: 2px 4px;
+                                    font-size: 11px;
+                                    min-width: 100px;
+                                ">
+                                    <option value="all">All Dungeons</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label style="margin-right: 6px;">Team:</label>
+                                <select id="mwi-dt-filter-team" style="
+                                    background: #333;
+                                    color: #fff;
+                                    border: 1px solid #555;
+                                    border-radius: 3px;
+                                    padding: 2px 4px;
+                                    font-size: 11px;
+                                    min-width: 100px;
+                                ">
+                                    <option value="all">All Teams</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="mwi-dt-run-list" style="
+                        display: none;
+                        max-height: 200px;
                         overflow-y: auto;
                         font-size: 11px;
                         color: #ccc;
                     ">
-                        <!-- Team list populated dynamically -->
-                        <div style="color: #888; font-style: italic; text-align: center; padding: 8px;">No team runs yet</div>
+                        <!-- Run list populated dynamically -->
+                        <div style="color: #888; font-style: italic; text-align: center; padding: 8px;">No runs yet</div>
                     </div>
                 </div>
             </div>
@@ -27837,20 +28168,14 @@
             // Setup run history toggle
             this.setupRunHistoryToggle();
 
-            // Setup team history toggle
-            this.setupTeamHistoryToggle();
-
-            // Setup clear all button
-            this.setupClearAll();
+            // Setup grouping and filtering controls
+            this.setupGroupingControls();
 
             // Setup backfill button
             this.setupBackfillButton();
 
-            // Setup clear team history button
-            this.setupClearTeamHistory();
-
-            // Load team history on initialization
-            this.loadTeamHistory();
+            // Setup clear all button
+            this.setupClearAll();
 
             // Apply initial collapsed state
             if (this.isCollapsed) {
@@ -27865,11 +28190,6 @@
             // Apply initial run history expanded state
             if (this.isRunHistoryExpanded) {
                 this.applyRunHistoryExpandedState();
-            }
-
-            // Apply initial team history expanded state
-            if (this.isTeamHistoryExpanded) {
-                this.applyTeamHistoryExpandedState();
             }
         }
 
@@ -27994,25 +28314,49 @@
             if (!runHistoryHeader) return;
 
             runHistoryHeader.addEventListener('click', (e) => {
-                // Don't toggle if clicking the clear button
+                // Don't toggle if clicking the clear or backfill buttons
                 if (e.target.id === 'mwi-dt-clear-all' || e.target.closest('#mwi-dt-clear-all')) return;
+                if (e.target.id === 'mwi-dt-backfill-btn' || e.target.closest('#mwi-dt-backfill-btn')) return;
                 this.toggleRunHistory();
             });
         }
 
         /**
-         * Setup team history toggle
+         * Setup grouping and filtering controls
          */
-        setupTeamHistoryToggle() {
-            const teamHistoryHeader = this.container.querySelector('#mwi-dt-team-history-header');
-            if (!teamHistoryHeader) return;
+        setupGroupingControls() {
+            // Group by dropdown
+            const groupBySelect = this.container.querySelector('#mwi-dt-group-by');
+            if (groupBySelect) {
+                groupBySelect.value = this.groupBy;
+                groupBySelect.addEventListener('change', (e) => {
+                    this.groupBy = e.target.value;
+                    this.saveState();
+                    // Clear expanded groups when grouping changes (different group labels)
+                    this.expandedGroups.clear();
+                    this.updateRunHistory();
+                });
+            }
 
-            teamHistoryHeader.addEventListener('click', (e) => {
-                // Don't toggle if clicking the backfill or clear button
-                if (e.target.id === 'mwi-dt-backfill-btn' || e.target.closest('#mwi-dt-backfill-btn')) return;
-                if (e.target.id === 'mwi-dt-clear-team' || e.target.closest('#mwi-dt-clear-team')) return;
-                this.toggleTeamHistory();
-            });
+            // Filter dungeon dropdown
+            const filterDungeonSelect = this.container.querySelector('#mwi-dt-filter-dungeon');
+            if (filterDungeonSelect) {
+                filterDungeonSelect.addEventListener('change', (e) => {
+                    this.filterDungeon = e.target.value;
+                    this.saveState();
+                    this.updateRunHistory();
+                });
+            }
+
+            // Filter team dropdown
+            const filterTeamSelect = this.container.querySelector('#mwi-dt-filter-team');
+            if (filterTeamSelect) {
+                filterTeamSelect.addEventListener('change', (e) => {
+                    this.filterTeam = e.target.value;
+                    this.saveState();
+                    this.updateRunHistory();
+                });
+            }
         }
 
         /**
@@ -28023,16 +28367,18 @@
             if (!clearBtn) return;
 
             clearBtn.addEventListener('click', async () => {
-                const currentRun = dungeonTracker.getCurrentRun();
-                if (!currentRun) return;
+                if (confirm('Delete ALL run history data?\\n\\nThis cannot be undone!')) {
+                    try {
+                        // Clear unified storage completely
+                        await storage.setJSON('allRuns', [], 'unifiedRuns', true);
+                        alert('All run history cleared.');
 
-                const dungeonInfo = dungeonTrackerStorage.getDungeonInfo(currentRun.dungeonHrid);
-                const dungeonName = dungeonInfo?.name || 'this dungeon';
-
-                if (confirm(`Delete all run history for ${dungeonName} T${currentRun.tier}?`)) {
-                    await dungeonTrackerStorage.clearHistory(currentRun.dungeonHrid, currentRun.tier);
-                    // Refresh display
-                    this.update(currentRun);
+                        // Refresh display
+                        await this.updateRunHistory();
+                    } catch (error) {
+                        console.error('[Dungeon Tracker UI] Clear all history error:', error);
+                        alert('Failed to clear run history. Check console for details.');
+                    }
                 }
             });
         }
@@ -28060,8 +28406,8 @@
                         alert('No new runs found to backfill.');
                     }
 
-                    // Refresh team history display
-                    await this.loadTeamHistory();
+                    // Refresh run history display
+                    await this.updateRunHistory();
                 } catch (error) {
                     console.error('[Dungeon Tracker UI] Backfill error:', error);
                     alert('Backfill failed. Check console for details.');
@@ -28071,115 +28417,6 @@
                     backfillBtn.disabled = false;
                 }
             });
-        }
-
-        /**
-         * Setup clear team history button
-         */
-        setupClearTeamHistory() {
-            const clearBtn = this.container.querySelector('#mwi-dt-clear-team');
-            if (!clearBtn) return;
-
-            clearBtn.addEventListener('click', async () => {
-                if (confirm('Delete ALL team history data?\n\nThis cannot be undone!')) {
-                    try {
-                        // Get all team run keys
-                        const teamKeys = await storage.getAllKeys('teamRuns');
-
-                        // Count total runs across all teams
-                        let totalRuns = 0;
-                        for (const key of teamKeys) {
-                            const runs = await storage.getJSON(key, 'teamRuns', []);
-                            totalRuns += runs.length;
-                        }
-
-                        // Delete each team
-                        for (const key of teamKeys) {
-                            await storage.delete(key, 'teamRuns');
-                        }
-
-                        alert(`Cleared ${teamKeys.length} team(s) with ${totalRuns} total run(s).`);
-
-                        // Refresh team history display
-                        await this.loadTeamHistory();
-                    } catch (error) {
-                        console.error('[Dungeon Tracker UI] Clear team history error:', error);
-                        alert('Failed to clear team history. Check console for details.');
-                    }
-                }
-            });
-        }
-
-        /**
-         * Load and display team history
-         */
-        async loadTeamHistory() {
-            const teamList = this.container.querySelector('#mwi-dt-team-list');
-            if (!teamList) return;
-
-            try {
-                const teams = await dungeonTrackerStorage.getAllTeamStats();
-
-                if (teams.length === 0) {
-                    teamList.innerHTML = '<div style="color: #888; font-style: italic; text-align: center; padding: 8px;">No team runs yet</div>';
-                    return;
-                }
-
-                // Build team list HTML
-                let html = '';
-                for (const team of teams) {
-                    const avgTime = this.formatTime(team.avgTime);
-                    const bestTime = this.formatTime(team.bestTime);
-                    const worstTime = this.formatTime(team.worstTime);
-
-                    html += `
-                    <div style="
-                        padding: 8px;
-                        margin-bottom: 4px;
-                        border: 1px solid #444;
-                        border-radius: 4px;
-                        display: flex;
-                        justify-content: space-between;
-                        align-items: flex-start;
-                    " data-team-key="${team.teamKey}">
-                        <div style="flex: 1;">
-                            <div style="font-weight: bold; color: #4a9eff; margin-bottom: 4px;">
-                                ${team.teamKey}
-                            </div>
-                            <div style="font-size: 10px; color: #aaa;">
-                                Runs: ${team.runCount} | Avg: ${avgTime} | Best: ${bestTime} | Worst: ${worstTime}
-                            </div>
-                        </div>
-                        <button class="mwi-dt-delete-team" style="
-                            background: none;
-                            border: 1px solid #ff6b6b;
-                            color: #ff6b6b;
-                            cursor: pointer;
-                            font-size: 10px;
-                            padding: 2px 6px;
-                            border-radius: 3px;
-                            font-weight: bold;
-                            flex-shrink: 0;
-                        " title="Delete this team's history">✕</button>
-                    </div>
-                `;
-                }
-
-                teamList.innerHTML = html;
-
-                // Attach delete handlers
-                teamList.querySelectorAll('.mwi-dt-delete-team').forEach((btn) => {
-                    btn.addEventListener('click', async (e) => {
-                        const teamKey = e.target.closest('[data-team-key]').dataset.teamKey;
-                        await dungeonTrackerStorage.clearTeamHistory(teamKey);
-                        // Refresh display
-                        await this.loadTeamHistory();
-                    });
-                });
-            } catch (error) {
-                console.error('[Dungeon Tracker UI] Load team history error:', error);
-                teamList.innerHTML = '<div style="color: #ff6b6b; text-align: center; padding: 8px;">Error loading team history</div>';
-            }
         }
 
         /**
@@ -28240,9 +28477,11 @@
         applyRunHistoryExpandedState() {
             const runList = this.container.querySelector('#mwi-dt-run-list');
             const runHistoryToggle = this.container.querySelector('#mwi-dt-run-history-toggle');
+            const controls = this.container.querySelector('#mwi-dt-controls');
 
             if (runList) runList.style.display = 'block';
             if (runHistoryToggle) runHistoryToggle.textContent = '▲';
+            if (controls) controls.style.display = 'block';
         }
 
         /**
@@ -28251,46 +28490,11 @@
         applyRunHistoryCollapsedState() {
             const runList = this.container.querySelector('#mwi-dt-run-list');
             const runHistoryToggle = this.container.querySelector('#mwi-dt-run-history-toggle');
+            const controls = this.container.querySelector('#mwi-dt-controls');
 
             if (runList) runList.style.display = 'none';
             if (runHistoryToggle) runHistoryToggle.textContent = '▼';
-        }
-
-        /**
-         * Toggle team history expanded state
-         */
-        toggleTeamHistory() {
-            this.isTeamHistoryExpanded = !this.isTeamHistoryExpanded;
-
-            if (this.isTeamHistoryExpanded) {
-                this.applyTeamHistoryExpandedState();
-            } else {
-                this.applyTeamHistoryCollapsedState();
-            }
-
-            this.saveState();
-        }
-
-        /**
-         * Apply team history expanded state
-         */
-        applyTeamHistoryExpandedState() {
-            const teamList = this.container.querySelector('#mwi-dt-team-list');
-            const teamHistoryToggle = this.container.querySelector('#mwi-dt-team-history-toggle');
-
-            if (teamList) teamList.style.display = 'block';
-            if (teamHistoryToggle) teamHistoryToggle.textContent = '▲';
-        }
-
-        /**
-         * Apply team history collapsed state
-         */
-        applyTeamHistoryCollapsedState() {
-            const teamList = this.container.querySelector('#mwi-dt-team-list');
-            const teamHistoryToggle = this.container.querySelector('#mwi-dt-team-history-toggle');
-
-            if (teamList) teamList.style.display = 'none';
-            if (teamHistoryToggle) teamHistoryToggle.textContent = '▼';
+            if (controls) controls.style.display = 'none';
         }
 
         /**
@@ -28369,6 +28573,18 @@
                 currentTime.textContent = this.formatTime(run.totalElapsed);
             }
 
+            // Update time label based on hibernation detection
+            const timeLabel = document.getElementById('mwi-dt-time-label');
+            if (timeLabel) {
+                if (run.hibernationDetected) {
+                    timeLabel.textContent = 'Chat: ';
+                    timeLabel.title = 'Using party chat timestamps (computer sleep detected)';
+                } else {
+                    timeLabel.textContent = 'Elapsed: ';
+                    timeLabel.title = 'Time since dungeon started';
+                }
+            }
+
             // Update progress bar
             const progressBar = document.getElementById('mwi-dt-progress-bar');
             const progressText = document.getElementById('mwi-dt-progress-text');
@@ -28378,12 +28594,20 @@
                 progressText.textContent = `${percent}%`;
             }
 
-            // Fetch run statistics for this dungeon+tier
-            const stats = await dungeonTrackerStorage.getStats(run.dungeonHrid, run.tier);
-            const runHistory = await dungeonTrackerStorage.getRunHistory(run.dungeonHrid, run.tier);
+            // Fetch run statistics - always use dungeonName since backfilled runs use it
+            let stats, runHistory, lastRunTime;
 
-            // Get last completed run time (most recent in history)
-            const lastRunTime = runHistory && runHistory.length > 0 ? runHistory[0].totalTime : 0;
+            if (run.dungeonName && run.dungeonName !== 'Unknown') {
+                // Query by dungeonName (works for both live tracking and backfilled runs)
+                stats = await dungeonTrackerStorage.getStatsByName(run.dungeonName);
+                const allRuns = await storage.getJSON('allRuns', 'unifiedRuns', []);
+                runHistory = allRuns.filter(r => r.dungeonName === run.dungeonName);
+                lastRunTime = runHistory && runHistory.length > 0 ? (runHistory[0].duration || runHistory[0].totalTime || 0) : 0;
+            } else {
+                // No dungeon info available or dungeon name unknown
+                stats = { totalRuns: 0, avgTime: 0, fastestTime: 0, slowestTime: 0, avgWaveTime: 0 };
+                lastRunTime = 0;
+            }
 
             // Get character name from dataManager, or fallback to first player in key counts
             let characterName = dataManager.characterData?.character?.name;
@@ -28453,8 +28677,8 @@
             // Update Keys section with party member key counts
             this.updateKeysDisplay(run.keyCountsMap || {}, characterName);
 
-            // Update run history list
-            this.updateRunHistory(run.dungeonHrid, run.tier, runHistory);
+            // Update run history list (uses unified storage with grouping/filtering)
+            await this.updateRunHistory();
         }
 
         /**
@@ -28518,12 +28742,318 @@
         }
 
         /**
-         * Update run history list
+         * Group runs by team
+         * @param {Array} runs - Array of runs
+         * @returns {Array} Grouped runs with stats
+         */
+        groupByTeam(runs) {
+            const groups = {};
+
+            for (const run of runs) {
+                const key = run.teamKey || 'Solo';
+                if (!groups[key]) {
+                    groups[key] = {
+                        key: key,
+                        label: key === 'Solo' ? 'Solo Runs' : key,
+                        runs: []
+                    };
+                }
+                groups[key].runs.push(run);
+            }
+
+            // Convert to array and calculate stats
+            return Object.values(groups).map(group => ({
+                ...group,
+                stats: this.calculateStatsForRuns(group.runs)
+            }));
+        }
+
+        /**
+         * Group runs by dungeon
+         * @param {Array} runs - Array of runs
+         * @returns {Array} Grouped runs with stats
+         */
+        groupByDungeon(runs) {
+            const groups = {};
+
+            for (const run of runs) {
+                const key = run.dungeonName || 'Unknown';
+                if (!groups[key]) {
+                    groups[key] = {
+                        key: key,
+                        label: key,
+                        runs: []
+                    };
+                }
+                groups[key].runs.push(run);
+            }
+
+            // Convert to array and calculate stats
+            return Object.values(groups).map(group => ({
+                ...group,
+                stats: this.calculateStatsForRuns(group.runs)
+            }));
+        }
+
+        /**
+         * Calculate stats for a set of runs
+         * @param {Array} runs - Array of runs
+         * @returns {Object} Stats object
+         */
+        calculateStatsForRuns(runs) {
+            if (!runs || runs.length === 0) {
+                return {
+                    totalRuns: 0,
+                    avgTime: 0,
+                    fastestTime: 0,
+                    slowestTime: 0
+                };
+            }
+
+            const durations = runs.map(r => r.duration);
+            const total = durations.reduce((sum, d) => sum + d, 0);
+
+            return {
+                totalRuns: runs.length,
+                avgTime: Math.floor(total / runs.length),
+                fastestTime: Math.min(...durations),
+                slowestTime: Math.max(...durations)
+            };
+        }
+
+        /**
+         * Update run history display with grouping and filtering
+         */
+        async updateRunHistory() {
+            const runList = document.getElementById('mwi-dt-run-list');
+            if (!runList) return;
+
+            try {
+                // Get all runs from unified storage
+                const allRuns = await dungeonTrackerStorage.getAllRuns();
+
+                if (allRuns.length === 0) {
+                    runList.innerHTML = '<div style="color: #888; font-style: italic; text-align: center; padding: 8px;">No runs yet</div>';
+                    // Update filter dropdowns with empty options
+                    this.updateFilterDropdowns([], []);
+                    return;
+                }
+
+                // Apply filters
+                let filteredRuns = allRuns;
+                if (this.filterDungeon !== 'all') {
+                    filteredRuns = filteredRuns.filter(r => r.dungeonName === this.filterDungeon);
+                }
+                if (this.filterTeam !== 'all') {
+                    filteredRuns = filteredRuns.filter(r => r.teamKey === this.filterTeam);
+                }
+
+                if (filteredRuns.length === 0) {
+                    runList.innerHTML = '<div style="color: #888; font-style: italic; text-align: center; padding: 8px;">No runs match filters</div>';
+                    return;
+                }
+
+                // Group runs
+                const groups = this.groupBy === 'team'
+                    ? this.groupByTeam(filteredRuns)
+                    : this.groupByDungeon(filteredRuns);
+
+                // Render grouped runs
+                this.renderGroupedRuns(groups);
+
+                // Update filter dropdowns
+                const dungeons = [...new Set(allRuns.map(r => r.dungeonName).filter(Boolean))].sort();
+                const teams = [...new Set(allRuns.map(r => r.teamKey).filter(Boolean))].sort();
+                this.updateFilterDropdowns(dungeons, teams);
+
+            } catch (error) {
+                console.error('[Dungeon Tracker UI] Update run history error:', error);
+                runList.innerHTML = '<div style="color: #ff6b6b; text-align: center; padding: 8px;">Error loading run history</div>';
+            }
+        }
+
+        /**
+         * Update filter dropdown options
+         * @param {Array} dungeons - List of dungeon names
+         * @param {Array} teams - List of team keys
+         */
+        updateFilterDropdowns(dungeons, teams) {
+            // Update dungeon filter
+            const dungeonFilter = document.getElementById('mwi-dt-filter-dungeon');
+            if (dungeonFilter) {
+                const currentValue = dungeonFilter.value;
+                dungeonFilter.innerHTML = '<option value="all">All Dungeons</option>';
+                for (const dungeon of dungeons) {
+                    dungeonFilter.innerHTML += `<option value="${dungeon}">${dungeon}</option>`;
+                }
+                // Restore selection if still valid
+                if (dungeons.includes(currentValue)) {
+                    dungeonFilter.value = currentValue;
+                } else {
+                    this.filterDungeon = 'all';
+                }
+            }
+
+            // Update team filter
+            const teamFilter = document.getElementById('mwi-dt-filter-team');
+            if (teamFilter) {
+                const currentValue = teamFilter.value;
+                teamFilter.innerHTML = '<option value="all">All Teams</option>';
+                for (const team of teams) {
+                    teamFilter.innerHTML += `<option value="${team}">${team}</option>`;
+                }
+                // Restore selection if still valid
+                if (teams.includes(currentValue)) {
+                    teamFilter.value = currentValue;
+                } else {
+                    this.filterTeam = 'all';
+                }
+            }
+        }
+
+        /**
+         * Render grouped runs
+         * @param {Array} groups - Grouped runs with stats
+         */
+        renderGroupedRuns(groups) {
+            const runList = document.getElementById('mwi-dt-run-list');
+            if (!runList) return;
+
+            let html = '';
+
+            for (const group of groups) {
+                const avgTime = this.formatTime(group.stats.avgTime);
+                const bestTime = this.formatTime(group.stats.fastestTime);
+                const worstTime = this.formatTime(group.stats.slowestTime);
+
+                // Check if this group is expanded
+                const isExpanded = this.expandedGroups.has(group.label);
+                const displayStyle = isExpanded ? 'block' : 'none';
+                const toggleIcon = isExpanded ? '▲' : '▼';
+
+                html += `
+                <div class="mwi-dt-group" style="
+                    margin-bottom: 8px;
+                    border: 1px solid #444;
+                    border-radius: 4px;
+                    padding: 8px;
+                ">
+                    <div style="
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                        margin-bottom: 6px;
+                        cursor: pointer;
+                    " class="mwi-dt-group-header" data-group-label="${group.label}">
+                        <div style="flex: 1;">
+                            <div style="font-weight: bold; color: #4a9eff; margin-bottom: 2px;">
+                                ${group.label}
+                            </div>
+                            <div style="font-size: 10px; color: #aaa;">
+                                Runs: ${group.stats.totalRuns} | Avg: ${avgTime} | Best: ${bestTime} | Worst: ${worstTime}
+                            </div>
+                        </div>
+                        <span class="mwi-dt-group-toggle" style="color: #aaa; font-size: 10px;">${toggleIcon}</span>
+                    </div>
+                    <div class="mwi-dt-group-runs" style="
+                        display: ${displayStyle};
+                        border-top: 1px solid #444;
+                        padding-top: 6px;
+                        margin-top: 4px;
+                    ">
+                        ${this.renderRunList(group.runs)}
+                    </div>
+                </div>
+            `;
+            }
+
+            runList.innerHTML = html;
+
+            // Attach toggle handlers
+            runList.querySelectorAll('.mwi-dt-group-header').forEach((header) => {
+                header.addEventListener('click', () => {
+                    const groupLabel = header.dataset.groupLabel;
+                    const runsDiv = header.nextElementSibling;
+                    const toggle = header.querySelector('.mwi-dt-group-toggle');
+
+                    if (runsDiv.style.display === 'none') {
+                        runsDiv.style.display = 'block';
+                        toggle.textContent = '▲';
+                        this.expandedGroups.add(groupLabel);
+                    } else {
+                        runsDiv.style.display = 'none';
+                        toggle.textContent = '▼';
+                        this.expandedGroups.delete(groupLabel);
+                    }
+                });
+            });
+
+            // Attach delete handlers
+            runList.querySelectorAll('.mwi-dt-delete-run').forEach((btn) => {
+                btn.addEventListener('click', async (e) => {
+                    const runTimestamp = e.target.closest('[data-run-timestamp]').dataset.runTimestamp;
+
+                    // Find and delete the run from unified storage
+                    const allRuns = await dungeonTrackerStorage.getAllRuns();
+                    const filteredRuns = allRuns.filter(r => r.timestamp !== runTimestamp);
+                    await storage.setJSON('allRuns', filteredRuns, 'unifiedRuns', true);
+
+                    // Refresh display
+                    await this.updateRunHistory();
+                });
+            });
+        }
+
+        /**
+         * Render individual run list
+         * @param {Array} runs - Array of runs
+         * @returns {string} HTML for run list
+         */
+        renderRunList(runs) {
+            let html = '';
+            runs.forEach((run, index) => {
+                const runNumber = runs.length - index;
+                const timeStr = this.formatTime(run.duration);
+                const date = new Date(run.timestamp).toLocaleDateString();
+                const dungeonLabel = run.dungeonName || 'Unknown';
+
+                html += `
+                <div style="
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    padding: 4px 0;
+                    border-bottom: 1px solid #333;
+                    font-size: 10px;
+                " data-run-timestamp="${run.timestamp}">
+                    <span style="color: #aaa; min-width: 25px;">#${runNumber}</span>
+                    <span style="color: #fff; flex: 1; text-align: center;">
+                        ${timeStr} <span style="color: #888; font-size: 9px;">(${date})</span>
+                    </span>
+                    <span style="color: #888; margin-right: 6px; font-size: 9px;">${dungeonLabel}</span>
+                    <button class="mwi-dt-delete-run" style="
+                        background: none;
+                        border: 1px solid #ff6b6b;
+                        color: #ff6b6b;
+                        cursor: pointer;
+                        font-size: 9px;
+                        padding: 1px 4px;
+                        border-radius: 2px;
+                        font-weight: bold;
+                    " title="Delete this run">✕</button>
+                </div>
+            `;
+            });
+            return html;
+        }
+
+        /**
+         * Update run history list (OLD METHOD - KEPT FOR COMPATIBILITY)
          * @param {string} dungeonHrid - Dungeon action HRID
          * @param {number} tier - Difficulty tier
          * @param {Array} runs - Run history array
          */
-        updateRunHistory(dungeonHrid, tier, runs) {
+        updateRunHistoryOld(dungeonHrid, tier, runs) {
             const runList = document.getElementById('mwi-dt-run-list');
             if (!runList) return;
 
@@ -28538,21 +29068,6 @@
                 const runNumber = runs.length - index; // Count down from most recent
                 const timeStr = this.formatTime(run.totalTime);
 
-                // Determine validation icon and color
-                let validationIcon = '';
-                let validationColor = '';
-                let validationTitle = '';
-
-                if (run.validated) {
-                    validationIcon = '✓';
-                    validationColor = '#5fda5f'; // Green
-                    validationTitle = 'Server-validated duration';
-                } else {
-                    validationIcon = '?';
-                    validationColor = '#888'; // Gray
-                    validationTitle = 'Duration unverified (solo run or no party messages)';
-                }
-
                 html += `
                 <div style="
                     display: flex;
@@ -28564,7 +29079,6 @@
                     <span style="color: #aaa; min-width: 30px;">#${runNumber}</span>
                     <span style="color: #fff; flex: 1; text-align: center;">
                         ${timeStr}
-                        <span style="color: ${validationColor}; margin-left: 4px; font-weight: bold;" title="${validationTitle}">${validationIcon}</span>
                     </span>
                     <button class="mwi-dt-delete-run" style="
                         background: none;
@@ -28648,419 +29162,6 @@
 
     // Create and export singleton instance
     const dungeonTrackerUI = new DungeonTrackerUI();
-
-    /**
-     * Dungeon Tracker Party Chat
-     * Sends dungeon completion messages to party chat
-     */
-
-
-    class DungeonTrackerPartyChat {
-        constructor() {
-            this.enabled = true;
-        }
-
-        /**
-         * Initialize party chat module
-         */
-        initialize() {
-            // Register for dungeon tracker updates
-            dungeonTracker.onUpdate((currentRun, completedRun) => {
-                if (completedRun) {
-                    this.sendCompletionMessage(completedRun);
-                }
-            });
-
-            console.log('[Dungeon Tracker Party Chat] Initialized');
-        }
-
-        /**
-         * Send completion message to party chat
-         * @param {Object} run - Completed run data
-         */
-        async sendCompletionMessage(run) {
-            if (!this.enabled) {
-                return;
-            }
-
-            try {
-                // Get dungeon info
-                const dungeonInfo = dungeonTrackerStorage.getDungeonInfo(run.dungeonHrid);
-                if (!dungeonInfo) {
-                    console.warn('[Dungeon Tracker Party Chat] Unknown dungeon:', run.dungeonHrid);
-                    return;
-                }
-
-                // Get previous runs for comparison
-                const lastRuns = await dungeonTrackerStorage.getLastRuns(run.dungeonHrid, run.tier, 10);
-                const stats = await dungeonTrackerStorage.getStats(run.dungeonHrid, run.tier);
-                const pb = await dungeonTrackerStorage.getPersonalBest(run.dungeonHrid, run.tier);
-
-                // Build message
-                const message = this.buildMessage(run, dungeonInfo, lastRuns, stats, pb);
-
-                // Send to party chat
-                this.sendToPartyChat(message);
-
-            } catch (error) {
-                console.error('[Dungeon Tracker Party Chat] Error sending message:', error);
-            }
-        }
-
-        /**
-         * Build completion message
-         * @param {Object} run - Completed run
-         * @param {Object} dungeonInfo - Dungeon info
-         * @param {Array} lastRuns - Last 10 runs
-         * @param {Object} stats - Statistics
-         * @param {Object} pb - Personal best run
-         * @returns {string} Message text
-         */
-        buildMessage(run, dungeonInfo, lastRuns, stats, pb) {
-            const dungeonName = dungeonInfo.name;
-            const tier = run.tier;
-            const totalTime = this.formatTime(run.totalTime);
-            const avgWaveTime = this.formatTime(run.avgWaveTime);
-
-            let message = `[Toolasha] ${dungeonName} T${tier} completed in ${totalTime} (avg ${avgWaveTime}/wave)`;
-
-            // Compare to last run
-            if (lastRuns.length > 1) {
-                const lastRun = lastRuns[1]; // Index 0 is the current run
-                const timeDiff = run.totalTime - lastRun.totalTime;
-                const faster = timeDiff < 0;
-                const diffStr = this.formatTime(Math.abs(timeDiff));
-
-                if (faster) {
-                    message += ` | ${diffStr} faster than last`;
-                } else {
-                    message += ` | ${diffStr} slower than last`;
-                }
-            }
-
-            // Compare to average
-            if (stats.totalRuns > 1) {
-                const avgDiff = run.totalTime - stats.avgTime;
-                const faster = avgDiff < 0;
-                const diffStr = this.formatTime(Math.abs(avgDiff));
-
-                if (faster) {
-                    message += ` | ${diffStr} faster than avg`;
-                } else {
-                    message += ` | ${diffStr} slower than avg`;
-                }
-            }
-
-            // Check if personal best
-            if (pb && run.totalTime === pb.totalTime) {
-                message += ' | 🏆 NEW PB!';
-            } else if (pb) {
-                const pbDiff = run.totalTime - pb.totalTime;
-                const diffStr = this.formatTime(pbDiff);
-                message += ` | PB: ${this.formatTime(pb.totalTime)} (+${diffStr})`;
-            }
-
-            return message;
-        }
-
-        /**
-         * Send message to party chat
-         * @param {string} message - Message text
-         */
-        sendToPartyChat(message) {
-            try {
-                // Find chat input
-                const chatInput = document.querySelector('textarea[placeholder="Type a message..."]');
-                if (!chatInput) {
-                    console.warn('[Dungeon Tracker Party Chat] Chat input not found');
-                    return;
-                }
-
-                // Get the React fiber key for the input
-                const fiberKey = Object.keys(chatInput).find(key => key.startsWith('__react'));
-                if (!fiberKey) {
-                    console.warn('[Dungeon Tracker Party Chat] React fiber not found');
-                    return;
-                }
-
-                // Set the input value
-                chatInput.value = message;
-
-                // Trigger React onChange event
-                const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
-                    window.HTMLTextAreaElement.prototype,
-                    'value'
-                ).set;
-                nativeInputValueSetter.call(chatInput, message);
-
-                // Dispatch input event
-                const inputEvent = new Event('input', { bubbles: true });
-                chatInput.dispatchEvent(inputEvent);
-
-                // Wait a bit, then find and click the send button
-                setTimeout(() => {
-                    // Find send button (look for button near the chat input)
-                    const sendButton = chatInput.parentElement?.querySelector('button[type="submit"]') ||
-                                       chatInput.closest('form')?.querySelector('button[type="submit"]') ||
-                                       document.querySelector('button[aria-label="Send message"]');
-
-                    if (sendButton) {
-                        sendButton.click();
-                        console.log('[Dungeon Tracker Party Chat] Message sent:', message);
-                    } else {
-                        console.warn('[Dungeon Tracker Party Chat] Send button not found, message typed but not sent');
-                    }
-                }, 100);
-
-            } catch (error) {
-                console.error('[Dungeon Tracker Party Chat] Error sending to chat:', error);
-            }
-        }
-
-        /**
-         * Format time in milliseconds to MM:SS
-         * @param {number} ms - Time in milliseconds
-         * @returns {string} Formatted time
-         */
-        formatTime(ms) {
-            const totalSeconds = Math.floor(ms / 1000);
-            const minutes = Math.floor(totalSeconds / 60);
-            const seconds = totalSeconds % 60;
-            return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-        }
-
-        /**
-         * Enable party chat messages
-         */
-        enable() {
-            this.enabled = true;
-        }
-
-        /**
-         * Disable party chat messages
-         */
-        disable() {
-            this.enabled = false;
-        }
-
-        /**
-         * Check if party chat messages are enabled
-         * @returns {boolean} Enabled status
-         */
-        isEnabled() {
-            return this.enabled;
-        }
-    }
-
-    // Create and export singleton instance
-    const dungeonTrackerPartyChat = new DungeonTrackerPartyChat();
-
-    /**
-     * Dungeon Tracker Chat Annotations
-     * Adds colored timer annotations to "Key counts" party chat messages
-     */
-
-
-    class DungeonTrackerChatAnnotations {
-        constructor() {
-            this.enabled = true;
-            this.observer = null;
-            this.annotatedMessages = new Set(); // Track which messages we've already annotated
-        }
-
-        /**
-         * Initialize chat annotation monitor
-         */
-        initialize() {
-            // Wait for chat to be available
-            this.waitForChat();
-        }
-
-        /**
-         * Wait for chat container to be available
-         */
-        waitForChat() {
-            const chatContainer = document.querySelector('[class^="Chat_chatMessagesContainer"]');
-            if (chatContainer) {
-                this.startMonitoring(chatContainer);
-            } else {
-                // Retry in 1 second
-                setTimeout(() => this.waitForChat(), 1000);
-            }
-        }
-
-        /**
-         * Start monitoring chat for new messages
-         * @param {HTMLElement} chatContainer - Chat messages container
-         */
-        startMonitoring(chatContainer) {
-            // Stop existing observer if any
-            if (this.observer) {
-                this.observer.disconnect();
-            }
-
-            // Create mutation observer to watch for new messages
-            this.observer = new MutationObserver((mutations) => {
-                for (const mutation of mutations) {
-                    for (const node of mutation.addedNodes) {
-                        if (node instanceof HTMLElement) {
-                            this.processNewMessage(node);
-                        }
-                    }
-                }
-            });
-
-            // Start observing
-            this.observer.observe(chatContainer, {
-                childList: true,
-                subtree: true
-            });
-        }
-
-        /**
-         * Process a newly added chat message
-         * @param {HTMLElement} node - New message node
-         */
-        async processNewMessage(node) {
-            // Check if enabled (both local flag and config setting)
-            if (!this.enabled || !config.isFeatureEnabled('dungeonTrackerChatAnnotations')) {
-                return;
-            }
-
-            // Find message element
-            const messageElement = node.matches?.('[class^="ChatMessage_chatMessage"]')
-                ? node
-                : node.querySelector?.('[class^="ChatMessage_chatMessage"]');
-
-            if (!messageElement) {
-                return;
-            }
-
-            // Check if already annotated
-            if (this.annotatedMessages.has(messageElement)) {
-                return;
-            }
-
-            // Get message text
-            const messageText = messageElement.textContent || '';
-
-            // Check if this is a "Key counts" message
-            if (!messageText.includes('Key counts:')) {
-                return;
-            }
-
-            // Parse timestamp from message (format: [MM/DD HH:MM:SS])
-            const timestampMatch = messageText.match(/\[(\d{1,2}\/\d{1,2})\s+(\d{1,2}):(\d{2}):(\d{2})\]/);
-            if (!timestampMatch) {
-                return;
-            }
-
-            // Check if dungeon tracker is currently tracking
-            const currentRun = dungeonTracker.getCurrentRun();
-            if (!currentRun) {
-                return;
-            }
-
-            // Get the server-validated duration from party messages
-            const duration = dungeonTracker.getPartyMessageDuration();
-            if (!duration) {
-                // This is the first "Key counts" message - no duration yet
-                return;
-            }
-
-            // This is the completion message - annotate it
-            await this.annotateMessage(messageElement, currentRun, duration);
-
-            // Mark as annotated
-            this.annotatedMessages.add(messageElement);
-        }
-
-        /**
-         * Annotate a message with colored timer
-         * @param {HTMLElement} messageElement - Message DOM element
-         * @param {Object} currentRun - Current run data
-         * @param {number} duration - Run duration in milliseconds
-         */
-        async annotateMessage(messageElement, currentRun, duration) {
-            // Get statistics for color determination
-            const stats = await dungeonTrackerStorage.getStats(currentRun.dungeonHrid, currentRun.tier);
-
-            // Determine color based on performance (Option B from user preference)
-            let color = config.COLOR_DEFAULT || '#fff'; // Default white
-
-            if (stats.fastestTime > 0 && stats.slowestTime > 0) {
-                const fastestThreshold = stats.fastestTime * 1.10; // Within 10% of fastest
-                const slowestThreshold = stats.slowestTime * 0.90; // Within 10% of slowest
-
-                if (duration <= fastestThreshold) {
-                    // Green: within 10% of fastest
-                    color = config.COLOR_PROFIT || '#5fda5f';
-                } else if (duration >= slowestThreshold) {
-                    // Red: within 10% of slowest
-                    color = config.COLOR_LOSS || '#ff6b6b';
-                }
-            }
-
-            // Format duration
-            const formattedDuration = this.formatTime(duration);
-
-            // Find the message text span (usually second span in the message)
-            const spans = messageElement.querySelectorAll('span');
-            if (spans.length < 2) {
-                return;
-            }
-
-            const messageSpan = spans[1];
-
-            // Create timer annotation span
-            const timerSpan = document.createElement('span');
-            timerSpan.textContent = ` [${formattedDuration}]`;
-            timerSpan.style.color = color;
-            timerSpan.style.fontWeight = 'bold';
-            timerSpan.style.marginLeft = '4px';
-            timerSpan.classList.add('dungeon-timer-annotation');
-
-            // Append to message
-            messageSpan.appendChild(timerSpan);
-        }
-
-        /**
-         * Format time in milliseconds to Mm Ss format
-         * @param {number} ms - Time in milliseconds
-         * @returns {string} Formatted time (e.g., "4m 32s")
-         */
-        formatTime(ms) {
-            const totalSeconds = Math.floor(ms / 1000);
-            const minutes = Math.floor(totalSeconds / 60);
-            const seconds = totalSeconds % 60;
-            return `${minutes}m ${seconds}s`;
-        }
-
-        /**
-         * Enable chat annotations
-         */
-        enable() {
-            this.enabled = true;
-        }
-
-        /**
-         * Disable chat annotations
-         */
-        disable() {
-            this.enabled = false;
-        }
-
-        /**
-         * Check if chat annotations are enabled
-         * @returns {boolean} Enabled status
-         */
-        isEnabled() {
-            return this.enabled;
-        }
-    }
-
-    // Create and export singleton instance
-    const dungeonTrackerChatAnnotations = new DungeonTrackerChatAnnotations();
 
     /**
      * Combat Summary Module
@@ -29488,7 +29589,6 @@
                 console.log('[Feature Registry] Initializing Dungeon Tracker...');
                 dungeonTracker.initialize();
                 dungeonTrackerUI.initialize();
-                dungeonTrackerPartyChat.initialize();
                 dungeonTrackerChatAnnotations.initialize();
                 console.log('[Feature Registry] Dungeon Tracker initialization complete');
             },
@@ -30958,7 +31058,7 @@
         const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
         targetWindow.Toolasha = {
-            version: '0.4.918',
+            version: '0.4.919',
 
             // Feature toggle API (for users to manage settings via console)
             features: {

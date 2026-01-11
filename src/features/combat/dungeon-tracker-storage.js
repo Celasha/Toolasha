@@ -18,8 +18,7 @@ const DUNGEON_MAX_WAVES = {
 
 class DungeonTrackerStorage {
     constructor() {
-        this.storeName = 'dungeonRuns';
-        this.teamRunsStoreName = 'teamRuns'; // Team-based runs (from backfill)
+        this.unifiedStoreName = 'unifiedRuns'; // Unified storage for all runs
     }
 
     /**
@@ -65,34 +64,6 @@ class DungeonTrackerStorage {
     }
 
     /**
-     * Save a completed dungeon run
-     * @param {Object} run - Run data
-     * @param {string} run.dungeonHrid - Dungeon action HRID
-     * @param {number} run.tier - Difficulty tier
-     * @param {number} run.startTime - Run start timestamp (ms)
-     * @param {number} run.endTime - Run end timestamp (ms)
-     * @param {number} run.totalTime - Total run time (ms)
-     * @param {number} run.avgWaveTime - Average wave time (ms)
-     * @param {number} run.fastestWave - Fastest wave time (ms)
-     * @param {number} run.slowestWave - Slowest wave time (ms)
-     * @param {number} run.wavesCompleted - Number of waves completed
-     * @param {Array<number>} run.waveTimes - Individual wave times (ms)
-     * @returns {Promise<boolean>} Success status
-     */
-    async saveRun(run) {
-        const key = this.getDungeonKey(run.dungeonHrid, run.tier);
-
-        // Get existing runs for this dungeon+tier
-        const existingRuns = await storage.getJSON(key, this.storeName, []);
-
-        // Add new run to front of list
-        existingRuns.unshift(run);
-
-        // Save updated list (no limit - store all runs)
-        return storage.setJSON(key, existingRuns, this.storeName, true);
-    }
-
-    /**
      * Get run history for a dungeon+tier
      * @param {string} dungeonHrid - Dungeon action HRID
      * @param {number} tier - Difficulty tier
@@ -100,8 +71,13 @@ class DungeonTrackerStorage {
      * @returns {Promise<Array>} Run history
      */
     async getRunHistory(dungeonHrid, tier, limit = 0) {
-        const key = this.getDungeonKey(dungeonHrid, tier);
-        const runs = await storage.getJSON(key, this.storeName, []);
+        // Get all runs from unified storage
+        const allRuns = await storage.getJSON('allRuns', this.unifiedStoreName, []);
+
+        // Filter by dungeon HRID and tier
+        const runs = allRuns.filter(r =>
+            r.dungeonHrid === dungeonHrid && r.tier === tier
+        );
 
         if (limit > 0 && runs.length > limit) {
             return runs.slice(0, limit);
@@ -136,6 +112,43 @@ class DungeonTrackerStorage {
 
         const totalAvgWaveTime = runs.reduce((sum, run) => sum + run.avgWaveTime, 0);
         const avgWaveTime = totalAvgWaveTime / runs.length;
+
+        return {
+            totalRuns: runs.length,
+            avgTime,
+            fastestTime,
+            slowestTime,
+            avgWaveTime
+        };
+    }
+
+    /**
+     * Get statistics for a dungeon by name (for chat-based runs)
+     * @param {string} dungeonName - Dungeon display name
+     * @returns {Promise<Object>} Statistics
+     */
+    async getStatsByName(dungeonName) {
+        const allRuns = await storage.getJSON('allRuns', this.unifiedStoreName, []);
+        const runs = allRuns.filter(r => r.dungeonName === dungeonName);
+
+        if (runs.length === 0) {
+            return {
+                totalRuns: 0,
+                avgTime: 0,
+                fastestTime: 0,
+                slowestTime: 0,
+                avgWaveTime: 0
+            };
+        }
+
+        // Use 'duration' field (chat-based) or 'totalTime' field (websocket-based)
+        const durations = runs.map(r => r.duration || r.totalTime || 0);
+        const totalTime = durations.reduce((sum, d) => sum + d, 0);
+        const avgTime = totalTime / runs.length;
+        const fastestTime = Math.min(...durations);
+        const slowestTime = Math.max(...durations);
+
+        const avgWaveTime = runs.reduce((sum, run) => sum + (run.avgWaveTime || 0), 0) / runs.length;
 
         return {
             totalRuns: runs.length,
@@ -187,19 +200,37 @@ class DungeonTrackerStorage {
      * @returns {Promise<boolean>} Success status
      */
     async deleteRun(dungeonHrid, tier, runIndex) {
-        const key = this.getDungeonKey(dungeonHrid, tier);
-        const runs = await storage.getJSON(key, this.storeName, []);
+        // Get all runs from unified storage
+        const allRuns = await storage.getJSON('allRuns', this.unifiedStoreName, []);
 
-        if (runIndex < 0 || runIndex >= runs.length) {
+        // Filter to this dungeon+tier
+        const dungeonRuns = allRuns.filter(r =>
+            r.dungeonHrid === dungeonHrid && r.tier === tier
+        );
+
+        if (runIndex < 0 || runIndex >= dungeonRuns.length) {
             console.warn('[Dungeon Tracker Storage] Invalid run index:', runIndex);
             return false;
         }
 
-        // Remove the run at the specified index
-        runs.splice(runIndex, 1);
+        // Find the run to delete in the full array
+        const runToDelete = dungeonRuns[runIndex];
+        const indexInAllRuns = allRuns.findIndex(r =>
+            r.timestamp === runToDelete.timestamp &&
+            r.dungeonHrid === runToDelete.dungeonHrid &&
+            r.tier === runToDelete.tier
+        );
+
+        if (indexInAllRuns === -1) {
+            console.warn('[Dungeon Tracker Storage] Run not found in unified storage');
+            return false;
+        }
+
+        // Remove the run
+        allRuns.splice(indexInAllRuns, 1);
 
         // Save updated list
-        return storage.setJSON(key, runs, this.storeName, true);
+        return storage.setJSON('allRuns', allRuns, this.unifiedStoreName, true);
     }
 
     /**
@@ -209,8 +240,16 @@ class DungeonTrackerStorage {
      * @returns {Promise<boolean>} Success status
      */
     async clearHistory(dungeonHrid, tier) {
-        const key = this.getDungeonKey(dungeonHrid, tier);
-        return storage.delete(key, this.storeName);
+        // Get all runs from unified storage
+        const allRuns = await storage.getJSON('allRuns', this.unifiedStoreName, []);
+
+        // Filter OUT the runs we want to delete
+        const filteredRuns = allRuns.filter(r =>
+            !(r.dungeonHrid === dungeonHrid && r.tier === tier)
+        );
+
+        // Save back the filtered list
+        return storage.setJSON('allRuns', filteredRuns, this.unifiedStoreName, true);
     }
 
     /**
@@ -266,34 +305,80 @@ class DungeonTrackerStorage {
      * Save a team-based run (from backfill)
      * @param {string} teamKey - Team key (sorted player names)
      * @param {Object} run - Run data
-     * @param {number} run.timestamp - Run start timestamp (ISO string)
+     * @param {string} run.timestamp - Run start timestamp (ISO string)
      * @param {number} run.duration - Run duration (ms)
+     * @param {string} run.dungeonName - Dungeon name (from Phase 2)
      * @returns {Promise<boolean>} Success status
      */
     async saveTeamRun(teamKey, run) {
-        // Get existing runs for this team
-        const existingRuns = await storage.getJSON(teamKey, this.teamRunsStoreName, []);
+        // Get all runs from unified storage
+        const allRuns = await storage.getJSON('allRuns', this.unifiedStoreName, []);
 
-        // Check for duplicates
-        const isDuplicate = existingRuns.some(r =>
-            r.timestamp === run.timestamp && r.duration === run.duration
+        // Check for duplicates (same timestamp, team, and duration)
+        const isDuplicate = allRuns.some(r =>
+            r.timestamp === run.timestamp &&
+            r.teamKey === teamKey &&
+            Math.abs(r.duration - run.duration) < 1000 // Within 1 second
         );
 
         if (!isDuplicate) {
-            existingRuns.push(run);
-            return storage.setJSON(teamKey, existingRuns, this.teamRunsStoreName, true);
+            // Create unified format run
+            const team = teamKey.split(',').sort();
+            const unifiedRun = {
+                timestamp: run.timestamp,
+                dungeonName: run.dungeonName || 'Unknown',
+                dungeonHrid: null,
+                tier: null,
+                team: team,
+                teamKey: teamKey,
+                duration: run.duration,
+                validated: true,
+                source: 'chat',
+                waveTimes: null,
+                avgWaveTime: null
+            };
+
+            // Add to front of list (most recent first)
+            allRuns.unshift(unifiedRun);
+
+            // Save to unified storage
+            await storage.setJSON('allRuns', allRuns, this.unifiedStoreName, true);
+
+            return true;
         }
 
         return false;
     }
 
     /**
-     * Get team run history
-     * @param {string} teamKey - Team key (sorted player names)
-     * @returns {Promise<Array>} Run history
+     * Get all runs (unfiltered)
+     * @returns {Promise<Array>} All runs
      */
-    async getTeamRunHistory(teamKey) {
-        return storage.getJSON(teamKey, this.teamRunsStoreName, []);
+    async getAllRuns() {
+        return storage.getJSON('allRuns', this.unifiedStoreName, []);
+    }
+
+    /**
+     * Get runs filtered by dungeon and/or team
+     * @param {Object} filters - Filter options
+     * @param {string} filters.dungeonName - Filter by dungeon name (optional)
+     * @param {string} filters.teamKey - Filter by team key (optional)
+     * @returns {Promise<Array>} Filtered runs
+     */
+    async getFilteredRuns(filters = {}) {
+        const allRuns = await this.getAllRuns();
+
+        let filtered = allRuns;
+
+        if (filters.dungeonName && filters.dungeonName !== 'all') {
+            filtered = filtered.filter(r => r.dungeonName === filters.dungeonName);
+        }
+
+        if (filters.teamKey && filters.teamKey !== 'all') {
+            filtered = filtered.filter(r => r.teamKey === filters.teamKey);
+        }
+
+        return filtered;
     }
 
     /**
@@ -301,40 +386,38 @@ class DungeonTrackerStorage {
      * @returns {Promise<Array>} Array of {teamKey, runCount, avgTime, bestTime, worstTime}
      */
     async getAllTeamStats() {
-        const results = [];
+        // Get all runs from unified storage
+        const allRuns = await storage.getJSON('allRuns', this.unifiedStoreName, []);
 
-        // Get all keys from IndexedDB for teamRuns store
-        const allKeys = await storage.getAllKeys(this.teamRunsStoreName);
+        // Group by teamKey
+        const teamGroups = {};
+        for (const run of allRuns) {
+            if (!run.teamKey) continue; // Skip solo runs (no team)
 
-        for (const teamKey of allKeys) {
-            const runs = await this.getTeamRunHistory(teamKey);
-
-            if (runs.length > 0) {
-                const durations = runs.map(r => r.duration);
-                const avgTime = durations.reduce((a, b) => a + b, 0) / durations.length;
-                const bestTime = Math.min(...durations);
-                const worstTime = Math.max(...durations);
-
-                results.push({
-                    teamKey,
-                    runCount: runs.length,
-                    avgTime,
-                    bestTime,
-                    worstTime
-                });
+            if (!teamGroups[run.teamKey]) {
+                teamGroups[run.teamKey] = [];
             }
+            teamGroups[run.teamKey].push(run);
+        }
+
+        // Calculate stats for each team
+        const results = [];
+        for (const [teamKey, runs] of Object.entries(teamGroups)) {
+            const durations = runs.map(r => r.duration);
+            const avgTime = durations.reduce((a, b) => a + b, 0) / durations.length;
+            const bestTime = Math.min(...durations);
+            const worstTime = Math.max(...durations);
+
+            results.push({
+                teamKey,
+                runCount: runs.length,
+                avgTime,
+                bestTime,
+                worstTime
+            });
         }
 
         return results;
-    }
-
-    /**
-     * Clear all team runs for a specific team
-     * @param {string} teamKey - Team key
-     * @returns {Promise<boolean>} Success status
-     */
-    async clearTeamHistory(teamKey) {
-        return storage.delete(teamKey, this.teamRunsStoreName);
     }
 }
 
@@ -342,4 +425,3 @@ class DungeonTrackerStorage {
 const dungeonTrackerStorage = new DungeonTrackerStorage();
 
 export default dungeonTrackerStorage;
-export { DungeonTrackerStorage, TIERS };

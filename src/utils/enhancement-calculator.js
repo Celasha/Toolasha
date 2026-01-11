@@ -220,23 +220,3 @@ export function calculateEnhancement(params) {
         }),
     };
 }
-
-/**
- * Calculate enhancement costs for multiple scenarios
- * @param {Object} params - Base parameters (same as calculateEnhancement)
- * @param {Array<number>} protectionLevels - Array of protection levels to compare (e.g., [0, 11, 16])
- * @returns {Array<Object>} Results for each protection strategy
- */
-export function compareProtectionStrategies(params, protectionLevels = [0, 11, 16]) {
-    return protectionLevels.map(protectFrom => {
-        const result = calculateEnhancement({
-            ...params,
-            protectFrom
-        });
-
-        return {
-            protectFrom,
-            ...result
-        };
-    });
-}

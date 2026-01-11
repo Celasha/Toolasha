@@ -1,6 +1,7 @@
 /**
  * Dungeon Tracker Chat Annotations
- * Adds colored timer annotations to "Key counts" party chat messages
+ * Adds colored timer annotations to party chat messages
+ * Handles both real-time (new messages) and batch (historical messages) processing
  */
 
 import dungeonTrackerStorage from './dungeon-tracker-storage.js';
@@ -11,7 +12,6 @@ class DungeonTrackerChatAnnotations {
     constructor() {
         this.enabled = true;
         this.observer = null;
-        this.annotatedMessages = new Set(); // Track which messages we've already annotated
     }
 
     /**
@@ -23,23 +23,40 @@ class DungeonTrackerChatAnnotations {
     }
 
     /**
-     * Wait for chat container to be available
+     * Wait for chat to be ready
      */
     waitForChat() {
-        const chatContainer = document.querySelector('[class^="Chat_chatMessagesContainer"]');
-        if (chatContainer) {
-            this.startMonitoring(chatContainer);
-        } else {
-            // Retry in 1 second
-            setTimeout(() => this.waitForChat(), 1000);
+        // Start monitoring immediately (doesn't need specific container)
+        this.startMonitoring();
+
+        // Initial annotation of existing messages (batch mode)
+        setTimeout(() => this.annotateAllMessages(), 1500);
+
+        // Also trigger when switching to party chat
+        this.observeTabSwitches();
+    }
+
+    /**
+     * Observe chat tab switches to trigger batch annotation when user views party chat
+     */
+    observeTabSwitches() {
+        // Find all chat tab buttons
+        const tabButtons = document.querySelectorAll('.Chat_tabsComponentContainer__3ZoKe .MuiButtonBase-root');
+
+        for (const button of tabButtons) {
+            if (button.textContent.includes('Party')) {
+                button.addEventListener('click', () => {
+                    // Delay to let DOM update
+                    setTimeout(() => this.annotateAllMessages(), 300);
+                });
+            }
         }
     }
 
     /**
      * Start monitoring chat for new messages
-     * @param {HTMLElement} chatContainer - Chat messages container
      */
-    startMonitoring(chatContainer) {
+    startMonitoring() {
         // Stop existing observer if any
         if (this.observer) {
             this.observer.disconnect();
@@ -49,125 +66,301 @@ class DungeonTrackerChatAnnotations {
         this.observer = new MutationObserver((mutations) => {
             for (const mutation of mutations) {
                 for (const node of mutation.addedNodes) {
-                    if (node instanceof HTMLElement) {
-                        this.processNewMessage(node);
-                    }
+                    if (!(node instanceof HTMLElement)) continue;
+
+                    const msg = node.matches?.('[class^="ChatMessage_chatMessage"]')
+                        ? node
+                        : node.querySelector?.('[class^="ChatMessage_chatMessage"]');
+
+                    if (!msg) continue;
+
+                    // Re-run batch annotation on any new message (matches working DRT script)
+                    setTimeout(() => this.annotateAllMessages(), 100);
                 }
             }
         });
 
-        // Start observing
-        this.observer.observe(chatContainer, {
+        // Observe entire document body (matches working DRT script)
+        this.observer.observe(document.body, {
             childList: true,
             subtree: true
         });
     }
 
     /**
-     * Process a newly added chat message
-     * @param {HTMLElement} node - New message node
+     * Batch process all chat messages (for historical messages)
+     * Called on page load and when needed
      */
-    async processNewMessage(node) {
-        // Check if enabled (both local flag and config setting)
-        if (!this.enabled || !config.isFeatureEnabled('dungeonTrackerChatAnnotations')) {
+    async annotateAllMessages() {
+        if (!this.enabled || !config.isFeatureEnabled('dungeonTracker')) {
             return;
         }
 
-        // Find message element
-        const messageElement = node.matches?.('[class^="ChatMessage_chatMessage"]')
-            ? node
-            : node.querySelector?.('[class^="ChatMessage_chatMessage"]');
+        const events = this.extractChatEvents();
 
-        if (!messageElement) {
-            return;
+        // Phase 5: Save runs from chat messages (authoritative source)
+        await this.saveRunsFromEvents(events);
+
+        // Continue with visual annotations
+        const runDurations = [];
+
+        for (let i = 0; i < events.length; i++) {
+            const e = events[i];
+            if (e.type !== 'key') continue;
+
+            const next = events[i + 1];
+            let label = null;
+            let diff = null;
+            let color = null;
+
+            // Find nearest battle_start before this event to get dungeon name
+            const battleStart = events.slice(0, i).reverse()
+                .find(ev => ev.type === 'battle_start');
+            const dungeonName = battleStart?.dungeonName || 'Unknown';
+
+            if (next?.type === 'key') {
+                // Calculate duration between consecutive key counts
+                diff = next.timestamp - e.timestamp;
+                if (diff < 0) {
+                    diff += 24 * 60 * 60 * 1000; // Handle midnight rollover
+                }
+
+                label = this.formatTime(diff);
+
+                // Determine color based on performance using dungeonName
+                if (dungeonName && dungeonName !== 'Unknown') {
+                    const stats = await dungeonTrackerStorage.getStatsByName(dungeonName);
+
+                    if (stats.fastestTime > 0 && stats.slowestTime > 0) {
+                        const fastestThreshold = stats.fastestTime * 1.10;
+                        const slowestThreshold = stats.slowestTime * 0.90;
+
+                        if (diff <= fastestThreshold) {
+                            color = config.COLOR_PROFIT || '#5fda5f'; // Green
+                        } else if (diff >= slowestThreshold) {
+                            color = config.COLOR_LOSS || '#ff6b6b'; // Red
+                        } else {
+                            color = '#90ee90'; // Light green (normal)
+                        }
+                    } else {
+                        color = '#90ee90'; // Light green (default)
+                    }
+                } else {
+                    color = '#90ee90'; // Light green (fallback)
+                }
+
+                // Track run durations for average calculation
+                runDurations.push({
+                    msg: e.msg,
+                    diff,
+                    dungeonName
+                });
+            } else if (next?.type === 'fail') {
+                label = 'FAILED';
+                color = '#ff4c4c'; // Red
+            } else if (next?.type === 'cancel') {
+                label = 'canceled';
+                color = '#ffd700'; // Gold
+            }
+
+            if (label) {
+                // Mark as processed BEFORE inserting (matches working DRT script)
+                e.msg.dataset.processed = '1';
+
+                this.insertAnnotation(label, color, e.msg, false);
+
+                // Add average if this is a successful run
+                if (diff && dungeonName && dungeonName !== 'Unknown') {
+                    // Get stats for average using dungeonName
+                    const stats = await dungeonTrackerStorage.getStatsByName(dungeonName);
+
+                    if (stats.totalRuns > 1 && stats.avgTime > 0) {
+                        const avgLabel = `Average: ${this.formatTime(stats.avgTime)}`;
+                        this.insertAnnotation(avgLabel, '#deb887', e.msg, true); // Tan color
+                    }
+                }
+            }
         }
-
-        // Check if already annotated
-        if (this.annotatedMessages.has(messageElement)) {
-            return;
-        }
-
-        // Get message text
-        const messageText = messageElement.textContent || '';
-
-        // Check if this is a "Key counts" message
-        if (!messageText.includes('Key counts:')) {
-            return;
-        }
-
-        // Parse timestamp from message (format: [MM/DD HH:MM:SS])
-        const timestampMatch = messageText.match(/\[(\d{1,2}\/\d{1,2})\s+(\d{1,2}):(\d{2}):(\d{2})\]/);
-        if (!timestampMatch) {
-            return;
-        }
-
-        // Check if dungeon tracker is currently tracking
-        const currentRun = dungeonTracker.getCurrentRun();
-        if (!currentRun) {
-            return;
-        }
-
-        // Get the server-validated duration from party messages
-        const duration = dungeonTracker.getPartyMessageDuration();
-        if (!duration) {
-            // This is the first "Key counts" message - no duration yet
-            return;
-        }
-
-        // This is the completion message - annotate it
-        await this.annotateMessage(messageElement, currentRun, duration);
-
-        // Mark as annotated
-        this.annotatedMessages.add(messageElement);
     }
 
     /**
-     * Annotate a message with colored timer
-     * @param {HTMLElement} messageElement - Message DOM element
-     * @param {Object} currentRun - Current run data
-     * @param {number} duration - Run duration in milliseconds
+     * Save runs from chat events to storage (Phase 5: authoritative source)
+     * @param {Array} events - Chat events array
      */
-    async annotateMessage(messageElement, currentRun, duration) {
-        // Get statistics for color determination
-        const stats = await dungeonTrackerStorage.getStats(currentRun.dungeonHrid, currentRun.tier);
+    async saveRunsFromEvents(events) {
+        // Build runs from events (only key→key pairs)
+        for (let i = 0; i < events.length; i++) {
+            const event = events[i];
+            if (event.type !== 'key') continue;
 
-        // Determine color based on performance (Option B from user preference)
-        let color = config.COLOR_DEFAULT || '#fff'; // Default white
+            const next = events[i + 1];
+            if (!next || next.type !== 'key') continue; // Only key→key pairs
 
-        if (stats.fastestTime > 0 && stats.slowestTime > 0) {
-            const fastestThreshold = stats.fastestTime * 1.10; // Within 10% of fastest
-            const slowestThreshold = stats.slowestTime * 0.90; // Within 10% of slowest
+            // Calculate duration
+            let duration = next.timestamp - event.timestamp;
+            if (duration < 0) duration += 24 * 60 * 60 * 1000; // Midnight rollover
 
-            if (duration <= fastestThreshold) {
-                // Green: within 10% of fastest
-                color = config.COLOR_PROFIT || '#5fda5f';
-            } else if (duration >= slowestThreshold) {
-                // Red: within 10% of slowest
-                color = config.COLOR_LOSS || '#ff6b6b';
+            // Find nearest battle_start before this run
+            const battleStart = events.slice(0, i).reverse()
+                .find(e => e.type === 'battle_start');
+            const dungeonName = battleStart?.dungeonName || 'Unknown';
+
+            // Get team key
+            const teamKey = dungeonTrackerStorage.getTeamKey(event.team);
+
+            // Create run object
+            const run = {
+                timestamp: event.timestamp.toISOString(),
+                duration: duration,
+                dungeonName: dungeonName
+            };
+
+            // Save team run (includes dungeon name from Phase 2)
+            await dungeonTrackerStorage.saveTeamRun(teamKey, run);
+        }
+    }
+
+    /**
+     * Extract chat events from DOM
+     * @returns {Array} Array of chat events with timestamps and types
+     */
+    extractChatEvents() {
+        // Query ALL chat messages (matches working DRT script - no tab filtering)
+        const nodes = [...document.querySelectorAll('[class^="ChatMessage_chatMessage"]')];
+        const events = [];
+
+        for (const node of nodes) {
+            // Skip if already processed
+            if (node.dataset.processed === '1') continue;
+
+            const text = node.textContent.trim();
+            const timestamp = this.getTimestampFromMessage(node);
+            if (!timestamp) continue;
+
+            // Battle started message
+            if (text.includes('Battle started:')) {
+                const dungeonName = text.split('Battle started:')[1]?.split(']')[0]?.trim();
+                if (dungeonName) {
+                    events.push({
+                        type: 'battle_start',
+                        timestamp,
+                        dungeonName,
+                        msg: node
+                    });
+                }
+                node.dataset.processed = '1';
+            }
+            // Key counts message
+            else if (text.includes('Key counts:')) {
+                const team = this.getTeamFromMessage(node);
+                if (!team.length) continue;
+
+                events.push({
+                    type: 'key',
+                    timestamp,
+                    team,
+                    msg: node
+                });
+            }
+            // Party failed message
+            else if (text.match(/Party failed on wave \d+/)) {
+                events.push({
+                    type: 'fail',
+                    timestamp,
+                    msg: node
+                });
+                node.dataset.processed = '1';
+            }
+            // Battle ended (canceled/fled)
+            else if (text.includes('Battle ended:')) {
+                events.push({
+                    type: 'cancel',
+                    timestamp,
+                    msg: node
+                });
+                node.dataset.processed = '1';
             }
         }
 
-        // Format duration
-        const formattedDuration = this.formatTime(duration);
+        return events;
+    }
 
-        // Find the message text span (usually second span in the message)
-        const spans = messageElement.querySelectorAll('span');
-        if (spans.length < 2) {
+    /**
+     * Check if party chat is currently selected
+     * @returns {boolean} True if party chat is visible
+     */
+    isPartySelected() {
+        const selectedTabEl = document.querySelector(`.Chat_tabsComponentContainer__3ZoKe .MuiButtonBase-root[aria-selected="true"]`);
+        const tabsEl = document.querySelector('.Chat_tabsComponentContainer__3ZoKe .TabsComponent_tabPanelsContainer__26mzo');
+        return selectedTabEl && tabsEl && selectedTabEl.textContent.includes('Party') && !tabsEl.classList.contains('TabsComponent_hidden__255ag');
+    }
+
+    /**
+     * Get timestamp from message DOM element
+     * @param {HTMLElement} msg - Message element
+     * @returns {Date|null} Parsed timestamp or null
+     */
+    getTimestampFromMessage(msg) {
+        const text = msg.textContent.trim();
+        const match = text.match(/\[(\d{1,2}\/\d{1,2})\s+(\d{1,2}):(\d{2}):(\d{2})\s*([AP]M)?\]/);
+        if (!match) return null;
+
+        let [, date, hour, min, sec, period] = match;
+        const [month, day] = date.split('/').map(x => parseInt(x, 10));
+
+        hour = parseInt(hour, 10);
+        min = parseInt(min, 10);
+        sec = parseInt(sec, 10);
+
+        if (period === 'PM' && hour < 12) hour += 12;
+        if (period === 'AM' && hour === 12) hour = 0;
+
+        const now = new Date();
+        const dateObj = new Date(now.getFullYear(), month - 1, day, hour, min, sec, 0);
+        return dateObj;
+    }
+
+    /**
+     * Get team composition from message
+     * @param {HTMLElement} msg - Message element
+     * @returns {Array<string>} Sorted array of player names
+     */
+    getTeamFromMessage(msg) {
+        const text = msg.textContent.trim();
+        const matches = [...text.matchAll(/\[([^\[\]-]+?)\s*-\s*[\d,]+\]/g)];
+        return matches.map(m => m[1].trim()).sort();
+    }
+
+    /**
+     * Insert annotation into chat message
+     * @param {string} label - Timer label text
+     * @param {string} color - CSS color for the label
+     * @param {HTMLElement} msg - Message DOM element
+     * @param {boolean} isAverage - Whether this is an average annotation
+     */
+    insertAnnotation(label, color, msg, isAverage = false) {
+        // Check using dataset attribute (matches working DRT script pattern)
+        const datasetKey = isAverage ? 'avgAppended' : 'timerAppended';
+        if (msg.dataset[datasetKey] === '1') {
             return;
         }
 
+        const spans = msg.querySelectorAll('span');
+        if (spans.length < 2) return;
+
         const messageSpan = spans[1];
-
-        // Create timer annotation span
         const timerSpan = document.createElement('span');
-        timerSpan.textContent = ` [${formattedDuration}]`;
+        timerSpan.textContent = ` [${label}]`;
+        timerSpan.classList.add(isAverage ? 'dungeon-timer-average' : 'dungeon-timer-annotation');
         timerSpan.style.color = color;
-        timerSpan.style.fontWeight = 'bold';
+        timerSpan.style.fontWeight = isAverage ? 'normal' : 'bold';
+        timerSpan.style.fontStyle = 'italic';
         timerSpan.style.marginLeft = '4px';
-        timerSpan.classList.add('dungeon-timer-annotation');
 
-        // Append to message
         messageSpan.appendChild(timerSpan);
+
+        // Mark as appended (matches working DRT script)
+        msg.dataset[datasetKey] = '1';
     }
 
     /**
@@ -209,4 +402,3 @@ class DungeonTrackerChatAnnotations {
 const dungeonTrackerChatAnnotations = new DungeonTrackerChatAnnotations();
 
 export default dungeonTrackerChatAnnotations;
-export { DungeonTrackerChatAnnotations };

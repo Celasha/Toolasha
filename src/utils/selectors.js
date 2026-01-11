@@ -144,20 +144,3 @@ export const COMBAT_SIM = {
     GROUP_COMBAT_TAB: 'a#group-combat-tab',
     GET_PRICES_BUTTON: 'button#buttonGetPrices'
 };
-
-/**
- * Helper function to create multiple selectors
- * @param {string[]} selectors - Array of selector strings
- * @returns {string} Combined selector
- */
-export function combineSelectors(...selectors) {
-    return selectors.join(', ');
-}
-
-/**
- * Helper function to get all instances of our injected elements for cleanup
- * @returns {string} Selector that matches all Toolasha-injected elements
- */
-export function getAllToolashaElements() {
-    return Object.values(TOOLASHA).join(', ');
-}

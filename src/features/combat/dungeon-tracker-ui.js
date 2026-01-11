@@ -5,7 +5,7 @@
 
 import dungeonTracker from './dungeon-tracker.js';
 import dungeonTrackerStorage from './dungeon-tracker-storage.js';
-import dungeonTrackerChat from './dungeon-tracker-chat.js';
+import dungeonTrackerChatAnnotations from './dungeon-tracker-chat-annotations.js';
 import storage from '../../core/storage.js';
 import dataManager from '../../core/data-manager.js';
 import config from '../../core/config.js';
@@ -17,10 +17,17 @@ class DungeonTrackerUI {
         this.isCollapsed = false;
         this.isKeysExpanded = false;
         this.isRunHistoryExpanded = false;
-        this.isTeamHistoryExpanded = false;
         this.isDragging = false;
         this.dragOffset = { x: 0, y: 0 };
         this.position = null; // { x, y } or null for default
+
+        // Phase 4: Grouping and filtering state
+        this.groupBy = 'team'; // 'team' or 'dungeon'
+        this.filterDungeon = 'all'; // 'all' or specific dungeon name
+        this.filterTeam = 'all'; // 'all' or specific team key
+
+        // Track expanded groups to preserve state across refreshes
+        this.expandedGroups = new Set();
     }
 
     /**
@@ -33,9 +40,6 @@ class DungeonTrackerUI {
         // Create UI elements
         this.createUI();
 
-        // Initialize chat annotations
-        dungeonTrackerChat.initialize();
-
         // Register for dungeon tracker updates
         dungeonTracker.onUpdate((currentRun, completedRun) => {
             // Check if UI is enabled
@@ -45,8 +49,8 @@ class DungeonTrackerUI {
             }
 
             if (completedRun) {
-                // Dungeon completed - trigger chat annotation update
-                setTimeout(() => dungeonTrackerChat.annotateAllMessages(), 200);
+                // Dungeon completed - trigger chat annotation update and hide UI
+                setTimeout(() => dungeonTrackerChatAnnotations.annotateAllMessages(), 200);
                 this.hide();
             } else if (currentRun) {
                 // Dungeon in progress
@@ -71,8 +75,12 @@ class DungeonTrackerUI {
             this.isCollapsed = savedState.isCollapsed || false;
             this.isKeysExpanded = savedState.isKeysExpanded || false;
             this.isRunHistoryExpanded = savedState.isRunHistoryExpanded || false;
-            this.isTeamHistoryExpanded = savedState.isTeamHistoryExpanded || false;
             this.position = savedState.position || null;
+
+            // Phase 4: Load grouping/filtering state
+            this.groupBy = savedState.groupBy || 'team';
+            this.filterDungeon = savedState.filterDungeon || 'all';
+            this.filterTeam = savedState.filterTeam || 'all';
         }
     }
 
@@ -84,8 +92,11 @@ class DungeonTrackerUI {
             isCollapsed: this.isCollapsed,
             isKeysExpanded: this.isKeysExpanded,
             isRunHistoryExpanded: this.isRunHistoryExpanded,
-            isTeamHistoryExpanded: this.isTeamHistoryExpanded,
-            position: this.position
+            position: this.position,
+            // Phase 4: Save grouping/filtering state
+            groupBy: this.groupBy,
+            filterDungeon: this.filterDungeon,
+            filterTeam: this.filterTeam
         }, 'settings', true);
     }
 
@@ -120,7 +131,7 @@ class DungeonTrackerUI {
                         </span>
                     </div>
                     <div style="flex: 0; padding: 0 10px; white-space: nowrap;">
-                        <span style="font-size: 12px; color: #aaa;">Elapsed: </span>
+                        <span id="mwi-dt-time-label" style="font-size: 12px; color: #aaa;" title="Time since dungeon started">Elapsed: </span>
                         <span id="mwi-dt-current-time" style="font-size: 13px; color: #fff; font-weight: bold;">
                             00:00
                         </span>
@@ -231,7 +242,7 @@ class DungeonTrackerUI {
                     </div>
                 </div>
 
-                <!-- Run history section -->
+                <!-- Run history section (unified with grouping/filtering) -->
                 <div style="padding-top: 8px; border-top: 1px solid #444;">
                     <div id="mwi-dt-run-history-header" style="
                         display: flex;
@@ -242,40 +253,6 @@ class DungeonTrackerUI {
                         margin-bottom: 8px;
                     ">
                         <span style="font-size: 12px; font-weight: bold; color: #ccc;">Run History <span id="mwi-dt-run-history-toggle" style="font-size: 10px;">▼</span></span>
-                        <button id="mwi-dt-clear-all" style="
-                            background: none;
-                            border: 1px solid #ff6b6b;
-                            color: #ff6b6b;
-                            cursor: pointer;
-                            font-size: 11px;
-                            padding: 2px 8px;
-                            border-radius: 3px;
-                            font-weight: bold;
-                        " title="Clear all runs">✕ Clear</button>
-                    </div>
-                    <div id="mwi-dt-run-list" style="
-                        display: none;
-                        max-height: 150px;
-                        overflow-y: auto;
-                        font-size: 11px;
-                        color: #ccc;
-                    ">
-                        <!-- Run list populated dynamically -->
-                        <div style="color: #888; font-style: italic; text-align: center; padding: 8px;">No runs yet</div>
-                    </div>
-                </div>
-
-                <!-- Team History section (backfill) -->
-                <div id="mwi-dt-team-history" style="padding-top: 8px; border-top: 1px solid #444;">
-                    <div id="mwi-dt-team-history-header" style="
-                        display: flex;
-                        justify-content: space-between;
-                        align-items: center;
-                        cursor: pointer;
-                        padding: 4px 0;
-                        margin-bottom: 8px;
-                    ">
-                        <span style="font-size: 12px; font-weight: bold; color: #ccc;">Team History <span id="mwi-dt-team-history-toggle" style="font-size: 10px;">▼</span></span>
                         <div style="display: flex; gap: 4px;">
                             <button id="mwi-dt-backfill-btn" style="
                                 background: none;
@@ -287,7 +264,7 @@ class DungeonTrackerUI {
                                 border-radius: 3px;
                                 font-weight: bold;
                             " title="Scan party chat and import historical runs">⟳ Backfill</button>
-                            <button id="mwi-dt-clear-team" style="
+                            <button id="mwi-dt-clear-all" style="
                                 background: none;
                                 border: 1px solid #ff6b6b;
                                 color: #ff6b6b;
@@ -296,18 +273,74 @@ class DungeonTrackerUI {
                                 padding: 2px 8px;
                                 border-radius: 3px;
                                 font-weight: bold;
-                            " title="Clear all team history">✕ Clear</button>
+                            " title="Clear all runs">✕ Clear</button>
                         </div>
                     </div>
-                    <div id="mwi-dt-team-list" style="
+
+                    <!-- Grouping and filtering controls -->
+                    <div id="mwi-dt-controls" style="
                         display: none;
-                        max-height: 150px;
+                        padding: 8px 0;
+                        font-size: 11px;
+                        color: #ccc;
+                        border-bottom: 1px solid #444;
+                        margin-bottom: 8px;
+                    ">
+                        <div style="margin-bottom: 6px;">
+                            <label style="margin-right: 6px;">Group by:</label>
+                            <select id="mwi-dt-group-by" style="
+                                background: #333;
+                                color: #fff;
+                                border: 1px solid #555;
+                                border-radius: 3px;
+                                padding: 2px 4px;
+                                font-size: 11px;
+                            ">
+                                <option value="team">Team</option>
+                                <option value="dungeon">Dungeon</option>
+                            </select>
+                        </div>
+                        <div style="display: flex; gap: 12px;">
+                            <div>
+                                <label style="margin-right: 6px;">Dungeon:</label>
+                                <select id="mwi-dt-filter-dungeon" style="
+                                    background: #333;
+                                    color: #fff;
+                                    border: 1px solid #555;
+                                    border-radius: 3px;
+                                    padding: 2px 4px;
+                                    font-size: 11px;
+                                    min-width: 100px;
+                                ">
+                                    <option value="all">All Dungeons</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label style="margin-right: 6px;">Team:</label>
+                                <select id="mwi-dt-filter-team" style="
+                                    background: #333;
+                                    color: #fff;
+                                    border: 1px solid #555;
+                                    border-radius: 3px;
+                                    padding: 2px 4px;
+                                    font-size: 11px;
+                                    min-width: 100px;
+                                ">
+                                    <option value="all">All Teams</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="mwi-dt-run-list" style="
+                        display: none;
+                        max-height: 200px;
                         overflow-y: auto;
                         font-size: 11px;
                         color: #ccc;
                     ">
-                        <!-- Team list populated dynamically -->
-                        <div style="color: #888; font-style: italic; text-align: center; padding: 8px;">No team runs yet</div>
+                        <!-- Run list populated dynamically -->
+                        <div style="color: #888; font-style: italic; text-align: center; padding: 8px;">No runs yet</div>
                     </div>
                 </div>
             </div>
@@ -328,20 +361,14 @@ class DungeonTrackerUI {
         // Setup run history toggle
         this.setupRunHistoryToggle();
 
-        // Setup team history toggle
-        this.setupTeamHistoryToggle();
-
-        // Setup clear all button
-        this.setupClearAll();
+        // Setup grouping and filtering controls
+        this.setupGroupingControls();
 
         // Setup backfill button
         this.setupBackfillButton();
 
-        // Setup clear team history button
-        this.setupClearTeamHistory();
-
-        // Load team history on initialization
-        this.loadTeamHistory();
+        // Setup clear all button
+        this.setupClearAll();
 
         // Apply initial collapsed state
         if (this.isCollapsed) {
@@ -356,11 +383,6 @@ class DungeonTrackerUI {
         // Apply initial run history expanded state
         if (this.isRunHistoryExpanded) {
             this.applyRunHistoryExpandedState();
-        }
-
-        // Apply initial team history expanded state
-        if (this.isTeamHistoryExpanded) {
-            this.applyTeamHistoryExpandedState();
         }
     }
 
@@ -485,25 +507,49 @@ class DungeonTrackerUI {
         if (!runHistoryHeader) return;
 
         runHistoryHeader.addEventListener('click', (e) => {
-            // Don't toggle if clicking the clear button
+            // Don't toggle if clicking the clear or backfill buttons
             if (e.target.id === 'mwi-dt-clear-all' || e.target.closest('#mwi-dt-clear-all')) return;
+            if (e.target.id === 'mwi-dt-backfill-btn' || e.target.closest('#mwi-dt-backfill-btn')) return;
             this.toggleRunHistory();
         });
     }
 
     /**
-     * Setup team history toggle
+     * Setup grouping and filtering controls
      */
-    setupTeamHistoryToggle() {
-        const teamHistoryHeader = this.container.querySelector('#mwi-dt-team-history-header');
-        if (!teamHistoryHeader) return;
+    setupGroupingControls() {
+        // Group by dropdown
+        const groupBySelect = this.container.querySelector('#mwi-dt-group-by');
+        if (groupBySelect) {
+            groupBySelect.value = this.groupBy;
+            groupBySelect.addEventListener('change', (e) => {
+                this.groupBy = e.target.value;
+                this.saveState();
+                // Clear expanded groups when grouping changes (different group labels)
+                this.expandedGroups.clear();
+                this.updateRunHistory();
+            });
+        }
 
-        teamHistoryHeader.addEventListener('click', (e) => {
-            // Don't toggle if clicking the backfill or clear button
-            if (e.target.id === 'mwi-dt-backfill-btn' || e.target.closest('#mwi-dt-backfill-btn')) return;
-            if (e.target.id === 'mwi-dt-clear-team' || e.target.closest('#mwi-dt-clear-team')) return;
-            this.toggleTeamHistory();
-        });
+        // Filter dungeon dropdown
+        const filterDungeonSelect = this.container.querySelector('#mwi-dt-filter-dungeon');
+        if (filterDungeonSelect) {
+            filterDungeonSelect.addEventListener('change', (e) => {
+                this.filterDungeon = e.target.value;
+                this.saveState();
+                this.updateRunHistory();
+            });
+        }
+
+        // Filter team dropdown
+        const filterTeamSelect = this.container.querySelector('#mwi-dt-filter-team');
+        if (filterTeamSelect) {
+            filterTeamSelect.addEventListener('change', (e) => {
+                this.filterTeam = e.target.value;
+                this.saveState();
+                this.updateRunHistory();
+            });
+        }
     }
 
     /**
@@ -514,16 +560,18 @@ class DungeonTrackerUI {
         if (!clearBtn) return;
 
         clearBtn.addEventListener('click', async () => {
-            const currentRun = dungeonTracker.getCurrentRun();
-            if (!currentRun) return;
+            if (confirm('Delete ALL run history data?\\n\\nThis cannot be undone!')) {
+                try {
+                    // Clear unified storage completely
+                    await storage.setJSON('allRuns', [], 'unifiedRuns', true);
+                    alert('All run history cleared.');
 
-            const dungeonInfo = dungeonTrackerStorage.getDungeonInfo(currentRun.dungeonHrid);
-            const dungeonName = dungeonInfo?.name || 'this dungeon';
-
-            if (confirm(`Delete all run history for ${dungeonName} T${currentRun.tier}?`)) {
-                await dungeonTrackerStorage.clearHistory(currentRun.dungeonHrid, currentRun.tier);
-                // Refresh display
-                this.update(currentRun);
+                    // Refresh display
+                    await this.updateRunHistory();
+                } catch (error) {
+                    console.error('[Dungeon Tracker UI] Clear all history error:', error);
+                    alert('Failed to clear run history. Check console for details.');
+                }
             }
         });
     }
@@ -551,8 +599,8 @@ class DungeonTrackerUI {
                     alert('No new runs found to backfill.');
                 }
 
-                // Refresh team history display
-                await this.loadTeamHistory();
+                // Refresh run history display
+                await this.updateRunHistory();
             } catch (error) {
                 console.error('[Dungeon Tracker UI] Backfill error:', error);
                 alert('Backfill failed. Check console for details.');
@@ -562,115 +610,6 @@ class DungeonTrackerUI {
                 backfillBtn.disabled = false;
             }
         });
-    }
-
-    /**
-     * Setup clear team history button
-     */
-    setupClearTeamHistory() {
-        const clearBtn = this.container.querySelector('#mwi-dt-clear-team');
-        if (!clearBtn) return;
-
-        clearBtn.addEventListener('click', async () => {
-            if (confirm('Delete ALL team history data?\n\nThis cannot be undone!')) {
-                try {
-                    // Get all team run keys
-                    const teamKeys = await storage.getAllKeys('teamRuns');
-
-                    // Count total runs across all teams
-                    let totalRuns = 0;
-                    for (const key of teamKeys) {
-                        const runs = await storage.getJSON(key, 'teamRuns', []);
-                        totalRuns += runs.length;
-                    }
-
-                    // Delete each team
-                    for (const key of teamKeys) {
-                        await storage.delete(key, 'teamRuns');
-                    }
-
-                    alert(`Cleared ${teamKeys.length} team(s) with ${totalRuns} total run(s).`);
-
-                    // Refresh team history display
-                    await this.loadTeamHistory();
-                } catch (error) {
-                    console.error('[Dungeon Tracker UI] Clear team history error:', error);
-                    alert('Failed to clear team history. Check console for details.');
-                }
-            }
-        });
-    }
-
-    /**
-     * Load and display team history
-     */
-    async loadTeamHistory() {
-        const teamList = this.container.querySelector('#mwi-dt-team-list');
-        if (!teamList) return;
-
-        try {
-            const teams = await dungeonTrackerStorage.getAllTeamStats();
-
-            if (teams.length === 0) {
-                teamList.innerHTML = '<div style="color: #888; font-style: italic; text-align: center; padding: 8px;">No team runs yet</div>';
-                return;
-            }
-
-            // Build team list HTML
-            let html = '';
-            for (const team of teams) {
-                const avgTime = this.formatTime(team.avgTime);
-                const bestTime = this.formatTime(team.bestTime);
-                const worstTime = this.formatTime(team.worstTime);
-
-                html += `
-                    <div style="
-                        padding: 8px;
-                        margin-bottom: 4px;
-                        border: 1px solid #444;
-                        border-radius: 4px;
-                        display: flex;
-                        justify-content: space-between;
-                        align-items: flex-start;
-                    " data-team-key="${team.teamKey}">
-                        <div style="flex: 1;">
-                            <div style="font-weight: bold; color: #4a9eff; margin-bottom: 4px;">
-                                ${team.teamKey}
-                            </div>
-                            <div style="font-size: 10px; color: #aaa;">
-                                Runs: ${team.runCount} | Avg: ${avgTime} | Best: ${bestTime} | Worst: ${worstTime}
-                            </div>
-                        </div>
-                        <button class="mwi-dt-delete-team" style="
-                            background: none;
-                            border: 1px solid #ff6b6b;
-                            color: #ff6b6b;
-                            cursor: pointer;
-                            font-size: 10px;
-                            padding: 2px 6px;
-                            border-radius: 3px;
-                            font-weight: bold;
-                            flex-shrink: 0;
-                        " title="Delete this team's history">✕</button>
-                    </div>
-                `;
-            }
-
-            teamList.innerHTML = html;
-
-            // Attach delete handlers
-            teamList.querySelectorAll('.mwi-dt-delete-team').forEach((btn) => {
-                btn.addEventListener('click', async (e) => {
-                    const teamKey = e.target.closest('[data-team-key]').dataset.teamKey;
-                    await dungeonTrackerStorage.clearTeamHistory(teamKey);
-                    // Refresh display
-                    await this.loadTeamHistory();
-                });
-            });
-        } catch (error) {
-            console.error('[Dungeon Tracker UI] Load team history error:', error);
-            teamList.innerHTML = '<div style="color: #ff6b6b; text-align: center; padding: 8px;">Error loading team history</div>';
-        }
     }
 
     /**
@@ -731,9 +670,11 @@ class DungeonTrackerUI {
     applyRunHistoryExpandedState() {
         const runList = this.container.querySelector('#mwi-dt-run-list');
         const runHistoryToggle = this.container.querySelector('#mwi-dt-run-history-toggle');
+        const controls = this.container.querySelector('#mwi-dt-controls');
 
         if (runList) runList.style.display = 'block';
         if (runHistoryToggle) runHistoryToggle.textContent = '▲';
+        if (controls) controls.style.display = 'block';
     }
 
     /**
@@ -742,46 +683,11 @@ class DungeonTrackerUI {
     applyRunHistoryCollapsedState() {
         const runList = this.container.querySelector('#mwi-dt-run-list');
         const runHistoryToggle = this.container.querySelector('#mwi-dt-run-history-toggle');
+        const controls = this.container.querySelector('#mwi-dt-controls');
 
         if (runList) runList.style.display = 'none';
         if (runHistoryToggle) runHistoryToggle.textContent = '▼';
-    }
-
-    /**
-     * Toggle team history expanded state
-     */
-    toggleTeamHistory() {
-        this.isTeamHistoryExpanded = !this.isTeamHistoryExpanded;
-
-        if (this.isTeamHistoryExpanded) {
-            this.applyTeamHistoryExpandedState();
-        } else {
-            this.applyTeamHistoryCollapsedState();
-        }
-
-        this.saveState();
-    }
-
-    /**
-     * Apply team history expanded state
-     */
-    applyTeamHistoryExpandedState() {
-        const teamList = this.container.querySelector('#mwi-dt-team-list');
-        const teamHistoryToggle = this.container.querySelector('#mwi-dt-team-history-toggle');
-
-        if (teamList) teamList.style.display = 'block';
-        if (teamHistoryToggle) teamHistoryToggle.textContent = '▲';
-    }
-
-    /**
-     * Apply team history collapsed state
-     */
-    applyTeamHistoryCollapsedState() {
-        const teamList = this.container.querySelector('#mwi-dt-team-list');
-        const teamHistoryToggle = this.container.querySelector('#mwi-dt-team-history-toggle');
-
-        if (teamList) teamList.style.display = 'none';
-        if (teamHistoryToggle) teamHistoryToggle.textContent = '▼';
+        if (controls) controls.style.display = 'none';
     }
 
     /**
@@ -860,6 +766,18 @@ class DungeonTrackerUI {
             currentTime.textContent = this.formatTime(run.totalElapsed);
         }
 
+        // Update time label based on hibernation detection
+        const timeLabel = document.getElementById('mwi-dt-time-label');
+        if (timeLabel) {
+            if (run.hibernationDetected) {
+                timeLabel.textContent = 'Chat: ';
+                timeLabel.title = 'Using party chat timestamps (computer sleep detected)';
+            } else {
+                timeLabel.textContent = 'Elapsed: ';
+                timeLabel.title = 'Time since dungeon started';
+            }
+        }
+
         // Update progress bar
         const progressBar = document.getElementById('mwi-dt-progress-bar');
         const progressText = document.getElementById('mwi-dt-progress-text');
@@ -869,12 +787,20 @@ class DungeonTrackerUI {
             progressText.textContent = `${percent}%`;
         }
 
-        // Fetch run statistics for this dungeon+tier
-        const stats = await dungeonTrackerStorage.getStats(run.dungeonHrid, run.tier);
-        const runHistory = await dungeonTrackerStorage.getRunHistory(run.dungeonHrid, run.tier);
+        // Fetch run statistics - always use dungeonName since backfilled runs use it
+        let stats, runHistory, lastRunTime;
 
-        // Get last completed run time (most recent in history)
-        const lastRunTime = runHistory && runHistory.length > 0 ? runHistory[0].totalTime : 0;
+        if (run.dungeonName && run.dungeonName !== 'Unknown') {
+            // Query by dungeonName (works for both live tracking and backfilled runs)
+            stats = await dungeonTrackerStorage.getStatsByName(run.dungeonName);
+            const allRuns = await storage.getJSON('allRuns', 'unifiedRuns', []);
+            runHistory = allRuns.filter(r => r.dungeonName === run.dungeonName);
+            lastRunTime = runHistory && runHistory.length > 0 ? (runHistory[0].duration || runHistory[0].totalTime || 0) : 0;
+        } else {
+            // No dungeon info available or dungeon name unknown
+            stats = { totalRuns: 0, avgTime: 0, fastestTime: 0, slowestTime: 0, avgWaveTime: 0 };
+            lastRunTime = 0;
+        }
 
         // Get character name from dataManager, or fallback to first player in key counts
         let characterName = dataManager.characterData?.character?.name;
@@ -944,8 +870,8 @@ class DungeonTrackerUI {
         // Update Keys section with party member key counts
         this.updateKeysDisplay(run.keyCountsMap || {}, characterName);
 
-        // Update run history list
-        this.updateRunHistory(run.dungeonHrid, run.tier, runHistory);
+        // Update run history list (uses unified storage with grouping/filtering)
+        await this.updateRunHistory();
     }
 
     /**
@@ -1009,12 +935,318 @@ class DungeonTrackerUI {
     }
 
     /**
-     * Update run history list
+     * Group runs by team
+     * @param {Array} runs - Array of runs
+     * @returns {Array} Grouped runs with stats
+     */
+    groupByTeam(runs) {
+        const groups = {};
+
+        for (const run of runs) {
+            const key = run.teamKey || 'Solo';
+            if (!groups[key]) {
+                groups[key] = {
+                    key: key,
+                    label: key === 'Solo' ? 'Solo Runs' : key,
+                    runs: []
+                };
+            }
+            groups[key].runs.push(run);
+        }
+
+        // Convert to array and calculate stats
+        return Object.values(groups).map(group => ({
+            ...group,
+            stats: this.calculateStatsForRuns(group.runs)
+        }));
+    }
+
+    /**
+     * Group runs by dungeon
+     * @param {Array} runs - Array of runs
+     * @returns {Array} Grouped runs with stats
+     */
+    groupByDungeon(runs) {
+        const groups = {};
+
+        for (const run of runs) {
+            const key = run.dungeonName || 'Unknown';
+            if (!groups[key]) {
+                groups[key] = {
+                    key: key,
+                    label: key,
+                    runs: []
+                };
+            }
+            groups[key].runs.push(run);
+        }
+
+        // Convert to array and calculate stats
+        return Object.values(groups).map(group => ({
+            ...group,
+            stats: this.calculateStatsForRuns(group.runs)
+        }));
+    }
+
+    /**
+     * Calculate stats for a set of runs
+     * @param {Array} runs - Array of runs
+     * @returns {Object} Stats object
+     */
+    calculateStatsForRuns(runs) {
+        if (!runs || runs.length === 0) {
+            return {
+                totalRuns: 0,
+                avgTime: 0,
+                fastestTime: 0,
+                slowestTime: 0
+            };
+        }
+
+        const durations = runs.map(r => r.duration);
+        const total = durations.reduce((sum, d) => sum + d, 0);
+
+        return {
+            totalRuns: runs.length,
+            avgTime: Math.floor(total / runs.length),
+            fastestTime: Math.min(...durations),
+            slowestTime: Math.max(...durations)
+        };
+    }
+
+    /**
+     * Update run history display with grouping and filtering
+     */
+    async updateRunHistory() {
+        const runList = document.getElementById('mwi-dt-run-list');
+        if (!runList) return;
+
+        try {
+            // Get all runs from unified storage
+            const allRuns = await dungeonTrackerStorage.getAllRuns();
+
+            if (allRuns.length === 0) {
+                runList.innerHTML = '<div style="color: #888; font-style: italic; text-align: center; padding: 8px;">No runs yet</div>';
+                // Update filter dropdowns with empty options
+                this.updateFilterDropdowns([], []);
+                return;
+            }
+
+            // Apply filters
+            let filteredRuns = allRuns;
+            if (this.filterDungeon !== 'all') {
+                filteredRuns = filteredRuns.filter(r => r.dungeonName === this.filterDungeon);
+            }
+            if (this.filterTeam !== 'all') {
+                filteredRuns = filteredRuns.filter(r => r.teamKey === this.filterTeam);
+            }
+
+            if (filteredRuns.length === 0) {
+                runList.innerHTML = '<div style="color: #888; font-style: italic; text-align: center; padding: 8px;">No runs match filters</div>';
+                return;
+            }
+
+            // Group runs
+            const groups = this.groupBy === 'team'
+                ? this.groupByTeam(filteredRuns)
+                : this.groupByDungeon(filteredRuns);
+
+            // Render grouped runs
+            this.renderGroupedRuns(groups);
+
+            // Update filter dropdowns
+            const dungeons = [...new Set(allRuns.map(r => r.dungeonName).filter(Boolean))].sort();
+            const teams = [...new Set(allRuns.map(r => r.teamKey).filter(Boolean))].sort();
+            this.updateFilterDropdowns(dungeons, teams);
+
+        } catch (error) {
+            console.error('[Dungeon Tracker UI] Update run history error:', error);
+            runList.innerHTML = '<div style="color: #ff6b6b; text-align: center; padding: 8px;">Error loading run history</div>';
+        }
+    }
+
+    /**
+     * Update filter dropdown options
+     * @param {Array} dungeons - List of dungeon names
+     * @param {Array} teams - List of team keys
+     */
+    updateFilterDropdowns(dungeons, teams) {
+        // Update dungeon filter
+        const dungeonFilter = document.getElementById('mwi-dt-filter-dungeon');
+        if (dungeonFilter) {
+            const currentValue = dungeonFilter.value;
+            dungeonFilter.innerHTML = '<option value="all">All Dungeons</option>';
+            for (const dungeon of dungeons) {
+                dungeonFilter.innerHTML += `<option value="${dungeon}">${dungeon}</option>`;
+            }
+            // Restore selection if still valid
+            if (dungeons.includes(currentValue)) {
+                dungeonFilter.value = currentValue;
+            } else {
+                this.filterDungeon = 'all';
+            }
+        }
+
+        // Update team filter
+        const teamFilter = document.getElementById('mwi-dt-filter-team');
+        if (teamFilter) {
+            const currentValue = teamFilter.value;
+            teamFilter.innerHTML = '<option value="all">All Teams</option>';
+            for (const team of teams) {
+                teamFilter.innerHTML += `<option value="${team}">${team}</option>`;
+            }
+            // Restore selection if still valid
+            if (teams.includes(currentValue)) {
+                teamFilter.value = currentValue;
+            } else {
+                this.filterTeam = 'all';
+            }
+        }
+    }
+
+    /**
+     * Render grouped runs
+     * @param {Array} groups - Grouped runs with stats
+     */
+    renderGroupedRuns(groups) {
+        const runList = document.getElementById('mwi-dt-run-list');
+        if (!runList) return;
+
+        let html = '';
+
+        for (const group of groups) {
+            const avgTime = this.formatTime(group.stats.avgTime);
+            const bestTime = this.formatTime(group.stats.fastestTime);
+            const worstTime = this.formatTime(group.stats.slowestTime);
+
+            // Check if this group is expanded
+            const isExpanded = this.expandedGroups.has(group.label);
+            const displayStyle = isExpanded ? 'block' : 'none';
+            const toggleIcon = isExpanded ? '▲' : '▼';
+
+            html += `
+                <div class="mwi-dt-group" style="
+                    margin-bottom: 8px;
+                    border: 1px solid #444;
+                    border-radius: 4px;
+                    padding: 8px;
+                ">
+                    <div style="
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                        margin-bottom: 6px;
+                        cursor: pointer;
+                    " class="mwi-dt-group-header" data-group-label="${group.label}">
+                        <div style="flex: 1;">
+                            <div style="font-weight: bold; color: #4a9eff; margin-bottom: 2px;">
+                                ${group.label}
+                            </div>
+                            <div style="font-size: 10px; color: #aaa;">
+                                Runs: ${group.stats.totalRuns} | Avg: ${avgTime} | Best: ${bestTime} | Worst: ${worstTime}
+                            </div>
+                        </div>
+                        <span class="mwi-dt-group-toggle" style="color: #aaa; font-size: 10px;">${toggleIcon}</span>
+                    </div>
+                    <div class="mwi-dt-group-runs" style="
+                        display: ${displayStyle};
+                        border-top: 1px solid #444;
+                        padding-top: 6px;
+                        margin-top: 4px;
+                    ">
+                        ${this.renderRunList(group.runs)}
+                    </div>
+                </div>
+            `;
+        }
+
+        runList.innerHTML = html;
+
+        // Attach toggle handlers
+        runList.querySelectorAll('.mwi-dt-group-header').forEach((header) => {
+            header.addEventListener('click', () => {
+                const groupLabel = header.dataset.groupLabel;
+                const runsDiv = header.nextElementSibling;
+                const toggle = header.querySelector('.mwi-dt-group-toggle');
+
+                if (runsDiv.style.display === 'none') {
+                    runsDiv.style.display = 'block';
+                    toggle.textContent = '▲';
+                    this.expandedGroups.add(groupLabel);
+                } else {
+                    runsDiv.style.display = 'none';
+                    toggle.textContent = '▼';
+                    this.expandedGroups.delete(groupLabel);
+                }
+            });
+        });
+
+        // Attach delete handlers
+        runList.querySelectorAll('.mwi-dt-delete-run').forEach((btn) => {
+            btn.addEventListener('click', async (e) => {
+                const runTimestamp = e.target.closest('[data-run-timestamp]').dataset.runTimestamp;
+
+                // Find and delete the run from unified storage
+                const allRuns = await dungeonTrackerStorage.getAllRuns();
+                const filteredRuns = allRuns.filter(r => r.timestamp !== runTimestamp);
+                await storage.setJSON('allRuns', filteredRuns, 'unifiedRuns', true);
+
+                // Refresh display
+                await this.updateRunHistory();
+            });
+        });
+    }
+
+    /**
+     * Render individual run list
+     * @param {Array} runs - Array of runs
+     * @returns {string} HTML for run list
+     */
+    renderRunList(runs) {
+        let html = '';
+        runs.forEach((run, index) => {
+            const runNumber = runs.length - index;
+            const timeStr = this.formatTime(run.duration);
+            const date = new Date(run.timestamp).toLocaleDateString();
+            const dungeonLabel = run.dungeonName || 'Unknown';
+
+            html += `
+                <div style="
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    padding: 4px 0;
+                    border-bottom: 1px solid #333;
+                    font-size: 10px;
+                " data-run-timestamp="${run.timestamp}">
+                    <span style="color: #aaa; min-width: 25px;">#${runNumber}</span>
+                    <span style="color: #fff; flex: 1; text-align: center;">
+                        ${timeStr} <span style="color: #888; font-size: 9px;">(${date})</span>
+                    </span>
+                    <span style="color: #888; margin-right: 6px; font-size: 9px;">${dungeonLabel}</span>
+                    <button class="mwi-dt-delete-run" style="
+                        background: none;
+                        border: 1px solid #ff6b6b;
+                        color: #ff6b6b;
+                        cursor: pointer;
+                        font-size: 9px;
+                        padding: 1px 4px;
+                        border-radius: 2px;
+                        font-weight: bold;
+                    " title="Delete this run">✕</button>
+                </div>
+            `;
+        });
+        return html;
+    }
+
+    /**
+     * Update run history list (OLD METHOD - KEPT FOR COMPATIBILITY)
      * @param {string} dungeonHrid - Dungeon action HRID
      * @param {number} tier - Difficulty tier
      * @param {Array} runs - Run history array
      */
-    updateRunHistory(dungeonHrid, tier, runs) {
+    updateRunHistoryOld(dungeonHrid, tier, runs) {
         const runList = document.getElementById('mwi-dt-run-list');
         if (!runList) return;
 
@@ -1029,21 +1261,6 @@ class DungeonTrackerUI {
             const runNumber = runs.length - index; // Count down from most recent
             const timeStr = this.formatTime(run.totalTime);
 
-            // Determine validation icon and color
-            let validationIcon = '';
-            let validationColor = '';
-            let validationTitle = '';
-
-            if (run.validated) {
-                validationIcon = '✓';
-                validationColor = '#5fda5f'; // Green
-                validationTitle = 'Server-validated duration';
-            } else {
-                validationIcon = '?';
-                validationColor = '#888'; // Gray
-                validationTitle = 'Duration unverified (solo run or no party messages)';
-            }
-
             html += `
                 <div style="
                     display: flex;
@@ -1055,7 +1272,6 @@ class DungeonTrackerUI {
                     <span style="color: #aaa; min-width: 30px;">#${runNumber}</span>
                     <span style="color: #fff; flex: 1; text-align: center;">
                         ${timeStr}
-                        <span style="color: ${validationColor}; margin-left: 4px; font-weight: bold;" title="${validationTitle}">${validationIcon}</span>
                     </span>
                     <button class="mwi-dt-delete-run" style="
                         background: none;
@@ -1141,4 +1357,3 @@ class DungeonTrackerUI {
 const dungeonTrackerUI = new DungeonTrackerUI();
 
 export default dungeonTrackerUI;
-export { DungeonTrackerUI };

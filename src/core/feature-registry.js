@@ -37,7 +37,6 @@ import enhancementUI from '../features/enhancement/enhancement-ui.js';
 import emptyQueueNotification from '../features/notifications/empty-queue-notification.js';
 import dungeonTracker from '../features/combat/dungeon-tracker.js';
 import dungeonTrackerUI from '../features/combat/dungeon-tracker-ui.js';
-import dungeonTrackerPartyChat from '../features/combat/dungeon-tracker-party-chat.js';
 import dungeonTrackerChatAnnotations from '../features/combat/dungeon-tracker-chat-annotations.js';
 import combatSummary from '../features/combat/combat-summary.js';
 
@@ -225,7 +224,6 @@ const featureRegistry = [
             console.log('[Feature Registry] Initializing Dungeon Tracker...');
             dungeonTracker.initialize();
             dungeonTrackerUI.initialize();
-            dungeonTrackerPartyChat.initialize();
             dungeonTrackerChatAnnotations.initialize();
             console.log('[Feature Registry] Dungeon Tracker initialization complete');
         },

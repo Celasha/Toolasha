@@ -567,6 +567,3 @@ class Config {
 const config = new Config();
 
 export default config;
-
-// Also export the class for testing
-export { Config };

@@ -175,6 +175,8 @@ class TooltipPrices {
             if (evData) {
                 this.injectExpectedValueDisplay(tooltipElement, evData, isCollectionTooltip);
             }
+            // Fix tooltip overflow before returning
+            dom.fixTooltipOverflow(tooltipElement);
             return; // Skip price/profit display for containers
         }
 

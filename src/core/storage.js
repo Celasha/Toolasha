@@ -9,7 +9,7 @@ class Storage {
         this.db = null;
         this.available = false;
         this.dbName = 'ToolashaDB';
-        this.dbVersion = 5; // Bumped for teamRuns store
+        this.dbVersion = 6; // Bumped for unifiedRuns store
         this.saveDebounceTimers = new Map(); // Per-key debounce timers
         this.SAVE_DEBOUNCE_DELAY = 3000; // 3 seconds
     }
@@ -74,6 +74,11 @@ class Storage {
                 // Create combatExport store if it doesn't exist (for combat sim/milkonomy exports)
                 if (!db.objectStoreNames.contains('combatExport')) {
                     db.createObjectStore('combatExport');
+                }
+
+                // Create unifiedRuns store if it doesn't exist (for dungeon tracker unified storage)
+                if (!db.objectStoreNames.contains('unifiedRuns')) {
+                    db.createObjectStore('unifiedRuns');
                 }
             };
         });
@@ -325,6 +330,3 @@ class Storage {
 const storage = new Storage();
 
 export default storage;
-
-// Also export the class for testing
-export { Storage };
