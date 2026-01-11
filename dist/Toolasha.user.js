@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.4.917
+// @version      0.4.918
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
 // @author       Celasha and Claude, thank you to bot7420, DrDucky, Frotty, Truth_Light, AlphB, and sentientmilk for providing the basis for a lot of this. Thank you to Miku, Orvel, Jigglymoose, Incinarator, Knerd, and others for their time and help. Thank you to Steez for testing and helping me figure out where I'm wrong! Special thanks to Zaeter for the name.
 // @license      CC-BY-NC-SA-4.0
@@ -1949,7 +1949,6 @@
                 // Save battle data including party members (on combat start)
                 if (messageType === 'new_battle') {
                     await this.saveToStorage('toolasha_new_battle', message);
-                    console.log('[Toolasha] Battle data saved for Combat Sim export');
                 }
 
                 // Save profile shares (when opening party member profiles)
@@ -18979,8 +18978,6 @@
                 for (const [taskId, data] of Object.entries(savedData)) {
                     this.taskRerollData.set(parseInt(taskId), data);
                 }
-
-                console.log(`[Task Reroll Tracker] Loaded ${this.taskRerollData.size} tasks from storage`);
             } catch (error) {
                 console.error('[Task Reroll Tracker] Failed to load from storage:', error);
             }
@@ -26147,8 +26144,6 @@
                 keyCountsMap: saved.keyCountsMap || {}
             };
 
-            console.log('[Dungeon Tracker] Restored state - firstTimestamp:', this.firstKeyCountTimestamp, 'lastTimestamp:', this.lastKeyCountTimestamp);
-
             this.notifyUpdate();
             return true;
         }
@@ -26850,25 +26845,19 @@
         onActionCompleted(data) {
             const action = data.endCharacterAction;
 
-            console.log('[Dungeon Tracker] action_completed received, actionHrid:', action.actionHrid, 'wave:', action.wave, 'isDone:', action.isDone, 'isTracking:', this.isTracking);
-
             if (!this.isTracking) {
                 return;
             }
 
             // Verify this is a dungeon action
             if (!this.isDungeonAction(action.actionHrid)) {
-                console.log('[Dungeon Tracker] Not a dungeon action, ignoring');
                 return;
             }
 
             // Ignore non-dungeon combat (zones don't have maxCount or wave field)
             if (action.wave === undefined) {
-                console.log('[Dungeon Tracker] No wave field, ignoring (not a dungeon)');
                 return;
             }
-
-            console.log('[Dungeon Tracker] Dungeon wave completed, wave:', action.wave, 'isDone:', action.isDone);
 
             // Set dungeon info if not already set (fallback for mid-dungeon starts)
             if (!this.currentRun.dungeonHrid) {
@@ -26879,8 +26868,6 @@
                 if (dungeonInfo) {
                     this.currentRun.maxWaves = dungeonInfo.maxWaves;
                 }
-
-                console.log('[Dungeon Tracker] Set dungeon info from action_completed:', this.currentRun.dungeonHrid, 'T' + this.currentRun.tier);
 
                 // Notify update now that we have dungeon name
                 this.notifyUpdate();
@@ -26896,14 +26883,11 @@
             const actualWaveNumber = action.wave === 0 ? this.currentRun.currentWave : action.wave;
             this.currentRun.wavesCompleted = actualWaveNumber;
 
-            console.log('[Dungeon Tracker] Wave', action.wave, 'completed in', waveTime + 'ms', 'Total waves completed:', this.currentRun.wavesCompleted + '/' + this.currentRun.maxWaves);
-
             // Save state after wave completion
             this.saveInProgressRun();
 
             // Check if dungeon is complete
             if (action.isDone) {
-                console.log('[Dungeon Tracker] action.isDone=true, checking completion...');
                 // Check if this was a successful completion (all waves done) or early exit
                 const allWavesCompleted = this.currentRun.maxWaves &&
                                           this.currentRun.wavesCompleted >= this.currentRun.maxWaves;
@@ -26918,7 +26902,6 @@
                     this.resetTracking();
                 }
             } else {
-                console.log('[Dungeon Tracker] Wave completed, continuing to next wave');
                 this.notifyUpdate();
             }
         }
@@ -30975,7 +30958,7 @@
         const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
         targetWindow.Toolasha = {
-            version: '0.4.917',
+            version: '0.4.918',
 
             // Feature toggle API (for users to manage settings via console)
             features: {

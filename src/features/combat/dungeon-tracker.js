@@ -158,8 +158,6 @@ class DungeonTracker {
             keyCountsMap: saved.keyCountsMap || {}
         };
 
-        console.log('[Dungeon Tracker] Restored state - firstTimestamp:', this.firstKeyCountTimestamp, 'lastTimestamp:', this.lastKeyCountTimestamp);
-
         this.notifyUpdate();
         return true;
     }
@@ -861,25 +859,19 @@ class DungeonTracker {
     onActionCompleted(data) {
         const action = data.endCharacterAction;
 
-        console.log('[Dungeon Tracker] action_completed received, actionHrid:', action.actionHrid, 'wave:', action.wave, 'isDone:', action.isDone, 'isTracking:', this.isTracking);
-
         if (!this.isTracking) {
             return;
         }
 
         // Verify this is a dungeon action
         if (!this.isDungeonAction(action.actionHrid)) {
-            console.log('[Dungeon Tracker] Not a dungeon action, ignoring');
             return;
         }
 
         // Ignore non-dungeon combat (zones don't have maxCount or wave field)
         if (action.wave === undefined) {
-            console.log('[Dungeon Tracker] No wave field, ignoring (not a dungeon)');
             return;
         }
-
-        console.log('[Dungeon Tracker] Dungeon wave completed, wave:', action.wave, 'isDone:', action.isDone);
 
         // Set dungeon info if not already set (fallback for mid-dungeon starts)
         if (!this.currentRun.dungeonHrid) {
@@ -890,8 +882,6 @@ class DungeonTracker {
             if (dungeonInfo) {
                 this.currentRun.maxWaves = dungeonInfo.maxWaves;
             }
-
-            console.log('[Dungeon Tracker] Set dungeon info from action_completed:', this.currentRun.dungeonHrid, 'T' + this.currentRun.tier);
 
             // Notify update now that we have dungeon name
             this.notifyUpdate();
@@ -907,14 +897,11 @@ class DungeonTracker {
         const actualWaveNumber = action.wave === 0 ? this.currentRun.currentWave : action.wave;
         this.currentRun.wavesCompleted = actualWaveNumber;
 
-        console.log('[Dungeon Tracker] Wave', action.wave, 'completed in', waveTime + 'ms', 'Total waves completed:', this.currentRun.wavesCompleted + '/' + this.currentRun.maxWaves);
-
         // Save state after wave completion
         this.saveInProgressRun();
 
         // Check if dungeon is complete
         if (action.isDone) {
-            console.log('[Dungeon Tracker] action.isDone=true, checking completion...');
             // Check if this was a successful completion (all waves done) or early exit
             const allWavesCompleted = this.currentRun.maxWaves &&
                                       this.currentRun.wavesCompleted >= this.currentRun.maxWaves;
@@ -929,7 +916,6 @@ class DungeonTracker {
                 this.resetTracking();
             }
         } else {
-            console.log('[Dungeon Tracker] Wave completed, continuing to next wave');
             this.notifyUpdate();
         }
     }

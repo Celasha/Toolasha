@@ -163,7 +163,6 @@ class WebSocketHook {
             // Save battle data including party members (on combat start)
             if (messageType === 'new_battle') {
                 await this.saveToStorage('toolasha_new_battle', message);
-                console.log('[Toolasha] Battle data saved for Combat Sim export');
             }
 
             // Save profile shares (when opening party member profiles)

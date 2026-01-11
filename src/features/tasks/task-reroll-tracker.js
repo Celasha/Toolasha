@@ -48,8 +48,6 @@ class TaskRerollTracker {
             for (const [taskId, data] of Object.entries(savedData)) {
                 this.taskRerollData.set(parseInt(taskId), data);
             }
-
-            console.log(`[Task Reroll Tracker] Loaded ${this.taskRerollData.size} tasks from storage`);
         } catch (error) {
             console.error('[Task Reroll Tracker] Failed to load from storage:', error);
         }
