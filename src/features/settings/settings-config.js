@@ -82,6 +82,14 @@ export const settingsGroups = {
                 dependencies: ['actionPanel_maxProduceable', 'actionPanel_gatheringStats'],
                 help: 'Hides action panels that would result in a loss (negative profit/hr)'
             },
+            actionPanel_sortByProfit: {
+                id: 'actionPanel_sortByProfit',
+                label: 'Action panel: Sort actions by profit/hr (highest first)',
+                type: 'checkbox',
+                default: false,
+                dependencies: ['actionPanel_maxProduceable', 'actionPanel_gatheringStats'],
+                help: 'Sorts action tiles by profit/hr in descending order. Actions without profit data appear at the end.'
+            },
             requiredMaterials: {
                 id: 'requiredMaterials',
                 label: 'Action panel: Show total required and missing materials',

@@ -22,6 +22,7 @@ class MaxProduceable {
         this.actionElements = new Map(); // actionPanel → {actionHrid, displayElement}
         this.unregisterObserver = null;
         this.lastCrimsonMilkCount = null; // For debugging inventory updates
+        this.sortTimeout = null; // Debounce timer for sorting
     }
 
     /**
@@ -56,6 +57,12 @@ class MaxProduceable {
                 this.injectMaxProduceable(actionPanel);
             }
         );
+
+        // Check for existing action panels that may already be open
+        const existingPanels = document.querySelectorAll('[class*="SkillAction_skillAction"]');
+        existingPanels.forEach(panel => {
+            this.injectMaxProduceable(panel);
+        });
     }
 
     /**
@@ -87,6 +94,8 @@ class MaxProduceable {
             });
             // Update with fresh inventory data
             this.updateCount(actionPanel);
+            // Trigger debounced sort after panels are loaded
+            this.scheduleSortIfEnabled();
             return;
         }
 
@@ -123,6 +132,29 @@ class MaxProduceable {
 
         // Initial update
         this.updateCount(actionPanel);
+
+        // Trigger debounced sort after panels are loaded
+        this.scheduleSortIfEnabled();
+    }
+
+    /**
+     * Schedule a sort to run after a short delay (debounced)
+     */
+    scheduleSortIfEnabled() {
+        if (!config.getSetting('actionPanel_sortByProfit')) {
+            return;
+        }
+
+        // Clear existing timeout
+        if (this.sortTimeout) {
+            clearTimeout(this.sortTimeout);
+        }
+
+        // Schedule new sort after 500ms of inactivity
+        this.sortTimeout = setTimeout(() => {
+            this.sortPanelsByProfit();
+            this.sortTimeout = null;
+        }, 500);
     }
 
     /**
@@ -242,6 +274,9 @@ class MaxProduceable {
         const expData = calculateExpPerHour(data.actionHrid);
         const expPerHour = expData?.expPerHour || null;
 
+        // Store profit value for sorting
+        data.profitPerHour = profitPerHour;
+
         // Check if we should hide actions with negative profit
         const hideNegativeProfit = config.getSetting('actionPanel_hideNegativeProfit');
         if (hideNegativeProfit && profitPerHour !== null && profitPerHour < 0) {
@@ -285,7 +320,7 @@ class MaxProduceable {
     /**
      * Update all counts
      */
-    updateAllCounts() {
+    async updateAllCounts() {
         // Get inventory once for all calculations (like MWIT-E does)
         const inventory = dataManager.getInventory();
 
@@ -294,13 +329,65 @@ class MaxProduceable {
         }
 
         // Clean up stale references and update valid ones
+        const updatePromises = [];
         for (const actionPanel of [...this.actionElements.keys()]) {
             if (document.body.contains(actionPanel)) {
-                this.updateCount(actionPanel, inventory);
+                updatePromises.push(this.updateCount(actionPanel, inventory));
             } else {
                 // Panel no longer in DOM, remove from tracking
                 this.actionElements.delete(actionPanel);
             }
+        }
+
+        // Wait for all updates to complete
+        await Promise.all(updatePromises);
+
+        // Sort panels if setting is enabled
+        if (config.getSetting('actionPanel_sortByProfit')) {
+            this.sortPanelsByProfit();
+        }
+    }
+
+    /**
+     * Sort action panels by profit/hr (highest first)
+     */
+    sortPanelsByProfit() {
+        // Group panels by their parent container
+        const containerMap = new Map();
+
+        for (const [actionPanel, data] of this.actionElements.entries()) {
+            if (!document.body.contains(actionPanel)) continue;
+
+            const container = actionPanel.parentElement;
+            if (!container) continue;
+
+            if (!containerMap.has(container)) {
+                containerMap.set(container, []);
+            }
+
+            // Extract profit value from the data we already have
+            const profitPerHour = data.profitPerHour ?? null;
+
+            containerMap.get(container).push({
+                panel: actionPanel,
+                profit: profitPerHour
+            });
+        }
+
+        // Sort and reorder each container
+        for (const [container, panels] of containerMap.entries()) {
+            // Sort by profit (descending), null values go to end
+            panels.sort((a, b) => {
+                if (a.profit === null && b.profit === null) return 0;
+                if (a.profit === null) return 1;
+                if (b.profit === null) return -1;
+                return b.profit - a.profit;
+            });
+
+            // Reorder DOM elements
+            panels.forEach(({panel}) => {
+                container.appendChild(panel);
+            });
         }
     }
 
