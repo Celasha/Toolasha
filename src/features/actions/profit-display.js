@@ -444,8 +444,8 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
             // Build material line with embedded Artisan information
             let materialText = `• ${material.itemName}: ${amountPerHour.toFixed(1)}/hr`;
 
-            // Add Artisan reduction info if present
-            if (profitData.artisanBonus > 0 && material.baseAmount) {
+            // Add Artisan reduction info if present (only show if actually reduced)
+            if (profitData.artisanBonus > 0 && material.baseAmount && material.amount !== material.baseAmount) {
                 const baseAmountPerHour = material.baseAmount * profitData.actionsPerHour;
                 materialText += ` (${baseAmountPerHour.toFixed(1)} base -${(profitData.artisanBonus * 100).toFixed(1)}% 🍵)`;
             }

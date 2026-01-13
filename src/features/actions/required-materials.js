@@ -130,16 +130,18 @@ class RequiredMaterials {
                 const invValue = this.parseAmount(invText);
 
                 // Get base requirement from action details (not from UI - UI rounds the value)
-                const baseMaterialCount = baseMaterialRequirements[materialIndex];
-                if (!baseMaterialCount || baseMaterialCount <= 0) {
+                const materialReq = baseMaterialRequirements[materialIndex];
+                if (!materialReq || materialReq.count <= 0) {
                     materialIndex++;
                     return;
                 }
 
-                // Apply artisan reduction to get actual materials per action
+                // Apply artisan reduction ONLY to regular materials (not upgrade items)
                 // Materials are consumed PER ACTION
                 // Efficiency gives bonus actions for FREE (no material cost)
-                const materialsPerAction = baseMaterialCount * (1 - artisanBonus);
+                const materialsPerAction = materialReq.isUpgradeItem
+                    ? materialReq.count
+                    : materialReq.count * (1 - artisanBonus);
 
                 // Calculate total materials needed for queued actions
                 const totalRequired = Math.ceil(materialsPerAction * numActions);
@@ -205,12 +207,33 @@ class RequiredMaterials {
                 }
             }
 
-            if (!actionDetails || !actionDetails.inputItems) {
+            if (!actionDetails) {
                 return [];
             }
 
-            // Return array of base material counts in order
-            return actionDetails.inputItems.map(item => item.count || 0);
+            const requirements = [];
+
+            // Add upgrade item first if it exists (shown first in UI)
+            // Upgrade items are NOT affected by Artisan Tea
+            if (actionDetails.upgradeItemHrid) {
+                requirements.push({
+                    count: 1,
+                    isUpgradeItem: true  // Flag to skip artisan reduction
+                });
+            }
+
+            // Add regular input items (affected by Artisan Tea)
+            if (actionDetails.inputItems && actionDetails.inputItems.length > 0) {
+                actionDetails.inputItems.forEach(item => {
+                    requirements.push({
+                        count: item.count || 0,
+                        isUpgradeItem: false
+                    });
+                });
+            }
+
+            // Return array of requirement objects in order
+            return requirements;
 
         } catch (error) {
             console.error('[Required Materials] Error getting base requirements:', error);

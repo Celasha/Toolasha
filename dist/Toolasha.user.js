@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.4.923
+// @version      0.4.924
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
 // @author       Celasha and Claude, thank you to bot7420, DrDucky, Frotty, Truth_Light, AlphB, and sentientmilk for providing the basis for a lot of this. Thank you to Miku, Orvel, Jigglymoose, Incinarator, Knerd, and others for their time and help. Thank you to Steez for testing and helping me figure out where I'm wrong! Special thanks to Zaeter for the name.
 // @license      CC-BY-NC-SA-4.0
@@ -5289,8 +5289,8 @@
                         materialPrice = 1;
                     }
 
-                    // Apply artisan reduction (upgrade items count as 1 item)
-                    const reducedAmount = 1 * (1 - artisanBonus);
+                    // Upgrade items are NOT affected by Artisan Tea (only regular inputItems are)
+                    const reducedAmount = 1;
 
                     costs.push({
                         itemHrid: actionDetails.upgradeItemHrid,
@@ -10694,8 +10694,8 @@
                 // Build material line with embedded Artisan information
                 let materialText = `• ${material.itemName}: ${amountPerHour.toFixed(1)}/hr`;
 
-                // Add Artisan reduction info if present
-                if (profitData.artisanBonus > 0 && material.baseAmount) {
+                // Add Artisan reduction info if present (only show if actually reduced)
+                if (profitData.artisanBonus > 0 && material.baseAmount && material.amount !== material.baseAmount) {
                     const baseAmountPerHour = material.baseAmount * profitData.actionsPerHour;
                     materialText += ` (${baseAmountPerHour.toFixed(1)} base -${(profitData.artisanBonus * 100).toFixed(1)}% 🍵)`;
                 }
@@ -13828,10 +13828,10 @@
                     const availableAmount = upgradeItem?.count || 0;
                     const baseRequirement = 1; // Upgrade items always require exactly 1
 
-                    // Apply Artisan reduction
+                    // Upgrade items are NOT affected by Artisan Tea (only regular inputItems are)
                     // Materials are consumed PER ACTION (not per attempt)
                     // Efficiency gives bonus actions for FREE (no material cost)
-                    const materialsPerAction = baseRequirement * (1 - artisanBonus);
+                    const materialsPerAction = baseRequirement;
 
                     if (materialsPerAction > 0) {
                         const possibleActions = Math.floor(availableAmount / materialsPerAction);
@@ -15473,16 +15473,18 @@
                     const invValue = this.parseAmount(invText);
 
                     // Get base requirement from action details (not from UI - UI rounds the value)
-                    const baseMaterialCount = baseMaterialRequirements[materialIndex];
-                    if (!baseMaterialCount || baseMaterialCount <= 0) {
+                    const materialReq = baseMaterialRequirements[materialIndex];
+                    if (!materialReq || materialReq.count <= 0) {
                         materialIndex++;
                         return;
                     }
 
-                    // Apply artisan reduction to get actual materials per action
+                    // Apply artisan reduction ONLY to regular materials (not upgrade items)
                     // Materials are consumed PER ACTION
                     // Efficiency gives bonus actions for FREE (no material cost)
-                    const materialsPerAction = baseMaterialCount * (1 - artisanBonus);
+                    const materialsPerAction = materialReq.isUpgradeItem
+                        ? materialReq.count
+                        : materialReq.count * (1 - artisanBonus);
 
                     // Calculate total materials needed for queued actions
                     const totalRequired = Math.ceil(materialsPerAction * numActions);
@@ -15548,12 +15550,33 @@
                     }
                 }
 
-                if (!actionDetails || !actionDetails.inputItems) {
+                if (!actionDetails) {
                     return [];
                 }
 
-                // Return array of base material counts in order
-                return actionDetails.inputItems.map(item => item.count || 0);
+                const requirements = [];
+
+                // Add upgrade item first if it exists (shown first in UI)
+                // Upgrade items are NOT affected by Artisan Tea
+                if (actionDetails.upgradeItemHrid) {
+                    requirements.push({
+                        count: 1,
+                        isUpgradeItem: true  // Flag to skip artisan reduction
+                    });
+                }
+
+                // Add regular input items (affected by Artisan Tea)
+                if (actionDetails.inputItems && actionDetails.inputItems.length > 0) {
+                    actionDetails.inputItems.forEach(item => {
+                        requirements.push({
+                            count: item.count || 0,
+                            isUpgradeItem: false
+                        });
+                    });
+                }
+
+                // Return array of requirement objects in order
+                return requirements;
 
             } catch (error) {
                 console.error('[Required Materials] Error getting base requirements:', error);
@@ -32261,7 +32284,7 @@
         const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
         targetWindow.Toolasha = {
-            version: '0.4.923',
+            version: '0.4.924',
 
             // Feature toggle API (for users to manage settings via console)
             features: {

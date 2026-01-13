@@ -747,10 +747,10 @@ class QuickInputButtons {
                 const availableAmount = upgradeItem?.count || 0;
                 const baseRequirement = 1; // Upgrade items always require exactly 1
 
-                // Apply Artisan reduction
+                // Upgrade items are NOT affected by Artisan Tea (only regular inputItems are)
                 // Materials are consumed PER ACTION (not per attempt)
                 // Efficiency gives bonus actions for FREE (no material cost)
-                const materialsPerAction = baseRequirement * (1 - artisanBonus);
+                const materialsPerAction = baseRequirement;
 
                 if (materialsPerAction > 0) {
                     const possibleActions = Math.floor(availableAmount / materialsPerAction);

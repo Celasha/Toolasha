@@ -380,8 +380,8 @@ class ProfitCalculator {
                     materialPrice = 1;
                 }
 
-                // Apply artisan reduction (upgrade items count as 1 item)
-                const reducedAmount = 1 * (1 - artisanBonus);
+                // Upgrade items are NOT affected by Artisan Tea (only regular inputItems are)
+                const reducedAmount = 1;
 
                 costs.push({
                     itemHrid: actionDetails.upgradeItemHrid,
