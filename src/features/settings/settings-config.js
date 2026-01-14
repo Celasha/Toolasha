@@ -620,11 +620,11 @@ export const settingsGroups = {
             },
             market_showListingAge: {
                 id: 'market_showListingAge',
-                label: 'Market: Show listing age',
+                label: 'Market: Show listing age on My Listings',
                 type: 'checkbox',
                 default: false,
                 dependencies: ['market_showListingPrices'],
-                help: 'Display how long ago each listing was created (e.g., "3h 45m")'
+                help: 'Display how long ago each listing was created on the My Listings tab (e.g., "3h 45m")'
             },
             market_showEstimatedListingAge: {
                 id: 'market_showEstimatedListingAge',
