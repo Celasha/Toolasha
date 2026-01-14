@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.4.927
+// @version      0.4.928
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
 // @author       Celasha and Claude, thank you to bot7420, DrDucky, Frotty, Truth_Light, AlphB, and sentientmilk for providing the basis for a lot of this. Thank you to Miku, Orvel, Jigglymoose, Incinarator, Knerd, and others for their time and help. Thank you to Steez for testing and helping me figure out where I'm wrong! Special thanks to Zaeter for the name.
 // @license      CC-BY-NC-SA-4.0
@@ -728,16 +728,7 @@
                     label: 'Show bid/ask prices on item icons',
                     type: 'checkbox',
                     default: false,
-                    help: 'Displays stack value on inventory items (works independently of sorting)'
-                },
-                invBadgePrices_type: {
-                    id: 'invBadgePrices_type',
-                    label: 'Badge price type to display',
-                    type: 'select',
-                    default: 'Ask',
-                    options: ['None', 'Ask', 'Bid'],
-                    dependencies: ['invBadgePrices'],
-                    help: 'Choose which price to show on badges: Ask (buying price), Bid (selling price), or None (hide badges)'
+                    help: 'Displays both bid (left) and ask (right) prices on inventory items'
                 },
                 profitCalc_pricingMode: {
                     id: 'profitCalc_pricingMode',
@@ -1175,6 +1166,20 @@
                     type: 'color',
                     default: '#FFFFFF',
                     help: 'Color for remaining XP text below skill bars in left navigation'
+                },
+                color_invBadge_bid: {
+                    id: 'color_invBadge_bid',
+                    label: 'Inventory Badge - Bid Price',
+                    type: 'color',
+                    default: '#ef4444',
+                    help: 'Color for bid prices on inventory item badges (left side)'
+                },
+                color_invBadge_ask: {
+                    id: 'color_invBadge_ask',
+                    label: 'Inventory Badge - Ask Price',
+                    type: 'color',
+                    default: '#22c55e',
+                    help: 'Color for ask prices on inventory item badges (right side)'
                 }
             }
         }
@@ -1815,6 +1820,8 @@
             this.COLOR_GOLD = this.getSettingValue('color_gold', "#ffa500");
             this.COLOR_ACCENT = this.getSettingValue('color_accent', "#22c55e");
             this.COLOR_REMAINING_XP = this.getSettingValue('color_remaining_xp', "#FFFFFF");
+            this.COLOR_INVBADGE_BID = this.getSettingValue('color_invBadge_bid', "#ef4444");
+            this.COLOR_INVBADGE_ASK = this.getSettingValue('color_invBadge_ask', "#22c55e");
 
             // Set legacy SCRIPT_COLOR_MAIN to accent color
             this.SCRIPT_COLOR_MAIN = this.COLOR_ACCENT;
@@ -15707,6 +15714,38 @@
         constructor() {
             this.observedInputs = new Map(); // input element → cleanup function
             this.unregisterObserver = null;
+            this.isInitialized = false;
+        }
+
+        /**
+         * Setup setting change listener (always active, even when feature is disabled)
+         */
+        setupSettingListener() {
+            // Listen for main toggle changes
+            config.onSettingChange('actionPanel_outputTotals', (enabled) => {
+                if (enabled) {
+                    this.initialize();
+                } else {
+                    this.disable();
+                }
+            });
+
+            // Listen for color changes
+            config.onSettingChange('color_info', () => {
+                if (this.isInitialized) {
+                    this.refresh();
+                }
+            });
+            config.onSettingChange('color_essence', () => {
+                if (this.isInitialized) {
+                    this.refresh();
+                }
+            });
+            config.onSettingChange('color_warning', () => {
+                if (this.isInitialized) {
+                    this.refresh();
+                }
+            });
         }
 
         /**
@@ -15717,7 +15756,13 @@
                 return;
             }
 
+            // Prevent multiple initializations
+            if (this.isInitialized) {
+                return;
+            }
+
             this.setupObserver();
+            this.isInitialized = true;
         }
 
         /**
@@ -15948,6 +15993,37 @@
         }
 
         /**
+         * Refresh colors (called when settings change)
+         */
+        refresh() {
+            // Find all output total elements and update their colors based on their type
+            const outputTotalElements = document.querySelectorAll('.mwi-output-total');
+
+            outputTotalElements.forEach(element => {
+                // Check the parent text to determine the type
+                const parent = element.parentElement;
+                if (!parent) return;
+
+                const parentText = parent.textContent.toLowerCase();
+
+                // Determine color based on item type
+                let color = config.COLOR_INFO; // Default blue for outputs
+
+                if (parentText.includes('essence')) {
+                    color = config.COLOR_ESSENCE; // Purple for essences
+                } else {
+                    // Check for rare drops (parent should have percentage)
+                    const percentMatch = parentText.match(/([\d\.]+)%/);
+                    if (percentMatch && parseFloat(percentMatch[1]) < 5) {
+                        color = config.COLOR_WARNING; // Orange for rares (< 5% drop)
+                    }
+                }
+
+                element.style.color = color;
+            });
+        }
+
+        /**
          * Disable the output totals display
          */
         disable() {
@@ -15965,11 +16041,16 @@
 
             // Remove all injected elements
             document.querySelectorAll('.mwi-output-total').forEach(el => el.remove());
+
+            this.isInitialized = false;
         }
     }
 
     // Create and export singleton instance
     const outputTotals = new OutputTotals();
+
+    // Setup setting listener immediately (before initialize)
+    outputTotals.setupSettingListener();
 
     /**
      * Max Produceable Display Module
@@ -15989,6 +16070,38 @@
             this.unregisterObserver = null;
             this.lastCrimsonMilkCount = null; // For debugging inventory updates
             this.sortTimeout = null; // Debounce timer for sorting
+            this.isInitialized = false;
+        }
+
+        /**
+         * Setup setting change listener (always active, even when feature is disabled)
+         */
+        setupSettingListener() {
+            // Listen for main toggle changes
+            config.onSettingChange('actionPanel_maxProduceable', (enabled) => {
+                if (enabled) {
+                    this.initialize();
+                } else {
+                    this.disable();
+                }
+            });
+
+            // Listen for color changes
+            config.onSettingChange('color_profit', () => {
+                if (this.isInitialized) {
+                    this.refresh();
+                }
+            });
+            config.onSettingChange('color_loss', () => {
+                if (this.isInitialized) {
+                    this.refresh();
+                }
+            });
+            config.onSettingChange('color_warning', () => {
+                if (this.isInitialized) {
+                    this.refresh();
+                }
+            });
         }
 
         /**
@@ -15996,6 +16109,11 @@
          */
         initialize() {
             if (!config.getSetting('actionPanel_maxProduceable')) {
+                return;
+            }
+
+            // Prevent multiple initializations
+            if (this.isInitialized) {
                 return;
             }
 
@@ -16009,6 +16127,8 @@
             dataManager.on('action_completed', () => {
                 this.updateAllCounts();
             });
+
+            this.isInitialized = true;
         }
 
         /**
@@ -16371,6 +16491,18 @@
         }
 
         /**
+         * Refresh colors (called when settings change)
+         */
+        refresh() {
+            // Update all existing displays with new colors
+            for (const [actionPanel, data] of this.actionElements.entries()) {
+                if (document.body.contains(actionPanel)) {
+                    this.updateCount(actionPanel);
+                }
+            }
+        }
+
+        /**
          * Disable the max produceable display
          */
         disable() {
@@ -16382,11 +16514,16 @@
             // Remove all injected elements
             document.querySelectorAll('.mwi-max-produceable').forEach(el => el.remove());
             this.actionElements.clear();
+
+            this.isInitialized = false;
         }
     }
 
     // Create and export singleton instance
     const maxProduceable = new MaxProduceable();
+
+    // Setup setting listener immediately (before initialize)
+    maxProduceable.setupSettingListener();
 
     /**
      * Gathering Stats Display Module
@@ -16401,6 +16538,33 @@
             this.actionElements = new Map(); // actionPanel → {actionHrid, displayElement}
             this.unregisterObserver = null;
             this.sortTimeout = null; // Debounce timer for sorting
+            this.isInitialized = false;
+        }
+
+        /**
+         * Setup setting change listener (always active, even when feature is disabled)
+         */
+        setupSettingListener() {
+            // Listen for main toggle changes
+            config.onSettingChange('actionPanel_gatheringStats', (enabled) => {
+                if (enabled) {
+                    this.initialize();
+                } else {
+                    this.disable();
+                }
+            });
+
+            // Listen for color changes
+            config.onSettingChange('color_profit', () => {
+                if (this.isInitialized) {
+                    this.refresh();
+                }
+            });
+            config.onSettingChange('color_loss', () => {
+                if (this.isInitialized) {
+                    this.refresh();
+                }
+            });
         }
 
         /**
@@ -16408,6 +16572,11 @@
          */
         initialize() {
             if (!config.getSetting('actionPanel_gatheringStats')) {
+                return;
+            }
+
+            // Prevent multiple initializations
+            if (this.isInitialized) {
                 return;
             }
 
@@ -16421,6 +16590,8 @@
             dataManager.on('action_completed', () => {
                 this.updateAllStats();
             });
+
+            this.isInitialized = true;
         }
 
         /**
@@ -16687,6 +16858,18 @@
         }
 
         /**
+         * Refresh colors (called when settings change)
+         */
+        refresh() {
+            // Update all existing stat displays with new colors
+            for (const [actionPanel, data] of this.actionElements.entries()) {
+                if (document.body.contains(actionPanel)) {
+                    this.updateStats(actionPanel);
+                }
+            }
+        }
+
+        /**
          * Disable the gathering stats display
          */
         disable() {
@@ -16698,11 +16881,16 @@
             // Remove all injected elements
             document.querySelectorAll('.mwi-gathering-stats').forEach(el => el.remove());
             this.actionElements.clear();
+
+            this.isInitialized = false;
         }
     }
 
     // Create and export singleton instance
     const gatheringStats = new GatheringStats();
+
+    // Setup setting listener immediately (before initialize)
+    gatheringStats.setupSettingListener();
 
     /**
      * DOM Selector Constants
@@ -16845,10 +17033,42 @@
             this.initialized = false;
             this.observers = [];
             this.processedPanels = new WeakSet();
+            this.isInitialized = false;
+        }
+
+        /**
+         * Setup setting change listener (always active, even when feature is disabled)
+         */
+        setupSettingListener() {
+            // Listen for main toggle changes
+            config.onSettingChange('requiredMaterials', (enabled) => {
+                if (enabled) {
+                    this.initialize();
+                } else {
+                    this.cleanup();
+                }
+            });
+
+            // Listen for color changes
+            config.onSettingChange('color_profit', () => {
+                if (this.isInitialized) {
+                    this.refresh();
+                }
+            });
+            config.onSettingChange('color_loss', () => {
+                if (this.isInitialized) {
+                    this.refresh();
+                }
+            });
         }
 
         initialize() {
             if (this.initialized) return;
+
+            // Prevent multiple initializations
+            if (this.isInitialized) {
+                return;
+            }
 
             // Watch for action panels appearing
             const unregister = domObserver.onClass(
@@ -16862,6 +17082,7 @@
             this.processActionPanels();
 
             this.initialized = true;
+            this.isInitialized = true;
         }
 
         processActionPanels() {
@@ -17141,6 +17362,24 @@
             return parseFloat(text.replace(/,/g, '')) || 0;
         }
 
+        /**
+         * Refresh colors (called when settings change)
+         */
+        refresh() {
+            // Find all required materials displays and update their colors
+            const requiredMaterialsElements = document.querySelectorAll('.mwi-required-materials');
+
+            requiredMaterialsElements.forEach(element => {
+                // Parse the text to determine if it's missing or sufficient
+                const text = element.textContent;
+                if (text.includes('Missing:')) {
+                    element.style.color = config.COLOR_LOSS;
+                } else {
+                    element.style.color = config.COLOR_PROFIT;
+                }
+            });
+        }
+
         cleanup() {
             this.observers.forEach(unregister => unregister());
             this.observers = [];
@@ -17149,10 +17388,14 @@
             document.querySelectorAll('.mwi-required-materials').forEach(el => el.remove());
 
             this.initialized = false;
+            this.isInitialized = false;
         }
     }
 
     const requiredMaterials = new RequiredMaterials();
+
+    // Setup setting listener immediately (before initialize)
+    requiredMaterials.setupSettingListener();
 
     /**
      * Ability Book Calculator
@@ -17452,6 +17695,38 @@
             this.monsterZoneCache = null; // Cache monster name -> zone index mapping
             this.taskMapIndexEnabled = false;
             this.mapIndexEnabled = false;
+            this.isInitialized = false;
+        }
+
+        /**
+         * Setup setting change listener (always active, even when feature is disabled)
+         */
+        setupSettingListener() {
+            // Listen for main toggle changes
+            config.onSettingChange('mapIndex', (enabled) => {
+                this.mapIndexEnabled = enabled;
+                if (enabled || this.taskMapIndexEnabled) {
+                    this.initialize();
+                } else if (!this.taskMapIndexEnabled) {
+                    this.disable();
+                }
+            });
+
+            config.onSettingChange('taskMapIndex', (enabled) => {
+                this.taskMapIndexEnabled = enabled;
+                if (enabled || this.mapIndexEnabled) {
+                    this.initialize();
+                } else if (!this.mapIndexEnabled) {
+                    this.disable();
+                }
+            });
+
+            // Listen for color changes
+            config.onSettingChange('color_accent', () => {
+                if (this.isInitialized) {
+                    this.refresh();
+                }
+            });
         }
 
         /**
@@ -17463,6 +17738,18 @@
             this.mapIndexEnabled = config.getSetting('mapIndex');
 
             if (!this.taskMapIndexEnabled && !this.mapIndexEnabled) {
+                return;
+            }
+
+            // Prevent multiple initializations
+            if (this.isInitialized) {
+                // Re-render if settings changed
+                if (this.taskMapIndexEnabled) {
+                    this.addTaskIndices();
+                }
+                if (this.mapIndexEnabled) {
+                    this.addMapIndices();
+                }
                 return;
             }
 
@@ -17494,6 +17781,7 @@
             }
 
             this.isActive = true;
+            this.isInitialized = true;
         }
 
         /**
@@ -17676,6 +17964,23 @@
         }
 
         /**
+         * Refresh colors (called when settings change)
+         */
+        refresh() {
+            // Update color for all task indices
+            const taskIndices = document.querySelectorAll('span.script_taskMapIndex');
+            taskIndices.forEach(span => {
+                span.style.color = config.COLOR_ACCENT;
+            });
+
+            // Update color for all map indices
+            const mapIndices = document.querySelectorAll('span.script_mapIndex');
+            mapIndices.forEach(span => {
+                span.style.color = config.COLOR_ACCENT;
+            });
+        }
+
+        /**
          * Disable the feature
          */
         disable() {
@@ -17699,11 +18004,15 @@
             // Clear cache
             this.monsterZoneCache = null;
             this.isActive = false;
+            this.isInitialized = false;
         }
     }
 
     // Create and export singleton instance
     const zoneIndices = new ZoneIndices();
+
+    // Setup setting listener immediately (before initialize)
+    zoneIndices.setupSettingListener();
 
     /**
      * Ability Cost Calculator Utility
@@ -19089,6 +19398,28 @@
         constructor() {
             this.isActive = false;
             this.currentPanel = null;
+            this.isInitialized = false;
+        }
+
+        /**
+         * Setup setting change listener (always active, even when feature is disabled)
+         */
+        setupSettingListener() {
+            // Listen for main toggle changes
+            config.onSettingChange('combatScore', (enabled) => {
+                if (enabled) {
+                    this.initialize();
+                } else {
+                    this.disable();
+                }
+            });
+
+            // Listen for color changes
+            config.onSettingChange('color_accent', () => {
+                if (this.isInitialized) {
+                    this.refresh();
+                }
+            });
         }
 
         /**
@@ -19100,12 +19431,18 @@
                 return;
             }
 
+            // Prevent multiple initializations
+            if (this.isInitialized) {
+                return;
+            }
+
             // Listen for profile_shared WebSocket messages
             webSocketHook.on('profile_shared', (data) => {
                 this.handleProfileShared(data);
             });
 
             this.isActive = true;
+            this.isInitialized = true;
         }
 
         /**
@@ -19527,6 +19864,32 @@
         }
 
         /**
+         * Refresh colors (called when settings change)
+         */
+        refresh() {
+            if (!this.currentPanel) {
+                return;
+            }
+
+            // Update player name color
+            const playerNameElement = this.currentPanel.querySelector('div[style*="font-weight: bold"]');
+            if (playerNameElement) {
+                playerNameElement.style.color = config.COLOR_ACCENT;
+            }
+
+            // Update button backgrounds
+            const combatSimBtn = this.currentPanel.querySelector('#mwi-combat-sim-export-btn');
+            const milkonomyBtn = this.currentPanel.querySelector('#mwi-milkonomy-export-btn');
+
+            if (combatSimBtn) {
+                combatSimBtn.style.background = config.COLOR_ACCENT;
+            }
+            if (milkonomyBtn) {
+                milkonomyBtn.style.background = config.COLOR_ACCENT;
+            }
+        }
+
+        /**
          * Disable the feature
          */
         disable() {
@@ -19536,11 +19899,15 @@
             }
 
             this.isActive = false;
+            this.isInitialized = false;
         }
     }
 
     // Create and export singleton instance
     const combatScore = new CombatScore();
+
+    // Setup setting listener immediately (before initialize)
+    combatScore.setupSettingListener();
 
     /**
      * Equipment Level Display
@@ -19557,6 +19924,37 @@
             this.unregisterHandler = null;
             this.isActive = false;
             this.processedDivs = new WeakSet(); // Track already-processed divs
+            this.isInitialized = false;
+        }
+
+        /**
+         * Setup setting change listener (always active, even when feature is disabled)
+         */
+        setupSettingListener() {
+            // Listen for main toggle changes
+            config.onSettingChange('itemIconLevel', (enabled) => {
+                if (enabled) {
+                    this.initialize();
+                } else {
+                    this.disable();
+                }
+            });
+
+            // Listen for key info toggle
+            config.onSettingChange('showsKeyInfoInIcon', () => {
+                if (this.isInitialized) {
+                    // Clear processed set and re-render
+                    this.processedDivs = new WeakSet();
+                    this.addItemLevels();
+                }
+            });
+
+            // Listen for color changes
+            config.onSettingChange('color_accent', () => {
+                if (this.isInitialized) {
+                    this.refresh();
+                }
+            });
         }
 
         /**
@@ -19565,6 +19963,11 @@
         initialize() {
             // Check if feature is enabled
             if (!config.getSetting('itemIconLevel')) {
+                return;
+            }
+
+            // Prevent multiple initializations
+            if (this.isInitialized) {
                 return;
             }
 
@@ -19580,6 +19983,7 @@
             this.addItemLevels();
 
             this.isActive = true;
+            this.isInitialized = true;
         }
 
         /**
@@ -19720,12 +20124,23 @@
         }
 
         /**
+         * Refresh colors (called when settings change)
+         */
+        refresh() {
+            // Update color for all level overlays
+            const overlays = document.querySelectorAll('div.script_itemLevel');
+            overlays.forEach(overlay => {
+                overlay.style.color = config.COLOR_ACCENT;
+            });
+        }
+
+        /**
          * Disable the feature
          */
         disable() {
-            if (this.observer) {
-                this.observer.disconnect();
-                this.observer = null;
+            if (this.unregisterHandler) {
+                this.unregisterHandler();
+                this.unregisterHandler = null;
             }
 
             // Remove all level overlays
@@ -19738,11 +20153,15 @@
             this.processedDivs = new WeakSet();
 
             this.isActive = false;
+            this.isInitialized = false;
         }
     }
 
     // Create and export singleton instance
     const equipmentLevelDisplay = new EquipmentLevelDisplay();
+
+    // Setup setting listener immediately (before initialize)
+    equipmentLevelDisplay.setupSettingListener();
 
     /**
      * Alchemy Item Dimming
@@ -19917,6 +20336,28 @@
             this.isActive = false;
             this.unregisterHandlers = [];
             this.processedBars = new WeakSet();
+            this.isInitialized = false;
+        }
+
+        /**
+         * Setup setting change listener (always active, even when feature is disabled)
+         */
+        setupSettingListener() {
+            // Listen for main toggle changes
+            config.onSettingChange('expPercentage', (enabled) => {
+                if (enabled) {
+                    this.initialize();
+                } else {
+                    this.disable();
+                }
+            });
+
+            // Listen for color changes
+            config.onSettingChange('color_accent', () => {
+                if (this.isInitialized) {
+                    this.refresh();
+                }
+            });
         }
 
         /**
@@ -19927,11 +20368,18 @@
                 return;
             }
 
+            // Prevent multiple initializations
+            if (this.isInitialized) {
+                return;
+            }
+
             this.isActive = true;
             this.registerObservers();
 
             // Initial update for existing skills
             this.updateAllSkills();
+
+            this.isInitialized = true;
         }
 
         /**
@@ -20008,6 +20456,17 @@
         }
 
         /**
+         * Refresh colors (called when settings change)
+         */
+        refresh() {
+            // Update color for all existing percentage spans
+            const percentageSpans = document.querySelectorAll('.mwi-exp-percentage');
+            percentageSpans.forEach(span => {
+                span.style.color = config.COLOR_ACCENT;
+            });
+        }
+
+        /**
          * Disable the feature
          */
         disable() {
@@ -20020,11 +20479,15 @@
 
             this.processedBars.clear();
             this.isActive = false;
+            this.isInitialized = false;
         }
     }
 
     // Create and export singleton instance
     const skillExperiencePercentage = new SkillExperiencePercentage();
+
+    // Setup setting listener immediately (before initialize)
+    skillExperiencePercentage.setupSettingListener();
 
     /**
      * Task Profit Calculator
@@ -22171,6 +22634,34 @@
         }
 
         /**
+         * Setup setting change listener (always active, even when feature is disabled)
+         */
+        setupSettingListener() {
+            // Listen for main toggle changes
+            config.onSettingChange('skillRemainingXP', (enabled) => {
+                if (enabled) {
+                    this.initialize();
+                } else {
+                    this.disable();
+                }
+            });
+
+            // Listen for color changes
+            config.onSettingChange('color_remaining_xp', () => {
+                if (this.initialized) {
+                    this.refresh();
+                }
+            });
+
+            // Listen for black border toggle
+            config.onSettingChange('skillRemainingXP_blackBorder', () => {
+                if (this.initialized) {
+                    this.refresh();
+                }
+            });
+        }
+
+        /**
          * Initialize the remaining XP display
          */
         initialize() {
@@ -22355,6 +22846,33 @@
         }
 
         /**
+         * Refresh colors (called when settings change)
+         */
+        refresh() {
+            // Update all XP displays with new color/style settings
+            const xpDisplays = document.querySelectorAll('.mwi-remaining-xp');
+            const useBlackBorder = config.getSetting('skillRemainingXP_blackBorder', true);
+            const textShadow = useBlackBorder
+                ? 'text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 0 3px #000;'
+                : '';
+
+            xpDisplays.forEach(display => {
+                display.style.color = config.COLOR_REMAINING_XP;
+                display.style.cssText = `
+                font-size: 11px;
+                color: ${config.COLOR_REMAINING_XP};
+                display: block;
+                margin-top: -8px;
+                text-align: center;
+                width: 100%;
+                font-weight: 600;
+                pointer-events: none;
+                ${textShadow}
+            `;
+            });
+        }
+
+        /**
          * Disable the remaining XP display
          */
         disable() {
@@ -22376,6 +22894,9 @@
 
     // Create and export singleton instance
     const remainingXP = new RemainingXP();
+
+    // Setup setting listener immediately (before initialize)
+    remainingXP.setupSettingListener();
 
     /**
      * House Upgrade Cost Calculator
@@ -25315,12 +25836,38 @@
      */
     class InventoryBadgePrices {
         constructor() {
-            this.currentPriceType = 'none'; // 'ask', 'bid', 'none'
             this.unregisterHandlers = [];
-            this.controlsContainer = null;
             this.currentInventoryElem = null;
             this.warnedItems = new Set();
             this.isCalculating = false;
+            this.isInitialized = false;
+        }
+
+        /**
+         * Setup setting change listener (always active, even when feature is disabled)
+         */
+        setupSettingListener() {
+            // Listen for main toggle changes
+            config.onSettingChange('invBadgePrices', (enabled) => {
+                if (enabled) {
+                    this.initialize();
+                } else {
+                    this.disable();
+                }
+            });
+
+            // Listen for color changes
+            config.onSettingChange('color_invBadge_bid', () => {
+                if (this.isInitialized) {
+                    this.refresh();
+                }
+            });
+
+            config.onSettingChange('color_invBadge_ask', () => {
+                if (this.isInitialized) {
+                    this.refresh();
+                }
+            });
         }
 
         /**
@@ -25332,18 +25879,16 @@
             }
 
             // Prevent multiple initializations
-            if (this.unregisterHandlers.length > 0) {
+            if (this.isInitialized) {
                 return;
             }
 
-            // Load persisted settings
-            this.loadSettings();
+            this.isInitialized = true;
 
             // Check if inventory is already open
             const existingInv = document.querySelector('[class*="Inventory_items"]');
             if (existingInv) {
                 this.currentInventoryElem = existingInv;
-                this.injectPriceTypeControls(existingInv);
                 this.updateBadges();
             }
 
@@ -25353,7 +25898,6 @@
                 'Inventory_items',
                 (elem) => {
                     this.currentInventoryElem = elem;
-                    this.injectPriceTypeControls(elem);
                     this.updateBadges();
                 }
             );
@@ -25373,12 +25917,6 @@
 
             // Listen for market data updates
             this.setupMarketDataListener();
-
-            // Register callback for setting changes
-            config.onSettingChange('invBadgePrices_type', (newValue) => {
-                this.currentPriceType = newValue.toLowerCase();
-                this.updateBadges();
-            });
         }
 
         /**
@@ -25404,143 +25942,6 @@
                     }
                 }, retryInterval);
             }
-        }
-
-        /**
-         * Load settings from localStorage
-         */
-        loadSettings() {
-            try {
-                const saved = localStorage.getItem('toolasha_inventory_badge_prices');
-                if (saved) {
-                    const settings = JSON.parse(saved);
-                    this.currentPriceType = settings.priceType || 'none';
-                } else {
-                    // Use config value as default
-                    this.currentPriceType = config.getSettingValue('invBadgePrices_type', 'Ask').toLowerCase();
-                }
-            } catch (error) {
-                console.error('[InventoryBadgePrices] Failed to load settings:', error);
-                this.currentPriceType = 'ask';
-            }
-        }
-
-        /**
-         * Save settings to localStorage
-         */
-        saveSettings() {
-            try {
-                localStorage.setItem('toolasha_inventory_badge_prices', JSON.stringify({
-                    priceType: this.currentPriceType
-                }));
-            } catch (error) {
-                console.error('[InventoryBadgePrices] Failed to save settings:', error);
-            }
-        }
-
-        /**
-         * Inject price type controls into inventory panel
-         * @param {Element} inventoryElem - Inventory items container
-         */
-        injectPriceTypeControls(inventoryElem) {
-            this.currentInventoryElem = inventoryElem;
-
-            // Check if controls already exist
-            if (this.controlsContainer && document.body.contains(this.controlsContainer)) {
-                return;
-            }
-
-            // Create controls container
-            this.controlsContainer = document.createElement('div');
-            this.controlsContainer.className = 'mwi-badge-prices-controls';
-            this.controlsContainer.style.cssText = `
-            color: ${config.SCRIPT_COLOR_MAIN};
-            font-size: 0.875rem;
-            text-align: left;
-            margin-bottom: 8px;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        `;
-
-            // Price type label and buttons
-            const label = document.createElement('span');
-            label.textContent = 'Badge Prices: ';
-
-            const askButton = this.createPriceTypeButton('Ask', 'ask');
-            const bidButton = this.createPriceTypeButton('Bid', 'bid');
-            const noneButton = this.createPriceTypeButton('None', 'none');
-
-            // Assemble controls
-            this.controlsContainer.appendChild(label);
-            this.controlsContainer.appendChild(askButton);
-            this.controlsContainer.appendChild(bidButton);
-            this.controlsContainer.appendChild(noneButton);
-
-            // Insert before inventory
-            inventoryElem.insertAdjacentElement('beforebegin', this.controlsContainer);
-
-            // Update button states
-            this.updateButtonStates();
-        }
-
-        /**
-         * Create a price type button
-         * @param {string} label - Button label
-         * @param {string} type - Price type ('ask', 'bid', 'none')
-         * @returns {Element} Button element
-         */
-        createPriceTypeButton(label, type) {
-            const button = document.createElement('button');
-            button.textContent = label;
-            button.dataset.type = type;
-            button.style.cssText = `
-            border-radius: 3px;
-            padding: 4px 12px;
-            border: none;
-            cursor: pointer;
-            font-size: 0.875rem;
-            transition: all 0.2s;
-        `;
-
-            button.addEventListener('click', () => {
-                this.setPriceType(type);
-            });
-
-            return button;
-        }
-
-        /**
-         * Update button visual states
-         */
-        updateButtonStates() {
-            if (!this.controlsContainer) return;
-
-            const buttons = this.controlsContainer.querySelectorAll('button');
-            buttons.forEach(button => {
-                const isActive = button.dataset.type === this.currentPriceType;
-
-                if (isActive) {
-                    button.style.backgroundColor = config.SCRIPT_COLOR_MAIN;
-                    button.style.color = 'black';
-                    button.style.fontWeight = 'bold';
-                } else {
-                    button.style.backgroundColor = '#444';
-                    button.style.color = config.COLOR_TEXT_SECONDARY;
-                    button.style.fontWeight = 'normal';
-                }
-            });
-        }
-
-        /**
-         * Set price type and update badges
-         * @param {string} type - Price type ('ask', 'bid', 'none')
-         */
-        setPriceType(type) {
-            this.currentPriceType = type;
-            this.saveSettings();
-            this.updateButtonStates();
-            this.updateBadges();
         }
 
         /**
@@ -25698,7 +26099,7 @@
                         }
                     }
                 } else {
-                    // Use market price
+                    // Use market price only (no fallback to crafting/enhancement costs)
                     const key = `${itemHrid}:${enhancementLevel}`;
                     const marketPrice = priceCache.get(key);
 
@@ -25706,41 +26107,11 @@
                         askPrice = marketPrice.ask > 0 ? marketPrice.ask : 0;
                         bidPrice = marketPrice.bid > 0 ? marketPrice.bid : 0;
                     }
-
-                    // Fill in missing prices with enhancement cost for enhanced equipment
-                    if (isEquipment && enhancementLevel > 0 && (askPrice === 0 || bidPrice === 0)) {
-                        const cachedCost = networthCache.get(itemHrid, enhancementLevel);
-                        let enhancementCost = cachedCost;
-
-                        if (cachedCost === null) {
-                            const enhancementParams = getEnhancingParams();
-                            const enhancementPath = calculateEnhancementPath(itemHrid, enhancementLevel, enhancementParams);
-
-                            if (enhancementPath && enhancementPath.optimalStrategy) {
-                                enhancementCost = enhancementPath.optimalStrategy.totalCost;
-                                networthCache.set(itemHrid, enhancementLevel, enhancementCost);
-                            } else {
-                                enhancementCost = null;
-                            }
-                        }
-
-                        if (enhancementCost !== null) {
-                            if (askPrice === 0) askPrice = enhancementCost;
-                            if (bidPrice === 0) bidPrice = enhancementCost;
-                        }
-                    } else if (isEquipment && enhancementLevel === 0 && askPrice === 0 && bidPrice === 0) {
-                        // Use crafting cost for unenhanced equipment
-                        const craftingCost = this.calculateCraftingCost(itemHrid);
-                        if (craftingCost > 0) {
-                            askPrice = craftingCost;
-                            bidPrice = craftingCost;
-                        }
-                    }
                 }
 
-                // Store both values
-                itemElem.dataset.askValue = askPrice * itemCount;
-                itemElem.dataset.bidValue = bidPrice * itemCount;
+                // Store both values (per-item price, not stack total)
+                itemElem.dataset.askValue = askPrice;
+                itemElem.dataset.bidValue = bidPrice;
             }
         }
 
@@ -25797,20 +26168,22 @@
             const itemElems = this.currentInventoryElem.querySelectorAll('[class*="Item_itemContainer"]');
 
             for (const itemElem of itemElems) {
-                // Remove existing badge
-                const existingBadge = itemElem.querySelector('.mwi-badge-price');
-                if (existingBadge) {
-                    existingBadge.remove();
+                // Remove existing badges
+                const existingBidBadge = itemElem.querySelector('.mwi-badge-price-bid');
+                const existingAskBadge = itemElem.querySelector('.mwi-badge-price-ask');
+                if (existingBidBadge) existingBidBadge.remove();
+                if (existingAskBadge) existingAskBadge.remove();
+
+                // Get values
+                const bidValue = parseFloat(itemElem.dataset.bidValue) || 0;
+                const askValue = parseFloat(itemElem.dataset.askValue) || 0;
+
+                // Show both badges if they have values
+                if (bidValue > 0) {
+                    this.renderPriceBadge(itemElem, bidValue, 'bid');
                 }
-
-                // Show badge if price type is selected
-                if (this.currentPriceType !== 'none') {
-                    const valueKey = this.currentPriceType + 'Value';
-                    const stackValue = parseFloat(itemElem.dataset[valueKey]) || 0;
-
-                    if (stackValue > 0) {
-                        this.renderPriceBadge(itemElem, stackValue);
-                    }
+                if (askValue > 0) {
+                    this.renderPriceBadge(itemElem, askValue, 'ask');
                 }
             }
         }
@@ -25818,26 +26191,33 @@
         /**
          * Render price badge on item
          * @param {Element} itemElem - Item container element
-         * @param {number} stackValue - Total stack value
+         * @param {number} price - Per-item price
+         * @param {string} type - 'bid' or 'ask'
          */
-        renderPriceBadge(itemElem, stackValue) {
+        renderPriceBadge(itemElem, price, type) {
             itemElem.style.position = 'relative';
 
             const badge = document.createElement('div');
-            badge.className = 'mwi-badge-price';
+            badge.className = `mwi-badge-price-${type}`;
+
+            // Position: vertically centered on left (bid) or right (ask)
+            const isAsk = type === 'ask';
+            const color = isAsk ? config.COLOR_INVBADGE_ASK : config.COLOR_INVBADGE_BID;
+
             badge.style.cssText = `
             position: absolute;
-            top: 2px;
-            left: 2px;
+            top: 50%;
+            transform: translateY(-50%);
+            ${isAsk ? 'right: 2px;' : 'left: 2px;'}
             z-index: 1;
-            color: ${config.SCRIPT_COLOR_MAIN};
+            color: ${color};
             font-size: 0.7rem;
             font-weight: bold;
-            text-align: left;
+            text-align: ${isAsk ? 'right' : 'left'};
             pointer-events: none;
-            text-shadow: 0 0 3px rgba(0,0,0,0.8), 0 0 5px rgba(0,0,0,0.6);
+            text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 0 3px #000;
         `;
-            badge.textContent = formatKMB(Math.round(stackValue), 0);
+            badge.textContent = formatKMB(Math.round(price), 0);
 
             const itemInner = itemElem.querySelector('[class*="Item_item"]');
             if (itemInner) {
@@ -25888,23 +26268,22 @@
          * Disable and cleanup
          */
         disable() {
-            if (this.controlsContainer) {
-                this.controlsContainer.remove();
-                this.controlsContainer = null;
-            }
-
-            const badges = document.querySelectorAll('.mwi-badge-price');
+            const badges = document.querySelectorAll('.mwi-badge-price-bid, .mwi-badge-price-ask');
             badges.forEach(badge => badge.remove());
 
             this.unregisterHandlers.forEach(unregister => unregister());
             this.unregisterHandlers = [];
 
             this.currentInventoryElem = null;
+            this.isInitialized = false;
         }
     }
 
     // Create and export singleton instance
     const inventoryBadgePrices = new InventoryBadgePrices();
+
+    // Setup setting listener immediately (before initialize)
+    inventoryBadgePrices.setupSettingListener();
 
     /**
      * Enhancement Session Data Structure
@@ -30120,14 +30499,37 @@
             this.enabled = true;
             this.observer = null;
             this.lastSeenDungeonName = null; // Cache last known dungeon name
+            this.isInitialized = false;
+        }
+
+        /**
+         * Setup setting change listener (always active, even when feature is disabled)
+         */
+        setupSettingListener() {
+            // Listen for color changes
+            config.onSettingChange('color_profit', () => {
+                if (this.isInitialized) {
+                    this.refresh();
+                }
+            });
+
+            config.onSettingChange('color_loss', () => {
+                if (this.isInitialized) {
+                    this.refresh();
+                }
+            });
         }
 
         /**
          * Initialize chat annotation monitor
          */
         initialize() {
+            if (this.isInitialized) return;
+
             // Wait for chat to be available
             this.waitForChat();
+
+            this.isInitialized = true;
         }
 
         /**
@@ -30513,6 +30915,24 @@
         }
 
         /**
+         * Refresh colors (called when settings change)
+         */
+        refresh() {
+            // Remove all existing annotations
+            document.querySelectorAll('.dungeon-timer-annotation, .dungeon-timer-average').forEach(el => el.remove());
+
+            // Clear processed flags so messages get re-annotated
+            document.querySelectorAll('[class^="ChatMessage_chatMessage"][data-processed="1"]').forEach(msg => {
+                delete msg.dataset.processed;
+                delete msg.dataset.timerAppended;
+                delete msg.dataset.avgAppended;
+            });
+
+            // Re-annotate with new colors
+            this.annotateAllMessages();
+        }
+
+        /**
          * Enable chat annotations
          */
         enable() {
@@ -30524,6 +30944,7 @@
          */
         disable() {
             this.enabled = false;
+            this.isInitialized = false;
         }
 
         /**
@@ -30537,6 +30958,9 @@
 
     // Create and export singleton instance
     const dungeonTrackerChatAnnotations = new DungeonTrackerChatAnnotations();
+
+    // Setup setting listener immediately (before initialize)
+    dungeonTrackerChatAnnotations.setupSettingListener();
 
     /**
      * Dungeon Tracker UI State Management
@@ -34479,7 +34903,7 @@
         const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
         targetWindow.Toolasha = {
-            version: '0.4.927',
+            version: '0.4.928',
 
             // Feature toggle API (for users to manage settings via console)
             features: {

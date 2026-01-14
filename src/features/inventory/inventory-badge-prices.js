@@ -19,12 +19,38 @@ import { getEnhancingParams } from '../../utils/enhancement-config.js';
  */
 class InventoryBadgePrices {
     constructor() {
-        this.currentPriceType = 'none'; // 'ask', 'bid', 'none'
         this.unregisterHandlers = [];
-        this.controlsContainer = null;
         this.currentInventoryElem = null;
         this.warnedItems = new Set();
         this.isCalculating = false;
+        this.isInitialized = false;
+    }
+
+    /**
+     * Setup setting change listener (always active, even when feature is disabled)
+     */
+    setupSettingListener() {
+        // Listen for main toggle changes
+        config.onSettingChange('invBadgePrices', (enabled) => {
+            if (enabled) {
+                this.initialize();
+            } else {
+                this.disable();
+            }
+        });
+
+        // Listen for color changes
+        config.onSettingChange('color_invBadge_bid', () => {
+            if (this.isInitialized) {
+                this.refresh();
+            }
+        });
+
+        config.onSettingChange('color_invBadge_ask', () => {
+            if (this.isInitialized) {
+                this.refresh();
+            }
+        });
     }
 
     /**
@@ -36,18 +62,16 @@ class InventoryBadgePrices {
         }
 
         // Prevent multiple initializations
-        if (this.unregisterHandlers.length > 0) {
+        if (this.isInitialized) {
             return;
         }
 
-        // Load persisted settings
-        this.loadSettings();
+        this.isInitialized = true;
 
         // Check if inventory is already open
         const existingInv = document.querySelector('[class*="Inventory_items"]');
         if (existingInv) {
             this.currentInventoryElem = existingInv;
-            this.injectPriceTypeControls(existingInv);
             this.updateBadges();
         }
 
@@ -57,7 +81,6 @@ class InventoryBadgePrices {
             'Inventory_items',
             (elem) => {
                 this.currentInventoryElem = elem;
-                this.injectPriceTypeControls(elem);
                 this.updateBadges();
             }
         );
@@ -77,12 +100,6 @@ class InventoryBadgePrices {
 
         // Listen for market data updates
         this.setupMarketDataListener();
-
-        // Register callback for setting changes
-        config.onSettingChange('invBadgePrices_type', (newValue) => {
-            this.currentPriceType = newValue.toLowerCase();
-            this.updateBadges();
-        });
     }
 
     /**
@@ -108,143 +125,6 @@ class InventoryBadgePrices {
                 }
             }, retryInterval);
         }
-    }
-
-    /**
-     * Load settings from localStorage
-     */
-    loadSettings() {
-        try {
-            const saved = localStorage.getItem('toolasha_inventory_badge_prices');
-            if (saved) {
-                const settings = JSON.parse(saved);
-                this.currentPriceType = settings.priceType || 'none';
-            } else {
-                // Use config value as default
-                this.currentPriceType = config.getSettingValue('invBadgePrices_type', 'Ask').toLowerCase();
-            }
-        } catch (error) {
-            console.error('[InventoryBadgePrices] Failed to load settings:', error);
-            this.currentPriceType = 'ask';
-        }
-    }
-
-    /**
-     * Save settings to localStorage
-     */
-    saveSettings() {
-        try {
-            localStorage.setItem('toolasha_inventory_badge_prices', JSON.stringify({
-                priceType: this.currentPriceType
-            }));
-        } catch (error) {
-            console.error('[InventoryBadgePrices] Failed to save settings:', error);
-        }
-    }
-
-    /**
-     * Inject price type controls into inventory panel
-     * @param {Element} inventoryElem - Inventory items container
-     */
-    injectPriceTypeControls(inventoryElem) {
-        this.currentInventoryElem = inventoryElem;
-
-        // Check if controls already exist
-        if (this.controlsContainer && document.body.contains(this.controlsContainer)) {
-            return;
-        }
-
-        // Create controls container
-        this.controlsContainer = document.createElement('div');
-        this.controlsContainer.className = 'mwi-badge-prices-controls';
-        this.controlsContainer.style.cssText = `
-            color: ${config.SCRIPT_COLOR_MAIN};
-            font-size: 0.875rem;
-            text-align: left;
-            margin-bottom: 8px;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        `;
-
-        // Price type label and buttons
-        const label = document.createElement('span');
-        label.textContent = 'Badge Prices: ';
-
-        const askButton = this.createPriceTypeButton('Ask', 'ask');
-        const bidButton = this.createPriceTypeButton('Bid', 'bid');
-        const noneButton = this.createPriceTypeButton('None', 'none');
-
-        // Assemble controls
-        this.controlsContainer.appendChild(label);
-        this.controlsContainer.appendChild(askButton);
-        this.controlsContainer.appendChild(bidButton);
-        this.controlsContainer.appendChild(noneButton);
-
-        // Insert before inventory
-        inventoryElem.insertAdjacentElement('beforebegin', this.controlsContainer);
-
-        // Update button states
-        this.updateButtonStates();
-    }
-
-    /**
-     * Create a price type button
-     * @param {string} label - Button label
-     * @param {string} type - Price type ('ask', 'bid', 'none')
-     * @returns {Element} Button element
-     */
-    createPriceTypeButton(label, type) {
-        const button = document.createElement('button');
-        button.textContent = label;
-        button.dataset.type = type;
-        button.style.cssText = `
-            border-radius: 3px;
-            padding: 4px 12px;
-            border: none;
-            cursor: pointer;
-            font-size: 0.875rem;
-            transition: all 0.2s;
-        `;
-
-        button.addEventListener('click', () => {
-            this.setPriceType(type);
-        });
-
-        return button;
-    }
-
-    /**
-     * Update button visual states
-     */
-    updateButtonStates() {
-        if (!this.controlsContainer) return;
-
-        const buttons = this.controlsContainer.querySelectorAll('button');
-        buttons.forEach(button => {
-            const isActive = button.dataset.type === this.currentPriceType;
-
-            if (isActive) {
-                button.style.backgroundColor = config.SCRIPT_COLOR_MAIN;
-                button.style.color = 'black';
-                button.style.fontWeight = 'bold';
-            } else {
-                button.style.backgroundColor = '#444';
-                button.style.color = config.COLOR_TEXT_SECONDARY;
-                button.style.fontWeight = 'normal';
-            }
-        });
-    }
-
-    /**
-     * Set price type and update badges
-     * @param {string} type - Price type ('ask', 'bid', 'none')
-     */
-    setPriceType(type) {
-        this.currentPriceType = type;
-        this.saveSettings();
-        this.updateButtonStates();
-        this.updateBadges();
     }
 
     /**
@@ -402,7 +282,7 @@ class InventoryBadgePrices {
                     }
                 }
             } else {
-                // Use market price
+                // Use market price only (no fallback to crafting/enhancement costs)
                 const key = `${itemHrid}:${enhancementLevel}`;
                 const marketPrice = priceCache.get(key);
 
@@ -410,41 +290,11 @@ class InventoryBadgePrices {
                     askPrice = marketPrice.ask > 0 ? marketPrice.ask : 0;
                     bidPrice = marketPrice.bid > 0 ? marketPrice.bid : 0;
                 }
-
-                // Fill in missing prices with enhancement cost for enhanced equipment
-                if (isEquipment && enhancementLevel > 0 && (askPrice === 0 || bidPrice === 0)) {
-                    const cachedCost = networthCache.get(itemHrid, enhancementLevel);
-                    let enhancementCost = cachedCost;
-
-                    if (cachedCost === null) {
-                        const enhancementParams = getEnhancingParams();
-                        const enhancementPath = calculateEnhancementPath(itemHrid, enhancementLevel, enhancementParams);
-
-                        if (enhancementPath && enhancementPath.optimalStrategy) {
-                            enhancementCost = enhancementPath.optimalStrategy.totalCost;
-                            networthCache.set(itemHrid, enhancementLevel, enhancementCost);
-                        } else {
-                            enhancementCost = null;
-                        }
-                    }
-
-                    if (enhancementCost !== null) {
-                        if (askPrice === 0) askPrice = enhancementCost;
-                        if (bidPrice === 0) bidPrice = enhancementCost;
-                    }
-                } else if (isEquipment && enhancementLevel === 0 && askPrice === 0 && bidPrice === 0) {
-                    // Use crafting cost for unenhanced equipment
-                    const craftingCost = this.calculateCraftingCost(itemHrid);
-                    if (craftingCost > 0) {
-                        askPrice = craftingCost;
-                        bidPrice = craftingCost;
-                    }
-                }
             }
 
-            // Store both values
-            itemElem.dataset.askValue = askPrice * itemCount;
-            itemElem.dataset.bidValue = bidPrice * itemCount;
+            // Store both values (per-item price, not stack total)
+            itemElem.dataset.askValue = askPrice;
+            itemElem.dataset.bidValue = bidPrice;
         }
     }
 
@@ -501,20 +351,22 @@ class InventoryBadgePrices {
         const itemElems = this.currentInventoryElem.querySelectorAll('[class*="Item_itemContainer"]');
 
         for (const itemElem of itemElems) {
-            // Remove existing badge
-            const existingBadge = itemElem.querySelector('.mwi-badge-price');
-            if (existingBadge) {
-                existingBadge.remove();
+            // Remove existing badges
+            const existingBidBadge = itemElem.querySelector('.mwi-badge-price-bid');
+            const existingAskBadge = itemElem.querySelector('.mwi-badge-price-ask');
+            if (existingBidBadge) existingBidBadge.remove();
+            if (existingAskBadge) existingAskBadge.remove();
+
+            // Get values
+            const bidValue = parseFloat(itemElem.dataset.bidValue) || 0;
+            const askValue = parseFloat(itemElem.dataset.askValue) || 0;
+
+            // Show both badges if they have values
+            if (bidValue > 0) {
+                this.renderPriceBadge(itemElem, bidValue, 'bid');
             }
-
-            // Show badge if price type is selected
-            if (this.currentPriceType !== 'none') {
-                const valueKey = this.currentPriceType + 'Value';
-                const stackValue = parseFloat(itemElem.dataset[valueKey]) || 0;
-
-                if (stackValue > 0) {
-                    this.renderPriceBadge(itemElem, stackValue);
-                }
+            if (askValue > 0) {
+                this.renderPriceBadge(itemElem, askValue, 'ask');
             }
         }
     }
@@ -522,26 +374,33 @@ class InventoryBadgePrices {
     /**
      * Render price badge on item
      * @param {Element} itemElem - Item container element
-     * @param {number} stackValue - Total stack value
+     * @param {number} price - Per-item price
+     * @param {string} type - 'bid' or 'ask'
      */
-    renderPriceBadge(itemElem, stackValue) {
+    renderPriceBadge(itemElem, price, type) {
         itemElem.style.position = 'relative';
 
         const badge = document.createElement('div');
-        badge.className = 'mwi-badge-price';
+        badge.className = `mwi-badge-price-${type}`;
+
+        // Position: vertically centered on left (bid) or right (ask)
+        const isAsk = type === 'ask';
+        const color = isAsk ? config.COLOR_INVBADGE_ASK : config.COLOR_INVBADGE_BID;
+
         badge.style.cssText = `
             position: absolute;
-            top: 2px;
-            left: 2px;
+            top: 50%;
+            transform: translateY(-50%);
+            ${isAsk ? 'right: 2px;' : 'left: 2px;'}
             z-index: 1;
-            color: ${config.SCRIPT_COLOR_MAIN};
+            color: ${color};
             font-size: 0.7rem;
             font-weight: bold;
-            text-align: left;
+            text-align: ${isAsk ? 'right' : 'left'};
             pointer-events: none;
-            text-shadow: 0 0 3px rgba(0,0,0,0.8), 0 0 5px rgba(0,0,0,0.6);
+            text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 0 3px #000;
         `;
-        badge.textContent = formatKMB(Math.round(stackValue), 0);
+        badge.textContent = formatKMB(Math.round(price), 0);
 
         const itemInner = itemElem.querySelector('[class*="Item_item"]');
         if (itemInner) {
@@ -592,22 +451,21 @@ class InventoryBadgePrices {
      * Disable and cleanup
      */
     disable() {
-        if (this.controlsContainer) {
-            this.controlsContainer.remove();
-            this.controlsContainer = null;
-        }
-
-        const badges = document.querySelectorAll('.mwi-badge-price');
+        const badges = document.querySelectorAll('.mwi-badge-price-bid, .mwi-badge-price-ask');
         badges.forEach(badge => badge.remove());
 
         this.unregisterHandlers.forEach(unregister => unregister());
         this.unregisterHandlers = [];
 
         this.currentInventoryElem = null;
+        this.isInitialized = false;
     }
 }
 
 // Create and export singleton instance
 const inventoryBadgePrices = new InventoryBadgePrices();
+
+// Setup setting listener immediately (before initialize)
+inventoryBadgePrices.setupSettingListener();
 
 export default inventoryBadgePrices;
