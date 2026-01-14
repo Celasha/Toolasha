@@ -1,7 +1,9 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.4.928
+// @version      0.4.929
+// @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
+// @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
 // @author       Celasha and Claude, thank you to bot7420, DrDucky, Frotty, Truth_Light, AlphB, and sentientmilk for providing the basis for a lot of this. Thank you to Miku, Orvel, Jigglymoose, Incinarator, Knerd, and others for their time and help. Thank you to Steez for testing and helping me figure out where I'm wrong! Special thanks to Zaeter for the name.
 // @license      CC-BY-NC-SA-4.0
@@ -20068,7 +20070,7 @@
 
                     div.insertAdjacentHTML(
                         'beforeend',
-                        `<div class="script_itemLevel" style="z-index: 1; position: absolute; ${position} color: ${config.SCRIPT_COLOR_MAIN};">${displayText}</div>`
+                        `<div class="script_itemLevel" style="z-index: 1; position: absolute; ${position} color: ${config.SCRIPT_COLOR_MAIN}; text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 0 3px #000;">${displayText}</div>`
                     );
                     // Mark as processed
                     this.processedDivs.add(div);
@@ -25749,6 +25751,7 @@
             font-weight: bold;
             text-align: right;
             pointer-events: none;
+            text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 0 3px #000;
         `;
             badge.textContent = formatKMB(Math.round(stackValue), 0);
 
@@ -34903,7 +34906,7 @@
         const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
         targetWindow.Toolasha = {
-            version: '0.4.928',
+            version: '0.4.929',
 
             // Feature toggle API (for users to manage settings via console)
             features: {

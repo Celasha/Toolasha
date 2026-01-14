@@ -16,6 +16,37 @@ class EquipmentLevelDisplay {
         this.unregisterHandler = null;
         this.isActive = false;
         this.processedDivs = new WeakSet(); // Track already-processed divs
+        this.isInitialized = false;
+    }
+
+    /**
+     * Setup setting change listener (always active, even when feature is disabled)
+     */
+    setupSettingListener() {
+        // Listen for main toggle changes
+        config.onSettingChange('itemIconLevel', (enabled) => {
+            if (enabled) {
+                this.initialize();
+            } else {
+                this.disable();
+            }
+        });
+
+        // Listen for key info toggle
+        config.onSettingChange('showsKeyInfoInIcon', () => {
+            if (this.isInitialized) {
+                // Clear processed set and re-render
+                this.processedDivs = new WeakSet();
+                this.addItemLevels();
+            }
+        });
+
+        // Listen for color changes
+        config.onSettingChange('color_accent', () => {
+            if (this.isInitialized) {
+                this.refresh();
+            }
+        });
     }
 
     /**
@@ -24,6 +55,11 @@ class EquipmentLevelDisplay {
     initialize() {
         // Check if feature is enabled
         if (!config.getSetting('itemIconLevel')) {
+            return;
+        }
+
+        // Prevent multiple initializations
+        if (this.isInitialized) {
             return;
         }
 
@@ -39,6 +75,7 @@ class EquipmentLevelDisplay {
         this.addItemLevels();
 
         this.isActive = true;
+        this.isInitialized = true;
     }
 
     /**
@@ -123,7 +160,7 @@ class EquipmentLevelDisplay {
 
                 div.insertAdjacentHTML(
                     'beforeend',
-                    `<div class="script_itemLevel" style="z-index: 1; position: absolute; ${position} color: ${config.SCRIPT_COLOR_MAIN};">${displayText}</div>`
+                    `<div class="script_itemLevel" style="z-index: 1; position: absolute; ${position} color: ${config.SCRIPT_COLOR_MAIN}; text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 0 3px #000;">${displayText}</div>`
                 );
                 // Mark as processed
                 this.processedDivs.add(div);
@@ -179,12 +216,23 @@ class EquipmentLevelDisplay {
     }
 
     /**
+     * Refresh colors (called when settings change)
+     */
+    refresh() {
+        // Update color for all level overlays
+        const overlays = document.querySelectorAll('div.script_itemLevel');
+        overlays.forEach(overlay => {
+            overlay.style.color = config.COLOR_ACCENT;
+        });
+    }
+
+    /**
      * Disable the feature
      */
     disable() {
-        if (this.observer) {
-            this.observer.disconnect();
-            this.observer = null;
+        if (this.unregisterHandler) {
+            this.unregisterHandler();
+            this.unregisterHandler = null;
         }
 
         // Remove all level overlays
@@ -197,10 +245,14 @@ class EquipmentLevelDisplay {
         this.processedDivs = new WeakSet();
 
         this.isActive = false;
+        this.isInitialized = false;
     }
 }
 
 // Create and export singleton instance
 const equipmentLevelDisplay = new EquipmentLevelDisplay();
+
+// Setup setting listener immediately (before initialize)
+equipmentLevelDisplay.setupSettingListener();
 
 export default equipmentLevelDisplay;

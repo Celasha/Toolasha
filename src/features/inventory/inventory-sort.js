@@ -656,6 +656,7 @@ class InventorySort {
             font-weight: bold;
             text-align: right;
             pointer-events: none;
+            text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 0 3px #000;
         `;
         badge.textContent = formatKMB(Math.round(stackValue), 0);
 
