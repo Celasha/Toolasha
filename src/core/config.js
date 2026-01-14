@@ -291,8 +291,15 @@ class Config {
                 enabled: false,
                 name: 'Inventory Sort Price Badges',
                 category: 'Economy',
-                description: 'Shows stack value badges on items',
+                description: 'Shows stack value badges on items when sorting',
                 settingKey: 'invSort_showBadges'
+            },
+            inventoryBadgePrices: {
+                enabled: false,
+                name: 'Inventory Price Badges',
+                category: 'Economy',
+                description: 'Shows stack value badges on items (independent of sorting)',
+                settingKey: 'invBadgePrices'
             },
 
             // Enhancement Features

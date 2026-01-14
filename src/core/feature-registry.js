@@ -35,6 +35,7 @@ import remainingXP from '../features/skills/remaining-xp.js';
 import housePanelObserver from '../features/house/house-panel-observer.js';
 import networthFeature from '../features/networth/index.js';
 import inventorySort from '../features/inventory/inventory-sort.js';
+import inventoryBadgePrices from '../features/inventory/inventory-badge-prices.js';
 import enhancementTracker from '../features/enhancement/enhancement-tracker.js';
 import { setupEnhancementHandlers } from '../features/enhancement/enhancement-handlers.js';
 import enhancementUI from '../features/enhancement/enhancement-ui.js';
@@ -366,6 +367,13 @@ const featureRegistry = [
         name: 'Inventory Sort',
         category: 'Economy',
         initialize: () => inventorySort.initialize(),
+        async: false
+    },
+    {
+        key: 'inventoryBadgePrices',
+        name: 'Inventory Price Badges',
+        category: 'Economy',
+        initialize: () => inventoryBadgePrices.initialize(),
         async: false
     },
 

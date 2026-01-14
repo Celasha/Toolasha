@@ -359,6 +359,22 @@ export const settingsGroups = {
                 default: false,
                 dependencies: ['invSort']
             },
+            invBadgePrices: {
+                id: 'invBadgePrices',
+                label: 'Show price badges on item icons (independent of sorting)',
+                type: 'checkbox',
+                default: false,
+                help: 'Displays stack value badges on inventory items without requiring sorting'
+            },
+            invBadgePrices_type: {
+                id: 'invBadgePrices_type',
+                label: 'Badge price type to display',
+                type: 'select',
+                default: 'Ask',
+                options: ['None', 'Ask', 'Bid'],
+                dependencies: ['invBadgePrices'],
+                help: 'Choose which price to show on badges: Ask (buying price), Bid (selling price), or None (hide badges)'
+            },
             profitCalc_pricingMode: {
                 id: 'profitCalc_pricingMode',
                 label: 'Profit calculation pricing mode',
