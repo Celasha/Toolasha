@@ -187,8 +187,9 @@ class DungeonTrackerUIInteractions {
                     await storage.setJSON('allRuns', [], 'unifiedRuns', true);
                     alert('All run history cleared.');
 
-                    // Refresh display
+                    // Refresh both history and chart display
                     if (this.callbacks.onUpdateHistory) await this.callbacks.onUpdateHistory();
+                    if (this.callbacks.onUpdateChart) await this.callbacks.onUpdateChart();
                 } catch (error) {
                     console.error('[Dungeon Tracker UI Interactions] Clear all history error:', error);
                     alert('Failed to clear run history. Check console for details.');
@@ -248,8 +249,9 @@ class DungeonTrackerUIInteractions {
                     alert('No new runs found to backfill.');
                 }
 
-                // Refresh run history display
+                // Refresh both history and chart display
                 if (this.callbacks.onUpdateHistory) await this.callbacks.onUpdateHistory();
+                if (this.callbacks.onUpdateChart) await this.callbacks.onUpdateChart();
             } catch (error) {
                 console.error('[Dungeon Tracker UI Interactions] Backfill error:', error);
                 alert('Backfill failed. Check console for details.');
@@ -408,9 +410,9 @@ class DungeonTrackerUIInteractions {
 
         if (chartContainer) {
             chartContainer.style.display = 'block';
-            // Render chart after becoming visible
+            // Render chart after becoming visible (longer delay for initial page load)
             if (this.callbacks.onUpdateChart) {
-                setTimeout(() => this.callbacks.onUpdateChart(), 100);
+                setTimeout(() => this.callbacks.onUpdateChart(), 300);
             }
         }
         if (toggle) toggle.textContent = '▼';

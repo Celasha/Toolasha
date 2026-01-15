@@ -14,6 +14,7 @@
 
 import dataManager from '../../core/data-manager.js';
 import config from '../../core/config.js';
+import domObserver from '../../core/dom-observer.js';
 import { calculateActionStats } from '../../utils/action-calculator.js';
 import { parseEquipmentSpeedBonuses, parseEquipmentEfficiencyBonuses, debugEquipmentSpeedBonuses } from '../../utils/equipment-parser.js';
 import { parseArtisanBonus, getDrinkConcentration, parseActionLevelBonus, parseTeaEfficiencyBreakdown } from '../../utils/tea-parser.js';
@@ -31,7 +32,7 @@ import { createCollapsibleSection } from '../../utils/ui-components.js';
 class QuickInputButtons {
     constructor() {
         this.isInitialized = false;
-        this.observer = null;
+        this.unregisterObserver = null;
         this.presetHours = [0.5, 1, 2, 3, 4, 5, 6, 10, 12, 24];
         this.presetValues = [10, 100, 1000];
     }
@@ -50,46 +51,23 @@ class QuickInputButtons {
     }
 
     /**
-     * Start MutationObserver to detect action panels
+     * Start observing for action panels using centralized observer
      */
     startObserving() {
-        // Wait for document.body to exist (critical for @run-at document-start)
-        const startObserver = () => {
-            if (!document.body) {
-                setTimeout(startObserver, 10);
-                return;
-            }
-
-            this.observer = new MutationObserver((mutations) => {
-                for (const mutation of mutations) {
-                    for (const node of mutation.addedNodes) {
-                        if (node.nodeType !== Node.ELEMENT_NODE) continue;
-
-                        // Look for main action detail panel (not sub-elements)
-                        const actionPanel = node.querySelector?.('[class*="SkillActionDetail_skillActionDetail"]');
-                        if (actionPanel) {
-                            this.injectButtons(actionPanel);
-                        } else if (node.className && typeof node.className === 'string' &&
-                                   node.className.includes('SkillActionDetail_skillActionDetail')) {
-                            this.injectButtons(node);
-                        }
-                    }
-                }
-            });
-
-            this.observer.observe(document.body, {
-                childList: true,
-                subtree: true
-            });
-
-            // Check for existing action panels that may already be open
-            const existingPanels = document.querySelectorAll('[class*="SkillActionDetail_skillActionDetail"]');
-            existingPanels.forEach(panel => {
+        // Register with centralized DOM observer
+        this.unregisterObserver = domObserver.onClass(
+            'QuickInputButtons',
+            'SkillActionDetail_skillActionDetail',
+            (panel) => {
                 this.injectButtons(panel);
-            });
-        };
+            }
+        );
 
-        startObserver();
+        // Check for existing action panels that may already be open
+        const existingPanels = document.querySelectorAll('[class*="SkillActionDetail_skillActionDetail"]');
+        existingPanels.forEach(panel => {
+            this.injectButtons(panel);
+        });
     }
 
     /**

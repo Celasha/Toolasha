@@ -44,6 +44,9 @@ class DungeonTrackerUI {
         // Create UI elements
         this.createUI();
 
+        // Hide UI initially - only show when dungeon is active
+        this.hide();
+
         // Register for dungeon tracker updates
         dungeonTracker.onUpdate((currentRun, completedRun) => {
             // Check if UI is enabled

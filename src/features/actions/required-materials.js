@@ -5,10 +5,10 @@
 
 import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
-import { GAME } from '../../utils/selectors.js';
 import { numberFormatter } from '../../utils/formatters.js';
 import dataManager from '../../core/data-manager.js';
 import { parseArtisanBonus, getDrinkConcentration } from '../../utils/tea-parser.js';
+import { findActionInput, attachInputListeners, performInitialUpdate } from '../../utils/action-panel-helper.js';
 
 class RequiredMaterials {
     constructor() {
@@ -43,16 +43,8 @@ class RequiredMaterials {
                 return;
             }
 
-            // Find the number input field (same logic as quick-input-buttons)
-            let inputField = panel.querySelector('input[type="number"]');
-            if (!inputField) {
-                // Try finding input within maxActionCountInput container
-                const inputContainer = panel.querySelector('[class*="maxActionCountInput"]');
-                if (inputContainer) {
-                    inputField = inputContainer.querySelector('input');
-                }
-            }
-
+            // Find the input box using utility
+            const inputField = findActionInput(panel);
             if (!inputField) {
                 return;
             }
@@ -60,24 +52,14 @@ class RequiredMaterials {
             // Mark as processed
             this.processedPanels.add(panel);
 
-            // Attach input listener
-            inputField.addEventListener('input', () => {
-                this.updateRequiredMaterials(panel, inputField.value);
+            // Attach input listeners using utility
+            attachInputListeners(panel, inputField, (value) => {
+                this.updateRequiredMaterials(panel, value);
             });
 
-            // Check if input already has a value and display materials
-            if (inputField.value && parseInt(inputField.value) > 0) {
-                this.updateRequiredMaterials(panel, inputField.value);
-            }
-
-            // Also listen for button clicks that change the input
-            // This catches quick input buttons and Max button
-            panel.addEventListener('click', (e) => {
-                if (e.target.matches('button')) {
-                    setTimeout(() => {
-                        this.updateRequiredMaterials(panel, inputField.value);
-                    }, 50);
-                }
+            // Initial update if there's already a value
+            performInitialUpdate(inputField, (value) => {
+                this.updateRequiredMaterials(panel, value);
             });
         });
     }
@@ -92,24 +74,29 @@ class RequiredMaterials {
             return;
         }
 
-        // Find requirements container
+        // Get artisan bonus for material reduction calculation
+        const artisanBonus = this.getArtisanBonus(panel);
+
+        // Get base material requirements from action details (separated into upgrade and regular)
+        const { upgradeItemCount, regularMaterials } = this.getBaseMaterialRequirements(panel);
+
+        // Process upgrade item first (if exists)
+        if (upgradeItemCount !== null) {
+            this.processUpgradeItem(panel, numActions, upgradeItemCount);
+        }
+
+        // Find requirements container for regular materials
         const requiresDiv = panel.querySelector('[class*="SkillActionDetail_itemRequirements"]');
         if (!requiresDiv) {
             return;
         }
-
-        // Get artisan bonus for material reduction calculation
-        const artisanBonus = this.getArtisanBonus(panel);
-
-        // Get base material requirements from action details
-        const baseMaterialRequirements = this.getBaseMaterialRequirements(panel);
 
         // Get inventory spans and input spans
         const inventorySpans = panel.querySelectorAll('[class*="SkillActionDetail_inventoryCount"]');
         const inputSpans = Array.from(panel.querySelectorAll('[class*="SkillActionDetail_inputCount"]'))
             .filter(span => !span.textContent.includes('Required'));
 
-        // Process each material using MWIT-E's approach
+        // Process each regular material using MWIT-E's approach
         // Iterate through requiresDiv children to find inputCount spans and their target containers
         const children = Array.from(requiresDiv.children);
         let materialIndex = 0;
@@ -124,24 +111,21 @@ class RequiredMaterials {
                 if (materialIndex >= inventorySpans.length || materialIndex >= inputSpans.length) return;
 
                 const invText = inventorySpans[materialIndex].textContent.trim();
-                const inputText = inputSpans[materialIndex].textContent.trim();
 
                 // Parse inventory amount (handle K/M suffixes)
                 const invValue = this.parseAmount(invText);
 
-                // Get base requirement from action details (not from UI - UI rounds the value)
-                const materialReq = baseMaterialRequirements[materialIndex];
+                // Get base requirement from action details (now correctly indexed)
+                const materialReq = regularMaterials[materialIndex];
                 if (!materialReq || materialReq.count <= 0) {
                     materialIndex++;
                     return;
                 }
 
-                // Apply artisan reduction ONLY to regular materials (not upgrade items)
+                // Apply artisan reduction to regular materials
                 // Materials are consumed PER ACTION
                 // Efficiency gives bonus actions for FREE (no material cost)
-                const materialsPerAction = materialReq.isUpgradeItem
-                    ? materialReq.count
-                    : materialReq.count * (1 - artisanBonus);
+                const materialsPerAction = materialReq.count * (1 - artisanBonus);
 
                 // Calculate total materials needed for queued actions
                 const totalRequired = Math.ceil(materialsPerAction * numActions);
@@ -179,16 +163,102 @@ class RequiredMaterials {
     }
 
     /**
+     * Process upgrade item display in "Upgrades From" section
+     * @param {HTMLElement} panel - Action panel element
+     * @param {number} numActions - Number of actions to perform
+     * @param {number} upgradeItemCount - Base count of upgrade item (always 1)
+     */
+    processUpgradeItem(panel, numActions, upgradeItemCount) {
+        try {
+            // Find upgrade item selector container
+            const upgradeContainer = panel.querySelector('[class*="SkillActionDetail_upgradeItemSelectorInput"]');
+            if (!upgradeContainer) {
+                return;
+            }
+
+            // Find the inventory count from game UI
+            let inventoryElement = upgradeContainer.querySelector('[class*="Item_count"]');
+            let invValue = 0;
+
+            if (inventoryElement) {
+                // Found the game's native inventory count display
+                invValue = this.parseAmount(inventoryElement.textContent.trim());
+            } else {
+                // Fallback: Get inventory from game data using item name
+                const svg = upgradeContainer.querySelector('svg[role="img"]');
+                if (svg) {
+                    const itemName = svg.getAttribute('aria-label');
+
+                    if (itemName) {
+                        // Look up inventory from game data
+                        const gameData = dataManager.getInitClientData();
+                        const inventory = dataManager.getInventory();
+
+                        if (gameData && inventory) {
+                            // Find item HRID by name
+                            let itemHrid = null;
+                            for (const [hrid, details] of Object.entries(gameData.itemDetailMap || {})) {
+                                if (details.name === itemName) {
+                                    itemHrid = hrid;
+                                    break;
+                                }
+                            }
+
+                            if (itemHrid) {
+                                // Get inventory count (default to 0 if not found)
+                                invValue = inventory[itemHrid] || 0;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Calculate requirements (upgrade items always need exactly 1 per action, no artisan)
+            const totalRequired = upgradeItemCount * numActions;
+            const missing = Math.max(0, totalRequired - invValue);
+
+            // Create display element (matching style of regular materials)
+            const displaySpan = document.createElement('span');
+            displaySpan.className = 'mwi-required-materials';
+            displaySpan.style.cssText = `
+                display: block;
+                font-size: 0.85em;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                margin-top: 2px;
+            `;
+
+            // Build text
+            let text = `Required: ${numberFormatter(totalRequired)}`;
+            if (missing > 0) {
+                text += ` || Missing: ${numberFormatter(missing)}`;
+                displaySpan.style.color = config.COLOR_LOSS; // Missing materials
+            } else {
+                displaySpan.style.color = config.COLOR_PROFIT; // Sufficient materials
+            }
+
+            displaySpan.textContent = text;
+
+            // Insert after entire upgrade container (not inside it)
+            upgradeContainer.after(displaySpan);
+
+        } catch (error) {
+            console.error('[Required Materials] Error processing upgrade item:', error);
+        }
+    }
+
+    /**
      * Get base material requirements from action details
      * @param {HTMLElement} panel - Action panel element
-     * @returns {Array<number>} Array of base material counts
+     * @returns {Object} Object with upgradeItemCount (number|null) and regularMaterials (Array)
      */
     getBaseMaterialRequirements(panel) {
         try {
             // Get action name from panel
             const actionNameElement = panel.querySelector('[class*="SkillActionDetail_name"]');
             if (!actionNameElement) {
-                return [];
+                return { upgradeItemCount: null, regularMaterials: [] };
             }
 
             const actionName = actionNameElement.textContent.trim();
@@ -196,7 +266,7 @@ class RequiredMaterials {
             // Look up action details
             const gameData = dataManager.getInitClientData();
             if (!gameData || !gameData.actionDetailMap) {
-                return [];
+                return { upgradeItemCount: null, regularMaterials: [] };
             }
 
             let actionDetails = null;
@@ -208,36 +278,28 @@ class RequiredMaterials {
             }
 
             if (!actionDetails) {
-                return [];
+                return { upgradeItemCount: null, regularMaterials: [] };
             }
 
-            const requirements = [];
-
-            // Add upgrade item first if it exists (shown first in UI)
-            // Upgrade items are NOT affected by Artisan Tea
-            if (actionDetails.upgradeItemHrid) {
-                requirements.push({
-                    count: 1,
-                    isUpgradeItem: true  // Flag to skip artisan reduction
-                });
-            }
+            // Separate upgrade item from regular materials
+            const upgradeItemCount = actionDetails.upgradeItemHrid ? 1 : null;
+            const regularMaterials = [];
 
             // Add regular input items (affected by Artisan Tea)
             if (actionDetails.inputItems && actionDetails.inputItems.length > 0) {
                 actionDetails.inputItems.forEach(item => {
-                    requirements.push({
-                        count: item.count || 0,
-                        isUpgradeItem: false
+                    regularMaterials.push({
+                        count: item.count || 0
                     });
                 });
             }
 
-            // Return array of requirement objects in order
-            return requirements;
+            // Return separated data
+            return { upgradeItemCount, regularMaterials };
 
         } catch (error) {
             console.error('[Required Materials] Error getting base requirements:', error);
-            return [];
+            return { upgradeItemCount: null, regularMaterials: [] };
         }
     }
 

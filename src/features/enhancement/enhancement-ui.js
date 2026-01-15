@@ -8,6 +8,7 @@ import enhancementTracker from './enhancement-tracker.js';
 import { SessionState, getSessionDuration } from './enhancement-session.js';
 import dataManager from '../../core/data-manager.js';
 import config from '../../core/config.js';
+import domObserver from '../../core/dom-observer.js';
 
 // UI Style Constants (matching Ultimate Enhancement Tracker)
 const STYLE = {
@@ -66,7 +67,7 @@ class EnhancementUI {
         this.currentViewingIndex = 0; // Index in sessions array
         this.updateDebounce = null;
         this.isDragging = false;
-        this.screenObserver = null;
+        this.unregisterScreenObserver = null;
         this.isOnEnhancingScreen = false;
         this.isCollapsed = false; // Track collapsed state
     }
@@ -91,7 +92,7 @@ class EnhancementUI {
     }
 
     /**
-     * Set up screen observer to detect Enhancing screen
+     * Set up screen observer to detect Enhancing screen using centralized observer
      */
     setupScreenObserver() {
         // Check if setting is enabled
@@ -106,25 +107,15 @@ class EnhancementUI {
         this.checkEnhancingScreen();
         this.updateVisibility(); // Always set initial visibility
 
-        // Wait for document.body before observing
-        const startObserver = () => {
-            if (!document.body) {
-                setTimeout(startObserver, 10);
-                return;
-            }
-
-            // Set up MutationObserver to detect screen changes
-            this.screenObserver = new MutationObserver(() => {
+        // Register with centralized DOM observer for enhancing panel detection
+        this.unregisterScreenObserver = domObserver.onClass(
+            'EnhancementUI-ScreenDetection',
+            'SkillActionDetail_enhancingComponent',
+            () => {
                 this.checkEnhancingScreen();
-            });
-
-            this.screenObserver.observe(document.body, {
-                childList: true,
-                subtree: true
-            });
-        };
-
-        startObserver();
+            },
+            { debounce: true, debounceDelay: 100 }
+        );
     }
 
     /**

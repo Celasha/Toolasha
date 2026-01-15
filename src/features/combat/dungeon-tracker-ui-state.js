@@ -64,7 +64,6 @@ class DungeonTrackerUIState {
      */
     updatePosition(container) {
         const baseStyle = `
-            display: none;
             position: fixed;
             z-index: 9999;
             background: rgba(0, 0, 0, 0.85);

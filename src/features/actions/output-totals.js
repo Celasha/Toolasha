@@ -12,6 +12,7 @@
 
 import domObserver from '../../core/dom-observer.js';
 import config from '../../core/config.js';
+import { findActionInput, attachInputListeners, performInitialUpdate } from '../../utils/action-panel-helper.js';
 
 class OutputTotals {
     constructor() {
@@ -50,13 +51,8 @@ class OutputTotals {
      * @param {HTMLElement} detailPanel - The action detail panel element
      */
     attachToActionPanel(detailPanel) {
-        // Find the input box - same approach as MWIT-E
-        const inputContainer = detailPanel.querySelector('[class*="maxActionCountInput"]');
-        if (!inputContainer) {
-            return;
-        }
-
-        const inputBox = inputContainer.querySelector('input');
+        // Find the input box using utility
+        const inputBox = findActionInput(detailPanel);
         if (!inputBox) {
             return;
         }
@@ -66,36 +62,18 @@ class OutputTotals {
             return;
         }
 
-        // Add keyup listener (same as MWIT-E)
-        const updateHandler = () => {
+        // Attach input listeners using utility
+        const cleanup = attachInputListeners(detailPanel, inputBox, (value) => {
             this.updateOutputTotals(detailPanel, inputBox);
-        };
-
-        inputBox.addEventListener('keyup', updateHandler);
-
-        // Also listen to clicks on the panel (for button clicks)
-        // But NOT for clicks on the input box itself
-        const panelClickHandler = (event) => {
-            // Only process if click is NOT on the input box
-            if (event.target === inputBox) {
-                return;
-            }
-            setTimeout(() => {
-                this.updateOutputTotals(detailPanel, inputBox);
-            }, 50);
-        };
-        detailPanel.addEventListener('click', panelClickHandler);
-
-        // Store cleanup function
-        this.observedInputs.set(inputBox, () => {
-            inputBox.removeEventListener('keyup', updateHandler);
-            detailPanel.removeEventListener('click', panelClickHandler);
         });
 
+        // Store cleanup function
+        this.observedInputs.set(inputBox, cleanup);
+
         // Initial update if there's already a value
-        if (inputBox.value && inputBox.value > 0) {
+        performInitialUpdate(inputBox, () => {
             this.updateOutputTotals(detailPanel, inputBox);
-        }
+        });
     }
 
     /**

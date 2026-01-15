@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.4.930
+// @version      0.4.931
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -14652,7 +14652,7 @@
     class QuickInputButtons {
         constructor() {
             this.isInitialized = false;
-            this.observer = null;
+            this.unregisterObserver = null;
             this.presetHours = [0.5, 1, 2, 3, 4, 5, 6, 10, 12, 24];
             this.presetValues = [10, 100, 1000];
         }
@@ -14671,46 +14671,23 @@
         }
 
         /**
-         * Start MutationObserver to detect action panels
+         * Start observing for action panels using centralized observer
          */
         startObserving() {
-            // Wait for document.body to exist (critical for @run-at document-start)
-            const startObserver = () => {
-                if (!document.body) {
-                    setTimeout(startObserver, 10);
-                    return;
-                }
-
-                this.observer = new MutationObserver((mutations) => {
-                    for (const mutation of mutations) {
-                        for (const node of mutation.addedNodes) {
-                            if (node.nodeType !== Node.ELEMENT_NODE) continue;
-
-                            // Look for main action detail panel (not sub-elements)
-                            const actionPanel = node.querySelector?.('[class*="SkillActionDetail_skillActionDetail"]');
-                            if (actionPanel) {
-                                this.injectButtons(actionPanel);
-                            } else if (node.className && typeof node.className === 'string' &&
-                                       node.className.includes('SkillActionDetail_skillActionDetail')) {
-                                this.injectButtons(node);
-                            }
-                        }
-                    }
-                });
-
-                this.observer.observe(document.body, {
-                    childList: true,
-                    subtree: true
-                });
-
-                // Check for existing action panels that may already be open
-                const existingPanels = document.querySelectorAll('[class*="SkillActionDetail_skillActionDetail"]');
-                existingPanels.forEach(panel => {
+            // Register with centralized DOM observer
+            this.unregisterObserver = domObserver.onClass(
+                'QuickInputButtons',
+                'SkillActionDetail_skillActionDetail',
+                (panel) => {
                     this.injectButtons(panel);
-                });
-            };
+                }
+            );
 
-            startObserver();
+            // Check for existing action panels that may already be open
+            const existingPanels = document.querySelectorAll('[class*="SkillActionDetail_skillActionDetail"]');
+            existingPanels.forEach(panel => {
+                this.injectButtons(panel);
+            });
         }
 
         /**
@@ -15740,6 +15717,86 @@
     const quickInputButtons = new QuickInputButtons();
 
     /**
+     * Action Panel Display Helper
+     * Utilities for working with action detail panels (gathering, production, enhancement)
+     */
+
+    /**
+     * Find the action count input field within a panel
+     * @param {HTMLElement} panel - The action detail panel
+     * @returns {HTMLInputElement|null} The input element or null if not found
+     */
+    function findActionInput(panel) {
+        const inputContainer = panel.querySelector('[class*="maxActionCountInput"]');
+        if (!inputContainer) {
+            return null;
+        }
+
+        const inputField = inputContainer.querySelector('input');
+        return inputField || null;
+    }
+
+    /**
+     * Attach input listeners to an action panel for tracking value changes
+     * Sets up three listeners:
+     * - keyup: For manual typing
+     * - input: For quick input button clicks (React dispatches input events)
+     * - panel click: For any panel interactions with 50ms delay
+     *
+     * @param {HTMLElement} panel - The action detail panel
+     * @param {HTMLInputElement} input - The input element
+     * @param {Function} updateCallback - Callback function(value) called on input changes
+     * @param {Object} options - Optional configuration
+     * @param {number} options.clickDelay - Delay in ms for panel click handler (default: 50)
+     * @returns {Function} Cleanup function to remove all listeners
+     */
+    function attachInputListeners(panel, input, updateCallback, options = {}) {
+        const { clickDelay = 50 } = options;
+
+        // Handler for keyup and input events
+        const updateHandler = () => {
+            updateCallback(input.value);
+        };
+
+        // Handler for panel clicks (with delay to allow React updates)
+        const panelClickHandler = (event) => {
+            // Skip if click is on the input box itself
+            if (event.target === input) {
+                return;
+            }
+            setTimeout(() => {
+                updateCallback(input.value);
+            }, clickDelay);
+        };
+
+        // Attach all listeners
+        input.addEventListener('keyup', updateHandler);
+        input.addEventListener('input', updateHandler);
+        panel.addEventListener('click', panelClickHandler);
+
+        // Return cleanup function
+        return () => {
+            input.removeEventListener('keyup', updateHandler);
+            input.removeEventListener('input', updateHandler);
+            panel.removeEventListener('click', panelClickHandler);
+        };
+    }
+
+    /**
+     * Perform initial update if input already has a valid value
+     * @param {HTMLInputElement} input - The input element
+     * @param {Function} updateCallback - Callback function(value) called if valid
+     * @returns {boolean} True if initial update was performed
+     */
+    function performInitialUpdate(input, updateCallback) {
+        if (input.value && parseInt(input.value) > 0) {
+            updateCallback(input.value);
+            return true;
+        }
+        return false;
+    }
+
+    /**
      * Output Totals Display Module
      *
      * Shows total expected outputs below per-action outputs when user enters
@@ -15789,13 +15846,8 @@
          * @param {HTMLElement} detailPanel - The action detail panel element
          */
         attachToActionPanel(detailPanel) {
-            // Find the input box - same approach as MWIT-E
-            const inputContainer = detailPanel.querySelector('[class*="maxActionCountInput"]');
-            if (!inputContainer) {
-                return;
-            }
-
-            const inputBox = inputContainer.querySelector('input');
+            // Find the input box using utility
+            const inputBox = findActionInput(detailPanel);
             if (!inputBox) {
                 return;
             }
@@ -15805,36 +15857,18 @@
                 return;
             }
 
-            // Add keyup listener (same as MWIT-E)
-            const updateHandler = () => {
+            // Attach input listeners using utility
+            const cleanup = attachInputListeners(detailPanel, inputBox, (value) => {
                 this.updateOutputTotals(detailPanel, inputBox);
-            };
-
-            inputBox.addEventListener('keyup', updateHandler);
-
-            // Also listen to clicks on the panel (for button clicks)
-            // But NOT for clicks on the input box itself
-            const panelClickHandler = (event) => {
-                // Only process if click is NOT on the input box
-                if (event.target === inputBox) {
-                    return;
-                }
-                setTimeout(() => {
-                    this.updateOutputTotals(detailPanel, inputBox);
-                }, 50);
-            };
-            detailPanel.addEventListener('click', panelClickHandler);
-
-            // Store cleanup function
-            this.observedInputs.set(inputBox, () => {
-                inputBox.removeEventListener('keyup', updateHandler);
-                detailPanel.removeEventListener('click', panelClickHandler);
             });
 
+            // Store cleanup function
+            this.observedInputs.set(inputBox, cleanup);
+
             // Initial update if there's already a value
-            if (inputBox.value && inputBox.value > 0) {
+            performInitialUpdate(inputBox, () => {
                 this.updateOutputTotals(detailPanel, inputBox);
-            }
+            });
         }
 
         /**
@@ -16754,136 +16788,6 @@
     const gatheringStats = new GatheringStats();
 
     /**
-     * DOM Selector Constants
-     * Centralized selector strings for querying game elements
-     * If game class names change, update here only
-     */
-
-    /**
-     * Game UI Selectors (class names from game code)
-     */
-    const GAME = {
-        // Header
-        TOTAL_LEVEL: '[class*="Header_totalLevel"]',
-
-        // Settings Panel
-        SETTINGS_PANEL_TITLE: '[class*="SettingsPanel_title"]',
-        SETTINGS_TABS_CONTAINER: 'div[class*="SettingsPanel_tabsComponentContainer"]',
-        TABS_FLEX_CONTAINER: '[class*="MuiTabs-flexContainer"]',
-        TAB_PANELS_CONTAINER: '[class*="TabsComponent_tabPanelsContainer"]',
-        TAB_PANEL: '[class*="TabPanel_tabPanel"]',
-
-        // Game Panel
-        GAME_PANEL: 'div[class*="GamePage_gamePanel"]',
-
-        // Skill Action Detail
-        SKILL_ACTION_DETAIL: '[class*="SkillActionDetail_skillActionDetail"]',
-        SKILL_ACTION_NAME: '[class*="SkillActionDetail_name"]',
-        ENHANCING_COMPONENT: 'div.SkillActionDetail_enhancingComponent__17bOx',
-
-        // Action Queue
-        QUEUED_ACTIONS: '[class*="QueuedActions_action"]',
-        MAX_ACTION_COUNT_INPUT: '[class*="maxActionCountInput"]',
-
-        // Tasks
-        TASK_PANEL: '[class*="TasksPanel_taskSlotCount"]',
-        TASK_LIST: '[class*="TasksPanel_taskList"]',
-        TASK_CARD: '[class*="RandomTask_randomTask"]',
-        TASK_NAME: '[class*="RandomTask_name"]',
-        TASK_INFO: '.RandomTask_taskInfo__1uasf',
-        TASK_ACTION: '.RandomTask_action__3eC6o',
-        TASK_REWARDS: '.RandomTask_rewards__YZk7D',
-        TASK_CONTENT: '[class*="RandomTask_content"]',
-        TASK_NAME_DIV: 'div[class*="RandomTask_name"]',
-
-        // House Panel
-        HOUSE_HEADER: '[class*="HousePanel_header"]',
-        HOUSE_COSTS: '[class*="HousePanel_costs"]',
-        HOUSE_ITEM_REQUIREMENTS: '[class*="HousePanel_itemRequirements"]',
-
-        // Inventory
-        INVENTORY_ITEMS: '[class*="Inventory_items"]',
-        INVENTORY_CATEGORY_BUTTON: '.Inventory_categoryButton__35s1x',
-        INVENTORY_LABEL: '.Inventory_label__XEOAx',
-
-        // Items
-        ITEM_CONTAINER: '.Item_itemContainer__x7kH1',
-        ITEM_ITEM: '.Item_item__2De2O',
-        ITEM_COUNT: '.Item_count__1HVvv',
-        ITEM_TOOLTIP_TEXT: '.ItemTooltipText_itemTooltipText__zFq3A',
-
-        // Navigation/Experience Bars
-        NAV_LEVEL: '[class*="NavigationBar_level"]',
-        NAV_CURRENT_EXPERIENCE: '[class*="NavigationBar_currentExperience"]',
-
-        // Enhancement
-        PROTECTION_ITEM_INPUT: '[class*="protectionItemInputContainer"]',
-
-        // Tooltips
-        MUI_TOOLTIP: '.MuiTooltip-tooltip'
-    };
-
-    /**
-     * Toolasha-specific selectors (our injected elements)
-     */
-    const TOOLASHA = {
-        // Settings
-        SETTINGS_TAB: '#toolasha-settings-tab',
-        SETTING_WITH_DEPS: '.toolasha-setting[data-dependencies]',
-
-        // Task features
-        TASK_PROFIT: '.mwi-task-profit',
-        REROLL_COST_DISPLAY: '.mwi-reroll-cost-display',
-
-        // Action features
-        QUEUE_TOTAL_TIME: '#mwi-queue-total-time',
-        FORAGING_PROFIT: '#mwi-foraging-profit',
-        PRODUCTION_PROFIT: '#mwi-production-profit',
-
-        // House features
-        HOUSE_PRICING: '.mwi-house-pricing',
-        HOUSE_PRICING_EMPTY: '.mwi-house-pricing-empty',
-        HOUSE_TOTAL: '.mwi-house-total',
-        HOUSE_TO_LEVEL: '.mwi-house-to-level',
-
-        // Profile/Combat Score
-        SCORE_CLOSE_BTN: '#mwi-score-close-btn',
-        SCORE_TOGGLE: '#mwi-score-toggle',
-        SCORE_DETAILS: '#mwi-score-details',
-        HOUSE_TOGGLE: '#mwi-house-toggle',
-        HOUSE_BREAKDOWN: '#mwi-house-breakdown',
-        ABILITY_TOGGLE: '#mwi-ability-toggle',
-        ABILITY_BREAKDOWN: '#mwi-ability-breakdown',
-        EQUIPMENT_TOGGLE: '#mwi-equipment-toggle',
-        EQUIPMENT_BREAKDOWN: '#mwi-equipment-breakdown',
-
-        // Market features
-        MARKET_PRICE_INJECTED: '.market-price-injected',
-        MARKET_PROFIT_INJECTED: '.market-profit-injected',
-        MARKET_EV_INJECTED: '.market-ev-injected',
-        MARKET_ENHANCEMENT_INJECTED: '.market-enhancement-injected',
-
-        // UI features
-        ALCHEMY_DIMMED: '.mwi-alchemy-dimmed',
-        EXP_PERCENTAGE: '.mwi-exp-percentage',
-        STACK_PRICE: '.mwi-stack-price',
-        NETWORTH_HEADER: '.mwi-networth-header',
-
-        // Enhancement
-        ENHANCEMENT_STATS: '#mwi-enhancement-stats',
-
-        // Generic
-        COLLAPSIBLE_SECTION: '.mwi-collapsible-section',
-        EXPANDABLE_HEADER: '.mwi-expandable-header',
-        SECTION_HEADER_NEXT: '.mwi-section-header + div',
-
-        // Legacy/cleanup markers
-        INSERTED_SPAN: '.insertedSpan',
-        SCRIPT_INJECTED: '.script-injected',
-        CONSUMABLE_STATS_INJECTED: '.consumable-stats-injected'
-    };
-
-    /**
      * Required Materials Display
      * Shows total required materials and missing amounts for production actions
      */
@@ -16922,16 +16826,8 @@
                     return;
                 }
 
-                // Find the number input field (same logic as quick-input-buttons)
-                let inputField = panel.querySelector('input[type="number"]');
-                if (!inputField) {
-                    // Try finding input within maxActionCountInput container
-                    const inputContainer = panel.querySelector('[class*="maxActionCountInput"]');
-                    if (inputContainer) {
-                        inputField = inputContainer.querySelector('input');
-                    }
-                }
-
+                // Find the input box using utility
+                const inputField = findActionInput(panel);
                 if (!inputField) {
                     return;
                 }
@@ -16939,24 +16835,14 @@
                 // Mark as processed
                 this.processedPanels.add(panel);
 
-                // Attach input listener
-                inputField.addEventListener('input', () => {
-                    this.updateRequiredMaterials(panel, inputField.value);
+                // Attach input listeners using utility
+                attachInputListeners(panel, inputField, (value) => {
+                    this.updateRequiredMaterials(panel, value);
                 });
 
-                // Check if input already has a value and display materials
-                if (inputField.value && parseInt(inputField.value) > 0) {
-                    this.updateRequiredMaterials(panel, inputField.value);
-                }
-
-                // Also listen for button clicks that change the input
-                // This catches quick input buttons and Max button
-                panel.addEventListener('click', (e) => {
-                    if (e.target.matches('button')) {
-                        setTimeout(() => {
-                            this.updateRequiredMaterials(panel, inputField.value);
-                        }, 50);
-                    }
+                // Initial update if there's already a value
+                performInitialUpdate(inputField, (value) => {
+                    this.updateRequiredMaterials(panel, value);
                 });
             });
         }
@@ -16971,24 +16857,29 @@
                 return;
             }
 
-            // Find requirements container
+            // Get artisan bonus for material reduction calculation
+            const artisanBonus = this.getArtisanBonus(panel);
+
+            // Get base material requirements from action details (separated into upgrade and regular)
+            const { upgradeItemCount, regularMaterials } = this.getBaseMaterialRequirements(panel);
+
+            // Process upgrade item first (if exists)
+            if (upgradeItemCount !== null) {
+                this.processUpgradeItem(panel, numActions, upgradeItemCount);
+            }
+
+            // Find requirements container for regular materials
             const requiresDiv = panel.querySelector('[class*="SkillActionDetail_itemRequirements"]');
             if (!requiresDiv) {
                 return;
             }
-
-            // Get artisan bonus for material reduction calculation
-            const artisanBonus = this.getArtisanBonus(panel);
-
-            // Get base material requirements from action details
-            const baseMaterialRequirements = this.getBaseMaterialRequirements(panel);
 
             // Get inventory spans and input spans
             const inventorySpans = panel.querySelectorAll('[class*="SkillActionDetail_inventoryCount"]');
             const inputSpans = Array.from(panel.querySelectorAll('[class*="SkillActionDetail_inputCount"]'))
                 .filter(span => !span.textContent.includes('Required'));
 
-            // Process each material using MWIT-E's approach
+            // Process each regular material using MWIT-E's approach
             // Iterate through requiresDiv children to find inputCount spans and their target containers
             const children = Array.from(requiresDiv.children);
             let materialIndex = 0;
@@ -17003,24 +16894,21 @@
                     if (materialIndex >= inventorySpans.length || materialIndex >= inputSpans.length) return;
 
                     const invText = inventorySpans[materialIndex].textContent.trim();
-                    inputSpans[materialIndex].textContent.trim();
 
                     // Parse inventory amount (handle K/M suffixes)
                     const invValue = this.parseAmount(invText);
 
-                    // Get base requirement from action details (not from UI - UI rounds the value)
-                    const materialReq = baseMaterialRequirements[materialIndex];
+                    // Get base requirement from action details (now correctly indexed)
+                    const materialReq = regularMaterials[materialIndex];
                     if (!materialReq || materialReq.count <= 0) {
                         materialIndex++;
                         return;
                     }
 
-                    // Apply artisan reduction ONLY to regular materials (not upgrade items)
+                    // Apply artisan reduction to regular materials
                     // Materials are consumed PER ACTION
                     // Efficiency gives bonus actions for FREE (no material cost)
-                    const materialsPerAction = materialReq.isUpgradeItem
-                        ? materialReq.count
-                        : materialReq.count * (1 - artisanBonus);
+                    const materialsPerAction = materialReq.count * (1 - artisanBonus);
 
                     // Calculate total materials needed for queued actions
                     const totalRequired = Math.ceil(materialsPerAction * numActions);
@@ -17058,16 +16946,102 @@
         }
 
         /**
+         * Process upgrade item display in "Upgrades From" section
+         * @param {HTMLElement} panel - Action panel element
+         * @param {number} numActions - Number of actions to perform
+         * @param {number} upgradeItemCount - Base count of upgrade item (always 1)
+         */
+        processUpgradeItem(panel, numActions, upgradeItemCount) {
+            try {
+                // Find upgrade item selector container
+                const upgradeContainer = panel.querySelector('[class*="SkillActionDetail_upgradeItemSelectorInput"]');
+                if (!upgradeContainer) {
+                    return;
+                }
+
+                // Find the inventory count from game UI
+                let inventoryElement = upgradeContainer.querySelector('[class*="Item_count"]');
+                let invValue = 0;
+
+                if (inventoryElement) {
+                    // Found the game's native inventory count display
+                    invValue = this.parseAmount(inventoryElement.textContent.trim());
+                } else {
+                    // Fallback: Get inventory from game data using item name
+                    const svg = upgradeContainer.querySelector('svg[role="img"]');
+                    if (svg) {
+                        const itemName = svg.getAttribute('aria-label');
+
+                        if (itemName) {
+                            // Look up inventory from game data
+                            const gameData = dataManager.getInitClientData();
+                            const inventory = dataManager.getInventory();
+
+                            if (gameData && inventory) {
+                                // Find item HRID by name
+                                let itemHrid = null;
+                                for (const [hrid, details] of Object.entries(gameData.itemDetailMap || {})) {
+                                    if (details.name === itemName) {
+                                        itemHrid = hrid;
+                                        break;
+                                    }
+                                }
+
+                                if (itemHrid) {
+                                    // Get inventory count (default to 0 if not found)
+                                    invValue = inventory[itemHrid] || 0;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Calculate requirements (upgrade items always need exactly 1 per action, no artisan)
+                const totalRequired = upgradeItemCount * numActions;
+                const missing = Math.max(0, totalRequired - invValue);
+
+                // Create display element (matching style of regular materials)
+                const displaySpan = document.createElement('span');
+                displaySpan.className = 'mwi-required-materials';
+                displaySpan.style.cssText = `
+                display: block;
+                font-size: 0.85em;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                margin-top: 2px;
+            `;
+
+                // Build text
+                let text = `Required: ${numberFormatter(totalRequired)}`;
+                if (missing > 0) {
+                    text += ` || Missing: ${numberFormatter(missing)}`;
+                    displaySpan.style.color = config.COLOR_LOSS; // Missing materials
+                } else {
+                    displaySpan.style.color = config.COLOR_PROFIT; // Sufficient materials
+                }
+
+                displaySpan.textContent = text;
+
+                // Insert after entire upgrade container (not inside it)
+                upgradeContainer.after(displaySpan);
+
+            } catch (error) {
+                console.error('[Required Materials] Error processing upgrade item:', error);
+            }
+        }
+
+        /**
          * Get base material requirements from action details
          * @param {HTMLElement} panel - Action panel element
-         * @returns {Array<number>} Array of base material counts
+         * @returns {Object} Object with upgradeItemCount (number|null) and regularMaterials (Array)
          */
         getBaseMaterialRequirements(panel) {
             try {
                 // Get action name from panel
                 const actionNameElement = panel.querySelector('[class*="SkillActionDetail_name"]');
                 if (!actionNameElement) {
-                    return [];
+                    return { upgradeItemCount: null, regularMaterials: [] };
                 }
 
                 const actionName = actionNameElement.textContent.trim();
@@ -17075,7 +17049,7 @@
                 // Look up action details
                 const gameData = dataManager.getInitClientData();
                 if (!gameData || !gameData.actionDetailMap) {
-                    return [];
+                    return { upgradeItemCount: null, regularMaterials: [] };
                 }
 
                 let actionDetails = null;
@@ -17087,36 +17061,28 @@
                 }
 
                 if (!actionDetails) {
-                    return [];
+                    return { upgradeItemCount: null, regularMaterials: [] };
                 }
 
-                const requirements = [];
-
-                // Add upgrade item first if it exists (shown first in UI)
-                // Upgrade items are NOT affected by Artisan Tea
-                if (actionDetails.upgradeItemHrid) {
-                    requirements.push({
-                        count: 1,
-                        isUpgradeItem: true  // Flag to skip artisan reduction
-                    });
-                }
+                // Separate upgrade item from regular materials
+                const upgradeItemCount = actionDetails.upgradeItemHrid ? 1 : null;
+                const regularMaterials = [];
 
                 // Add regular input items (affected by Artisan Tea)
                 if (actionDetails.inputItems && actionDetails.inputItems.length > 0) {
                     actionDetails.inputItems.forEach(item => {
-                        requirements.push({
-                            count: item.count || 0,
-                            isUpgradeItem: false
+                        regularMaterials.push({
+                            count: item.count || 0
                         });
                     });
                 }
 
-                // Return array of requirement objects in order
-                return requirements;
+                // Return separated data
+                return { upgradeItemCount, regularMaterials };
 
             } catch (error) {
                 console.error('[Required Materials] Error getting base requirements:', error);
-                return [];
+                return { upgradeItemCount: null, regularMaterials: [] };
             }
         }
 
@@ -20462,6 +20428,136 @@
             taskInfo: taskInfo
         };
     }
+
+    /**
+     * DOM Selector Constants
+     * Centralized selector strings for querying game elements
+     * If game class names change, update here only
+     */
+
+    /**
+     * Game UI Selectors (class names from game code)
+     */
+    const GAME = {
+        // Header
+        TOTAL_LEVEL: '[class*="Header_totalLevel"]',
+
+        // Settings Panel
+        SETTINGS_PANEL_TITLE: '[class*="SettingsPanel_title"]',
+        SETTINGS_TABS_CONTAINER: 'div[class*="SettingsPanel_tabsComponentContainer"]',
+        TABS_FLEX_CONTAINER: '[class*="MuiTabs-flexContainer"]',
+        TAB_PANELS_CONTAINER: '[class*="TabsComponent_tabPanelsContainer"]',
+        TAB_PANEL: '[class*="TabPanel_tabPanel"]',
+
+        // Game Panel
+        GAME_PANEL: 'div[class*="GamePage_gamePanel"]',
+
+        // Skill Action Detail
+        SKILL_ACTION_DETAIL: '[class*="SkillActionDetail_skillActionDetail"]',
+        SKILL_ACTION_NAME: '[class*="SkillActionDetail_name"]',
+        ENHANCING_COMPONENT: 'div.SkillActionDetail_enhancingComponent__17bOx',
+
+        // Action Queue
+        QUEUED_ACTIONS: '[class*="QueuedActions_action"]',
+        MAX_ACTION_COUNT_INPUT: '[class*="maxActionCountInput"]',
+
+        // Tasks
+        TASK_PANEL: '[class*="TasksPanel_taskSlotCount"]',
+        TASK_LIST: '[class*="TasksPanel_taskList"]',
+        TASK_CARD: '[class*="RandomTask_randomTask"]',
+        TASK_NAME: '[class*="RandomTask_name"]',
+        TASK_INFO: '.RandomTask_taskInfo__1uasf',
+        TASK_ACTION: '.RandomTask_action__3eC6o',
+        TASK_REWARDS: '.RandomTask_rewards__YZk7D',
+        TASK_CONTENT: '[class*="RandomTask_content"]',
+        TASK_NAME_DIV: 'div[class*="RandomTask_name"]',
+
+        // House Panel
+        HOUSE_HEADER: '[class*="HousePanel_header"]',
+        HOUSE_COSTS: '[class*="HousePanel_costs"]',
+        HOUSE_ITEM_REQUIREMENTS: '[class*="HousePanel_itemRequirements"]',
+
+        // Inventory
+        INVENTORY_ITEMS: '[class*="Inventory_items"]',
+        INVENTORY_CATEGORY_BUTTON: '.Inventory_categoryButton__35s1x',
+        INVENTORY_LABEL: '.Inventory_label__XEOAx',
+
+        // Items
+        ITEM_CONTAINER: '.Item_itemContainer__x7kH1',
+        ITEM_ITEM: '.Item_item__2De2O',
+        ITEM_COUNT: '.Item_count__1HVvv',
+        ITEM_TOOLTIP_TEXT: '.ItemTooltipText_itemTooltipText__zFq3A',
+
+        // Navigation/Experience Bars
+        NAV_LEVEL: '[class*="NavigationBar_level"]',
+        NAV_CURRENT_EXPERIENCE: '[class*="NavigationBar_currentExperience"]',
+
+        // Enhancement
+        PROTECTION_ITEM_INPUT: '[class*="protectionItemInputContainer"]',
+
+        // Tooltips
+        MUI_TOOLTIP: '.MuiTooltip-tooltip'
+    };
+
+    /**
+     * Toolasha-specific selectors (our injected elements)
+     */
+    const TOOLASHA = {
+        // Settings
+        SETTINGS_TAB: '#toolasha-settings-tab',
+        SETTING_WITH_DEPS: '.toolasha-setting[data-dependencies]',
+
+        // Task features
+        TASK_PROFIT: '.mwi-task-profit',
+        REROLL_COST_DISPLAY: '.mwi-reroll-cost-display',
+
+        // Action features
+        QUEUE_TOTAL_TIME: '#mwi-queue-total-time',
+        FORAGING_PROFIT: '#mwi-foraging-profit',
+        PRODUCTION_PROFIT: '#mwi-production-profit',
+
+        // House features
+        HOUSE_PRICING: '.mwi-house-pricing',
+        HOUSE_PRICING_EMPTY: '.mwi-house-pricing-empty',
+        HOUSE_TOTAL: '.mwi-house-total',
+        HOUSE_TO_LEVEL: '.mwi-house-to-level',
+
+        // Profile/Combat Score
+        SCORE_CLOSE_BTN: '#mwi-score-close-btn',
+        SCORE_TOGGLE: '#mwi-score-toggle',
+        SCORE_DETAILS: '#mwi-score-details',
+        HOUSE_TOGGLE: '#mwi-house-toggle',
+        HOUSE_BREAKDOWN: '#mwi-house-breakdown',
+        ABILITY_TOGGLE: '#mwi-ability-toggle',
+        ABILITY_BREAKDOWN: '#mwi-ability-breakdown',
+        EQUIPMENT_TOGGLE: '#mwi-equipment-toggle',
+        EQUIPMENT_BREAKDOWN: '#mwi-equipment-breakdown',
+
+        // Market features
+        MARKET_PRICE_INJECTED: '.market-price-injected',
+        MARKET_PROFIT_INJECTED: '.market-profit-injected',
+        MARKET_EV_INJECTED: '.market-ev-injected',
+        MARKET_ENHANCEMENT_INJECTED: '.market-enhancement-injected',
+
+        // UI features
+        ALCHEMY_DIMMED: '.mwi-alchemy-dimmed',
+        EXP_PERCENTAGE: '.mwi-exp-percentage',
+        STACK_PRICE: '.mwi-stack-price',
+        NETWORTH_HEADER: '.mwi-networth-header',
+
+        // Enhancement
+        ENHANCEMENT_STATS: '#mwi-enhancement-stats',
+
+        // Generic
+        COLLAPSIBLE_SECTION: '.mwi-collapsible-section',
+        EXPANDABLE_HEADER: '.mwi-expandable-header',
+        SECTION_HEADER_NEXT: '.mwi-section-header + div',
+
+        // Legacy/cleanup markers
+        INSERTED_SPAN: '.insertedSpan',
+        SCRIPT_INJECTED: '.script-injected',
+        CONSUMABLE_STATS_INJECTED: '.consumable-stats-injected'
+    };
 
     /**
      * Task Profit Display
@@ -26929,7 +27025,7 @@
             this.currentViewingIndex = 0; // Index in sessions array
             this.updateDebounce = null;
             this.isDragging = false;
-            this.screenObserver = null;
+            this.unregisterScreenObserver = null;
             this.isOnEnhancingScreen = false;
             this.isCollapsed = false; // Track collapsed state
         }
@@ -26954,7 +27050,7 @@
         }
 
         /**
-         * Set up screen observer to detect Enhancing screen
+         * Set up screen observer to detect Enhancing screen using centralized observer
          */
         setupScreenObserver() {
             // Check if setting is enabled
@@ -26969,25 +27065,15 @@
             this.checkEnhancingScreen();
             this.updateVisibility(); // Always set initial visibility
 
-            // Wait for document.body before observing
-            const startObserver = () => {
-                if (!document.body) {
-                    setTimeout(startObserver, 10);
-                    return;
-                }
-
-                // Set up MutationObserver to detect screen changes
-                this.screenObserver = new MutationObserver(() => {
+            // Register with centralized DOM observer for enhancing panel detection
+            this.unregisterScreenObserver = domObserver.onClass(
+                'EnhancementUI-ScreenDetection',
+                'SkillActionDetail_enhancingComponent',
+                () => {
                     this.checkEnhancingScreen();
-                });
-
-                this.screenObserver.observe(document.body, {
-                    childList: true,
-                    subtree: true
-                });
-            };
-
-            startObserver();
+                },
+                { debounce: true, debounceDelay: 100 }
+            );
         }
 
         /**
@@ -30166,8 +30252,8 @@
 
             const events = this.extractChatEvents();
 
-            // Phase 5: Save runs from chat messages (authoritative source)
-            await this.saveRunsFromEvents(events);
+            // NOTE: Run saving is done manually via the Backfill button
+            // Chat annotations only add visual time labels to messages
 
             // Continue with visual annotations
             const runDurations = [];
@@ -30563,7 +30649,6 @@
          */
         updatePosition(container) {
             const baseStyle = `
-            display: none;
             position: fixed;
             z-index: 9999;
             background: rgba(0, 0, 0, 0.85);
@@ -31559,8 +31644,9 @@
                         await storage.setJSON('allRuns', [], 'unifiedRuns', true);
                         alert('All run history cleared.');
 
-                        // Refresh display
+                        // Refresh both history and chart display
                         if (this.callbacks.onUpdateHistory) await this.callbacks.onUpdateHistory();
+                        if (this.callbacks.onUpdateChart) await this.callbacks.onUpdateChart();
                     } catch (error) {
                         console.error('[Dungeon Tracker UI Interactions] Clear all history error:', error);
                         alert('Failed to clear run history. Check console for details.');
@@ -31620,8 +31706,9 @@
                         alert('No new runs found to backfill.');
                     }
 
-                    // Refresh run history display
+                    // Refresh both history and chart display
                     if (this.callbacks.onUpdateHistory) await this.callbacks.onUpdateHistory();
+                    if (this.callbacks.onUpdateChart) await this.callbacks.onUpdateChart();
                 } catch (error) {
                     console.error('[Dungeon Tracker UI Interactions] Backfill error:', error);
                     alert('Backfill failed. Check console for details.');
@@ -31780,9 +31867,9 @@
 
             if (chartContainer) {
                 chartContainer.style.display = 'block';
-                // Render chart after becoming visible
+                // Render chart after becoming visible (longer delay for initial page load)
                 if (this.callbacks.onUpdateChart) {
-                    setTimeout(() => this.callbacks.onUpdateChart(), 100);
+                    setTimeout(() => this.callbacks.onUpdateChart(), 300);
                 }
             }
             if (toggle) toggle.textContent = '▼';
@@ -31926,6 +32013,9 @@
 
             // Create UI elements
             this.createUI();
+
+            // Hide UI initially - only show when dungeon is active
+            this.hide();
 
             // Register for dungeon tracker updates
             dungeonTracker.onUpdate((currentRun, completedRun) => {
@@ -33566,7 +33656,7 @@
         constructor() {
             this.config = config;
             this.settingsPanel = null;
-            this.settingsObserver = null;
+            this.unregisterSettingsObserver = null;
             this.currentSettings = {};
             this.isInjecting = false; // Guard against concurrent injection
         }
@@ -33596,59 +33686,27 @@
         }
 
         /**
-         * Observe for game's settings panel
-         * Uses MutationObserver to detect when settings panel appears
+         * Observe for game's settings panel using centralized observer
          */
         observeSettingsPanel() {
-            // Watch for settings panel to be added to DOM
-
-            // Wait for DOM to be ready before observing
-            const startObserver = () => {
-                if (!document.body) {
-                    setTimeout(startObserver, 10);
-                    return;
-                }
-
-                const observer = new MutationObserver((mutations) => {
-                    // Look for the settings tabs container
-                    const tabsContainer = document.querySelector('div[class*="SettingsPanel_tabsComponentContainer"]');
-
-                    if (tabsContainer) {
-                        // Check if our tab already exists before injecting
-                        if (!tabsContainer.querySelector('#toolasha-settings-tab')) {
-                            this.injectSettingsTab();
-                        }
-                        // Keep observer running - panel might be removed/re-added if user navigates away and back
+            // Register with centralized DOM observer for settings panel detection
+            this.unregisterSettingsObserver = domObserver.onClass(
+                'SettingsUI-PanelDetection',
+                'SettingsPanel_tabsComponentContainer',
+                (tabsContainer) => {
+                    // Check if our tab already exists before injecting
+                    if (!tabsContainer.querySelector('#toolasha-settings-tab')) {
+                        this.injectSettingsTab();
                     }
-                });
+                },
+                { debounce: true, debounceDelay: 100 }
+            );
 
-                // Observe the main game panel for changes
-                const gamePanel = document.querySelector('div[class*="GamePage_gamePanel"]');
-                if (gamePanel) {
-                    observer.observe(gamePanel, {
-                        childList: true,
-                        subtree: true
-                    });
-                } else {
-                    // Fallback: observe entire body if game panel not found (Firefox timing issue)
-                    console.warn('[Toolasha Settings] Could not find game panel, observing body instead');
-                    observer.observe(document.body, {
-                        childList: true,
-                        subtree: true
-                    });
-                }
-
-                // Store observer reference
-                this.settingsObserver = observer;
-
-                // Also check immediately in case settings is already open
-                const existingTabsContainer = document.querySelector('div[class*="SettingsPanel_tabsComponentContainer"]');
-                if (existingTabsContainer && !existingTabsContainer.querySelector('#toolasha-settings-tab')) {
-                    this.injectSettingsTab();
-                }
-            };
-
-            startObserver();
+            // Also check immediately in case settings is already open
+            const existingTabsContainer = document.querySelector('div[class*="SettingsPanel_tabsComponentContainer"]');
+            if (existingTabsContainer && !existingTabsContainer.querySelector('#toolasha-settings-tab')) {
+                this.injectSettingsTab();
+            }
         }
 
         /**
@@ -34517,7 +34575,7 @@
         const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
         targetWindow.Toolasha = {
-            version: '0.4.930',
+            version: '0.4.931',
 
             // Feature toggle API (for users to manage settings via console)
             features: {

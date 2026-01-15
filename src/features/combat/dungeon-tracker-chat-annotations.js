@@ -99,8 +99,8 @@ class DungeonTrackerChatAnnotations {
 
         const events = this.extractChatEvents();
 
-        // Phase 5: Save runs from chat messages (authoritative source)
-        await this.saveRunsFromEvents(events);
+        // NOTE: Run saving is done manually via the Backfill button
+        // Chat annotations only add visual time labels to messages
 
         // Continue with visual annotations
         const runDurations = [];
