@@ -77,27 +77,57 @@ HIGH PRIORITY
    Issue: Each feature manually handles observer cleanup, processed flags,
           and re-rendering logic
 
-   Proposed Module: utils/dom-observer-helpers.js
-   Functions:
-   - createSingletonObserver(id, selector, handler) - Auto-prevents duplicate processing
-   - createPersistentDisplay(selector, createFn) - Handles cleanup and re-creation
-   - createMutationWatcher(element, callback) - Simplified mutation observer
+   **STATUS: ATTEMPTED & REVERTED (January 2026)**
 
-   Pattern Example:
-   Current (20 lines):
-     this.unregister = domObserver.onClass('ID', 'selector', (elem) => {
-       if (elem.classList.contains('processed')) return;
-       elem.classList.add('processed');
-       // do work
-     });
+   **What Went Wrong:**
+   Initial implementation created `createSingletonObserver()` helper that tracked
+   container elements (menus, panels, modals) to prevent duplicate processing.
+   This fundamentally misunderstood the purpose of the original WeakSets.
 
-   Proposed (5 lines):
-     this.unregister = createSingletonObserver('ID', 'selector', (elem) => {
-       // do work (processed flag automatic)
-     });
+   **Critical Misunderstanding:**
+   - Original WeakSets tracked **child elements** (item icons within menus, etc.)
+   - createSingletonObserver tracked **container elements** (the menu itself)
+   - Wrong granularity → feature broke after first use
 
-   Estimated Lines Saved: ~150 lines of boilerplate observer code
-   Risk Level: Low (wrapper around existing domObserver)
+   **Example Failure (alchemy-item-dimming.js):**
+   - First open: Menu element processed → items dimmed ✅
+   - Second open: Menu element marked "processed" → callback never fires → no dimming ❌
+   - Menu element persists in DOM, helper assumes "process once and never again"
+
+   **Root Cause:**
+   Many DOM elements need **re-processing on visibility changes**, not one-time processing:
+   - Alchemy menu: Re-process items each time menu opens
+   - Equipment icons: Re-process when new items appear in inventory
+   - Skill XP bars: Re-process when XP changes
+   - Market modals: May be hidden/shown rather than removed/re-added
+
+   **Files Affected (all reverted):**
+   - alchemy-item-dimming.js
+   - skill-experience-percentage.js
+   - equipment-level-display.js
+   - auto-fill-price.js
+   - required-materials.js
+   - house-panel-observer.js
+
+   **Lessons Learned:**
+   1. WeakSets tracking child elements serve a real purpose (prevent duplicate overlays)
+   2. Container-level deduplication breaks visibility-dependent features
+   3. "Process once" assumption is wrong for most DOM observer patterns
+   4. The boilerplate is often necessary, not just overhead
+   5. Must understand **why** code exists before abstracting it
+
+   **Potentially Useful Helpers (not implemented):**
+   - createTrackedObserver() - Manages cleanup function Maps ✅ (useful pattern)
+   - createMutationWatcher() - Simplifies custom MutationObserver ✅ (useful pattern)
+   - createSingletonObserver() - ❌ WRONG ABSTRACTION, DO NOT IMPLEMENT
+
+   **Recommendation:**
+   SKIP THIS ITEM. The WeakSet patterns are necessary boilerplate, not removable
+   duplication. Focus on items #4, #6-15 instead.
+
+   Original Estimated Lines Saved: ~150 lines
+   Actual Lines Saved: 0 (reverted due to broken functionality)
+   Risk Level: DEFERRED (fundamental pattern mismatch)
 
 ================================================================================
 MEDIUM PRIORITY
@@ -196,20 +226,30 @@ MEDIUM PRIORITY
 LOW PRIORITY
 ================================================================================
 
-11. Create Number Formatting Service
+✅ 11. Create Number Formatting Service - COMPLETED (January 2026)
     Current: formatters.js exists but not consistently used; ~15 files have
              inline formatting
     Issue: Currency formatting (K/M/B), time formatting, and percentage
            formatting duplicated
 
-    Proposal: Expand formatters.js and enforce usage via code review
-    Functions to Add:
-    - formatCurrency(amount, options) - Consistent gold/coin display
-    - formatPercentage(value, decimals) - Consistent percentage formatting
-    - formatCompactNumber(value) - K/M/B notation
+    COMPLETED: Expanded formatters.js and refactored 8 files
+    Functions Added:
+    - formatPercentage(value, decimals = 1) - Converts decimal to percentage
+    - formatCurrency(amount, options) - Smart wrapper for different currency styles
+    - formatCompactNumber(value, decimals = 1) - Alias for formatKMB
 
-    Estimated Lines Saved: ~80 lines
-    Risk Level: Low (utility expansion)
+    Files Refactored (8 total):
+    - skill-experience-percentage.js (1 instance)
+    - enhancement-ui.js (2 instances)
+    - gathering-profit.js (7 instances)
+    - profit-display.js (9 instances)
+    - tooltip-prices.js (2 instances)
+    - task-profit-display.js (2 instances)
+    - quick-input-buttons.js (3 instances)
+
+    Result: ~26 instances of percentage formatting consolidated
+    Estimated Lines Saved: ~50 lines (inline percentage logic removed)
+    Risk Level: Low (pure utility functions)
 
 --------------------------------------------------------------------------------
 
@@ -282,27 +322,31 @@ LOW PRIORITY
 SUMMARY METRICS
 ================================================================================
 
-COMPLETED: 3/15 items (20%)
+COMPLETED: 4/15 items (27%)
   ✅ #1: Break Down Monolithic UI Files (dungeon tracker split)
   ✅ #2: Extract React Input Utility
   ✅ #3: Consolidate Action Panel Display Logic
+  ✅ #11: Create Number Formatting Service
 
-REMAINING: 12/15 items
+DEFERRED: 1/15 items
+  ⛔ #5: Standardize DOM Observer Patterns (architectural mismatch)
+
+REMAINING: 10/15 items
 Estimated Total Lines Saved: ~1,500-2,000 lines (reduction of 4-6% of codebase)
 Number of New Utility Modules: 8-10 new files in src/utils/
-Files Requiring Refactoring: ~35 feature files would benefit
+Files Requiring Refactoring: ~27 feature files would benefit (8 already refactored)
 Largest Impact Items: #4 (market data), #7 (profit service)
-Quickest Wins: #5 (DOM observer), #11 (formatters)
+Quickest Remaining Wins: #4 (market data access)
 
 ================================================================================
 IMPLEMENTATION STRATEGY
 ================================================================================
 
-Phase 1 - Foundation (Quickest Wins) - 1/3 COMPLETE
+Phase 1 - Foundation (Quickest Wins) - 2/3 COMPLETE
   ✅ #2: Extract React Input Utility - DONE
-  - #5: Standardize DOM Observer Patterns - PENDING
-  - #11: Create Number Formatting Service - PENDING
-  Estimated Time: 2-3 days remaining
+  ⛔ #5: Standardize DOM Observer Patterns - DEFERRED
+  ✅ #11: Create Number Formatting Service - DONE
+  Estimated Time: Complete
   Risk: Low
 
 Phase 2 - Core Utilities (High Impact) - 1/2 COMPLETE

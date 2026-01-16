@@ -18,6 +18,7 @@ import domObserver from '../../core/dom-observer.js';
 import { calculateActionStats } from '../../utils/action-calculator.js';
 import { parseEquipmentSpeedBonuses, parseEquipmentEfficiencyBonuses, debugEquipmentSpeedBonuses } from '../../utils/equipment-parser.js';
 import { parseArtisanBonus, getDrinkConcentration, parseActionLevelBonus, parseTeaEfficiencyBreakdown } from '../../utils/tea-parser.js';
+import { formatPercentage } from '../../utils/formatters.js';
 import { calculateHouseEfficiency } from '../../utils/house-efficiency.js';
 import { stackAdditive } from '../../utils/efficiency.js';
 import { timeReadable, formatWithSeparator } from '../../utils/formatters.js';
@@ -158,7 +159,7 @@ class QuickInputButtons {
             const speedLines = [];
             speedLines.push(`Base: ${baseTime.toFixed(2)}s → ${actionTime.toFixed(2)}s`);
             if (speedBonus > 0) {
-                speedLines.push(`Speed: +${(speedBonus * 100).toFixed(1)}% | ${(3600 / actionTime).toFixed(0)}/hr`);
+                speedLines.push(`Speed: +${formatPercentage(speedBonus, 1)} | ${(3600 / actionTime).toFixed(0)}/hr`);
             } else {
                 speedLines.push(`${(3600 / actionTime).toFixed(0)}/hr`);
             }
@@ -170,9 +171,9 @@ class QuickInputButtons {
                 for (const item of speedBreakdown.equipmentAndTools) {
                     const enhText = item.enhancementLevel > 0 ? ` +${item.enhancementLevel}` : '';
                     const detailText = item.enhancementBonus > 0 ?
-                        ` (${(item.baseBonus * 100).toFixed(1)}% + ${(item.enhancementBonus * item.enhancementLevel * 100).toFixed(1)}%)` :
+                        ` (${formatPercentage(item.baseBonus, 1)} + ${formatPercentage(item.enhancementBonus * item.enhancementLevel, 1)})` :
                         '';
-                    speedLines.push(`  - ${item.itemName}${enhText}: +${(item.scaledBonus * 100).toFixed(1)}%${detailText}`);
+                    speedLines.push(`  - ${item.itemName}${enhText}: +${formatPercentage(item.scaledBonus, 1)}${detailText}`);
                 }
 
                 // Consumables

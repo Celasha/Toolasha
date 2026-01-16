@@ -9,7 +9,7 @@
 import config from '../../core/config.js';
 import { calculateGatheringProfit } from './gathering-profit.js';
 import { calculateProductionProfit } from './production-profit.js';
-import { formatWithSeparator } from '../../utils/formatters.js';
+import { formatWithSeparator, formatPercentage } from '../../utils/formatters.js';
 import { createCollapsibleSection } from '../../utils/ui-components.js';
 
 /**
@@ -56,8 +56,8 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
 
             // Show processing percentage for processed items
             if (output.isProcessed && output.processingChance) {
-                const processingPercent = (output.processingChance * 100).toFixed(1);
-                line.textContent = `• ${output.name}: (${processingPercent}%) ${output.itemsPerHour.toFixed(decimals)}/hr @ ${formatWithSeparator(output.priceEach)} each → ${formatWithSeparator(Math.round(output.revenuePerHour))}/hr`;
+                const processingPercent = formatPercentage(output.processingChance, 1);
+                line.textContent = `• ${output.name}: (${processingPercent}) ${output.itemsPerHour.toFixed(decimals)}/hr @ ${formatWithSeparator(output.priceEach)} each → ${formatWithSeparator(Math.round(output.revenuePerHour))}/hr`;
             } else {
                 line.textContent = `• ${output.name}: ${output.itemsPerHour.toFixed(decimals)}/hr @ ${formatWithSeparator(output.priceEach)} each → ${formatWithSeparator(Math.round(output.revenuePerHour))}/hr`;
             }
@@ -89,7 +89,8 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
             const decimals = drop.dropsPerHour < 1 ? 2 : 1;
             const line = document.createElement('div');
             line.style.marginLeft = '8px';
-            line.textContent = `• ${drop.itemName}: ${drop.dropsPerHour.toFixed(decimals)}/hr (${(drop.dropRate * 100).toFixed(drop.dropRate < 0.01 ? 3 : 2)}%) → ${formatWithSeparator(Math.round(drop.revenuePerHour))}/hr`;
+            const dropRatePct = formatPercentage(drop.dropRate, drop.dropRate < 0.01 ? 3 : 2);
+            line.textContent = `• ${drop.itemName}: ${drop.dropsPerHour.toFixed(decimals)}/hr (${dropRatePct}) → ${formatWithSeparator(Math.round(drop.revenuePerHour))}/hr`;
             essenceContent.appendChild(line);
         }
 
@@ -113,7 +114,8 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
             const decimals = drop.dropsPerHour < 1 ? 2 : 1;
             const line = document.createElement('div');
             line.style.marginLeft = '8px';
-            line.textContent = `• ${drop.itemName}: ${drop.dropsPerHour.toFixed(decimals)}/hr (${(drop.dropRate * 100).toFixed(drop.dropRate < 0.01 ? 3 : 2)}%) → ${formatWithSeparator(Math.round(drop.revenuePerHour))}/hr`;
+            const dropRatePct = formatPercentage(drop.dropRate, drop.dropRate < 0.01 ? 3 : 2);
+            line.textContent = `• ${drop.itemName}: ${drop.dropsPerHour.toFixed(decimals)}/hr (${dropRatePct}) → ${formatWithSeparator(Math.round(drop.revenuePerHour))}/hr`;
             rareFindContent.appendChild(line);
         }
 
@@ -354,7 +356,7 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
         const gourmetRevenue = profitData.gourmetBonusItems * profitData.priceAfterTax;
         gourmetSection = createCollapsibleSection(
             '',
-            `Gourmet Bonus: ${formatWithSeparator(Math.round(gourmetRevenue))}/hr (${(profitData.gourmetBonus * 100).toFixed(1)}% gourmet)`,
+            `Gourmet Bonus: ${formatWithSeparator(Math.round(gourmetRevenue))}/hr (${formatPercentage(profitData.gourmetBonus, 1)} gourmet)`,
             null,
             gourmetContent,
             false,
@@ -380,7 +382,8 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
             const decimals = drop.dropsPerHour < 1 ? 2 : 1;
             const line = document.createElement('div');
             line.style.marginLeft = '8px';
-            line.textContent = `• ${drop.itemName}: ${drop.dropsPerHour.toFixed(decimals)}/hr (${(drop.dropRate * 100).toFixed(drop.dropRate < 0.01 ? 3 : 2)}%) → ${formatWithSeparator(Math.round(drop.revenuePerHour))}/hr`;
+            const dropRatePct = formatPercentage(drop.dropRate, drop.dropRate < 0.01 ? 3 : 2);
+            line.textContent = `• ${drop.itemName}: ${drop.dropsPerHour.toFixed(decimals)}/hr (${dropRatePct}) → ${formatWithSeparator(Math.round(drop.revenuePerHour))}/hr`;
             essenceContent.appendChild(line);
         }
 
@@ -404,7 +407,8 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
             const decimals = drop.dropsPerHour < 1 ? 2 : 1;
             const line = document.createElement('div');
             line.style.marginLeft = '8px';
-            line.textContent = `• ${drop.itemName}: ${drop.dropsPerHour.toFixed(decimals)}/hr (${(drop.dropRate * 100).toFixed(drop.dropRate < 0.01 ? 3 : 2)}%) → ${formatWithSeparator(Math.round(drop.revenuePerHour))}/hr`;
+            const dropRatePct = formatPercentage(drop.dropRate, drop.dropRate < 0.01 ? 3 : 2);
+            line.textContent = `• ${drop.itemName}: ${drop.dropsPerHour.toFixed(decimals)}/hr (${dropRatePct}) → ${formatWithSeparator(Math.round(drop.revenuePerHour))}/hr`;
             rareFindContent.appendChild(line);
         }
 
@@ -447,7 +451,7 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
             // Add Artisan reduction info if present (only show if actually reduced)
             if (profitData.artisanBonus > 0 && material.baseAmount && material.amount !== material.baseAmount) {
                 const baseAmountPerHour = material.baseAmount * profitData.actionsPerHour;
-                materialText += ` (${baseAmountPerHour.toFixed(1)} base -${(profitData.artisanBonus * 100).toFixed(1)}% 🍵)`;
+                materialText += ` (${baseAmountPerHour.toFixed(1)} base -${formatPercentage(profitData.artisanBonus, 1)} 🍵)`;
             }
 
             materialText += ` @ ${formatWithSeparator(Math.round(material.askPrice))} → ${formatWithSeparator(Math.round(material.totalCost * profitData.actionsPerHour))}/hr`;
@@ -503,7 +507,7 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
     // Artisan Bonus (still shown here for reference, also embedded in materials)
     if (profitData.artisanBonus > 0) {
         modifierLines.push(`<div style="font-weight: 500; color: var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY});">Modifiers:</div>`);
-        modifierLines.push(`<div style="margin-left: 8px;">• Artisan: -${(profitData.artisanBonus * 100).toFixed(1)}% material requirement</div>`);
+        modifierLines.push(`<div style="margin-left: 8px;">• Artisan: -${formatPercentage(profitData.artisanBonus, 1)} material requirement</div>`);
     }
 
     // Gourmet Bonus
@@ -511,7 +515,7 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
         if (modifierLines.length === 0) {
             modifierLines.push(`<div style="font-weight: 500; color: var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY});">Modifiers:</div>`);
         }
-        modifierLines.push(`<div style="margin-left: 8px;">• Gourmet: +${(profitData.gourmetBonus * 100).toFixed(1)}% bonus items</div>`);
+        modifierLines.push(`<div style="margin-left: 8px;">• Gourmet: +${formatPercentage(profitData.gourmetBonus, 1)} bonus items</div>`);
     }
 
     modifiersDiv.innerHTML = modifierLines.join('');

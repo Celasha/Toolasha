@@ -9,6 +9,7 @@ import { SessionState, getSessionDuration } from './enhancement-session.js';
 import dataManager from '../../core/data-manager.js';
 import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
+import { formatPercentage } from '../../utils/formatters.js';
 
 // UI Style Constants (matching Ultimate Enhancement Tracker)
 const STYLE = {
@@ -68,6 +69,7 @@ class EnhancementUI {
         this.updateDebounce = null;
         this.isDragging = false;
         this.unregisterScreenObserver = null;
+        this.pollInterval = null;
         this.isOnEnhancingScreen = false;
         this.isCollapsed = false; // Track collapsed state
     }
@@ -95,38 +97,61 @@ class EnhancementUI {
      * Set up screen observer to detect Enhancing screen using centralized observer
      */
     setupScreenObserver() {
-        // Check if setting is enabled
-        if (!config.getSetting('enhancementTracker_showOnlyOnEnhancingScreen')) {
-            // Setting is disabled, always show tracker
+        // Check if setting is enabled (default to false if undefined)
+        const showOnlyOnEnhancingScreen = config.getSetting('enhancementTracker_showOnlyOnEnhancingScreen');
+
+        if (showOnlyOnEnhancingScreen !== true) {
+            // Setting is disabled or undefined, always show tracker
             this.isOnEnhancingScreen = true;
             this.show();
-            return;
+        } else {
+            // Setting enabled, check current screen
+            this.checkEnhancingScreen();
+            this.updateVisibility();
         }
 
-        // Initial check and set visibility
-        this.checkEnhancingScreen();
-        this.updateVisibility(); // Always set initial visibility
-
         // Register with centralized DOM observer for enhancing panel detection
+        // Note: Enhancing screen uses EnhancingPanel_enhancingPanel, not SkillActionDetail_enhancingComponent
         this.unregisterScreenObserver = domObserver.onClass(
             'EnhancementUI-ScreenDetection',
-            'SkillActionDetail_enhancingComponent',
-            () => {
+            'EnhancingPanel_enhancingPanel',
+            (node) => {
                 this.checkEnhancingScreen();
             },
-            { debounce: true, debounceDelay: 100 }
+            { debounce: false }
         );
+
+        // Poll for both setting changes and panel removal
+        this.pollInterval = setInterval(() => {
+            const currentSetting = config.getSetting('enhancementTracker_showOnlyOnEnhancingScreen');
+
+            if (currentSetting !== true) {
+                // Setting disabled - always show
+                if (!this.isOnEnhancingScreen) {
+                    this.isOnEnhancingScreen = true;
+                    this.updateVisibility();
+                }
+            } else {
+                // Setting enabled - check if panel exists
+                const panel = document.querySelector('[class*="EnhancingPanel_enhancingPanel"]');
+                const shouldBeOnScreen = !!panel;
+
+                if (this.isOnEnhancingScreen !== shouldBeOnScreen) {
+                    this.isOnEnhancingScreen = shouldBeOnScreen;
+                    this.updateVisibility();
+                }
+            }
+        }, 500);
     }
 
     /**
      * Check if currently on Enhancing screen
      */
     checkEnhancingScreen() {
-        const enhancingPanel = document.querySelector('div.SkillActionDetail_enhancingComponent__17bOx');
+        const enhancingPanel = document.querySelector('[class*="EnhancingPanel_enhancingPanel"]');
         const wasOnEnhancingScreen = this.isOnEnhancingScreen;
         this.isOnEnhancingScreen = !!enhancingPanel;
 
-        // Only update visibility if screen state changed
         if (wasOnEnhancingScreen !== this.isOnEnhancingScreen) {
             this.updateVisibility();
         }
@@ -138,14 +163,11 @@ class EnhancementUI {
     updateVisibility() {
         const showOnlyOnEnhancingScreen = config.getSetting('enhancementTracker_showOnlyOnEnhancingScreen');
 
-        if (!showOnlyOnEnhancingScreen) {
-            // Setting is disabled, always show
+        if (showOnlyOnEnhancingScreen !== true) {
             this.show();
         } else if (this.isOnEnhancingScreen) {
-            // On Enhancing screen, show
             this.show();
         } else {
-            // Not on Enhancing screen, hide
             this.hide();
         }
     }
@@ -666,7 +688,7 @@ class EnhancementUI {
         const totalAttempts = session.totalAttempts;
         const totalSuccess = session.totalSuccesses;
         const totalFailure = session.totalFailures;
-        const successRate = totalAttempts > 0 ? ((totalSuccess / totalAttempts) * 100).toFixed(1) : '0.0';
+        const successRate = totalAttempts > 0 ? formatPercentage(totalSuccess / totalAttempts, 1) : '0.0%';
 
         const duration = getSessionDuration(session);
         const durationText = this.formatDuration(duration);
@@ -792,7 +814,7 @@ class EnhancementUI {
         let rows = '';
         for (const level of levels) {
             const levelData = session.attemptsPerLevel[level];
-            const rate = (levelData.successRate * 100).toFixed(1);
+            const rate = formatPercentage(levelData.successRate, 1);
             const isCurrent = (parseInt(level) === session.currentLevel);
 
             const rowStyle = isCurrent ? `
@@ -807,7 +829,7 @@ class EnhancementUI {
                     <td style="${compactCellStyle} text-align: center;">${level}</td>
                     <td style="${compactCellStyle} text-align: right;">${levelData.success}</td>
                     <td style="${compactCellStyle} text-align: right;">${levelData.fail}</td>
-                    <td style="${compactCellStyle} text-align: right;">${rate}%</td>
+                    <td style="${compactCellStyle} text-align: right;">${rate}</td>
                 </tr>
             `;
         }

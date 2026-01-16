@@ -11,7 +11,7 @@ import expectedValueCalculator from './expected-value-calculator.js';
 import { getEnhancingParams } from '../../utils/enhancement-config.js';
 import { calculateEnhancementPath, buildEnhancementTooltipHTML } from '../enhancement/tooltip-enhancement.js';
 import { calculateGatheringProfit } from '../actions/gathering-profit.js';
-import { numberFormatter, formatKMB, networthFormatter } from '../../utils/formatters.js';
+import { numberFormatter, formatKMB, networthFormatter, formatPercentage } from '../../utils/formatters.js';
 import dom from '../../utils/dom.js';
 import domObserver from '../../core/dom-observer.js';
 
@@ -620,10 +620,10 @@ class TooltipPrices {
             for (const drop of dropsToShow) {
                 if (!drop.hasPriceData) {
                     // Show item without price data in gray
-                    html += `<div style="color: ${config.COLOR_TEXT_SECONDARY};">• ${drop.itemName} (${(drop.dropRate * 100).toFixed(2)}%): ${drop.avgCount.toFixed(2)} avg → No price data</div>`;
+                    html += `<div style="color: ${config.COLOR_TEXT_SECONDARY};">• ${drop.itemName} (${formatPercentage(drop.dropRate, 2)}): ${drop.avgCount.toFixed(2)} avg → No price data</div>`;
                 } else {
                     // Format drop rate percentage
-                    const dropRatePercent = (drop.dropRate * 100).toFixed(2);
+                    const dropRatePercent = formatPercentage(drop.dropRate, 2);
 
                     // Show full drop breakdown
                     html += `<div>• ${drop.itemName} (${dropRatePercent}%): ${drop.avgCount.toFixed(2)} avg → ${formatTooltipPrice(drop.expectedValue)}</div>`;

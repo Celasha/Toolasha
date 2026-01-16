@@ -8,7 +8,7 @@ import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
 import webSocketHook from '../../core/websocket.js';
-import { numberFormatter, timeReadable } from '../../utils/formatters.js';
+import { numberFormatter, timeReadable, formatPercentage } from '../../utils/formatters.js';
 import { calculateTaskProfit } from './task-profit-calculator.js';
 import { GAME, TOOLASHA } from '../../utils/selectors.js';
 
@@ -512,8 +512,8 @@ class TaskProfitDisplay {
                     for (const output of details.baseOutputs) {
                         const itemsForTask = (output.itemsPerHour / actionsPerHour) * quantity;
                         const revenueForTask = output.revenuePerHour * hoursNeeded;
-                        const dropRateText = output.dropRate < 1.0 ? ` (${(output.dropRate * 100).toFixed(1)}% drop)` : '';
-                        const processingText = output.isProcessed ? ` [${(output.processingChance * 100).toFixed(1)}% processed]` : '';
+                        const dropRateText = output.dropRate < 1.0 ? ` (${formatPercentage(output.dropRate, 1)} drop)` : '';
+                        const processingText = output.isProcessed ? ` [${formatPercentage(output.processingChance, 1)} processed]` : '';
                         lines.push(`<div>• ${output.name}: ${itemsForTask.toFixed(1)} items @ ${numberFormatter(Math.round(output.priceEach))} = ${numberFormatter(Math.round(revenueForTask))}${dropRateText}${processingText}</div>`);
                     }
                 }

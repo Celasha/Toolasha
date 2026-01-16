@@ -5,6 +5,7 @@
 
 import domObserver from '../../core/dom-observer.js';
 import config from '../../core/config.js';
+import { formatPercentage } from '../../utils/formatters.js';
 
 class SkillExperiencePercentage {
     constructor() {
@@ -77,8 +78,8 @@ class SkillExperiencePercentage {
         const percentage = parseFloat(widthStyle.replace('%', ''));
         if (isNaN(percentage)) return;
 
-        // Format with 1 decimal place
-        const formattedPercentage = percentage.toFixed(1) + '%';
+        // Format with 1 decimal place (convert from percentage to decimal first)
+        const formattedPercentage = formatPercentage(percentage / 100, 1);
 
         // Check if we already have a percentage span
         let percentageSpan = levelContainer.querySelector('.mwi-exp-percentage');

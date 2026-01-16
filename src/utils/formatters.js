@@ -262,3 +262,72 @@ export function networthFormatter(num) {
     // 1B+: B with 2 decimals
     return sign + (absNum / 1000000000).toFixed(2) + 'B';
 }
+
+/**
+ * Format a decimal value as a percentage
+ * @param {number} value - The decimal value to format (e.g., 0.05 for 5%)
+ * @param {number} decimals - Number of decimal places (default: 1)
+ * @returns {string} Formatted percentage (e.g., "5.0%", "12.5%")
+ *
+ * @example
+ * formatPercentage(0.05) // "5.0%"
+ * formatPercentage(0.125, 1) // "12.5%"
+ * formatPercentage(0.00123, 2) // "0.12%"
+ * formatPercentage(0.00123, 3) // "0.123%"
+ */
+export function formatPercentage(value, decimals = 1) {
+    if (value === null || value === undefined) {
+        return null;
+    }
+
+    return (value * 100).toFixed(decimals) + '%';
+}
+
+/**
+ * Format currency/coin amounts intelligently based on context
+ * @param {number} amount - The amount to format
+ * @param {Object} options - Formatting options
+ * @param {string} options.style - 'game' (4-digit), 'compact' (K/M/B), 'full' (thousand separators), 'networth' (2 decimals)
+ * @param {number} options.decimals - Decimal places for compact style (default: 1)
+ * @returns {string} Formatted currency string
+ *
+ * @example
+ * formatCurrency(1500, {style: 'game'}) // "1,500"
+ * formatCurrency(1500000, {style: 'game'}) // "1,500K"
+ * formatCurrency(1500000, {style: 'compact'}) // "1.5M"
+ * formatCurrency(1500000, {style: 'full'}) // "1,500,000"
+ * formatCurrency(1234, {style: 'networth'}) // "1.23K"
+ */
+export function formatCurrency(amount, options = {}) {
+    const style = options.style || 'game';
+    const decimals = options.decimals !== undefined ? options.decimals : 1;
+
+    switch (style) {
+        case 'game':
+            return coinFormatter(amount);
+        case 'compact':
+            return formatKMB(amount, decimals);
+        case 'networth':
+            return networthFormatter(amount);
+        case 'full':
+            return formatWithSeparator(amount);
+        default:
+            return coinFormatter(amount);
+    }
+}
+
+/**
+ * Format numbers in compact notation (K/M/B)
+ * Alias for formatKMB for clearer naming
+ * @param {number} value - The number to format
+ * @param {number} decimals - Number of decimal places (default: 1)
+ * @returns {string} Formatted number (e.g., "1.5K", "2.3M", "1.2B")
+ *
+ * @example
+ * formatCompactNumber(1500) // "1.5K"
+ * formatCompactNumber(2300000) // "2.3M"
+ * formatCompactNumber(1234567890) // "1.2B"
+ */
+export function formatCompactNumber(value, decimals = 1) {
+    return formatKMB(value, decimals);
+}

@@ -15,7 +15,7 @@ import dataManager from '../../core/data-manager.js';
 import { parseEquipmentSpeedBonuses, parseEquipmentEfficiencyBonuses } from '../../utils/equipment-parser.js';
 import { parseTeaEfficiency, parseGourmetBonus, parseProcessingBonus, parseGatheringBonus, getDrinkConcentration } from '../../utils/tea-parser.js';
 import { stackAdditive } from '../../utils/efficiency.js';
-import { formatWithSeparator } from '../../utils/formatters.js';
+import { formatWithSeparator, formatPercentage } from '../../utils/formatters.js';
 import { calculateBonusRevenue } from '../../utils/bonus-revenue-calculator.js';
 
 /**
@@ -429,7 +429,7 @@ export function formatProfitDisplay(profitData) {
             lines.push(`<br><span style="font-size: 0.85em; opacity: 0.7; margin-left: 10px;">`);
             const decimals = output.itemsPerHour < 1 ? 2 : 1;
             if (output.dropRate < 1.0) {
-                lines.push(`• ${output.name}: ~${output.itemsPerHour.toFixed(decimals)}/hour (${(output.dropRate * 100).toFixed(1)}% drop rate)`);
+                lines.push(`• ${output.name}: ~${output.itemsPerHour.toFixed(decimals)}/hour (${formatPercentage(output.dropRate, 1)} drop rate)`);
             } else {
                 lines.push(`• ${output.name}: ~${output.itemsPerHour.toFixed(decimals)}/hour`);
             }
@@ -472,7 +472,8 @@ export function formatProfitDisplay(profitData) {
             for (const drop of profitData.bonusRevenue.bonusDrops) {
                 lines.push(`<br><span style="font-size: 0.85em; opacity: 0.7; margin-left: 10px;">`);
                 const decimals = drop.dropsPerHour < 1 ? 2 : 1;
-                lines.push(`• ${drop.itemName}: ${(drop.dropRate * 100).toFixed(drop.dropRate < 0.01 ? 3 : 2)}% drop, ~${drop.dropsPerHour.toFixed(decimals)}/hour → ${formatWithSeparator(Math.round(drop.revenuePerHour))}/hour`);
+                const dropRatePct = formatPercentage(drop.dropRate, drop.dropRate < 0.01 ? 3 : 2);
+                lines.push(`• ${drop.itemName}: ${dropRatePct} drop, ~${drop.dropsPerHour.toFixed(decimals)}/hour → ${formatWithSeparator(Math.round(drop.revenuePerHour))}/hour`);
                 lines.push(`</span>`);
             }
         }
@@ -481,7 +482,7 @@ export function formatProfitDisplay(profitData) {
     // Show Processing Tea bonus (conversions: raw → processed)
     if (profitData.processingBonus > 0 && profitData.processingRevenueBonus > 0) {
         lines.push(`<br>Processing: +${formatWithSeparator(Math.round(profitData.processingRevenueBonus))}/hour`);
-        lines.push(` (${(profitData.processingBonus * 100).toFixed(1)}% conversion)`);
+        lines.push(` (${formatPercentage(profitData.processingBonus, 1)} conversion)`);
 
         // Show individual conversions
         if (profitData.processingConversions && profitData.processingConversions.length > 0) {
@@ -498,16 +499,16 @@ export function formatProfitDisplay(profitData) {
     if (profitData.totalGathering > 0) {
         const gatheringParts = [];
         if (profitData.gatheringTea > 0) {
-            gatheringParts.push(`${(profitData.gatheringTea * 100).toFixed(1)}% tea`);
+            gatheringParts.push(`${formatPercentage(profitData.gatheringTea, 1)} tea`);
         }
         if (profitData.communityGathering > 0) {
-            gatheringParts.push(`${(profitData.communityGathering * 100).toFixed(1)}% community`);
+            gatheringParts.push(`${formatPercentage(profitData.communityGathering, 1)} community`);
         }
         if (profitData.achievementGathering > 0) {
-            gatheringParts.push(`${(profitData.achievementGathering * 100).toFixed(1)}% achievement`);
+            gatheringParts.push(`${formatPercentage(profitData.achievementGathering, 1)} achievement`);
         }
 
-        lines.push(`<br>Gathering: +${(profitData.totalGathering * 100).toFixed(1)}% quantity`);
+        lines.push(`<br>Gathering: +${formatPercentage(profitData.totalGathering, 1)} quantity`);
         if (gatheringParts.length > 0) {
             lines.push(` (${gatheringParts.join(' + ')})`);
         }

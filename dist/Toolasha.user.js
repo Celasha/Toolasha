@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.4.934
+// @version      0.4.935
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -4625,6 +4625,26 @@
     }
 
     /**
+     * Format a decimal value as a percentage
+     * @param {number} value - The decimal value to format (e.g., 0.05 for 5%)
+     * @param {number} decimals - Number of decimal places (default: 1)
+     * @returns {string} Formatted percentage (e.g., "5.0%", "12.5%")
+     *
+     * @example
+     * formatPercentage(0.05) // "5.0%"
+     * formatPercentage(0.125, 1) // "12.5%"
+     * formatPercentage(0.00123, 2) // "0.12%"
+     * formatPercentage(0.00123, 3) // "0.123%"
+     */
+    function formatPercentage(value, decimals = 1) {
+        if (value === null || value === undefined) {
+            return null;
+        }
+
+        return (value * 100).toFixed(decimals) + '%';
+    }
+
+    /**
      * Token Valuation Utility
      * Shared logic for calculating dungeon token and task token values
      */
@@ -8446,10 +8466,10 @@
                 for (const drop of dropsToShow) {
                     if (!drop.hasPriceData) {
                         // Show item without price data in gray
-                        html += `<div style="color: ${config.COLOR_TEXT_SECONDARY};">• ${drop.itemName} (${(drop.dropRate * 100).toFixed(2)}%): ${drop.avgCount.toFixed(2)} avg → No price data</div>`;
+                        html += `<div style="color: ${config.COLOR_TEXT_SECONDARY};">• ${drop.itemName} (${formatPercentage(drop.dropRate, 2)}): ${drop.avgCount.toFixed(2)} avg → No price data</div>`;
                     } else {
                         // Format drop rate percentage
-                        const dropRatePercent = (drop.dropRate * 100).toFixed(2);
+                        const dropRatePercent = formatPercentage(drop.dropRate, 2);
 
                         // Show full drop breakdown
                         html += `<div>• ${drop.itemName} (${dropRatePercent}%): ${drop.avgCount.toFixed(2)} avg → ${formatTooltipPrice(drop.expectedValue)}</div>`;
@@ -11882,8 +11902,8 @@
 
                 // Show processing percentage for processed items
                 if (output.isProcessed && output.processingChance) {
-                    const processingPercent = (output.processingChance * 100).toFixed(1);
-                    line.textContent = `• ${output.name}: (${processingPercent}%) ${output.itemsPerHour.toFixed(decimals)}/hr @ ${formatWithSeparator(output.priceEach)} each → ${formatWithSeparator(Math.round(output.revenuePerHour))}/hr`;
+                    const processingPercent = formatPercentage(output.processingChance, 1);
+                    line.textContent = `• ${output.name}: (${processingPercent}) ${output.itemsPerHour.toFixed(decimals)}/hr @ ${formatWithSeparator(output.priceEach)} each → ${formatWithSeparator(Math.round(output.revenuePerHour))}/hr`;
                 } else {
                     line.textContent = `• ${output.name}: ${output.itemsPerHour.toFixed(decimals)}/hr @ ${formatWithSeparator(output.priceEach)} each → ${formatWithSeparator(Math.round(output.revenuePerHour))}/hr`;
                 }
@@ -11915,7 +11935,8 @@
                 const decimals = drop.dropsPerHour < 1 ? 2 : 1;
                 const line = document.createElement('div');
                 line.style.marginLeft = '8px';
-                line.textContent = `• ${drop.itemName}: ${drop.dropsPerHour.toFixed(decimals)}/hr (${(drop.dropRate * 100).toFixed(drop.dropRate < 0.01 ? 3 : 2)}%) → ${formatWithSeparator(Math.round(drop.revenuePerHour))}/hr`;
+                const dropRatePct = formatPercentage(drop.dropRate, drop.dropRate < 0.01 ? 3 : 2);
+                line.textContent = `• ${drop.itemName}: ${drop.dropsPerHour.toFixed(decimals)}/hr (${dropRatePct}) → ${formatWithSeparator(Math.round(drop.revenuePerHour))}/hr`;
                 essenceContent.appendChild(line);
             }
 
@@ -11939,7 +11960,8 @@
                 const decimals = drop.dropsPerHour < 1 ? 2 : 1;
                 const line = document.createElement('div');
                 line.style.marginLeft = '8px';
-                line.textContent = `• ${drop.itemName}: ${drop.dropsPerHour.toFixed(decimals)}/hr (${(drop.dropRate * 100).toFixed(drop.dropRate < 0.01 ? 3 : 2)}%) → ${formatWithSeparator(Math.round(drop.revenuePerHour))}/hr`;
+                const dropRatePct = formatPercentage(drop.dropRate, drop.dropRate < 0.01 ? 3 : 2);
+                line.textContent = `• ${drop.itemName}: ${drop.dropsPerHour.toFixed(decimals)}/hr (${dropRatePct}) → ${formatWithSeparator(Math.round(drop.revenuePerHour))}/hr`;
                 rareFindContent.appendChild(line);
             }
 
@@ -12180,7 +12202,7 @@
             const gourmetRevenue = profitData.gourmetBonusItems * profitData.priceAfterTax;
             gourmetSection = createCollapsibleSection(
                 '',
-                `Gourmet Bonus: ${formatWithSeparator(Math.round(gourmetRevenue))}/hr (${(profitData.gourmetBonus * 100).toFixed(1)}% gourmet)`,
+                `Gourmet Bonus: ${formatWithSeparator(Math.round(gourmetRevenue))}/hr (${formatPercentage(profitData.gourmetBonus, 1)} gourmet)`,
                 null,
                 gourmetContent,
                 false,
@@ -12206,7 +12228,8 @@
                 const decimals = drop.dropsPerHour < 1 ? 2 : 1;
                 const line = document.createElement('div');
                 line.style.marginLeft = '8px';
-                line.textContent = `• ${drop.itemName}: ${drop.dropsPerHour.toFixed(decimals)}/hr (${(drop.dropRate * 100).toFixed(drop.dropRate < 0.01 ? 3 : 2)}%) → ${formatWithSeparator(Math.round(drop.revenuePerHour))}/hr`;
+                const dropRatePct = formatPercentage(drop.dropRate, drop.dropRate < 0.01 ? 3 : 2);
+                line.textContent = `• ${drop.itemName}: ${drop.dropsPerHour.toFixed(decimals)}/hr (${dropRatePct}) → ${formatWithSeparator(Math.round(drop.revenuePerHour))}/hr`;
                 essenceContent.appendChild(line);
             }
 
@@ -12230,7 +12253,8 @@
                 const decimals = drop.dropsPerHour < 1 ? 2 : 1;
                 const line = document.createElement('div');
                 line.style.marginLeft = '8px';
-                line.textContent = `• ${drop.itemName}: ${drop.dropsPerHour.toFixed(decimals)}/hr (${(drop.dropRate * 100).toFixed(drop.dropRate < 0.01 ? 3 : 2)}%) → ${formatWithSeparator(Math.round(drop.revenuePerHour))}/hr`;
+                const dropRatePct = formatPercentage(drop.dropRate, drop.dropRate < 0.01 ? 3 : 2);
+                line.textContent = `• ${drop.itemName}: ${drop.dropsPerHour.toFixed(decimals)}/hr (${dropRatePct}) → ${formatWithSeparator(Math.round(drop.revenuePerHour))}/hr`;
                 rareFindContent.appendChild(line);
             }
 
@@ -12273,7 +12297,7 @@
                 // Add Artisan reduction info if present (only show if actually reduced)
                 if (profitData.artisanBonus > 0 && material.baseAmount && material.amount !== material.baseAmount) {
                     const baseAmountPerHour = material.baseAmount * profitData.actionsPerHour;
-                    materialText += ` (${baseAmountPerHour.toFixed(1)} base -${(profitData.artisanBonus * 100).toFixed(1)}% 🍵)`;
+                    materialText += ` (${baseAmountPerHour.toFixed(1)} base -${formatPercentage(profitData.artisanBonus, 1)} 🍵)`;
                 }
 
                 materialText += ` @ ${formatWithSeparator(Math.round(material.askPrice))} → ${formatWithSeparator(Math.round(material.totalCost * profitData.actionsPerHour))}/hr`;
@@ -12329,7 +12353,7 @@
         // Artisan Bonus (still shown here for reference, also embedded in materials)
         if (profitData.artisanBonus > 0) {
             modifierLines.push(`<div style="font-weight: 500; color: var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY});">Modifiers:</div>`);
-            modifierLines.push(`<div style="margin-left: 8px;">• Artisan: -${(profitData.artisanBonus * 100).toFixed(1)}% material requirement</div>`);
+            modifierLines.push(`<div style="margin-left: 8px;">• Artisan: -${formatPercentage(profitData.artisanBonus, 1)} material requirement</div>`);
         }
 
         // Gourmet Bonus
@@ -12337,7 +12361,7 @@
             if (modifierLines.length === 0) {
                 modifierLines.push(`<div style="font-weight: 500; color: var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY});">Modifiers:</div>`);
             }
-            modifierLines.push(`<div style="margin-left: 8px;">• Gourmet: +${(profitData.gourmetBonus * 100).toFixed(1)}% bonus items</div>`);
+            modifierLines.push(`<div style="margin-left: 8px;">• Gourmet: +${formatPercentage(profitData.gourmetBonus, 1)} bonus items</div>`);
         }
 
         modifiersDiv.innerHTML = modifierLines.join('');
@@ -14878,7 +14902,7 @@
                 const speedLines = [];
                 speedLines.push(`Base: ${baseTime.toFixed(2)}s → ${actionTime.toFixed(2)}s`);
                 if (speedBonus > 0) {
-                    speedLines.push(`Speed: +${(speedBonus * 100).toFixed(1)}% | ${(3600 / actionTime).toFixed(0)}/hr`);
+                    speedLines.push(`Speed: +${formatPercentage(speedBonus, 1)} | ${(3600 / actionTime).toFixed(0)}/hr`);
                 } else {
                     speedLines.push(`${(3600 / actionTime).toFixed(0)}/hr`);
                 }
@@ -14890,9 +14914,9 @@
                     for (const item of speedBreakdown.equipmentAndTools) {
                         const enhText = item.enhancementLevel > 0 ? ` +${item.enhancementLevel}` : '';
                         const detailText = item.enhancementBonus > 0 ?
-                            ` (${(item.baseBonus * 100).toFixed(1)}% + ${(item.enhancementBonus * item.enhancementLevel * 100).toFixed(1)}%)` :
+                            ` (${formatPercentage(item.baseBonus, 1)} + ${formatPercentage(item.enhancementBonus * item.enhancementLevel, 1)})` :
                             '';
-                        speedLines.push(`  - ${item.itemName}${enhText}: +${(item.scaledBonus * 100).toFixed(1)}%${detailText}`);
+                        speedLines.push(`  - ${item.itemName}${enhText}: +${formatPercentage(item.scaledBonus, 1)}${detailText}`);
                     }
 
                     // Consumables
@@ -20150,8 +20174,8 @@
             const percentage = parseFloat(widthStyle.replace('%', ''));
             if (isNaN(percentage)) return;
 
-            // Format with 1 decimal place
-            const formattedPercentage = percentage.toFixed(1) + '%';
+            // Format with 1 decimal place (convert from percentage to decimal first)
+            const formattedPercentage = formatPercentage(percentage / 100, 1);
 
             // Check if we already have a percentage span
             let percentageSpan = levelContainer.querySelector('.mwi-exp-percentage');
@@ -21166,8 +21190,8 @@
                         for (const output of details.baseOutputs) {
                             const itemsForTask = (output.itemsPerHour / actionsPerHour) * quantity;
                             const revenueForTask = output.revenuePerHour * hoursNeeded;
-                            const dropRateText = output.dropRate < 1.0 ? ` (${(output.dropRate * 100).toFixed(1)}% drop)` : '';
-                            const processingText = output.isProcessed ? ` [${(output.processingChance * 100).toFixed(1)}% processed]` : '';
+                            const dropRateText = output.dropRate < 1.0 ? ` (${formatPercentage(output.dropRate, 1)} drop)` : '';
+                            const processingText = output.isProcessed ? ` [${formatPercentage(output.processingChance, 1)} processed]` : '';
                             lines.push(`<div>• ${output.name}: ${itemsForTask.toFixed(1)} items @ ${numberFormatter(Math.round(output.priceEach))} = ${numberFormatter(Math.round(revenueForTask))}${dropRateText}${processingText}</div>`);
                         }
                     }
@@ -27237,6 +27261,7 @@
             this.updateDebounce = null;
             this.isDragging = false;
             this.unregisterScreenObserver = null;
+            this.pollInterval = null;
             this.isOnEnhancingScreen = false;
             this.isCollapsed = false; // Track collapsed state
         }
@@ -27264,38 +27289,61 @@
          * Set up screen observer to detect Enhancing screen using centralized observer
          */
         setupScreenObserver() {
-            // Check if setting is enabled
-            if (!config.getSetting('enhancementTracker_showOnlyOnEnhancingScreen')) {
-                // Setting is disabled, always show tracker
+            // Check if setting is enabled (default to false if undefined)
+            const showOnlyOnEnhancingScreen = config.getSetting('enhancementTracker_showOnlyOnEnhancingScreen');
+
+            if (showOnlyOnEnhancingScreen !== true) {
+                // Setting is disabled or undefined, always show tracker
                 this.isOnEnhancingScreen = true;
                 this.show();
-                return;
+            } else {
+                // Setting enabled, check current screen
+                this.checkEnhancingScreen();
+                this.updateVisibility();
             }
 
-            // Initial check and set visibility
-            this.checkEnhancingScreen();
-            this.updateVisibility(); // Always set initial visibility
-
             // Register with centralized DOM observer for enhancing panel detection
+            // Note: Enhancing screen uses EnhancingPanel_enhancingPanel, not SkillActionDetail_enhancingComponent
             this.unregisterScreenObserver = domObserver.onClass(
                 'EnhancementUI-ScreenDetection',
-                'SkillActionDetail_enhancingComponent',
-                () => {
+                'EnhancingPanel_enhancingPanel',
+                (node) => {
                     this.checkEnhancingScreen();
                 },
-                { debounce: true, debounceDelay: 100 }
+                { debounce: false }
             );
+
+            // Poll for both setting changes and panel removal
+            this.pollInterval = setInterval(() => {
+                const currentSetting = config.getSetting('enhancementTracker_showOnlyOnEnhancingScreen');
+
+                if (currentSetting !== true) {
+                    // Setting disabled - always show
+                    if (!this.isOnEnhancingScreen) {
+                        this.isOnEnhancingScreen = true;
+                        this.updateVisibility();
+                    }
+                } else {
+                    // Setting enabled - check if panel exists
+                    const panel = document.querySelector('[class*="EnhancingPanel_enhancingPanel"]');
+                    const shouldBeOnScreen = !!panel;
+
+                    if (this.isOnEnhancingScreen !== shouldBeOnScreen) {
+                        this.isOnEnhancingScreen = shouldBeOnScreen;
+                        this.updateVisibility();
+                    }
+                }
+            }, 500);
         }
 
         /**
          * Check if currently on Enhancing screen
          */
         checkEnhancingScreen() {
-            const enhancingPanel = document.querySelector('div.SkillActionDetail_enhancingComponent__17bOx');
+            const enhancingPanel = document.querySelector('[class*="EnhancingPanel_enhancingPanel"]');
             const wasOnEnhancingScreen = this.isOnEnhancingScreen;
             this.isOnEnhancingScreen = !!enhancingPanel;
 
-            // Only update visibility if screen state changed
             if (wasOnEnhancingScreen !== this.isOnEnhancingScreen) {
                 this.updateVisibility();
             }
@@ -27307,14 +27355,11 @@
         updateVisibility() {
             const showOnlyOnEnhancingScreen = config.getSetting('enhancementTracker_showOnlyOnEnhancingScreen');
 
-            if (!showOnlyOnEnhancingScreen) {
-                // Setting is disabled, always show
+            if (showOnlyOnEnhancingScreen !== true) {
                 this.show();
             } else if (this.isOnEnhancingScreen) {
-                // On Enhancing screen, show
                 this.show();
             } else {
-                // Not on Enhancing screen, hide
                 this.hide();
             }
         }
@@ -27835,7 +27880,7 @@
             const totalAttempts = session.totalAttempts;
             const totalSuccess = session.totalSuccesses;
             session.totalFailures;
-            totalAttempts > 0 ? ((totalSuccess / totalAttempts) * 100).toFixed(1) : '0.0';
+            totalAttempts > 0 ? formatPercentage(totalSuccess / totalAttempts, 1) : '0.0%';
 
             const duration = getSessionDuration(session);
             const durationText = this.formatDuration(duration);
@@ -27961,7 +28006,7 @@
             let rows = '';
             for (const level of levels) {
                 const levelData = session.attemptsPerLevel[level];
-                const rate = (levelData.successRate * 100).toFixed(1);
+                const rate = formatPercentage(levelData.successRate, 1);
                 const isCurrent = (parseInt(level) === session.currentLevel);
 
                 const rowStyle = isCurrent ? `
@@ -27976,7 +28021,7 @@
                     <td style="${compactCellStyle} text-align: center;">${level}</td>
                     <td style="${compactCellStyle} text-align: right;">${levelData.success}</td>
                     <td style="${compactCellStyle} text-align: right;">${levelData.fail}</td>
-                    <td style="${compactCellStyle} text-align: right;">${rate}%</td>
+                    <td style="${compactCellStyle} text-align: right;">${rate}</td>
                 </tr>
             `;
             }
@@ -35088,7 +35133,7 @@
         const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
         targetWindow.Toolasha = {
-            version: '0.4.934',
+            version: '0.4.935',
 
             // Feature toggle API (for users to manage settings via console)
             features: {
