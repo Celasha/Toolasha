@@ -4,6 +4,7 @@
  */
 
 import config from '../../core/config.js';
+import dataManager from '../../core/data-manager.js';
 import webSocketHook from '../../core/websocket.js';
 
 class EmptyQueueNotification {
@@ -26,6 +27,11 @@ class EmptyQueueNotification {
 
         // Listen for action updates
         this.registerWebSocketListeners();
+
+        // Listen for character switching to clean up
+        dataManager.on('character_switching', () => {
+            this.disable();
+        });
     }
 
     /**
@@ -137,6 +143,8 @@ class EmptyQueueNotification {
      * Cleanup
      */
     disable() {
+        console.log('[Toolasha Empty Queue Notification] Cleaning up for character switch');
+
         this.unregisterHandlers.forEach(unregister => unregister());
         this.unregisterHandlers = [];
         this.wasEmpty = false;

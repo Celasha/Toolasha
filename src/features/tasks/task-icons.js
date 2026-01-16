@@ -39,6 +39,11 @@ class TaskIcons {
         // Watch for task cards being added/updated
         this.watchTaskCards();
 
+        // Listen for character switching to clean up
+        dataManager.on('character_switching', () => {
+            this.cleanup();
+        });
+
         this.initialized = true;
     }
 
@@ -524,6 +529,8 @@ class TaskIcons {
      * Cleanup
      */
     cleanup() {
+        console.log('[Toolasha Task Icons] Cleaning up for character switch');
+
         // Unregister all observers
         this.observers.forEach(unregister => unregister());
         this.observers = [];
@@ -533,6 +540,11 @@ class TaskIcons {
         document.querySelectorAll('[data-mwi-task-processed]').forEach(card => {
             card.removeAttribute('data-mwi-task-processed');
         });
+
+        // Clear caches
+        this.itemsByHrid = null;
+        this.actionsByHrid = null;
+        this.monstersByHrid = null;
 
         this.initialized = false;
     }

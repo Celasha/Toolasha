@@ -5,6 +5,7 @@
  */
 
 import config from '../../core/config.js';
+import dataManager from '../../core/data-manager.js';
 import { settingsGroups } from './settings-config.js';
 import settingsStorage from './settings-storage.js';
 import storage from '../../core/storage.js';
@@ -33,6 +34,11 @@ class SettingsUI {
 
         // Wait for game's settings panel to load
         this.observeSettingsPanel();
+
+        // Listen for character switching to clean up
+        dataManager.on('character_switching', () => {
+            this.cleanup();
+        });
     }
 
     /**
@@ -841,6 +847,39 @@ class SettingsUI {
         });
 
         input.click();
+    }
+
+    /**
+     * Cleanup for character switching
+     */
+    cleanup() {
+        console.log('[Toolasha Settings] Cleaning up for character switch');
+
+        // Stop observer
+        if (this.settingsObserver) {
+            this.settingsObserver.disconnect();
+            this.settingsObserver = null;
+        }
+
+        // Remove settings tab
+        const tab = document.querySelector('#toolasha-settings-tab');
+        if (tab) {
+            tab.remove();
+        }
+
+        // Remove settings panel
+        const panel = document.querySelector('#toolasha-settings');
+        if (panel) {
+            panel.remove();
+        }
+
+        // Clear state
+        this.settingsPanel = null;
+        this.currentSettings = {};
+        this.isInjecting = false;
+
+        // Clear config cache
+        this.config.clearSettingsCache();
     }
 }
 

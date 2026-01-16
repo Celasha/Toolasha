@@ -4,6 +4,7 @@
  */
 
 import config from './config.js';
+import dataManager from './data-manager.js';
 
 // Import all features
 import tooltipPrices from '../features/market/tooltip-prices.js';
@@ -405,6 +406,12 @@ const featureRegistry = [
  * @returns {Promise<void>}
  */
 async function initializeFeatures() {
+    // Block feature initialization during character switch
+    if (dataManager.getIsCharacterSwitching()) {
+        console.log('[Toolasha] Feature initialization blocked: character switch in progress');
+        return;
+    }
+
     const errors = [];
 
     for (const feature of featureRegistry) {
@@ -508,6 +515,28 @@ function checkFeatureHealth() {
 }
 
 /**
+ * Setup character switch handler
+ * Re-initializes all features when character switches
+ */
+function setupCharacterSwitchHandler() {
+    dataManager.on('character_switched', async (data) => {
+        console.log('[Toolasha] Character switched, re-initializing features...');
+        console.log('[Toolasha] New character:', data.newName, `(${data.newId})`);
+
+        // Wait a moment for character data to fully load
+        setTimeout(async () => {
+            // Reload config settings first (settings were cleared during cleanup)
+            await config.loadSettings();
+            config.applyColorSettings();
+
+            // Now re-initialize all features with fresh settings
+            await initializeFeatures();
+            console.log('[Toolasha] Feature re-initialization complete');
+        }, 100);
+    });
+}
+
+/**
  * Retry initialization for specific features
  * @param {Array<Object>} failedFeatures - Array of failed feature objects
  * @returns {Promise<void>}
@@ -549,6 +578,7 @@ async function retryFailedFeatures(failedFeatures) {
 
 export default {
     initializeFeatures,
+    setupCharacterSwitchHandler,
     checkFeatureHealth,
     retryFailedFeatures,
     getFeature,

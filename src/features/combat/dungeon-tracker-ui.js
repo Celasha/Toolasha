@@ -71,6 +71,11 @@ class DungeonTrackerUI {
 
         // Start update loop (updates current wave time every second)
         this.startUpdateLoop();
+
+        // Listen for character switching to clean up
+        dataManager.on('character_switching', () => {
+            this.cleanup();
+        });
     }
 
     /**
@@ -640,6 +645,36 @@ class DungeonTrackerUI {
                 this.update(currentRun);
             }
         }, 1000);
+    }
+
+    /**
+     * Cleanup for character switching
+     */
+    cleanup() {
+        console.log('[Toolasha Dungeon Tracker UI] Cleaning up for character switch');
+
+        // Clear update interval
+        if (this.updateInterval) {
+            clearInterval(this.updateInterval);
+            this.updateInterval = null;
+        }
+
+        // Remove UI container from DOM
+        if (this.container) {
+            this.container.remove();
+            this.container = null;
+        }
+
+        // Clean up module references
+        if (this.chart) {
+            this.chart = null;
+        }
+        if (this.history) {
+            this.history = null;
+        }
+        if (this.interactions) {
+            this.interactions = null;
+        }
     }
 
     /**

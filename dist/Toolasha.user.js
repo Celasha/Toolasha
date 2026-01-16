@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.4.933
+// @version      0.4.934
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -1657,6 +1657,15 @@
                     category: 'Enhancement',
                     description: 'Tracks enhancement attempts, costs, and statistics',
                     settingKey: 'enhancementTracker'
+                },
+
+                // Notification Features
+                notifiEmptyAction: {
+                    enabled: false,
+                    name: 'Empty Queue Notification',
+                    category: 'Notifications',
+                    description: 'Browser notification when action queue becomes empty',
+                    settingKey: 'notifiEmptyAction'
                 }
             };
 
@@ -1679,6 +1688,13 @@
         async loadSettings() {
             // Load settings from settings-storage (which uses settings-config.js as source of truth)
             this.settingsMap = await settingsStorage.loadSettings();
+        }
+
+        /**
+         * Clear settings cache (for character switching)
+         */
+        clearSettingsCache() {
+            this.settingsMap = {};
         }
 
         /**
@@ -2456,6 +2472,11 @@
             this.characterHouseRooms = new Map();  // House room HRID -> {houseRoomHrid, level}
             this.actionTypeDrinkSlotsMap = new Map();  // Action type HRID -> array of drink items
 
+            // Character tracking for switch detection
+            this.currentCharacterId = null;
+            this.currentCharacterName = null;
+            this.isCharacterSwitching = false;
+
             // Event listeners
             this.eventListeners = new Map();
 
@@ -2576,6 +2597,57 @@
         setupMessageHandlers() {
             // Handle init_character_data (player data on login/refresh)
             this.webSocketHook.on('init_character_data', (data) => {
+                // Detect character switch
+                const newCharacterId = data.character?.id;
+                const newCharacterName = data.character?.name;
+
+                // Check if this is a character switch (not first load)
+                if (this.currentCharacterId && this.currentCharacterId !== newCharacterId) {
+                    console.log('[Toolasha] Character switch detected:',
+                        `${this.currentCharacterName} (${this.currentCharacterId})`,
+                        '→',
+                        `${newCharacterName} (${newCharacterId})`);
+
+                    // Set switching flag to block feature initialization
+                    this.isCharacterSwitching = true;
+
+                    // Emit character_switching event (cleanup phase)
+                    this.emit('character_switching', {
+                        oldId: this.currentCharacterId,
+                        newId: newCharacterId,
+                        oldName: this.currentCharacterName,
+                        newName: newCharacterName
+                    });
+
+                    // Update character tracking
+                    this.currentCharacterId = newCharacterId;
+                    this.currentCharacterName = newCharacterName;
+
+                    // Clear old character data
+                    this.characterData = null;
+                    this.characterSkills = null;
+                    this.characterItems = null;
+                    this.characterActions = [];
+                    this.characterEquipment.clear();
+                    this.characterHouseRooms.clear();
+                    this.actionTypeDrinkSlotsMap.clear();
+
+                    // Reset switching flag (cleanup complete, ready for re-init)
+                    this.isCharacterSwitching = false;
+
+                    // Emit character_switched event (ready for re-init)
+                    this.emit('character_switched', {
+                        newId: newCharacterId,
+                        newName: newCharacterName
+                    });
+                } else if (!this.currentCharacterId) {
+                    // First load - set character tracking
+                    this.currentCharacterId = newCharacterId;
+                    this.currentCharacterName = newCharacterName;
+                    console.log('[Toolasha] Character initialized:', newCharacterName, `(${newCharacterId})`);
+                }
+
+                // Process new character data normally
                 this.characterData = data;
                 this.characterSkills = data.characterSkills;
                 this.characterItems = data.characterItems;
@@ -2590,6 +2662,10 @@
                 // Build drink slots map (tea buffs)
                 this.updateDrinkSlotsMap(data.actionTypeDrinkSlotsMap);
 
+                // Clear switching flag
+                this.isCharacterSwitching = false;
+
+                // Emit character_initialized event (trigger feature initialization)
                 this.emit('character_initialized', data);
             });
 
@@ -2857,6 +2933,30 @@
          */
         getActionDrinkSlots(actionTypeHrid) {
             return this.actionTypeDrinkSlotsMap.get(actionTypeHrid) || [];
+        }
+
+        /**
+         * Get current character ID
+         * @returns {string|null} Character ID or null
+         */
+        getCurrentCharacterId() {
+            return this.currentCharacterId;
+        }
+
+        /**
+         * Get current character name
+         * @returns {string|null} Character name or null
+         */
+        getCurrentCharacterName() {
+            return this.currentCharacterName;
+        }
+
+        /**
+         * Check if character is currently switching
+         * @returns {boolean} True if switching
+         */
+        getIsCharacterSwitching() {
+            return this.isCharacterSwitching;
         }
 
         /**
@@ -21769,6 +21869,11 @@
             // Watch for task cards being added/updated
             this.watchTaskCards();
 
+            // Listen for character switching to clean up
+            dataManager.on('character_switching', () => {
+                this.cleanup();
+            });
+
             this.initialized = true;
         }
 
@@ -22254,6 +22359,8 @@
          * Cleanup
          */
         cleanup() {
+            console.log('[Toolasha Task Icons] Cleaning up for character switch');
+
             // Unregister all observers
             this.observers.forEach(unregister => unregister());
             this.observers = [];
@@ -22263,6 +22370,11 @@
             document.querySelectorAll('[data-mwi-task-processed]').forEach(card => {
                 card.removeAttribute('data-mwi-task-processed');
             });
+
+            // Clear caches
+            this.itemsByHrid = null;
+            this.actionsByHrid = null;
+            this.monstersByHrid = null;
 
             this.initialized = false;
         }
@@ -28429,6 +28541,11 @@
 
             // Listen for action updates
             this.registerWebSocketListeners();
+
+            // Listen for character switching to clean up
+            dataManager.on('character_switching', () => {
+                this.disable();
+            });
         }
 
         /**
@@ -28540,6 +28657,8 @@
          * Cleanup
          */
         disable() {
+            console.log('[Toolasha Empty Queue Notification] Cleaning up for character switch');
+
             this.unregisterHandlers.forEach(unregister => unregister());
             this.unregisterHandlers = [];
             this.wasEmpty = false;
@@ -29003,6 +29122,14 @@
 
             // Hibernation detection (for UI time label switching)
             this.hibernationDetected = false;
+
+            // Store handler references for cleanup
+            this.handlers = {
+                newBattle: null,
+                actionCompleted: null,
+                actionsUpdated: null,
+                chatMessage: null
+            };
         }
 
         /**
@@ -29156,23 +29283,34 @@
             // Get character ID from URL for data isolation
             this.characterId = this.getCharacterIdFromURL();
 
+            // Create and store handler references for cleanup
+            this.handlers.newBattle = (data) => this.onNewBattle(data);
+            this.handlers.actionCompleted = (data) => this.onActionCompleted(data);
+            this.handlers.actionsUpdated = (data) => this.onActionsUpdated(data);
+            this.handlers.chatMessage = (data) => this.onChatMessage(data);
+
             // Listen for new_battle messages (wave start)
-            webSocketHook.on('new_battle', (data) => this.onNewBattle(data));
+            webSocketHook.on('new_battle', this.handlers.newBattle);
 
             // Listen for action_completed messages (wave complete)
-            webSocketHook.on('action_completed', (data) => this.onActionCompleted(data));
+            webSocketHook.on('action_completed', this.handlers.actionCompleted);
 
             // Listen for actions_updated to detect flee/cancel
-            webSocketHook.on('actions_updated', (data) => this.onActionsUpdated(data));
+            webSocketHook.on('actions_updated', this.handlers.actionsUpdated);
 
             // Listen for party chat messages (for server-validated duration and battle started)
-            webSocketHook.on('chat_message_received', (data) => this.onChatMessage(data));
+            webSocketHook.on('chat_message_received', this.handlers.chatMessage);
 
             // Setup hibernation detection using Visibility API
             this.setupHibernationDetection();
 
             // Check for active dungeon on page load and try to restore state
             setTimeout(() => this.checkForActiveDungeon(), 1000);
+
+            // Listen for character switching to clean up
+            dataManager.on('character_switching', () => {
+                this.cleanup();
+            });
         }
 
         /**
@@ -30117,6 +30255,58 @@
         }
 
         /**
+         * Cleanup for character switching
+         */
+        async cleanup() {
+            console.log('[Toolasha Dungeon Tracker] Cleaning up for character switch');
+
+            // Unregister all WebSocket handlers
+            if (this.handlers.newBattle) {
+                webSocketHook.off('new_battle', this.handlers.newBattle);
+                this.handlers.newBattle = null;
+            }
+            if (this.handlers.actionCompleted) {
+                webSocketHook.off('action_completed', this.handlers.actionCompleted);
+                this.handlers.actionCompleted = null;
+            }
+            if (this.handlers.actionsUpdated) {
+                webSocketHook.off('actions_updated', this.handlers.actionsUpdated);
+                this.handlers.actionsUpdated = null;
+            }
+            if (this.handlers.chatMessage) {
+                webSocketHook.off('chat_message_received', this.handlers.chatMessage);
+                this.handlers.chatMessage = null;
+            }
+
+            // Reset all tracking state
+            this.isTracking = false;
+            this.currentRun = null;
+            this.waveStartTime = null;
+            this.waveTimes = [];
+            this.pendingDungeonInfo = null;
+            this.currentBattleId = null;
+
+            // Clear party message tracking
+            this.firstKeyCountTimestamp = null;
+            this.lastKeyCountTimestamp = null;
+            this.keyCountMessages = [];
+            this.battleStartedTimestamp = null;
+            this.recentChatMessages = [];
+
+            // Reset hibernation detection
+            this.hibernationDetected = false;
+
+            // Clear character ID
+            this.characterId = null;
+
+            // Clear all callbacks
+            this.updateCallbacks = [];
+
+            // Clear saved in-progress run
+            await this.clearInProgressRun();
+        }
+
+        /**
          * Backfill team runs from party chat history
          * Scans all "Key counts:" messages and calculates run durations
          * @returns {Promise<{runsAdded: number, teams: Array<string>}>} Backfill results
@@ -30273,6 +30463,11 @@
         initialize() {
             // Wait for chat to be available
             this.waitForChat();
+
+            // Listen for character switching to clean up
+            dataManager.on('character_switching', () => {
+                this.cleanup();
+            });
         }
 
         /**
@@ -30354,6 +30549,9 @@
             // NOTE: Run saving is done manually via the Backfill button
             // Chat annotations only add visual time labels to messages
 
+            // Calculate in-memory stats from visible chat messages (for averages when no backfill exists)
+            const inMemoryStats = this.calculateStatsFromEvents(events);
+
             // Continue with visual annotations
             const runDurations = [];
 
@@ -30379,10 +30577,12 @@
                     label = this.formatTime(diff);
 
                     // Determine color based on performance using dungeonName
+                    // Check storage first, fall back to in-memory stats
                     if (dungeonName && dungeonName !== 'Unknown') {
-                        const stats = await dungeonTrackerStorage.getStatsByName(dungeonName);
+                        const storageStats = await dungeonTrackerStorage.getStatsByName(dungeonName);
+                        const stats = storageStats.totalRuns > 0 ? storageStats : inMemoryStats[dungeonName];
 
-                        if (stats.fastestTime > 0 && stats.slowestTime > 0) {
+                        if (stats && stats.fastestTime > 0 && stats.slowestTime > 0) {
                             const fastestThreshold = stats.fastestTime * 1.10;
                             const slowestThreshold = stats.slowestTime * 0.90;
 
@@ -30422,10 +30622,11 @@
 
                     // Add average if this is a successful run
                     if (diff && dungeonName && dungeonName !== 'Unknown') {
-                        // Get stats for average using dungeonName
-                        const stats = await dungeonTrackerStorage.getStatsByName(dungeonName);
+                        // Check storage first, fall back to in-memory stats
+                        const storageStats = await dungeonTrackerStorage.getStatsByName(dungeonName);
+                        const stats = storageStats.totalRuns > 0 ? storageStats : inMemoryStats[dungeonName];
 
-                        if (stats.totalRuns > 1 && stats.avgTime > 0) {
+                        if (stats && stats.totalRuns > 1 && stats.avgTime > 0) {
                             const avgLabel = `Average: ${this.formatTime(stats.avgTime)}`;
                             this.insertAnnotation(avgLabel, '#deb887', e.msg, true); // Tan color
                         }
@@ -30467,6 +30668,60 @@
                 // Save team run (includes dungeon name from Phase 2)
                 await dungeonTrackerStorage.saveTeamRun(teamKey, run);
             }
+        }
+
+        /**
+         * Calculate stats from visible chat events (in-memory, no storage)
+         * Used to show averages before backfill is done
+         * @param {Array} events - Chat events array
+         * @returns {Object} Stats by dungeon name { dungeonName: { totalRuns, avgTime, fastestTime, slowestTime } }
+         */
+        calculateStatsFromEvents(events) {
+            const statsByDungeon = {};
+
+            // Loop through events and collect all completed runs
+            for (let i = 0; i < events.length; i++) {
+                const event = events[i];
+                if (event.type !== 'key') continue;
+
+                const next = events[i + 1];
+                if (!next || next.type !== 'key') continue; // Only key→key pairs (successful runs)
+
+                // Calculate duration
+                let duration = next.timestamp - event.timestamp;
+                if (duration < 0) duration += 24 * 60 * 60 * 1000; // Midnight rollover
+
+                // Get dungeon name
+                const dungeonName = this.getDungeonNameWithFallback(events, i);
+                if (!dungeonName || dungeonName === 'Unknown') continue;
+
+                // Initialize dungeon stats if needed
+                if (!statsByDungeon[dungeonName]) {
+                    statsByDungeon[dungeonName] = {
+                        durations: []
+                    };
+                }
+
+                // Add this run duration
+                statsByDungeon[dungeonName].durations.push(duration);
+            }
+
+            // Calculate stats for each dungeon
+            const result = {};
+            for (const [dungeonName, data] of Object.entries(statsByDungeon)) {
+                const durations = data.durations;
+                if (durations.length === 0) continue;
+
+                const total = durations.reduce((sum, d) => sum + d, 0);
+                result[dungeonName] = {
+                    totalRuns: durations.length,
+                    avgTime: Math.floor(total / durations.length),
+                    fastestTime: Math.min(...durations),
+                    slowestTime: Math.max(...durations)
+                };
+            }
+
+            return result;
         }
 
         /**
@@ -30669,6 +30924,35 @@
          */
         disable() {
             this.enabled = false;
+        }
+
+        /**
+         * Cleanup for character switching
+         */
+        cleanup() {
+            console.log('[Toolasha Dungeon Tracker Chat Annotations] Cleaning up for character switch');
+
+            // Disconnect MutationObserver
+            if (this.observer) {
+                this.observer.disconnect();
+                this.observer = null;
+            }
+
+            // Clear cached state
+            this.lastSeenDungeonName = null;
+            this.enabled = true; // Reset to default enabled state
+
+            // Remove all annotations from DOM
+            const annotations = document.querySelectorAll('.dungeon-timer-annotation, .dungeon-timer-average');
+            annotations.forEach(annotation => annotation.remove());
+
+            // Clear processed markers from chat messages
+            const processedMessages = document.querySelectorAll('[class^="ChatMessage_chatMessage"][data-processed="1"]');
+            processedMessages.forEach(msg => {
+                delete msg.dataset.processed;
+                delete msg.dataset.timerAppended;
+                delete msg.dataset.avgAppended;
+            });
         }
 
         /**
@@ -32140,6 +32424,11 @@
 
             // Start update loop (updates current wave time every second)
             this.startUpdateLoop();
+
+            // Listen for character switching to clean up
+            dataManager.on('character_switching', () => {
+                this.cleanup();
+            });
         }
 
         /**
@@ -32709,6 +32998,36 @@
                     this.update(currentRun);
                 }
             }, 1000);
+        }
+
+        /**
+         * Cleanup for character switching
+         */
+        cleanup() {
+            console.log('[Toolasha Dungeon Tracker UI] Cleaning up for character switch');
+
+            // Clear update interval
+            if (this.updateInterval) {
+                clearInterval(this.updateInterval);
+                this.updateInterval = null;
+            }
+
+            // Remove UI container from DOM
+            if (this.container) {
+                this.container.remove();
+                this.container = null;
+            }
+
+            // Clean up module references
+            if (this.chart) {
+                this.chart = null;
+            }
+            if (this.history) {
+                this.history = null;
+            }
+            if (this.interactions) {
+                this.interactions = null;
+            }
         }
 
         /**
@@ -33323,6 +33642,12 @@
      * @returns {Promise<void>}
      */
     async function initializeFeatures() {
+        // Block feature initialization during character switch
+        if (dataManager.getIsCharacterSwitching()) {
+            console.log('[Toolasha] Feature initialization blocked: character switch in progress');
+            return;
+        }
+
         const errors = [];
 
         for (const feature of featureRegistry) {
@@ -33426,6 +33751,28 @@
     }
 
     /**
+     * Setup character switch handler
+     * Re-initializes all features when character switches
+     */
+    function setupCharacterSwitchHandler() {
+        dataManager.on('character_switched', async (data) => {
+            console.log('[Toolasha] Character switched, re-initializing features...');
+            console.log('[Toolasha] New character:', data.newName, `(${data.newId})`);
+
+            // Wait a moment for character data to fully load
+            setTimeout(async () => {
+                // Reload config settings first (settings were cleared during cleanup)
+                await config.loadSettings();
+                config.applyColorSettings();
+
+                // Now re-initialize all features with fresh settings
+                await initializeFeatures();
+                console.log('[Toolasha] Feature re-initialization complete');
+            }, 100);
+        });
+    }
+
+    /**
      * Retry initialization for specific features
      * @param {Array<Object>} failedFeatures - Array of failed feature objects
      * @returns {Promise<void>}
@@ -33467,6 +33814,7 @@
 
     var featureRegistry$1 = {
         initializeFeatures,
+        setupCharacterSwitchHandler,
         checkFeatureHealth,
         retryFailedFeatures,
         getFeature,
@@ -33774,6 +34122,11 @@
 
             // Wait for game's settings panel to load
             this.observeSettingsPanel();
+
+            // Listen for character switching to clean up
+            dataManager.on('character_switching', () => {
+                this.cleanup();
+            });
         }
 
         /**
@@ -34583,6 +34936,39 @@
 
             input.click();
         }
+
+        /**
+         * Cleanup for character switching
+         */
+        cleanup() {
+            console.log('[Toolasha Settings] Cleaning up for character switch');
+
+            // Stop observer
+            if (this.settingsObserver) {
+                this.settingsObserver.disconnect();
+                this.settingsObserver = null;
+            }
+
+            // Remove settings tab
+            const tab = document.querySelector('#toolasha-settings-tab');
+            if (tab) {
+                tab.remove();
+            }
+
+            // Remove settings panel
+            const panel = document.querySelector('#toolasha-settings');
+            if (panel) {
+                panel.remove();
+            }
+
+            // Clear state
+            this.settingsPanel = null;
+            this.currentSettings = {};
+            this.isInjecting = false;
+
+            // Clear config cache
+            this.config.clearSettingsCache();
+        }
     }
 
     // Create and export singleton instance
@@ -34662,6 +35048,9 @@
                     await featureRegistry$1.initializeFeatures();
                     console.log('[Toolasha] Feature initialization complete');
 
+                    // Setup character switch handler (re-initializes features on character switch)
+                    featureRegistry$1.setupCharacterSwitchHandler();
+
                     // Health check after initialization
                     setTimeout(async () => {
                         const failedFeatures = featureRegistry$1.checkFeatureHealth();
@@ -34699,7 +35088,7 @@
         const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
         targetWindow.Toolasha = {
-            version: '0.4.933',
+            version: '0.4.934',
 
             // Feature toggle API (for users to manage settings via console)
             features: {

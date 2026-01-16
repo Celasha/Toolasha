@@ -7,6 +7,7 @@
 import dungeonTrackerStorage from './dungeon-tracker-storage.js';
 import dungeonTracker from './dungeon-tracker.js';
 import config from '../../core/config.js';
+import dataManager from '../../core/data-manager.js';
 
 class DungeonTrackerChatAnnotations {
     constructor() {
@@ -21,6 +22,11 @@ class DungeonTrackerChatAnnotations {
     initialize() {
         // Wait for chat to be available
         this.waitForChat();
+
+        // Listen for character switching to clean up
+        dataManager.on('character_switching', () => {
+            this.cleanup();
+        });
     }
 
     /**
@@ -102,6 +108,9 @@ class DungeonTrackerChatAnnotations {
         // NOTE: Run saving is done manually via the Backfill button
         // Chat annotations only add visual time labels to messages
 
+        // Calculate in-memory stats from visible chat messages (for averages when no backfill exists)
+        const inMemoryStats = this.calculateStatsFromEvents(events);
+
         // Continue with visual annotations
         const runDurations = [];
 
@@ -127,10 +136,12 @@ class DungeonTrackerChatAnnotations {
                 label = this.formatTime(diff);
 
                 // Determine color based on performance using dungeonName
+                // Check storage first, fall back to in-memory stats
                 if (dungeonName && dungeonName !== 'Unknown') {
-                    const stats = await dungeonTrackerStorage.getStatsByName(dungeonName);
+                    const storageStats = await dungeonTrackerStorage.getStatsByName(dungeonName);
+                    const stats = storageStats.totalRuns > 0 ? storageStats : inMemoryStats[dungeonName];
 
-                    if (stats.fastestTime > 0 && stats.slowestTime > 0) {
+                    if (stats && stats.fastestTime > 0 && stats.slowestTime > 0) {
                         const fastestThreshold = stats.fastestTime * 1.10;
                         const slowestThreshold = stats.slowestTime * 0.90;
 
@@ -170,10 +181,11 @@ class DungeonTrackerChatAnnotations {
 
                 // Add average if this is a successful run
                 if (diff && dungeonName && dungeonName !== 'Unknown') {
-                    // Get stats for average using dungeonName
-                    const stats = await dungeonTrackerStorage.getStatsByName(dungeonName);
+                    // Check storage first, fall back to in-memory stats
+                    const storageStats = await dungeonTrackerStorage.getStatsByName(dungeonName);
+                    const stats = storageStats.totalRuns > 0 ? storageStats : inMemoryStats[dungeonName];
 
-                    if (stats.totalRuns > 1 && stats.avgTime > 0) {
+                    if (stats && stats.totalRuns > 1 && stats.avgTime > 0) {
                         const avgLabel = `Average: ${this.formatTime(stats.avgTime)}`;
                         this.insertAnnotation(avgLabel, '#deb887', e.msg, true); // Tan color
                     }
@@ -215,6 +227,60 @@ class DungeonTrackerChatAnnotations {
             // Save team run (includes dungeon name from Phase 2)
             await dungeonTrackerStorage.saveTeamRun(teamKey, run);
         }
+    }
+
+    /**
+     * Calculate stats from visible chat events (in-memory, no storage)
+     * Used to show averages before backfill is done
+     * @param {Array} events - Chat events array
+     * @returns {Object} Stats by dungeon name { dungeonName: { totalRuns, avgTime, fastestTime, slowestTime } }
+     */
+    calculateStatsFromEvents(events) {
+        const statsByDungeon = {};
+
+        // Loop through events and collect all completed runs
+        for (let i = 0; i < events.length; i++) {
+            const event = events[i];
+            if (event.type !== 'key') continue;
+
+            const next = events[i + 1];
+            if (!next || next.type !== 'key') continue; // Only key→key pairs (successful runs)
+
+            // Calculate duration
+            let duration = next.timestamp - event.timestamp;
+            if (duration < 0) duration += 24 * 60 * 60 * 1000; // Midnight rollover
+
+            // Get dungeon name
+            const dungeonName = this.getDungeonNameWithFallback(events, i);
+            if (!dungeonName || dungeonName === 'Unknown') continue;
+
+            // Initialize dungeon stats if needed
+            if (!statsByDungeon[dungeonName]) {
+                statsByDungeon[dungeonName] = {
+                    durations: []
+                };
+            }
+
+            // Add this run duration
+            statsByDungeon[dungeonName].durations.push(duration);
+        }
+
+        // Calculate stats for each dungeon
+        const result = {};
+        for (const [dungeonName, data] of Object.entries(statsByDungeon)) {
+            const durations = data.durations;
+            if (durations.length === 0) continue;
+
+            const total = durations.reduce((sum, d) => sum + d, 0);
+            result[dungeonName] = {
+                totalRuns: durations.length,
+                avgTime: Math.floor(total / durations.length),
+                fastestTime: Math.min(...durations),
+                slowestTime: Math.max(...durations)
+            };
+        }
+
+        return result;
     }
 
     /**
@@ -417,6 +483,35 @@ class DungeonTrackerChatAnnotations {
      */
     disable() {
         this.enabled = false;
+    }
+
+    /**
+     * Cleanup for character switching
+     */
+    cleanup() {
+        console.log('[Toolasha Dungeon Tracker Chat Annotations] Cleaning up for character switch');
+
+        // Disconnect MutationObserver
+        if (this.observer) {
+            this.observer.disconnect();
+            this.observer = null;
+        }
+
+        // Clear cached state
+        this.lastSeenDungeonName = null;
+        this.enabled = true; // Reset to default enabled state
+
+        // Remove all annotations from DOM
+        const annotations = document.querySelectorAll('.dungeon-timer-annotation, .dungeon-timer-average');
+        annotations.forEach(annotation => annotation.remove());
+
+        // Clear processed markers from chat messages
+        const processedMessages = document.querySelectorAll('[class^="ChatMessage_chatMessage"][data-processed="1"]');
+        processedMessages.forEach(msg => {
+            delete msg.dataset.processed;
+            delete msg.dataset.timerAppended;
+            delete msg.dataset.avgAppended;
+        });
     }
 
     /**

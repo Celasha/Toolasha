@@ -32,6 +32,14 @@ class DungeonTracker {
 
         // Hibernation detection (for UI time label switching)
         this.hibernationDetected = false;
+
+        // Store handler references for cleanup
+        this.handlers = {
+            newBattle: null,
+            actionCompleted: null,
+            actionsUpdated: null,
+            chatMessage: null
+        };
     }
 
     /**
@@ -185,23 +193,34 @@ class DungeonTracker {
         // Get character ID from URL for data isolation
         this.characterId = this.getCharacterIdFromURL();
 
+        // Create and store handler references for cleanup
+        this.handlers.newBattle = (data) => this.onNewBattle(data);
+        this.handlers.actionCompleted = (data) => this.onActionCompleted(data);
+        this.handlers.actionsUpdated = (data) => this.onActionsUpdated(data);
+        this.handlers.chatMessage = (data) => this.onChatMessage(data);
+
         // Listen for new_battle messages (wave start)
-        webSocketHook.on('new_battle', (data) => this.onNewBattle(data));
+        webSocketHook.on('new_battle', this.handlers.newBattle);
 
         // Listen for action_completed messages (wave complete)
-        webSocketHook.on('action_completed', (data) => this.onActionCompleted(data));
+        webSocketHook.on('action_completed', this.handlers.actionCompleted);
 
         // Listen for actions_updated to detect flee/cancel
-        webSocketHook.on('actions_updated', (data) => this.onActionsUpdated(data));
+        webSocketHook.on('actions_updated', this.handlers.actionsUpdated);
 
         // Listen for party chat messages (for server-validated duration and battle started)
-        webSocketHook.on('chat_message_received', (data) => this.onChatMessage(data));
+        webSocketHook.on('chat_message_received', this.handlers.chatMessage);
 
         // Setup hibernation detection using Visibility API
         this.setupHibernationDetection();
 
         // Check for active dungeon on page load and try to restore state
         setTimeout(() => this.checkForActiveDungeon(), 1000);
+
+        // Listen for character switching to clean up
+        dataManager.on('character_switching', () => {
+            this.cleanup();
+        });
     }
 
     /**
@@ -1149,6 +1168,58 @@ class DungeonTracker {
      */
     isTrackingDungeon() {
         return this.isTracking;
+    }
+
+    /**
+     * Cleanup for character switching
+     */
+    async cleanup() {
+        console.log('[Toolasha Dungeon Tracker] Cleaning up for character switch');
+
+        // Unregister all WebSocket handlers
+        if (this.handlers.newBattle) {
+            webSocketHook.off('new_battle', this.handlers.newBattle);
+            this.handlers.newBattle = null;
+        }
+        if (this.handlers.actionCompleted) {
+            webSocketHook.off('action_completed', this.handlers.actionCompleted);
+            this.handlers.actionCompleted = null;
+        }
+        if (this.handlers.actionsUpdated) {
+            webSocketHook.off('actions_updated', this.handlers.actionsUpdated);
+            this.handlers.actionsUpdated = null;
+        }
+        if (this.handlers.chatMessage) {
+            webSocketHook.off('chat_message_received', this.handlers.chatMessage);
+            this.handlers.chatMessage = null;
+        }
+
+        // Reset all tracking state
+        this.isTracking = false;
+        this.currentRun = null;
+        this.waveStartTime = null;
+        this.waveTimes = [];
+        this.pendingDungeonInfo = null;
+        this.currentBattleId = null;
+
+        // Clear party message tracking
+        this.firstKeyCountTimestamp = null;
+        this.lastKeyCountTimestamp = null;
+        this.keyCountMessages = [];
+        this.battleStartedTimestamp = null;
+        this.recentChatMessages = [];
+
+        // Reset hibernation detection
+        this.hibernationDetected = false;
+
+        // Clear character ID
+        this.characterId = null;
+
+        // Clear all callbacks
+        this.updateCallbacks = [];
+
+        // Clear saved in-progress run
+        await this.clearInProgressRun();
     }
 
     /**

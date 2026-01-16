@@ -309,6 +309,15 @@ class Config {
                 category: 'Enhancement',
                 description: 'Tracks enhancement attempts, costs, and statistics',
                 settingKey: 'enhancementTracker'
+            },
+
+            // Notification Features
+            notifiEmptyAction: {
+                enabled: false,
+                name: 'Empty Queue Notification',
+                category: 'Notifications',
+                description: 'Browser notification when action queue becomes empty',
+                settingKey: 'notifiEmptyAction'
             }
         };
 
@@ -331,6 +340,13 @@ class Config {
     async loadSettings() {
         // Load settings from settings-storage (which uses settings-config.js as source of truth)
         this.settingsMap = await settingsStorage.loadSettings();
+    }
+
+    /**
+     * Clear settings cache (for character switching)
+     */
+    clearSettingsCache() {
+        this.settingsMap = {};
     }
 
     /**

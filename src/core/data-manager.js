@@ -24,6 +24,11 @@ class DataManager {
         this.characterHouseRooms = new Map();  // House room HRID -> {houseRoomHrid, level}
         this.actionTypeDrinkSlotsMap = new Map();  // Action type HRID -> array of drink items
 
+        // Character tracking for switch detection
+        this.currentCharacterId = null;
+        this.currentCharacterName = null;
+        this.isCharacterSwitching = false;
+
         // Event listeners
         this.eventListeners = new Map();
 
@@ -144,6 +149,57 @@ class DataManager {
     setupMessageHandlers() {
         // Handle init_character_data (player data on login/refresh)
         this.webSocketHook.on('init_character_data', (data) => {
+            // Detect character switch
+            const newCharacterId = data.character?.id;
+            const newCharacterName = data.character?.name;
+
+            // Check if this is a character switch (not first load)
+            if (this.currentCharacterId && this.currentCharacterId !== newCharacterId) {
+                console.log('[Toolasha] Character switch detected:',
+                    `${this.currentCharacterName} (${this.currentCharacterId})`,
+                    '→',
+                    `${newCharacterName} (${newCharacterId})`);
+
+                // Set switching flag to block feature initialization
+                this.isCharacterSwitching = true;
+
+                // Emit character_switching event (cleanup phase)
+                this.emit('character_switching', {
+                    oldId: this.currentCharacterId,
+                    newId: newCharacterId,
+                    oldName: this.currentCharacterName,
+                    newName: newCharacterName
+                });
+
+                // Update character tracking
+                this.currentCharacterId = newCharacterId;
+                this.currentCharacterName = newCharacterName;
+
+                // Clear old character data
+                this.characterData = null;
+                this.characterSkills = null;
+                this.characterItems = null;
+                this.characterActions = [];
+                this.characterEquipment.clear();
+                this.characterHouseRooms.clear();
+                this.actionTypeDrinkSlotsMap.clear();
+
+                // Reset switching flag (cleanup complete, ready for re-init)
+                this.isCharacterSwitching = false;
+
+                // Emit character_switched event (ready for re-init)
+                this.emit('character_switched', {
+                    newId: newCharacterId,
+                    newName: newCharacterName
+                });
+            } else if (!this.currentCharacterId) {
+                // First load - set character tracking
+                this.currentCharacterId = newCharacterId;
+                this.currentCharacterName = newCharacterName;
+                console.log('[Toolasha] Character initialized:', newCharacterName, `(${newCharacterId})`);
+            }
+
+            // Process new character data normally
             this.characterData = data;
             this.characterSkills = data.characterSkills;
             this.characterItems = data.characterItems;
@@ -158,6 +214,10 @@ class DataManager {
             // Build drink slots map (tea buffs)
             this.updateDrinkSlotsMap(data.actionTypeDrinkSlotsMap);
 
+            // Clear switching flag
+            this.isCharacterSwitching = false;
+
+            // Emit character_initialized event (trigger feature initialization)
             this.emit('character_initialized', data);
         });
 
@@ -425,6 +485,30 @@ class DataManager {
      */
     getActionDrinkSlots(actionTypeHrid) {
         return this.actionTypeDrinkSlotsMap.get(actionTypeHrid) || [];
+    }
+
+    /**
+     * Get current character ID
+     * @returns {string|null} Character ID or null
+     */
+    getCurrentCharacterId() {
+        return this.currentCharacterId;
+    }
+
+    /**
+     * Get current character name
+     * @returns {string|null} Character name or null
+     */
+    getCurrentCharacterName() {
+        return this.currentCharacterName;
+    }
+
+    /**
+     * Check if character is currently switching
+     * @returns {boolean} True if switching
+     */
+    getIsCharacterSwitching() {
+        return this.isCharacterSwitching;
     }
 
     /**

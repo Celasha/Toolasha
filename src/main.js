@@ -81,6 +81,9 @@ if (isCombatSimulatorPage()) {
                 await featureRegistry.initializeFeatures();
                 console.log('[Toolasha] Feature initialization complete');
 
+                // Setup character switch handler (re-initializes features on character switch)
+                featureRegistry.setupCharacterSwitchHandler();
+
                 // Health check after initialization
                 setTimeout(async () => {
                     const failedFeatures = featureRegistry.checkFeatureHealth();
@@ -118,7 +121,7 @@ if (isCombatSimulatorPage()) {
     const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
     targetWindow.Toolasha = {
-        version: '0.4.933',
+        version: '0.4.934',
 
         // Feature toggle API (for users to manage settings via console)
         features: {
