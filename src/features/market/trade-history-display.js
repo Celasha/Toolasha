@@ -272,10 +272,10 @@ class TradeHistoryDisplay {
             return '#888'; // Grey if no market data
         }
 
-        if (lastBuy < currentAsk) {
-            return config.COLOR_PROFIT; // Green - you bought cheaper
-        } else if (lastBuy > currentAsk) {
-            return config.COLOR_LOSS; // Red - you paid more
+        if (currentAsk > lastBuy) {
+            return config.COLOR_LOSS; // Red - current price is higher (worse deal now)
+        } else if (currentAsk < lastBuy) {
+            return config.COLOR_PROFIT; // Green - current price is lower (better deal now)
         } else {
             return '#888'; // Grey - same price
         }
