@@ -353,10 +353,10 @@ export const settingsGroups = {
             },
             invBadgePrices: {
                 id: 'invBadgePrices',
-                label: 'Show bid/ask prices on item icons',
+                label: 'Show price badges on item icons',
                 type: 'checkbox',
                 default: false,
-                help: 'Displays stack value on inventory items (works independently of sorting)'
+                help: 'Displays per-item ask or bid price on inventory items'
             },
             invBadgePrices_type: {
                 id: 'invBadgePrices_type',
@@ -365,7 +365,7 @@ export const settingsGroups = {
                 default: 'Ask',
                 options: ['None', 'Ask', 'Bid'],
                 dependencies: ['invBadgePrices'],
-                help: 'Choose which price to show on badges: Ask (buying price), Bid (selling price), or None (hide badges)'
+                help: 'Ask (instant-buy price), Bid (instant-sell price), or None'
             },
             profitCalc_pricingMode: {
                 id: 'profitCalc_pricingMode',
@@ -810,6 +810,20 @@ export const settingsGroups = {
                 type: 'color',
                 default: '#FFFFFF',
                 help: 'Color for remaining XP text below skill bars in left navigation'
+            },
+            color_invBadge_ask: {
+                id: 'color_invBadge_ask',
+                label: 'Inventory Badge: Ask Price',
+                type: 'color',
+                default: '#047857',
+                help: 'Color for Ask price badges on inventory items (seller asking price - better selling value)'
+            },
+            color_invBadge_bid: {
+                id: 'color_invBadge_bid',
+                label: 'Inventory Badge: Bid Price',
+                type: 'color',
+                default: '#60a5fa',
+                help: 'Color for Bid price badges on inventory items (buyer bid price - instant-sell value)'
             }
         }
     }

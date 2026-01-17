@@ -14,6 +14,7 @@ class DungeonTrackerChatAnnotations {
         this.enabled = true;
         this.observer = null;
         this.lastSeenDungeonName = null; // Cache last known dungeon name
+        this.cumulativeStatsByDungeon = {}; // Persistent cumulative counters for rolling averages
     }
 
     /**
@@ -108,7 +109,7 @@ class DungeonTrackerChatAnnotations {
         // NOTE: Run saving is done manually via the Backfill button
         // Chat annotations only add visual time labels to messages
 
-        // Calculate in-memory stats from visible chat messages (for averages when no backfill exists)
+        // Calculate in-memory stats from visible chat messages (for color thresholds only)
         const inMemoryStats = this.calculateStatsFromEvents(events);
 
         // Continue with visual annotations
@@ -179,16 +180,27 @@ class DungeonTrackerChatAnnotations {
 
                 this.insertAnnotation(label, color, e.msg, false);
 
-                // Add average if this is a successful run
+                // Add cumulative average if this is a successful run
                 if (diff && dungeonName && dungeonName !== 'Unknown') {
-                    // Check storage first, fall back to in-memory stats
-                    const storageStats = await dungeonTrackerStorage.getStatsByName(dungeonName);
-                    const stats = storageStats.totalRuns > 0 ? storageStats : inMemoryStats[dungeonName];
-
-                    if (stats && stats.totalRuns > 1 && stats.avgTime > 0) {
-                        const avgLabel = `Average: ${this.formatTime(stats.avgTime)}`;
-                        this.insertAnnotation(avgLabel, '#deb887', e.msg, true); // Tan color
+                    // Initialize dungeon tracking if needed
+                    if (!this.cumulativeStatsByDungeon[dungeonName]) {
+                        this.cumulativeStatsByDungeon[dungeonName] = {
+                            runCount: 0,
+                            totalTime: 0
+                        };
                     }
+
+                    // Add this run to cumulative totals
+                    const dungeonStats = this.cumulativeStatsByDungeon[dungeonName];
+                    dungeonStats.runCount++;
+                    dungeonStats.totalTime += diff;
+
+                    // Calculate cumulative average (average of all runs up to this point)
+                    const cumulativeAvg = Math.floor(dungeonStats.totalTime / dungeonStats.runCount);
+
+                    // Show cumulative average
+                    const avgLabel = `Average: ${this.formatTime(cumulativeAvg)}`;
+                    this.insertAnnotation(avgLabel, '#deb887', e.msg, true); // Tan color
                 }
             }
         }
@@ -499,6 +511,7 @@ class DungeonTrackerChatAnnotations {
 
         // Clear cached state
         this.lastSeenDungeonName = null;
+        this.cumulativeStatsByDungeon = {}; // Reset cumulative counters
         this.enabled = true; // Reset to default enabled state
 
         // Remove all annotations from DOM

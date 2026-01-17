@@ -367,70 +367,81 @@ class QuickInputButtons {
                 numberInput
             );
 
-            // ===== SECTION 3: Quick Queue Setup =====
-            const queueContent = document.createElement('div');
-            queueContent.style.cssText = `
-                color: var(--text-color-secondary, ${config.COLOR_TEXT_SECONDARY});
-                font-size: 0.9em;
-                margin-top: 8px;
-                margin-bottom: 8px;
-            `;
+            // ===== SECTION 3: Quick Queue Setup (Skip for combat) =====
+            let queueContent = null;
 
-            // FIRST ROW: Time-based buttons (hours)
-            queueContent.appendChild(document.createTextNode('Do '));
+            if (hasNormalXP) {
+                queueContent = document.createElement('div');
+                queueContent.style.cssText = `
+                    color: var(--text-color-secondary, ${config.COLOR_TEXT_SECONDARY});
+                    font-size: 0.9em;
+                    margin-top: 8px;
+                    margin-bottom: 8px;
+                `;
 
-            this.presetHours.forEach(hours => {
-                const button = this.createButton(hours === 0.5 ? '0.5' : hours.toString(), () => {
-                    // How many actions (outputs) fit in X hours?
-                    // With efficiency, fewer actual attempts produce more outputs
-                    // Time (seconds) = hours × 3600
-                    // Actual attempts = Time / actionTime
-                    // Queue count (outputs) = Actual attempts × efficiencyMultiplier
-                    // Round to whole number (input doesn't accept decimals)
-                    const totalSeconds = hours * 60 * 60;
-                    const actualAttempts = Math.round(totalSeconds / actionTime);
-                    const actionCount = Math.round(actualAttempts * efficiencyMultiplier);
-                    this.setInputValue(numberInput, actionCount);
+                // FIRST ROW: Time-based buttons (hours)
+                queueContent.appendChild(document.createTextNode('Do '));
+
+                this.presetHours.forEach(hours => {
+                    const button = this.createButton(hours === 0.5 ? '0.5' : hours.toString(), () => {
+                        // How many actions (outputs) fit in X hours?
+                        // With efficiency, fewer actual attempts produce more outputs
+                        // Time (seconds) = hours × 3600
+                        // Actual attempts = Time / actionTime
+                        // Queue count (outputs) = Actual attempts × efficiencyMultiplier
+                        // Round to whole number (input doesn't accept decimals)
+                        const totalSeconds = hours * 60 * 60;
+                        const actualAttempts = Math.round(totalSeconds / actionTime);
+                        const actionCount = Math.round(actualAttempts * efficiencyMultiplier);
+                        this.setInputValue(numberInput, actionCount);
+                    });
+                    queueContent.appendChild(button);
                 });
-                queueContent.appendChild(button);
-            });
 
-            queueContent.appendChild(document.createTextNode(' hours'));
-            queueContent.appendChild(document.createElement('div')); // Line break
+                queueContent.appendChild(document.createTextNode(' hours'));
+                queueContent.appendChild(document.createElement('div')); // Line break
 
-            // SECOND ROW: Count-based buttons (times)
-            queueContent.appendChild(document.createTextNode('Do '));
+                // SECOND ROW: Count-based buttons (times)
+                queueContent.appendChild(document.createTextNode('Do '));
 
-            this.presetValues.forEach(value => {
-                const button = this.createButton(value.toLocaleString(), () => {
-                    this.setInputValue(numberInput, value);
+                this.presetValues.forEach(value => {
+                    const button = this.createButton(value.toLocaleString(), () => {
+                        this.setInputValue(numberInput, value);
+                    });
+                    queueContent.appendChild(button);
                 });
-                queueContent.appendChild(button);
-            });
 
-            const maxButton = this.createButton('Max', () => {
-                const maxValue = this.calculateMaxValue(panel, actionDetails, gameData);
-                // Handle both infinity symbol and numeric values
-                if (maxValue === '∞' || maxValue > 0) {
-                    this.setInputValue(numberInput, maxValue);
-                }
-            });
-            queueContent.appendChild(maxButton);
+                const maxButton = this.createButton('Max', () => {
+                    const maxValue = this.calculateMaxValue(panel, actionDetails, gameData);
+                    // Handle both infinity symbol and numeric values
+                    if (maxValue === '∞' || maxValue > 0) {
+                        this.setInputValue(numberInput, maxValue);
+                    }
+                });
+                queueContent.appendChild(maxButton);
 
-            queueContent.appendChild(document.createTextNode(' times'));
+                queueContent.appendChild(document.createTextNode(' times'));
+            } // End hasNormalXP check - queueContent only created for non-combat
 
-            // Insert sections: inputContainer -> queueContent -> speedSection (if exists) -> levelProgressSection
-            inputContainer.insertAdjacentElement('afterend', queueContent);
+            // Insert sections into DOM
+            if (queueContent) {
+                // Non-combat: Insert queueContent first
+                inputContainer.insertAdjacentElement('afterend', queueContent);
 
-            if (speedSection) {
-                queueContent.insertAdjacentElement('afterend', speedSection);
-                if (levelProgressSection) {
-                    speedSection.insertAdjacentElement('afterend', levelProgressSection);
+                if (speedSection) {
+                    queueContent.insertAdjacentElement('afterend', speedSection);
+                    if (levelProgressSection) {
+                        speedSection.insertAdjacentElement('afterend', levelProgressSection);
+                    }
+                } else {
+                    if (levelProgressSection) {
+                        queueContent.insertAdjacentElement('afterend', levelProgressSection);
+                    }
                 }
             } else {
-                // No speedSection for combat - insert levelProgressSection directly after queueContent
+                // Combat: Insert levelProgressSection directly after inputContainer
                 if (levelProgressSection) {
-                    queueContent.insertAdjacentElement('afterend', levelProgressSection);
+                    inputContainer.insertAdjacentElement('afterend', levelProgressSection);
                 }
             }
 
@@ -838,12 +849,14 @@ class QuickInputButtons {
             // Efficiency means each action repeats, giving more XP per performed action
             const xpPerPerformedAction = xpPerAction * efficiencyMultiplier;
 
-            // Calculate real actions needed for this level
+            // Calculate real actions needed for this level (attempts)
             const actionsForLevel = Math.ceil(xpNeeded / xpPerPerformedAction);
-            totalActions += actionsForLevel;
 
-            // Time is simply actions × time per action
-            // (efficiency already factored into action count)
+            // Convert attempts to outputs (queue input expects outputs, not attempts)
+            const outputsToQueue = Math.round(actionsForLevel * efficiencyMultiplier);
+            totalActions += outputsToQueue;
+
+            // Time is based on attempts (actions performed), not outputs
             totalTime += actionsForLevel * actionTime;
         }
 

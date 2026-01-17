@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.4.936
+// @version      0.4.937
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -719,10 +719,10 @@
                 },
                 invBadgePrices: {
                     id: 'invBadgePrices',
-                    label: 'Show bid/ask prices on item icons',
+                    label: 'Show price badges on item icons',
                     type: 'checkbox',
                     default: false,
-                    help: 'Displays stack value on inventory items (works independently of sorting)'
+                    help: 'Displays per-item ask or bid price on inventory items'
                 },
                 invBadgePrices_type: {
                     id: 'invBadgePrices_type',
@@ -731,7 +731,7 @@
                     default: 'Ask',
                     options: ['None', 'Ask', 'Bid'],
                     dependencies: ['invBadgePrices'],
-                    help: 'Choose which price to show on badges: Ask (buying price), Bid (selling price), or None (hide badges)'
+                    help: 'Ask (instant-buy price), Bid (instant-sell price), or None'
                 },
                 profitCalc_pricingMode: {
                     id: 'profitCalc_pricingMode',
@@ -1176,6 +1176,20 @@
                     type: 'color',
                     default: '#FFFFFF',
                     help: 'Color for remaining XP text below skill bars in left navigation'
+                },
+                color_invBadge_ask: {
+                    id: 'color_invBadge_ask',
+                    label: 'Inventory Badge: Ask Price',
+                    type: 'color',
+                    default: '#047857',
+                    help: 'Color for Ask price badges on inventory items (seller asking price - better selling value)'
+                },
+                color_invBadge_bid: {
+                    id: 'color_invBadge_bid',
+                    label: 'Inventory Badge: Bid Price',
+                    type: 'color',
+                    default: '#60a5fa',
+                    help: 'Color for Bid price badges on inventory items (buyer bid price - instant-sell value)'
                 }
             }
         }
@@ -1839,6 +1853,8 @@
             this.COLOR_GOLD = this.getSettingValue('color_gold', "#ffa500");
             this.COLOR_ACCENT = this.getSettingValue('color_accent', "#22c55e");
             this.COLOR_REMAINING_XP = this.getSettingValue('color_remaining_xp', "#FFFFFF");
+            this.COLOR_INVBADGE_ASK = this.getSettingValue('color_invBadge_ask', "#047857");
+            this.COLOR_INVBADGE_BID = this.getSettingValue('color_invBadge_bid', "#60a5fa");
 
             // Set legacy SCRIPT_COLOR_MAIN to accent color
             this.SCRIPT_COLOR_MAIN = this.COLOR_ACCENT;
@@ -15138,70 +15154,81 @@
                     numberInput
                 );
 
-                // ===== SECTION 3: Quick Queue Setup =====
-                const queueContent = document.createElement('div');
-                queueContent.style.cssText = `
-                color: var(--text-color-secondary, ${config.COLOR_TEXT_SECONDARY});
-                font-size: 0.9em;
-                margin-top: 8px;
-                margin-bottom: 8px;
-            `;
+                // ===== SECTION 3: Quick Queue Setup (Skip for combat) =====
+                let queueContent = null;
 
-                // FIRST ROW: Time-based buttons (hours)
-                queueContent.appendChild(document.createTextNode('Do '));
+                if (hasNormalXP) {
+                    queueContent = document.createElement('div');
+                    queueContent.style.cssText = `
+                    color: var(--text-color-secondary, ${config.COLOR_TEXT_SECONDARY});
+                    font-size: 0.9em;
+                    margin-top: 8px;
+                    margin-bottom: 8px;
+                `;
 
-                this.presetHours.forEach(hours => {
-                    const button = this.createButton(hours === 0.5 ? '0.5' : hours.toString(), () => {
-                        // How many actions (outputs) fit in X hours?
-                        // With efficiency, fewer actual attempts produce more outputs
-                        // Time (seconds) = hours × 3600
-                        // Actual attempts = Time / actionTime
-                        // Queue count (outputs) = Actual attempts × efficiencyMultiplier
-                        // Round to whole number (input doesn't accept decimals)
-                        const totalSeconds = hours * 60 * 60;
-                        const actualAttempts = Math.round(totalSeconds / actionTime);
-                        const actionCount = Math.round(actualAttempts * efficiencyMultiplier);
-                        this.setInputValue(numberInput, actionCount);
+                    // FIRST ROW: Time-based buttons (hours)
+                    queueContent.appendChild(document.createTextNode('Do '));
+
+                    this.presetHours.forEach(hours => {
+                        const button = this.createButton(hours === 0.5 ? '0.5' : hours.toString(), () => {
+                            // How many actions (outputs) fit in X hours?
+                            // With efficiency, fewer actual attempts produce more outputs
+                            // Time (seconds) = hours × 3600
+                            // Actual attempts = Time / actionTime
+                            // Queue count (outputs) = Actual attempts × efficiencyMultiplier
+                            // Round to whole number (input doesn't accept decimals)
+                            const totalSeconds = hours * 60 * 60;
+                            const actualAttempts = Math.round(totalSeconds / actionTime);
+                            const actionCount = Math.round(actualAttempts * efficiencyMultiplier);
+                            this.setInputValue(numberInput, actionCount);
+                        });
+                        queueContent.appendChild(button);
                     });
-                    queueContent.appendChild(button);
-                });
 
-                queueContent.appendChild(document.createTextNode(' hours'));
-                queueContent.appendChild(document.createElement('div')); // Line break
+                    queueContent.appendChild(document.createTextNode(' hours'));
+                    queueContent.appendChild(document.createElement('div')); // Line break
 
-                // SECOND ROW: Count-based buttons (times)
-                queueContent.appendChild(document.createTextNode('Do '));
+                    // SECOND ROW: Count-based buttons (times)
+                    queueContent.appendChild(document.createTextNode('Do '));
 
-                this.presetValues.forEach(value => {
-                    const button = this.createButton(value.toLocaleString(), () => {
-                        this.setInputValue(numberInput, value);
+                    this.presetValues.forEach(value => {
+                        const button = this.createButton(value.toLocaleString(), () => {
+                            this.setInputValue(numberInput, value);
+                        });
+                        queueContent.appendChild(button);
                     });
-                    queueContent.appendChild(button);
-                });
 
-                const maxButton = this.createButton('Max', () => {
-                    const maxValue = this.calculateMaxValue(panel, actionDetails, gameData);
-                    // Handle both infinity symbol and numeric values
-                    if (maxValue === '∞' || maxValue > 0) {
-                        this.setInputValue(numberInput, maxValue);
-                    }
-                });
-                queueContent.appendChild(maxButton);
+                    const maxButton = this.createButton('Max', () => {
+                        const maxValue = this.calculateMaxValue(panel, actionDetails, gameData);
+                        // Handle both infinity symbol and numeric values
+                        if (maxValue === '∞' || maxValue > 0) {
+                            this.setInputValue(numberInput, maxValue);
+                        }
+                    });
+                    queueContent.appendChild(maxButton);
 
-                queueContent.appendChild(document.createTextNode(' times'));
+                    queueContent.appendChild(document.createTextNode(' times'));
+                } // End hasNormalXP check - queueContent only created for non-combat
 
-                // Insert sections: inputContainer -> queueContent -> speedSection (if exists) -> levelProgressSection
-                inputContainer.insertAdjacentElement('afterend', queueContent);
+                // Insert sections into DOM
+                if (queueContent) {
+                    // Non-combat: Insert queueContent first
+                    inputContainer.insertAdjacentElement('afterend', queueContent);
 
-                if (speedSection) {
-                    queueContent.insertAdjacentElement('afterend', speedSection);
-                    if (levelProgressSection) {
-                        speedSection.insertAdjacentElement('afterend', levelProgressSection);
+                    if (speedSection) {
+                        queueContent.insertAdjacentElement('afterend', speedSection);
+                        if (levelProgressSection) {
+                            speedSection.insertAdjacentElement('afterend', levelProgressSection);
+                        }
+                    } else {
+                        if (levelProgressSection) {
+                            queueContent.insertAdjacentElement('afterend', levelProgressSection);
+                        }
                     }
                 } else {
-                    // No speedSection for combat - insert levelProgressSection directly after queueContent
+                    // Combat: Insert levelProgressSection directly after inputContainer
                     if (levelProgressSection) {
-                        queueContent.insertAdjacentElement('afterend', levelProgressSection);
+                        inputContainer.insertAdjacentElement('afterend', levelProgressSection);
                     }
                 }
 
@@ -15609,12 +15636,14 @@
                 // Efficiency means each action repeats, giving more XP per performed action
                 const xpPerPerformedAction = xpPerAction * efficiencyMultiplier;
 
-                // Calculate real actions needed for this level
+                // Calculate real actions needed for this level (attempts)
                 const actionsForLevel = Math.ceil(xpNeeded / xpPerPerformedAction);
-                totalActions += actionsForLevel;
 
-                // Time is simply actions × time per action
-                // (efficiency already factored into action count)
+                // Convert attempts to outputs (queue input expects outputs, not attempts)
+                const outputsToQueue = Math.round(actionsForLevel * efficiencyMultiplier);
+                totalActions += outputsToQueue;
+
+                // Time is based on attempts (actions performed), not outputs
                 totalTime += actionsForLevel * actionTime;
             }
 
@@ -30551,6 +30580,7 @@
             this.enabled = true;
             this.observer = null;
             this.lastSeenDungeonName = null; // Cache last known dungeon name
+            this.cumulativeStatsByDungeon = {}; // Persistent cumulative counters for rolling averages
         }
 
         /**
@@ -30645,7 +30675,7 @@
             // NOTE: Run saving is done manually via the Backfill button
             // Chat annotations only add visual time labels to messages
 
-            // Calculate in-memory stats from visible chat messages (for averages when no backfill exists)
+            // Calculate in-memory stats from visible chat messages (for color thresholds only)
             const inMemoryStats = this.calculateStatsFromEvents(events);
 
             // Continue with visual annotations
@@ -30716,16 +30746,27 @@
 
                     this.insertAnnotation(label, color, e.msg, false);
 
-                    // Add average if this is a successful run
+                    // Add cumulative average if this is a successful run
                     if (diff && dungeonName && dungeonName !== 'Unknown') {
-                        // Check storage first, fall back to in-memory stats
-                        const storageStats = await dungeonTrackerStorage.getStatsByName(dungeonName);
-                        const stats = storageStats.totalRuns > 0 ? storageStats : inMemoryStats[dungeonName];
-
-                        if (stats && stats.totalRuns > 1 && stats.avgTime > 0) {
-                            const avgLabel = `Average: ${this.formatTime(stats.avgTime)}`;
-                            this.insertAnnotation(avgLabel, '#deb887', e.msg, true); // Tan color
+                        // Initialize dungeon tracking if needed
+                        if (!this.cumulativeStatsByDungeon[dungeonName]) {
+                            this.cumulativeStatsByDungeon[dungeonName] = {
+                                runCount: 0,
+                                totalTime: 0
+                            };
                         }
+
+                        // Add this run to cumulative totals
+                        const dungeonStats = this.cumulativeStatsByDungeon[dungeonName];
+                        dungeonStats.runCount++;
+                        dungeonStats.totalTime += diff;
+
+                        // Calculate cumulative average (average of all runs up to this point)
+                        const cumulativeAvg = Math.floor(dungeonStats.totalTime / dungeonStats.runCount);
+
+                        // Show cumulative average
+                        const avgLabel = `Average: ${this.formatTime(cumulativeAvg)}`;
+                        this.insertAnnotation(avgLabel, '#deb887', e.msg, true); // Tan color
                     }
                 }
             }
@@ -31036,6 +31077,7 @@
 
             // Clear cached state
             this.lastSeenDungeonName = null;
+            this.cumulativeStatsByDungeon = {}; // Reset cumulative counters
             this.enabled = true; // Reset to default enabled state
 
             // Remove all annotations from DOM
@@ -35184,7 +35226,7 @@
         const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
         targetWindow.Toolasha = {
-            version: '0.4.936',
+            version: '0.4.937',
 
             // Feature toggle API (for users to manage settings via console)
             features: {
