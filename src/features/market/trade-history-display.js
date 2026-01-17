@@ -143,6 +143,11 @@ class TradeHistoryDisplay {
             return;
         }
 
+        // Get current top order prices from the DOM
+        const currentPrices = this.extractCurrentPrices(panel);
+        console.log('[TradeHistoryDisplay] Current top orders:', currentPrices);
+        console.log('[TradeHistoryDisplay] Your history:', history);
+
         // Ensure panel has position relative for absolute positioning to work
         if (!panel.style.position || panel.style.position === 'static') {
             panel.style.position = 'relative';
@@ -174,7 +179,9 @@ class TradeHistoryDisplay {
         parts.push(`<span style="color: #aaa; font-weight: 500;">Last:</span>`);
 
         if (history.buy) {
-            parts.push(`<span style="color: ${config.COLOR_LOSS}; font-weight: 600;" title="Your last buy price">Buy ${formatKMB(history.buy)}</span>`);
+            const buyColor = this.getBuyColor(history.buy, currentPrices?.ask);
+            console.log('[TradeHistoryDisplay] Buy color:', buyColor, 'lastBuy:', history.buy, 'currentAsk:', currentPrices?.ask);
+            parts.push(`<span style="color: ${buyColor}; font-weight: 600;" title="Your last buy price">Buy ${formatKMB(history.buy)}</span>`);
         }
 
         if (history.buy && history.sell) {
@@ -182,13 +189,116 @@ class TradeHistoryDisplay {
         }
 
         if (history.sell) {
-            parts.push(`<span style="color: ${config.COLOR_PROFIT}; font-weight: 600;" title="Your last sell price">Sell ${formatKMB(history.sell)}</span>`);
+            const sellColor = this.getSellColor(history.sell, currentPrices?.bid);
+            console.log('[TradeHistoryDisplay] Sell color:', sellColor, 'lastSell:', history.sell, 'currentBid:', currentPrices?.bid);
+            parts.push(`<span style="color: ${sellColor}; font-weight: 600;" title="Your last sell price">Sell ${formatKMB(history.sell)}</span>`);
         }
 
         historyDiv.innerHTML = parts.join('');
 
         // Append to panel (position is controlled by absolute positioning)
         panel.appendChild(historyDiv);
+    }
+
+    /**
+     * Extract current top order prices from the marketplace panel
+     * @param {HTMLElement} panel - Current item panel
+     * @returns {Object|null} { ask, bid } or null
+     */
+    extractCurrentPrices(panel) {
+        try {
+            // Find the top order section
+            const topOrderSection = panel.querySelector('[class*="MarketplacePanel_topOrderSection"]');
+            if (!topOrderSection) {
+                return null;
+            }
+
+            // The top order section contains two price displays: Sell (Ask) and Buy (Bid)
+            const priceTexts = topOrderSection.querySelectorAll('[class*="MarketplacePanel_price"]');
+
+            if (priceTexts.length >= 2) {
+                // First price is Sell price (Ask), second is Buy price (Bid)
+                const askText = priceTexts[0].textContent.trim();
+                const bidText = priceTexts[1].textContent.trim();
+
+                return {
+                    ask: this.parsePrice(askText),
+                    bid: this.parsePrice(bidText)
+                };
+            }
+
+            return null;
+        } catch (error) {
+            console.error('[TradeHistoryDisplay] Failed to extract current prices:', error);
+            return null;
+        }
+    }
+
+    /**
+     * Parse price text to number (handles K, M, B suffixes)
+     * @param {string} text - Price text (e.g., "82.0K", "1.5M")
+     * @returns {number} Parsed price
+     */
+    parsePrice(text) {
+        if (!text) return 0;
+
+        // Remove non-numeric characters except K, M, B, and decimal point
+        let cleaned = text.replace(/[^0-9.KMB]/gi, '');
+
+        let multiplier = 1;
+        if (cleaned.toUpperCase().includes('K')) {
+            multiplier = 1000;
+            cleaned = cleaned.replace(/K/gi, '');
+        } else if (cleaned.toUpperCase().includes('M')) {
+            multiplier = 1000000;
+            cleaned = cleaned.replace(/M/gi, '');
+        } else if (cleaned.toUpperCase().includes('B')) {
+            multiplier = 1000000000;
+            cleaned = cleaned.replace(/B/gi, '');
+        }
+
+        const num = parseFloat(cleaned);
+        return isNaN(num) ? 0 : Math.floor(num * multiplier);
+    }
+
+    /**
+     * Get color for buy price based on comparison to current ask
+     * @param {number} lastBuy - Your last buy price
+     * @param {number} currentAsk - Current market ask price
+     * @returns {string} Color code
+     */
+    getBuyColor(lastBuy, currentAsk) {
+        if (!currentAsk || currentAsk === -1) {
+            return '#888'; // Grey if no market data
+        }
+
+        if (lastBuy < currentAsk) {
+            return config.COLOR_PROFIT; // Green - you bought cheaper
+        } else if (lastBuy > currentAsk) {
+            return config.COLOR_LOSS; // Red - you paid more
+        } else {
+            return '#888'; // Grey - same price
+        }
+    }
+
+    /**
+     * Get color for sell price based on comparison to current bid
+     * @param {number} lastSell - Your last sell price
+     * @param {number} currentBid - Current market bid price
+     * @returns {string} Color code
+     */
+    getSellColor(lastSell, currentBid) {
+        if (!currentBid || currentBid === -1) {
+            return '#888'; // Grey if no market data
+        }
+
+        if (lastSell > currentBid) {
+            return config.COLOR_PROFIT; // Green - you sold for more
+        } else if (lastSell < currentBid) {
+            return config.COLOR_LOSS; // Red - you sold for less
+        } else {
+            return '#888'; // Grey - same price
+        }
     }
 
     /**
