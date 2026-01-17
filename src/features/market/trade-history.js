@@ -6,6 +6,7 @@
 import webSocketHook from '../../core/websocket.js';
 import storage from '../../core/storage.js';
 import config from '../../core/config.js';
+import dataManager from '../../core/data-manager.js';
 
 /**
  * TradeHistory class manages personal buy/sell price tracking
@@ -15,6 +16,18 @@ class TradeHistory {
         this.history = {}; // itemHrid:enhancementLevel -> { buy, sell }
         this.isInitialized = false;
         this.isLoaded = false;
+        this.characterId = null;
+    }
+
+    /**
+     * Get character-specific storage key
+     * @returns {string} Storage key with character ID suffix
+     */
+    getStorageKey() {
+        if (this.characterId) {
+            return `tradeHistory_${this.characterId}`;
+        }
+        return 'tradeHistory'; // Fallback for no character ID
     }
 
     /**
@@ -42,6 +55,9 @@ class TradeHistory {
             return;
         }
 
+        // Get current character ID
+        this.characterId = dataManager.getCurrentCharacterId();
+
         // Load existing history from storage
         await this.loadHistory();
 
@@ -58,7 +74,8 @@ class TradeHistory {
      */
     async loadHistory() {
         try {
-            const saved = await storage.getJSON('tradeHistory', 'settings', {});
+            const storageKey = this.getStorageKey();
+            const saved = await storage.getJSON(storageKey, 'settings', {});
             this.history = saved || {};
             this.isLoaded = true;
         } catch (error) {
@@ -73,7 +90,8 @@ class TradeHistory {
      */
     async saveHistory() {
         try {
-            await storage.setJSON('tradeHistory', this.history, 'settings', true);
+            const storageKey = this.getStorageKey();
+            await storage.setJSON(storageKey, this.history, 'settings', true);
         } catch (error) {
             console.error('[TradeHistory] Failed to save history:', error);
         }
@@ -149,10 +167,30 @@ class TradeHistory {
         // Don't clear history data, just stop tracking
         this.isInitialized = false;
     }
+
+    /**
+     * Handle character switch - clear old data and reinitialize
+     */
+    async handleCharacterSwitch() {
+        // Clear old character's data from memory
+        this.history = {};
+        this.isLoaded = false;
+        this.isInitialized = false;
+
+        // Reinitialize with new character
+        await this.initialize();
+    }
 }
 
 // Create and export singleton instance
 const tradeHistory = new TradeHistory();
 tradeHistory.setupSettingListener();
+
+// Setup character switch handler
+dataManager.on('character_switched', () => {
+    if (config.getSetting('market_tradeHistory')) {
+        tradeHistory.handleCharacterSwitch();
+    }
+});
 
 export default tradeHistory;
