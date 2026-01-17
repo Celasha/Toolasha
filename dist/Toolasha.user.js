@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.4.938
+// @version      0.4.939
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -2498,6 +2498,7 @@
             this.currentCharacterId = null;
             this.currentCharacterName = null;
             this.isCharacterSwitching = false;
+            this.lastCharacterSwitchTime = 0; // Prevent rapid-fire switch loops
 
             // Event listeners
             this.eventListeners = new Map();
@@ -2625,6 +2626,14 @@
 
                 // Check if this is a character switch (not first load)
                 if (this.currentCharacterId && this.currentCharacterId !== newCharacterId) {
+                    // Prevent rapid-fire character switches (loop protection)
+                    const now = Date.now();
+                    if (this.lastCharacterSwitchTime && (now - this.lastCharacterSwitchTime) < 1000) {
+                        console.warn('[Toolasha] Ignoring rapid character switch (<1s since last), possible loop detected');
+                        return;
+                    }
+                    this.lastCharacterSwitchTime = now;
+
                     console.log('[Toolasha] Character switch detected:',
                         `${this.currentCharacterName} (${this.currentCharacterId})`,
                         '→',
@@ -32509,6 +32518,7 @@
         constructor() {
             this.container = null;
             this.updateInterval = null;
+            this.isInitialized = false; // Guard against multiple initializations
 
             // Module references (initialized in initialize())
             this.state = dungeonTrackerUIState;
@@ -32521,6 +32531,13 @@
          * Initialize UI
          */
         async initialize() {
+            // Prevent multiple initializations (memory leak protection)
+            if (this.isInitialized) {
+                console.warn('[Toolasha Dungeon Tracker UI] Already initialized, skipping duplicate initialization');
+                return;
+            }
+            this.isInitialized = true;
+
             // Load saved state
             await this.state.load();
 
@@ -33150,11 +33167,15 @@
                 this.updateInterval = null;
             }
 
-            // Remove UI container from DOM
-            if (this.container) {
-                this.container.remove();
-                this.container = null;
+            // Force remove ALL dungeon tracker containers (handles duplicates from memory leak)
+            const allContainers = document.querySelectorAll('#mwi-dungeon-tracker');
+            if (allContainers.length > 1) {
+                console.warn(`[Toolasha Dungeon Tracker UI] Found ${allContainers.length} UI containers, removing all (memory leak detected)`);
             }
+            allContainers.forEach(container => container.remove());
+
+            // Clear instance reference
+            this.container = null;
 
             // Clean up module references
             if (this.chart) {
@@ -33166,6 +33187,9 @@
             if (this.interactions) {
                 this.interactions = null;
             }
+
+            // Reset initialization flag
+            this.isInitialized = false;
         }
 
         /**
@@ -33896,6 +33920,11 @@
         dataManager.on('character_switched', async (data) => {
             console.log('[Toolasha] Character switched, re-initializing features...');
             console.log('[Toolasha] New character:', data.newName, `(${data.newId})`);
+
+            // Force cleanup of dungeon tracker UI (safety measure)
+            if (dungeonTrackerUI && typeof dungeonTrackerUI.cleanup === 'function') {
+                dungeonTrackerUI.cleanup();
+            }
 
             // Wait a moment for character data to fully load
             setTimeout(async () => {
@@ -35226,7 +35255,7 @@
         const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
         targetWindow.Toolasha = {
-            version: '0.4.938',
+            version: '0.4.939',
 
             // Feature toggle API (for users to manage settings via console)
             features: {
