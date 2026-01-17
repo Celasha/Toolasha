@@ -1045,7 +1045,6 @@ class DungeonTracker {
 
                 // Save to database (with duplicate detection)
                 await dungeonTrackerStorage.saveTeamRun(teamKey, runToSave);
-                console.log('[Dungeon Tracker] Auto-saved completed run to history');
             } catch (error) {
                 console.error('[Dungeon Tracker] Failed to auto-save run:', error);
             }
@@ -1187,8 +1186,6 @@ class DungeonTracker {
      * Cleanup for character switching
      */
     async cleanup() {
-        console.log('[Toolasha Dungeon Tracker] Cleaning up for character switch');
-
         // Unregister all WebSocket handlers
         if (this.handlers.newBattle) {
             webSocketHook.off('new_battle', this.handlers.newBattle);

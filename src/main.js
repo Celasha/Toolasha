@@ -77,9 +77,7 @@ if (isCombatSimulatorPage()) {
         // Initialize all features using the feature registry
         setTimeout(async () => {
             try {
-                console.log('[Toolasha] Initializing features...');
                 await featureRegistry.initializeFeatures();
-                console.log('[Toolasha] Feature initialization complete');
 
                 // Setup character switch handler (re-initializes features on character switch)
                 featureRegistry.setupCharacterSwitchHandler();
@@ -92,7 +90,6 @@ if (isCombatSimulatorPage()) {
 
                     if (failedFeatures.length > 0) {
                         console.warn('[Toolasha] Health check found failed features:', failedFeatures.map(f => f.name));
-                        console.log('[Toolasha] Retrying failed features in 3 seconds...');
 
                         setTimeout(async () => {
                             await featureRegistry.retryFailedFeatures(failedFeatures);
@@ -102,12 +99,8 @@ if (isCombatSimulatorPage()) {
                             if (stillFailed.length > 0) {
                                 console.warn('[Toolasha] These features could not initialize:', stillFailed.map(f => f.name));
                                 console.warn('[Toolasha] Try refreshing the page or reopening the relevant game panels');
-                            } else {
-                                console.log('[Toolasha] All features healthy after retry!');
                             }
                         }, 3000);
-                    } else {
-                        console.log('[Toolasha] All features healthy!');
                     }
                 }, 2000); // Wait 2s after initialization to check health
 
@@ -121,7 +114,7 @@ if (isCombatSimulatorPage()) {
     const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
     targetWindow.Toolasha = {
-        version: '0.4.939',
+        version: '0.4.940',
 
         // Feature toggle API (for users to manage settings via console)
         features: {

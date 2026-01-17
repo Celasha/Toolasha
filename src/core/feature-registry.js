@@ -5,6 +5,7 @@
 
 import config from './config.js';
 import dataManager from './data-manager.js';
+import settingsUI from '../features/settings/settings-ui.js';
 
 // Import all features
 import tooltipPrices from '../features/market/tooltip-prices.js';
@@ -266,11 +267,9 @@ const featureRegistry = [
         name: 'Dungeon Tracker',
         category: 'Combat',
         initialize: () => {
-            console.log('[Feature Registry] Initializing Dungeon Tracker...');
             dungeonTracker.initialize();
             dungeonTrackerUI.initialize();
             dungeonTrackerChatAnnotations.initialize();
-            console.log('[Feature Registry] Dungeon Tracker initialization complete');
         },
         async: false
     },
@@ -408,7 +407,6 @@ const featureRegistry = [
 async function initializeFeatures() {
     // Block feature initialization during character switch
     if (dataManager.getIsCharacterSwitching()) {
-        console.log('[Toolasha] Feature initialization blocked: character switch in progress');
         return;
     }
 
@@ -520,19 +518,34 @@ function checkFeatureHealth() {
  */
 function setupCharacterSwitchHandler() {
     dataManager.on('character_switched', async (data) => {
-        console.log('[Toolasha] Character switched, re-initializing features...');
-        console.log('[Toolasha] New character:', data.newName, `(${data.newId})`);
+        // Force cleanup of dungeon tracker UI (safety measure)
+        if (dungeonTrackerUI && typeof dungeonTrackerUI.cleanup === 'function') {
+            dungeonTrackerUI.cleanup();
+        }
 
-        // Wait a moment for character data to fully load
-        setTimeout(async () => {
+        // FIX 1: Re-initialize settings UI (restart observer after cleanup)
+        if (settingsUI && typeof settingsUI.initialize === 'function') {
+            await settingsUI.initialize().catch(error => {
+                console.error('[Toolasha] Settings UI re-initialization failed:', error);
+            });
+        }
+
+        // FIX 4: Use requestIdleCallback for non-blocking re-init
+        const reinit = async () => {
             // Reload config settings first (settings were cleared during cleanup)
             await config.loadSettings();
             config.applyColorSettings();
 
             // Now re-initialize all features with fresh settings
             await initializeFeatures();
-            console.log('[Toolasha] Feature re-initialization complete');
-        }, 100);
+        };
+
+        if ('requestIdleCallback' in window) {
+            requestIdleCallback(() => reinit(), { timeout: 2000 });
+        } else {
+            // Fallback for browsers without requestIdleCallback
+            setTimeout(() => reinit(), 300); // Longer delay for game to stabilize
+        }
     });
 }
 
@@ -542,15 +555,11 @@ function setupCharacterSwitchHandler() {
  * @returns {Promise<void>}
  */
 async function retryFailedFeatures(failedFeatures) {
-    console.log('[Toolasha] Retrying failed features...');
-
     for (const failed of failedFeatures) {
         const feature = getFeature(failed.key);
         if (!feature) continue;
 
         try {
-            console.log(`[Toolasha] Retrying ${feature.name}...`);
-
             if (feature.async) {
                 await feature.initialize();
             } else {
@@ -560,18 +569,12 @@ async function retryFailedFeatures(failedFeatures) {
             // Verify the retry actually worked by running health check
             if (feature.healthCheck) {
                 const healthResult = feature.healthCheck();
-                if (healthResult === true) {
-                    console.log(`[Toolasha] ✓ ${feature.name} retry successful`);
-                } else if (healthResult === false) {
-                    console.warn(`[Toolasha] ⚠ ${feature.name} retry completed but health check still fails`);
-                } else {
-                    console.log(`[Toolasha] ⚠ ${feature.name} retry completed (unable to verify - DOM not ready)`);
+                if (healthResult === false) {
+                    console.warn(`[Toolasha] ${feature.name} retry completed but health check still fails`);
                 }
-            } else {
-                console.log(`[Toolasha] ✓ ${feature.name} retry completed (no health check available)`);
             }
         } catch (error) {
-            console.error(`[Toolasha] ✗ ${feature.name} retry failed:`, error);
+            console.error(`[Toolasha] ${feature.name} retry failed:`, error);
         }
     }
 }

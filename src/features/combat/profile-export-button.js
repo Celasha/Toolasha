@@ -13,7 +13,6 @@ import storage from '../../core/storage.js';
  * Initialize profile export button
  */
 export function initialize() {
-    console.log('[Profile Export] Initializing');
     waitForProfilePage();
     observeProfileClosure();
 }

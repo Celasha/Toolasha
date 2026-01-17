@@ -103,7 +103,6 @@ class TaskRerollTracker {
         }
 
         if (hasChanges) {
-            console.log(`[Task Reroll Tracker] Cleaned up ${this.taskRerollData.size} inactive tasks`);
             this.saveToStorage();
         }
     }

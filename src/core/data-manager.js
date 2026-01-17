@@ -7,6 +7,7 @@
  */
 
 import webSocketHook from './websocket.js';
+import storage from './storage.js';
 
 class DataManager {
     constructor() {
@@ -28,6 +29,7 @@ class DataManager {
         this.currentCharacterId = null;
         this.currentCharacterName = null;
         this.isCharacterSwitching = false;
+        this.lastCharacterSwitchTime = 0; // Prevent rapid-fire switch loops
 
         // Event listeners
         this.eventListeners = new Map();
@@ -148,17 +150,29 @@ class DataManager {
      */
     setupMessageHandlers() {
         // Handle init_character_data (player data on login/refresh)
-        this.webSocketHook.on('init_character_data', (data) => {
+        this.webSocketHook.on('init_character_data', async (data) => {
             // Detect character switch
             const newCharacterId = data.character?.id;
             const newCharacterName = data.character?.name;
 
             // Check if this is a character switch (not first load)
             if (this.currentCharacterId && this.currentCharacterId !== newCharacterId) {
-                console.log('[Toolasha] Character switch detected:',
-                    `${this.currentCharacterName} (${this.currentCharacterId})`,
-                    '→',
-                    `${newCharacterName} (${newCharacterId})`);
+                // Prevent rapid-fire character switches (loop protection)
+                const now = Date.now();
+                if (this.lastCharacterSwitchTime && (now - this.lastCharacterSwitchTime) < 1000) {
+                    console.warn('[Toolasha] Ignoring rapid character switch (<1s since last), possible loop detected');
+                    return;
+                }
+                this.lastCharacterSwitchTime = now;
+
+                // FIX 3: Flush all pending storage writes before cleanup
+                try {
+                    if (storage && typeof storage.flushAll === 'function') {
+                        await storage.flushAll();
+                    }
+                } catch (error) {
+                    console.error('[Toolasha] Failed to flush storage before character switch:', error);
+                }
 
                 // Set switching flag to block feature initialization
                 this.isCharacterSwitching = true;
@@ -196,7 +210,6 @@ class DataManager {
                 // First load - set character tracking
                 this.currentCharacterId = newCharacterId;
                 this.currentCharacterName = newCharacterName;
-                console.log('[Toolasha] Character initialized:', newCharacterName, `(${newCharacterId})`);
             }
 
             // Process new character data normally

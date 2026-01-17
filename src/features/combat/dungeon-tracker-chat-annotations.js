@@ -501,8 +501,6 @@ class DungeonTrackerChatAnnotations {
      * Cleanup for character switching
      */
     cleanup() {
-        console.log('[Toolasha Dungeon Tracker Chat Annotations] Cleaning up for character switch');
-
         // Disconnect MutationObserver
         if (this.observer) {
             this.observer.disconnect();

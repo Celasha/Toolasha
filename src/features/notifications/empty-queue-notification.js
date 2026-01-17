@@ -143,8 +143,6 @@ class EmptyQueueNotification {
      * Cleanup
      */
     disable() {
-        console.log('[Toolasha Empty Queue Notification] Cleaning up for character switch');
-
         this.unregisterHandlers.forEach(unregister => unregister());
         this.unregisterHandlers = [];
         this.wasEmpty = false;

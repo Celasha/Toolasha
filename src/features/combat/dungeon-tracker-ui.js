@@ -18,6 +18,7 @@ class DungeonTrackerUI {
     constructor() {
         this.container = null;
         this.updateInterval = null;
+        this.isInitialized = false; // Guard against multiple initializations
 
         // Module references (initialized in initialize())
         this.state = dungeonTrackerUIState;
@@ -30,6 +31,13 @@ class DungeonTrackerUI {
      * Initialize UI
      */
     async initialize() {
+        // Prevent multiple initializations (memory leak protection)
+        if (this.isInitialized) {
+            console.warn('[Toolasha Dungeon Tracker UI] Already initialized, skipping duplicate initialization');
+            return;
+        }
+        this.isInitialized = true;
+
         // Load saved state
         await this.state.load();
 
@@ -651,19 +659,21 @@ class DungeonTrackerUI {
      * Cleanup for character switching
      */
     cleanup() {
-        console.log('[Toolasha Dungeon Tracker UI] Cleaning up for character switch');
-
         // Clear update interval
         if (this.updateInterval) {
             clearInterval(this.updateInterval);
             this.updateInterval = null;
         }
 
-        // Remove UI container from DOM
-        if (this.container) {
-            this.container.remove();
-            this.container = null;
+        // Force remove ALL dungeon tracker containers (handles duplicates from memory leak)
+        const allContainers = document.querySelectorAll('#mwi-dungeon-tracker');
+        if (allContainers.length > 1) {
+            console.warn(`[Toolasha Dungeon Tracker UI] Found ${allContainers.length} UI containers, removing all (memory leak detected)`);
         }
+        allContainers.forEach(container => container.remove());
+
+        // Clear instance reference
+        this.container = null;
 
         // Clean up module references
         if (this.chart) {
@@ -675,6 +685,9 @@ class DungeonTrackerUI {
         if (this.interactions) {
             this.interactions = null;
         }
+
+        // Reset initialization flag
+        this.isInitialized = false;
     }
 
     /**

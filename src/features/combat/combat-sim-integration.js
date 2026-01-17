@@ -13,8 +13,6 @@ import { setReactInputValue } from '../../utils/react-input.js';
  * Initialize combat sim integration (runs on sim page only)
  */
 export function initialize() {
-    console.log('[Toolasha Combat Sim] Initializing integration');
-
     // Wait for simulator UI to load
     waitForSimulatorUI();
 }
@@ -27,7 +25,6 @@ function waitForSimulatorUI() {
         const exportButton = document.querySelector('button#buttonImportExport');
         if (exportButton) {
             clearInterval(checkInterval);
-            console.log('[Toolasha Combat Sim] Simulator UI detected');
             injectImportButton(exportButton);
         }
     }, 200);

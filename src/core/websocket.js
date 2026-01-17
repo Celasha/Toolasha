@@ -13,7 +13,6 @@ class WebSocketHook {
         this.messageHandlers = new Map();
         // Detect if userscript manager is present (Tampermonkey, Greasemonkey, etc.)
         this.hasScriptManager = typeof GM_info !== 'undefined';
-        console.log(`[WebSocket Hook] Script manager detected: ${this.hasScriptManager}`);
     }
 
     /**
@@ -57,8 +56,6 @@ class WebSocketHook {
             return;
         }
 
-        console.log('[WebSocket Hook] Installing MessageEvent hook at:', new Date().toISOString());
-
         // Capture hook instance for closure
         const hookInstance = this;
 
@@ -97,7 +94,6 @@ class WebSocketHook {
         Object.defineProperty(MessageEvent.prototype, "data", dataProperty);
 
         this.isHooked = true;
-        console.log('[WebSocket Hook] MessageEvent hook successfully installed');
     }
 
     /**
@@ -108,11 +104,6 @@ class WebSocketHook {
         try {
             const data = JSON.parse(message);
             const messageType = data.type;
-
-            // Debug: Log profile-related messages
-            if (messageType && messageType.includes('profile')) {
-                console.log('[WebSocket Hook] Profile-related message:', messageType);
-            }
 
             // Save critical data to GM storage for Combat Sim export
             this.saveCombatSimData(messageType, message);
@@ -151,13 +142,11 @@ class WebSocketHook {
             // Save full character data (on login/refresh)
             if (messageType === 'init_character_data') {
                 await this.saveToStorage('toolasha_init_character_data', message);
-                console.log('[WebSocket Hook] init_character_data received and saved at:', new Date().toISOString());
             }
 
             // Save client data (for ability special detection)
             if (messageType === 'init_client_data') {
                 await this.saveToStorage('toolasha_init_client_data', message);
-                console.log('[Toolasha] Client data saved for Combat Sim export');
             }
 
             // Save battle data including party members (on combat start)
@@ -167,19 +156,7 @@ class WebSocketHook {
 
             // Save profile shares (when opening party member profiles)
             if (messageType === 'profile_shared') {
-                console.log('[Toolasha] profile_shared message received!', message.substring(0, 200) + '...');
                 const parsed = JSON.parse(message);
-
-                console.log('[Toolasha] Profile structure:', {
-                    hasProfile: !!parsed.profile,
-                    hasSharableChar: !!parsed.profile?.sharableCharacter,
-                    sharableCharId: parsed.profile?.sharableCharacter?.id,
-                    sharableCharName: parsed.profile?.sharableCharacter?.name,
-                    hasCharSkills: !!parsed.profile?.characterSkills,
-                    firstSkillCharId: parsed.profile?.characterSkills?.[0]?.characterID,
-                    hasCharacter: !!parsed.profile?.character,
-                    characterId: parsed.profile?.character?.id
-                });
 
                 // Extract character info - try multiple sources for ID
                 parsed.characterID = parsed.profile.sharableCharacter?.id ||
@@ -187,8 +164,6 @@ class WebSocketHook {
                                     parsed.profile.character?.id;
                 parsed.characterName = parsed.profile.sharableCharacter?.name || 'Unknown';
                 parsed.timestamp = Date.now();
-
-                console.log('[Toolasha] Extracted characterID:', parsed.characterID, 'characterName:', parsed.characterName);
 
                 // Validate we got a character ID
                 if (!parsed.characterID) {
@@ -213,8 +188,6 @@ class WebSocketHook {
 
                 // Save updated profile list to GM storage (matches pattern of other combat sim data)
                 await this.saveToStorage('toolasha_profile_list', JSON.stringify(profileList));
-
-                console.log('[Toolasha] Profile saved for Combat Sim export:', parsed.characterName);
             }
         } catch (error) {
             console.error('[WebSocket] Failed to save Combat Sim data:', error);

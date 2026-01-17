@@ -529,8 +529,6 @@ class TaskIcons {
      * Cleanup
      */
     cleanup() {
-        console.log('[Toolasha Task Icons] Cleaning up for character switch');
-
         // Unregister all observers
         this.observers.forEach(unregister => unregister());
         this.observers = [];

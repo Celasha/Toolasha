@@ -853,8 +853,6 @@ class SettingsUI {
      * Cleanup for character switching
      */
     cleanup() {
-        console.log('[Toolasha Settings] Cleaning up for character switch');
-
         // Stop observer
         if (this.settingsObserver) {
             this.settingsObserver.disconnect();

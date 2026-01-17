@@ -11,6 +11,7 @@ class Storage {
         this.dbName = 'ToolashaDB';
         this.dbVersion = 7; // Bumped for marketListings store
         this.saveDebounceTimers = new Map(); // Per-key debounce timers
+        this.pendingWrites = new Map(); // Per-key pending write data: {value, storeName}
         this.SAVE_DEBOUNCE_DELAY = 3000; // 3 seconds
     }
 
@@ -177,6 +178,9 @@ class Storage {
     _debouncedSave(key, value, storeName) {
         const timerKey = `${storeName}:${key}`;
 
+        // Store pending write data
+        this.pendingWrites.set(timerKey, { value, storeName });
+
         // Clear existing timer for this key
         if (this.saveDebounceTimers.has(timerKey)) {
             clearTimeout(this.saveDebounceTimers.get(timerKey));
@@ -185,9 +189,15 @@ class Storage {
         // Return a promise that resolves when save completes
         return new Promise((resolve) => {
             const timer = setTimeout(async () => {
-                const success = await this._saveToIndexedDB(key, value, storeName);
-                this.saveDebounceTimers.delete(timerKey);
-                resolve(success);
+                const pending = this.pendingWrites.get(timerKey);
+                if (pending) {
+                    const success = await this._saveToIndexedDB(key, pending.value, pending.storeName);
+                    this.pendingWrites.delete(timerKey);
+                    this.saveDebounceTimers.delete(timerKey);
+                    resolve(success);
+                } else {
+                    resolve(false);
+                }
             }, this.SAVE_DEBOUNCE_DELAY);
 
             this.saveDebounceTimers.set(timerKey, timer);
@@ -319,15 +329,25 @@ class Storage {
      * Force immediate save of all pending debounced writes
      */
     async flushAll() {
-        const timers = Array.from(this.saveDebounceTimers.keys());
-
-        for (const timerKey of timers) {
-            const timer = this.saveDebounceTimers.get(timerKey);
+        // Clear all timers first
+        for (const timer of this.saveDebounceTimers.values()) {
             if (timer) {
                 clearTimeout(timer);
-                this.saveDebounceTimers.delete(timerKey);
             }
         }
+        this.saveDebounceTimers.clear();
+
+        // Now execute all pending writes immediately
+        const writes = Array.from(this.pendingWrites.entries());
+        for (const [timerKey, pending] of writes) {
+            // Extract actual key from timerKey (format: "storeName:key")
+            const colonIndex = timerKey.indexOf(':');
+            const storeName = timerKey.substring(0, colonIndex);
+            const key = timerKey.substring(colonIndex + 1); // Handle keys with colons
+
+            await this._saveToIndexedDB(key, pending.value, storeName);
+        }
+        this.pendingWrites.clear();
     }
 }
 
