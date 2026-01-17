@@ -18,6 +18,7 @@ class SettingsUI {
         this.settingsObserver = null;
         this.currentSettings = {};
         this.isInjecting = false; // Guard against concurrent injection
+        this.characterSwitchHandler = null; // Store listener reference to prevent duplicates
     }
 
     /**
@@ -32,13 +33,61 @@ class SettingsUI {
         // Load current settings
         this.currentSettings = await settingsStorage.loadSettings();
 
+        // Set up handler for character switching (ONLY if not already registered)
+        if (!this.characterSwitchHandler) {
+            this.characterSwitchHandler = () => {
+                this.handleCharacterSwitch();
+            };
+            dataManager.on('character_initialized', this.characterSwitchHandler);
+        }
+
         // Wait for game's settings panel to load
         this.observeSettingsPanel();
+    }
 
-        // Listen for character switching to clean up
-        dataManager.on('character_switching', () => {
-            this.cleanup();
-        });
+    /**
+     * Handle character switch
+     * Clean up old observers and re-initialize for new character's settings panel
+     */
+    handleCharacterSwitch() {
+        // Clean up old DOM references and observers (but keep listener registered)
+        this.cleanupDOM();
+
+        // Wait for settings panel to stabilize before re-observing
+        setTimeout(() => {
+            this.observeSettingsPanel();
+        }, 500);
+    }
+
+    /**
+     * Cleanup DOM elements and observers only (internal cleanup during character switch)
+     */
+    cleanupDOM() {
+        // Stop observer
+        if (this.settingsObserver) {
+            this.settingsObserver.disconnect();
+            this.settingsObserver = null;
+        }
+
+        // Remove settings tab
+        const tab = document.querySelector('#toolasha-settings-tab');
+        if (tab) {
+            tab.remove();
+        }
+
+        // Remove settings panel
+        const panel = document.querySelector('#toolasha-settings');
+        if (panel) {
+            panel.remove();
+        }
+
+        // Clear state
+        this.settingsPanel = null;
+        this.currentSettings = {};
+        this.isInjecting = false;
+
+        // Clear config cache
+        this.config.clearSettingsCache();
     }
 
     /**
@@ -889,34 +938,18 @@ class SettingsUI {
     }
 
     /**
-     * Cleanup for character switching
+     * Cleanup for full shutdown (not character switching)
+     * Unregisters event listeners and removes all DOM elements
      */
     cleanup() {
-        // Stop observer
-        if (this.settingsObserver) {
-            this.settingsObserver.disconnect();
-            this.settingsObserver = null;
+        // Clean up DOM elements first
+        this.cleanupDOM();
+
+        // Unregister character switch listener
+        if (this.characterSwitchHandler) {
+            dataManager.off('character_initialized', this.characterSwitchHandler);
+            this.characterSwitchHandler = null;
         }
-
-        // Remove settings tab
-        const tab = document.querySelector('#toolasha-settings-tab');
-        if (tab) {
-            tab.remove();
-        }
-
-        // Remove settings panel
-        const panel = document.querySelector('#toolasha-settings');
-        if (panel) {
-            panel.remove();
-        }
-
-        // Clear state
-        this.settingsPanel = null;
-        this.currentSettings = {};
-        this.isInjecting = false;
-
-        // Clear config cache
-        this.config.clearSettingsCache();
     }
 }
 

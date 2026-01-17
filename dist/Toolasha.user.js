@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.4.942
+// @version      0.4.943
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -3242,6 +3242,7 @@
             this.settingsObserver = null;
             this.currentSettings = {};
             this.isInjecting = false; // Guard against concurrent injection
+            this.characterSwitchHandler = null; // Store listener reference to prevent duplicates
         }
 
         /**
@@ -3256,13 +3257,61 @@
             // Load current settings
             this.currentSettings = await settingsStorage.loadSettings();
 
+            // Set up handler for character switching (ONLY if not already registered)
+            if (!this.characterSwitchHandler) {
+                this.characterSwitchHandler = () => {
+                    this.handleCharacterSwitch();
+                };
+                dataManager.on('character_initialized', this.characterSwitchHandler);
+            }
+
             // Wait for game's settings panel to load
             this.observeSettingsPanel();
+        }
 
-            // Listen for character switching to clean up
-            dataManager.on('character_switching', () => {
-                this.cleanup();
-            });
+        /**
+         * Handle character switch
+         * Clean up old observers and re-initialize for new character's settings panel
+         */
+        handleCharacterSwitch() {
+            // Clean up old DOM references and observers (but keep listener registered)
+            this.cleanupDOM();
+
+            // Wait for settings panel to stabilize before re-observing
+            setTimeout(() => {
+                this.observeSettingsPanel();
+            }, 500);
+        }
+
+        /**
+         * Cleanup DOM elements and observers only (internal cleanup during character switch)
+         */
+        cleanupDOM() {
+            // Stop observer
+            if (this.settingsObserver) {
+                this.settingsObserver.disconnect();
+                this.settingsObserver = null;
+            }
+
+            // Remove settings tab
+            const tab = document.querySelector('#toolasha-settings-tab');
+            if (tab) {
+                tab.remove();
+            }
+
+            // Remove settings panel
+            const panel = document.querySelector('#toolasha-settings');
+            if (panel) {
+                panel.remove();
+            }
+
+            // Clear state
+            this.settingsPanel = null;
+            this.currentSettings = {};
+            this.isInjecting = false;
+
+            // Clear config cache
+            this.config.clearSettingsCache();
         }
 
         /**
@@ -4113,34 +4162,18 @@
         }
 
         /**
-         * Cleanup for character switching
+         * Cleanup for full shutdown (not character switching)
+         * Unregisters event listeners and removes all DOM elements
          */
         cleanup() {
-            // Stop observer
-            if (this.settingsObserver) {
-                this.settingsObserver.disconnect();
-                this.settingsObserver = null;
+            // Clean up DOM elements first
+            this.cleanupDOM();
+
+            // Unregister character switch listener
+            if (this.characterSwitchHandler) {
+                dataManager.off('character_initialized', this.characterSwitchHandler);
+                this.characterSwitchHandler = null;
             }
-
-            // Remove settings tab
-            const tab = document.querySelector('#toolasha-settings-tab');
-            if (tab) {
-                tab.remove();
-            }
-
-            // Remove settings panel
-            const panel = document.querySelector('#toolasha-settings');
-            if (panel) {
-                panel.remove();
-            }
-
-            // Clear state
-            this.settingsPanel = null;
-            this.currentSettings = {};
-            this.isInjecting = false;
-
-            // Clear config cache
-            this.config.clearSettingsCache();
         }
     }
 
@@ -35025,14 +35058,10 @@
                 dungeonTrackerUI.cleanup();
             }
 
-            // FIX 1: Re-initialize settings UI (restart observer after cleanup)
-            if (settingsUI && typeof settingsUI.initialize === 'function') {
-                await settingsUI.initialize().catch(error => {
-                    console.error('[Toolasha] Settings UI re-initialization failed:', error);
-                });
-            }
+            // Settings UI manages its own character switch lifecycle via character_initialized event
+            // No need to call settingsUI.initialize() here
 
-            // FIX 4: Use requestIdleCallback for non-blocking re-init
+            // Use requestIdleCallback for non-blocking re-init
             const reinit = async () => {
                 // Reload config settings first (settings were cleared during cleanup)
                 await config.loadSettings();
@@ -35463,7 +35492,7 @@
         const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
         targetWindow.Toolasha = {
-            version: '0.4.942',
+            version: '0.4.943',
 
             // Feature toggle API (for users to manage settings via console)
             features: {

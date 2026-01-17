@@ -523,14 +523,10 @@ function setupCharacterSwitchHandler() {
             dungeonTrackerUI.cleanup();
         }
 
-        // FIX 1: Re-initialize settings UI (restart observer after cleanup)
-        if (settingsUI && typeof settingsUI.initialize === 'function') {
-            await settingsUI.initialize().catch(error => {
-                console.error('[Toolasha] Settings UI re-initialization failed:', error);
-            });
-        }
+        // Settings UI manages its own character switch lifecycle via character_initialized event
+        // No need to call settingsUI.initialize() here
 
-        // FIX 4: Use requestIdleCallback for non-blocking re-init
+        // Use requestIdleCallback for non-blocking re-init
         const reinit = async () => {
             // Reload config settings first (settings were cleared during cleanup)
             await config.loadSettings();
