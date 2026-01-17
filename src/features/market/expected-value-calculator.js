@@ -8,7 +8,7 @@ import marketAPI from '../../api/marketplace.js';
 import dataManager from '../../core/data-manager.js';
 import { numberFormatter } from '../../utils/formatters.js';
 import { calculateDungeonTokenValue } from '../../utils/token-valuation.js';
-import { selectPrice } from '../../utils/pricing-helper.js';
+import { getItemPrice, getItemPrices } from '../../utils/market-data.js';
 
 /**
  * ExpectedValueCalculator class handles EV calculations for openable containers
@@ -179,15 +179,12 @@ class ExpectedValueCalculator {
 
         // Special case: Cowbell (use bag price ÷ 10, with 18% tax)
         if (itemHrid === this.COWBELL_HRID) {
-            const bagPrice = marketAPI.getPrice(this.COWBELL_BAG_HRID, 0);
-            if (bagPrice) {
-                // Respect pricing mode for Cowbell Bag price
-                const bagValue = selectPrice(bagPrice, 'profitCalc_pricingMode', 'expectedValue_respectPricingMode');
+            // Get Cowbell Bag price using profit context
+            const bagValue = getItemPrice(this.COWBELL_BAG_HRID, { context: 'profit' }) || 0;
 
-                if (bagValue > 0) {
-                    // Apply 18% market tax (Cowbell Bag only), then divide by 10
-                    return (bagValue * 0.82) / 10;
-                }
+            if (bagValue > 0) {
+                // Apply 18% market tax (Cowbell Bag only), then divide by 10
+                return (bagValue * 0.82) / 10;
             }
             return null; // No bag price available
         }
@@ -203,14 +200,7 @@ class ExpectedValueCalculator {
         }
 
         // Regular market item - get price based on pricing mode
-        const price = marketAPI.getPrice(itemHrid, 0);
-        if (!price) {
-            return null; // No market data
-        }
-
-        // Determine which price to use for drop revenue
-        const dropPrice = selectPrice(price, 'profitCalc_pricingMode', 'expectedValue_respectPricingMode');
-
+        const dropPrice = getItemPrice(itemHrid, { enhancementLevel: 0, context: 'profit' });
         return dropPrice > 0 ? dropPrice : null;
     }
 

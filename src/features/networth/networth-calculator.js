@@ -19,6 +19,7 @@ import { calculateDungeonTokenValue } from '../../utils/token-valuation.js';
 import expectedValueCalculator from '../market/expected-value-calculator.js';
 import config from '../../core/config.js';
 import networthCache from './networth-cache.js';
+import { getItemPrice, getItemPrices } from '../../utils/market-data.js';
 
 /**
  * Calculate the value of a single item
@@ -114,7 +115,7 @@ function getMarketPrice(itemHrid, enhancementLevel, pricingMode, priceCache = nu
         const key = `${itemHrid}:${enhancementLevel}`;
         prices = priceCache.get(key);
     } else {
-        prices = marketAPI.getPrice(itemHrid, enhancementLevel);
+        prices = getItemPrices(itemHrid, enhancementLevel);
     }
 
     // If no market data, try fallbacks (only for base items)
@@ -180,9 +181,9 @@ function calculateCurrencyValue(itemHrid) {
             return null; // Don't include cowbells in net worth
         }
 
-        const bagPrice = marketAPI.getPrice('/items/bag_of_10_cowbells', 0);
-        if (bagPrice && bagPrice.ask > 0) {
-            return bagPrice.ask / 10;
+        const bagPrice = getItemPrice('/items/bag_of_10_cowbells', { mode: 'ask' }) || 0;
+        if (bagPrice > 0) {
+            return bagPrice / 10;
         }
         // Fallback: vendor value
         return 100000;
@@ -237,10 +238,8 @@ function calculateCraftingCost(itemHrid) {
                     // Add input items
                     if (action.inputItems && action.inputItems.length > 0) {
                         for (const input of action.inputItems) {
-                            const inputPrice = marketAPI.getPrice(input.itemHrid, 0);
-                            if (inputPrice) {
-                                inputCost += (inputPrice.ask || 0) * input.count;
-                            }
+                            const inputPrice = getItemPrice(input.itemHrid, { mode: 'ask' }) || 0;
+                            inputCost += inputPrice * input.count;
                         }
                     }
 
@@ -250,10 +249,8 @@ function calculateCraftingCost(itemHrid) {
                     // Add upgrade item cost (not affected by Artisan Tea)
                     let upgradeCost = 0;
                     if (action.upgradeItemHrid) {
-                        const upgradePrice = marketAPI.getPrice(action.upgradeItemHrid, 0);
-                        if (upgradePrice) {
-                            upgradeCost = (upgradePrice.ask || 0);
-                        }
+                        const upgradePrice = getItemPrice(action.upgradeItemHrid, { mode: 'ask' }) || 0;
+                        upgradeCost = upgradePrice;
                     }
 
                     const totalCost = inputCost + upgradeCost;

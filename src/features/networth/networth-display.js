@@ -17,6 +17,7 @@ class NetworthHeaderDisplay {
     constructor() {
         this.container = null;
         this.unregisterHandlers = [];
+        this.isInitialized = false;
     }
 
     /**
@@ -38,6 +39,8 @@ class NetworthHeaderDisplay {
             }
         );
         this.unregisterHandlers.push(unregister);
+
+        this.isInitialized = true;
     }
 
     /**
@@ -61,7 +64,7 @@ class NetworthHeaderDisplay {
         this.container.style.cssText = `
             font-size: 0.875rem;
             font-weight: 500;
-            color: ${config.SCRIPT_COLOR_MAIN};
+            color: ${config.COLOR_ACCENT};
             text-wrap: nowrap;
         `;
 
@@ -88,6 +91,15 @@ class NetworthHeaderDisplay {
     }
 
     /**
+     * Refresh colors on existing header element
+     */
+    refresh() {
+        if (this.container && document.body.contains(this.container)) {
+            this.container.style.color = config.COLOR_ACCENT;
+        }
+    }
+
+    /**
      * Disable and cleanup
      */
     disable() {
@@ -98,6 +110,7 @@ class NetworthHeaderDisplay {
 
         this.unregisterHandlers.forEach(unregister => unregister());
         this.unregisterHandlers = [];
+        this.isInitialized = false;
     }
 }
 
@@ -110,6 +123,7 @@ class NetworthInventoryDisplay {
         this.container = null;
         this.unregisterHandlers = [];
         this.currentData = null;
+        this.isInitialized = false;
     }
 
     /**
@@ -131,6 +145,8 @@ class NetworthInventoryDisplay {
             }
         );
         this.unregisterHandlers.push(unregister);
+
+        this.isInitialized = true;
     }
 
     /**
@@ -153,7 +169,7 @@ class NetworthInventoryDisplay {
         this.container.className = 'mwi-networth-panel';
         this.container.style.cssText = `
             text-align: left;
-            color: ${config.SCRIPT_COLOR_MAIN};
+            color: ${config.COLOR_ACCENT};
             font-size: 0.875rem;
             margin-bottom: 12px;
         `;
@@ -527,6 +543,18 @@ class NetworthInventoryDisplay {
     }
 
     /**
+     * Refresh colors on existing panel
+     */
+    refresh() {
+        if (!this.container || !document.body.contains(this.container)) {
+            return;
+        }
+
+        // Update main container color
+        this.container.style.color = config.COLOR_ACCENT;
+    }
+
+    /**
      * Disable and cleanup
      */
     disable() {
@@ -538,6 +566,7 @@ class NetworthInventoryDisplay {
         this.unregisterHandlers.forEach(unregister => unregister());
         this.unregisterHandlers = [];
         this.currentData = null;
+        this.isInitialized = false;
     }
 }
 

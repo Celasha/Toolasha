@@ -12,6 +12,7 @@ import { calculateEnhancementPath } from '../enhancement/tooltip-enhancement.js'
 import { getEnhancingParams } from '../../utils/enhancement-config.js';
 import networthCache from '../networth/networth-cache.js';
 import expectedValueCalculator from '../market/expected-value-calculator.js';
+import { getItemPrice } from '../../utils/market-data.js';
 
 /**
  * InventorySort class manages inventory sorting and price badges
@@ -24,6 +25,26 @@ class InventorySort {
         this.currentInventoryElem = null;
         this.warnedItems = new Set(); // Track items we've already warned about
         this.isCalculating = false; // Guard flag to prevent recursive calls
+        this.isInitialized = false;
+    }
+
+    /**
+     * Setup settings listeners for feature toggle and color changes
+     */
+    setupSettingListener() {
+        config.onSettingChange('invSort', (value) => {
+            if (value) {
+                this.initialize();
+            } else {
+                this.disable();
+            }
+        });
+
+        config.onSettingChange('color_accent', () => {
+            if (this.isInitialized) {
+                this.refresh();
+            }
+        });
     }
 
     /**
@@ -78,6 +99,7 @@ class InventorySort {
         // Listen for market data updates to refresh badges
         this.setupMarketDataListener();
 
+        this.isInitialized = true;
     }
 
     /**
@@ -155,7 +177,7 @@ class InventorySort {
         this.controlsContainer = document.createElement('div');
         this.controlsContainer.className = 'mwi-inventory-sort-controls';
         this.controlsContainer.style.cssText = `
-            color: ${config.SCRIPT_COLOR_MAIN};
+            color: ${config.COLOR_ACCENT};
             font-size: 0.875rem;
             text-align: left;
             margin-bottom: 8px;
@@ -222,7 +244,7 @@ class InventorySort {
             const isActive = button.dataset.mode === this.currentMode;
 
             if (isActive) {
-                button.style.backgroundColor = config.SCRIPT_COLOR_MAIN;
+                button.style.backgroundColor = config.COLOR_ACCENT;
                 button.style.color = 'black';
                 button.style.fontWeight = 'bold';
             } else {
@@ -536,10 +558,8 @@ class InventorySort {
                         // Add input items
                         if (action.inputItems && action.inputItems.length > 0) {
                             for (const input of action.inputItems) {
-                                const inputPrice = marketAPI.getPrice(input.itemHrid, 0);
-                                if (inputPrice) {
-                                    inputCost += (inputPrice.ask || 0) * input.count;
-                                }
+                                const inputPrice = getItemPrice(input.itemHrid, { mode: 'ask' }) || 0;
+                                inputCost += inputPrice * input.count;
                             }
                         }
 
@@ -549,10 +569,8 @@ class InventorySort {
                         // Add upgrade item cost (not affected by Artisan Tea)
                         let upgradeCost = 0;
                         if (action.upgradeItemHrid) {
-                            const upgradePrice = marketAPI.getPrice(action.upgradeItemHrid, 0);
-                            if (upgradePrice) {
-                                upgradeCost = (upgradePrice.ask || 0);
-                            }
+                            const upgradePrice = getItemPrice(action.upgradeItemHrid, { mode: 'ask' }) || 0;
+                            upgradeCost = upgradePrice;
                         }
 
                         const totalCost = inputCost + upgradeCost;
@@ -651,7 +669,7 @@ class InventorySort {
             top: 2px;
             right: 2px;
             z-index: 1;
-            color: ${config.SCRIPT_COLOR_MAIN};
+            color: ${config.COLOR_ACCENT};
             font-size: 0.7rem;
             font-weight: bold;
             text-align: right;
@@ -704,7 +722,18 @@ class InventorySort {
      * Refresh badges (called when badge setting changes)
      */
     refresh() {
-        this.updatePriceBadges();
+        // Update controls container color
+        if (this.controlsContainer) {
+            this.controlsContainer.style.color = config.COLOR_ACCENT;
+        }
+
+        // Update button states (which includes colors)
+        this.updateButtonStates();
+
+        // Update all price badge colors
+        document.querySelectorAll('.mwi-stack-price').forEach(badge => {
+            badge.style.color = config.COLOR_ACCENT;
+        });
     }
 
     /**
@@ -726,10 +755,12 @@ class InventorySort {
         this.unregisterHandlers = [];
 
         this.currentInventoryElem = null;
+        this.isInitialized = false;
     }
 }
 
 // Create and export singleton instance
 const inventorySort = new InventorySort();
+inventorySort.setupSettingListener();
 
 export default inventorySort;

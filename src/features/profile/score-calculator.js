@@ -12,6 +12,7 @@ import dataManager from '../../core/data-manager.js';
 import marketAPI from '../../api/marketplace.js';
 import { calculateEnhancementPath } from '../enhancement/tooltip-enhancement.js';
 import { getEnhancingParams } from '../../utils/enhancement-config.js';
+import { getItemPrice } from '../../utils/market-data.js';
 
 /**
  * Token-based item data for untradeable back slot items (capes/cloaks/quivers)
@@ -168,11 +169,8 @@ function calculateTokenBasedItemValue(itemHrid) {
     // Find the best value per token from shop items
     let bestValuePerToken = 0;
     for (const shopItem of capeData.tokenShopItems) {
-        const marketPrice = marketAPI.getPrice(shopItem.hrid, 0);
-        if (!marketPrice) continue;
-
         // Use ask price for shop items (instant buy cost)
-        const shopItemPrice = marketPrice.ask > 0 ? marketPrice.ask : 0;
+        const shopItemPrice = getItemPrice(shopItem.hrid, { mode: 'ask' }) || 0;
         if (shopItemPrice > 0) {
             const valuePerToken = shopItemPrice / shopItem.cost;
             if (valuePerToken > bestValuePerToken) {
@@ -223,22 +221,11 @@ function calculateEquipmentScore(profileData) {
             itemCost = tokenValue;
         } else {
             // Try market price (most items are purchased, not self-enhanced)
-            const marketPrice = marketAPI.getPrice(itemHrid, enhancementLevel);
+            const marketPrice = getItemPrice(itemHrid, { enhancementLevel, mode: 'average' });
 
-            if (marketPrice && marketPrice.ask > 0 && marketPrice.bid > 0) {
-                // Good market data exists - use actual market price
-                let ask = marketPrice.ask;
-                let bid = marketPrice.bid;
-
-                // Match MCS behavior: if one price is positive and other is negative, use positive for both
-                if (ask > 0 && bid < 0) {
-                    bid = ask;
-                }
-                if (bid > 0 && ask < 0) {
-                    ask = bid;
-                }
-
-                itemCost = (ask + bid) / 2;
+            if (marketPrice && marketPrice > 0) {
+                // Good market data exists - use average price
+                itemCost = marketPrice;
             } else if (enhancementLevel > 1) {
                 // No market data or illiquid - calculate enhancement cost
                 const enhancementParams = getEnhancingParams();
@@ -248,37 +235,13 @@ function calculateEquipmentScore(profileData) {
                     itemCost = enhancementPath.optimalStrategy.totalCost;
                 } else {
                     // Fallback to base market price if enhancement calculation fails
-                    const basePrice = marketAPI.getPrice(itemHrid, 0);
-                    if (basePrice) {
-                        let ask = basePrice.ask;
-                        let bid = basePrice.bid;
-
-                        if (ask > 0 && bid < 0) {
-                            bid = ask;
-                        }
-                        if (bid > 0 && ask < 0) {
-                            ask = bid;
-                        }
-
-                        itemCost = (ask + bid) / 2;
-                    }
+                    const basePrice = getItemPrice(itemHrid, { mode: 'average' }) || 0;
+                    itemCost = basePrice;
                 }
             } else {
                 // Enhancement level 0 or 1, just use base market price
-                const basePrice = marketAPI.getPrice(itemHrid, 0);
-                if (basePrice) {
-                    let ask = basePrice.ask;
-                    let bid = basePrice.bid;
-
-                    if (ask > 0 && bid < 0) {
-                        bid = ask;
-                    }
-                    if (bid > 0 && ask < 0) {
-                        ask = bid;
-                    }
-
-                    itemCost = (ask + bid) / 2;
-                }
+                const basePrice = getItemPrice(itemHrid, { mode: 'average' }) || 0;
+                itemCost = basePrice;
             }
         }
 

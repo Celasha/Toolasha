@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.4.944
+// @version      0.4.945
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -5880,31 +5880,134 @@
     }
 
     /**
-     * Pricing Helper Utility
-     * Shared logic for selecting market prices based on pricing mode settings
+     * Market Data Utility
+     * Centralized access to market prices with smart pricing mode handling
      */
 
+
+    // Track logged warnings to prevent console spam
+    const loggedWarnings = new Set();
 
     /**
-     * Select appropriate price from market data based on pricing mode settings
-     * @param {Object} priceData - Market price data with bid/ask properties
-     * @param {string} modeSetting - Config setting key for pricing mode (default: 'profitCalc_pricingMode')
-     * @param {string} respectSetting - Config setting key for respect pricing mode flag (default: 'expectedValue_respectPricingMode')
-     * @returns {number} Selected price (bid or ask)
+     * Get item price based on pricing mode and context
+     * @param {string} itemHrid - Item HRID
+     * @param {Object} options - Configuration options
+     * @param {number} [options.enhancementLevel=0] - Enhancement level
+     * @param {string} [options.mode] - Pricing mode ('ask'|'bid'|'average'). If not provided, uses context or user settings
+     * @param {string} [options.context] - Context hint ('profit'|'networth'|null). Used to determine pricing mode from settings
+     * @returns {number|null} Price in gold, or null if no market data
      */
-    function selectPrice(priceData, modeSetting = 'profitCalc_pricingMode', respectSetting = 'expectedValue_respectPricingMode') {
-        if (!priceData) return 0;
-
-        const pricingMode = config.getSettingValue(modeSetting, 'conservative');
-        const respectPricingMode = config.getSettingValue(respectSetting, true);
-
-        // If not respecting mode or mode is conservative, always use bid
-        if (!respectPricingMode || pricingMode === 'conservative') {
-            return priceData.bid || 0;
+    function getItemPrice(itemHrid, options = {}) {
+        // Validate inputs
+        if (!itemHrid || typeof itemHrid !== 'string') {
+            return null;
         }
 
-        // Hybrid/Optimistic: Use ask
-        return priceData.ask || 0;
+        // Handle case where someone passes enhancementLevel as second arg (old API)
+        if (typeof options === 'number') {
+            options = { enhancementLevel: options };
+        }
+
+        // Ensure options is an object
+        if (typeof options !== 'object' || options === null) {
+            options = {};
+        }
+
+        const {
+            enhancementLevel = 0,
+            mode,
+            context
+        } = options;
+
+        // Get raw price data from API
+        const priceData = marketAPI.getPrice(itemHrid, enhancementLevel);
+
+        if (!priceData) {
+            return null;
+        }
+
+        // Determine pricing mode
+        const pricingMode = mode || getPricingMode(context);
+
+        // Validate pricing mode
+        const validModes = ['ask', 'bid', 'average'];
+        if (!validModes.includes(pricingMode)) {
+            const warningKey = `mode:${pricingMode}`;
+            if (!loggedWarnings.has(warningKey)) {
+                console.warn(`[Market Data] Unknown pricing mode: ${pricingMode}, defaulting to ask`);
+                loggedWarnings.add(warningKey);
+            }
+            return priceData.ask || 0;
+        }
+
+        // Return price based on mode
+        switch (pricingMode) {
+            case 'ask':
+                return priceData.ask || 0;
+            case 'bid':
+                return priceData.bid || 0;
+            case 'average':
+                return ((priceData.ask || 0) + (priceData.bid || 0)) / 2;
+            default:
+                return priceData.ask || 0;
+        }
+    }
+
+    /**
+     * Get all price variants for an item
+     * @param {string} itemHrid - Item HRID
+     * @param {number} [enhancementLevel=0] - Enhancement level
+     * @returns {Object|null} Object with {ask, bid, average} or null if no market data
+     */
+    function getItemPrices(itemHrid, enhancementLevel = 0) {
+        const priceData = marketAPI.getPrice(itemHrid, enhancementLevel);
+
+        if (!priceData) {
+            return null;
+        }
+
+        return {
+            ask: priceData.ask,
+            bid: priceData.bid,
+            average: (priceData.ask + priceData.bid) / 2
+        };
+    }
+
+    /**
+     * Determine pricing mode from context and user settings
+     * @param {string} [context] - Context hint ('profit'|'networth'|null)
+     * @returns {string} Pricing mode ('ask'|'bid'|'average')
+     */
+    function getPricingMode(context) {
+        // If no context, default to 'ask'
+        if (!context) {
+            return 'ask';
+        }
+
+        // Validate context is a string
+        if (typeof context !== 'string') {
+            return 'ask';
+        }
+
+        // Get pricing mode from settings based on context
+        switch (context) {
+            case 'profit': {
+                const profitMode = config.getSettingValue('profitCalc_pricingMode');
+                return profitMode || 'ask';
+            }
+            case 'networth': {
+                const networthMode = config.getSettingValue('networth_pricingMode');
+                return networthMode || 'average';
+            }
+            default: {
+                const warningKey = `context:${context}`;
+                if (!loggedWarnings.has(warningKey)) {
+                    console.warn(`[Market Data] Unknown context: ${context}, defaulting to ask`);
+                    loggedWarnings.add(warningKey);
+                }
+                return 'ask';
+            }
+        }
     }
 
     /**
@@ -6080,15 +6183,12 @@
 
             // Special case: Cowbell (use bag price ÷ 10, with 18% tax)
             if (itemHrid === this.COWBELL_HRID) {
-                const bagPrice = marketAPI.getPrice(this.COWBELL_BAG_HRID, 0);
-                if (bagPrice) {
-                    // Respect pricing mode for Cowbell Bag price
-                    const bagValue = selectPrice(bagPrice, 'profitCalc_pricingMode', 'expectedValue_respectPricingMode');
+                // Get Cowbell Bag price using profit context
+                const bagValue = getItemPrice(this.COWBELL_BAG_HRID, { context: 'profit' }) || 0;
 
-                    if (bagValue > 0) {
-                        // Apply 18% market tax (Cowbell Bag only), then divide by 10
-                        return (bagValue * 0.82) / 10;
-                    }
+                if (bagValue > 0) {
+                    // Apply 18% market tax (Cowbell Bag only), then divide by 10
+                    return (bagValue * 0.82) / 10;
                 }
                 return null; // No bag price available
             }
@@ -6104,14 +6204,7 @@
             }
 
             // Regular market item - get price based on pricing mode
-            const price = marketAPI.getPrice(itemHrid, 0);
-            if (!price) {
-                return null; // No market data
-            }
-
-            // Determine which price to use for drop revenue
-            const dropPrice = selectPrice(price, 'profitCalc_pricingMode', 'expectedValue_respectPricingMode');
-
+            const dropPrice = getItemPrice(itemHrid, { enhancementLevel: 0, context: 'profit' });
             return dropPrice > 0 ? dropPrice : null;
         }
 
@@ -6581,19 +6674,9 @@
             // Use fallback {ask: 0, bid: 0} if no market data exists (e.g., refined items)
             const itemPrice = marketAPI.getPrice(itemHrid, 0) || { ask: 0, bid: 0 };
 
-            // Check pricing mode setting
-            const pricingMode = config.getSettingValue('profitCalc_pricingMode', 'conservative');
-
-            // Get output price based on pricing mode
-            // conservative: Bid price (instant sell)
-            // hybrid/optimistic: Ask price (patient sell orders)
-            let outputPrice = 0;
-            if (pricingMode === 'conservative') {
-                outputPrice = itemPrice.bid;
-            } else {
-                // hybrid or optimistic both use Ask for output
-                outputPrice = itemPrice.ask;
-            }
+            // Get output price based on pricing mode setting
+            // Uses 'profit' context to automatically select correct price
+            const outputPrice = getItemPrice(itemHrid, { context: 'profit' }) || 0;
 
             // Apply market tax (2% tax on sales)
             const priceAfterTax = outputPrice * (1 - this.MARKET_TAX);
@@ -6708,25 +6791,13 @@
         calculateMaterialCosts(actionDetails, artisanBonus = 0) {
             const costs = [];
 
-            // Check pricing mode setting
-            const pricingMode = config.getSettingValue('profitCalc_pricingMode', 'conservative');
-
             // Check for upgrade item (e.g., Crimson Bulwark → Rainbow Bulwark)
             if (actionDetails.upgradeItemHrid) {
                 const itemDetails = dataManager.getItemDetails(actionDetails.upgradeItemHrid);
-                const price = marketAPI.getPrice(actionDetails.upgradeItemHrid, 0);
 
                 if (itemDetails) {
-                    // Get material price based on pricing mode
-                    // conservative/hybrid: Ask price (instant buy)
-                    // optimistic: Bid price (patient buy orders)
-                    let materialPrice = 0;
-                    if (pricingMode === 'optimistic') {
-                        materialPrice = (price?.bid && price.bid > 0) ? price.bid : 0;
-                    } else {
-                        // conservative or hybrid both use Ask for materials
-                        materialPrice = (price?.ask && price.ask > 0) ? price.ask : 0;
-                    }
+                    // Get material price based on pricing mode (uses 'profit' context)
+                    let materialPrice = getItemPrice(actionDetails.upgradeItemHrid, { context: 'profit' }) || 0;
 
                     // Special case: Coins have no market price but have face value of 1
                     if (actionDetails.upgradeItemHrid === '/items/coin' && materialPrice === 0) {
@@ -6751,7 +6822,6 @@
             if (actionDetails.inputItems && actionDetails.inputItems.length > 0) {
                 for (const input of actionDetails.inputItems) {
                     const itemDetails = dataManager.getItemDetails(input.itemHrid);
-                    const price = marketAPI.getPrice(input.itemHrid, 0);
 
                     if (!itemDetails) {
                         continue;
@@ -6763,16 +6833,8 @@
                     // Apply artisan reduction
                     const reducedAmount = baseAmount * (1 - artisanBonus);
 
-                    // Get material price based on pricing mode
-                    // conservative/hybrid: Ask price (instant buy)
-                    // optimistic: Bid price (patient buy orders)
-                    let materialPrice = 0;
-                    if (pricingMode === 'optimistic') {
-                        materialPrice = (price?.bid && price.bid > 0) ? price.bid : 0;
-                    } else {
-                        // conservative or hybrid both use Ask for materials
-                        materialPrice = (price?.ask && price.ask > 0) ? price.ask : 0;
-                    }
+                    // Get material price based on pricing mode (uses 'profit' context)
+                    let materialPrice = getItemPrice(input.itemHrid, { context: 'profit' }) || 0;
 
                     // Special case: Coins have no market price but have face value of 1
                     if (input.itemHrid === '/items/coin' && materialPrice === 0) {
@@ -6904,9 +6966,6 @@
                 return [];
             }
 
-            // Check pricing mode for tea costs
-            const pricingMode = config.getSettingValue('profitCalc_pricingMode', 'conservative');
-
             const costs = [];
 
             for (const drink of activeDrinks) {
@@ -6915,17 +6974,8 @@
                 const itemDetails = dataManager.getItemDetails(drink.itemHrid);
                 if (!itemDetails) continue;
 
-                // Get market price for the tea
-                const price = marketAPI.getPrice(drink.itemHrid, 0);
-
-                // Use same pricing mode logic as materials
-                let teaPrice = 0;
-                if (pricingMode === 'optimistic') {
-                    teaPrice = (price?.bid && price.bid > 0) ? price.bid : 0;
-                } else {
-                    // conservative or hybrid both use Ask for costs
-                    teaPrice = (price?.ask && price.ask > 0) ? price.ask : 0;
-                }
+                // Get tea price based on pricing mode (uses 'profit' context)
+                const teaPrice = getItemPrice(drink.itemHrid, { context: 'profit' }) || 0;
 
                 // Drink Concentration increases consumption rate: base 12/hour × (1 + DC%)
                 const drinksPerHour = 12 * (1 + drinkConcentration);
@@ -7982,7 +8032,7 @@
                 } else if (material.itemHrid === '/items/coin') {
                     price = 1; // Coins have face value of 1
                 } else {
-                    const marketPrice = marketAPI.getPrice(material.itemHrid, 0);
+                    const marketPrice = getItemPrices(material.itemHrid, 0);
                     if (marketPrice) {
                         let ask = marketPrice.ask;
                         let bid = marketPrice.bid;
@@ -8041,7 +8091,7 @@
      * @private
      */
     function getRealisticBaseItemPrice(itemHrid) {
-        const marketPrice = marketAPI.getPrice(itemHrid, 0);
+        const marketPrice = getItemPrices(itemHrid, 0);
         const ask = marketPrice?.ask > 0 ? marketPrice.ask : 0;
         const bid = marketPrice?.bid > 0 ? marketPrice.bid : 0;
 
@@ -8112,9 +8162,8 @@
         // Sum up input material costs
         if (action.inputItems) {
             for (const input of action.inputItems) {
-                const inputPrice = marketAPI.getPrice(input.itemHrid, 0);
-                const price = inputPrice?.ask > 0 ? inputPrice.ask : 0;
-                totalPrice += price * input.count;
+                const inputPrice = getItemPrice(input.itemHrid, { mode: 'ask' }) || 0;
+                totalPrice += inputPrice * input.count;
             }
         }
 
@@ -8123,9 +8172,8 @@
 
         // Add upgrade item cost if this is an upgrade recipe (for refined items)
         if (action.upgradeItemHrid) {
-            const upgradePrice = marketAPI.getPrice(action.upgradeItemHrid, 0);
-            const price = upgradePrice?.ask > 0 ? upgradePrice.ask : 0;
-            totalPrice += price;
+            const upgradePrice = getItemPrice(action.upgradeItemHrid, { mode: 'ask' }) || 0;
+            totalPrice += upgradePrice;
         }
 
         return totalPrice;
@@ -8464,15 +8512,15 @@
             if (!drink || !drink.itemHrid) {
                 continue;
             }
-            const askPrice = marketData[drink.itemHrid]?.[0]?.a || 0;
-            const costPerHour = askPrice * drinksPerHour;
+            const drinkPrice = getItemPrice(drink.itemHrid, { context: 'profit' }) || 0;
+            const costPerHour = drinkPrice * drinksPerHour;
             drinkCostPerHour += costPerHour;
 
             // Store individual drink cost details
             const drinkName = gameData.itemDetailMap[drink.itemHrid]?.name || 'Unknown';
             drinkCosts.push({
                 name: drinkName,
-                priceEach: askPrice,
+                priceEach: drinkPrice,
                 drinksPerHour: drinksPerHour,
                 costPerHour: costPerHour
             });
@@ -8528,8 +8576,8 @@
         const dropTable = actionDetail.dropTable;
 
         for (const drop of dropTable) {
-            const rawBidPrice = marketData[drop.itemHrid]?.[0]?.b || 0;
-            const rawPriceAfterTax = rawBidPrice * 0.98;
+            const rawPrice = getItemPrice(drop.itemHrid, { context: 'profit' }) || 0;
+            const rawPriceAfterTax = rawPrice * 0.98;
 
             // Apply gathering quantity bonus to drop amounts
             const baseAvgAmount = (drop.minCount + drop.maxCount) / 2;
@@ -8568,8 +8616,8 @@
                 rawPerAction = processingBonus * rawLeftoverIfProcs + (1 - processingBonus) * rawIfNoProc;
 
                 // Revenue per hour = per-action × actionsPerHour × efficiency
-                const processedBidPrice = marketData[processedItemHrid]?.[0]?.b || 0;
-                const processedPriceAfterTax = processedBidPrice * 0.98;
+                const processedPrice = getItemPrice(processedItemHrid, { context: 'profit' }) || 0;
+                const processedPriceAfterTax = processedPrice * 0.98;
 
                 const rawItemsPerHour = actionsPerHour * drop.dropRate * rawPerAction * efficiencyMultiplier;
                 const processedItemsPerHour = actionsPerHour * drop.dropRate * processedPerAction * efficiencyMultiplier;
@@ -8637,8 +8685,8 @@
 
                 // Use weighted average price for gourmet bonus
                 if (processedItemHrid && processingBonus > 0) {
-                    const processedBidPrice = marketData[processedItemHrid]?.[0]?.b || 0;
-                    const processedPriceAfterTax = processedBidPrice * 0.98;
+                    const processedPrice = getItemPrice(processedItemHrid, { context: 'profit' }) || 0;
+                    const processedPriceAfterTax = processedPrice * 0.98;
                     const weightedPrice = (rawPerAction * rawPriceAfterTax + processedPerAction * processedPriceAfterTax) /
                                          (rawPerAction + processedPerAction);
                     revenuePerHour += bonusItemsPerHour * weightedPrice;
@@ -9177,7 +9225,7 @@
             }
 
             // Get market price for the specific enhancement level (0 for base items, 1-20 for enhanced)
-            const price = marketAPI.getPrice(itemHrid, enhancementLevel);
+            const price = getItemPrices(itemHrid, enhancementLevel);
 
             // Inject price display only if we have market data
             if (price && (price.ask > 0 || price.bid > 0)) {
@@ -18463,6 +18511,26 @@
         constructor() {
             this.unregisterObserver = null; // Unregister function from centralized observer
             this.isActive = false;
+            this.isInitialized = false;
+        }
+
+        /**
+         * Setup settings listeners for feature toggle and color changes
+         */
+        setupSettingListener() {
+            config.onSettingChange('skillbook', (value) => {
+                if (value) {
+                    this.initialize();
+                } else {
+                    this.disable();
+                }
+            });
+
+            config.onSettingChange('color_accent', () => {
+                if (this.isInitialized) {
+                    this.refresh();
+                }
+            });
         }
 
         /**
@@ -18484,6 +18552,7 @@
             );
 
             this.isActive = true;
+            this.isInitialized = true;
         }
 
         /**
@@ -18630,7 +18699,7 @@
             // Create calculator HTML
             const calculatorDiv = dom.createStyledDiv(
                 {
-                    color: config.SCRIPT_COLOR_MAIN,
+                    color: config.COLOR_ACCENT,
                     textAlign: 'left',
                     marginTop: '16px',
                     padding: '12px',
@@ -18713,6 +18782,16 @@
         }
 
         /**
+         * Refresh colors on existing calculator displays
+         */
+        refresh() {
+            // Update all .tillLevel elements
+            document.querySelectorAll('.tillLevel').forEach(calc => {
+                calc.style.color = config.COLOR_ACCENT;
+            });
+        }
+
+        /**
          * Disable the feature
          */
         disable() {
@@ -18722,11 +18801,13 @@
                 this.unregisterObserver = null;
             }
             this.isActive = false;
+            this.isInitialized = false;
         }
     }
 
     // Create and export singleton instance
     const abilityBookCalculator = new AbilityBookCalculator();
+    abilityBookCalculator.setupSettingListener();
 
     /**
      * Combat Zone Indices
@@ -18747,6 +18828,38 @@
             this.monsterZoneCache = null; // Cache monster name -> zone index mapping
             this.taskMapIndexEnabled = false;
             this.mapIndexEnabled = false;
+            this.isInitialized = false;
+        }
+
+        /**
+         * Setup setting change listener (always active, even when feature is disabled)
+         */
+        setupSettingListener() {
+            // Listen for feature toggle changes
+            config.onSettingChange('taskMapIndex', () => {
+                this.taskMapIndexEnabled = config.getSetting('taskMapIndex');
+                if (this.taskMapIndexEnabled || this.mapIndexEnabled) {
+                    this.initialize();
+                } else {
+                    this.disable();
+                }
+            });
+
+            config.onSettingChange('mapIndex', () => {
+                this.mapIndexEnabled = config.getSetting('mapIndex');
+                if (this.taskMapIndexEnabled || this.mapIndexEnabled) {
+                    this.initialize();
+                } else {
+                    this.disable();
+                }
+            });
+
+            // Listen for color changes
+            config.onSettingChange('color_accent', () => {
+                if (this.isInitialized) {
+                    this.refresh();
+                }
+            });
         }
 
         /**
@@ -18758,6 +18871,11 @@
             this.mapIndexEnabled = config.getSetting('mapIndex');
 
             if (!this.taskMapIndexEnabled && !this.mapIndexEnabled) {
+                return;
+            }
+
+            // Prevent multiple initializations
+            if (this.isInitialized) {
                 return;
             }
 
@@ -18789,6 +18907,7 @@
             }
 
             this.isActive = true;
+            this.isInitialized = true;
         }
 
         /**
@@ -18971,6 +19090,22 @@
         }
 
         /**
+         * Refresh colors (called when settings change)
+         */
+        refresh() {
+            // Update all existing zone index spans with new color
+            const taskIndices = document.querySelectorAll('span.script_taskMapIndex');
+            taskIndices.forEach(span => {
+                span.style.color = config.COLOR_ACCENT;
+            });
+
+            const mapIndices = document.querySelectorAll('span.script_mapIndex');
+            mapIndices.forEach(span => {
+                span.style.color = config.COLOR_ACCENT;
+            });
+        }
+
+        /**
          * Disable the feature
          */
         disable() {
@@ -18994,11 +19129,15 @@
             // Clear cache
             this.monsterZoneCache = null;
             this.isActive = false;
+            this.isInitialized = false;
         }
     }
 
     // Create and export singleton instance
     const zoneIndices = new ZoneIndices();
+
+    // Setup setting listener immediately (before initialize)
+    zoneIndices.setupSettingListener();
 
     /**
      * Ability Cost Calculator Utility
@@ -19357,11 +19496,8 @@
         // Find the best value per token from shop items
         let bestValuePerToken = 0;
         for (const shopItem of capeData.tokenShopItems) {
-            const marketPrice = marketAPI.getPrice(shopItem.hrid, 0);
-            if (!marketPrice) continue;
-
             // Use ask price for shop items (instant buy cost)
-            const shopItemPrice = marketPrice.ask > 0 ? marketPrice.ask : 0;
+            const shopItemPrice = getItemPrice(shopItem.hrid, { mode: 'ask' }) || 0;
             if (shopItemPrice > 0) {
                 const valuePerToken = shopItemPrice / shopItem.cost;
                 if (valuePerToken > bestValuePerToken) {
@@ -19412,22 +19548,11 @@
                 itemCost = tokenValue;
             } else {
                 // Try market price (most items are purchased, not self-enhanced)
-                const marketPrice = marketAPI.getPrice(itemHrid, enhancementLevel);
+                const marketPrice = getItemPrice(itemHrid, { enhancementLevel, mode: 'average' });
 
-                if (marketPrice && marketPrice.ask > 0 && marketPrice.bid > 0) {
-                    // Good market data exists - use actual market price
-                    let ask = marketPrice.ask;
-                    let bid = marketPrice.bid;
-
-                    // Match MCS behavior: if one price is positive and other is negative, use positive for both
-                    if (ask > 0 && bid < 0) {
-                        bid = ask;
-                    }
-                    if (bid > 0 && ask < 0) {
-                        ask = bid;
-                    }
-
-                    itemCost = (ask + bid) / 2;
+                if (marketPrice && marketPrice > 0) {
+                    // Good market data exists - use average price
+                    itemCost = marketPrice;
                 } else if (enhancementLevel > 1) {
                     // No market data or illiquid - calculate enhancement cost
                     const enhancementParams = getEnhancingParams();
@@ -19437,37 +19562,13 @@
                         itemCost = enhancementPath.optimalStrategy.totalCost;
                     } else {
                         // Fallback to base market price if enhancement calculation fails
-                        const basePrice = marketAPI.getPrice(itemHrid, 0);
-                        if (basePrice) {
-                            let ask = basePrice.ask;
-                            let bid = basePrice.bid;
-
-                            if (ask > 0 && bid < 0) {
-                                bid = ask;
-                            }
-                            if (bid > 0 && ask < 0) {
-                                ask = bid;
-                            }
-
-                            itemCost = (ask + bid) / 2;
-                        }
+                        const basePrice = getItemPrice(itemHrid, { mode: 'average' }) || 0;
+                        itemCost = basePrice;
                     }
                 } else {
                     // Enhancement level 0 or 1, just use base market price
-                    const basePrice = marketAPI.getPrice(itemHrid, 0);
-                    if (basePrice) {
-                        let ask = basePrice.ask;
-                        let bid = basePrice.bid;
-
-                        if (ask > 0 && bid < 0) {
-                            bid = ask;
-                        }
-                        if (bid > 0 && ask < 0) {
-                            ask = bid;
-                        }
-
-                        itemCost = (ask + bid) / 2;
-                    }
+                    const basePrice = getItemPrice(itemHrid, { mode: 'average' }) || 0;
+                    itemCost = basePrice;
                 }
             }
 
@@ -20268,8 +20369,8 @@
                 return null;
             }
 
-            // Check if trying to export external profile
-            if (externalProfileId && externalProfileId !== characterData.character?.id) {
+            // Milkonomy export is only for your own character (no external profiles)
+            if (externalProfileId) {
                 console.error('[Milkonomy Export] External profile export not supported');
                 alert('Milkonomy export is only available for your own profile.\n\nTo export another player:\n1. Use Combat Sim Export instead\n2. Or copy their profile link and open it separately');
                 return null;
@@ -20384,6 +20485,26 @@
         constructor() {
             this.isActive = false;
             this.currentPanel = null;
+            this.isInitialized = false;
+        }
+
+        /**
+         * Setup settings listeners for feature toggle and color changes
+         */
+        setupSettingListener() {
+            config.onSettingChange('combatScore', (value) => {
+                if (value) {
+                    this.initialize();
+                } else {
+                    this.disable();
+                }
+            });
+
+            config.onSettingChange('color_accent', () => {
+                if (this.isInitialized) {
+                    this.refresh();
+                }
+            });
         }
 
         /**
@@ -20401,6 +20522,7 @@
             });
 
             this.isActive = true;
+            this.isInitialized = true;
         }
 
         /**
@@ -20408,6 +20530,10 @@
          * @param {Object} profileData - Profile data from WebSocket
          */
         async handleProfileShared(profileData) {
+            // Clear any stale profile ID from storage (defensive cleanup)
+            // When viewing your own profile, this should always be null
+            await storage.set('currentProfileId', null, 'combatExport', true);
+
             // Wait for profile panel to appear in DOM
             const profilePanel = await this.waitForProfilePanel();
             if (!profilePanel) {
@@ -20507,7 +20633,7 @@
             // Create panel HTML
             panel.innerHTML = `
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                <div style="font-weight: bold; color: ${config.SCRIPT_COLOR_MAIN}; font-size: 0.9rem;">${playerName}</div>
+                <div style="font-weight: bold; color: ${config.COLOR_ACCENT}; font-size: 0.9rem;">${playerName}</div>
                 <span id="mwi-score-close-btn" style="
                     cursor: pointer;
                     font-size: 18px;
@@ -20544,7 +20670,7 @@
             <div style="margin-top: 12px; display: flex; flex-direction: column; gap: 6px;">
                 <button id="mwi-combat-sim-export-btn" style="
                     padding: 8px 12px;
-                    background: ${config.SCRIPT_COLOR_MAIN};
+                    background: ${config.COLOR_ACCENT};
                     color: black;
                     border: none;
                     border-radius: 4px;
@@ -20555,7 +20681,7 @@
                 ">Combat Sim Export</button>
                 <button id="mwi-milkonomy-export-btn" style="
                     padding: 8px 12px;
-                    background: ${config.SCRIPT_COLOR_MAIN};
+                    background: ${config.COLOR_ACCENT};
                     color: black;
                     border: none;
                     border-radius: 4px;
@@ -20785,7 +20911,11 @@
             const originalBg = button.style.background;
 
             try {
-                // Get current profile ID (if viewing someone else's profile)
+                // Defensive: ensure currentProfileId is null when exporting own profile
+                // This prevents stale data from blocking export
+                await storage.set('currentProfileId', null, 'combatExport', true);
+
+                // Get current profile ID (should be null for own profile)
                 const currentProfileId = await storage.get('currentProfileId', 'combatExport', null);
 
                 // Get export data (pass profile ID if viewing external profile)
@@ -20822,6 +20952,25 @@
         }
 
         /**
+         * Refresh colors on existing panel
+         */
+        refresh() {
+            if (!this.currentPanel) return;
+
+            // Update title color
+            const titleElem = this.currentPanel.querySelector('div[style*="font-weight: bold"]');
+            if (titleElem) {
+                titleElem.style.color = config.COLOR_ACCENT;
+            }
+
+            // Update both export buttons
+            const buttons = this.currentPanel.querySelectorAll('button[id*="export-btn"]');
+            buttons.forEach(button => {
+                button.style.background = config.COLOR_ACCENT;
+            });
+        }
+
+        /**
          * Disable the feature
          */
         disable() {
@@ -20831,11 +20980,13 @@
             }
 
             this.isActive = false;
+            this.isInitialized = false;
         }
     }
 
     // Create and export singleton instance
     const combatScore = new CombatScore();
+    combatScore.setupSettingListener();
 
     /**
      * Equipment Level Display
@@ -21264,6 +21415,28 @@
             this.isActive = false;
             this.unregisterHandlers = [];
             this.processedBars = new WeakSet();
+            this.isInitialized = false;
+        }
+
+        /**
+         * Setup setting change listener (always active, even when feature is disabled)
+         */
+        setupSettingListener() {
+            // Listen for main toggle changes
+            config.onSettingChange('skillExperiencePercentage', (enabled) => {
+                if (enabled) {
+                    this.initialize();
+                } else {
+                    this.disable();
+                }
+            });
+
+            // Listen for color changes
+            config.onSettingChange('color_accent', () => {
+                if (this.isInitialized) {
+                    this.refresh();
+                }
+            });
         }
 
         /**
@@ -21274,11 +21447,18 @@
                 return;
             }
 
+            // Prevent multiple initializations
+            if (this.isInitialized) {
+                return;
+            }
+
             this.isActive = true;
             this.registerObservers();
 
             // Initial update for existing skills
             this.updateAllSkills();
+
+            this.isInitialized = true;
         }
 
         /**
@@ -21355,6 +21535,17 @@
         }
 
         /**
+         * Refresh colors (called when settings change)
+         */
+        refresh() {
+            // Update all existing percentage spans with new color
+            const percentageSpans = document.querySelectorAll('.mwi-exp-percentage');
+            percentageSpans.forEach(span => {
+                span.style.color = config.COLOR_ACCENT;
+            });
+        }
+
+        /**
          * Disable the feature
          */
         disable() {
@@ -21367,11 +21558,15 @@
 
             this.processedBars.clear();
             this.isActive = false;
+            this.isInitialized = false;
         }
     }
 
     // Create and export singleton instance
     const skillExperiencePercentage = new SkillExperiencePercentage();
+
+    // Setup setting listener immediately (before initialize)
+    skillExperiencePercentage.setupSettingListener();
 
     /**
      * Task Profit Calculator
@@ -21860,6 +22055,26 @@
             this.marketDataRetryHandler = null; // Market data retry handler
             this.pendingTaskNodes = new Set(); // Track task nodes waiting for data
             this.eventListeners = new WeakMap(); // Store listeners for cleanup
+            this.isInitialized = false;
+        }
+
+        /**
+         * Setup settings listeners for feature toggle and color changes
+         */
+        setupSettingListener() {
+            config.onSettingChange('taskProfitCalculator', (value) => {
+                if (value) {
+                    this.initialize();
+                } else {
+                    this.disable();
+                }
+            });
+
+            config.onSettingChange('color_accent', () => {
+                if (this.isInitialized) {
+                    this.refresh();
+                }
+            });
         }
 
         /**
@@ -21900,6 +22115,7 @@
             this.updateTaskProfits();
 
             this.isActive = true;
+            this.isInitialized = true;
         }
 
         /**
@@ -22232,7 +22448,7 @@
             // Create main profit display (Option B format: compact with time)
             const profitLine = document.createElement('div');
             profitLine.style.cssText = `
-            color: ${config.SCRIPT_COLOR_MAIN};
+            color: ${config.COLOR_ACCENT};
             cursor: pointer;
             user-select: none;
         `;
@@ -22490,7 +22706,7 @@
 
             // Total
             lines.push('<div style="border-top: 1px solid #555; margin-top: 6px; padding-top: 4px;"></div>');
-            lines.push(`<div style="font-weight: bold; color: ${config.SCRIPT_COLOR_MAIN};">Total Profit: ${numberFormatter(profitData.totalProfit)}</div>`);
+            lines.push(`<div style="font-weight: bold; color: ${config.COLOR_ACCENT};">Total Profit: ${numberFormatter(profitData.totalProfit)}</div>`);
 
             return lines.join('');
         }
@@ -22546,6 +22762,23 @@
         }
 
         /**
+         * Refresh colors on existing task profit displays
+         */
+        refresh() {
+            // Update all profit line colors
+            const profitLines = document.querySelectorAll('.mwi-task-profit > div:first-child');
+            profitLines.forEach(line => {
+                line.style.color = config.COLOR_ACCENT;
+            });
+
+            // Update all total profit colors in breakdowns
+            const totalProfits = document.querySelectorAll('.mwi-task-profit-breakdown > div:last-child');
+            totalProfits.forEach(total => {
+                total.style.color = config.COLOR_ACCENT;
+            });
+        }
+
+        /**
          * Disable the feature
          */
         disable() {
@@ -22580,11 +22813,13 @@
             });
 
             this.isActive = false;
+            this.isInitialized = false;
         }
     }
 
     // Create and export singleton instance
     const taskProfitDisplay = new TaskProfitDisplay();
+    taskProfitDisplay.setupSettingListener();
 
     /**
      * Task Reroll Cost Tracker
@@ -24094,40 +24329,22 @@
         }
 
         /**
-         * Get market price for an item based on pricing mode
+         * Get market price for an item (uses 'ask' price for buying materials)
          * @param {string} itemHrid - Item HRID
          * @returns {Promise<number>} Market price
          */
         async getItemMarketPrice(itemHrid) {
-            const priceData = await marketAPI.getPrice(itemHrid);
+            // Use 'ask' mode since house upgrades involve buying materials
+            const price = getItemPrice(itemHrid, { mode: 'ask' });
 
-            if (!priceData || (!priceData.ask && !priceData.bid)) {
+            if (price === null || price === 0) {
                 // Fallback to vendor price from game data
                 const initData = dataManager.getInitClientData();
                 const itemData = initData?.itemDetailMap?.[itemHrid];
                 return itemData?.sellPrice || 0;
             }
 
-            // Use pricing mode from config
-            const pricingMode = config.getSetting('marketPricingMode') || 'hybrid';
-
-            let ask = priceData.ask || 0;
-            let bid = priceData.bid || 0;
-
-            // Handle missing prices
-            if (ask > 0 && bid <= 0) bid = ask;
-            if (bid > 0 && ask <= 0) ask = bid;
-
-            // Calculate weighted price based on mode
-            switch (pricingMode) {
-                case 'conservative':
-                    return ask; // Buy at ask price (pessimistic)
-                case 'optimistic':
-                    return bid; // Sell at bid price (optimistic)
-                case 'hybrid':
-                default:
-                    return ask * 0.5 + bid * 0.5; // 50/50 mix
-            }
+            return price;
         }
 
         /**
@@ -24183,6 +24400,26 @@
         constructor() {
             this.isActive = false;
             this.currentModalContent = null; // Track current modal to detect room switches
+            this.isInitialized = false;
+        }
+
+        /**
+         * Setup settings listeners for feature toggle and color changes
+         */
+        setupSettingListener() {
+            config.onSettingChange('houseUpgradeCosts', (value) => {
+                if (value) {
+                    this.initialize();
+                } else {
+                    this.disable();
+                }
+            });
+
+            config.onSettingChange('color_accent', () => {
+                if (this.isInitialized) {
+                    this.refresh();
+                }
+            });
         }
 
         /**
@@ -24194,6 +24431,7 @@
             }
 
             this.isActive = true;
+            this.isInitialized = true;
         }
 
         /**
@@ -24357,14 +24595,14 @@
             align-items: center;
             gap: 8px;
             font-size: 0.75rem;
-            color: ${config.SCRIPT_COLOR_MAIN};
+            color: ${config.COLOR_ACCENT};
             padding-left: 8px;
             white-space: nowrap;
         `;
 
             pricingCell.innerHTML = `
             <span style="color: ${config.SCRIPT_COLOR_SECONDARY};">@ ${coinFormatter(materialData.marketPrice)}</span>
-            <span style="color: ${config.SCRIPT_COLOR_MAIN}; font-weight: bold;">= ${coinFormatter(materialData.totalValue)}</span>
+            <span style="color: ${config.COLOR_ACCENT}; font-weight: bold;">= ${coinFormatter(materialData.totalValue)}</span>
             <span style="color: ${hasEnough ? '#4ade80' : '#f87171'}; margin-left: auto; text-align: right;">${coinFormatter(amountNeeded)}</span>
         `;
 
@@ -24383,10 +24621,10 @@
             totalDiv.style.cssText = `
             margin-top: 12px;
             padding-top: 12px;
-            border-top: 2px solid ${config.SCRIPT_COLOR_MAIN};
+            border-top: 2px solid ${config.COLOR_ACCENT};
             font-weight: bold;
             font-size: 1rem;
-            color: ${config.SCRIPT_COLOR_MAIN};
+            color: ${config.COLOR_ACCENT};
             text-align: center;
         `;
             totalDiv.textContent = `Total Market Value: ${coinFormatter(costData.totalValue)}`;
@@ -24422,7 +24660,7 @@
 
             const label = document.createElement('span');
             label.style.cssText = `
-            color: ${config.SCRIPT_COLOR_MAIN};
+            color: ${config.COLOR_ACCENT};
             font-weight: bold;
             font-size: 0.875rem;
         `;
@@ -24519,10 +24757,10 @@
             totalDiv.style.cssText = `
             margin-top: 12px;
             padding-top: 12px;
-            border-top: 2px solid ${config.SCRIPT_COLOR_MAIN};
+            border-top: 2px solid ${config.COLOR_ACCENT};
             font-weight: bold;
             font-size: 1rem;
-            color: ${config.SCRIPT_COLOR_MAIN};
+            color: ${config.COLOR_ACCENT};
             text-align: center;
         `;
             totalDiv.textContent = `Total Market Value: ${coinFormatter(costData.totalValue)}`;
@@ -24575,7 +24813,7 @@
             const totalSpan = document.createElement('span');
             if (isCoin) {
                 totalSpan.style.cssText = `
-                color: ${config.SCRIPT_COLOR_MAIN};
+                color: ${config.COLOR_ACCENT};
                 font-weight: bold;
                 font-size: 0.75rem;
                 text-align: left;
@@ -24583,7 +24821,7 @@
                 totalSpan.textContent = `= ${coinFormatter(material.totalValue)}`;
             } else {
                 totalSpan.style.cssText = `
-                color: ${config.SCRIPT_COLOR_MAIN};
+                color: ${config.COLOR_ACCENT};
                 font-weight: bold;
                 font-size: 0.75rem;
                 text-align: left;
@@ -24604,6 +24842,36 @@
         }
 
         /**
+         * Refresh colors on existing displays
+         */
+        refresh() {
+            // Update pricing cell colors
+            document.querySelectorAll('.mwi-house-pricing').forEach(cell => {
+                cell.style.color = config.COLOR_ACCENT;
+                const boldSpan = cell.querySelector('span[style*="font-weight: bold"]');
+                if (boldSpan) {
+                    boldSpan.style.color = config.COLOR_ACCENT;
+                }
+            });
+
+            // Update total cost colors
+            document.querySelectorAll('.mwi-house-total').forEach(total => {
+                total.style.borderTopColor = config.COLOR_ACCENT;
+                total.style.color = config.COLOR_ACCENT;
+            });
+
+            // Update "To Level" label colors
+            document.querySelectorAll('.mwi-house-to-level span[style*="font-weight: bold"]').forEach(label => {
+                label.style.color = config.COLOR_ACCENT;
+            });
+
+            // Update cumulative total colors
+            document.querySelectorAll('.mwi-cumulative-cost-container span[style*="font-weight: bold"]').forEach(span => {
+                span.style.color = config.COLOR_ACCENT;
+            });
+        }
+
+        /**
          * Disable the feature
          */
         disable() {
@@ -24617,11 +24885,13 @@
 
             this.currentModalContent = null;
             this.isActive = false;
+            this.isInitialized = false;
         }
     }
 
     // Create and export singleton instance
     const houseCostDisplay = new HouseCostDisplay();
+    houseCostDisplay.setupSettingListener();
 
     /**
      * House Panel Observer
@@ -25022,7 +25292,7 @@
             const key = `${itemHrid}:${enhancementLevel}`;
             prices = priceCache.get(key);
         } else {
-            prices = marketAPI.getPrice(itemHrid, enhancementLevel);
+            prices = getItemPrices(itemHrid, enhancementLevel);
         }
 
         // If no market data, try fallbacks (only for base items)
@@ -25088,9 +25358,9 @@
                 return null; // Don't include cowbells in net worth
             }
 
-            const bagPrice = marketAPI.getPrice('/items/bag_of_10_cowbells', 0);
-            if (bagPrice && bagPrice.ask > 0) {
-                return bagPrice.ask / 10;
+            const bagPrice = getItemPrice('/items/bag_of_10_cowbells', { mode: 'ask' }) || 0;
+            if (bagPrice > 0) {
+                return bagPrice / 10;
             }
             // Fallback: vendor value
             return 100000;
@@ -25145,10 +25415,8 @@
                         // Add input items
                         if (action.inputItems && action.inputItems.length > 0) {
                             for (const input of action.inputItems) {
-                                const inputPrice = marketAPI.getPrice(input.itemHrid, 0);
-                                if (inputPrice) {
-                                    inputCost += (inputPrice.ask || 0) * input.count;
-                                }
+                                const inputPrice = getItemPrice(input.itemHrid, { mode: 'ask' }) || 0;
+                                inputCost += inputPrice * input.count;
                             }
                         }
 
@@ -25158,10 +25426,8 @@
                         // Add upgrade item cost (not affected by Artisan Tea)
                         let upgradeCost = 0;
                         if (action.upgradeItemHrid) {
-                            const upgradePrice = marketAPI.getPrice(action.upgradeItemHrid, 0);
-                            if (upgradePrice) {
-                                upgradeCost = (upgradePrice.ask || 0);
-                            }
+                            const upgradePrice = getItemPrice(action.upgradeItemHrid, { mode: 'ask' }) || 0;
+                            upgradeCost = upgradePrice;
                         }
 
                         const totalCost = inputCost + upgradeCost;
@@ -25537,6 +25803,7 @@
         constructor() {
             this.container = null;
             this.unregisterHandlers = [];
+            this.isInitialized = false;
         }
 
         /**
@@ -25558,6 +25825,8 @@
                 }
             );
             this.unregisterHandlers.push(unregister);
+
+            this.isInitialized = true;
         }
 
         /**
@@ -25581,7 +25850,7 @@
             this.container.style.cssText = `
             font-size: 0.875rem;
             font-weight: 500;
-            color: ${config.SCRIPT_COLOR_MAIN};
+            color: ${config.COLOR_ACCENT};
             text-wrap: nowrap;
         `;
 
@@ -25608,6 +25877,15 @@
         }
 
         /**
+         * Refresh colors on existing header element
+         */
+        refresh() {
+            if (this.container && document.body.contains(this.container)) {
+                this.container.style.color = config.COLOR_ACCENT;
+            }
+        }
+
+        /**
          * Disable and cleanup
          */
         disable() {
@@ -25618,6 +25896,7 @@
 
             this.unregisterHandlers.forEach(unregister => unregister());
             this.unregisterHandlers = [];
+            this.isInitialized = false;
         }
     }
 
@@ -25630,6 +25909,7 @@
             this.container = null;
             this.unregisterHandlers = [];
             this.currentData = null;
+            this.isInitialized = false;
         }
 
         /**
@@ -25651,6 +25931,8 @@
                 }
             );
             this.unregisterHandlers.push(unregister);
+
+            this.isInitialized = true;
         }
 
         /**
@@ -25673,7 +25955,7 @@
             this.container.className = 'mwi-networth-panel';
             this.container.style.cssText = `
             text-align: left;
-            color: ${config.SCRIPT_COLOR_MAIN};
+            color: ${config.COLOR_ACCENT};
             font-size: 0.875rem;
             margin-bottom: 12px;
         `;
@@ -26047,6 +26329,18 @@
         }
 
         /**
+         * Refresh colors on existing panel
+         */
+        refresh() {
+            if (!this.container || !document.body.contains(this.container)) {
+                return;
+            }
+
+            // Update main container color
+            this.container.style.color = config.COLOR_ACCENT;
+        }
+
+        /**
          * Disable and cleanup
          */
         disable() {
@@ -26058,6 +26352,7 @@
             this.unregisterHandlers.forEach(unregister => unregister());
             this.unregisterHandlers = [];
             this.currentData = null;
+            this.isInitialized = false;
         }
     }
 
@@ -26184,6 +26479,26 @@
             this.currentInventoryElem = null;
             this.warnedItems = new Set(); // Track items we've already warned about
             this.isCalculating = false; // Guard flag to prevent recursive calls
+            this.isInitialized = false;
+        }
+
+        /**
+         * Setup settings listeners for feature toggle and color changes
+         */
+        setupSettingListener() {
+            config.onSettingChange('invSort', (value) => {
+                if (value) {
+                    this.initialize();
+                } else {
+                    this.disable();
+                }
+            });
+
+            config.onSettingChange('color_accent', () => {
+                if (this.isInitialized) {
+                    this.refresh();
+                }
+            });
         }
 
         /**
@@ -26238,6 +26553,7 @@
             // Listen for market data updates to refresh badges
             this.setupMarketDataListener();
 
+            this.isInitialized = true;
         }
 
         /**
@@ -26314,7 +26630,7 @@
             this.controlsContainer = document.createElement('div');
             this.controlsContainer.className = 'mwi-inventory-sort-controls';
             this.controlsContainer.style.cssText = `
-            color: ${config.SCRIPT_COLOR_MAIN};
+            color: ${config.COLOR_ACCENT};
             font-size: 0.875rem;
             text-align: left;
             margin-bottom: 8px;
@@ -26381,7 +26697,7 @@
                 const isActive = button.dataset.mode === this.currentMode;
 
                 if (isActive) {
-                    button.style.backgroundColor = config.SCRIPT_COLOR_MAIN;
+                    button.style.backgroundColor = config.COLOR_ACCENT;
                     button.style.color = 'black';
                     button.style.fontWeight = 'bold';
                 } else {
@@ -26693,10 +27009,8 @@
                             // Add input items
                             if (action.inputItems && action.inputItems.length > 0) {
                                 for (const input of action.inputItems) {
-                                    const inputPrice = marketAPI.getPrice(input.itemHrid, 0);
-                                    if (inputPrice) {
-                                        inputCost += (inputPrice.ask || 0) * input.count;
-                                    }
+                                    const inputPrice = getItemPrice(input.itemHrid, { mode: 'ask' }) || 0;
+                                    inputCost += inputPrice * input.count;
                                 }
                             }
 
@@ -26706,10 +27020,8 @@
                             // Add upgrade item cost (not affected by Artisan Tea)
                             let upgradeCost = 0;
                             if (action.upgradeItemHrid) {
-                                const upgradePrice = marketAPI.getPrice(action.upgradeItemHrid, 0);
-                                if (upgradePrice) {
-                                    upgradeCost = (upgradePrice.ask || 0);
-                                }
+                                const upgradePrice = getItemPrice(action.upgradeItemHrid, { mode: 'ask' }) || 0;
+                                upgradeCost = upgradePrice;
                             }
 
                             const totalCost = inputCost + upgradeCost;
@@ -26808,7 +27120,7 @@
             top: 2px;
             right: 2px;
             z-index: 1;
-            color: ${config.SCRIPT_COLOR_MAIN};
+            color: ${config.COLOR_ACCENT};
             font-size: 0.7rem;
             font-weight: bold;
             text-align: right;
@@ -26861,7 +27173,18 @@
          * Refresh badges (called when badge setting changes)
          */
         refresh() {
-            this.updatePriceBadges();
+            // Update controls container color
+            if (this.controlsContainer) {
+                this.controlsContainer.style.color = config.COLOR_ACCENT;
+            }
+
+            // Update button states (which includes colors)
+            this.updateButtonStates();
+
+            // Update all price badge colors
+            document.querySelectorAll('.mwi-stack-price').forEach(badge => {
+                badge.style.color = config.COLOR_ACCENT;
+            });
         }
 
         /**
@@ -26883,11 +27206,13 @@
             this.unregisterHandlers = [];
 
             this.currentInventoryElem = null;
+            this.isInitialized = false;
         }
     }
 
     // Create and export singleton instance
     const inventorySort = new InventorySort();
+    inventorySort.setupSettingListener();
 
     /**
      * Inventory Badge Prices Module
@@ -27197,10 +27522,8 @@
 
                             if (action.inputItems && action.inputItems.length > 0) {
                                 for (const input of action.inputItems) {
-                                    const inputPrice = marketAPI.getPrice(input.itemHrid, 0);
-                                    if (inputPrice) {
-                                        inputCost += (inputPrice.ask || 0) * input.count;
-                                    }
+                                    const inputPrice = getItemPrice(input.itemHrid, { mode: 'ask' }) || 0;
+                                    inputCost += inputPrice * input.count;
                                 }
                             }
 
@@ -27208,10 +27531,8 @@
 
                             let upgradeCost = 0;
                             if (action.upgradeItemHrid) {
-                                const upgradePrice = marketAPI.getPrice(action.upgradeItemHrid, 0);
-                                if (upgradePrice) {
-                                    upgradeCost = (upgradePrice.ask || 0);
-                                }
+                                const upgradePrice = getItemPrice(action.upgradeItemHrid, { mode: 'ask' }) || 0;
+                                upgradeCost = upgradePrice;
                             }
 
                             const totalCost = inputCost + upgradeCost;
@@ -35171,7 +35492,7 @@
         button.id = 'toolasha-import-button';
         // Include hidden text for JIGS compatibility (JIGS searches for "Import solo/group")
         button.innerHTML = 'Import from Toolasha<span style="display:none;">Import solo/group</span>';
-        button.style.backgroundColor = config.SCRIPT_COLOR_MAIN;
+        button.style.backgroundColor = config.COLOR_ACCENT;
         button.style.color = 'white';
         button.style.padding = '10px 20px';
         button.style.border = 'none';
@@ -35213,7 +35534,7 @@
                 button.style.backgroundColor = '#dc3545'; // Red
                 setTimeout(() => {
                     button.innerHTML = 'Import from Toolasha<span style="display:none;">Import solo/group</span>';
-                    button.style.backgroundColor = config.SCRIPT_COLOR_MAIN;
+                    button.style.backgroundColor = config.COLOR_ACCENT;
                 }, 3000);
                 console.error('[Toolasha Combat Sim] No export data available');
                 alert('No character data found. Please:\n1. Refresh the game page\n2. Wait for it to fully load\n3. Try again');
@@ -35321,7 +35642,7 @@
                 button.style.backgroundColor = '#28a745'; // Green
                 setTimeout(() => {
                     button.innerHTML = 'Import from Toolasha<span style="display:none;">Import solo/group</span>';
-                    button.style.backgroundColor = config.SCRIPT_COLOR_MAIN;
+                    button.style.backgroundColor = config.COLOR_ACCENT;
                 }, 3000);
             }, 100);
 
@@ -35331,7 +35652,7 @@
             button.style.backgroundColor = '#dc3545'; // Red
             setTimeout(() => {
                 button.innerHTML = 'Import from Toolasha<span style="display:none;">Import solo/group</span>';
-                button.style.backgroundColor = config.SCRIPT_COLOR_MAIN;
+                button.style.backgroundColor = config.COLOR_ACCENT;
             }, 3000);
         }
     }
@@ -35496,7 +35817,7 @@
         const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
         targetWindow.Toolasha = {
-            version: '0.4.944',
+            version: '0.4.945',
 
             // Feature toggle API (for users to manage settings via console)
             features: {

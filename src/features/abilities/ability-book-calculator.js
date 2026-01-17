@@ -18,6 +18,26 @@ class AbilityBookCalculator {
     constructor() {
         this.unregisterObserver = null; // Unregister function from centralized observer
         this.isActive = false;
+        this.isInitialized = false;
+    }
+
+    /**
+     * Setup settings listeners for feature toggle and color changes
+     */
+    setupSettingListener() {
+        config.onSettingChange('skillbook', (value) => {
+            if (value) {
+                this.initialize();
+            } else {
+                this.disable();
+            }
+        });
+
+        config.onSettingChange('color_accent', () => {
+            if (this.isInitialized) {
+                this.refresh();
+            }
+        });
     }
 
     /**
@@ -39,6 +59,7 @@ class AbilityBookCalculator {
         );
 
         this.isActive = true;
+        this.isInitialized = true;
     }
 
     /**
@@ -185,7 +206,7 @@ class AbilityBookCalculator {
         // Create calculator HTML
         const calculatorDiv = dom.createStyledDiv(
             {
-                color: config.SCRIPT_COLOR_MAIN,
+                color: config.COLOR_ACCENT,
                 textAlign: 'left',
                 marginTop: '16px',
                 padding: '12px',
@@ -268,6 +289,16 @@ class AbilityBookCalculator {
     }
 
     /**
+     * Refresh colors on existing calculator displays
+     */
+    refresh() {
+        // Update all .tillLevel elements
+        document.querySelectorAll('.tillLevel').forEach(calc => {
+            calc.style.color = config.COLOR_ACCENT;
+        });
+    }
+
+    /**
      * Disable the feature
      */
     disable() {
@@ -277,10 +308,12 @@ class AbilityBookCalculator {
             this.unregisterObserver = null;
         }
         this.isActive = false;
+        this.isInitialized = false;
     }
 }
 
 // Create and export singleton instance
 const abilityBookCalculator = new AbilityBookCalculator();
+abilityBookCalculator.setupSettingListener();
 
 export default abilityBookCalculator;

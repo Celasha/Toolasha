@@ -14,6 +14,7 @@ import dataManager from '../../core/data-manager.js';
 import marketAPI from '../../api/marketplace.js';
 import { numberFormatter } from '../../utils/formatters.js';
 import config from '../../core/config.js';
+import { getItemPrice, getItemPrices } from '../../utils/market-data.js';
 
 /**
  * Calculate optimal enhancement path for an item
@@ -296,7 +297,7 @@ function calculateTotalCost(itemHrid, targetLevel, protectFrom, config) {
             } else if (material.itemHrid === '/items/coin') {
                 price = 1; // Coins have face value of 1
             } else {
-                const marketPrice = marketAPI.getPrice(material.itemHrid, 0);
+                const marketPrice = getItemPrices(material.itemHrid, 0);
                 if (marketPrice) {
                     let ask = marketPrice.ask;
                     let bid = marketPrice.bid;
@@ -355,7 +356,7 @@ function calculateTotalCost(itemHrid, targetLevel, protectFrom, config) {
  * @private
  */
 function getRealisticBaseItemPrice(itemHrid) {
-    const marketPrice = marketAPI.getPrice(itemHrid, 0);
+    const marketPrice = getItemPrices(itemHrid, 0);
     const ask = marketPrice?.ask > 0 ? marketPrice.ask : 0;
     const bid = marketPrice?.bid > 0 ? marketPrice.bid : 0;
 
@@ -426,9 +427,8 @@ function getProductionCost(itemHrid) {
     // Sum up input material costs
     if (action.inputItems) {
         for (const input of action.inputItems) {
-            const inputPrice = marketAPI.getPrice(input.itemHrid, 0);
-            const price = inputPrice?.ask > 0 ? inputPrice.ask : 0;
-            totalPrice += price * input.count;
+            const inputPrice = getItemPrice(input.itemHrid, { mode: 'ask' }) || 0;
+            totalPrice += inputPrice * input.count;
         }
     }
 
@@ -437,9 +437,8 @@ function getProductionCost(itemHrid) {
 
     // Add upgrade item cost if this is an upgrade recipe (for refined items)
     if (action.upgradeItemHrid) {
-        const upgradePrice = marketAPI.getPrice(action.upgradeItemHrid, 0);
-        const price = upgradePrice?.ask > 0 ? upgradePrice.ask : 0;
-        totalPrice += price;
+        const upgradePrice = getItemPrice(action.upgradeItemHrid, { mode: 'ask' }) || 0;
+        totalPrice += upgradePrice;
     }
 
     return totalPrice;

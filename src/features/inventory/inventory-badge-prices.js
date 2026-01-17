@@ -13,6 +13,7 @@ import networthCache from '../networth/networth-cache.js';
 import expectedValueCalculator from '../market/expected-value-calculator.js';
 import { calculateEnhancementPath } from '../enhancement/tooltip-enhancement.js';
 import { getEnhancingParams } from '../../utils/enhancement-config.js';
+import { getItemPrice } from '../../utils/market-data.js';
 
 /**
  * InventoryBadgePrices class manages price badge overlays on inventory items
@@ -315,10 +316,8 @@ class InventoryBadgePrices {
 
                         if (action.inputItems && action.inputItems.length > 0) {
                             for (const input of action.inputItems) {
-                                const inputPrice = marketAPI.getPrice(input.itemHrid, 0);
-                                if (inputPrice) {
-                                    inputCost += (inputPrice.ask || 0) * input.count;
-                                }
+                                const inputPrice = getItemPrice(input.itemHrid, { mode: 'ask' }) || 0;
+                                inputCost += inputPrice * input.count;
                             }
                         }
 
@@ -326,10 +325,8 @@ class InventoryBadgePrices {
 
                         let upgradeCost = 0;
                         if (action.upgradeItemHrid) {
-                            const upgradePrice = marketAPI.getPrice(action.upgradeItemHrid, 0);
-                            if (upgradePrice) {
-                                upgradeCost = (upgradePrice.ask || 0);
-                            }
+                            const upgradePrice = getItemPrice(action.upgradeItemHrid, { mode: 'ask' }) || 0;
+                            upgradeCost = upgradePrice;
                         }
 
                         const totalCost = inputCost + upgradeCost;

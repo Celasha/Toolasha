@@ -20,6 +20,38 @@ class ZoneIndices {
         this.monsterZoneCache = null; // Cache monster name -> zone index mapping
         this.taskMapIndexEnabled = false;
         this.mapIndexEnabled = false;
+        this.isInitialized = false;
+    }
+
+    /**
+     * Setup setting change listener (always active, even when feature is disabled)
+     */
+    setupSettingListener() {
+        // Listen for feature toggle changes
+        config.onSettingChange('taskMapIndex', () => {
+            this.taskMapIndexEnabled = config.getSetting('taskMapIndex');
+            if (this.taskMapIndexEnabled || this.mapIndexEnabled) {
+                this.initialize();
+            } else {
+                this.disable();
+            }
+        });
+
+        config.onSettingChange('mapIndex', () => {
+            this.mapIndexEnabled = config.getSetting('mapIndex');
+            if (this.taskMapIndexEnabled || this.mapIndexEnabled) {
+                this.initialize();
+            } else {
+                this.disable();
+            }
+        });
+
+        // Listen for color changes
+        config.onSettingChange('color_accent', () => {
+            if (this.isInitialized) {
+                this.refresh();
+            }
+        });
     }
 
     /**
@@ -31,6 +63,11 @@ class ZoneIndices {
         this.mapIndexEnabled = config.getSetting('mapIndex');
 
         if (!this.taskMapIndexEnabled && !this.mapIndexEnabled) {
+            return;
+        }
+
+        // Prevent multiple initializations
+        if (this.isInitialized) {
             return;
         }
 
@@ -62,6 +99,7 @@ class ZoneIndices {
         }
 
         this.isActive = true;
+        this.isInitialized = true;
     }
 
     /**
@@ -244,6 +282,22 @@ class ZoneIndices {
     }
 
     /**
+     * Refresh colors (called when settings change)
+     */
+    refresh() {
+        // Update all existing zone index spans with new color
+        const taskIndices = document.querySelectorAll('span.script_taskMapIndex');
+        taskIndices.forEach(span => {
+            span.style.color = config.COLOR_ACCENT;
+        });
+
+        const mapIndices = document.querySelectorAll('span.script_mapIndex');
+        mapIndices.forEach(span => {
+            span.style.color = config.COLOR_ACCENT;
+        });
+    }
+
+    /**
      * Disable the feature
      */
     disable() {
@@ -267,10 +321,14 @@ class ZoneIndices {
         // Clear cache
         this.monsterZoneCache = null;
         this.isActive = false;
+        this.isInitialized = false;
     }
 }
 
 // Create and export singleton instance
 const zoneIndices = new ZoneIndices();
+
+// Setup setting listener immediately (before initialize)
+zoneIndices.setupSettingListener();
 
 export default zoneIndices;

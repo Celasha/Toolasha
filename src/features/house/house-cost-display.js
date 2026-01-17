@@ -12,6 +12,26 @@ class HouseCostDisplay {
     constructor() {
         this.isActive = false;
         this.currentModalContent = null; // Track current modal to detect room switches
+        this.isInitialized = false;
+    }
+
+    /**
+     * Setup settings listeners for feature toggle and color changes
+     */
+    setupSettingListener() {
+        config.onSettingChange('houseUpgradeCosts', (value) => {
+            if (value) {
+                this.initialize();
+            } else {
+                this.disable();
+            }
+        });
+
+        config.onSettingChange('color_accent', () => {
+            if (this.isInitialized) {
+                this.refresh();
+            }
+        });
     }
 
     /**
@@ -23,6 +43,7 @@ class HouseCostDisplay {
         }
 
         this.isActive = true;
+        this.isInitialized = true;
     }
 
     /**
@@ -186,14 +207,14 @@ class HouseCostDisplay {
             align-items: center;
             gap: 8px;
             font-size: 0.75rem;
-            color: ${config.SCRIPT_COLOR_MAIN};
+            color: ${config.COLOR_ACCENT};
             padding-left: 8px;
             white-space: nowrap;
         `;
 
         pricingCell.innerHTML = `
             <span style="color: ${config.SCRIPT_COLOR_SECONDARY};">@ ${coinFormatter(materialData.marketPrice)}</span>
-            <span style="color: ${config.SCRIPT_COLOR_MAIN}; font-weight: bold;">= ${coinFormatter(materialData.totalValue)}</span>
+            <span style="color: ${config.COLOR_ACCENT}; font-weight: bold;">= ${coinFormatter(materialData.totalValue)}</span>
             <span style="color: ${hasEnough ? '#4ade80' : '#f87171'}; margin-left: auto; text-align: right;">${coinFormatter(amountNeeded)}</span>
         `;
 
@@ -212,10 +233,10 @@ class HouseCostDisplay {
         totalDiv.style.cssText = `
             margin-top: 12px;
             padding-top: 12px;
-            border-top: 2px solid ${config.SCRIPT_COLOR_MAIN};
+            border-top: 2px solid ${config.COLOR_ACCENT};
             font-weight: bold;
             font-size: 1rem;
-            color: ${config.SCRIPT_COLOR_MAIN};
+            color: ${config.COLOR_ACCENT};
             text-align: center;
         `;
         totalDiv.textContent = `Total Market Value: ${coinFormatter(costData.totalValue)}`;
@@ -251,7 +272,7 @@ class HouseCostDisplay {
 
         const label = document.createElement('span');
         label.style.cssText = `
-            color: ${config.SCRIPT_COLOR_MAIN};
+            color: ${config.COLOR_ACCENT};
             font-weight: bold;
             font-size: 0.875rem;
         `;
@@ -348,10 +369,10 @@ class HouseCostDisplay {
         totalDiv.style.cssText = `
             margin-top: 12px;
             padding-top: 12px;
-            border-top: 2px solid ${config.SCRIPT_COLOR_MAIN};
+            border-top: 2px solid ${config.COLOR_ACCENT};
             font-weight: bold;
             font-size: 1rem;
-            color: ${config.SCRIPT_COLOR_MAIN};
+            color: ${config.COLOR_ACCENT};
             text-align: center;
         `;
         totalDiv.textContent = `Total Market Value: ${coinFormatter(costData.totalValue)}`;
@@ -404,7 +425,7 @@ class HouseCostDisplay {
         const totalSpan = document.createElement('span');
         if (isCoin) {
             totalSpan.style.cssText = `
-                color: ${config.SCRIPT_COLOR_MAIN};
+                color: ${config.COLOR_ACCENT};
                 font-weight: bold;
                 font-size: 0.75rem;
                 text-align: left;
@@ -412,7 +433,7 @@ class HouseCostDisplay {
             totalSpan.textContent = `= ${coinFormatter(material.totalValue)}`;
         } else {
             totalSpan.style.cssText = `
-                color: ${config.SCRIPT_COLOR_MAIN};
+                color: ${config.COLOR_ACCENT};
                 font-weight: bold;
                 font-size: 0.75rem;
                 text-align: left;
@@ -433,6 +454,36 @@ class HouseCostDisplay {
     }
 
     /**
+     * Refresh colors on existing displays
+     */
+    refresh() {
+        // Update pricing cell colors
+        document.querySelectorAll('.mwi-house-pricing').forEach(cell => {
+            cell.style.color = config.COLOR_ACCENT;
+            const boldSpan = cell.querySelector('span[style*="font-weight: bold"]');
+            if (boldSpan) {
+                boldSpan.style.color = config.COLOR_ACCENT;
+            }
+        });
+
+        // Update total cost colors
+        document.querySelectorAll('.mwi-house-total').forEach(total => {
+            total.style.borderTopColor = config.COLOR_ACCENT;
+            total.style.color = config.COLOR_ACCENT;
+        });
+
+        // Update "To Level" label colors
+        document.querySelectorAll('.mwi-house-to-level span[style*="font-weight: bold"]').forEach(label => {
+            label.style.color = config.COLOR_ACCENT;
+        });
+
+        // Update cumulative total colors
+        document.querySelectorAll('.mwi-cumulative-cost-container span[style*="font-weight: bold"]').forEach(span => {
+            span.style.color = config.COLOR_ACCENT;
+        });
+    }
+
+    /**
      * Disable the feature
      */
     disable() {
@@ -446,10 +497,12 @@ class HouseCostDisplay {
 
         this.currentModalContent = null;
         this.isActive = false;
+        this.isInitialized = false;
     }
 }
 
 // Create and export singleton instance
 const houseCostDisplay = new HouseCostDisplay();
+houseCostDisplay.setupSettingListener();
 
 export default houseCostDisplay;

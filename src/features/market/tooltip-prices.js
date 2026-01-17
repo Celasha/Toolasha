@@ -12,6 +12,7 @@ import { getEnhancingParams } from '../../utils/enhancement-config.js';
 import { calculateEnhancementPath, buildEnhancementTooltipHTML } from '../enhancement/tooltip-enhancement.js';
 import { calculateGatheringProfit } from '../actions/gathering-profit.js';
 import { numberFormatter, formatKMB, networthFormatter, formatPercentage } from '../../utils/formatters.js';
+import { getItemPrices } from '../../utils/market-data.js';
 import dom from '../../utils/dom.js';
 import domObserver from '../../core/dom-observer.js';
 
@@ -187,7 +188,7 @@ class TooltipPrices {
         }
 
         // Get market price for the specific enhancement level (0 for base items, 1-20 for enhanced)
-        const price = marketAPI.getPrice(itemHrid, enhancementLevel);
+        const price = getItemPrices(itemHrid, enhancementLevel);
 
         // Inject price display only if we have market data
         if (price && (price.ask > 0 || price.bid > 0)) {

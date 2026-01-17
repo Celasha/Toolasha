@@ -12,6 +12,28 @@ class SkillExperiencePercentage {
         this.isActive = false;
         this.unregisterHandlers = [];
         this.processedBars = new WeakSet();
+        this.isInitialized = false;
+    }
+
+    /**
+     * Setup setting change listener (always active, even when feature is disabled)
+     */
+    setupSettingListener() {
+        // Listen for main toggle changes
+        config.onSettingChange('skillExperiencePercentage', (enabled) => {
+            if (enabled) {
+                this.initialize();
+            } else {
+                this.disable();
+            }
+        });
+
+        // Listen for color changes
+        config.onSettingChange('color_accent', () => {
+            if (this.isInitialized) {
+                this.refresh();
+            }
+        });
     }
 
     /**
@@ -22,11 +44,18 @@ class SkillExperiencePercentage {
             return;
         }
 
+        // Prevent multiple initializations
+        if (this.isInitialized) {
+            return;
+        }
+
         this.isActive = true;
         this.registerObservers();
 
         // Initial update for existing skills
         this.updateAllSkills();
+
+        this.isInitialized = true;
     }
 
     /**
@@ -103,6 +132,17 @@ class SkillExperiencePercentage {
     }
 
     /**
+     * Refresh colors (called when settings change)
+     */
+    refresh() {
+        // Update all existing percentage spans with new color
+        const percentageSpans = document.querySelectorAll('.mwi-exp-percentage');
+        percentageSpans.forEach(span => {
+            span.style.color = config.COLOR_ACCENT;
+        });
+    }
+
+    /**
      * Disable the feature
      */
     disable() {
@@ -115,10 +155,14 @@ class SkillExperiencePercentage {
 
         this.processedBars.clear();
         this.isActive = false;
+        this.isInitialized = false;
     }
 }
 
 // Create and export singleton instance
 const skillExperiencePercentage = new SkillExperiencePercentage();
+
+// Setup setting listener immediately (before initialize)
+skillExperiencePercentage.setupSettingListener();
 
 export default skillExperiencePercentage;

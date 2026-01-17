@@ -69,7 +69,7 @@ function injectExportButton(container) {
     button.style.cssText = `
         border-radius: 5px;
         height: 30px;
-        background-color: ${config.SCRIPT_COLOR_MAIN};
+        background-color: ${config.COLOR_ACCENT};
         color: black;
         box-shadow: none;
         border: 0px;
@@ -150,5 +150,5 @@ async function handleExport(button) {
  */
 function resetButton(button) {
     button.textContent = 'Export to Clipboard';
-    button.style.backgroundColor = config.SCRIPT_COLOR_MAIN;
+    button.style.backgroundColor = config.COLOR_ACCENT;
 }

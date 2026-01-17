@@ -18,6 +18,26 @@ class CombatScore {
     constructor() {
         this.isActive = false;
         this.currentPanel = null;
+        this.isInitialized = false;
+    }
+
+    /**
+     * Setup settings listeners for feature toggle and color changes
+     */
+    setupSettingListener() {
+        config.onSettingChange('combatScore', (value) => {
+            if (value) {
+                this.initialize();
+            } else {
+                this.disable();
+            }
+        });
+
+        config.onSettingChange('color_accent', () => {
+            if (this.isInitialized) {
+                this.refresh();
+            }
+        });
     }
 
     /**
@@ -35,6 +55,7 @@ class CombatScore {
         });
 
         this.isActive = true;
+        this.isInitialized = true;
     }
 
     /**
@@ -42,6 +63,10 @@ class CombatScore {
      * @param {Object} profileData - Profile data from WebSocket
      */
     async handleProfileShared(profileData) {
+        // Clear any stale profile ID from storage (defensive cleanup)
+        // When viewing your own profile, this should always be null
+        await storage.set('currentProfileId', null, 'combatExport', true);
+
         // Wait for profile panel to appear in DOM
         const profilePanel = await this.waitForProfilePanel();
         if (!profilePanel) {
@@ -141,7 +166,7 @@ class CombatScore {
         // Create panel HTML
         panel.innerHTML = `
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                <div style="font-weight: bold; color: ${config.SCRIPT_COLOR_MAIN}; font-size: 0.9rem;">${playerName}</div>
+                <div style="font-weight: bold; color: ${config.COLOR_ACCENT}; font-size: 0.9rem;">${playerName}</div>
                 <span id="mwi-score-close-btn" style="
                     cursor: pointer;
                     font-size: 18px;
@@ -178,7 +203,7 @@ class CombatScore {
             <div style="margin-top: 12px; display: flex; flex-direction: column; gap: 6px;">
                 <button id="mwi-combat-sim-export-btn" style="
                     padding: 8px 12px;
-                    background: ${config.SCRIPT_COLOR_MAIN};
+                    background: ${config.COLOR_ACCENT};
                     color: black;
                     border: none;
                     border-radius: 4px;
@@ -189,7 +214,7 @@ class CombatScore {
                 ">Combat Sim Export</button>
                 <button id="mwi-milkonomy-export-btn" style="
                     padding: 8px 12px;
-                    background: ${config.SCRIPT_COLOR_MAIN};
+                    background: ${config.COLOR_ACCENT};
                     color: black;
                     border: none;
                     border-radius: 4px;
@@ -419,7 +444,11 @@ class CombatScore {
         const originalBg = button.style.background;
 
         try {
-            // Get current profile ID (if viewing someone else's profile)
+            // Defensive: ensure currentProfileId is null when exporting own profile
+            // This prevents stale data from blocking export
+            await storage.set('currentProfileId', null, 'combatExport', true);
+
+            // Get current profile ID (should be null for own profile)
             const currentProfileId = await storage.get('currentProfileId', 'combatExport', null);
 
             // Get export data (pass profile ID if viewing external profile)
@@ -456,6 +485,25 @@ class CombatScore {
     }
 
     /**
+     * Refresh colors on existing panel
+     */
+    refresh() {
+        if (!this.currentPanel) return;
+
+        // Update title color
+        const titleElem = this.currentPanel.querySelector('div[style*="font-weight: bold"]');
+        if (titleElem) {
+            titleElem.style.color = config.COLOR_ACCENT;
+        }
+
+        // Update both export buttons
+        const buttons = this.currentPanel.querySelectorAll('button[id*="export-btn"]');
+        buttons.forEach(button => {
+            button.style.background = config.COLOR_ACCENT;
+        });
+    }
+
+    /**
      * Disable the feature
      */
     disable() {
@@ -465,10 +513,12 @@ class CombatScore {
         }
 
         this.isActive = false;
+        this.isInitialized = false;
     }
 }
 
 // Create and export singleton instance
 const combatScore = new CombatScore();
+combatScore.setupSettingListener();
 
 export default combatScore;

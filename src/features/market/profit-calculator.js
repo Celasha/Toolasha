@@ -12,6 +12,7 @@ import { calculateHouseEfficiency } from '../../utils/house-efficiency.js';
 import { parseTeaEfficiency, getDrinkConcentration, parseArtisanBonus, parseGourmetBonus, parseProcessingBonus, parseActionLevelBonus } from '../../utils/tea-parser.js';
 import expectedValueCalculator from './expected-value-calculator.js';
 import { calculateBonusRevenue } from '../../utils/bonus-revenue-calculator.js';
+import { getItemPrice } from '../../utils/market-data.js';
 
 /**
  * ProfitCalculator class handles profit calculations for production actions
@@ -228,19 +229,9 @@ class ProfitCalculator {
         // Use fallback {ask: 0, bid: 0} if no market data exists (e.g., refined items)
         const itemPrice = marketAPI.getPrice(itemHrid, 0) || { ask: 0, bid: 0 };
 
-        // Check pricing mode setting
-        const pricingMode = config.getSettingValue('profitCalc_pricingMode', 'conservative');
-
-        // Get output price based on pricing mode
-        // conservative: Bid price (instant sell)
-        // hybrid/optimistic: Ask price (patient sell orders)
-        let outputPrice = 0;
-        if (pricingMode === 'conservative') {
-            outputPrice = itemPrice.bid;
-        } else {
-            // hybrid or optimistic both use Ask for output
-            outputPrice = itemPrice.ask;
-        }
+        // Get output price based on pricing mode setting
+        // Uses 'profit' context to automatically select correct price
+        const outputPrice = getItemPrice(itemHrid, { context: 'profit' }) || 0;
 
         // Apply market tax (2% tax on sales)
         const priceAfterTax = outputPrice * (1 - this.MARKET_TAX);
@@ -355,25 +346,13 @@ class ProfitCalculator {
     calculateMaterialCosts(actionDetails, artisanBonus = 0) {
         const costs = [];
 
-        // Check pricing mode setting
-        const pricingMode = config.getSettingValue('profitCalc_pricingMode', 'conservative');
-
         // Check for upgrade item (e.g., Crimson Bulwark → Rainbow Bulwark)
         if (actionDetails.upgradeItemHrid) {
             const itemDetails = dataManager.getItemDetails(actionDetails.upgradeItemHrid);
-            const price = marketAPI.getPrice(actionDetails.upgradeItemHrid, 0);
 
             if (itemDetails) {
-                // Get material price based on pricing mode
-                // conservative/hybrid: Ask price (instant buy)
-                // optimistic: Bid price (patient buy orders)
-                let materialPrice = 0;
-                if (pricingMode === 'optimistic') {
-                    materialPrice = (price?.bid && price.bid > 0) ? price.bid : 0;
-                } else {
-                    // conservative or hybrid both use Ask for materials
-                    materialPrice = (price?.ask && price.ask > 0) ? price.ask : 0;
-                }
+                // Get material price based on pricing mode (uses 'profit' context)
+                let materialPrice = getItemPrice(actionDetails.upgradeItemHrid, { context: 'profit' }) || 0;
 
                 // Special case: Coins have no market price but have face value of 1
                 if (actionDetails.upgradeItemHrid === '/items/coin' && materialPrice === 0) {
@@ -398,7 +377,6 @@ class ProfitCalculator {
         if (actionDetails.inputItems && actionDetails.inputItems.length > 0) {
             for (const input of actionDetails.inputItems) {
                 const itemDetails = dataManager.getItemDetails(input.itemHrid);
-                const price = marketAPI.getPrice(input.itemHrid, 0);
 
                 if (!itemDetails) {
                     continue;
@@ -410,16 +388,8 @@ class ProfitCalculator {
                 // Apply artisan reduction
                 const reducedAmount = baseAmount * (1 - artisanBonus);
 
-                // Get material price based on pricing mode
-                // conservative/hybrid: Ask price (instant buy)
-                // optimistic: Bid price (patient buy orders)
-                let materialPrice = 0;
-                if (pricingMode === 'optimistic') {
-                    materialPrice = (price?.bid && price.bid > 0) ? price.bid : 0;
-                } else {
-                    // conservative or hybrid both use Ask for materials
-                    materialPrice = (price?.ask && price.ask > 0) ? price.ask : 0;
-                }
+                // Get material price based on pricing mode (uses 'profit' context)
+                let materialPrice = getItemPrice(input.itemHrid, { context: 'profit' }) || 0;
 
                 // Special case: Coins have no market price but have face value of 1
                 if (input.itemHrid === '/items/coin' && materialPrice === 0) {
@@ -551,9 +521,6 @@ class ProfitCalculator {
             return [];
         }
 
-        // Check pricing mode for tea costs
-        const pricingMode = config.getSettingValue('profitCalc_pricingMode', 'conservative');
-
         const costs = [];
 
         for (const drink of activeDrinks) {
@@ -562,17 +529,8 @@ class ProfitCalculator {
             const itemDetails = dataManager.getItemDetails(drink.itemHrid);
             if (!itemDetails) continue;
 
-            // Get market price for the tea
-            const price = marketAPI.getPrice(drink.itemHrid, 0);
-
-            // Use same pricing mode logic as materials
-            let teaPrice = 0;
-            if (pricingMode === 'optimistic') {
-                teaPrice = (price?.bid && price.bid > 0) ? price.bid : 0;
-            } else {
-                // conservative or hybrid both use Ask for costs
-                teaPrice = (price?.ask && price.ask > 0) ? price.ask : 0;
-            }
+            // Get tea price based on pricing mode (uses 'profit' context)
+            const teaPrice = getItemPrice(drink.itemHrid, { context: 'profit' }) || 0;
 
             // Drink Concentration increases consumption rate: base 12/hour × (1 + DC%)
             const drinksPerHour = 12 * (1 + drinkConcentration);

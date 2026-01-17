@@ -26,6 +26,26 @@ class TaskProfitDisplay {
         this.marketDataRetryHandler = null; // Market data retry handler
         this.pendingTaskNodes = new Set(); // Track task nodes waiting for data
         this.eventListeners = new WeakMap(); // Store listeners for cleanup
+        this.isInitialized = false;
+    }
+
+    /**
+     * Setup settings listeners for feature toggle and color changes
+     */
+    setupSettingListener() {
+        config.onSettingChange('taskProfitCalculator', (value) => {
+            if (value) {
+                this.initialize();
+            } else {
+                this.disable();
+            }
+        });
+
+        config.onSettingChange('color_accent', () => {
+            if (this.isInitialized) {
+                this.refresh();
+            }
+        });
     }
 
     /**
@@ -66,6 +86,7 @@ class TaskProfitDisplay {
         this.updateTaskProfits();
 
         this.isActive = true;
+        this.isInitialized = true;
     }
 
     /**
@@ -398,7 +419,7 @@ class TaskProfitDisplay {
         // Create main profit display (Option B format: compact with time)
         const profitLine = document.createElement('div');
         profitLine.style.cssText = `
-            color: ${config.SCRIPT_COLOR_MAIN};
+            color: ${config.COLOR_ACCENT};
             cursor: pointer;
             user-select: none;
         `;
@@ -656,7 +677,7 @@ class TaskProfitDisplay {
 
         // Total
         lines.push('<div style="border-top: 1px solid #555; margin-top: 6px; padding-top: 4px;"></div>');
-        lines.push(`<div style="font-weight: bold; color: ${config.SCRIPT_COLOR_MAIN};">Total Profit: ${numberFormatter(profitData.totalProfit)}</div>`);
+        lines.push(`<div style="font-weight: bold; color: ${config.COLOR_ACCENT};">Total Profit: ${numberFormatter(profitData.totalProfit)}</div>`);
 
         return lines.join('');
     }
@@ -712,6 +733,23 @@ class TaskProfitDisplay {
     }
 
     /**
+     * Refresh colors on existing task profit displays
+     */
+    refresh() {
+        // Update all profit line colors
+        const profitLines = document.querySelectorAll('.mwi-task-profit > div:first-child');
+        profitLines.forEach(line => {
+            line.style.color = config.COLOR_ACCENT;
+        });
+
+        // Update all total profit colors in breakdowns
+        const totalProfits = document.querySelectorAll('.mwi-task-profit-breakdown > div:last-child');
+        totalProfits.forEach(total => {
+            total.style.color = config.COLOR_ACCENT;
+        });
+    }
+
+    /**
      * Disable the feature
      */
     disable() {
@@ -746,10 +784,12 @@ class TaskProfitDisplay {
         });
 
         this.isActive = false;
+        this.isInitialized = false;
     }
 }
 
 // Create and export singleton instance
 const taskProfitDisplay = new TaskProfitDisplay();
+taskProfitDisplay.setupSettingListener();
 
 export default taskProfitDisplay;

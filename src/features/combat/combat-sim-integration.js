@@ -52,7 +52,7 @@ function injectImportButton(exportButton) {
     button.id = 'toolasha-import-button';
     // Include hidden text for JIGS compatibility (JIGS searches for "Import solo/group")
     button.innerHTML = 'Import from Toolasha<span style="display:none;">Import solo/group</span>';
-    button.style.backgroundColor = config.SCRIPT_COLOR_MAIN;
+    button.style.backgroundColor = config.COLOR_ACCENT;
     button.style.color = 'white';
     button.style.padding = '10px 20px';
     button.style.border = 'none';
@@ -94,7 +94,7 @@ async function importDataToSimulator(button) {
             button.style.backgroundColor = '#dc3545'; // Red
             setTimeout(() => {
                 button.innerHTML = 'Import from Toolasha<span style="display:none;">Import solo/group</span>';
-                button.style.backgroundColor = config.SCRIPT_COLOR_MAIN;
+                button.style.backgroundColor = config.COLOR_ACCENT;
             }, 3000);
             console.error('[Toolasha Combat Sim] No export data available');
             alert('No character data found. Please:\n1. Refresh the game page\n2. Wait for it to fully load\n3. Try again');
@@ -202,7 +202,7 @@ async function importDataToSimulator(button) {
             button.style.backgroundColor = '#28a745'; // Green
             setTimeout(() => {
                 button.innerHTML = 'Import from Toolasha<span style="display:none;">Import solo/group</span>';
-                button.style.backgroundColor = config.SCRIPT_COLOR_MAIN;
+                button.style.backgroundColor = config.COLOR_ACCENT;
             }, 3000);
         }, 100);
 
@@ -212,7 +212,7 @@ async function importDataToSimulator(button) {
         button.style.backgroundColor = '#dc3545'; // Red
         setTimeout(() => {
             button.innerHTML = 'Import from Toolasha<span style="display:none;">Import solo/group</span>';
-            button.style.backgroundColor = config.SCRIPT_COLOR_MAIN;
+            button.style.backgroundColor = config.COLOR_ACCENT;
         }, 3000);
     }
 }

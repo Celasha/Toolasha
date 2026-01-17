@@ -6,6 +6,7 @@
 import dataManager from '../../core/data-manager.js';
 import marketAPI from '../../api/marketplace.js';
 import config from '../../core/config.js';
+import { getItemPrice } from '../../utils/market-data.js';
 
 class HouseCostCalculator {
     constructor() {
@@ -133,40 +134,22 @@ class HouseCostCalculator {
     }
 
     /**
-     * Get market price for an item based on pricing mode
+     * Get market price for an item (uses 'ask' price for buying materials)
      * @param {string} itemHrid - Item HRID
      * @returns {Promise<number>} Market price
      */
     async getItemMarketPrice(itemHrid) {
-        const priceData = await marketAPI.getPrice(itemHrid);
+        // Use 'ask' mode since house upgrades involve buying materials
+        const price = getItemPrice(itemHrid, { mode: 'ask' });
 
-        if (!priceData || (!priceData.ask && !priceData.bid)) {
+        if (price === null || price === 0) {
             // Fallback to vendor price from game data
             const initData = dataManager.getInitClientData();
             const itemData = initData?.itemDetailMap?.[itemHrid];
             return itemData?.sellPrice || 0;
         }
 
-        // Use pricing mode from config
-        const pricingMode = config.getSetting('marketPricingMode') || 'hybrid';
-
-        let ask = priceData.ask || 0;
-        let bid = priceData.bid || 0;
-
-        // Handle missing prices
-        if (ask > 0 && bid <= 0) bid = ask;
-        if (bid > 0 && ask <= 0) ask = bid;
-
-        // Calculate weighted price based on mode
-        switch (pricingMode) {
-            case 'conservative':
-                return ask; // Buy at ask price (pessimistic)
-            case 'optimistic':
-                return bid; // Sell at bid price (optimistic)
-            case 'hybrid':
-            default:
-                return ask * 0.5 + bid * 0.5; // 50/50 mix
-        }
+        return price;
     }
 
     /**
