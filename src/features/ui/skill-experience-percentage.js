@@ -11,7 +11,7 @@ class SkillExperiencePercentage {
     constructor() {
         this.isActive = false;
         this.unregisterHandlers = [];
-        this.processedBars = new WeakSet();
+        this.processedBars = new Set();
         this.isInitialized = false;
     }
 

@@ -5,6 +5,7 @@
 
 import storage from './storage.js';
 import settingsStorage from '../features/settings/settings-storage.js';
+import { settingsGroups } from '../features/settings/settings-config.js';
 import dataManager from './data-manager.js';
 
 /**
@@ -376,7 +377,20 @@ class Config {
      * @returns {boolean} Setting value
      */
     getSetting(key) {
-        return this.settingsMap[key]?.isTrue ?? false;
+        // Check loaded settings first
+        if (this.settingsMap[key]) {
+            return this.settingsMap[key].isTrue ?? false;
+        }
+
+        // Fallback: Check settings-config.js for default (fixes race condition on load)
+        for (const group of Object.values(settingsGroups)) {
+            if (group.settings[key]) {
+                return group.settings[key].default ?? false;
+            }
+        }
+
+        // Ultimate fallback
+        return false;
     }
 
     /**

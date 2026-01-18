@@ -155,6 +155,16 @@ class DataManager {
             const newCharacterId = data.character?.id;
             const newCharacterName = data.character?.name;
 
+            // Validate character data before processing
+            if (!newCharacterId || !newCharacterName) {
+                console.error('[DataManager] Invalid character data received:', {
+                    hasCharacter: !!data.character,
+                    hasId: !!newCharacterId,
+                    hasName: !!newCharacterName
+                });
+                return; // Don't process invalid character data
+            }
+
             // Check if this is a character switch (not first load)
             if (this.currentCharacterId && this.currentCharacterId !== newCharacterId) {
                 // Prevent rapid-fire character switches (loop protection)

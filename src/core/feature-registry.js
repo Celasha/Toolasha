@@ -48,6 +48,7 @@ import dungeonTracker from '../features/combat/dungeon-tracker.js';
 import dungeonTrackerUI from '../features/combat/dungeon-tracker-ui.js';
 import dungeonTrackerChatAnnotations from '../features/combat/dungeon-tracker-chat-annotations.js';
 import combatSummary from '../features/combat/combat-summary.js';
+import alchemyProfitDisplay from '../features/alchemy/alchemy-profit-display.js';
 
 /**
  * Feature Registry
@@ -249,6 +250,24 @@ const featureRegistry = [
             // Look for our injected required materials displays
             const materialsElements = document.querySelectorAll('.mwi-required-materials');
             return materialsElements.length > 0 || null; // null if panels open but no input entered yet
+        }
+    },
+    {
+        key: 'alchemy_profitDisplay',
+        name: 'Alchemy Profit Calculator',
+        category: 'Actions',
+        initialize: () => alchemyProfitDisplay.initialize(),
+        async: false,
+        healthCheck: () => {
+            // Check if alchemy panel is open
+            const alchemyComponent = document.querySelector('[class*="SkillActionDetail_alchemyComponent"]');
+            if (!alchemyComponent) {
+                return null; // Not on alchemy screen, can't verify
+            }
+
+            // Look for our injected profit display
+            const profitDisplay = document.querySelector('.mwi-alchemy-profit');
+            return profitDisplay !== null;
         }
     },
 
@@ -529,6 +548,31 @@ function checkFeatureHealth() {
  * Re-initializes all features when character switches
  */
 function setupCharacterSwitchHandler() {
+    // Handle character_switching event (cleanup phase)
+    dataManager.on('character_switching', async (data) => {
+        console.log(`[FeatureRegistry] Character switching: ${data.oldName} → ${data.newName}`);
+
+        // Clear config cache to prevent stale settings
+        if (config && typeof config.clearSettingsCache === 'function') {
+            config.clearSettingsCache();
+        }
+
+        // Disable all active features (cleanup DOM elements, event listeners, etc.)
+        // Note: Individual features should implement their own disable() methods
+        for (const feature of featureRegistry) {
+            try {
+                // Check if feature has a disable method
+                const featureInstance = getFeatureInstance(feature.key);
+                if (featureInstance && typeof featureInstance.disable === 'function') {
+                    featureInstance.disable();
+                }
+            } catch (error) {
+                console.error(`[FeatureRegistry] Failed to disable ${feature.name}:`, error);
+            }
+        }
+    });
+
+    // Handle character_switched event (re-initialization phase)
     dataManager.on('character_switched', async (data) => {
         // Force cleanup of dungeon tracker UI (safety measure)
         if (dungeonTrackerUI && typeof dungeonTrackerUI.cleanup === 'function') {
@@ -555,6 +599,55 @@ function setupCharacterSwitchHandler() {
             setTimeout(() => reinit(), 300); // Longer delay for game to stabilize
         }
     });
+}
+
+/**
+ * Get feature instance from imported module
+ * @param {string} key - Feature key
+ * @returns {Object|null} Feature instance or null
+ * @private
+ */
+function getFeatureInstance(key) {
+    // Map feature keys to their imported instances
+    const instanceMap = {
+        'tooltipPrices': tooltipPrices,
+        'expectedValueCalculator': expectedValueCalculator,
+        'tooltipConsumables': tooltipConsumables,
+        'marketFilter': marketFilter,
+        'fillMarketOrderPrice': autoFillPrice,
+        'market_visibleItemCount': itemCountDisplay,
+        'market_showListingPrices': listingPriceDisplay,
+        'market_showEstimatedListingAge': estimatedListingAge,
+        'market_tradeHistory': tradeHistory,
+        'actionTimeDisplay': actionTimeDisplay,
+        'quickInputButtons': quickInputButtons,
+        'actionPanel_outputTotals': outputTotals,
+        'actionPanel_maxProduceable': maxProduceable,
+        'actionPanel_gatheringStats': gatheringStats,
+        'requiredMaterials': requiredMaterials,
+        'alchemy_profitDisplay': alchemyProfitDisplay,
+        'abilityBookCalculator': abilityBookCalculator,
+        'zoneIndices': zoneIndices,
+        'combatScore': combatScore,
+        'dungeonTracker': dungeonTracker,
+        'combatSummary': combatSummary,
+        'equipmentLevelDisplay': equipmentLevelDisplay,
+        'alchemyItemDimming': alchemyItemDimming,
+        'skillExperiencePercentage': skillExperiencePercentage,
+        'taskProfitDisplay': taskProfitDisplay,
+        'taskRerollTracker': taskRerollTracker,
+        'taskSorter': taskSorter,
+        'taskIcons': taskIcons,
+        'skillRemainingXP': remainingXP,
+        'houseCostDisplay': housePanelObserver,
+        'networth': networthFeature,
+        'inventorySort': inventorySort,
+        'inventoryBadgePrices': inventoryBadgePrices,
+        'enhancementTracker': enhancementTracker,
+        'notifiEmptyAction': emptyQueueNotification
+    };
+
+    return instanceMap[key] || null;
 }
 
 /**

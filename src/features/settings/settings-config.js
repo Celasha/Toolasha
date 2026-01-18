@@ -96,6 +96,13 @@ export const settingsGroups = {
                 type: 'checkbox',
                 default: true,
                 help: 'Displays total materials needed and shortfall when entering quantity'
+            },
+            alchemy_profitDisplay: {
+                id: 'alchemy_profitDisplay',
+                label: 'Alchemy panel: Show profit calculator',
+                type: 'checkbox',
+                default: true,
+                help: 'Displays profit/hour and profit/day for alchemy actions based on success rate and market prices'
             }
         }
     },

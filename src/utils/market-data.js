@@ -150,7 +150,18 @@ export function getPricingMode(context) {
     switch (context) {
         case 'profit': {
             const profitMode = config.getSettingValue('profitCalc_pricingMode');
-            return profitMode || 'ask';
+
+            // Convert profit calculation modes to price types
+            // For EV/profit context, we're calculating sell-side value
+            switch (profitMode) {
+                case 'conservative':
+                    return 'bid'; // Instant sell (Bid price)
+                case 'hybrid':
+                case 'optimistic':
+                    return 'ask'; // Patient sell (Ask price)
+                default:
+                    return 'ask';
+            }
         }
         case 'networth': {
             const networthMode = config.getSettingValue('networth_pricingMode');

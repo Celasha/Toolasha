@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.4.946
+// @version      0.4.947
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -482,6 +482,13 @@
                     type: 'checkbox',
                     default: true,
                     help: 'Displays total materials needed and shortfall when entering quantity'
+                },
+                alchemy_profitDisplay: {
+                    id: 'alchemy_profitDisplay',
+                    label: 'Alchemy panel: Show profit calculator',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Displays profit/hour and profit/day for alchemy actions based on success rate and market prices'
                 }
             }
         },
@@ -1891,6 +1898,16 @@
                 const newCharacterId = data.character?.id;
                 const newCharacterName = data.character?.name;
 
+                // Validate character data before processing
+                if (!newCharacterId || !newCharacterName) {
+                    console.error('[DataManager] Invalid character data received:', {
+                        hasCharacter: !!data.character,
+                        hasId: !!newCharacterId,
+                        hasName: !!newCharacterName
+                    });
+                    return; // Don't process invalid character data
+                }
+
                 // Check if this is a character switch (not first load)
                 if (this.currentCharacterId && this.currentCharacterId !== newCharacterId) {
                     // Prevent rapid-fire character switches (loop protection)
@@ -2734,7 +2751,20 @@
          * @returns {boolean} Setting value
          */
         getSetting(key) {
-            return this.settingsMap[key]?.isTrue ?? false;
+            // Check loaded settings first
+            if (this.settingsMap[key]) {
+                return this.settingsMap[key].isTrue ?? false;
+            }
+
+            // Fallback: Check settings-config.js for default (fixes race condition on load)
+            for (const group of Object.values(settingsGroups)) {
+                if (group.settings[key]) {
+                    return group.settings[key].default ?? false;
+                }
+            }
+
+            // Ultimate fallback
+            return false;
         }
 
         /**
@@ -6000,7 +6030,18 @@
         switch (context) {
             case 'profit': {
                 const profitMode = config.getSettingValue('profitCalc_pricingMode');
-                return profitMode || 'ask';
+
+                // Convert profit calculation modes to price types
+                // For EV/profit context, we're calculating sell-side value
+                switch (profitMode) {
+                    case 'conservative':
+                        return 'bid'; // Instant sell (Bid price)
+                    case 'hybrid':
+                    case 'optimistic':
+                        return 'ask'; // Patient sell (Ask price)
+                    default:
+                        return 'ask';
+                }
             }
             case 'networth': {
                 const networthMode = config.getSettingValue('networth_pricingMode');
@@ -21931,7 +21972,7 @@
         constructor() {
             this.isActive = false;
             this.unregisterHandlers = [];
-            this.processedBars = new WeakSet();
+            this.processedBars = new Set();
             this.isInitialized = false;
         }
 
@@ -35415,6 +35456,943 @@
     const combatSummary = new CombatSummary();
 
     /**
+     * Alchemy Profit Calculator Module
+     * Calculates real-time profit for alchemy actions accounting for:
+     * - Success rate (failures consume materials but not catalyst)
+     * - Efficiency bonuses
+     * - Tea buff costs and duration
+     * - Market prices (ask/bid based on pricing mode)
+     */
+
+
+    class AlchemyProfit {
+        constructor() {
+            this.cachedData = null;
+            this.lastFingerprint = null;
+        }
+
+        /**
+         * Extract alchemy action data from the DOM
+         * @returns {Object|null} Action data or null if extraction fails
+         */
+        async extractActionData() {
+            try {
+                const alchemyComponent = document.querySelector('[class*="SkillActionDetail_alchemyComponent"]');
+                if (!alchemyComponent) return null;
+
+                // Get success rate
+                const successRate = this.extractSuccessRate();
+                if (successRate === null) return null;
+
+                // Get action time (base 20 seconds)
+                const actionSpeed = this.extractActionSpeed();
+                const actionTime = 20 / (1 + actionSpeed);
+
+                // Get efficiency
+                const efficiency = this.extractEfficiency();
+
+                // Get requirements (inputs)
+                const requirements = await this.extractRequirements();
+
+                // Get drops (outputs)
+                const drops = await this.extractDrops();
+
+                // Get catalyst
+                const catalyst = await this.extractCatalyst();
+
+                // Get consumables (tea/drinks)
+                const consumables = await this.extractConsumables();
+                const teaDuration = this.extractTeaDuration();
+
+                return {
+                    successRate,
+                    actionTime,
+                    efficiency,
+                    requirements,
+                    drops,
+                    catalyst,
+                    consumables,
+                    teaDuration
+                };
+            } catch (error) {
+                console.error('[AlchemyProfit] Failed to extract action data:', error);
+                return null;
+            }
+        }
+
+        /**
+         * Extract success rate from the DOM
+         * @returns {number|null} Success rate as decimal (0-1) or null
+         */
+        extractSuccessRate() {
+            try {
+                const element = document.querySelector('[class*="SkillActionDetail_successRate"] [class*="SkillActionDetail_value"]');
+                if (!element) return null;
+
+                const text = element.textContent.trim();
+                const match = text.match(/(\d+\.?\d*)/);
+                if (!match) return null;
+
+                return parseFloat(match[1]) / 100;
+            } catch (error) {
+                console.error('[AlchemyProfit] Failed to extract success rate:', error);
+                return null;
+            }
+        }
+
+        /**
+         * Extract action speed buff from React props
+         * @returns {number} Action speed bonus as decimal
+         */
+        extractActionSpeed() {
+            try {
+                const container = document.querySelector('[class*="SkillActionDetail_alchemyComponent"]');
+                if (!container || !container._reactProps) {
+                    return 0;
+                }
+
+                // Crawl React Fiber to find props
+                let fiber = container._reactProps;
+                for (let key in fiber) {
+                    if (key.startsWith('__reactFiber') || key.startsWith('__reactInternalInstance')) {
+                        fiber = fiber[key];
+                        break;
+                    }
+                }
+
+                // Look for actionBuffs in fiber tree
+                let current = fiber;
+                let depth = 0;
+                while (current && depth < 20) {
+                    if (current.memoizedProps?.actionBuffs) {
+                        const buffs = current.memoizedProps.actionBuffs;
+                        let actionSpeed = 0;
+
+                        for (const buff of buffs) {
+                            if (buff.typeHrid === '/buff_types/action_speed') {
+                                actionSpeed += (buff.flatBoost || 0);
+                            }
+                        }
+
+                        return actionSpeed;
+                    }
+
+                    current = current.return;
+                    depth++;
+                }
+
+                return 0;
+            } catch (error) {
+                console.error('[AlchemyProfit] Failed to extract action speed:', error);
+                return 0;
+            }
+        }
+
+        /**
+         * Extract efficiency from React props and level bonus
+         * @returns {number} Total efficiency as decimal
+         */
+        extractEfficiency() {
+            try {
+                const container = document.querySelector('[class*="SkillActionDetail_alchemyComponent"]');
+                if (!container || !container._reactProps) {
+                    return 0;
+                }
+
+                // Get buffs from React Fiber
+                let fiber = container._reactProps;
+                for (let key in fiber) {
+                    if (key.startsWith('__reactFiber') || key.startsWith('__reactInternalInstance')) {
+                        fiber = fiber[key];
+                        break;
+                    }
+                }
+
+                let current = fiber;
+                let depth = 0;
+                let efficiencyBuff = 0;
+                let alchemyLevelBonus = 0;
+
+                while (current && depth < 20) {
+                    if (current.memoizedProps?.actionBuffs) {
+                        const buffs = current.memoizedProps.actionBuffs;
+
+                        for (const buff of buffs) {
+                            if (buff.typeHrid === '/buff_types/efficiency') {
+                                efficiencyBuff += (buff.flatBoost || 0);
+                            }
+                            if (buff.typeHrid === '/buff_types/alchemy_level') {
+                                alchemyLevelBonus += (buff.flatBoost || 0);
+                            }
+                        }
+                        break;
+                    }
+
+                    current = current.return;
+                    depth++;
+                }
+
+                // Calculate level-based efficiency
+                const baseLevel = this.extractAlchemyLevel();
+                const requiredLevel = this.extractRequiredLevel();
+                const finalLevel = baseLevel + alchemyLevelBonus;
+                const levelEfficiency = Math.max(0, (finalLevel - requiredLevel) / 100);
+
+                return efficiencyBuff + levelEfficiency;
+            } catch (error) {
+                console.error('[AlchemyProfit] Failed to extract efficiency:', error);
+                return 0;
+            }
+        }
+
+        /**
+         * Extract base alchemy level from React props
+         * @returns {number} Alchemy skill level
+         */
+        extractAlchemyLevel() {
+            try {
+                const container = document.querySelector('[class*="SkillActionDetail_alchemyComponent"]');
+                if (!container || !container._reactProps) {
+                    return 0;
+                }
+
+                let fiber = container._reactProps;
+                for (let key in fiber) {
+                    if (key.startsWith('__reactFiber') || key.startsWith('__reactInternalInstance')) {
+                        fiber = fiber[key];
+                        break;
+                    }
+                }
+
+                let current = fiber;
+                let depth = 0;
+
+                while (current && depth < 20) {
+                    if (current.memoizedProps?.characterSkillMap) {
+                        const skillMap = current.memoizedProps.characterSkillMap;
+                        const alchemySkill = skillMap.get('/skills/alchemy');
+                        return alchemySkill?.level || 0;
+                    }
+
+                    current = current.return;
+                    depth++;
+                }
+
+                return 0;
+            } catch (error) {
+                console.error('[AlchemyProfit] Failed to extract alchemy level:', error);
+                return 0;
+            }
+        }
+
+        /**
+         * Extract required level from notes
+         * @returns {number} Required alchemy level
+         */
+        extractRequiredLevel() {
+            try {
+                const notesEl = document.querySelector('[class*="SkillActionDetail_notes"]');
+                if (!notesEl) return 0;
+
+                const text = notesEl.textContent;
+                const match = text.match(/(\d+)/);
+                return match ? parseInt(match[1]) : 0;
+            } catch (error) {
+                console.error('[AlchemyProfit] Failed to extract required level:', error);
+                return 0;
+            }
+        }
+
+        /**
+         * Extract tea buff duration from React props
+         * @returns {number} Duration in seconds (default 300)
+         */
+        extractTeaDuration() {
+            try {
+                const container = document.querySelector('[class*="SkillActionDetail_alchemyComponent"]');
+                if (!container || !container._reactProps) {
+                    return 300;
+                }
+
+                let fiber = container._reactProps;
+                for (let key in fiber) {
+                    if (key.startsWith('__reactFiber') || key.startsWith('__reactInternalInstance')) {
+                        fiber = fiber[key];
+                        break;
+                    }
+                }
+
+                let current = fiber;
+                let depth = 0;
+
+                while (current && depth < 20) {
+                    if (current.memoizedProps?.actionBuffs) {
+                        const buffs = current.memoizedProps.actionBuffs;
+
+                        for (const buff of buffs) {
+                            if (buff.uniqueHrid && buff.uniqueHrid.endsWith('tea')) {
+                                const duration = buff.duration || 0;
+                                return duration / 1e9; // Convert nanoseconds to seconds
+                            }
+                        }
+                        break;
+                    }
+
+                    current = current.return;
+                    depth++;
+                }
+
+                return 300; // Default 5 minutes
+            } catch (error) {
+                console.error('[AlchemyProfit] Failed to extract tea duration:', error);
+                return 300;
+            }
+        }
+
+        /**
+         * Extract requirements (input materials) from the DOM
+         * @returns {Promise<Array>} Array of requirement objects
+         */
+        async extractRequirements() {
+            try {
+                const elements = document.querySelectorAll('[class*="SkillActionDetail_itemRequirements"] [class*="Item_itemContainer"]');
+                const requirements = [];
+
+                for (let i = 0; i < elements.length; i++) {
+                    const el = elements[i];
+                    const itemData = await this.extractItemData(el, true, i);
+                    if (itemData) {
+                        requirements.push(itemData);
+                    }
+                }
+
+                return requirements;
+            } catch (error) {
+                console.error('[AlchemyProfit] Failed to extract requirements:', error);
+                return [];
+            }
+        }
+
+        /**
+         * Extract drops (outputs) from the DOM
+         * @returns {Promise<Array>} Array of drop objects
+         */
+        async extractDrops() {
+            try {
+                const elements = document.querySelectorAll('[class*="SkillActionDetail_dropTable"] [class*="Item_itemContainer"]');
+                const drops = [];
+
+                for (let i = 0; i < elements.length; i++) {
+                    const el = elements[i];
+                    const itemData = await this.extractItemData(el, false, i);
+                    if (itemData) {
+                        drops.push(itemData);
+                    }
+                }
+
+                return drops;
+            } catch (error) {
+                console.error('[AlchemyProfit] Failed to extract drops:', error);
+                return [];
+            }
+        }
+
+        /**
+         * Extract catalyst from the DOM
+         * @returns {Promise<Object>} Catalyst object with prices
+         */
+        async extractCatalyst() {
+            try {
+                const element = document.querySelector('[class*="SkillActionDetail_catalystItemInputContainer"] [class*="ItemSelector_itemContainer"]') ||
+                               document.querySelector('[class*="SkillActionDetail_catalystItemInputContainer"] [class*="SkillActionDetail_itemContainer"]');
+
+                if (!element) {
+                    return { ask: 0, bid: 0 };
+                }
+
+                const itemData = await this.extractItemData(element, false, -1);
+                return itemData || { ask: 0, bid: 0 };
+            } catch (error) {
+                console.error('[AlchemyProfit] Failed to extract catalyst:', error);
+                return { ask: 0, bid: 0 };
+            }
+        }
+
+        /**
+         * Extract consumables (tea/drinks) from the DOM
+         * @returns {Promise<Array>} Array of consumable objects
+         */
+        async extractConsumables() {
+            try {
+                const elements = document.querySelectorAll('[class*="ActionTypeConsumableSlots_consumableSlots"] [class*="Item_itemContainer"]');
+                const consumables = [];
+
+                for (const el of elements) {
+                    const itemData = await this.extractItemData(el, false, -1);
+                    if (itemData && itemData.itemHrid !== '/items/coin') {
+                        consumables.push(itemData);
+                    }
+                }
+
+                return consumables;
+            } catch (error) {
+                console.error('[AlchemyProfit] Failed to extract consumables:', error);
+                return [];
+            }
+        }
+
+        /**
+         * Extract item data (HRID, prices, count, drop rate) from DOM element
+         * @param {HTMLElement} element - Item container element
+         * @param {boolean} isRequirement - True if this is a requirement (has count), false if drop (has drop rate)
+         * @param {number} index - Index in the list (for extracting count/rate text)
+         * @returns {Promise<Object|null>} Item data object or null
+         */
+        async extractItemData(element, isRequirement, index) {
+            try {
+                // Get item HRID from SVG use element
+                const use = element.querySelector('svg use');
+                if (!use) return null;
+
+                const href = use.getAttribute('href');
+                if (!href) return null;
+
+                const itemId = href.split('#')[1];
+                if (!itemId) return null;
+
+                const itemHrid = `/items/${itemId}`;
+
+                // Get enhancement level
+                let enhancementLevel = 0;
+                if (isRequirement) {
+                    const enhEl = element.querySelector('[class*="Item_enhancementLevel"]');
+                    if (enhEl) {
+                        const match = enhEl.textContent.match(/\+(\d+)/);
+                        enhancementLevel = match ? parseInt(match[1]) : 0;
+                    }
+                }
+
+                // Get market prices
+                let ask = 0, bid = 0;
+                if (itemHrid === '/items/coin') {
+                    ask = bid = 1;
+                } else {
+                    const priceData = marketAPI.getPrice(itemHrid, enhancementLevel);
+                    if (priceData) {
+                        ask = priceData.ask || 0;
+                        bid = priceData.bid || 0;
+                    }
+                }
+
+                const result = { itemHrid, ask, bid, enhancementLevel };
+
+                // Get count or drop rate
+                if (isRequirement && index >= 0) {
+                    // Extract count from requirement
+                    const countElements = document.querySelectorAll('[class*="SkillActionDetail_itemRequirements"] [class*="SkillActionDetail_inputCount"]');
+                    if (countElements[index]) {
+                        const text = countElements[index].textContent.trim();
+                        const cleaned = text.replace(/,/g, '');
+                        result.count = parseFloat(cleaned) || 1;
+                    }
+                } else if (!isRequirement && index >= 0) {
+                    // Extract count and drop rate from drop
+                    const dropElements = document.querySelectorAll('[class*="SkillActionDetail_drop"]');
+                    if (dropElements[index]) {
+                        const text = dropElements[index].textContent.trim();
+
+                        // Extract count (at start of text)
+                        const countMatch = text.match(/^([\d\s,.]+)/);
+                        if (countMatch) {
+                            const cleaned = countMatch[1].replace(/,/g, '').trim();
+                            result.count = parseFloat(cleaned) || 1;
+                        } else {
+                            result.count = 1;
+                        }
+
+                        // Extract drop rate percentage
+                        const rateMatch = text.match(/([\d,.]+)%/);
+                        if (rateMatch) {
+                            const cleaned = rateMatch[1].replace(/,/g, '');
+                            result.dropRate = parseFloat(cleaned) / 100 || 1;
+                        } else {
+                            result.dropRate = 1;
+                        }
+                    }
+                }
+
+                return result;
+            } catch (error) {
+                console.error('[AlchemyProfit] Failed to extract item data:', error);
+                return null;
+            }
+        }
+
+        /**
+         * Calculate profit based on extracted data and pricing mode
+         * @param {Object} data - Action data from extractActionData()
+         * @returns {Object|null} { profitPerHour, profitPerDay } or null
+         */
+        calculateProfit(data) {
+            try {
+                if (!data) return null;
+
+                // Get pricing mode
+                const pricingMode = config.getSetting('profitCalc_pricingMode') || 'hybrid';
+
+                // Determine buy/sell price types
+                let buyType, sellType;
+                if (pricingMode === 'conservative') {
+                    buyType = 'ask';  // Instant buy (Ask)
+                    sellType = 'bid'; // Instant sell (Bid)
+                } else if (pricingMode === 'hybrid') {
+                    buyType = 'ask';  // Instant buy (Ask)
+                    sellType = 'ask'; // Patient sell (Ask)
+                } else { // optimistic
+                    buyType = 'bid';  // Patient buy (Bid)
+                    sellType = 'ask'; // Patient sell (Ask)
+                }
+
+                // Calculate material cost (accounting for failures)
+                const materialCost = data.requirements.reduce((sum, req) => {
+                    const price = buyType === 'ask' ? req.ask : req.bid;
+                    return sum + (price * (req.count || 1));
+                }, 0);
+
+                // Calculate cost per attempt (materials consumed on failure, materials + catalyst on success)
+                const catalystPrice = buyType === 'ask' ? data.catalyst.ask : data.catalyst.bid;
+                const costPerAttempt = (materialCost * (1 - data.successRate)) +
+                                       ((materialCost + catalystPrice) * data.successRate);
+
+                // Calculate income per attempt
+                const incomePerAttempt = data.drops.reduce((sum, drop, index) => {
+                    const price = sellType === 'ask' ? drop.ask : drop.bid;
+
+                    // TODO: Rare drops - last drop in list
+                    // For now, calculate normally
+                    const isEssence = (index === data.drops.length - 2); // Second-to-last
+
+                    let income;
+                    if (isEssence) {
+                        // Essence doesn't multiply by success rate
+                        income = price * (drop.dropRate || 1) * (drop.count || 1);
+                    } else {
+                        // Normal drops multiply by success rate
+                        income = price * (drop.dropRate || 1) * (drop.count || 1) * data.successRate;
+                    }
+
+                    // Apply market tax (2% fee)
+                    if (drop.itemHrid !== '/items/coin') {
+                        income *= 0.98;
+                    }
+
+                    return sum + income;
+                }, 0);
+
+                // Calculate net profit per attempt
+                const netProfitPerAttempt = incomePerAttempt - costPerAttempt;
+
+                // Calculate profit per second (accounting for efficiency)
+                const profitPerSecond = (netProfitPerAttempt * (1 + data.efficiency)) / data.actionTime;
+
+                // Calculate tea cost per second
+                let teaCostPerSecond = 0;
+                if (data.consumables.length > 0 && data.teaDuration > 0) {
+                    const totalTeaCost = data.consumables.reduce((sum, consumable) => {
+                        const price = buyType === 'ask' ? consumable.ask : consumable.bid;
+                        return sum + price;
+                    }, 0);
+                    teaCostPerSecond = totalTeaCost / data.teaDuration;
+                }
+
+                // Final profit accounting for tea costs
+                const finalProfitPerSecond = profitPerSecond - teaCostPerSecond;
+                const profitPerHour = finalProfitPerSecond * 3600;
+                const profitPerDay = finalProfitPerSecond * 86400;
+
+                return { profitPerHour, profitPerDay };
+            } catch (error) {
+                console.error('[AlchemyProfit] Failed to calculate profit:', error);
+                return null;
+            }
+        }
+
+        /**
+         * Generate state fingerprint for change detection
+         * @returns {string} Fingerprint string
+         */
+        getStateFingerprint() {
+            try {
+                const successRate = document.querySelector('[class*="SkillActionDetail_successRate"] [class*="SkillActionDetail_value"]')?.textContent || '';
+                const consumables = Array.from(document.querySelectorAll('[class*="ActionTypeConsumableSlots_consumableSlots"] [class*="Item_itemContainer"]'))
+                    .map(el => el.querySelector('svg use')?.getAttribute('href') || 'empty')
+                    .join('|');
+                const infoText = document.querySelector('[class*="SkillActionDetail_info"]')?.textContent || '';
+
+                return `${successRate}:${consumables}:${infoText}`;
+            } catch (error) {
+                return '';
+            }
+        }
+    }
+
+    // Create and export singleton instance
+    const alchemyProfit = new AlchemyProfit();
+
+    /**
+     * Alchemy Profit Display Module
+     * Displays profit calculator in alchemy action detail panel
+     */
+
+
+    class AlchemyProfitDisplay {
+        constructor() {
+            this.isActive = false;
+            this.unregisterObserver = null;
+            this.displayElement = null;
+            this.isCollapsed = false;
+            this.updateTimeout = null;
+            this.lastFingerprint = null;
+            this.pollInterval = null;
+        }
+
+        /**
+         * Initialize the display system
+         */
+        initialize() {
+            if (!config.getSetting('alchemy_profitDisplay')) {
+                return;
+            }
+
+            // Load collapsed state
+            const savedState = localStorage.getItem('mwi_alchemy_profit_collapsed');
+            this.isCollapsed = savedState === 'true';
+
+            this.setupObserver();
+            this.isActive = true;
+        }
+
+        /**
+         * Setup DOM observer to watch for alchemy panel
+         */
+        setupObserver() {
+            // Observer for alchemy component appearing
+            this.unregisterObserver = domObserver.onClass(
+                'AlchemyProfitDisplay',
+                'SkillActionDetail_alchemyComponent',
+                (alchemyComponent) => {
+                    this.checkAndUpdateDisplay();
+                }
+            );
+
+            // Initial check for existing panel
+            this.checkAndUpdateDisplay();
+
+            // Polling interval to check DOM state (like enhancement-ui.js does)
+            // This catches state changes that the observer might miss
+            this.pollInterval = setInterval(() => {
+                this.checkAndUpdateDisplay();
+            }, 200); // Check 5× per second for responsive updates
+        }
+
+        /**
+         * Check DOM state and update display accordingly
+         * Pattern from enhancement-ui.js
+         */
+        checkAndUpdateDisplay() {
+            // Query current DOM state
+            const alchemyComponent = document.querySelector('[class*="SkillActionDetail_alchemyComponent"]');
+            const instructionsEl = document.querySelector('[class*="SkillActionDetail_instructions"]');
+            const infoContainer = document.querySelector('[class*="SkillActionDetail_info"]');
+
+            // Determine if display should be shown
+            // Show if: alchemy component exists AND instructions NOT present AND info container exists
+            const shouldShow = alchemyComponent && !instructionsEl && infoContainer;
+
+            if (shouldShow && (!this.displayElement || !this.displayElement.parentNode)) {
+                // Should show but doesn't exist - create it
+                this.handleAlchemyPanelUpdate(alchemyComponent);
+            } else if (!shouldShow && this.displayElement?.parentNode) {
+                // Shouldn't show but exists - remove it
+                this.removeDisplay();
+            } else if (shouldShow && this.displayElement?.parentNode) {
+                // Should show and exists - check if state changed
+                const fingerprint = alchemyProfit.getStateFingerprint();
+                if (fingerprint !== this.lastFingerprint) {
+                    this.handleAlchemyPanelUpdate(alchemyComponent);
+                }
+            }
+        }
+
+        /**
+         * Handle alchemy panel update
+         * @param {HTMLElement} alchemyComponent - Alchemy component container
+         */
+        handleAlchemyPanelUpdate(alchemyComponent) {
+            // Get info container
+            const infoContainer = alchemyComponent.querySelector('[class*="SkillActionDetail_info"]');
+            if (!infoContainer) {
+                this.removeDisplay();
+                return;
+            }
+
+            // Check if state has changed
+            const fingerprint = alchemyProfit.getStateFingerprint();
+            if (fingerprint === this.lastFingerprint && this.displayElement?.parentNode) {
+                return; // No change, display still valid
+            }
+            this.lastFingerprint = fingerprint;
+
+            // Debounce updates
+            if (this.updateTimeout) {
+                clearTimeout(this.updateTimeout);
+            }
+
+            this.updateTimeout = setTimeout(() => {
+                this.updateDisplay(infoContainer);
+            }, 100);
+        }
+
+        /**
+         * Update or create profit display
+         * @param {HTMLElement} infoContainer - Info container to append display to
+         */
+        async updateDisplay(infoContainer) {
+            try {
+                // Extract action data
+                const actionData = await alchemyProfit.extractActionData();
+                if (!actionData) {
+                    this.removeDisplay();
+                    return;
+                }
+
+                // Calculate profit
+                const profitData = alchemyProfit.calculateProfit(actionData);
+                if (!profitData) {
+                    this.removeDisplay();
+                    return;
+                }
+
+                // Create or update display
+                if (!this.displayElement || !this.displayElement.parentNode) {
+                    this.createDisplay(infoContainer, profitData);
+                } else {
+                    this.refreshDisplay(profitData);
+                }
+            } catch (error) {
+                console.error('[AlchemyProfitDisplay] Failed to update display:', error);
+                this.removeDisplay();
+            }
+        }
+
+        /**
+         * Create profit display element
+         * @param {HTMLElement} container - Container to append to
+         * @param {Object} profitData - { profitPerHour, profitPerDay }
+         */
+        createDisplay(container, profitData) {
+            // Remove any existing display
+            this.removeDisplay();
+
+            // Create main container
+            const displayDiv = document.createElement('div');
+            displayDiv.className = 'mwi-alchemy-profit';
+            displayDiv.style.cssText = `
+            margin-top: 12px;
+            padding: 10px 12px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 6px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        `;
+
+            // Create header (collapsible)
+            const header = document.createElement('div');
+            header.style.cssText = `
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            cursor: pointer;
+            user-select: none;
+            margin-bottom: ${this.isCollapsed ? '0' : '8px'};
+        `;
+
+            const headerTitle = document.createElement('div');
+            headerTitle.style.cssText = `
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: ${config.getSetting('color_accent') || '#22c55e'};
+        `;
+            headerTitle.textContent = 'Profit Calculator';
+
+            const toggleIcon = document.createElement('span');
+            toggleIcon.className = 'mwi-alchemy-profit-toggle';
+            toggleIcon.style.cssText = `
+            font-size: 0.8rem;
+            color: #888;
+            transition: transform 0.2s;
+            transform: rotate(${this.isCollapsed ? '0deg' : '180deg'});
+        `;
+            toggleIcon.textContent = '▼';
+
+            header.appendChild(headerTitle);
+            header.appendChild(toggleIcon);
+
+            // Create content container
+            const content = document.createElement('div');
+            content.className = 'mwi-alchemy-profit-content';
+            content.style.cssText = `
+            display: ${this.isCollapsed ? 'none' : 'block'};
+            font-size: 0.85rem;
+        `;
+
+            // Get pricing mode name
+            const pricingMode = config.getSetting('profitCalc_pricingMode') || 'hybrid';
+            const modeLabel = {
+                'conservative': 'Conservative',
+                'hybrid': 'Hybrid',
+                'optimistic': 'Optimistic'
+            }[pricingMode];
+
+            // Add pricing mode label
+            const modeDiv = document.createElement('div');
+            modeDiv.style.cssText = `
+            margin-bottom: 6px;
+            color: #888;
+            font-size: 0.8rem;
+        `;
+            modeDiv.textContent = `Mode: ${modeLabel}`;
+            content.appendChild(modeDiv);
+
+            // Add profit rows
+            const profitPerHour = profitData.profitPerHour;
+            const profitPerDay = profitData.profitPerDay;
+
+            const hourColor = profitPerHour >= 0 ? (config.getSetting('color_profit') || '#047857') : (config.getSetting('color_loss') || '#f87171');
+            const dayColor = profitPerDay >= 0 ? (config.getSetting('color_profit') || '#047857') : (config.getSetting('color_loss') || '#f87171');
+
+            const hourRow = this.createProfitRow('Profit/Hour:', profitPerHour, hourColor);
+            const dayRow = this.createProfitRow('Profit/Day:', profitPerDay, dayColor);
+
+            content.appendChild(hourRow);
+            content.appendChild(dayRow);
+
+            // Add click handler for collapse/expand
+            header.addEventListener('click', () => {
+                this.isCollapsed = !this.isCollapsed;
+                content.style.display = this.isCollapsed ? 'none' : 'block';
+                toggleIcon.style.transform = `rotate(${this.isCollapsed ? '0deg' : '180deg'})`;
+                header.style.marginBottom = this.isCollapsed ? '0' : '8px';
+                localStorage.setItem('mwi_alchemy_profit_collapsed', this.isCollapsed.toString());
+            });
+
+            // Assemble
+            displayDiv.appendChild(header);
+            displayDiv.appendChild(content);
+
+            // Append to container
+            container.appendChild(displayDiv);
+            this.displayElement = displayDiv;
+        }
+
+        /**
+         * Create a profit row element
+         * @param {string} label - Row label
+         * @param {number} value - Profit value
+         * @param {string} color - Text color
+         * @returns {HTMLElement} Row element
+         */
+        createProfitRow(label, value, color) {
+            const row = document.createElement('div');
+            row.style.cssText = `
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 4px 0;
+        `;
+
+            const labelSpan = document.createElement('span');
+            labelSpan.style.color = '#aaa';
+            labelSpan.textContent = label;
+
+            const valueSpan = document.createElement('span');
+            valueSpan.className = 'mwi-profit-value';
+            valueSpan.style.cssText = `
+            font-weight: 600;
+            color: ${color};
+        `;
+            valueSpan.textContent = formatKMB(value);
+
+            row.appendChild(labelSpan);
+            row.appendChild(valueSpan);
+
+            return row;
+        }
+
+        /**
+         * Refresh existing display with new profit data
+         * @param {Object} profitData - { profitPerHour, profitPerDay }
+         */
+        refreshDisplay(profitData) {
+            if (!this.displayElement) return;
+
+            const content = this.displayElement.querySelector('.mwi-alchemy-profit-content');
+            if (!content) return;
+
+            const profitValues = content.querySelectorAll('.mwi-profit-value');
+            if (profitValues.length >= 2) {
+                const profitPerHour = profitData.profitPerHour;
+                const profitPerDay = profitData.profitPerDay;
+
+                const hourColor = profitPerHour >= 0 ? (config.getSetting('color_profit') || '#047857') : (config.getSetting('color_loss') || '#f87171');
+                const dayColor = profitPerDay >= 0 ? (config.getSetting('color_profit') || '#047857') : (config.getSetting('color_loss') || '#f87171');
+
+                profitValues[0].textContent = formatKMB(profitPerHour);
+                profitValues[0].style.color = hourColor;
+
+                profitValues[1].textContent = formatKMB(profitPerDay);
+                profitValues[1].style.color = dayColor;
+            }
+        }
+
+        /**
+         * Remove profit display
+         */
+        removeDisplay() {
+            if (this.displayElement && this.displayElement.parentNode) {
+                this.displayElement.remove();
+            }
+            this.displayElement = null;
+            this.lastFingerprint = null;
+        }
+
+        /**
+         * Disable the display
+         */
+        disable() {
+            if (this.updateTimeout) {
+                clearTimeout(this.updateTimeout);
+                this.updateTimeout = null;
+            }
+
+            if (this.pollInterval) {
+                clearInterval(this.pollInterval);
+                this.pollInterval = null;
+            }
+
+            if (this.unregisterObserver) {
+                this.unregisterObserver();
+                this.unregisterObserver = null;
+            }
+
+            this.removeDisplay();
+            this.isActive = false;
+        }
+    }
+
+    // Create and export singleton instance
+    const alchemyProfitDisplay = new AlchemyProfitDisplay();
+
+    /**
      * Feature Registry
      * Centralized feature initialization system
      */
@@ -35620,6 +36598,24 @@
                 // Look for our injected required materials displays
                 const materialsElements = document.querySelectorAll('.mwi-required-materials');
                 return materialsElements.length > 0 || null; // null if panels open but no input entered yet
+            }
+        },
+        {
+            key: 'alchemy_profitDisplay',
+            name: 'Alchemy Profit Calculator',
+            category: 'Actions',
+            initialize: () => alchemyProfitDisplay.initialize(),
+            async: false,
+            healthCheck: () => {
+                // Check if alchemy panel is open
+                const alchemyComponent = document.querySelector('[class*="SkillActionDetail_alchemyComponent"]');
+                if (!alchemyComponent) {
+                    return null; // Not on alchemy screen, can't verify
+                }
+
+                // Look for our injected profit display
+                const profitDisplay = document.querySelector('.mwi-alchemy-profit');
+                return profitDisplay !== null;
             }
         },
 
@@ -35900,6 +36896,31 @@
      * Re-initializes all features when character switches
      */
     function setupCharacterSwitchHandler() {
+        // Handle character_switching event (cleanup phase)
+        dataManager.on('character_switching', async (data) => {
+            console.log(`[FeatureRegistry] Character switching: ${data.oldName} → ${data.newName}`);
+
+            // Clear config cache to prevent stale settings
+            if (config && typeof config.clearSettingsCache === 'function') {
+                config.clearSettingsCache();
+            }
+
+            // Disable all active features (cleanup DOM elements, event listeners, etc.)
+            // Note: Individual features should implement their own disable() methods
+            for (const feature of featureRegistry) {
+                try {
+                    // Check if feature has a disable method
+                    const featureInstance = getFeatureInstance(feature.key);
+                    if (featureInstance && typeof featureInstance.disable === 'function') {
+                        featureInstance.disable();
+                    }
+                } catch (error) {
+                    console.error(`[FeatureRegistry] Failed to disable ${feature.name}:`, error);
+                }
+            }
+        });
+
+        // Handle character_switched event (re-initialization phase)
         dataManager.on('character_switched', async (data) => {
             // Force cleanup of dungeon tracker UI (safety measure)
             if (dungeonTrackerUI && typeof dungeonTrackerUI.cleanup === 'function') {
@@ -35926,6 +36947,55 @@
                 setTimeout(() => reinit(), 300); // Longer delay for game to stabilize
             }
         });
+    }
+
+    /**
+     * Get feature instance from imported module
+     * @param {string} key - Feature key
+     * @returns {Object|null} Feature instance or null
+     * @private
+     */
+    function getFeatureInstance(key) {
+        // Map feature keys to their imported instances
+        const instanceMap = {
+            'tooltipPrices': tooltipPrices,
+            'expectedValueCalculator': expectedValueCalculator,
+            'tooltipConsumables': tooltipConsumables,
+            'marketFilter': marketFilter,
+            'fillMarketOrderPrice': autoFillPrice,
+            'market_visibleItemCount': itemCountDisplay,
+            'market_showListingPrices': listingPriceDisplay,
+            'market_showEstimatedListingAge': estimatedListingAge,
+            'market_tradeHistory': tradeHistory,
+            'actionTimeDisplay': actionTimeDisplay,
+            'quickInputButtons': quickInputButtons,
+            'actionPanel_outputTotals': outputTotals,
+            'actionPanel_maxProduceable': maxProduceable,
+            'actionPanel_gatheringStats': gatheringStats,
+            'requiredMaterials': requiredMaterials,
+            'alchemy_profitDisplay': alchemyProfitDisplay,
+            'abilityBookCalculator': abilityBookCalculator,
+            'zoneIndices': zoneIndices,
+            'combatScore': combatScore,
+            'dungeonTracker': dungeonTracker,
+            'combatSummary': combatSummary,
+            'equipmentLevelDisplay': equipmentLevelDisplay,
+            'alchemyItemDimming': alchemyItemDimming,
+            'skillExperiencePercentage': skillExperiencePercentage,
+            'taskProfitDisplay': taskProfitDisplay,
+            'taskRerollTracker': taskRerollTracker,
+            'taskSorter': taskSorter,
+            'taskIcons': taskIcons,
+            'skillRemainingXP': remainingXP,
+            'houseCostDisplay': housePanelObserver,
+            'networth': networthFeature,
+            'inventorySort': inventorySort,
+            'inventoryBadgePrices': inventoryBadgePrices,
+            'enhancementTracker': enhancementTracker,
+            'notifiEmptyAction': emptyQueueNotification
+        };
+
+        return instanceMap[key] || null;
     }
 
     /**
@@ -36299,6 +37369,9 @@
             }
         })();
 
+        // Setup character switch handler once (NOT inside character_initialized listener)
+        featureRegistry$1.setupCharacterSwitchHandler();
+
         dataManager.on('character_initialized', (data) => {
             // Initialize all features using the feature registry
             setTimeout(async () => {
@@ -36308,9 +37381,6 @@
                     config.applyColorSettings();
 
                     await featureRegistry$1.initializeFeatures();
-
-                    // Setup character switch handler (re-initializes features on character switch)
-                    featureRegistry$1.setupCharacterSwitchHandler();
 
                     // Health check after initialization
                     setTimeout(async () => {
@@ -36344,7 +37414,7 @@
         const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
         targetWindow.Toolasha = {
-            version: '0.4.946',
+            version: '0.4.947',
 
             // Feature toggle API (for users to manage settings via console)
             features: {

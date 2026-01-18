@@ -73,6 +73,9 @@ if (isCombatSimulatorPage()) {
         }
     })();
 
+    // Setup character switch handler once (NOT inside character_initialized listener)
+    featureRegistry.setupCharacterSwitchHandler();
+
     dataManager.on('character_initialized', (data) => {
         // Initialize all features using the feature registry
         setTimeout(async () => {
@@ -82,9 +85,6 @@ if (isCombatSimulatorPage()) {
                 config.applyColorSettings();
 
                 await featureRegistry.initializeFeatures();
-
-                // Setup character switch handler (re-initializes features on character switch)
-                featureRegistry.setupCharacterSwitchHandler();
 
                 // Health check after initialization
                 setTimeout(async () => {
@@ -118,7 +118,7 @@ if (isCombatSimulatorPage()) {
     const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
     targetWindow.Toolasha = {
-        version: '0.4.946',
+        version: '0.4.948',
 
         // Feature toggle API (for users to manage settings via console)
         features: {
