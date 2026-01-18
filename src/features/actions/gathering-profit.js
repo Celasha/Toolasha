@@ -13,7 +13,7 @@
 import marketAPI from '../../api/marketplace.js';
 import dataManager from '../../core/data-manager.js';
 import { parseEquipmentSpeedBonuses, parseEquipmentEfficiencyBonuses } from '../../utils/equipment-parser.js';
-import { parseTeaEfficiency, parseGourmetBonus, parseProcessingBonus, parseGatheringBonus, getDrinkConcentration } from '../../utils/tea-parser.js';
+import { parseTeaEfficiency, parseGourmetBonus, parseProcessingBonus, parseGatheringBonus, getDrinkConcentration, parseTeaSkillLevelBonus } from '../../utils/tea-parser.js';
 import { stackAdditive } from '../../utils/efficiency.js';
 import { formatWithSeparator, formatPercentage } from '../../utils/formatters.js';
 import { calculateBonusRevenue } from '../../utils/bonus-revenue-calculator.js';
@@ -169,7 +169,18 @@ export async function calculateGatheringProfit(actionHrid) {
             break;
         }
     }
-    const levelEfficiency = Math.max(0, currentLevel - requiredLevel);
+
+    // Calculate tea skill level bonus (e.g., +5 Foraging from Ultra Foraging Tea)
+    const teaSkillLevelBonus = parseTeaSkillLevelBonus(
+        actionDetail.type,
+        drinkSlots,
+        gameData.itemDetailMap,
+        drinkConcentration
+    );
+
+    // Apply tea skill level bonus to effective player level
+    const effectiveLevel = currentLevel + teaSkillLevelBonus;
+    const levelEfficiency = Math.max(0, effectiveLevel - requiredLevel);
 
     // Calculate house efficiency bonus
     let houseEfficiency = 0;

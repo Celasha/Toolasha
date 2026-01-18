@@ -11,7 +11,7 @@ import config from '../../core/config.js';
 import marketAPI from '../../api/marketplace.js';
 import dataManager from '../../core/data-manager.js';
 import { parseEquipmentSpeedBonuses, parseEquipmentEfficiencyBonuses } from '../../utils/equipment-parser.js';
-import { parseTeaEfficiency, getDrinkConcentration } from '../../utils/tea-parser.js';
+import { parseTeaEfficiency, getDrinkConcentration, parseTeaSkillLevelBonus } from '../../utils/tea-parser.js';
 import { stackAdditive } from '../../utils/efficiency.js';
 
 class AlchemyProfit {
@@ -217,9 +217,6 @@ class AlchemyProfit {
                 }
             }
 
-            // Calculate level efficiency bonus (+1% per level above requirement)
-            const levelEfficiency = Math.max(0, currentLevel - requiredLevel);
-
             // Calculate house efficiency bonus (room level × 1.5%)
             let houseEfficiency = 0;
             for (const room of houseRooms) {
@@ -242,6 +239,19 @@ class AlchemyProfit {
                 gameData.itemDetailMap,
                 drinkConcentration
             );
+
+            // Parse tea skill level bonus (e.g., +8 Cheesesmithing from Ultra Cheesesmithing Tea)
+            const teaLevelBonus = parseTeaSkillLevelBonus(
+                actionTypeHrid,
+                drinkSlots,
+                gameData.itemDetailMap,
+                drinkConcentration
+            );
+
+            // Calculate level efficiency bonus (+1% per level above requirement)
+            // Apply tea level bonus to effective level
+            const effectiveLevel = currentLevel + teaLevelBonus;
+            const levelEfficiency = Math.max(0, effectiveLevel - requiredLevel);
 
             // Calculate equipment efficiency bonus using utility
             const equipmentEfficiency = parseEquipmentEfficiencyBonuses(

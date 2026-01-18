@@ -11,7 +11,8 @@ import {
     parseTeaEfficiencyBreakdown,
     getDrinkConcentration,
     parseActionLevelBonus,
-    parseActionLevelBonusBreakdown
+    parseActionLevelBonusBreakdown,
+    parseTeaSkillLevelBonus
 } from './tea-parser.js';
 import { calculateHouseEfficiency } from './house-efficiency.js';
 import { stackAdditive } from './efficiency.js';
@@ -85,8 +86,18 @@ export function calculateActionStats(actionDetails, options = {}) {
         // - action-time-display historically didn't floor (preserving for compatibility)
         const effectiveRequirement = baseRequirement + (floorActionLevel ? Math.floor(actionLevelBonus) : actionLevelBonus);
 
+        // Calculate tea skill level bonus (e.g., +8 Cheesesmithing from Ultra Cheesesmithing Tea)
+        const teaSkillLevelBonus = parseTeaSkillLevelBonus(
+            actionDetails.type,
+            activeDrinks,
+            itemDetailMap,
+            drinkConcentration
+        );
+
         // Calculate efficiency components
-        const levelEfficiency = Math.max(0, skillLevel - effectiveRequirement);
+        // Apply tea skill level bonus to effective player level
+        const effectiveLevel = skillLevel + teaSkillLevelBonus;
+        const levelEfficiency = Math.max(0, effectiveLevel - effectiveRequirement);
         const houseEfficiency = calculateHouseEfficiency(actionDetails.type);
         const equipmentEfficiency = parseEquipmentEfficiencyBonuses(
             equipment,

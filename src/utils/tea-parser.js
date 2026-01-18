@@ -85,11 +85,6 @@ export function parseTeaEfficiency(actionTypeHrid, activeDrinks, itemDetailMap, 
 
     let totalEfficiency = 0;
 
-    // Extract skill name from action type for skill-specific tea detection
-    // e.g., "/action_types/brewing" -> "brewing"
-    const skillName = actionTypeHrid.replace('/action_types/', '');
-    const skillLevelBuffType = `/buff_types/${skillName}_level`;
-
     // Process each active tea/drink
     for (const drink of activeDrinks) {
         if (!drink || !drink.itemHrid) {
@@ -109,13 +104,8 @@ export function parseTeaEfficiency(actionTypeHrid, activeDrinks, itemDetailMap, 
                 const scaledEfficiency = baseEfficiency * (1 + drinkConcentration);
                 totalEfficiency += scaledEfficiency;
             }
-            // Skill-specific level buff (e.g., Brewing Tea: +3 Brewing levels)
-            // Level bonuses translate to efficiency: +1 level = +1% efficiency
-            else if (buff.typeHrid === skillLevelBuffType) {
-                const levelBonus = buff.flatBoost;
-                const scaledBonus = levelBonus * (1 + drinkConcentration);
-                totalEfficiency += scaledBonus;
-            }
+            // Note: Skill-specific level buffs are NOT counted here
+            // They affect Level Bonus calculation, not Tea Bonus
         }
     }
 
@@ -149,11 +139,6 @@ export function parseTeaEfficiencyBreakdown(actionTypeHrid, activeDrinks, itemDe
 
     const teaBreakdown = [];
 
-    // Extract skill name from action type for skill-specific tea detection
-    // e.g., "/action_types/brewing" -> "brewing"
-    const skillName = actionTypeHrid.replace('/action_types/', '');
-    const skillLevelBuffType = `/buff_types/${skillName}_level`;
-
     // Process each active tea/drink
     for (const drink of activeDrinks) {
         if (!drink || !drink.itemHrid) {
@@ -177,14 +162,8 @@ export function parseTeaEfficiencyBreakdown(actionTypeHrid, activeDrinks, itemDe
                 baseEfficiency += baseValue;
                 totalEfficiency += scaledValue;
             }
-            // Skill-specific level buff (e.g., Brewing Tea: +3 Brewing levels)
-            // Level bonuses translate to efficiency: +1 level = +1% efficiency
-            else if (buff.typeHrid === skillLevelBuffType) {
-                const baseValue = buff.flatBoost;
-                const scaledValue = baseValue * (1 + drinkConcentration);
-                baseEfficiency += baseValue;
-                totalEfficiency += scaledValue;
-            }
+            // Note: Skill-specific level buffs are NOT counted here
+            // They affect Level Bonus calculation, not Tea Bonus
         }
 
         // Only add to breakdown if this tea contributes efficiency
@@ -411,6 +390,60 @@ export function parseGatheringBonus(activeDrinks, itemDetailMap, drinkConcentrat
     });
 }
 
+/**
+ * Parse skill level bonus from active tea buffs for a specific action type
+ * @param {string} actionTypeHrid - Action type HRID (e.g., "/action_types/cheesesmithing")
+ * @param {Array} activeDrinks - Array of active drink items from actionTypeDrinkSlotsMap
+ * @param {Object} itemDetailMap - Item details from init_client_data
+ * @param {number} drinkConcentration - Drink Concentration stat (as decimal, e.g., 0.129 for 12.9%)
+ * @returns {number} Total skill level bonus (e.g., 9.032 for +8 base × 1.129 DC)
+ *
+ * @example
+ * // With Ultra Cheesesmithing Tea (+8 Cheesesmithing base) and 12.9% DC:
+ * parseTeaSkillLevelBonus("/action_types/cheesesmithing", activeDrinks, items, 0.129)
+ * // Returns: 9.032 (8 × 1.129 = 9.032 levels)
+ */
+export function parseTeaSkillLevelBonus(actionTypeHrid, activeDrinks, itemDetailMap, drinkConcentration = 0) {
+    if (!activeDrinks || activeDrinks.length === 0) {
+        return 0; // No active teas
+    }
+
+    if (!actionTypeHrid || !itemDetailMap) {
+        return 0; // Missing required data
+    }
+
+    // Extract skill name from action type HRID
+    // "/action_types/cheesesmithing" -> "cheesesmithing"
+    const skillName = actionTypeHrid.split('/').pop();
+    const skillLevelBuffType = `/buff_types/${skillName}_level`;
+
+    let totalLevelBonus = 0;
+
+    // Process each active tea/drink
+    for (const drink of activeDrinks) {
+        if (!drink || !drink.itemHrid) {
+            continue; // Empty slot
+        }
+
+        const itemDetails = itemDetailMap[drink.itemHrid];
+        if (!itemDetails || !itemDetails.consumableDetail || !itemDetails.consumableDetail.buffs) {
+            continue; // Not a consumable or has no buffs
+        }
+
+        // Check each buff on this tea
+        for (const buff of itemDetails.consumableDetail.buffs) {
+            // Skill-specific level buff (e.g., "/buff_types/cheesesmithing_level")
+            if (buff.typeHrid === skillLevelBuffType) {
+                const baseValue = buff.flatBoost;
+                const scaledValue = baseValue * (1 + drinkConcentration);
+                totalLevelBonus += scaledValue;
+            }
+        }
+    }
+
+    return totalLevelBonus;
+}
+
 export default {
     parseTeaEfficiency,
     getDrinkConcentration,
@@ -418,5 +451,6 @@ export default {
     parseGourmetBonus,
     parseProcessingBonus,
     parseActionLevelBonus,
-    parseGatheringBonus
+    parseGatheringBonus,
+    parseTeaSkillLevelBonus
 };

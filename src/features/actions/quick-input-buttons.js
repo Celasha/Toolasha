@@ -17,7 +17,7 @@ import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
 import { calculateActionStats } from '../../utils/action-calculator.js';
 import { parseEquipmentSpeedBonuses, parseEquipmentEfficiencyBonuses, debugEquipmentSpeedBonuses } from '../../utils/equipment-parser.js';
-import { parseArtisanBonus, getDrinkConcentration, parseActionLevelBonus, parseTeaEfficiencyBreakdown } from '../../utils/tea-parser.js';
+import { parseArtisanBonus, getDrinkConcentration, parseActionLevelBonus, parseTeaEfficiencyBreakdown, parseTeaSkillLevelBonus } from '../../utils/tea-parser.js';
 import { formatPercentage } from '../../utils/formatters.js';
 import { calculateHouseEfficiency } from '../../utils/house-efficiency.js';
 import { stackAdditive } from '../../utils/efficiency.js';
@@ -799,7 +799,12 @@ class QuickInputButtons {
         const actionLevelBonus = parseActionLevelBonus(activeDrinks, itemDetailMap, drinkConcentration);
         const effectiveRequirement = baseRequirement + Math.floor(actionLevelBonus);
 
-        const levelEfficiency = Math.max(0, skillLevel - effectiveRequirement);
+        // Calculate tea skill level bonus (e.g., +8 Cheesesmithing from Ultra Cheesesmithing Tea)
+        const teaSkillLevelBonus = parseTeaSkillLevelBonus(actionDetails.type, activeDrinks, itemDetailMap, drinkConcentration);
+
+        // Apply tea skill level bonus to effective player level
+        const effectiveLevel = skillLevel + teaSkillLevelBonus;
+        const levelEfficiency = Math.max(0, effectiveLevel - effectiveRequirement);
         const houseEfficiency = calculateHouseEfficiency(actionDetails.type);
         const equipmentEfficiency = parseEquipmentEfficiencyBonuses(equipment, actionDetails.type, itemDetailMap);
 

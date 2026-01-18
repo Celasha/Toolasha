@@ -9,7 +9,7 @@ import dataManager from '../../core/data-manager.js';
 import * as efficiency from '../../utils/efficiency.js';
 import { parseEquipmentSpeedBonuses, parseEquipmentEfficiencyBonuses } from '../../utils/equipment-parser.js';
 import { calculateHouseEfficiency } from '../../utils/house-efficiency.js';
-import { parseTeaEfficiency, getDrinkConcentration, parseArtisanBonus, parseGourmetBonus, parseProcessingBonus, parseActionLevelBonus } from '../../utils/tea-parser.js';
+import { parseTeaEfficiency, getDrinkConcentration, parseArtisanBonus, parseGourmetBonus, parseProcessingBonus, parseActionLevelBonus, parseTeaSkillLevelBonus } from '../../utils/tea-parser.js';
 import expectedValueCalculator from './expected-value-calculator.js';
 import { calculateBonusRevenue } from '../../utils/bonus-revenue-calculator.js';
 import { getItemPrice } from '../../utils/market-data.js';
@@ -130,7 +130,18 @@ class ProfitCalculator {
         // Action Level bonus increases the effective requirement
         const baseRequirement = actionDetails.levelRequirement?.level || 1;
         const effectiveRequirement = baseRequirement + actionLevelBonus;
-        const levelEfficiency = Math.max(0, skillLevel - effectiveRequirement);
+
+        // Calculate tea skill level bonus (e.g., +8 Cheesesmithing from Ultra Cheesesmithing Tea)
+        const teaSkillLevelBonus = parseTeaSkillLevelBonus(
+            actionDetails.type,
+            activeDrinks,
+            itemDetailMap,
+            drinkConcentration
+        );
+
+        // Apply tea skill level bonus to effective player level
+        const effectiveLevel = skillLevel + teaSkillLevelBonus;
+        const levelEfficiency = Math.max(0, effectiveLevel - effectiveRequirement);
 
         const houseEfficiency = calculateHouseEfficiency(actionDetails.type);
 
