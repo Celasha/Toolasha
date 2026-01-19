@@ -259,24 +259,27 @@ class ActionTimeDisplay {
             itemNameFromDom = null;
         }
 
-        // Match action from cache
-        action = cachedActions.find(a => {
-            const actionDetails = dataManager.getActionDetails(a.actionHrid);
-            if (!actionDetails || actionDetails.name !== actionNameFromDom) {
-                return false;
-            }
+        // ONLY match against the first action (current action), not queued actions
+        // This prevents showing stats from queued actions when party combat interrupts
+        if (cachedActions.length > 0) {
+            const currentAction = cachedActions[0];
+            const actionDetails = dataManager.getActionDetails(currentAction.actionHrid);
 
-            // If there's an item name (like "Foraging Essence" from "Coinify: Foraging Essence"),
-            // we need to match on primaryItemHash
-            if (itemNameFromDom && a.primaryItemHash) {
-                // Convert display name to item HRID format (lowercase with underscores)
-                const itemHrid = '/items/' + itemNameFromDom.toLowerCase().replace(/\s+/g, '_');
-                return a.primaryItemHash.includes(itemHrid);
+            if (actionDetails && actionDetails.name === actionNameFromDom) {
+                // If there's an item name (like "Foraging Essence" from "Coinify: Foraging Essence"),
+                // we need to match on primaryItemHash
+                if (itemNameFromDom && currentAction.primaryItemHash) {
+                    // Convert display name to item HRID format (lowercase with underscores)
+                    const itemHrid = '/items/' + itemNameFromDom.toLowerCase().replace(/\s+/g, '_');
+                    if (currentAction.primaryItemHash.includes(itemHrid)) {
+                        action = currentAction;
+                    }
+                } else if (!itemNameFromDom) {
+                    // No item name specified, match on action name alone
+                    action = currentAction;
+                }
             }
-
-            // No item name specified, just match on action name
-            return true;
-        });
+        }
 
         if (!action) {
             this.displayElement.innerHTML = '';
