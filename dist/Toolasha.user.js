@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.4.951
+// @version      0.4.952
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -8296,17 +8296,7 @@
 
         // Add specific protection items if they exist
         if (itemDetails.protectionItemHrids && itemDetails.protectionItemHrids.length > 0) {
-            // protectionItemHrids is an array of arrays (one per level)
-            // Flatten and deduplicate
-            const allProtectionHrids = new Set();
-            for (const levelProtections of itemDetails.protectionItemHrids) {
-                if (Array.isArray(levelProtections)) {
-                    for (const hrid of levelProtections) {
-                        allProtectionHrids.add(hrid);
-                    }
-                }
-            }
-            protectionOptions.push(...Array.from(allProtectionHrids));
+            protectionOptions.push(...itemDetails.protectionItemHrids);
         }
 
         // Find cheapest option
@@ -38472,7 +38462,7 @@
         const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
         targetWindow.Toolasha = {
-            version: '0.4.951',
+            version: '0.4.952',
 
             // Feature toggle API (for users to manage settings via console)
             features: {

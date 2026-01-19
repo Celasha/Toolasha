@@ -461,17 +461,7 @@ function getCheapestProtectionPrice(itemHrid) {
 
     // Add specific protection items if they exist
     if (itemDetails.protectionItemHrids && itemDetails.protectionItemHrids.length > 0) {
-        // protectionItemHrids is an array of arrays (one per level)
-        // Flatten and deduplicate
-        const allProtectionHrids = new Set();
-        for (const levelProtections of itemDetails.protectionItemHrids) {
-            if (Array.isArray(levelProtections)) {
-                for (const hrid of levelProtections) {
-                    allProtectionHrids.add(hrid);
-                }
-            }
-        }
-        protectionOptions.push(...Array.from(allProtectionHrids));
+        protectionOptions.push(...itemDetails.protectionItemHrids);
     }
 
     // Find cheapest option
