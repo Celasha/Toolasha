@@ -12,7 +12,9 @@
 
 import domObserver from '../../core/dom-observer.js';
 import config from '../../core/config.js';
+import dataManager from '../../core/data-manager.js';
 import { findActionInput, attachInputListeners, performInitialUpdate } from '../../utils/action-panel-helper.js';
+import { calculateExperienceMultiplier } from '../../utils/experience-parser.js';
 
 class OutputTotals {
     constructor() {
@@ -84,7 +86,7 @@ class OutputTotals {
     updateOutputTotals(detailPanel, inputBox) {
         const amount = parseFloat(inputBox.value);
 
-        // Remove existing totals (cloned outputs)
+        // Remove existing totals (cloned outputs and XP)
         detailPanel.querySelectorAll('.mwi-output-total').forEach(el => el.remove());
 
         // No amount entered - nothing to calculate
@@ -130,6 +132,9 @@ class OutputTotals {
                 }
             }
         });
+
+        // Process XP element
+        this.processXpElement(detailPanel, amount);
     }
 
     /**
@@ -233,6 +238,90 @@ class OutputTotals {
         }
 
         return clone;
+    }
+
+    /**
+     * Extract action HRID from detail panel
+     * @param {HTMLElement} detailPanel - The action detail panel element
+     * @returns {string|null} Action HRID or null
+     */
+    getActionHridFromPanel(detailPanel) {
+        // Find action name element
+        const nameElement = detailPanel.querySelector('[class*="SkillActionDetail_name"]');
+
+        if (!nameElement) {
+            return null;
+        }
+
+        const actionName = nameElement.textContent.trim();
+
+        // Look up action by name in game data
+        const initData = dataManager.getInitClientData();
+        if (!initData) {
+            return null;
+        }
+
+        for (const [hrid, action] of Object.entries(initData.actionDetailMap)) {
+            if (action.name === actionName) {
+                return hrid;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Process XP element and display total XP
+     * @param {HTMLElement} detailPanel - The action detail panel
+     * @param {number} amount - Number of actions
+     */
+    processXpElement(detailPanel, amount) {
+        // Find XP element
+        const xpElement = detailPanel.querySelector('[class*="SkillActionDetail_expGain"]');
+        if (!xpElement) {
+            return;
+        }
+
+        // Get action HRID
+        const actionHrid = this.getActionHridFromPanel(detailPanel);
+        if (!actionHrid) {
+            return;
+        }
+
+        // Get action details
+        const actionDetails = dataManager.getActionDetails(actionHrid);
+        if (!actionDetails || !actionDetails.experienceGain) {
+            return;
+        }
+
+        // Calculate experience multiplier (Wisdom + Charm Experience)
+        const skillHrid = actionDetails.experienceGain.skillHrid;
+        const xpData = calculateExperienceMultiplier(skillHrid, actionDetails.type);
+
+        // Calculate total XP
+        const baseXP = actionDetails.experienceGain.value;
+        const modifiedXP = baseXP * xpData.totalMultiplier;
+        const totalXP = modifiedXP * amount;
+
+        // Create clone for total display
+        const clone = xpElement.cloneNode(true);
+        clone.classList.add('mwi-output-total');
+
+        // Apply blue color for XP
+        clone.style.cssText = `
+            color: ${config.COLOR_INFO};
+            font-weight: 600;
+            margin-top: 2px;
+        `;
+
+        // Set total XP text (formatted with 1 decimal place and thousand separators)
+        clone.childNodes[0].textContent = totalXP.toLocaleString('en-US', {
+            minimumFractionDigits: 1,
+            maximumFractionDigits: 1
+        });
+
+        // Insert after original XP element
+        xpElement.parentNode.insertBefore(clone, xpElement.nextSibling);
     }
 
     /**
