@@ -103,15 +103,48 @@ class TaskSorter {
      */
     getTaskOrder(taskCard) {
         const parsed = this.parseTaskCard(taskCard);
-        if (!parsed) return 999; // Unknown tasks go to end
+        if (!parsed) return { skillOrder: 999, taskName: '', isCombat: false, monsterSortIndex: 999 };
 
         const skillOrder = this.TASK_ORDER[parsed.skillType] || 999;
+        const isCombat = parsed.skillType === 'Defeat';
+
+        // For combat tasks, get monster sort index from game data
+        let monsterSortIndex = 999;
+        if (isCombat) {
+            // Extract monster name from task name (e.g., "Granite GolemZ9" -> "Granite Golem")
+            const monsterName = this.extractMonsterName(parsed.taskName);
+            if (monsterName) {
+                const monsterHrid = dataManager.getMonsterHridFromName(monsterName);
+                if (monsterHrid) {
+                    monsterSortIndex = dataManager.getMonsterSortIndex(monsterHrid);
+                }
+            }
+        }
 
         return {
             skillOrder,
             taskName: parsed.taskName,
-            skillType: parsed.skillType
+            skillType: parsed.skillType,
+            isCombat,
+            monsterSortIndex
         };
+    }
+
+    /**
+     * Extract monster name from combat task name
+     * @param {string} taskName - Task name (e.g., "Granite Golem Z9")
+     * @returns {string|null} Monster name or null if not found
+     */
+    extractMonsterName(taskName) {
+        // Combat task format from parseTaskCard: "[Monster Name]Z[number]" (may or may not have space)
+        // Strip the zone suffix "Z\d+" from the end
+        const match = taskName.match(/^(.+?)\s*Z\d+$/);
+        if (match) {
+            return match[1].trim();
+        }
+
+        // Fallback: return as-is if no zone suffix found
+        return taskName.trim();
     }
 
     /**
@@ -121,12 +154,19 @@ class TaskSorter {
         const orderA = this.getTaskOrder(cardA);
         const orderB = this.getTaskOrder(cardB);
 
-        // First sort by skill type
+        // First sort by skill type (combat vs non-combat)
         if (orderA.skillOrder !== orderB.skillOrder) {
             return orderA.skillOrder - orderB.skillOrder;
         }
 
-        // Within same skill type, sort alphabetically by task name
+        // Within combat tasks, sort by zone progression (sortIndex)
+        if (orderA.isCombat && orderB.isCombat) {
+            if (orderA.monsterSortIndex !== orderB.monsterSortIndex) {
+                return orderA.monsterSortIndex - orderB.monsterSortIndex;
+            }
+        }
+
+        // Within same skill type (or same zone for combat), sort alphabetically by task name
         return orderA.taskName.localeCompare(orderB.taskName);
     }
 

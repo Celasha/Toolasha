@@ -25,6 +25,7 @@ class DataManager {
         this.characterEquipment = new Map();
         this.characterHouseRooms = new Map();  // House room HRID -> {houseRoomHrid, level}
         this.actionTypeDrinkSlotsMap = new Map();  // Action type HRID -> array of drink items
+        this.monsterSortIndexMap = new Map();  // Monster HRID -> combat zone sortIndex
 
         // Character tracking for switch detection
         this.currentCharacterId = null;
@@ -135,6 +136,10 @@ class DataManager {
                 const data = localStorageUtil.getInitClientData();
                 if (data && Object.keys(data).length > 0) {
                     this.initClientData = data;
+
+                    // Build monster sort index map for task sorting
+                    this.buildMonsterSortIndexMap();
+
                     return true;
                 }
             }
@@ -656,6 +661,70 @@ class DataManager {
         totalTaskSpeed = (taskSpeed + totalEnhancementBonus) * 100; // Convert to percentage
 
         return totalTaskSpeed;
+    }
+
+    /**
+     * Build monster-to-sortIndex mapping from combat zone data
+     * Used for sorting combat tasks by zone progression order
+     * @private
+     */
+    buildMonsterSortIndexMap() {
+        if (!this.initClientData || !this.initClientData.actionDetailMap) {
+            return;
+        }
+
+        this.monsterSortIndexMap.clear();
+
+        // Extract combat zones (non-dungeon only)
+        for (const [zoneHrid, action] of Object.entries(this.initClientData.actionDetailMap)) {
+            // Skip non-combat actions and dungeons
+            if (action.type !== '/action_types/combat' || action.combatZoneInfo?.isDungeon) {
+                continue;
+            }
+
+            const sortIndex = action.sortIndex;
+            const monsters = action.combatZoneInfo?.fightInfo?.randomSpawnInfo?.spawns || [];
+
+            // Map each monster to this zone's sortIndex
+            for (const spawn of monsters) {
+                const monsterHrid = spawn.combatMonsterHrid;
+                if (!monsterHrid) continue;
+
+                // If monster appears in multiple zones, use earliest zone (lowest sortIndex)
+                if (!this.monsterSortIndexMap.has(monsterHrid) || sortIndex < this.monsterSortIndexMap.get(monsterHrid)) {
+                    this.monsterSortIndexMap.set(monsterHrid, sortIndex);
+                }
+            }
+        }
+    }
+
+    /**
+     * Get zone sortIndex for a monster (for task sorting)
+     * @param {string} monsterHrid - Monster HRID (e.g., "/monsters/rat")
+     * @returns {number} Zone sortIndex (999 if not found)
+     */
+    getMonsterSortIndex(monsterHrid) {
+        return this.monsterSortIndexMap.get(monsterHrid) || 999;
+    }
+
+    /**
+     * Get monster HRID from display name (for task sorting)
+     * @param {string} monsterName - Monster display name (e.g., "Jerry")
+     * @returns {string|null} Monster HRID or null if not found
+     */
+    getMonsterHridFromName(monsterName) {
+        if (!this.initClientData || !this.initClientData.combatMonsterDetailMap) {
+            return null;
+        }
+
+        // Search for monster by display name
+        for (const [hrid, monster] of Object.entries(this.initClientData.combatMonsterDetailMap)) {
+            if (monster.name === monsterName) {
+                return hrid;
+            }
+        }
+
+        return null;
     }
 
     /**

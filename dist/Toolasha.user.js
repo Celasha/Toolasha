@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.4.956
+// @version      0.4.957
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -1817,6 +1817,7 @@
             this.characterEquipment = new Map();
             this.characterHouseRooms = new Map();  // House room HRID -> {houseRoomHrid, level}
             this.actionTypeDrinkSlotsMap = new Map();  // Action type HRID -> array of drink items
+            this.monsterSortIndexMap = new Map();  // Monster HRID -> combat zone sortIndex
 
             // Character tracking for switch detection
             this.currentCharacterId = null;
@@ -1927,6 +1928,10 @@
                     const data = localStorageUtil.getInitClientData();
                     if (data && Object.keys(data).length > 0) {
                         this.initClientData = data;
+
+                        // Build monster sort index map for task sorting
+                        this.buildMonsterSortIndexMap();
+
                         return true;
                     }
                 }
@@ -2448,6 +2453,70 @@
             totalTaskSpeed = (taskSpeed + totalEnhancementBonus) * 100; // Convert to percentage
 
             return totalTaskSpeed;
+        }
+
+        /**
+         * Build monster-to-sortIndex mapping from combat zone data
+         * Used for sorting combat tasks by zone progression order
+         * @private
+         */
+        buildMonsterSortIndexMap() {
+            if (!this.initClientData || !this.initClientData.actionDetailMap) {
+                return;
+            }
+
+            this.monsterSortIndexMap.clear();
+
+            // Extract combat zones (non-dungeon only)
+            for (const [zoneHrid, action] of Object.entries(this.initClientData.actionDetailMap)) {
+                // Skip non-combat actions and dungeons
+                if (action.type !== '/action_types/combat' || action.combatZoneInfo?.isDungeon) {
+                    continue;
+                }
+
+                const sortIndex = action.sortIndex;
+                const monsters = action.combatZoneInfo?.fightInfo?.randomSpawnInfo?.spawns || [];
+
+                // Map each monster to this zone's sortIndex
+                for (const spawn of monsters) {
+                    const monsterHrid = spawn.combatMonsterHrid;
+                    if (!monsterHrid) continue;
+
+                    // If monster appears in multiple zones, use earliest zone (lowest sortIndex)
+                    if (!this.monsterSortIndexMap.has(monsterHrid) || sortIndex < this.monsterSortIndexMap.get(monsterHrid)) {
+                        this.monsterSortIndexMap.set(monsterHrid, sortIndex);
+                    }
+                }
+            }
+        }
+
+        /**
+         * Get zone sortIndex for a monster (for task sorting)
+         * @param {string} monsterHrid - Monster HRID (e.g., "/monsters/rat")
+         * @returns {number} Zone sortIndex (999 if not found)
+         */
+        getMonsterSortIndex(monsterHrid) {
+            return this.monsterSortIndexMap.get(monsterHrid) || 999;
+        }
+
+        /**
+         * Get monster HRID from display name (for task sorting)
+         * @param {string} monsterName - Monster display name (e.g., "Jerry")
+         * @returns {string|null} Monster HRID or null if not found
+         */
+        getMonsterHridFromName(monsterName) {
+            if (!this.initClientData || !this.initClientData.combatMonsterDetailMap) {
+                return null;
+            }
+
+            // Search for monster by display name
+            for (const [hrid, monster] of Object.entries(this.initClientData.combatMonsterDetailMap)) {
+                if (monster.name === monsterName) {
+                    return hrid;
+                }
+            }
+
+            return null;
         }
 
         /**
@@ -25613,15 +25682,48 @@
          */
         getTaskOrder(taskCard) {
             const parsed = this.parseTaskCard(taskCard);
-            if (!parsed) return 999; // Unknown tasks go to end
+            if (!parsed) return { skillOrder: 999, taskName: '', isCombat: false, monsterSortIndex: 999 };
 
             const skillOrder = this.TASK_ORDER[parsed.skillType] || 999;
+            const isCombat = parsed.skillType === 'Defeat';
+
+            // For combat tasks, get monster sort index from game data
+            let monsterSortIndex = 999;
+            if (isCombat) {
+                // Extract monster name from task name (e.g., "Granite GolemZ9" -> "Granite Golem")
+                const monsterName = this.extractMonsterName(parsed.taskName);
+                if (monsterName) {
+                    const monsterHrid = dataManager.getMonsterHridFromName(monsterName);
+                    if (monsterHrid) {
+                        monsterSortIndex = dataManager.getMonsterSortIndex(monsterHrid);
+                    }
+                }
+            }
 
             return {
                 skillOrder,
                 taskName: parsed.taskName,
-                skillType: parsed.skillType
+                skillType: parsed.skillType,
+                isCombat,
+                monsterSortIndex
             };
+        }
+
+        /**
+         * Extract monster name from combat task name
+         * @param {string} taskName - Task name (e.g., "Granite Golem Z9")
+         * @returns {string|null} Monster name or null if not found
+         */
+        extractMonsterName(taskName) {
+            // Combat task format from parseTaskCard: "[Monster Name]Z[number]" (may or may not have space)
+            // Strip the zone suffix "Z\d+" from the end
+            const match = taskName.match(/^(.+?)\s*Z\d+$/);
+            if (match) {
+                return match[1].trim();
+            }
+
+            // Fallback: return as-is if no zone suffix found
+            return taskName.trim();
         }
 
         /**
@@ -25631,12 +25733,19 @@
             const orderA = this.getTaskOrder(cardA);
             const orderB = this.getTaskOrder(cardB);
 
-            // First sort by skill type
+            // First sort by skill type (combat vs non-combat)
             if (orderA.skillOrder !== orderB.skillOrder) {
                 return orderA.skillOrder - orderB.skillOrder;
             }
 
-            // Within same skill type, sort alphabetically by task name
+            // Within combat tasks, sort by zone progression (sortIndex)
+            if (orderA.isCombat && orderB.isCombat) {
+                if (orderA.monsterSortIndex !== orderB.monsterSortIndex) {
+                    return orderA.monsterSortIndex - orderB.monsterSortIndex;
+                }
+            }
+
+            // Within same skill type (or same zone for combat), sort alphabetically by task name
             return orderA.taskName.localeCompare(orderB.taskName);
         }
 
@@ -39453,7 +39562,7 @@
         const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
         targetWindow.Toolasha = {
-            version: '0.4.956',
+            version: '0.4.957',
 
             // Feature toggle API (for users to manage settings via console)
             features: {
