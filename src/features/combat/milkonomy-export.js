@@ -7,19 +7,32 @@ import dataManager from '../../core/data-manager.js';
 import webSocketHook from '../../core/websocket.js';
 import storage from '../../core/storage.js';
 
+// Detect if we're running on Tampermonkey or Steam
+const hasScriptManager = typeof GM_info !== 'undefined';
+
 /**
  * Get character data from storage
  * @returns {Promise<Object|null>} Character data or null
  */
 async function getCharacterData() {
     try {
-        const data = await webSocketHook.loadFromStorage('toolasha_init_character_data', null);
-        if (!data) {
+        // Tampermonkey: Use GM storage (cross-domain, persisted)
+        if (hasScriptManager) {
+            const data = await webSocketHook.loadFromStorage('toolasha_init_character_data', null);
+            if (!data) {
+                console.error('[Milkonomy Export] No character data found');
+                return null;
+            }
+            return JSON.parse(data);
+        }
+
+        // Steam: Use dataManager (RAM only, no GM storage available)
+        const characterData = dataManager.characterData;
+        if (!characterData) {
             console.error('[Milkonomy Export] No character data found');
             return null;
         }
-
-        return JSON.parse(data);
+        return characterData;
     } catch (error) {
         console.error('[Milkonomy Export] Failed to get character data:', error);
         return null;
