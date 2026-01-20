@@ -20980,19 +20980,32 @@
      */
 
 
+    // Detect if we're running on Tampermonkey or Steam
+    const hasScriptManager = typeof GM_info !== 'undefined';
+
     /**
      * Get saved character data from storage
      * @returns {Promise<Object|null>} Parsed character data or null
      */
     async function getCharacterData$1() {
         try {
-            const data = await webSocketHook.loadFromStorage('toolasha_init_character_data', null);
-            if (!data) {
+            // Tampermonkey: Use GM storage (cross-domain, persisted)
+            if (hasScriptManager) {
+                const data = await webSocketHook.loadFromStorage('toolasha_init_character_data', null);
+                if (!data) {
+                    console.error('[Combat Sim Export] No character data found. Please refresh game page.');
+                    return null;
+                }
+                return JSON.parse(data);
+            }
+
+            // Steam: Use dataManager (RAM only, no GM storage available)
+            const characterData = dataManager.characterData;
+            if (!characterData) {
                 console.error('[Combat Sim Export] No character data found. Please refresh game page.');
                 return null;
             }
-
-            return JSON.parse(data);
+            return characterData;
         } catch (error) {
             console.error('[Combat Sim Export] Failed to get character data:', error);
             return null;
@@ -21023,13 +21036,23 @@
      */
     async function getClientData() {
         try {
-            const data = await webSocketHook.loadFromStorage('toolasha_init_client_data', null);
-            if (!data) {
+            // Tampermonkey: Use GM storage (cross-domain, persisted)
+            if (hasScriptManager) {
+                const data = await webSocketHook.loadFromStorage('toolasha_init_client_data', null);
+                if (!data) {
+                    console.warn('[Combat Sim Export] No client data found');
+                    return null;
+                }
+                return JSON.parse(data);
+            }
+
+            // Steam: Use dataManager (RAM only, no GM storage available)
+            const clientData = dataManager.getInitClientData();
+            if (!clientData) {
                 console.warn('[Combat Sim Export] No client data found');
                 return null;
             }
-
-            return JSON.parse(data);
+            return clientData;
         } catch (error) {
             console.error('[Combat Sim Export] Failed to get client data:', error);
             return null;
