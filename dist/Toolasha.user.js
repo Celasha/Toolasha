@@ -21990,8 +21990,7 @@
             // Store the profile ID so export button can find it
             await storage.set('currentProfileId', characterId, 'combatExport', true);
 
-            // Store in memory cache (for Steam users)
-            setCurrentProfile(profileData);
+            // Note: Memory cache is handled by websocket.js listener (don't duplicate here)
 
             // Wait for profile panel to appear in DOM
             const profilePanel = await this.waitForProfilePanel();

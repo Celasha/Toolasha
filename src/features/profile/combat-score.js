@@ -9,7 +9,7 @@ import webSocketHook from '../../core/websocket.js';
 import { calculateCombatScore } from './score-calculator.js';
 import { numberFormatter } from '../../utils/formatters.js';
 import { constructExportObject } from '../combat/combat-sim-export.js';
-import { setCurrentProfile, clearCurrentProfile } from '../combat/profile-cache.js';
+import { clearCurrentProfile } from '../combat/profile-cache.js';
 import { constructMilkonomyExport } from '../combat/milkonomy-export.js';
 
 /**
@@ -72,8 +72,7 @@ class CombatScore {
         // Store the profile ID so export button can find it
         await storage.set('currentProfileId', characterId, 'combatExport', true);
 
-        // Store in memory cache (for Steam users)
-        setCurrentProfile(profileData);
+        // Note: Memory cache is handled by websocket.js listener (don't duplicate here)
 
         // Wait for profile panel to appear in DOM
         const profilePanel = await this.waitForProfilePanel();
