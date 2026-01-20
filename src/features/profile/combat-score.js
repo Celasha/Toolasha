@@ -64,10 +64,16 @@ class CombatScore {
      * @param {Object} profileData - Profile data from WebSocket
      */
     async handleProfileShared(profileData) {
-        // Clear any stale profile ID from storage (defensive cleanup)
-        // When viewing your own profile, this should always be null
-        await storage.set('currentProfileId', null, 'combatExport', true);
-        clearCurrentProfile();
+        // Extract character ID from profile data
+        const characterId = profileData.profile.sharableCharacter?.id ||
+                           profileData.profile.characterSkills?.[0]?.characterID ||
+                           profileData.profile.character?.id;
+
+        // Store the profile ID so export button can find it
+        await storage.set('currentProfileId', characterId, 'combatExport', true);
+
+        // Store in memory cache (for Steam users)
+        setCurrentProfile(profileData);
 
         // Wait for profile panel to appear in DOM
         const profilePanel = await this.waitForProfilePanel();
