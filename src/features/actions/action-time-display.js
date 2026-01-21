@@ -185,6 +185,7 @@ class ActionTimeDisplay {
             margin-top: 2px;
             line-height: 1.4;
             text-align: left;
+            white-space: pre-wrap;
         `;
 
         // Insert after action name
@@ -544,7 +545,7 @@ class ActionTimeDisplay {
         // Show time info if we have a finite number of remaining actions
         // This includes both finite actions (hasMaxCount) and infinite actions with inventory count
         if (remainingActions !== Infinity && !isNaN(remainingActions) && remainingActions > 0) {
-            this.displayElement.innerHTML = `⏱ ${timeStr} → ${clockTime}`;
+            this.displayElement.innerHTML = `<span style="display: inline-block; margin-right: 0.25em;">⏱</span> ${timeStr} → ${clockTime}`;
         } else {
             this.displayElement.innerHTML = '';
         }

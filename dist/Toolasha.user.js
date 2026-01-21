@@ -13999,7 +13999,17 @@
     `;
 
         const label = document.createElement('span');
-        label.textContent = icon ? `${icon} ${title}` : title;
+        if (icon) {
+            // Emojis that need spacing fix (stopwatch has rendering issues in some browsers)
+            const needsSpacingFix = icon === '⏱';
+            if (needsSpacingFix) {
+                label.innerHTML = `<span style="display: inline-block; margin-right: 0.25em;">${icon}</span> ${title}`;
+            } else {
+                label.textContent = `${icon} ${title}`;
+            }
+        } else {
+            label.textContent = title;
+        }
 
         header.appendChild(arrow);
         header.appendChild(label);
@@ -16125,6 +16135,7 @@
             margin-top: 2px;
             line-height: 1.4;
             text-align: left;
+            white-space: pre-wrap;
         `;
 
             // Insert after action name
@@ -16484,7 +16495,7 @@
             // Show time info if we have a finite number of remaining actions
             // This includes both finite actions (hasMaxCount) and infinite actions with inventory count
             if (remainingActions !== Infinity && !isNaN(remainingActions) && remainingActions > 0) {
-                this.displayElement.innerHTML = `⏱ ${timeStr} → ${clockTime}`;
+                this.displayElement.innerHTML = `<span style="display: inline-block; margin-right: 0.25em;">⏱</span> ${timeStr} → ${clockTime}`;
             } else {
                 this.displayElement.innerHTML = '';
             }
@@ -24304,7 +24315,7 @@
             cursor: pointer;
             user-select: none;
         `;
-            profitLine.textContent = `💰 ${numberFormatter(profitData.totalProfit)} | ⏱ ${timeEstimate} ▸`;
+            profitLine.innerHTML = `💰 ${numberFormatter(profitData.totalProfit)} | <span style="display: inline-block; margin-right: 0.25em;">⏱</span> ${timeEstimate} ▸`;
 
             // Create breakdown section (hidden by default)
             const breakdownSection = document.createElement('div');
@@ -24351,7 +24362,7 @@
                 e.stopPropagation();
                 const isHidden = breakdownSection.style.display === 'none';
                 breakdownSection.style.display = isHidden ? 'block' : 'none';
-                profitLine.textContent = `💰 ${numberFormatter(profitData.totalProfit)} | ⏱ ${timeEstimate} ${isHidden ? '▾' : '▸'}`;
+                profitLine.innerHTML = `💰 ${numberFormatter(profitData.totalProfit)} | <span style="display: inline-block; margin-right: 0.25em;">⏱</span> ${timeEstimate} ${isHidden ? '▾' : '▸'}`;
             };
 
             profitLine.addEventListener('click', profitLineListener);

@@ -423,7 +423,7 @@ class TaskProfitDisplay {
             cursor: pointer;
             user-select: none;
         `;
-        profitLine.textContent = `💰 ${numberFormatter(profitData.totalProfit)} | ⏱ ${timeEstimate} ▸`;
+        profitLine.innerHTML = `💰 ${numberFormatter(profitData.totalProfit)} | <span style="display: inline-block; margin-right: 0.25em;">⏱</span> ${timeEstimate} ▸`;
 
         // Create breakdown section (hidden by default)
         const breakdownSection = document.createElement('div');
@@ -470,7 +470,7 @@ class TaskProfitDisplay {
             e.stopPropagation();
             const isHidden = breakdownSection.style.display === 'none';
             breakdownSection.style.display = isHidden ? 'block' : 'none';
-            profitLine.textContent = `💰 ${numberFormatter(profitData.totalProfit)} | ⏱ ${timeEstimate} ${isHidden ? '▾' : '▸'}`;
+            profitLine.innerHTML = `💰 ${numberFormatter(profitData.totalProfit)} | <span style="display: inline-block; margin-right: 0.25em;">⏱</span> ${timeEstimate} ${isHidden ? '▾' : '▸'}`;
         };
 
         profitLine.addEventListener('click', profitLineListener);
