@@ -21769,6 +21769,7 @@
         let isZoneDungeon = false;
         let difficultyTier = 0;
         let isParty = false;
+        let yourSlotIndex = 1; // Track which slot contains YOUR data (for party mode)
 
         // Check if in party
         const hasParty = characterObj.partyInfo?.partySlotMap;
@@ -21797,6 +21798,7 @@
                 if (member.characterID) {
                     if (member.characterID === characterObj.character.id) {
                         // This is you
+                        yourSlotIndex = slotIndex; // Remember your slot
                         exportObj[slotIndex] = JSON.stringify(constructSelfPlayer(characterObj, clientObj));
                         playerIDs[slotIndex - 1] = characterObj.character.name;
                         importedPlayerPositions[slotIndex - 1] = true;
@@ -21824,11 +21826,14 @@
 
         // If single-player format requested, return just the player object
         if (singlePlayerFormat && exportObj[1]) {
+            // In party mode, export YOUR data (not necessarily slot 1)
+            const slotToExport = isParty ? yourSlotIndex : 1;
+
             // Parse the player JSON string back to an object
-            const playerObj = JSON.parse(exportObj[1]);
+            const playerObj = JSON.parse(exportObj[slotToExport]);
 
             // Add name field and remove zone/simulationTime for single-player format
-            playerObj.name = playerIDs[0];
+            playerObj.name = playerIDs[slotToExport - 1];
             delete playerObj.zone;
             delete playerObj.simulationTime;
 
@@ -37192,13 +37197,18 @@
                     communityEfficiency = communityBonus * 100; // Convert to percentage
                 }
 
+                // Get achievement buffs (Adept tier: +2% efficiency per tier)
+                const achievementBuffs = dataManager.getAchievementBuffs(actionTypeHrid);
+                const achievementEfficiency = (achievementBuffs.efficiency || 0) * 100; // Convert to percentage
+
                 // Stack all efficiency bonuses additively
                 const totalEfficiency = stackAdditive(
                     levelEfficiency,
                     houseEfficiency,
                     teaEfficiency,
                     equipmentEfficiency,
-                    communityEfficiency
+                    communityEfficiency,
+                    achievementEfficiency
                 );
 
                 return {
@@ -37207,11 +37217,12 @@
                     house: houseEfficiency,
                     tea: teaEfficiency,
                     equipment: equipmentEfficiency,
-                    community: communityEfficiency
+                    community: communityEfficiency,
+                    achievement: achievementEfficiency
                 };
             } catch (error) {
                 console.error('[AlchemyProfit] Failed to extract efficiency:', error);
-                return { total: 0, level: 0, house: 0, tea: 0, equipment: 0, community: 0 };
+                return { total: 0, level: 0, house: 0, tea: 0, equipment: 0, community: 0, achievement: 0 };
             }
         }
 
@@ -37616,15 +37627,31 @@
                 if (itemHrid === '/items/coin') {
                     ask = bid = 1;
                 } else {
-                    const priceData = marketAPI.getPrice(itemHrid, enhancementLevel);
-                    if (priceData && (priceData.ask > 0 || priceData.bid > 0)) {
-                        // Market data exists for this specific enhancement level
-                        ask = priceData.ask || 0;
-                        bid = priceData.bid || 0;
+                    // Check if this is an openable container (loot crate)
+                    const itemDetails = dataManager.getItemDetails(itemHrid);
+                    if (itemDetails?.isOpenable) {
+                        // Use expected value calculator for openable containers
+                        const containerValue = expectedValueCalculator.getCachedValue(itemHrid);
+                        if (containerValue !== null && containerValue > 0) {
+                            ask = bid = containerValue;
+                        } else {
+                            // Fallback to marketplace if EV not available
+                            const priceData = marketAPI.getPrice(itemHrid, enhancementLevel);
+                            ask = priceData?.ask || 0;
+                            bid = priceData?.bid || 0;
+                        }
                     } else {
-                        // No market data for this enhancement level - calculate cost
-                        ask = this.calculateEnhancementCost(itemHrid, enhancementLevel, 'ask');
-                        bid = this.calculateEnhancementCost(itemHrid, enhancementLevel, 'bid');
+                        // Regular item - use marketplace price
+                        const priceData = marketAPI.getPrice(itemHrid, enhancementLevel);
+                        if (priceData && (priceData.ask > 0 || priceData.bid > 0)) {
+                            // Market data exists for this specific enhancement level
+                            ask = priceData.ask || 0;
+                            bid = priceData.bid || 0;
+                        } else {
+                            // No market data for this enhancement level - calculate cost
+                            ask = this.calculateEnhancementCost(itemHrid, enhancementLevel, 'ask');
+                            bid = this.calculateEnhancementCost(itemHrid, enhancementLevel, 'bid');
+                        }
                     }
                 }
 
@@ -37739,7 +37766,13 @@
 
                 // Calculate income per attempt
                 const incomePerAttempt = data.drops.reduce((sum, drop, index) => {
-                    const price = sellType === 'ask' ? drop.ask : drop.bid;
+                    // Special handling for coins (no marketplace price)
+                    let price;
+                    if (drop.itemHrid === '/items/coin') {
+                        price = 1; // Coins are worth 1 coin each
+                    } else {
+                        price = sellType === 'ask' ? drop.ask : drop.bid;
+                    }
 
                     // Identify drop type
                     const isEssence = (index === data.drops.length - 2); // Second-to-last
@@ -37818,7 +37851,13 @@
 
                 // Build detailed drop revenues breakdown
                 const dropRevenues = data.drops.map((drop, index) => {
-                    const price = sellType === 'ask' ? drop.ask : drop.bid;
+                    // Special handling for coins (no marketplace price)
+                    let price;
+                    if (drop.itemHrid === '/items/coin') {
+                        price = 1; // Coins are worth 1 coin each
+                    } else {
+                        price = sellType === 'ask' ? drop.ask : drop.bid;
+                    }
                     const isEssence = (index === data.drops.length - 2);
                     const isRare = (index === data.drops.length - 1);
 
@@ -38488,6 +38527,13 @@
                     const line = document.createElement('div');
                     line.style.marginLeft = '8px';
                     line.textContent = `• Community Buff: +${effBreakdown.community.toFixed(1)}%`;
+                    effContent.appendChild(line);
+                }
+
+                if (effBreakdown.achievement > 0) {
+                    const line = document.createElement('div');
+                    line.style.marginLeft = '8px';
+                    line.textContent = `• Achievement Bonus: +${effBreakdown.achievement.toFixed(1)}%`;
                     effContent.appendChild(line);
                 }
 

@@ -470,6 +470,7 @@ export async function constructExportObject(externalProfileId = null, singlePlay
     let isZoneDungeon = false;
     let difficultyTier = 0;
     let isParty = false;
+    let yourSlotIndex = 1; // Track which slot contains YOUR data (for party mode)
 
     // Check if in party
     const hasParty = characterObj.partyInfo?.partySlotMap;
@@ -498,6 +499,7 @@ export async function constructExportObject(externalProfileId = null, singlePlay
             if (member.characterID) {
                 if (member.characterID === characterObj.character.id) {
                     // This is you
+                    yourSlotIndex = slotIndex; // Remember your slot
                     exportObj[slotIndex] = JSON.stringify(constructSelfPlayer(characterObj, clientObj));
                     playerIDs[slotIndex - 1] = characterObj.character.name;
                     importedPlayerPositions[slotIndex - 1] = true;
@@ -525,11 +527,14 @@ export async function constructExportObject(externalProfileId = null, singlePlay
 
     // If single-player format requested, return just the player object
     if (singlePlayerFormat && exportObj[1]) {
+        // In party mode, export YOUR data (not necessarily slot 1)
+        const slotToExport = isParty ? yourSlotIndex : 1;
+
         // Parse the player JSON string back to an object
-        const playerObj = JSON.parse(exportObj[1]);
+        const playerObj = JSON.parse(exportObj[slotToExport]);
 
         // Add name field and remove zone/simulationTime for single-player format
-        playerObj.name = playerIDs[0];
+        playerObj.name = playerIDs[slotToExport - 1];
         delete playerObj.zone;
         delete playerObj.simulationTime;
 
