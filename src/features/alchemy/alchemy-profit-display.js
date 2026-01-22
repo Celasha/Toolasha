@@ -521,6 +521,13 @@ class AlchemyProfitDisplay {
                 effContent.appendChild(line);
             }
 
+            if (effBreakdown.achievement > 0) {
+                const line = document.createElement('div');
+                line.style.marginLeft = '8px';
+                line.textContent = `• Achievement Bonus: +${effBreakdown.achievement.toFixed(1)}%`;
+                effContent.appendChild(line);
+            }
+
             const effSection = createCollapsibleSection(
                 '',
                 `Efficiency: +${formatPercentage(profitData.efficiency, 1)}`,

@@ -358,6 +358,18 @@ class DungeonTracker {
                 for (const msg of messages) {
                     const text = msg.textContent || '';
 
+                    // FILTER: Skip player messages
+                    // Check for username element (player messages have a username child element)
+                    const hasUsername = msg.querySelector('[class*="ChatMessage_username"]') !== null;
+                    if (hasUsername) {
+                        continue; // Skip player messages
+                    }
+
+                    // FALLBACK: Check if text starts with non-timestamp text followed by colon
+                    if (/^[^\[]+:/.test(text)) {
+                        continue; // Skip player messages
+                    }
+
                     // Look for "Battle started:" messages
                     if (text.includes('Battle started:')) {
                         // Try to extract timestamp
@@ -1256,6 +1268,18 @@ class DungeonTracker {
             // Extract all relevant events: key counts, party failed, battle ended, battle started
             for (const msg of messages) {
                 const text = msg.textContent || '';
+
+                // FILTER: Skip player messages
+                // Check for username element (player messages have a username child element)
+                const hasUsername = msg.querySelector('[class*="ChatMessage_username"]') !== null;
+                if (hasUsername) {
+                    continue; // Skip player messages
+                }
+
+                // FALLBACK: Check if text starts with non-timestamp text followed by colon
+                if (/^[^\[]+:/.test(text)) {
+                    continue; // Skip player messages
+                }
 
                 // Parse timestamp from message display format: [MM/DD HH:MM:SS]
                 const timestampMatch = text.match(/\[(\d{1,2}\/\d{1,2})\s+(\d{1,2}):(\d{2}):(\d{2})\s*([AP]M)?\]/);
