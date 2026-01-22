@@ -1013,9 +1013,12 @@ class QuickInputButtons {
                     }
                 }
 
-                // Equipment wisdom (e.g., Philosopher's Necklace skillingExperience)
-                if (xpData.breakdown.equipmentWisdom > 0) {
-                    lines.push(`    • Philosopher's Necklace: +${xpData.breakdown.equipmentWisdom.toFixed(1)}%`);
+                // Equipment wisdom (e.g., Necklace Of Wisdom, Philosopher's Necklace skillingExperience)
+                if (xpData.wisdomBreakdown && xpData.wisdomBreakdown.length > 0) {
+                    for (const item of xpData.wisdomBreakdown) {
+                        const enhText = item.enhancementLevel > 0 ? ` +${item.enhancementLevel}` : '';
+                        lines.push(`    • ${item.name}${enhText}: +${item.value.toFixed(1)}%`);
+                    }
                 }
 
                 // House rooms

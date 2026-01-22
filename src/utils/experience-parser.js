@@ -14,10 +14,11 @@ import dataManager from '../core/data-manager.js';
  * Parse equipment wisdom bonus (skillingExperience stat)
  * @param {Map} equipment - Character equipment map
  * @param {Object} itemDetailMap - Item details from game data
- * @returns {number} Wisdom percentage (e.g., 10 for 10%)
+ * @returns {Object} {total: number, breakdown: Array} Total wisdom and item breakdown
  */
 export function parseEquipmentWisdom(equipment, itemDetailMap) {
     let totalWisdom = 0;
+    const breakdown = [];
 
     for (const [slot, item] of equipment) {
         const itemDetails = itemDetailMap[item.itemHrid];
@@ -48,9 +49,19 @@ export function parseEquipmentWisdom(equipment, itemDetailMap) {
         // Calculate total wisdom from this item
         const itemWisdom = (baseWisdom + (enhancementBonus * enhancementLevel * multiplier)) * 100;
         totalWisdom += itemWisdom;
+
+        // Add to breakdown
+        breakdown.push({
+            name: itemDetails.name,
+            value: itemWisdom,
+            enhancementLevel: enhancementLevel
+        });
     }
 
-    return totalWisdom;
+    return {
+        total: totalWisdom,
+        breakdown: breakdown
+    };
 }
 
 /**
@@ -204,7 +215,8 @@ export function calculateExperienceMultiplier(skillHrid, actionTypeHrid) {
     const activeDrinks = dataManager.getActionDrinkSlots(actionTypeHrid);
 
     // Parse wisdom from all sources
-    const equipmentWisdom = parseEquipmentWisdom(equipment, itemDetailMap);
+    const equipmentWisdomData = parseEquipmentWisdom(equipment, itemDetailMap);
+    const equipmentWisdom = equipmentWisdomData.total;
     const houseWisdom = parseHouseRoomWisdom();
     const communityWisdom = parseCommunityBuffWisdom();
     const consumableWisdom = parseConsumableWisdom(activeDrinks, itemDetailMap, drinkConcentration);
@@ -223,6 +235,7 @@ export function calculateExperienceMultiplier(skillHrid, actionTypeHrid) {
         totalWisdom,
         charmExperience,
         charmBreakdown: charmData.breakdown,
+        wisdomBreakdown: equipmentWisdomData.breakdown,
         breakdown: {
             equipmentWisdom,
             houseWisdom,
