@@ -16362,6 +16362,12 @@
                 '/action_types/milking'
             ];
 
+            // Production action types that benefit from Gourmet Tea
+            const PRODUCTION_TYPES = [
+                '/action_types/brewing',
+                '/action_types/cooking'
+            ];
+
             if (actionDetails.dropTable && actionDetails.dropTable.length > 0 && GATHERING_TYPES.includes(actionDetails.type)) {
                 // Gathering action - use dropTable with gathering quantity bonus
                 const mainDrop = actionDetails.dropTable[0];
@@ -16392,6 +16398,17 @@
                 // Production action - use outputItems
                 const outputAmount = actionDetails.outputItems[0].count || 1;
                 itemsPerHour = baseActionsPerHour * outputAmount * avgActionsPerAttempt;
+
+                // Apply Gourmet bonus for brewing/cooking (extra items chance)
+                if (PRODUCTION_TYPES.includes(actionDetails.type)) {
+                    const activeDrinks = dataManager.getActionDrinkSlots(actionDetails.type);
+                    const drinkConcentration = getDrinkConcentration(equipment, itemDetailMap);
+                    const gourmetBonus = parseGourmetBonus(activeDrinks, itemDetailMap, drinkConcentration);
+
+                    // Gourmet gives a chance for extra items (e.g., 0.1344 = 13.44% more items)
+                    const gourmetBonusItems = itemsPerHour * gourmetBonus;
+                    itemsPerHour += gourmetBonusItems;
+                }
             } else {
                 // Fallback - no items produced
                 itemsPerHour = actionsPerHourWithEfficiency;
