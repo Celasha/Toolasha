@@ -12167,14 +12167,30 @@
             for (const row of tbody.querySelectorAll('tr')) {
                 const rowInfo = this.extractRowInfo(row);
 
-                // Find matching listing
+                // Find matching listing with improved criteria
                 const matchedListing = listings.find(listing => {
                     if (used.has(listing.id)) return false;
 
-                    return listing.itemHrid === rowInfo.itemHrid &&
-                           listing.enhancementLevel === rowInfo.enhancementLevel &&
-                           listing.isSell === rowInfo.isSell &&
-                           (!rowInfo.price || Math.abs(listing.price - rowInfo.price) < 0.01);
+                    // Basic matching criteria
+                    const itemMatch = listing.itemHrid === rowInfo.itemHrid;
+                    const enhancementMatch = listing.enhancementLevel === rowInfo.enhancementLevel;
+                    const typeMatch = listing.isSell === rowInfo.isSell;
+                    const priceMatch = !rowInfo.price || Math.abs(listing.price - rowInfo.price) < 0.01;
+
+                    if (!itemMatch || !enhancementMatch || !typeMatch || !priceMatch) {
+                        return false;
+                    }
+
+                    // If quantity info is available from row, use it for precise matching
+                    if (rowInfo.filledQuantity !== null && rowInfo.orderQuantity !== null) {
+                        const quantityMatch = 
+                            listing.filledQuantity === rowInfo.filledQuantity &&
+                            listing.orderQuantity === rowInfo.orderQuantity;
+                        return quantityMatch;
+                    }
+
+                    // Fallback to basic match if no quantity info
+                    return true;
                 });
 
                 if (matchedListing) {
@@ -12234,6 +12250,19 @@
                 }
             }
 
+            // Extract quantity (3rd cell) - format: "filled / total"
+            let filledQuantity = null;
+            let orderQuantity = null;
+            const quantityCell = row.children[2];
+            if (quantityCell) {
+                const text = quantityCell.textContent.trim();
+                const match = text.match(/(\d+)\s*\/\s*(\d+)/);
+                if (match) {
+                    filledQuantity = Number(match[1]);
+                    orderQuantity = Number(match[2]);
+                }
+            }
+
             // Extract price (4th cell before our inserts)
             let price = NaN;
             const priceNode = row.querySelector('[class*="price"]') || row.children[3];
@@ -12257,7 +12286,7 @@
                 price = numStr ? Number(numStr) * multiplier : NaN;
             }
 
-            return { itemHrid, enhancementLevel, isSell, price };
+            return { itemHrid, enhancementLevel, isSell, price, filledQuantity, orderQuantity };
         }
 
         /**
