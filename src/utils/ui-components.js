@@ -46,7 +46,17 @@ export function createCollapsibleSection(icon, title, summary, content, defaultO
     `;
 
     const label = document.createElement('span');
-    label.textContent = icon ? `${icon} ${title}` : title;
+    if (icon) {
+        // Emojis that need spacing fix (stopwatch has rendering issues in some browsers)
+        const needsSpacingFix = icon === '⏱';
+        if (needsSpacingFix) {
+            label.innerHTML = `<span style="display: inline-block; margin-right: 0.25em;">${icon}</span> ${title}`;
+        } else {
+            label.textContent = `${icon} ${title}`;
+        }
+    } else {
+        label.textContent = title;
+    }
 
     header.appendChild(arrow);
     header.appendChild(label);
