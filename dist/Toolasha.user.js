@@ -5949,6 +5949,71 @@
     }
 
     /**
+     * Format large numbers in K/M/B notation with 3 significant digits
+     * @param {number} num - The number to format
+     * @returns {string} Formatted number (e.g., "999", "1.25K", "82.1K", "825K", "1.25M")
+     *
+     * Handles rounding edge cases properly:
+     * - 9999 rounds to "10.0K" (not "10.00K")
+     * - 99999 rounds to "100K" (not "100.0K")
+     * - 999999 promotes to "1.00M" (not "1000K")
+     *
+     * @example
+     * formatKMB3Digits(999) // "999"
+     * formatKMB3Digits(1250) // "1.25K"
+     * formatKMB3Digits(8210) // "8.21K"
+     * formatKMB3Digits(9999) // "10.0K"
+     * formatKMB3Digits(82100) // "82.1K"
+     * formatKMB3Digits(99999) // "100K"
+     * formatKMB3Digits(825000) // "825K"
+     * formatKMB3Digits(999999) // "1.00M"
+     * formatKMB3Digits(1250000) // "1.25M"
+     * formatKMB3Digits(82300000) // "82.3M"
+     */
+    function formatKMB3Digits(num) {
+        if (num === null || num === undefined) {
+            return null;
+        }
+
+        const absNum = Math.abs(num);
+        const sign = num < 0 ? '-' : '';
+
+        if (absNum >= 1e9) {
+            const value = absNum / 1e9;
+            // Round to 2 decimals first to check actual display value
+            const rounded = parseFloat(value.toFixed(2));
+            let decimals = 2;
+            if (rounded >= 100) decimals = 0;
+            else if (rounded >= 10) decimals = 1;
+            return sign + value.toFixed(decimals) + 'B';
+        } else if (absNum >= 1e6) {
+            const value = absNum / 1e6;
+            const rounded = parseFloat(value.toFixed(2));
+            if (rounded >= 1000) {
+                // Promote to B (e.g., 999999999 -> 1.00B not 1000M)
+                return sign + (value / 1000).toFixed(2) + 'B';
+            }
+            let decimals = 2;
+            if (rounded >= 100) decimals = 0;
+            else if (rounded >= 10) decimals = 1;
+            return sign + value.toFixed(decimals) + 'M';
+        } else if (absNum >= 1e3) {
+            const value = absNum / 1e3;
+            const rounded = parseFloat(value.toFixed(2));
+            if (rounded >= 1000) {
+                // Promote to M (e.g., 999999 -> 1.00M not 1000K)
+                return sign + (value / 1000).toFixed(2) + 'M';
+            }
+            let decimals = 2;
+            if (rounded >= 100) decimals = 0;
+            else if (rounded >= 10) decimals = 1;
+            return sign + value.toFixed(decimals) + 'K';
+        } else {
+            return sign + Math.floor(absNum).toString();
+        }
+    }
+
+    /**
      * Format numbers using game-style coin notation (4-digit maximum display)
      * @param {number} num - The number to format
      * @returns {string} Formatted number (e.g., "999", "1,000", "10K", "9,999K", "10M")
@@ -12931,7 +12996,7 @@
             if (history.buy) {
                 const buyColor = this.getBuyColor(history.buy, currentPrices?.ask);
                 console.log('[TradeHistoryDisplay] Buy color:', buyColor, 'lastBuy:', history.buy, 'currentAsk:', currentPrices?.ask);
-                parts.push(`<span style="color: ${buyColor}; font-weight: 600;" title="Your last buy price">Buy ${formatKMB(history.buy)}</span>`);
+                parts.push(`<span style="color: ${buyColor}; font-weight: 600;" title="Your last buy price">Buy ${formatKMB3Digits(history.buy)}</span>`);
             }
 
             if (history.buy && history.sell) {
@@ -12941,7 +13006,7 @@
             if (history.sell) {
                 const sellColor = this.getSellColor(history.sell, currentPrices?.bid);
                 console.log('[TradeHistoryDisplay] Sell color:', sellColor, 'lastSell:', history.sell, 'currentBid:', currentPrices?.bid);
-                parts.push(`<span style="color: ${sellColor}; font-weight: 600;" title="Your last sell price">Sell ${formatKMB(history.sell)}</span>`);
+                parts.push(`<span style="color: ${sellColor}; font-weight: 600;" title="Your last sell price">Sell ${formatKMB3Digits(history.sell)}</span>`);
             }
 
             historyDiv.innerHTML = parts.join('');
