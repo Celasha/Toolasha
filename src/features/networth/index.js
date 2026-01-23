@@ -14,7 +14,6 @@ class NetworthFeature {
         this.isActive = false;
         this.updateInterval = null;
         this.currentData = null;
-        this.lastPricingMode = null;
     }
 
     /**
@@ -22,11 +21,6 @@ class NetworthFeature {
      */
     async initialize() {
         if (this.isActive) return;
-
-        // Register callback for pricing mode changes
-        config.onSettingChange('networth_pricingMode', () => {
-            this.forceRecalculate();
-        });
 
         // Initialize header display (always enabled with networth feature)
         if (config.isFeatureEnabled('networth')) {
@@ -57,9 +51,6 @@ class NetworthFeature {
             const networthData = await calculateNetworth();
             this.currentData = networthData;
 
-            // Track pricing mode for change detection
-            this.lastPricingMode = networthData.pricingMode;
-
             // Update displays
             if (config.isFeatureEnabled('networth')) {
                 networthHeaderDisplay.update(networthData);
@@ -70,18 +61,6 @@ class NetworthFeature {
             }
         } catch (error) {
             console.error('[Networth] Error calculating networth:', error);
-        }
-    }
-
-    /**
-     * Force immediate recalculation (called when settings change)
-     */
-    async forceRecalculate() {
-        const currentPricingMode = config.getSettingValue('networth_pricingMode', 'ask');
-
-        // Only recalculate if pricing mode actually changed
-        if (currentPricingMode !== this.lastPricingMode) {
-            await this.recalculate(true);
         }
     }
 

@@ -12,7 +12,8 @@ import dataManager from '../../core/data-manager.js';
 import marketAPI from '../../api/marketplace.js';
 import { calculateEnhancementPath } from '../enhancement/tooltip-enhancement.js';
 import { getEnhancingParams } from '../../utils/enhancement-config.js';
-import { getItemPrice } from '../../utils/market-data.js';
+import { getItemPrice, getItemPrices } from '../../utils/market-data.js';
+import config from '../../core/config.js';
 
 /**
  * Token-based item data for untradeable back slot items (capes/cloaks/quivers)
@@ -91,6 +92,98 @@ export async function calculateCombatScore(profileData) {
             breakdown: { houses: [], abilities: [], equipment: [] }
         };
     }
+}
+
+/**
+ * Get market price for an item with crafting cost fallback
+ * @param {string} itemHrid - Item HRID
+ * @param {number} enhancementLevel - Enhancement level
+ * @returns {number} Price per item (always uses ask price, falls back to crafting cost)
+ */
+function getMarketPriceWithFallback(itemHrid, enhancementLevel = 0) {
+    const gameData = dataManager.getInitClientData();
+
+    // Try ask price first
+    const askPrice = getItemPrice(itemHrid, { enhancementLevel, mode: 'ask' });
+
+    if (askPrice && askPrice > 0) {
+        return askPrice;
+    }
+
+    // For base items (enhancement 0), try crafting cost fallback
+    if (enhancementLevel === 0 && gameData) {
+        // Find the action that produces this item
+        for (const action of Object.values(gameData.actionDetailMap || {})) {
+            if (action.outputItems) {
+                for (const output of action.outputItems) {
+                    if (output.itemHrid === itemHrid) {
+                        // Found the crafting action, calculate material costs
+                        let inputCost = 0;
+
+                        // Add input items
+                        if (action.inputItems && action.inputItems.length > 0) {
+                            for (const input of action.inputItems) {
+                                const inputPrice = getMarketPriceWithFallback(input.itemHrid, 0);
+                                inputCost += inputPrice * input.count;
+                            }
+                        }
+
+                        // Apply Artisan Tea reduction (0.9x) to input materials
+                        inputCost *= 0.9;
+
+                        // Add upgrade item cost (not affected by Artisan Tea)
+                        let upgradeCost = 0;
+                        if (action.upgradeItemHrid) {
+                            const upgradePrice = getMarketPriceWithFallback(action.upgradeItemHrid, 0);
+                            upgradeCost = upgradePrice;
+                        }
+
+                        const totalCost = inputCost + upgradeCost;
+
+                        // Divide by output count to get per-item cost
+                        const perItemCost = totalCost / (output.count || 1);
+
+                        if (perItemCost > 0) {
+                            return perItemCost;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Try shop cost as final fallback (for shop-only items)
+        const shopCost = getShopCost(itemHrid, gameData);
+        if (shopCost > 0) {
+            return shopCost;
+        }
+    }
+
+    return 0;
+}
+
+/**
+ * Get shop cost for an item (if purchaseable with coins)
+ * @param {string} itemHrid - Item HRID
+ * @param {Object} gameData - Game data object
+ * @returns {number} Coin cost, or 0 if not in shop or not purchaseable with coins
+ */
+function getShopCost(itemHrid, gameData) {
+    if (!gameData) return 0;
+
+    // Find shop item for this itemHrid
+    for (const shopItem of Object.values(gameData.shopItemDetailMap || {})) {
+        if (shopItem.itemHrid === itemHrid) {
+            // Check if purchaseable with coins
+            if (shopItem.costs && shopItem.costs.length > 0) {
+                const coinCost = shopItem.costs.find(cost => cost.itemHrid === '/items/coin');
+                if (coinCost) {
+                    return coinCost.count;
+                }
+            }
+        }
+    }
+
+    return 0;
 }
 
 /**
@@ -220,28 +313,47 @@ function calculateEquipmentScore(profileData) {
         if (tokenValue > 0) {
             itemCost = tokenValue;
         } else {
-            // Try market price (most items are purchased, not self-enhanced)
-            const marketPrice = getItemPrice(itemHrid, { enhancementLevel, mode: 'average' });
+            // Check if high enhancement cost mode is enabled
+            const useHighEnhancementCost = config.getSetting('networth_highEnhancementUseCost');
+            const minLevel = config.getSetting('networth_highEnhancementMinLevel') || 13;
 
-            if (marketPrice && marketPrice > 0) {
-                // Good market data exists - use average price
-                itemCost = marketPrice;
-            } else if (enhancementLevel > 1) {
-                // No market data or illiquid - calculate enhancement cost
+            // For high enhancement levels, use cost instead of market price (if enabled)
+            if (enhancementLevel >= 1 && useHighEnhancementCost && enhancementLevel >= minLevel) {
+                // Calculate enhancement cost (ignore market price)
                 const enhancementParams = getEnhancingParams();
                 const enhancementPath = calculateEnhancementPath(itemHrid, enhancementLevel, enhancementParams);
 
                 if (enhancementPath && enhancementPath.optimalStrategy) {
                     itemCost = enhancementPath.optimalStrategy.totalCost;
                 } else {
-                    // Fallback to base market price if enhancement calculation fails
-                    const basePrice = getItemPrice(itemHrid, { mode: 'average' }) || 0;
+                    // Enhancement calculation failed, fallback to base item price
+                    console.warn('[Combat Score] Enhancement calculation failed for:', itemHrid, '+' + enhancementLevel);
+                    const basePrice = getMarketPriceWithFallback(itemHrid, 0);
                     itemCost = basePrice;
                 }
             } else {
-                // Enhancement level 0 or 1, just use base market price
-                const basePrice = getItemPrice(itemHrid, { mode: 'average' }) || 0;
-                itemCost = basePrice;
+                // Try market price first (ask price with crafting cost fallback)
+                const marketPrice = getMarketPriceWithFallback(itemHrid, enhancementLevel);
+
+                if (marketPrice && marketPrice > 0) {
+                    itemCost = marketPrice;
+                } else if (enhancementLevel > 1) {
+                    // No market data - calculate enhancement cost
+                    const enhancementParams = getEnhancingParams();
+                    const enhancementPath = calculateEnhancementPath(itemHrid, enhancementLevel, enhancementParams);
+
+                    if (enhancementPath && enhancementPath.optimalStrategy) {
+                        itemCost = enhancementPath.optimalStrategy.totalCost;
+                    } else {
+                        // Fallback to base market price if enhancement calculation fails
+                        const basePrice = getMarketPriceWithFallback(itemHrid, 0);
+                        itemCost = basePrice;
+                    }
+                } else {
+                    // Enhancement level 0 or 1, just use base market price with fallback
+                    const basePrice = getMarketPriceWithFallback(itemHrid, 0);
+                    itemCost = basePrice;
+                }
             }
         }
 

@@ -245,9 +245,7 @@ class NetworthInventoryDisplay {
                     <div style="cursor: pointer; margin-top: 4px;" id="mwi-equipment-toggle">
                         + Equipment value: ${networthFormatter(Math.round(networthData.currentAssets.equipped.value))}
                     </div>
-                    <div id="mwi-equipment-breakdown" style="display: none; margin-left: 20px; font-size: 0.8rem; color: #bbb;">
-                        ${this.renderEquipmentBreakdown(networthData.currentAssets.equipped.breakdown)}
-                    </div>
+                    <div id="mwi-equipment-breakdown" style="display: none; margin-left: 20px; font-size: 0.8rem; color: #bbb; white-space: pre-line;">${this.renderEquipmentBreakdown(networthData.currentAssets.equipped.breakdown)}</div>
 
                     <!-- Inventory Value -->
                     <div style="cursor: pointer; margin-top: 4px;" id="mwi-inventory-toggle">
@@ -269,9 +267,7 @@ class NetworthInventoryDisplay {
                     <div style="cursor: pointer; margin-top: 4px;" id="mwi-houses-toggle">
                         + Houses: ${networthFormatter(Math.round(networthData.fixedAssets.houses.totalCost))}
                     </div>
-                    <div id="mwi-houses-breakdown" style="display: none; margin-left: 20px; font-size: 0.8rem; color: #bbb;">
-                        ${this.renderHousesBreakdown(networthData.fixedAssets.houses.breakdown)}
-                    </div>
+                    <div id="mwi-houses-breakdown" style="display: none; margin-left: 20px; font-size: 0.8rem; color: #bbb; white-space: pre-line;">${this.renderHousesBreakdown(networthData.fixedAssets.houses.breakdown)}</div>
 
                     <!-- Abilities -->
                     <div style="cursor: pointer; margin-top: 4px;" id="mwi-abilities-toggle">
@@ -282,29 +278,23 @@ class NetworthInventoryDisplay {
                         <div style="cursor: pointer; margin-top: 4px;" id="mwi-equipped-abilities-toggle">
                             + Equipped (${networthData.fixedAssets.abilities.equippedBreakdown.length}): ${networthFormatter(Math.round(networthData.fixedAssets.abilities.equippedCost))}
                         </div>
-                        <div id="mwi-equipped-abilities-breakdown" style="display: none; margin-left: 20px; font-size: 0.8rem; color: #bbb;">
-                            ${this.renderAbilitiesBreakdown(networthData.fixedAssets.abilities.equippedBreakdown)}
-                        </div>
+                        <div id="mwi-equipped-abilities-breakdown" style="display: none; margin-left: 20px; font-size: 0.8rem; color: #bbb; white-space: pre-line;">${this.renderAbilitiesBreakdown(networthData.fixedAssets.abilities.equippedBreakdown)}</div>
 
                         <!-- Other Abilities -->
                         ${networthData.fixedAssets.abilities.otherBreakdown.length > 0 ? `
                             <div style="cursor: pointer; margin-top: 4px;" id="mwi-other-abilities-toggle">
-                                + Other Abilities: ${networthFormatter(Math.round(networthData.fixedAssets.abilities.totalCost - networthData.fixedAssets.abilities.equippedCost))}
+                                + Other (${networthData.fixedAssets.abilities.otherBreakdown.length}): ${networthFormatter(Math.round(networthData.fixedAssets.abilities.totalCost - networthData.fixedAssets.abilities.equippedCost))}
                             </div>
-                            <div id="mwi-other-abilities-breakdown" style="display: none; margin-left: 20px; font-size: 0.8rem; color: #bbb;">
-                                ${this.renderAbilitiesBreakdown(networthData.fixedAssets.abilities.otherBreakdown)}
-                            </div>
+                            <div id="mwi-other-abilities-breakdown" style="display: none; margin-left: 20px; font-size: 0.8rem; color: #bbb; white-space: pre-line;">${this.renderAbilitiesBreakdown(networthData.fixedAssets.abilities.otherBreakdown)}</div>
                         ` : ''}
                     </div>
 
                     <!-- Ability Books -->
                     ${networthData.fixedAssets.abilityBooks.breakdown.length > 0 ? `
                         <div style="cursor: pointer; margin-top: 4px;" id="mwi-ability-books-toggle">
-                            + Ability Books: ${networthFormatter(Math.round(networthData.fixedAssets.abilityBooks.totalCost))}
+                            + Ability Books (${networthData.fixedAssets.abilityBooks.breakdown.length}): ${networthFormatter(Math.round(networthData.fixedAssets.abilityBooks.totalCost))}
                         </div>
-                        <div id="mwi-ability-books-breakdown" style="display: none; margin-left: 20px; font-size: 0.8rem; color: #bbb;">
-                            ${this.renderAbilityBooksBreakdown(networthData.fixedAssets.abilityBooks.breakdown)}
-                        </div>
+                        <div id="mwi-ability-books-breakdown" style="display: none; margin-left: 20px; font-size: 0.8rem; color: #bbb; white-space: pre-line;">${this.renderAbilityBooksBreakdown(networthData.fixedAssets.abilityBooks.breakdown)}</div>
                     ` : ''}
                 </div>
             </div>
@@ -341,10 +331,9 @@ class NetworthInventoryDisplay {
             return '<div>No houses built</div>';
         }
 
-        return breakdown.map((house, index) => {
-            const houseText = `${house.name} ${house.level}: ${networthFormatter(Math.round(house.cost))}`;
-            return index < breakdown.length - 1 ? houseText + '<br>' : houseText;
-        }).join('');
+        return breakdown.map((house) => {
+            return `${house.name} ${house.level}: ${networthFormatter(Math.round(house.cost))}`;
+        }).join('\n');
     }
 
     /**
@@ -357,10 +346,9 @@ class NetworthInventoryDisplay {
             return '<div>No abilities</div>';
         }
 
-        return breakdown.map((ability, index) => {
-            const abilityText = `${ability.name}: ${networthFormatter(Math.round(ability.cost))}`;
-            return index < breakdown.length - 1 ? abilityText + '<br>' : abilityText;
-        }).join('');
+        return breakdown.map((ability) => {
+            return `${ability.name}: ${networthFormatter(Math.round(ability.cost))}`;
+        }).join('\n');
     }
 
     /**
@@ -373,10 +361,9 @@ class NetworthInventoryDisplay {
             return '<div>No ability books</div>';
         }
 
-        return breakdown.map((book, index) => {
-            const bookText = `${book.name} (${book.count}): ${networthFormatter(Math.round(book.value))}`;
-            return index < breakdown.length - 1 ? bookText + '<br>' : bookText;
-        }).join('');
+        return breakdown.map((book) => {
+            return `${book.name} (${book.count}): ${networthFormatter(Math.round(book.value))}`;
+        }).join('\n');
     }
 
     /**
@@ -389,10 +376,9 @@ class NetworthInventoryDisplay {
             return '<div>No equipment</div>';
         }
 
-        return breakdown.map((item, index) => {
-            const itemText = `${item.name}: ${networthFormatter(Math.round(item.value))}`;
-            return index < breakdown.length - 1 ? itemText + '<br>' : itemText;
-        }).join('');
+        return breakdown.map((item) => {
+            return `${item.name}: ${networthFormatter(Math.round(item.value))}`;
+        }).join('\n');
     }
 
     /**
@@ -413,12 +399,10 @@ class NetworthInventoryDisplay {
             const categoryId = `mwi-inventory-${categoryName.toLowerCase().replace(/\s+/g, '-')}`;
             const categoryToggleId = `${categoryId}-toggle`;
 
-            // Build items HTML with explicit line breaks using BR tags
-            const itemsHTML = categoryData.items.map((item, index) => {
-                const itemText = `${item.name} x${item.count}: ${networthFormatter(Math.round(item.value))}`;
-                // Add BR after each item except the last one
-                return index < categoryData.items.length - 1 ? itemText + '<br>' : itemText;
-            }).join('');
+            // Build items HTML with newlines
+            const itemsHTML = categoryData.items.map((item) => {
+                return `${item.name} x${item.count}: ${networthFormatter(Math.round(item.value))}`;
+            }).join('\n');
 
             return `
                 <div style="cursor: pointer; margin-top: 4px; font-size: 0.85rem;" id="${categoryToggleId}">

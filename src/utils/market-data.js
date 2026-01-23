@@ -163,10 +163,6 @@ export function getPricingMode(context) {
                     return 'ask';
             }
         }
-        case 'networth': {
-            const networthMode = config.getSettingValue('networth_pricingMode');
-            return networthMode || 'average';
-        }
         default: {
             const warningKey = `context:${context}`;
             if (!loggedWarnings.has(warningKey)) {

@@ -24,11 +24,10 @@ import { getItemPrice, getItemPrices } from '../../utils/market-data.js';
 /**
  * Calculate the value of a single item
  * @param {Object} item - Item data {itemHrid, enhancementLevel, count}
- * @param {string} pricingMode - Pricing mode: 'ask', 'bid', or 'average'
  * @param {Map} priceCache - Optional price cache from getPricesBatch()
  * @returns {number} Total value in coins
  */
-export async function calculateItemValue(item, pricingMode = 'ask', priceCache = null) {
+export async function calculateItemValue(item, priceCache = null) {
     const { itemHrid, enhancementLevel = 0, count = 1 } = item;
 
     let itemValue = 0;
@@ -57,12 +56,12 @@ export async function calculateItemValue(item, pricingMode = 'ask', priceCache =
                 } else {
                     // Enhancement calculation failed, fallback to base item price
                     console.warn('[Networth] Enhancement calculation failed for:', itemHrid, '+' + enhancementLevel);
-                    itemValue = getMarketPrice(itemHrid, 0, pricingMode, priceCache);
+                    itemValue = getMarketPrice(itemHrid, 0, priceCache);
                 }
             }
         } else {
             // Normal logic for lower enhancement levels: try market price first, then calculate
-            const marketPrice = getMarketPrice(itemHrid, enhancementLevel, pricingMode, priceCache);
+            const marketPrice = getMarketPrice(itemHrid, enhancementLevel, priceCache);
 
             if (marketPrice > 0) {
                 itemValue = marketPrice;
@@ -80,14 +79,14 @@ export async function calculateItemValue(item, pricingMode = 'ask', priceCache =
                         networthCache.set(itemHrid, enhancementLevel, itemValue);
                     } else {
                         console.warn('[Networth] Enhancement calculation failed for:', itemHrid, '+' + enhancementLevel);
-                        itemValue = getMarketPrice(itemHrid, 0, pricingMode, priceCache);
+                        itemValue = getMarketPrice(itemHrid, 0, priceCache);
                     }
                 }
             }
         }
     } else {
         // Unenhanced items: use market price or crafting cost
-        itemValue = getMarketPrice(itemHrid, enhancementLevel, pricingMode, priceCache);
+        itemValue = getMarketPrice(itemHrid, enhancementLevel, priceCache);
     }
 
     return itemValue * count;
@@ -97,11 +96,10 @@ export async function calculateItemValue(item, pricingMode = 'ask', priceCache =
  * Get market price for an item
  * @param {string} itemHrid - Item HRID
  * @param {number} enhancementLevel - Enhancement level
- * @param {string} pricingMode - Pricing mode: 'ask', 'bid', or 'average'
  * @param {Map} priceCache - Optional price cache from getPricesBatch()
- * @returns {number} Price per item
+ * @returns {number} Price per item (always uses ask price)
  */
-function getMarketPrice(itemHrid, enhancementLevel, pricingMode, priceCache = null) {
+function getMarketPrice(itemHrid, enhancementLevel, priceCache = null) {
     // Special handling for currencies
     const currencyValue = calculateCurrencyValue(itemHrid);
     if (currencyValue !== null) {
@@ -118,48 +116,63 @@ function getMarketPrice(itemHrid, enhancementLevel, pricingMode, priceCache = nu
         prices = getItemPrices(itemHrid, enhancementLevel);
     }
 
-    // If no market data, try fallbacks (only for base items)
-    if (!prices) {
-        // Only use fallbacks for base items (enhancementLevel = 0)
-        // Enhanced items should calculate via enhancement path, not crafting cost
-        if (enhancementLevel === 0) {
-            // Check if it's an openable container (crates, caches, chests)
-            const itemDetails = dataManager.getItemDetails(itemHrid);
-            if (itemDetails?.isOpenable && expectedValueCalculator.isInitialized) {
-                const evData = expectedValueCalculator.calculateExpectedValue(itemHrid);
-                if (evData && evData.expectedValue > 0) {
-                    return evData.expectedValue;
-                }
-            }
+    // Try ask price first
+    const ask = prices?.ask;
+    if (ask && ask > 0) {
+        return ask;
+    }
 
-            // Try crafting cost as fallback
-            const craftingCost = calculateCraftingCost(itemHrid);
-            if (craftingCost > 0) {
-                return craftingCost;
+    // No valid ask price - try fallbacks (only for base items)
+    // Enhanced items should calculate via enhancement path, not crafting cost
+    if (enhancementLevel === 0) {
+        // Check if it's an openable container (crates, caches, chests)
+        const itemDetails = dataManager.getItemDetails(itemHrid);
+        if (itemDetails?.isOpenable && expectedValueCalculator.isInitialized) {
+            const evData = expectedValueCalculator.calculateExpectedValue(itemHrid);
+            if (evData && evData.expectedValue > 0) {
+                return evData.expectedValue;
             }
         }
-        return 0;
+
+        // Try crafting cost as fallback
+        const craftingCost = calculateCraftingCost(itemHrid);
+        if (craftingCost > 0) {
+            return craftingCost;
+        }
+
+        // Try shop cost as final fallback (for shop-only items)
+        const shopCost = getShopCost(itemHrid);
+        if (shopCost > 0) {
+            return shopCost;
+        }
     }
 
-    let ask = prices.ask || 0;
-    let bid = prices.bid || 0;
+    return 0;
+}
 
-    // Match MCS behavior: if one price is positive and other is negative, use positive for both
-    if (ask > 0 && bid < 0) {
-        bid = ask;
-    }
-    if (bid > 0 && ask < 0) {
-        ask = bid;
+/**
+ * Get shop cost for an item (if purchaseable with coins)
+ * @param {string} itemHrid - Item HRID
+ * @returns {number} Coin cost, or 0 if not in shop or not purchaseable with coins
+ */
+function getShopCost(itemHrid) {
+    const gameData = dataManager.getInitClientData();
+    if (!gameData) return 0;
+
+    // Find shop item for this itemHrid
+    for (const shopItem of Object.values(gameData.shopItemDetailMap || {})) {
+        if (shopItem.itemHrid === itemHrid) {
+            // Check if purchaseable with coins
+            if (shopItem.costs && shopItem.costs.length > 0) {
+                const coinCost = shopItem.costs.find(cost => cost.itemHrid === '/items/coin');
+                if (coinCost) {
+                    return coinCost.count;
+                }
+            }
+        }
     }
 
-    // Return price based on pricing mode
-    if (pricingMode === 'ask') {
-        return ask;
-    } else if (pricingMode === 'bid') {
-        return bid;
-    } else { // 'average'
-        return (ask + bid) / 2;
-    }
+    return 0;
 }
 
 /**
@@ -201,17 +214,18 @@ function calculateCurrencyValue(itemHrid) {
 
     // Dungeon tokens: Best market value per token approach
     // Calculate based on best shop item value (similar to task tokens)
+    // Uses profitCalc_pricingMode which defaults to 'hybrid' (ask price)
     if (itemHrid === '/items/chimerical_token') {
-        return calculateDungeonTokenValue(itemHrid, 'networth_pricingMode', null) || 0;
+        return calculateDungeonTokenValue(itemHrid, 'profitCalc_pricingMode', null) || 0;
     }
     if (itemHrid === '/items/sinister_token') {
-        return calculateDungeonTokenValue(itemHrid, 'networth_pricingMode', null) || 0;
+        return calculateDungeonTokenValue(itemHrid, 'profitCalc_pricingMode', null) || 0;
     }
     if (itemHrid === '/items/enchanted_token') {
-        return calculateDungeonTokenValue(itemHrid, 'networth_pricingMode', null) || 0;
+        return calculateDungeonTokenValue(itemHrid, 'profitCalc_pricingMode', null) || 0;
     }
     if (itemHrid === '/items/pirate_token') {
-        return calculateDungeonTokenValue(itemHrid, 'networth_pricingMode', null) || 0;
+        return calculateDungeonTokenValue(itemHrid, 'profitCalc_pricingMode', null) || 0;
     }
 
     return null; // Not a currency
@@ -238,7 +252,7 @@ function calculateCraftingCost(itemHrid) {
                     // Add input items
                     if (action.inputItems && action.inputItems.length > 0) {
                         for (const input of action.inputItems) {
-                            const inputPrice = getItemPrice(input.itemHrid, { mode: 'ask' }) || 0;
+                            const inputPrice = getMarketPrice(input.itemHrid, 0, null);
                             inputCost += inputPrice * input.count;
                         }
                     }
@@ -249,7 +263,7 @@ function calculateCraftingCost(itemHrid) {
                     // Add upgrade item cost (not affected by Artisan Tea)
                     let upgradeCost = 0;
                     if (action.upgradeItemHrid) {
-                        const upgradePrice = getItemPrice(action.upgradeItemHrid, { mode: 'ask' }) || 0;
+                        const upgradePrice = getMarketPrice(action.upgradeItemHrid, 0, null);
                         upgradeCost = upgradePrice;
                     }
 
@@ -398,9 +412,6 @@ export async function calculateNetworth() {
     // Invalidate cache if market data changed (wrap for cache compatibility)
     networthCache.checkAndInvalidate({ marketData: marketAPI.marketData });
 
-    // Get pricing mode from settings
-    const pricingMode = config.getSettingValue('networth_pricingMode', 'ask');
-
     const characterItems = gameData.characterItems || [];
     const marketListings = gameData.myMarketListings || [];
     const characterHouseRooms = gameData.characterHouseRoomMap || {};
@@ -430,7 +441,7 @@ export async function calculateNetworth() {
     for (const item of characterItems) {
         if (item.itemLocationHrid === '/item_locations/inventory') continue;
 
-        const value = await calculateItemValue(item, pricingMode, priceCache);
+        const value = await calculateItemValue(item, priceCache);
         equippedValue += value;
 
         // Add to breakdown
@@ -458,7 +469,7 @@ export async function calculateNetworth() {
     for (const item of characterItems) {
         if (item.itemLocationHrid !== '/item_locations/inventory') continue;
 
-        const value = await calculateItemValue(item, pricingMode, priceCache);
+        const value = await calculateItemValue(item, priceCache);
 
         // Add to breakdown
         const itemDetails = gameData.itemDetailMap[item.itemHrid];
@@ -524,7 +535,6 @@ export async function calculateNetworth() {
 
             const value = await calculateItemValue(
                 { itemHrid: listing.itemHrid, enhancementLevel, count: quantity },
-                pricingMode,
                 priceCache
             );
 
@@ -533,7 +543,6 @@ export async function calculateNetworth() {
             // Buying: value is locked coins + unclaimed items
             const unclaimedValue = await calculateItemValue(
                 { itemHrid: listing.itemHrid, enhancementLevel, count: listing.unclaimedItemCount },
-                pricingMode,
                 priceCache
             );
 
@@ -558,7 +567,6 @@ export async function calculateNetworth() {
 
     return {
         totalNetworth,
-        pricingMode,
         currentAssets: {
             total: currentAssetsTotal,
             equipped: { value: equippedValue, breakdown: equippedBreakdown },
@@ -588,7 +596,6 @@ export async function calculateNetworth() {
 function createEmptyNetworthData() {
     return {
         totalNetworth: 0,
-        pricingMode: 'ask',
         currentAssets: {
             total: 0,
             equipped: { value: 0, breakdown: [] },
