@@ -14,6 +14,8 @@ class TransmuteRates {
     constructor() {
         this.unregisterHandlers = [];
         this.isInitialized = false;
+        this.injectTimeout = null;
+        this.nameToHridCache = new Map();
     }
 
     /**
@@ -58,12 +60,21 @@ class TransmuteRates {
 
         this.isInitialized = true;
 
-        // Watch for Item Dictionary modal "Transmuted From" section
+        // Watch for individual source items being added to the dictionary
         const unregister = domObserver.onClass(
             'TransmuteRates',
-            'ItemDictionary_transmutedFrom',
+            'ItemDictionary_item',
             (elem) => {
-                this.injectRates(elem);
+                // When a new source item appears, find the parent section and inject rates
+                const section = elem.closest('[class*="ItemDictionary_transmutedFrom"]');
+
+                if (section) {
+                    // Debounce to avoid injecting multiple times as items are added
+                    clearTimeout(this.injectTimeout);
+                    this.injectTimeout = setTimeout(() => {
+                        this.injectRates(section);
+                    }, 50);
+                }
             }
         );
         this.unregisterHandlers.push(unregister);
@@ -92,14 +103,15 @@ class TransmuteRates {
             return;
         }
 
-        // Find current item HRID by name
-        let currentItemHrid = null;
-        for (const [hrid, item] of Object.entries(gameData.itemDetailMap)) {
-            if (item.name === currentItemName) {
-                currentItemHrid = hrid;
-                break;
+        // Build name->HRID cache once for O(1) lookups
+        if (this.nameToHridCache.size === 0) {
+            for (const [hrid, item] of Object.entries(gameData.itemDetailMap)) {
+                this.nameToHridCache.set(item.name, hrid);
             }
         }
+
+        // Find current item HRID by name (O(1) lookup)
+        const currentItemHrid = this.nameToHridCache.get(currentItemName);
 
         if (!currentItemHrid) {
             return;
@@ -109,9 +121,10 @@ class TransmuteRates {
         const sourceItems = transmutedFromSection.querySelectorAll('[class*="ItemDictionary_item"]');
 
         for (const sourceItemElem of sourceItems) {
-            // Check if we already injected rate
-            if (sourceItemElem.querySelector('.mwi-transmute-rate')) {
-                continue;
+            // Remove any existing rate first (in case React re-rendered this item)
+            const existingRate = sourceItemElem.querySelector('.mwi-transmute-rate');
+            if (existingRate) {
+                existingRate.remove();
             }
 
             // Get source item name
@@ -122,14 +135,8 @@ class TransmuteRates {
 
             const sourceItemName = nameElem.textContent.trim();
 
-            // Find source item HRID by name
-            let sourceItemHrid = null;
-            for (const [hrid, item] of Object.entries(gameData.itemDetailMap)) {
-                if (item.name === sourceItemName) {
-                    sourceItemHrid = hrid;
-                    break;
-                }
-            }
+            // Find source item HRID by name (O(1) lookup)
+            const sourceItemHrid = this.nameToHridCache.get(sourceItemName);
 
             if (!sourceItemHrid) {
                 continue;
@@ -164,13 +171,20 @@ class TransmuteRates {
             rateElem.className = 'mwi-transmute-rate';
             rateElem.textContent = ` ~${percentageText}`;
             rateElem.style.cssText = `
+                position: absolute;
+                right: 0;
+                top: 50%;
+                transform: translateY(-50%);
                 color: ${config.COLOR_TRANSMUTE};
                 font-size: 0.9em;
-                margin-left: 4px;
+                pointer-events: none;
             `;
 
-            // Insert after item name
-            nameElem.appendChild(rateElem);
+            // Make parent container position: relative so absolute positioning works
+            sourceItemElem.style.position = 'relative';
+
+            // Insert as sibling after item box (outside React's control)
+            sourceItemElem.appendChild(rateElem);
         }
     }
 
@@ -192,12 +206,18 @@ class TransmuteRates {
      * Disable the feature and clean up
      */
     disable() {
+        // Clear any pending injection timeouts
+        clearTimeout(this.injectTimeout);
+
         // Unregister all observers
         this.unregisterHandlers.forEach(unregister => unregister());
         this.unregisterHandlers = [];
 
         // Remove all injected rate displays
         document.querySelectorAll('.mwi-transmute-rate').forEach(elem => elem.remove());
+
+        // Clear cache
+        this.nameToHridCache.clear();
 
         this.isInitialized = false;
     }
