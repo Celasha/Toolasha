@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.4.960
+// @version      0.4.961
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -1073,6 +1073,21 @@
                     ],
                     dependencies: ['market_showEstimatedListingAge'],
                     help: 'Time format when using Date/Time display (only applies if Date/Time format is selected)'
+                },
+                itemDictionary_transmuteRates: {
+                    id: 'itemDictionary_transmuteRates',
+                    label: 'Item Dictionary: Show transmutation success rates',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Displays success rate percentages in the "Transmuted From (Alchemy)" section'
+                },
+                itemDictionary_transmuteIncludeBaseRate: {
+                    id: 'itemDictionary_transmuteIncludeBaseRate',
+                    label: 'Item Dictionary: Include base success rate in transmutation percentages',
+                    type: 'checkbox',
+                    default: true,
+                    dependencies: ['itemDictionary_transmuteRates'],
+                    help: 'When enabled, shows total probability (base rate × drop rate). When disabled, shows conditional probability (drop rate only, matching "Transmutes Into" section)'
                 }
             }
         },
@@ -1226,6 +1241,13 @@
                     type: 'color',
                     default: '#60a5fa',
                     help: 'Color for Bid price badges on inventory items (buyer bid price - instant-sell value)'
+                },
+                color_transmute: {
+                    id: 'color_transmute',
+                    label: 'Transmutation Rates',
+                    type: 'color',
+                    default: '#ffffff',
+                    help: 'Color used for transmutation success rate percentages in Item Dictionary'
                 }
             }
         }
@@ -3132,6 +3154,7 @@
             this.COLOR_REMAINING_XP = this.getSettingValue('color_remaining_xp', "#FFFFFF");
             this.COLOR_INVBADGE_ASK = this.getSettingValue('color_invBadge_ask', "#047857");
             this.COLOR_INVBADGE_BID = this.getSettingValue('color_invBadge_bid', "#60a5fa");
+            this.COLOR_TRANSMUTE = this.getSettingValue('color_transmute', "#ffffff");
 
             // Set legacy SCRIPT_COLOR_MAIN to accent color
             this.SCRIPT_COLOR_MAIN = this.COLOR_ACCENT;
@@ -28454,7 +28477,7 @@
             }
 
             return breakdown.map((book) => {
-                return `${book.name} (${book.count}): ${networthFormatter(Math.round(book.value))}`;
+                return `${book.name} (${formatKMB(book.count)}): ${networthFormatter(Math.round(book.value))}`;
             }).join('\n');
         }
 
@@ -28493,7 +28516,7 @@
 
                 // Build items HTML with newlines
                 const itemsHTML = categoryData.items.map((item) => {
-                    return `${item.name} x${item.count}: ${networthFormatter(Math.round(item.value))}`;
+                    return `${item.name} x${formatKMB(item.count)}: ${networthFormatter(Math.round(item.value))}`;
                 }).join('\n');
 
                 return `
@@ -39021,6 +39044,214 @@
     const alchemyProfitDisplay = new AlchemyProfitDisplay();
 
     /**
+     * Transmute Rates Module
+     * Shows transmutation success rate percentages in Item Dictionary modal
+     */
+
+
+    /**
+     * TransmuteRates class manages success rate display in Item Dictionary
+     */
+    class TransmuteRates {
+        constructor() {
+            this.unregisterHandlers = [];
+            this.isInitialized = false;
+        }
+
+        /**
+         * Setup setting change listener
+         */
+        setupSettingListener() {
+            config.onSettingChange('itemDictionary_transmuteRates', (enabled) => {
+                if (enabled) {
+                    this.initialize();
+                } else {
+                    this.disable();
+                }
+            });
+
+            // Listen for base rate inclusion toggle
+            config.onSettingChange('itemDictionary_transmuteIncludeBaseRate', () => {
+                if (this.isInitialized) {
+                    this.refreshRates();
+                }
+            });
+
+            // Listen for color changes
+            config.onSettingChange('color_transmute', () => {
+                if (this.isInitialized) {
+                    this.refreshRates();
+                }
+            });
+        }
+
+        /**
+         * Initialize transmute rates feature
+         */
+        initialize() {
+            if (config.getSetting('itemDictionary_transmuteRates') !== true) {
+                return;
+            }
+
+            // Prevent multiple initializations
+            if (this.isInitialized) {
+                return;
+            }
+
+            this.isInitialized = true;
+
+            // Watch for Item Dictionary modal "Transmuted From" section
+            const unregister = domObserver.onClass(
+                'TransmuteRates',
+                'ItemDictionary_transmutedFrom',
+                (elem) => {
+                    this.injectRates(elem);
+                }
+            );
+            this.unregisterHandlers.push(unregister);
+
+            // Check if dictionary is already open
+            const existingSection = document.querySelector('[class*="ItemDictionary_transmutedFrom"]');
+            if (existingSection) {
+                this.injectRates(existingSection);
+            }
+        }
+
+        /**
+         * Inject transmutation success rates into the dictionary
+         * @param {HTMLElement} transmutedFromSection - The "Transmuted From" section
+         */
+        injectRates(transmutedFromSection) {
+            // Get current item name from modal title
+            const titleElem = document.querySelector('[class*="ItemDictionary_title"]');
+            if (!titleElem) {
+                return;
+            }
+
+            const currentItemName = titleElem.textContent.trim();
+            const gameData = dataManager.getInitClientData();
+            if (!gameData) {
+                return;
+            }
+
+            // Find current item HRID by name
+            let currentItemHrid = null;
+            for (const [hrid, item] of Object.entries(gameData.itemDetailMap)) {
+                if (item.name === currentItemName) {
+                    currentItemHrid = hrid;
+                    break;
+                }
+            }
+
+            if (!currentItemHrid) {
+                return;
+            }
+
+            // Find all source items in "Transmuted From" list
+            const sourceItems = transmutedFromSection.querySelectorAll('[class*="ItemDictionary_item"]');
+
+            for (const sourceItemElem of sourceItems) {
+                // Check if we already injected rate
+                if (sourceItemElem.querySelector('.mwi-transmute-rate')) {
+                    continue;
+                }
+
+                // Get source item name
+                const nameElem = sourceItemElem.querySelector('[class*="Item_name"]');
+                if (!nameElem) {
+                    continue;
+                }
+
+                const sourceItemName = nameElem.textContent.trim();
+
+                // Find source item HRID by name
+                let sourceItemHrid = null;
+                for (const [hrid, item] of Object.entries(gameData.itemDetailMap)) {
+                    if (item.name === sourceItemName) {
+                        sourceItemHrid = hrid;
+                        break;
+                    }
+                }
+
+                if (!sourceItemHrid) {
+                    continue;
+                }
+
+                // Get source item's alchemy details
+                const sourceItem = gameData.itemDetailMap[sourceItemHrid];
+                if (!sourceItem.alchemyDetail || !sourceItem.alchemyDetail.transmuteDropTable) {
+                    continue;
+                }
+
+                const transmuteSuccessRate = sourceItem.alchemyDetail.transmuteSuccessRate;
+
+                // Find current item in source's drop table
+                const dropEntry = sourceItem.alchemyDetail.transmuteDropTable.find(
+                    entry => entry.itemHrid === currentItemHrid
+                );
+
+                if (!dropEntry) {
+                    continue;
+                }
+
+                // Calculate effective rate based on setting
+                const includeBaseRate = config.getSetting('itemDictionary_transmuteIncludeBaseRate') !== false;
+                const effectiveRate = includeBaseRate
+                    ? transmuteSuccessRate * dropEntry.dropRate  // Total probability
+                    : dropEntry.dropRate;                         // Conditional probability
+                const percentageText = `${(effectiveRate * 100).toFixed(effectiveRate * 100 % 1 === 0 ? 1 : 2)}%`;
+
+                // Create rate element
+                const rateElem = document.createElement('span');
+                rateElem.className = 'mwi-transmute-rate';
+                rateElem.textContent = ` ~${percentageText}`;
+                rateElem.style.cssText = `
+                color: ${config.COLOR_TRANSMUTE};
+                font-size: 0.9em;
+                margin-left: 4px;
+            `;
+
+                // Insert after item name
+                nameElem.appendChild(rateElem);
+            }
+        }
+
+        /**
+         * Refresh all displayed rates (e.g., after color change)
+         */
+        refreshRates() {
+            // Remove all existing rate displays
+            document.querySelectorAll('.mwi-transmute-rate').forEach(elem => elem.remove());
+
+            // Re-inject if section is visible
+            const existingSection = document.querySelector('[class*="ItemDictionary_transmutedFrom"]');
+            if (existingSection) {
+                this.injectRates(existingSection);
+            }
+        }
+
+        /**
+         * Disable the feature and clean up
+         */
+        disable() {
+            // Unregister all observers
+            this.unregisterHandlers.forEach(unregister => unregister());
+            this.unregisterHandlers = [];
+
+            // Remove all injected rate displays
+            document.querySelectorAll('.mwi-transmute-rate').forEach(elem => elem.remove());
+
+            this.isInitialized = false;
+        }
+    }
+
+    // Create and export singleton instance
+    const transmuteRates = new TransmuteRates();
+
+    // Setup setting listener (always active, even when feature is disabled)
+    transmuteRates.setupSettingListener();
+
+    /**
      * Feature Registry
      * Centralized feature initialization system
      */
@@ -39412,6 +39643,15 @@
             category: 'Notifications',
             initialize: () => emptyQueueNotification.initialize(),
             async: true
+        },
+
+        // Dictionary Features
+        {
+            key: 'itemDictionary_transmuteRates',
+            name: 'Item Dictionary Transmute Rates',
+            category: 'UI',
+            initialize: () => transmuteRates.initialize(),
+            async: false
         }
     ];
 
@@ -40064,7 +40304,7 @@
         const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
         targetWindow.Toolasha = {
-            version: '0.4.960',
+            version: '0.4.961',
 
             // Feature toggle API (for users to manage settings via console)
             features: {

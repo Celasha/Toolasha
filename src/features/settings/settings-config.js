@@ -687,6 +687,21 @@ export const settingsGroups = {
                 ],
                 dependencies: ['market_showEstimatedListingAge'],
                 help: 'Time format when using Date/Time display (only applies if Date/Time format is selected)'
+            },
+            itemDictionary_transmuteRates: {
+                id: 'itemDictionary_transmuteRates',
+                label: 'Item Dictionary: Show transmutation success rates',
+                type: 'checkbox',
+                default: true,
+                help: 'Displays success rate percentages in the "Transmuted From (Alchemy)" section'
+            },
+            itemDictionary_transmuteIncludeBaseRate: {
+                id: 'itemDictionary_transmuteIncludeBaseRate',
+                label: 'Item Dictionary: Include base success rate in transmutation percentages',
+                type: 'checkbox',
+                default: true,
+                dependencies: ['itemDictionary_transmuteRates'],
+                help: 'When enabled, shows total probability (base rate × drop rate). When disabled, shows conditional probability (drop rate only, matching "Transmutes Into" section)'
             }
         }
     },
@@ -840,6 +855,13 @@ export const settingsGroups = {
                 type: 'color',
                 default: '#60a5fa',
                 help: 'Color for Bid price badges on inventory items (buyer bid price - instant-sell value)'
+            },
+            color_transmute: {
+                id: 'color_transmute',
+                label: 'Transmutation Rates',
+                type: 'color',
+                default: '#ffffff',
+                help: 'Color used for transmutation success rate percentages in Item Dictionary'
             }
         }
     }

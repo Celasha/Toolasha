@@ -7,7 +7,7 @@
 
 import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
-import { networthFormatter } from '../../utils/formatters.js';
+import { networthFormatter, formatKMB } from '../../utils/formatters.js';
 
 /**
  * Header Display Component
@@ -362,7 +362,7 @@ class NetworthInventoryDisplay {
         }
 
         return breakdown.map((book) => {
-            return `${book.name} (${book.count}): ${networthFormatter(Math.round(book.value))}`;
+            return `${book.name} (${formatKMB(book.count)}): ${networthFormatter(Math.round(book.value))}`;
         }).join('\n');
     }
 
@@ -401,7 +401,7 @@ class NetworthInventoryDisplay {
 
             // Build items HTML with newlines
             const itemsHTML = categoryData.items.map((item) => {
-                return `${item.name} x${item.count}: ${networthFormatter(Math.round(item.value))}`;
+                return `${item.name} x${formatKMB(item.count)}: ${networthFormatter(Math.round(item.value))}`;
             }).join('\n');
 
             return `

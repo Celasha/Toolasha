@@ -565,6 +565,7 @@ class Config {
         this.COLOR_REMAINING_XP = this.getSettingValue('color_remaining_xp', "#FFFFFF");
         this.COLOR_INVBADGE_ASK = this.getSettingValue('color_invBadge_ask', "#047857");
         this.COLOR_INVBADGE_BID = this.getSettingValue('color_invBadge_bid', "#60a5fa");
+        this.COLOR_TRANSMUTE = this.getSettingValue('color_transmute', "#ffffff");
 
         // Set legacy SCRIPT_COLOR_MAIN to accent color
         this.SCRIPT_COLOR_MAIN = this.COLOR_ACCENT;

@@ -50,6 +50,7 @@ import dungeonTrackerUI from '../features/combat/dungeon-tracker-ui.js';
 import dungeonTrackerChatAnnotations from '../features/combat/dungeon-tracker-chat-annotations.js';
 import combatSummary from '../features/combat/combat-summary.js';
 import alchemyProfitDisplay from '../features/alchemy/alchemy-profit-display.js';
+import transmuteRates from '../features/dictionary/transmute-rates.js';
 
 /**
  * Feature Registry
@@ -437,6 +438,15 @@ const featureRegistry = [
         category: 'Notifications',
         initialize: () => emptyQueueNotification.initialize(),
         async: true
+    },
+
+    // Dictionary Features
+    {
+        key: 'itemDictionary_transmuteRates',
+        name: 'Item Dictionary Transmute Rates',
+        category: 'UI',
+        initialize: () => transmuteRates.initialize(),
+        async: false
     }
 ];
 
