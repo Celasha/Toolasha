@@ -39911,7 +39911,7 @@
 
         // Handle character_switched event (re-initialization phase)
         dataManager.on('character_switched', async (data) => {
-            console.log(`[FeatureRegistry] Character switched to: ${data.name}`);
+            console.log(`[FeatureRegistry] Character switched to: ${data.newName}`);
 
             // Prevent multiple overlapping reinits
             if (reinitScheduled) {
