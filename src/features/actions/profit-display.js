@@ -648,7 +648,10 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
  * @returns {HTMLElement} Breakdown section element
  */
 function buildGatheringActionsBreakdown(profitData, actionsCount) {
-    const hoursNeeded = actionsCount / profitData.actionsPerHour;
+    // Calculate actual attempts needed (input is desired output actions)
+    const efficiencyMultiplier = 1 + (profitData.totalEfficiency / 100);
+    const actualAttempts = Math.ceil(actionsCount / efficiencyMultiplier);
+    const hoursNeeded = actualAttempts / profitData.actionsPerHour;
 
     // Calculate totals
     const totalRevenue = Math.round(profitData.revenuePerHour * hoursNeeded);
@@ -831,7 +834,10 @@ function buildGatheringActionsBreakdown(profitData, actionsCount) {
  * @returns {HTMLElement} Breakdown section element
  */
 function buildProductionActionsBreakdown(profitData, actionsCount) {
-    const hoursNeeded = actionsCount / profitData.actionsPerHour;
+    // Calculate actual attempts needed (input is desired output actions)
+    const efficiencyMultiplier = 1 + (profitData.efficiencyBonus / 100);
+    const actualAttempts = Math.ceil(actionsCount / efficiencyMultiplier);
+    const hoursNeeded = actualAttempts / profitData.actionsPerHour;
 
     // Calculate totals
     const bonusRevenueTotal = profitData.bonusRevenue?.totalBonusRevenue || 0;
