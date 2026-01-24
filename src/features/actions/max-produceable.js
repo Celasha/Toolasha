@@ -24,6 +24,8 @@ class MaxProduceable {
         this.actionElements = new Map(); // actionPanel → {actionHrid, displayElement, pinElement}
         this.unregisterObserver = null;
         this.lastCrimsonMilkCount = null; // For debugging inventory updates
+        this.itemsUpdatedHandler = null;
+        this.actionCompletedHandler = null;
     }
 
     /**
@@ -39,14 +41,17 @@ class MaxProduceable {
 
         this.setupObserver();
 
-        // Event-driven updates (no polling needed)
-        dataManager.on('items_updated', () => {
+        // Store handler references for cleanup
+        this.itemsUpdatedHandler = () => {
             this.updateAllCounts();
-        });
+        };
+        this.actionCompletedHandler = () => {
+            this.updateAllCounts();
+        };
 
-        dataManager.on('action_completed', () => {
-            this.updateAllCounts();
-        });
+        // Event-driven updates (no polling needed)
+        dataManager.on('items_updated', this.itemsUpdatedHandler);
+        dataManager.on('action_completed', this.actionCompletedHandler);
     }
 
     /**
@@ -446,6 +451,17 @@ class MaxProduceable {
      * Disable the max produceable display
      */
     disable() {
+        // Remove event listeners
+        if (this.itemsUpdatedHandler) {
+            dataManager.off('items_updated', this.itemsUpdatedHandler);
+            this.itemsUpdatedHandler = null;
+        }
+        if (this.actionCompletedHandler) {
+            dataManager.off('action_completed', this.actionCompletedHandler);
+            this.actionCompletedHandler = null;
+        }
+
+        // Remove DOM observer
         if (this.unregisterObserver) {
             this.unregisterObserver();
             this.unregisterObserver = null;

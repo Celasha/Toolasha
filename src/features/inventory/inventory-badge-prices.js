@@ -26,6 +26,7 @@ class InventoryBadgePrices {
         this.warnedItems = new Set();
         this.isCalculating = false;
         this.isInitialized = false;
+        this.itemsUpdatedHandler = null;
     }
 
     /**
@@ -96,12 +97,15 @@ class InventoryBadgePrices {
         );
 
 
-        // Listen for inventory changes to recalculate prices
-        dataManager.on('items_updated', () => {
+        // Store handler reference for cleanup
+        this.itemsUpdatedHandler = () => {
             if (this.currentInventoryElem) {
                 this.updateBadges();
             }
-        });
+        };
+
+        // Listen for inventory changes to recalculate prices
+        dataManager.on('items_updated', this.itemsUpdatedHandler);
 
         // Listen for market data updates
         this.setupMarketDataListener();
@@ -220,6 +224,12 @@ class InventoryBadgePrices {
      * Disable and cleanup
      */
     disable() {
+        // Remove event listeners
+        if (this.itemsUpdatedHandler) {
+            dataManager.off('items_updated', this.itemsUpdatedHandler);
+            this.itemsUpdatedHandler = null;
+        }
+
         // Unregister from badge manager
         inventoryBadgeManager.unregisterProvider('inventory-badge-prices');
 

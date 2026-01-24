@@ -620,7 +620,8 @@ function setupCharacterSwitchHandler() {
             console.log('[FeatureRegistry] All features disabled successfully');
         } catch (error) {
             console.error('[FeatureRegistry] Error during character switch cleanup:', error);
-            // Reset flag even on error to prevent permanent lock
+        } finally {
+            // Always reset flag to allow next character switch
             isSwitching = false;
         }
     });

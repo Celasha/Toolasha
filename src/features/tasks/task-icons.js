@@ -13,6 +13,7 @@ class TaskIcons {
     constructor() {
         this.initialized = false;
         this.observers = [];
+        this.characterSwitchingHandler = null;
 
         // SVG sprite paths (from game assets)
         this.SPRITES = {
@@ -39,10 +40,13 @@ class TaskIcons {
         // Watch for task cards being added/updated
         this.watchTaskCards();
 
-        // Listen for character switching to clean up
-        dataManager.on('character_switching', () => {
+        // Store handler reference for cleanup
+        this.characterSwitchingHandler = () => {
             this.cleanup();
-        });
+        };
+
+        // Listen for character switching to clean up
+        dataManager.on('character_switching', this.characterSwitchingHandler);
 
         this.initialized = true;
     }
@@ -545,6 +549,20 @@ class TaskIcons {
         this.monstersByHrid = null;
 
         this.initialized = false;
+    }
+
+    /**
+     * Disable and cleanup (called by feature registry during character switch)
+     */
+    disable() {
+        // Remove event listeners
+        if (this.characterSwitchingHandler) {
+            dataManager.off('character_switching', this.characterSwitchingHandler);
+            this.characterSwitchingHandler = null;
+        }
+
+        // Run cleanup
+        this.cleanup();
     }
 }
 

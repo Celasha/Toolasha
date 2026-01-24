@@ -27,6 +27,7 @@ class InventorySort {
         this.warnedItems = new Set(); // Track items we've already warned about
         this.isCalculating = false; // Guard flag to prevent recursive calls
         this.isInitialized = false;
+        this.itemsUpdatedHandler = null;
     }
 
     /**
@@ -92,12 +93,15 @@ class InventorySort {
         );
 
 
-        // Listen for inventory changes to recalculate prices
-        dataManager.on('items_updated', () => {
+        // Store handler reference for cleanup
+        this.itemsUpdatedHandler = () => {
             if (this.currentInventoryElem) {
                 this.applyCurrentSort();
             }
-        });
+        };
+
+        // Listen for inventory changes to recalculate prices
+        dataManager.on('items_updated', this.itemsUpdatedHandler);
 
         // Listen for market data updates to refresh badges
         this.setupMarketDataListener();
@@ -450,6 +454,12 @@ class InventorySort {
      * Disable and cleanup
      */
     disable() {
+        // Remove event listeners
+        if (this.itemsUpdatedHandler) {
+            dataManager.off('items_updated', this.itemsUpdatedHandler);
+            this.itemsUpdatedHandler = null;
+        }
+
         // Unregister from badge manager
         inventoryBadgeManager.unregisterProvider('inventory-stack-price');
 

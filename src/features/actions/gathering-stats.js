@@ -17,6 +17,8 @@ class GatheringStats {
     constructor() {
         this.actionElements = new Map(); // actionPanel → {actionHrid, displayElement}
         this.unregisterObserver = null;
+        this.itemsUpdatedHandler = null;
+        this.actionCompletedHandler = null;
     }
 
     /**
@@ -32,14 +34,17 @@ class GatheringStats {
 
         this.setupObserver();
 
-        // Event-driven updates (no polling needed)
-        dataManager.on('items_updated', () => {
+        // Store handler references for cleanup
+        this.itemsUpdatedHandler = () => {
             this.updateAllStats();
-        });
+        };
+        this.actionCompletedHandler = () => {
+            this.updateAllStats();
+        };
 
-        dataManager.on('action_completed', () => {
-            this.updateAllStats();
-        });
+        // Event-driven updates (no polling needed)
+        dataManager.on('items_updated', this.itemsUpdatedHandler);
+        dataManager.on('action_completed', this.actionCompletedHandler);
     }
 
     /**
@@ -252,6 +257,17 @@ class GatheringStats {
      * Disable the gathering stats display
      */
     disable() {
+        // Remove event listeners
+        if (this.itemsUpdatedHandler) {
+            dataManager.off('items_updated', this.itemsUpdatedHandler);
+            this.itemsUpdatedHandler = null;
+        }
+        if (this.actionCompletedHandler) {
+            dataManager.off('action_completed', this.actionCompletedHandler);
+            this.actionCompletedHandler = null;
+        }
+
+        // Remove DOM observer
         if (this.unregisterObserver) {
             this.unregisterObserver();
             this.unregisterObserver = null;

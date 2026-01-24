@@ -19324,6 +19324,8 @@
             this.actionElements = new Map(); // actionPanel → {actionHrid, displayElement, pinElement}
             this.unregisterObserver = null;
             this.lastCrimsonMilkCount = null; // For debugging inventory updates
+            this.itemsUpdatedHandler = null;
+            this.actionCompletedHandler = null;
         }
 
         /**
@@ -19339,14 +19341,17 @@
 
             this.setupObserver();
 
-            // Event-driven updates (no polling needed)
-            dataManager.on('items_updated', () => {
+            // Store handler references for cleanup
+            this.itemsUpdatedHandler = () => {
                 this.updateAllCounts();
-            });
+            };
+            this.actionCompletedHandler = () => {
+                this.updateAllCounts();
+            };
 
-            dataManager.on('action_completed', () => {
-                this.updateAllCounts();
-            });
+            // Event-driven updates (no polling needed)
+            dataManager.on('items_updated', this.itemsUpdatedHandler);
+            dataManager.on('action_completed', this.actionCompletedHandler);
         }
 
         /**
@@ -19746,6 +19751,17 @@
          * Disable the max produceable display
          */
         disable() {
+            // Remove event listeners
+            if (this.itemsUpdatedHandler) {
+                dataManager.off('items_updated', this.itemsUpdatedHandler);
+                this.itemsUpdatedHandler = null;
+            }
+            if (this.actionCompletedHandler) {
+                dataManager.off('action_completed', this.actionCompletedHandler);
+                this.actionCompletedHandler = null;
+            }
+
+            // Remove DOM observer
             if (this.unregisterObserver) {
                 this.unregisterObserver();
                 this.unregisterObserver = null;
@@ -19778,6 +19794,8 @@
         constructor() {
             this.actionElements = new Map(); // actionPanel → {actionHrid, displayElement}
             this.unregisterObserver = null;
+            this.itemsUpdatedHandler = null;
+            this.actionCompletedHandler = null;
         }
 
         /**
@@ -19793,14 +19811,17 @@
 
             this.setupObserver();
 
-            // Event-driven updates (no polling needed)
-            dataManager.on('items_updated', () => {
+            // Store handler references for cleanup
+            this.itemsUpdatedHandler = () => {
                 this.updateAllStats();
-            });
+            };
+            this.actionCompletedHandler = () => {
+                this.updateAllStats();
+            };
 
-            dataManager.on('action_completed', () => {
-                this.updateAllStats();
-            });
+            // Event-driven updates (no polling needed)
+            dataManager.on('items_updated', this.itemsUpdatedHandler);
+            dataManager.on('action_completed', this.actionCompletedHandler);
         }
 
         /**
@@ -20013,6 +20034,17 @@
          * Disable the gathering stats display
          */
         disable() {
+            // Remove event listeners
+            if (this.itemsUpdatedHandler) {
+                dataManager.off('items_updated', this.itemsUpdatedHandler);
+                this.itemsUpdatedHandler = null;
+            }
+            if (this.actionCompletedHandler) {
+                dataManager.off('action_completed', this.actionCompletedHandler);
+                this.actionCompletedHandler = null;
+            }
+
+            // Remove DOM observer
             if (this.unregisterObserver) {
                 this.unregisterObserver();
                 this.unregisterObserver = null;
@@ -25534,6 +25566,7 @@
         constructor() {
             this.initialized = false;
             this.observers = [];
+            this.characterSwitchingHandler = null;
 
             // SVG sprite paths (from game assets)
             this.SPRITES = {
@@ -25560,10 +25593,13 @@
             // Watch for task cards being added/updated
             this.watchTaskCards();
 
-            // Listen for character switching to clean up
-            dataManager.on('character_switching', () => {
+            // Store handler reference for cleanup
+            this.characterSwitchingHandler = () => {
                 this.cleanup();
-            });
+            };
+
+            // Listen for character switching to clean up
+            dataManager.on('character_switching', this.characterSwitchingHandler);
 
             this.initialized = true;
         }
@@ -26066,6 +26102,20 @@
             this.monstersByHrid = null;
 
             this.initialized = false;
+        }
+
+        /**
+         * Disable and cleanup (called by feature registry during character switch)
+         */
+        disable() {
+            // Remove event listeners
+            if (this.characterSwitchingHandler) {
+                dataManager.off('character_switching', this.characterSwitchingHandler);
+                this.characterSwitchingHandler = null;
+            }
+
+            // Run cleanup
+            this.cleanup();
         }
     }
 
@@ -29263,6 +29313,7 @@
             this.warnedItems = new Set(); // Track items we've already warned about
             this.isCalculating = false; // Guard flag to prevent recursive calls
             this.isInitialized = false;
+            this.itemsUpdatedHandler = null;
         }
 
         /**
@@ -29328,12 +29379,15 @@
             );
 
 
-            // Listen for inventory changes to recalculate prices
-            dataManager.on('items_updated', () => {
+            // Store handler reference for cleanup
+            this.itemsUpdatedHandler = () => {
                 if (this.currentInventoryElem) {
                     this.applyCurrentSort();
                 }
-            });
+            };
+
+            // Listen for inventory changes to recalculate prices
+            dataManager.on('items_updated', this.itemsUpdatedHandler);
 
             // Listen for market data updates to refresh badges
             this.setupMarketDataListener();
@@ -29685,6 +29739,12 @@
          * Disable and cleanup
          */
         disable() {
+            // Remove event listeners
+            if (this.itemsUpdatedHandler) {
+                dataManager.off('items_updated', this.itemsUpdatedHandler);
+                this.itemsUpdatedHandler = null;
+            }
+
             // Unregister from badge manager
             inventoryBadgeManager.unregisterProvider('inventory-stack-price');
 
@@ -29728,6 +29788,7 @@
             this.warnedItems = new Set();
             this.isCalculating = false;
             this.isInitialized = false;
+            this.itemsUpdatedHandler = null;
         }
 
         /**
@@ -29798,12 +29859,15 @@
             );
 
 
-            // Listen for inventory changes to recalculate prices
-            dataManager.on('items_updated', () => {
+            // Store handler reference for cleanup
+            this.itemsUpdatedHandler = () => {
                 if (this.currentInventoryElem) {
                     this.updateBadges();
                 }
-            });
+            };
+
+            // Listen for inventory changes to recalculate prices
+            dataManager.on('items_updated', this.itemsUpdatedHandler);
 
             // Listen for market data updates
             this.setupMarketDataListener();
@@ -29922,6 +29986,12 @@
          * Disable and cleanup
          */
         disable() {
+            // Remove event listeners
+            if (this.itemsUpdatedHandler) {
+                dataManager.off('items_updated', this.itemsUpdatedHandler);
+                this.itemsUpdatedHandler = null;
+            }
+
             // Unregister from badge manager
             inventoryBadgeManager.unregisterProvider('inventory-badge-prices');
 
@@ -32328,6 +32398,7 @@
             this.wasEmpty = false;
             this.unregisterHandlers = [];
             this.permissionGranted = false;
+            this.characterSwitchingHandler = null;
         }
 
         /**
@@ -32344,10 +32415,13 @@
             // Listen for action updates
             this.registerWebSocketListeners();
 
-            // Listen for character switching to clean up
-            dataManager.on('character_switching', () => {
+            // Store handler reference for cleanup
+            this.characterSwitchingHandler = () => {
                 this.disable();
-            });
+            };
+
+            // Listen for character switching to clean up
+            dataManager.on('character_switching', this.characterSwitchingHandler);
         }
 
         /**
@@ -32459,6 +32533,12 @@
          * Cleanup
          */
         disable() {
+            // Remove event listeners
+            if (this.characterSwitchingHandler) {
+                dataManager.off('character_switching', this.characterSwitchingHandler);
+                this.characterSwitchingHandler = null;
+            }
+
             this.unregisterHandlers.forEach(unregister => unregister());
             this.unregisterHandlers = [];
             this.wasEmpty = false;
@@ -39823,7 +39903,8 @@
                 console.log('[FeatureRegistry] All features disabled successfully');
             } catch (error) {
                 console.error('[FeatureRegistry] Error during character switch cleanup:', error);
-                // Reset flag even on error to prevent permanent lock
+            } finally {
+                // Always reset flag to allow next character switch
                 isSwitching = false;
             }
         });

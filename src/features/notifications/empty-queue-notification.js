@@ -12,6 +12,7 @@ class EmptyQueueNotification {
         this.wasEmpty = false;
         this.unregisterHandlers = [];
         this.permissionGranted = false;
+        this.characterSwitchingHandler = null;
     }
 
     /**
@@ -28,10 +29,13 @@ class EmptyQueueNotification {
         // Listen for action updates
         this.registerWebSocketListeners();
 
-        // Listen for character switching to clean up
-        dataManager.on('character_switching', () => {
+        // Store handler reference for cleanup
+        this.characterSwitchingHandler = () => {
             this.disable();
-        });
+        };
+
+        // Listen for character switching to clean up
+        dataManager.on('character_switching', this.characterSwitchingHandler);
     }
 
     /**
@@ -143,6 +147,12 @@ class EmptyQueueNotification {
      * Cleanup
      */
     disable() {
+        // Remove event listeners
+        if (this.characterSwitchingHandler) {
+            dataManager.off('character_switching', this.characterSwitchingHandler);
+            this.characterSwitchingHandler = null;
+        }
+
         this.unregisterHandlers.forEach(unregister => unregister());
         this.unregisterHandlers = [];
         this.wasEmpty = false;
