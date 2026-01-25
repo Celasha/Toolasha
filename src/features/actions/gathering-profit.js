@@ -147,7 +147,7 @@ export async function calculateGatheringProfit(actionHrid) {
         if (!drink || !drink.itemHrid) {
             continue;
         }
-        const drinkPrice = getItemPrice(drink.itemHrid, { context: 'profit' }) || 0;
+        const drinkPrice = getItemPrice(drink.itemHrid, { context: 'profit', side: 'buy' }) || 0;
         const costPerHour = drinkPrice * drinksPerHour;
         drinkCostPerHour += costPerHour;
 
@@ -222,7 +222,7 @@ export async function calculateGatheringProfit(actionHrid) {
     const dropTable = actionDetail.dropTable;
 
     for (const drop of dropTable) {
-        const rawPrice = getItemPrice(drop.itemHrid, { context: 'profit' }) || 0;
+        const rawPrice = getItemPrice(drop.itemHrid, { context: 'profit', side: 'sell' }) || 0;
         const rawPriceAfterTax = rawPrice * 0.98;
 
         // Apply gathering quantity bonus to drop amounts
@@ -270,7 +270,7 @@ export async function calculateGatheringProfit(actionHrid) {
             rawPerAction = processingBonus * rawLeftoverIfProcs + (1 - processingBonus) * rawIfNoProc;
 
             // Revenue per hour = per-action × actionsPerHour × efficiency
-            const processedPrice = getItemPrice(processedItemHrid, { context: 'profit' }) || 0;
+            const processedPrice = getItemPrice(processedItemHrid, { context: 'profit', side: 'sell' }) || 0;
             const processedPriceAfterTax = processedPrice * 0.98;
 
             const rawItemsPerHour = actionsPerHour * drop.dropRate * rawPerAction * efficiencyMultiplier;
@@ -339,7 +339,7 @@ export async function calculateGatheringProfit(actionHrid) {
 
             // Use weighted average price for gourmet bonus
             if (processedItemHrid && processingBonus > 0) {
-                const processedPrice = getItemPrice(processedItemHrid, { context: 'profit' }) || 0;
+                const processedPrice = getItemPrice(processedItemHrid, { context: 'profit', side: 'sell' }) || 0;
                 const processedPriceAfterTax = processedPrice * 0.98;
                 const weightedPrice = (rawPerAction * rawPriceAfterTax + processedPerAction * processedPriceAfterTax) /
                                      (rawPerAction + processedPerAction);

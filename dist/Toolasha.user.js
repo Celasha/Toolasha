@@ -6238,6 +6238,7 @@
      * @param {number} [options.enhancementLevel=0] - Enhancement level
      * @param {string} [options.mode] - Pricing mode ('ask'|'bid'|'average'). If not provided, uses context or user settings
      * @param {string} [options.context] - Context hint ('profit'|'networth'|null). Used to determine pricing mode from settings
+     * @param {string} [options.side='sell'] - Transaction side ('buy'|'sell') - used with 'profit' context to determine correct price
      * @returns {number|null} Price in gold, or null if no market data
      */
     function getItemPrice(itemHrid, options = {}) {
@@ -6259,7 +6260,8 @@
         const {
             enhancementLevel = 0,
             mode,
-            context
+            context,
+            side = 'sell'
         } = options;
 
         // Get raw price data from API
@@ -6270,7 +6272,7 @@
         }
 
         // Determine pricing mode
-        const pricingMode = mode || getPricingMode(context);
+        const pricingMode = mode || getPricingMode(context, side);
 
         // Validate pricing mode
         const validModes = ['ask', 'bid', 'average'];
@@ -6319,9 +6321,10 @@
     /**
      * Determine pricing mode from context and user settings
      * @param {string} [context] - Context hint ('profit'|'networth'|null)
+     * @param {string} [side='sell'] - Transaction side ('buy'|'sell') - used with 'profit' context
      * @returns {string} Pricing mode ('ask'|'bid'|'average')
      */
-    function getPricingMode(context) {
+    function getPricingMode(context, side = 'sell') {
         // If no context, default to 'ask'
         if (!context) {
             return 'ask';
@@ -6337,14 +6340,17 @@
             case 'profit': {
                 const profitMode = config.getSettingValue('profitCalc_pricingMode');
 
-                // Convert profit calculation modes to price types
-                // For EV/profit context, we're calculating sell-side value
+                // Convert profit calculation modes to price types based on transaction side
+                // Conservative: Ask/Bid (instant buy materials, instant sell output)
+                // Hybrid: Ask/Ask (instant buy materials, patient sell output)
+                // Optimistic: Bid/Ask (patient buy materials, patient sell output)
                 switch (profitMode) {
                     case 'conservative':
-                        return 'bid'; // Instant sell (Bid price)
+                        return side === 'buy' ? 'ask' : 'bid';
                     case 'hybrid':
+                        return 'ask'; // Ask for both buy and sell
                     case 'optimistic':
-                        return 'ask'; // Patient sell (Ask price)
+                        return side === 'buy' ? 'bid' : 'ask';
                     default:
                         return 'ask';
                 }
@@ -6533,8 +6539,8 @@
 
             // Special case: Cowbell (use bag price ÷ 10, with 18% tax)
             if (itemHrid === this.COWBELL_HRID) {
-                // Get Cowbell Bag price using profit context
-                const bagValue = getItemPrice(this.COWBELL_BAG_HRID, { context: 'profit' }) || 0;
+                // Get Cowbell Bag price using profit context (sell side - you're selling the bag)
+                const bagValue = getItemPrice(this.COWBELL_BAG_HRID, { context: 'profit', side: 'sell' }) || 0;
 
                 if (bagValue > 0) {
                     // Apply 18% market tax (Cowbell Bag only), then divide by 10
@@ -6553,8 +6559,8 @@
                 return this.containerCache.get(itemHrid);
             }
 
-            // Regular market item - get price based on pricing mode
-            const dropPrice = getItemPrice(itemHrid, { enhancementLevel: 0, context: 'profit' });
+            // Regular market item - get price based on pricing mode (sell side - you're selling drops)
+            const dropPrice = getItemPrice(itemHrid, { enhancementLevel: 0, context: 'profit', side: 'sell' });
             return dropPrice > 0 ? dropPrice : null;
         }
 
@@ -7036,8 +7042,8 @@
             const itemPrice = marketAPI.getPrice(itemHrid, 0) || { ask: 0, bid: 0 };
 
             // Get output price based on pricing mode setting
-            // Uses 'profit' context to automatically select correct price
-            const outputPrice = getItemPrice(itemHrid, { context: 'profit' }) || 0;
+            // Uses 'profit' context with 'sell' side to get correct sell price
+            const outputPrice = getItemPrice(itemHrid, { context: 'profit', side: 'sell' }) || 0;
 
             // Apply market tax (2% tax on sales)
             const priceAfterTax = outputPrice * (1 - this.MARKET_TAX);
@@ -7157,8 +7163,8 @@
                 const itemDetails = dataManager.getItemDetails(actionDetails.upgradeItemHrid);
 
                 if (itemDetails) {
-                    // Get material price based on pricing mode (uses 'profit' context)
-                    let materialPrice = getItemPrice(actionDetails.upgradeItemHrid, { context: 'profit' }) || 0;
+                    // Get material price based on pricing mode (uses 'profit' context with 'buy' side)
+                    let materialPrice = getItemPrice(actionDetails.upgradeItemHrid, { context: 'profit', side: 'buy' }) || 0;
 
                     // Special case: Coins have no market price but have face value of 1
                     if (actionDetails.upgradeItemHrid === '/items/coin' && materialPrice === 0) {
@@ -7194,8 +7200,8 @@
                     // Apply artisan reduction
                     const reducedAmount = baseAmount * (1 - artisanBonus);
 
-                    // Get material price based on pricing mode (uses 'profit' context)
-                    let materialPrice = getItemPrice(input.itemHrid, { context: 'profit' }) || 0;
+                    // Get material price based on pricing mode (uses 'profit' context with 'buy' side)
+                    let materialPrice = getItemPrice(input.itemHrid, { context: 'profit', side: 'buy' }) || 0;
 
                     // Special case: Coins have no market price but have face value of 1
                     if (input.itemHrid === '/items/coin' && materialPrice === 0) {
@@ -7335,8 +7341,8 @@
                 const itemDetails = dataManager.getItemDetails(drink.itemHrid);
                 if (!itemDetails) continue;
 
-                // Get tea price based on pricing mode (uses 'profit' context)
-                const teaPrice = getItemPrice(drink.itemHrid, { context: 'profit' }) || 0;
+                // Get tea price based on pricing mode (uses 'profit' context with 'buy' side)
+                const teaPrice = getItemPrice(drink.itemHrid, { context: 'profit', side: 'buy' }) || 0;
 
                 // Drink Concentration increases consumption rate: base 12/hour × (1 + DC%)
                 const drinksPerHour = 12 * (1 + drinkConcentration);
@@ -8865,7 +8871,7 @@
             if (!drink || !drink.itemHrid) {
                 continue;
             }
-            const drinkPrice = getItemPrice(drink.itemHrid, { context: 'profit' }) || 0;
+            const drinkPrice = getItemPrice(drink.itemHrid, { context: 'profit', side: 'buy' }) || 0;
             const costPerHour = drinkPrice * drinksPerHour;
             drinkCostPerHour += costPerHour;
 
@@ -8940,7 +8946,7 @@
         const dropTable = actionDetail.dropTable;
 
         for (const drop of dropTable) {
-            const rawPrice = getItemPrice(drop.itemHrid, { context: 'profit' }) || 0;
+            const rawPrice = getItemPrice(drop.itemHrid, { context: 'profit', side: 'sell' }) || 0;
             const rawPriceAfterTax = rawPrice * 0.98;
 
             // Apply gathering quantity bonus to drop amounts
@@ -8988,7 +8994,7 @@
                 rawPerAction = processingBonus * rawLeftoverIfProcs + (1 - processingBonus) * rawIfNoProc;
 
                 // Revenue per hour = per-action × actionsPerHour × efficiency
-                const processedPrice = getItemPrice(processedItemHrid, { context: 'profit' }) || 0;
+                const processedPrice = getItemPrice(processedItemHrid, { context: 'profit', side: 'sell' }) || 0;
                 const processedPriceAfterTax = processedPrice * 0.98;
 
                 const rawItemsPerHour = actionsPerHour * drop.dropRate * rawPerAction * efficiencyMultiplier;
@@ -9057,7 +9063,7 @@
 
                 // Use weighted average price for gourmet bonus
                 if (processedItemHrid && processingBonus > 0) {
-                    const processedPrice = getItemPrice(processedItemHrid, { context: 'profit' }) || 0;
+                    const processedPrice = getItemPrice(processedItemHrid, { context: 'profit', side: 'sell' }) || 0;
                     const processedPriceAfterTax = processedPrice * 0.98;
                     const weightedPrice = (rawPerAction * rawPriceAfterTax + processedPerAction * processedPriceAfterTax) /
                                          (rawPerAction + processedPerAction);

@@ -179,8 +179,8 @@ class ExpectedValueCalculator {
 
         // Special case: Cowbell (use bag price ÷ 10, with 18% tax)
         if (itemHrid === this.COWBELL_HRID) {
-            // Get Cowbell Bag price using profit context
-            const bagValue = getItemPrice(this.COWBELL_BAG_HRID, { context: 'profit' }) || 0;
+            // Get Cowbell Bag price using profit context (sell side - you're selling the bag)
+            const bagValue = getItemPrice(this.COWBELL_BAG_HRID, { context: 'profit', side: 'sell' }) || 0;
 
             if (bagValue > 0) {
                 // Apply 18% market tax (Cowbell Bag only), then divide by 10
@@ -199,8 +199,8 @@ class ExpectedValueCalculator {
             return this.containerCache.get(itemHrid);
         }
 
-        // Regular market item - get price based on pricing mode
-        const dropPrice = getItemPrice(itemHrid, { enhancementLevel: 0, context: 'profit' });
+        // Regular market item - get price based on pricing mode (sell side - you're selling drops)
+        const dropPrice = getItemPrice(itemHrid, { enhancementLevel: 0, context: 'profit', side: 'sell' });
         return dropPrice > 0 ? dropPrice : null;
     }
 

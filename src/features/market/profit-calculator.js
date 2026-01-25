@@ -241,8 +241,8 @@ class ProfitCalculator {
         const itemPrice = marketAPI.getPrice(itemHrid, 0) || { ask: 0, bid: 0 };
 
         // Get output price based on pricing mode setting
-        // Uses 'profit' context to automatically select correct price
-        const outputPrice = getItemPrice(itemHrid, { context: 'profit' }) || 0;
+        // Uses 'profit' context with 'sell' side to get correct sell price
+        const outputPrice = getItemPrice(itemHrid, { context: 'profit', side: 'sell' }) || 0;
 
         // Apply market tax (2% tax on sales)
         const priceAfterTax = outputPrice * (1 - this.MARKET_TAX);
@@ -362,8 +362,8 @@ class ProfitCalculator {
             const itemDetails = dataManager.getItemDetails(actionDetails.upgradeItemHrid);
 
             if (itemDetails) {
-                // Get material price based on pricing mode (uses 'profit' context)
-                let materialPrice = getItemPrice(actionDetails.upgradeItemHrid, { context: 'profit' }) || 0;
+                // Get material price based on pricing mode (uses 'profit' context with 'buy' side)
+                let materialPrice = getItemPrice(actionDetails.upgradeItemHrid, { context: 'profit', side: 'buy' }) || 0;
 
                 // Special case: Coins have no market price but have face value of 1
                 if (actionDetails.upgradeItemHrid === '/items/coin' && materialPrice === 0) {
@@ -399,8 +399,8 @@ class ProfitCalculator {
                 // Apply artisan reduction
                 const reducedAmount = baseAmount * (1 - artisanBonus);
 
-                // Get material price based on pricing mode (uses 'profit' context)
-                let materialPrice = getItemPrice(input.itemHrid, { context: 'profit' }) || 0;
+                // Get material price based on pricing mode (uses 'profit' context with 'buy' side)
+                let materialPrice = getItemPrice(input.itemHrid, { context: 'profit', side: 'buy' }) || 0;
 
                 // Special case: Coins have no market price but have face value of 1
                 if (input.itemHrid === '/items/coin' && materialPrice === 0) {
@@ -540,8 +540,8 @@ class ProfitCalculator {
             const itemDetails = dataManager.getItemDetails(drink.itemHrid);
             if (!itemDetails) continue;
 
-            // Get tea price based on pricing mode (uses 'profit' context)
-            const teaPrice = getItemPrice(drink.itemHrid, { context: 'profit' }) || 0;
+            // Get tea price based on pricing mode (uses 'profit' context with 'buy' side)
+            const teaPrice = getItemPrice(drink.itemHrid, { context: 'profit', side: 'buy' }) || 0;
 
             // Drink Concentration increases consumption rate: base 12/hour × (1 + DC%)
             const drinksPerHour = 12 * (1 + drinkConcentration);

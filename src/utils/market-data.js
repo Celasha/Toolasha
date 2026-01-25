@@ -16,6 +16,7 @@ const loggedWarnings = new Set();
  * @param {number} [options.enhancementLevel=0] - Enhancement level
  * @param {string} [options.mode] - Pricing mode ('ask'|'bid'|'average'). If not provided, uses context or user settings
  * @param {string} [options.context] - Context hint ('profit'|'networth'|null). Used to determine pricing mode from settings
+ * @param {string} [options.side='sell'] - Transaction side ('buy'|'sell') - used with 'profit' context to determine correct price
  * @returns {number|null} Price in gold, or null if no market data
  */
 export function getItemPrice(itemHrid, options = {}) {
@@ -37,7 +38,8 @@ export function getItemPrice(itemHrid, options = {}) {
     const {
         enhancementLevel = 0,
         mode,
-        context
+        context,
+        side = 'sell'
     } = options;
 
     // Get raw price data from API
@@ -48,7 +50,7 @@ export function getItemPrice(itemHrid, options = {}) {
     }
 
     // Determine pricing mode
-    const pricingMode = mode || getPricingMode(context);
+    const pricingMode = mode || getPricingMode(context, side);
 
     // Validate pricing mode
     const validModes = ['ask', 'bid', 'average'];
@@ -133,9 +135,10 @@ export function formatPrice(amount, options = {}) {
 /**
  * Determine pricing mode from context and user settings
  * @param {string} [context] - Context hint ('profit'|'networth'|null)
+ * @param {string} [side='sell'] - Transaction side ('buy'|'sell') - used with 'profit' context
  * @returns {string} Pricing mode ('ask'|'bid'|'average')
  */
-export function getPricingMode(context) {
+export function getPricingMode(context, side = 'sell') {
     // If no context, default to 'ask'
     if (!context) {
         return 'ask';
@@ -151,14 +154,17 @@ export function getPricingMode(context) {
         case 'profit': {
             const profitMode = config.getSettingValue('profitCalc_pricingMode');
 
-            // Convert profit calculation modes to price types
-            // For EV/profit context, we're calculating sell-side value
+            // Convert profit calculation modes to price types based on transaction side
+            // Conservative: Ask/Bid (instant buy materials, instant sell output)
+            // Hybrid: Ask/Ask (instant buy materials, patient sell output)
+            // Optimistic: Bid/Ask (patient buy materials, patient sell output)
             switch (profitMode) {
                 case 'conservative':
-                    return 'bid'; // Instant sell (Bid price)
+                    return side === 'buy' ? 'ask' : 'bid';
                 case 'hybrid':
+                    return 'ask'; // Ask for both buy and sell
                 case 'optimistic':
-                    return 'ask'; // Patient sell (Ask price)
+                    return side === 'buy' ? 'bid' : 'ask';
                 default:
                     return 'ask';
             }
@@ -180,6 +186,7 @@ export function getPricingMode(context) {
  * @param {Object} options - Configuration options
  * @param {string} [options.mode] - Pricing mode ('ask'|'bid'|'average')
  * @param {string} [options.context] - Context hint ('profit'|'networth'|null)
+ * @param {string} [options.side='sell'] - Transaction side ('buy'|'sell')
  * @returns {Map<string, number>} Map of itemHrid+enhancementLevel to price
  */
 export function getItemPricesBatch(items, options = {}) {
@@ -190,7 +197,8 @@ export function getItemPricesBatch(items, options = {}) {
         const price = getItemPrice(item.itemHrid, {
             enhancementLevel: item.enhancementLevel || 0,
             mode: options.mode,
-            context: options.context
+            context: options.context,
+            side: options.side
         });
 
         if (price !== null) {
