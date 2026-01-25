@@ -426,7 +426,7 @@ class QuickInputButtons {
                         // Queue count (outputs) = Actual attempts × efficiencyMultiplier
                         // Round to whole number (input doesn't accept decimals)
                         const totalSeconds = hours * 60 * 60;
-                        const actualAttempts = Math.round(totalSeconds / actionTime);
+                        const actualAttempts = totalSeconds / actionTime;
                         const actionCount = Math.round(actualAttempts * efficiencyMultiplier);
                         this.setInputValue(numberInput, actionCount);
                     });
