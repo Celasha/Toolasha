@@ -132,7 +132,15 @@ export async function calculateGatheringProfit(actionHrid) {
 
         // Get Achievement buffs for this action type (Beginner tier: +2% Gathering Quantity)
         const achievementBuffs = dataManager.getAchievementBuffs(actionDetail.type);
-        achievementGathering = achievementBuffs.gatheringQuantity || 0;
+        
+        // achievementBuffs is an array of buff objects
+        // Find the gathering buff (typeHrid: "/buff_types/gathering") and get its flatBoost value
+        if (Array.isArray(achievementBuffs)) {
+            const gatheringBuff = achievementBuffs.find(buff => buff.typeHrid === '/buff_types/gathering');
+            achievementGathering = gatheringBuff?.flatBoost || 0;
+        } else {
+            achievementGathering = 0;
+        }
 
         // Stack all bonuses additively
         totalGathering = gatheringTea + communityGathering + achievementGathering;
@@ -386,16 +394,15 @@ export async function calculateGatheringProfit(actionHrid) {
         processingBonus,           // Processing Tea chance (as decimal)
         processingRevenueBonus,    // Extra revenue from Processing conversions
         processingConversions,     // Array of conversion details {rawItem, processedItem, valueGain}
-        totalGathering,            // Total gathering quantity bonus (as decimal)
-        gatheringTea,              // Gathering Tea component (as decimal)
-        communityGathering,        // Community Buff component (as decimal)
-        achievementGathering,      // Achievement Tier component (as decimal)
+        gatheringQuantity: totalGathering,  // Total gathering quantity bonus (as decimal) - renamed for display consistency
         details: {
             levelEfficiency,
             houseEfficiency,
             teaEfficiency,
             equipmentEfficiency,
-            gourmetBonus
+            communityBuffQuantity: communityGathering,  // Community Buff component (as decimal)
+            gatheringTeaBonus: gatheringTea,            // Gathering Tea component (as decimal)
+            achievementGathering: achievementGathering  // Achievement Tier component (as decimal)
         }
     };
 }

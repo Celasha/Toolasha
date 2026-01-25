@@ -8857,7 +8857,15 @@
 
             // Get Achievement buffs for this action type (Beginner tier: +2% Gathering Quantity)
             const achievementBuffs = dataManager.getAchievementBuffs(actionDetail.type);
-            achievementGathering = achievementBuffs.gatheringQuantity || 0;
+            
+            // achievementBuffs is an array of buff objects
+            // Find the gathering buff (typeHrid: "/buff_types/gathering") and get its flatBoost value
+            if (Array.isArray(achievementBuffs)) {
+                const gatheringBuff = achievementBuffs.find(buff => buff.typeHrid === '/buff_types/gathering');
+                achievementGathering = gatheringBuff?.flatBoost || 0;
+            } else {
+                achievementGathering = 0;
+            }
 
             // Stack all bonuses additively
             totalGathering = gatheringTea + communityGathering + achievementGathering;
@@ -9111,16 +9119,15 @@
             processingBonus,           // Processing Tea chance (as decimal)
             processingRevenueBonus,    // Extra revenue from Processing conversions
             processingConversions,     // Array of conversion details {rawItem, processedItem, valueGain}
-            totalGathering,            // Total gathering quantity bonus (as decimal)
-            gatheringTea,              // Gathering Tea component (as decimal)
-            communityGathering,        // Community Buff component (as decimal)
-            achievementGathering,      // Achievement Tier component (as decimal)
+            gatheringQuantity: totalGathering,  // Total gathering quantity bonus (as decimal) - renamed for display consistency
             details: {
                 levelEfficiency,
                 houseEfficiency,
                 teaEfficiency,
                 equipmentEfficiency,
-                gourmetBonus
+                communityBuffQuantity: communityGathering,  // Community Buff component (as decimal)
+                gatheringTeaBonus: gatheringTea,            // Gathering Tea component (as decimal)
+                achievementGathering: achievementGathering  // Achievement Tier component (as decimal)
             }
         };
     }
@@ -14401,9 +14408,6 @@
         if (profitData.details.equipmentEfficiency > 0) {
             effParts.push(`${profitData.details.equipmentEfficiency.toFixed(1)}% equip`);
         }
-        if (profitData.details.gourmetBonus > 0) {
-            effParts.push(`${profitData.details.gourmetBonus.toFixed(1)}% gourmet`);
-        }
 
         if (effParts.length > 0) {
             modifierLines.push(`<div style="font-weight: 500; color: var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY});">Modifiers:</div>`);
@@ -14414,12 +14418,15 @@
         if (profitData.gatheringQuantity > 0) {
             const gatheringParts = [];
             if (profitData.details.communityBuffQuantity > 0) {
-                gatheringParts.push(`${profitData.details.communityBuffQuantity.toFixed(1)}% community`);
+                gatheringParts.push(`${(profitData.details.communityBuffQuantity * 100).toFixed(1)}% community`);
             }
             if (profitData.details.gatheringTeaBonus > 0) {
-                gatheringParts.push(`${profitData.details.gatheringTeaBonus.toFixed(1)}% tea`);
+                gatheringParts.push(`${(profitData.details.gatheringTeaBonus * 100).toFixed(1)}% tea`);
             }
-            modifierLines.push(`<div style="margin-left: 8px;">• Gathering Quantity: +${profitData.gatheringQuantity.toFixed(1)}% (${gatheringParts.join(', ')})</div>`);
+            if (profitData.details.achievementGathering > 0) {
+                gatheringParts.push(`${(profitData.details.achievementGathering * 100).toFixed(1)}% achievement`);
+            }
+            modifierLines.push(`<div style="margin-left: 8px;">• Gathering Quantity: +${(profitData.gatheringQuantity * 100).toFixed(1)}% (${gatheringParts.join(', ')})</div>`);
         }
 
         modifiersDiv.innerHTML = modifierLines.join('');
@@ -14764,9 +14771,34 @@
 
         const modifierLines = [];
 
+        // Efficiency breakdown
+        const effParts = [];
+        if (profitData.levelEfficiency > 0) {
+            effParts.push(`${profitData.levelEfficiency}% level`);
+        }
+        if (profitData.houseEfficiency > 0) {
+            effParts.push(`${profitData.houseEfficiency.toFixed(1)}% house`);
+        }
+        if (profitData.teaEfficiency > 0) {
+            effParts.push(`${profitData.teaEfficiency.toFixed(1)}% tea`);
+        }
+        if (profitData.equipmentEfficiency > 0) {
+            effParts.push(`${profitData.equipmentEfficiency.toFixed(1)}% equip`);
+        }
+        if (profitData.communityEfficiency > 0) {
+            effParts.push(`${profitData.communityEfficiency.toFixed(1)}% community`);
+        }
+
+        if (effParts.length > 0) {
+            modifierLines.push(`<div style="font-weight: 500; color: var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY});">Modifiers:</div>`);
+            modifierLines.push(`<div style="margin-left: 8px;">• Efficiency: +${profitData.efficiencyBonus.toFixed(1)}% (${effParts.join(', ')})</div>`);
+        }
+
         // Artisan Bonus (still shown here for reference, also embedded in materials)
         if (profitData.artisanBonus > 0) {
-            modifierLines.push(`<div style="font-weight: 500; color: var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY});">Modifiers:</div>`);
+            if (modifierLines.length === 0) {
+                modifierLines.push(`<div style="font-weight: 500; color: var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY});">Modifiers:</div>`);
+            }
             modifierLines.push(`<div style="margin-left: 8px;">• Artisan: -${formatPercentage(profitData.artisanBonus, 1)} material requirement</div>`);
         }
 
