@@ -160,12 +160,10 @@ class CharacterCardButton {
             // If we have profile data from profile_shared event, use it (other player)
             if (this.currentProfileData?.profile) {
                 characterData = this.currentProfileData.profile;
-                console.log('[CharacterCard] Using profile data (other player):', characterData);
             }
             // Otherwise use own character data from dataManager
             else {
                 characterData = dataManager.characterData;
-                console.log('[CharacterCard] Using own character data:', characterData);
             }
 
             if (!characterData) {
@@ -173,34 +171,8 @@ class CharacterCardButton {
                 return;
             }
 
-            // === COMPREHENSIVE LOGGING FOR DEBUG ===
-
-            // Log ALL wearableItemMap items to see equipment structure
-            if (characterData?.wearableItemMap) {
-                const items = Object.values(characterData.wearableItemMap);
-                console.log('[CharacterCard] All wearableItemMap items:', items.map(item => ({
-                    location: item.itemLocationHrid,
-                    item: item.itemHrid,
-                    enhancement: item.enhancementLevel
-                })));
-            }
-
-            // Log actual consumables structure from own character data
+            // Get own character data for consumables (profile_shared doesn't have them)
             const ownCharacterData = dataManager.characterData;
-            if (ownCharacterData?.actionTypeFoodSlotsMap) {
-                console.log('[CharacterCard] Food slots structure:', ownCharacterData.actionTypeFoodSlotsMap['/action_types/combat']);
-            }
-            if (ownCharacterData?.actionTypeDrinkSlotsMap) {
-                console.log('[CharacterCard] Drink slots structure:', ownCharacterData.actionTypeDrinkSlotsMap['/action_types/combat']);
-            }
-
-            // Log abilities structure
-            console.log('[CharacterCard] Abilities check:', {
-                hasEquippedAbilities: !!characterData?.equippedAbilities,
-                equippedAbilities: characterData?.equippedAbilities,
-                hasCombatUnit: !!characterData?.combatUnit,
-                hasCombatAbilities: !!characterData?.combatUnit?.combatAbilities
-            });
 
             // Find the profile modal for fallback
             const modal = document.querySelector('.SharableProfile_modal__2OmCQ');
@@ -214,21 +186,6 @@ class CharacterCardButton {
                 clientData,
                 ownCharacterData  // Always use own character data for consumables
             );
-
-            // Log the ACTUAL segments being built (for debugging)
-            const segments = buildSegmentsFromCharacterData(characterData, clientData, ownCharacterData);
-            console.log('[CharacterCard] Built segments:', segments);
-            console.log('[CharacterCard] URL components:', {
-                general: segments.general,
-                skills: segments.skills,
-                equipment: segments.equipment,
-                abilities: segments.abilities,
-                food: segments.food,
-                housing: segments.housing,
-                achievements: segments.achievements
-            });
-
-            console.log('[CharacterCard] Generated URL:', url);
 
             // Open in new tab
             window.open(url, '_blank');
