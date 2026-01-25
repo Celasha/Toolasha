@@ -12410,69 +12410,6 @@
     const tradeHistoryDisplay = new TradeHistoryDisplay();
 
     /**
-     * Production Profit Calculator
-     *
-     * Calculates comprehensive profit/hour for production actions (Brewing, Cooking, Crafting, Tailoring, Cheesesmithing)
-     * Reuses existing profit calculator from tooltip system.
-     */
-
-
-    /**
-     * Action types for production skills (5 skills)
-     */
-    const PRODUCTION_TYPES$2 = [
-        '/action_types/brewing',
-        '/action_types/cooking',
-        '/action_types/cheesesmithing',
-        '/action_types/crafting',
-        '/action_types/tailoring',
-    ];
-
-    /**
-     * Calculate comprehensive profit for a production action
-     * @param {string} actionHrid - Action HRID (e.g., "/actions/brewing/efficiency_tea")
-     * @returns {Object|null} Profit data or null if not applicable
-     */
-    async function calculateProductionProfit(actionHrid) {
-        // Get action details
-        const gameData = dataManager.getInitClientData();
-        const actionDetail = gameData.actionDetailMap[actionHrid];
-
-        if (!actionDetail) {
-            return null;
-        }
-
-        // Only process production actions with outputs
-        if (!PRODUCTION_TYPES$2.includes(actionDetail.type)) {
-            return null;
-        }
-
-        if (!actionDetail.outputItems || actionDetail.outputItems.length === 0) {
-            return null; // No output - nothing to calculate
-        }
-
-        // Ensure market data is loaded
-        if (!marketAPI.isLoaded()) {
-            const marketData = await marketAPI.fetch();
-            if (!marketData) {
-                return null;
-            }
-        }
-
-        // Get output item HRID
-        const outputItemHrid = actionDetail.outputItems[0].itemHrid;
-
-        // Reuse existing profit calculator (does all the heavy lifting)
-        const profitData = await profitCalculator.calculateProfit(outputItemHrid);
-
-        if (!profitData) {
-            return null;
-        }
-
-        return profitData;
-    }
-
-    /**
      * Enhancement Display
      *
      * Displays enhancement calculations in the enhancement action panel.
@@ -13435,6 +13372,69 @@
             }
         });
         observer.observe(document.body, { childList: true });
+    }
+
+    /**
+     * Production Profit Calculator
+     *
+     * Calculates comprehensive profit/hour for production actions (Brewing, Cooking, Crafting, Tailoring, Cheesesmithing)
+     * Reuses existing profit calculator from tooltip system.
+     */
+
+
+    /**
+     * Action types for production skills (5 skills)
+     */
+    const PRODUCTION_TYPES$2 = [
+        '/action_types/brewing',
+        '/action_types/cooking',
+        '/action_types/cheesesmithing',
+        '/action_types/crafting',
+        '/action_types/tailoring',
+    ];
+
+    /**
+     * Calculate comprehensive profit for a production action
+     * @param {string} actionHrid - Action HRID (e.g., "/actions/brewing/efficiency_tea")
+     * @returns {Object|null} Profit data or null if not applicable
+     */
+    async function calculateProductionProfit(actionHrid) {
+        // Get action details
+        const gameData = dataManager.getInitClientData();
+        const actionDetail = gameData.actionDetailMap[actionHrid];
+
+        if (!actionDetail) {
+            return null;
+        }
+
+        // Only process production actions with outputs
+        if (!PRODUCTION_TYPES$2.includes(actionDetail.type)) {
+            return null;
+        }
+
+        if (!actionDetail.outputItems || actionDetail.outputItems.length === 0) {
+            return null; // No output - nothing to calculate
+        }
+
+        // Ensure market data is loaded
+        if (!marketAPI.isLoaded()) {
+            const marketData = await marketAPI.fetch();
+            if (!marketData) {
+                return null;
+            }
+        }
+
+        // Get output item HRID
+        const outputItemHrid = actionDetail.outputItems[0].itemHrid;
+
+        // Reuse existing profit calculator (does all the heavy lifting)
+        const profitData = await profitCalculator.calculateProfit(outputItemHrid);
+
+        if (!profitData) {
+            return null;
+        }
+
+        return profitData;
     }
 
     /**
@@ -17868,11 +17868,9 @@
                     } else if (levelProgressSection) {
                         queueContent.insertAdjacentElement('afterend', levelProgressSection);
                     }
-                } else {
+                } else if (levelProgressSection) {
                     // Combat: Insert levelProgressSection directly after inputContainer
-                    if (levelProgressSection) {
-                        inputContainer.insertAdjacentElement('afterend', levelProgressSection);
-                    }
+                    inputContainer.insertAdjacentElement('afterend', levelProgressSection);
                 }
             } catch (error) {
                 console.error('[Toolasha] Error injecting quick input buttons:', error);
@@ -18387,7 +18385,7 @@
 
                 // Calculate actions and time needed (using modified XP)
                 const actionsNeeded = Math.ceil(xpNeeded / modifiedXP);
-                const timeNeeded = actionsNeeded * actionTime;
+                const _timeNeeded = actionsNeeded * actionTime;
 
                 // Calculate rates using shared utility (includes efficiency)
                 const expData = calculateExpPerHour(actionDetails.hrid);
@@ -18782,7 +18780,7 @@
         processChildElement(child, amount) {
             // Look for output element (first child with numbers or ranges)
             const hasRange = child.children[0]?.innerText?.includes('-');
-            const hasNumbers = child.children[0]?.innerText?.match(/[\d\.]+/);
+            const hasNumbers = child.children[0]?.innerText?.match(/[\d.]+/);
 
             const outputElement = hasRange || hasNumbers ? child.children[0] : null;
 
@@ -18790,7 +18788,7 @@
 
             // Extract drop rate from the child's text
             const dropRateText = child.innerText;
-            const rateMatch = dropRateText.match(/~?([\d\.]+)%/);
+            const rateMatch = dropRateText.match(/~?([\d.]+)%/);
             const dropRate = rateMatch ? parseFloat(rateMatch[1]) / 100 : 1; // Default to 100%
 
             // Parse output values

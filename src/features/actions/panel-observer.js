@@ -10,12 +10,8 @@
  */
 
 import dataManager from '../../core/data-manager.js';
-import { calculateGatheringProfit } from './gathering-profit.js';
-import { calculateProductionProfit } from './production-profit.js';
 import { displayEnhancementStats } from './enhancement-display.js';
 import { displayGatheringProfit, displayProductionProfit } from './profit-display.js';
-import { formatWithSeparator } from '../../utils/formatters.js';
-import { createCollapsibleSection } from '../../utils/ui-components.js';
 import { getOriginalText } from '../../utils/dom.js';
 
 /**
@@ -37,7 +33,7 @@ const PRODUCTION_TYPES = [
 /**
  * Action type for enhancing
  */
-const ENHANCING_TYPE = '/action_types/enhancing';
+const _ENHANCING_TYPE = '/action_types/enhancing';
 
 /**
  * Debounced update tracker for enhancement calculations

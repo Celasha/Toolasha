@@ -511,11 +511,9 @@ class QuickInputButtons {
                 } else if (levelProgressSection) {
                     queueContent.insertAdjacentElement('afterend', levelProgressSection);
                 }
-            } else {
+            } else if (levelProgressSection) {
                 // Combat: Insert levelProgressSection directly after inputContainer
-                if (levelProgressSection) {
-                    inputContainer.insertAdjacentElement('afterend', levelProgressSection);
-                }
+                inputContainer.insertAdjacentElement('afterend', levelProgressSection);
             }
         } catch (error) {
             console.error('[Toolasha] Error injecting quick input buttons:', error);
@@ -1030,7 +1028,7 @@ class QuickInputButtons {
 
             // Calculate actions and time needed (using modified XP)
             const actionsNeeded = Math.ceil(xpNeeded / modifiedXP);
-            const timeNeeded = actionsNeeded * actionTime;
+            const _timeNeeded = actionsNeeded * actionTime;
 
             // Calculate rates using shared utility (includes efficiency)
             const expData = calculateExpPerHour(actionDetails.hrid);

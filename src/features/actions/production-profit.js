@@ -8,7 +8,6 @@
 import marketAPI from '../../api/marketplace.js';
 import dataManager from '../../core/data-manager.js';
 import profitCalculator from '../market/profit-calculator.js';
-import { formatWithSeparator } from '../../utils/formatters.js';
 
 /**
  * Action types for production skills (5 skills)

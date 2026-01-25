@@ -196,7 +196,7 @@ class OutputTotals {
     processChildElement(child, amount) {
         // Look for output element (first child with numbers or ranges)
         const hasRange = child.children[0]?.innerText?.includes('-');
-        const hasNumbers = child.children[0]?.innerText?.match(/[\d\.]+/);
+        const hasNumbers = child.children[0]?.innerText?.match(/[\d.]+/);
 
         const outputElement = hasRange || hasNumbers ? child.children[0] : null;
 
@@ -204,7 +204,7 @@ class OutputTotals {
 
         // Extract drop rate from the child's text
         const dropRateText = child.innerText;
-        const rateMatch = dropRateText.match(/~?([\d\.]+)%/);
+        const rateMatch = dropRateText.match(/~?([\d.]+)%/);
         const dropRate = rateMatch ? parseFloat(rateMatch[1]) / 100 : 1; // Default to 100%
 
         // Parse output values
