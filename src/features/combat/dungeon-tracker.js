@@ -11,6 +11,7 @@ import storage from '../../core/storage.js';
 class DungeonTracker {
     constructor() {
         this.isTracking = false;
+        this.isInitialized = false; // Guard flag
         this.currentRun = null;
         this.waveStartTime = null;
         this.waveTimes = [];
@@ -190,6 +191,15 @@ class DungeonTracker {
      * Initialize dungeon tracker
      */
     async initialize() {
+        // Guard FIRST
+        if (this.isInitialized) {
+            console.log('[DungeonTracker] ⚠️ BLOCKED duplicate initialization (fix working!)');
+            return;
+        }
+
+        console.log('[DungeonTracker] ✓ Initializing (first time)');
+        this.isInitialized = true;
+
         // Get character ID from URL for data isolation
         this.characterId = this.getCharacterIdFromURL();
 
@@ -1209,6 +1219,8 @@ class DungeonTracker {
      * Cleanup for character switching
      */
     async cleanup() {
+        console.log('[DungeonTracker] 🧹 Cleaning up handlers');
+
         // Unregister all WebSocket handlers
         if (this.handlers.newBattle) {
             webSocketHook.off('new_battle', this.handlers.newBattle);
@@ -1253,6 +1265,9 @@ class DungeonTracker {
 
         // Clear saved in-progress run
         await this.clearInProgressRun();
+
+        // Reset initialization flag
+        this.isInitialized = false;
     }
 
     /**

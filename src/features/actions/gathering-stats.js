@@ -20,15 +20,23 @@ class GatheringStats {
         this.itemsUpdatedHandler = null;
         this.actionCompletedHandler = null;
         this.characterSwitchingHandler = null; // Handler for character switch cleanup
+        this.isInitialized = false;
     }
 
     /**
      * Initialize the gathering stats display
      */
     async initialize() {
+        // Guard against duplicate initialization
+        if (this.isInitialized) {
+            return;
+        }
+
         if (!config.getSetting('actionPanel_gatheringStats')) {
             return;
         }
+
+        this.isInitialized = true;
 
         // Initialize shared sort manager
         await actionPanelSort.initialize();
@@ -317,6 +325,8 @@ class GatheringStats {
         // Remove all injected elements
         document.querySelectorAll('.mwi-gathering-stats').forEach(el => el.remove());
         this.actionElements.clear();
+
+        this.isInitialized = false;
     }
 }
 

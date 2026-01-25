@@ -20,15 +20,25 @@ class ListingPriceDisplay {
         this.allListings = {}; // Maintained listing state
         this.unregisterWebSocket = null;
         this.unregisterObserver = null;
+        this.isInitialized = false;
     }
 
     /**
      * Initialize the listing price display
      */
     initialize() {
+        // Guard against duplicate initialization
+        if (this.isInitialized) {
+            console.log('[ListingPriceDisplay] ⚠️ BLOCKED duplicate initialization (fix working!)');
+            return;
+        }
+
         if (!config.getSetting('market_showListingPrices')) {
             return;
         }
+
+        console.log('[ListingPriceDisplay] ✓ Initializing (first time)');
+        this.isInitialized = true;
 
         // Load initial listings from dataManager
         this.loadInitialListings();
@@ -727,6 +737,8 @@ class ListingPriceDisplay {
      * Disable the listing price display
      */
     disable() {
+        console.log('[ListingPriceDisplay] 🧹 Cleaning up handlers');
+
         if (this.unregisterWebSocket) {
             this.unregisterWebSocket();
             this.unregisterWebSocket = null;
@@ -739,6 +751,7 @@ class ListingPriceDisplay {
 
         this.clearDisplays();
         this.allListings = {};
+        this.isInitialized = false;
     }
 }
 

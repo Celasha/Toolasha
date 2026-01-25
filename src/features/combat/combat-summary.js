@@ -14,21 +14,35 @@ import { formatWithSeparator } from '../../utils/formatters.js';
 class CombatSummary {
     constructor() {
         this.isActive = false;
+        this.isInitialized = false;
+        this.battleUnitFetchedHandler = null; // Store handler reference for cleanup
     }
 
     /**
      * Initialize combat summary feature
      */
     initialize() {
+        // Guard FIRST (before feature check)
+        if (this.isInitialized) {
+            console.log('[CombatSummary] ⚠️ BLOCKED duplicate initialization (fix working!)');
+            return;
+        }
+
         // Check if feature is enabled
         if (!config.getSetting('combatSummary')) {
             return;
         }
 
-        // Listen for battle_unit_fetched WebSocket message
-        webSocketHook.on('battle_unit_fetched', (data) => {
+        console.log('[CombatSummary] ✓ Initializing (first time)');
+        this.isInitialized = true;
+
+        // Store handler reference for cleanup
+        this.battleUnitFetchedHandler = (data) => {
             this.handleBattleSummary(data);
-        });
+        };
+
+        // Listen for battle_unit_fetched WebSocket message
+        webSocketHook.on('battle_unit_fetched', this.battleUnitFetchedHandler);
 
         this.isActive = true;
     }
@@ -224,8 +238,16 @@ class CombatSummary {
      * Disable the combat summary feature
      */
     disable() {
+        console.log('[CombatSummary] 🧹 Cleaning up handlers');
+
+        // Unregister WebSocket handler
+        if (this.battleUnitFetchedHandler) {
+            webSocketHook.off('battle_unit_fetched', this.battleUnitFetchedHandler);
+            this.battleUnitFetchedHandler = null;
+        }
+
         this.isActive = false;
-        // Note: WebSocket listeners remain registered (no cleanup needed for settings toggle)
+        this.isInitialized = false;
     }
 }
 

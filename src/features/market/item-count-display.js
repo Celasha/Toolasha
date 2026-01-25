@@ -12,16 +12,23 @@ import config from '../../core/config.js';
 class ItemCountDisplay {
     constructor() {
         this.unregisterObserver = null;
+        this.isInitialized = false;
     }
 
     /**
      * Initialize the item count display
      */
     initialize() {
+        // Guard against duplicate initialization
+        if (this.isInitialized) {
+            return;
+        }
+
         if (!config.getSetting('market_visibleItemCount')) {
             return;
         }
 
+        this.isInitialized = true;
         this.setupObserver();
     }
 
@@ -163,6 +170,8 @@ class ItemCountDisplay {
         document.querySelectorAll('[class*="Item_clickable"]').forEach(tile => {
             tile.style.opacity = '1.0';
         });
+
+        this.isInitialized = false;
     }
 }
 

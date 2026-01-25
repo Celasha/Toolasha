@@ -23,6 +23,7 @@ class EstimatedListingAge {
         this.unregisterObserver = null;
         this.storageKey = 'marketListingTimestamps';
         this.maxAge = 30 * 24 * 60 * 60 * 1000; // 30 days in ms
+        this.isInitialized = false;
     }
 
     /**
@@ -59,9 +60,16 @@ class EstimatedListingAge {
      * Initialize the estimated listing age feature
      */
     async initialize() {
+        // Guard against duplicate initialization
+        if (this.isInitialized) {
+            return;
+        }
+
         if (!config.getSetting('market_showEstimatedListingAge')) {
             return;
         }
+
+        this.isInitialized = true;
 
         // Load historical data from storage
         await this.loadHistoricalData();
@@ -578,6 +586,7 @@ class EstimatedListingAge {
         }
 
         this.clearDisplays();
+        this.isInitialized = false;
     }
 }
 

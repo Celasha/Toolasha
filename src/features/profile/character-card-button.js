@@ -16,6 +16,7 @@ class CharacterCardButton {
         this.isActive = false;
         this.isInitialized = false;
         this.currentProfileData = null; // Store profile data for food/drinks
+        this.profileSharedHandler = null; // Store handler reference for cleanup
     }
 
     /**
@@ -41,18 +42,29 @@ class CharacterCardButton {
      * Initialize character card button feature
      */
     initialize() {
+        // Guard FIRST (before feature check)
+        if (this.isInitialized) {
+            console.log('[CharacterCardButton] ⚠️ BLOCKED duplicate initialization (fix working!)');
+            return;
+        }
+
         // Check if feature is enabled
         if (!config.getSetting('characterCard')) {
             return;
         }
 
-        // Listen for profile_shared WebSocket messages
-        webSocketHook.on('profile_shared', (data) => {
+        console.log('[CharacterCardButton] ✓ Initializing (first time)');
+        this.isInitialized = true;
+
+        // Store handler reference for cleanup
+        this.profileSharedHandler = (data) => {
             this.handleProfileShared(data);
-        });
+        };
+
+        // Listen for profile_shared WebSocket messages
+        webSocketHook.on('profile_shared', this.profileSharedHandler);
 
         this.isActive = true;
-        this.isInitialized = true;
     }
 
     /**
@@ -259,6 +271,15 @@ class CharacterCardButton {
      * Disable the feature
      */
     disable() {
+        console.log('[CharacterCardButton] 🧹 Cleaning up handlers');
+
+        // Unregister WebSocket handler
+        if (this.profileSharedHandler) {
+            webSocketHook.off('profile_shared', this.profileSharedHandler);
+            this.profileSharedHandler = null;
+        }
+
+        // Remove button from DOM
         const button = document.getElementById('mwi-character-card-btn');
         if (button) {
             button.remove();

@@ -199,6 +199,22 @@ class DOMObserver {
             pendingCallbacks: this.debounceTimers.size
         };
     }
+
+    /**
+     * Debug helper: Log detailed handler information
+     * TEMPORARY: For testing handler accumulation fix
+     */
+    debugHandlers() {
+        console.log('=== DOM Observer Diagnostics ===');
+        console.log('Total handlers:', this.handlers.length);
+        console.log('Active observers:', this.isObserving);
+        console.log('Pending callbacks:', this.debounceTimers.size);
+        console.log('\nHandler list:');
+        this.handlers.forEach((h, i) => {
+            console.log(`  ${i + 1}. ${h.name}${h.debounce ? ' (debounced)' : ''}`);
+        });
+        console.log('================================');
+    }
 }
 
 // Create singleton instance

@@ -11,6 +11,7 @@ class MarketFilter {
     constructor() {
         this.isActive = false;
         this.unregisterHandlers = [];
+        this.isInitialized = false;
 
         // Filter state
         this.minLevel = 1;
@@ -26,9 +27,18 @@ class MarketFilter {
      * Initialize market filter
      */
     initialize() {
+        // Guard FIRST (before feature check)
+        if (this.isInitialized) {
+            console.log('[MarketFilter] ⚠️ BLOCKED duplicate initialization (fix working!)');
+            return;
+        }
+
         if (!config.getSetting('marketFilter')) {
             return;
         }
+
+        console.log('[MarketFilter] ✓ Initializing (first time)');
+        this.isInitialized = true;
 
         // Register DOM observer for marketplace panel
         this.registerDOMObservers();
@@ -366,6 +376,7 @@ class MarketFilter {
         }
 
         this.isActive = false;
+        this.isInitialized = false;
     }
 }
 

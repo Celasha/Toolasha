@@ -39,16 +39,24 @@ class TooltipPrices {
     constructor() {
         this.unregisterObserver = null;
         this.isActive = false;
+        this.isInitialized = false;
     }
 
     /**
      * Initialize the tooltip prices feature
      */
     async initialize() {
+        // Guard against duplicate initialization
+        if (this.isInitialized) {
+            return;
+        }
+
         // Check if feature is enabled
         if (!config.getSetting('itemTooltip_prices')) {
             return;
         }
+
+        this.isInitialized = true;
 
         // Wait for market data to load
         if (!marketAPI.isLoaded()) {
@@ -864,6 +872,7 @@ class TooltipPrices {
         }
 
         this.isActive = false;
+        this.isInitialized = false;
     }
 }
 

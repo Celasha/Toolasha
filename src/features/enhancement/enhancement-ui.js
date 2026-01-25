@@ -986,6 +986,41 @@ class EnhancementUI {
             }
         }
     }
+
+    /**
+     * Cleanup all UI resources
+     */
+    cleanup() {
+        // Clear any pending update debounces
+        if (this.updateDebounce) {
+            clearTimeout(this.updateDebounce);
+            this.updateDebounce = null;
+        }
+
+        // Clear poll interval
+        if (this.pollInterval) {
+            clearInterval(this.pollInterval);
+            this.pollInterval = null;
+        }
+
+        // Unregister DOM observer
+        if (this.unregisterScreenObserver) {
+            this.unregisterScreenObserver();
+            this.unregisterScreenObserver = null;
+        }
+
+        // Remove floating UI from DOM
+        if (this.floatingUI && this.floatingUI.parentNode) {
+            this.floatingUI.parentNode.removeChild(this.floatingUI);
+            this.floatingUI = null;
+        }
+
+        // Reset state
+        this.isOnEnhancingScreen = false;
+        this.isCollapsed = false;
+        this.currentViewingIndex = 0;
+        this.isDragging = false;
+    }
 }
 
 // Create and export singleton instance

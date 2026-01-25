@@ -17,16 +17,24 @@ class TooltipConsumables {
     constructor() {
         this.unregisterObserver = null;
         this.isActive = false;
+        this.isInitialized = false;
     }
 
     /**
      * Initialize the consumable tooltips feature
      */
     async initialize() {
+        // Guard against duplicate initialization
+        if (this.isInitialized) {
+            return;
+        }
+
         // Check if feature is enabled
         if (!config.getSetting('showConsumTips')) {
             return;
         }
+
+        this.isInitialized = true;
 
         // Wait for market data to load (needed for cost calculations)
         if (!marketAPI.isLoaded()) {
@@ -317,6 +325,7 @@ class TooltipConsumables {
         }
 
         this.isActive = false;
+        this.isInitialized = false;
     }
 }
 

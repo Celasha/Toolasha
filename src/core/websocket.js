@@ -261,6 +261,21 @@ class WebSocketHook {
             }
         }
     }
+
+    /**
+     * Debug helper: Log WebSocket handler counts
+     * TEMPORARY: For testing handler accumulation fix
+     */
+    debugHandlers() {
+        console.log('=== WebSocket Handler Diagnostics ===');
+        let totalHandlers = 0;
+        for (const [type, handlers] of this.messageHandlers.entries()) {
+            console.log(`  ${type}: ${handlers.length} handler(s)`);
+            totalHandlers += handlers.length;
+        }
+        console.log(`Total: ${totalHandlers} handlers across ${this.messageHandlers.size} event types`);
+        console.log('====================================');
+    }
 }
 
 // Create and export singleton instance

@@ -52,9 +52,17 @@ class TaskProfitDisplay {
      * Initialize task profit display
      */
     initialize() {
+        // Guard FIRST (before feature check)
+        if (this.isInitialized) {
+            console.log('[TaskProfitDisplay] ⚠️ BLOCKED duplicate initialization (fix working!)');
+            return;
+        }
+
         if (!config.getSetting('taskProfitCalculator')) {
             return;
         }
+
+        console.log('[TaskProfitDisplay] ✓ Initializing (first time)');
 
         // Set up retry handler for when game data loads
         if (!dataManager.getInitClientData()) {

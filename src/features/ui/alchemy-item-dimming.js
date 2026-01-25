@@ -16,16 +16,26 @@ class AlchemyItemDimming {
         this.unregisterObserver = null; // Unregister function from centralized observer
         this.isActive = false;
         this.processedDivs = new WeakSet(); // Track already-processed divs
+        this.isInitialized = false;
     }
 
     /**
      * Initialize the alchemy item dimming
      */
     initialize() {
+        // Guard FIRST (before feature check)
+        if (this.isInitialized) {
+            console.log('[AlchemyItemDimming] ⚠️ BLOCKED duplicate initialization (fix working!)');
+            return;
+        }
+
         // Check if feature is enabled
         if (!config.getSetting('alchemyItemDimming')) {
             return;
         }
+
+        console.log('[AlchemyItemDimming] ✓ Initializing (first time)');
+        this.isInitialized = true;
 
         // Register with centralized observer to watch for alchemy panel
         this.unregisterObserver = domObserver.onClass(
@@ -157,6 +167,7 @@ class AlchemyItemDimming {
         this.processedDivs = new WeakSet();
 
         this.isActive = false;
+        this.isInitialized = false;
     }
 }
 

@@ -17,6 +17,7 @@ class TradeHistory {
         this.isInitialized = false;
         this.isLoaded = false;
         this.characterId = null;
+        this.marketUpdateHandler = null; // Store handler reference for cleanup
     }
 
     /**
@@ -47,13 +48,17 @@ class TradeHistory {
      * Initialize trade history tracking
      */
     async initialize() {
+        // Guard FIRST (before feature check)
+        if (this.isInitialized) {
+            console.log('[TradeHistory] ⚠️ BLOCKED duplicate initialization (fix working!)');
+            return;
+        }
+
         if (!config.getSetting('market_tradeHistory')) {
             return;
         }
 
-        if (this.isInitialized) {
-            return;
-        }
+        console.log('[TradeHistory] ✓ Initializing (first time)');
 
         // Get current character ID
         this.characterId = dataManager.getCurrentCharacterId();
@@ -61,10 +66,13 @@ class TradeHistory {
         // Load existing history from storage
         await this.loadHistory();
 
-        // Hook into WebSocket for market listing updates
-        webSocketHook.on('market_listings_updated', (data) => {
+        // Store handler reference for cleanup
+        this.marketUpdateHandler = (data) => {
             this.handleMarketUpdate(data);
-        });
+        };
+
+        // Hook into WebSocket for market listing updates
+        webSocketHook.on('market_listings_updated', this.marketUpdateHandler);
 
         this.isInitialized = true;
     }
@@ -164,6 +172,14 @@ class TradeHistory {
      * Disable the feature
      */
     disable() {
+        console.log('[TradeHistory] 🧹 Cleaning up handlers');
+
+        // Unregister WebSocket handler
+        if (this.marketUpdateHandler) {
+            webSocketHook.off('market_listings_updated', this.marketUpdateHandler);
+            this.marketUpdateHandler = null;
+        }
+
         // Don't clear history data, just stop tracking
         this.isInitialized = false;
     }
@@ -172,10 +188,12 @@ class TradeHistory {
      * Handle character switch - clear old data and reinitialize
      */
     async handleCharacterSwitch() {
+        // Disable first to clean up old handlers
+        this.disable();
+
         // Clear old character's data from memory
         this.history = {};
         this.isLoaded = false;
-        this.isInitialized = false;
 
         // Reinitialize with new character
         await this.initialize();

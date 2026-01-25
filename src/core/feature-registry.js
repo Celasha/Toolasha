@@ -43,9 +43,7 @@ import networthFeature from '../features/networth/index.js';
 import inventoryBadgeManager from '../features/inventory/inventory-badge-manager.js';
 import inventorySort from '../features/inventory/inventory-sort.js';
 import inventoryBadgePrices from '../features/inventory/inventory-badge-prices.js';
-import enhancementTracker from '../features/enhancement/enhancement-tracker.js';
-import { setupEnhancementHandlers } from '../features/enhancement/enhancement-handlers.js';
-import enhancementUI from '../features/enhancement/enhancement-ui.js';
+import enhancementFeature from '../features/enhancement/enhancement-feature.js';
 import emptyQueueNotification from '../features/notifications/empty-queue-notification.js';
 import dungeonTracker from '../features/combat/dungeon-tracker.js';
 import dungeonTrackerUI from '../features/combat/dungeon-tracker-ui.js';
@@ -443,9 +441,7 @@ const featureRegistry = [
         name: 'Enhancement Tracker',
         category: 'Enhancement',
         initialize: async () => {
-            await enhancementTracker.initialize();
-            setupEnhancementHandlers();
-            enhancementUI.initialize();
+            await enhancementFeature.initialize();
         },
         async: true
     },
@@ -728,7 +724,7 @@ function getFeatureInstance(key) {
         'networth': networthFeature,
         'inventorySort': inventorySort,
         'inventoryBadgePrices': inventoryBadgePrices,
-        'enhancementTracker': enhancementTracker,
+        'enhancementTracker': enhancementFeature,
         'notifiEmptyAction': emptyQueueNotification
     };
 

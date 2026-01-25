@@ -18,16 +18,23 @@ class AlchemyProfitDisplay {
         this.updateTimeout = null;
         this.lastFingerprint = null;
         this.pollInterval = null;
+        this.isInitialized = false;
     }
 
     /**
      * Initialize the display system
      */
     initialize() {
+        // Guard against duplicate initialization
+        if (this.isInitialized) {
+            return;
+        }
+
         if (!config.getSetting('alchemy_profitDisplay')) {
             return;
         }
 
+        this.isInitialized = true;
         this.setupObserver();
         this.isActive = true;
     }
@@ -733,6 +740,7 @@ class AlchemyProfitDisplay {
         this.removeDisplay();
         this.lastFingerprint = null; // Clear fingerprint on disable
         this.isActive = false;
+        this.isInitialized = false;
     }
 }
 

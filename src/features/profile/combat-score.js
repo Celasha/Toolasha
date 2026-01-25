@@ -20,6 +20,7 @@ class CombatScore {
         this.isActive = false;
         this.currentPanel = null;
         this.isInitialized = false;
+        this.profileSharedHandler = null; // Store handler reference for cleanup
     }
 
     /**
@@ -45,18 +46,29 @@ class CombatScore {
      * Initialize combat score feature
      */
     initialize() {
+        // Guard FIRST (before feature check)
+        if (this.isInitialized) {
+            console.log('[CombatScore] ⚠️ BLOCKED duplicate initialization (fix working!)');
+            return;
+        }
+
         // Check if feature is enabled
         if (!config.getSetting('combatScore')) {
             return;
         }
 
-        // Listen for profile_shared WebSocket messages
-        webSocketHook.on('profile_shared', (data) => {
+        console.log('[CombatScore] ✓ Initializing (first time)');
+        this.isInitialized = true;
+
+        // Store handler reference for cleanup
+        this.profileSharedHandler = (data) => {
             this.handleProfileShared(data);
-        });
+        };
+
+        // Listen for profile_shared WebSocket messages
+        webSocketHook.on('profile_shared', this.profileSharedHandler);
 
         this.isActive = true;
-        this.isInitialized = true;
     }
 
     /**
@@ -515,6 +527,14 @@ class CombatScore {
      * Disable the feature
      */
     disable() {
+        console.log('[CombatScore] 🧹 Cleaning up handlers');
+
+        // Unregister WebSocket handler
+        if (this.profileSharedHandler) {
+            webSocketHook.off('profile_shared', this.profileSharedHandler);
+            this.profileSharedHandler = null;
+        }
+
         if (this.currentPanel) {
             this.currentPanel.remove();
             this.currentPanel = null;

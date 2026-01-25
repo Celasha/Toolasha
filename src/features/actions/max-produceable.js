@@ -50,15 +50,23 @@ class MaxProduceable {
         this.characterSwitchingHandler = null; // Handler for character switch cleanup
         this.profitCalcTimeout = null; // Debounce timer for deferred profit calculations
         this.actionNameToHridCache = null; // Cached reverse lookup map (name → hrid)
+        this.isInitialized = false;
     }
 
     /**
      * Initialize the max produceable display
      */
     async initialize() {
+        // Guard against duplicate initialization
+        if (this.isInitialized) {
+            return;
+        }
+
         if (!config.getSetting('actionPanel_maxProduceable')) {
             return;
         }
+
+        this.isInitialized = true;
 
         // Initialize shared sort manager
         await actionPanelSort.initialize();
@@ -570,6 +578,8 @@ class MaxProduceable {
         document.querySelectorAll('.mwi-max-produceable').forEach(el => el.remove());
         document.querySelectorAll('.mwi-action-pin').forEach(el => el.remove());
         this.actionElements.clear();
+
+        this.isInitialized = false;
     }
 }
 

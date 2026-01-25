@@ -15,16 +15,23 @@ class TradeHistoryDisplay {
         this.unregisterObserver = null;
         this.currentItemHrid = null;
         this.currentEnhancementLevel = 0;
+        this.isInitialized = false;
     }
 
     /**
      * Initialize the display system
      */
     initialize() {
+        // Guard against duplicate initialization
+        if (this.isInitialized) {
+            return;
+        }
+
         if (!config.getSetting('market_tradeHistory')) {
             return;
         }
 
+        this.isInitialized = true;
         this.setupObserver();
         this.isActive = true;
     }
@@ -316,6 +323,7 @@ class TradeHistoryDisplay {
         this.isActive = false;
         this.currentItemHrid = null;
         this.currentEnhancementLevel = 0;
+        this.isInitialized = false;
     }
 }
 

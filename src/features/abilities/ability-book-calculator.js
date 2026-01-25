@@ -44,10 +44,19 @@ class AbilityBookCalculator {
      * Initialize the ability book calculator
      */
     initialize() {
+        // Guard FIRST (before feature check)
+        if (this.isInitialized) {
+            console.log('[AbilityBookCalculator] ⚠️ BLOCKED duplicate initialization (fix working!)');
+            return;
+        }
+
         // Check if feature is enabled
         if (!config.getSetting('skillbook')) {
             return;
         }
+
+        console.log('[AbilityBookCalculator] ✓ Initializing (first time)');
+        this.isInitialized = true;
 
         // Register with centralized observer to watch for Item Dictionary modal
         this.unregisterObserver = domObserver.onClass(
@@ -59,7 +68,6 @@ class AbilityBookCalculator {
         );
 
         this.isActive = true;
-        this.isInitialized = true;
     }
 
     /**

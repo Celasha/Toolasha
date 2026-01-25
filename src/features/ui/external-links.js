@@ -10,16 +10,23 @@ class ExternalLinks {
     constructor() {
         this.unregisterObserver = null;
         this.linksAdded = false;
+        this.isInitialized = false;
     }
 
     /**
      * Initialize external links feature
      */
     initialize() {
+        // Guard against duplicate initialization
+        if (this.isInitialized) {
+            return;
+        }
+
         if (!config.getSetting('ui_externalLinks')) {
             return;
         }
 
+        this.isInitialized = true;
         this.setupObserver();
     }
 
@@ -120,6 +127,7 @@ class ExternalLinks {
         }
 
         this.linksAdded = false;
+        this.isInitialized = false;
     }
 }
 

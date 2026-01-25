@@ -20,16 +20,23 @@ class OutputTotals {
     constructor() {
         this.observedInputs = new Map(); // input element → cleanup function
         this.unregisterObserver = null;
+        this.isInitialized = false;
     }
 
     /**
      * Initialize the output totals display
      */
     initialize() {
+        // Guard against duplicate initialization
+        if (this.isInitialized) {
+            return;
+        }
+
         if (!config.getSetting('actionPanel_outputTotals')) {
             return;
         }
 
+        this.isInitialized = true;
         this.setupObserver();
     }
 
@@ -342,6 +349,8 @@ class OutputTotals {
 
         // Remove all injected elements
         document.querySelectorAll('.mwi-output-total').forEach(el => el.remove());
+
+        this.isInitialized = false;
     }
 }
 

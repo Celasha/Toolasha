@@ -13,15 +13,25 @@ class AutoFillPrice {
         this.isActive = false;
         this.unregisterHandlers = [];
         this.processedModals = new WeakSet(); // Track processed modals to prevent duplicates
+        this.isInitialized = false;
     }
 
     /**
      * Initialize auto-fill price feature
      */
     initialize() {
+        // Guard FIRST (before feature check)
+        if (this.isInitialized) {
+            console.log('[AutoFillPrice] ⚠️ BLOCKED duplicate initialization (fix working!)');
+            return;
+        }
+
         if (!config.getSetting('fillMarketOrderPrice')) {
             return;
         }
+
+        console.log('[AutoFillPrice] ✓ Initializing (first time)');
+        this.isInitialized = true;
 
         // Register DOM observer for marketplace order modals
         this.registerDOMObservers();
@@ -130,6 +140,7 @@ class AutoFillPrice {
         this.unregisterHandlers.forEach(unregister => unregister());
         this.unregisterHandlers = [];
         this.isActive = false;
+        this.isInitialized = false;
     }
 }
 

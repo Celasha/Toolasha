@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.5.03
+// @version      0.5.04
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -1815,6 +1815,21 @@
                 }
             }
         }
+
+        /**
+         * Debug helper: Log WebSocket handler counts
+         * TEMPORARY: For testing handler accumulation fix
+         */
+        debugHandlers() {
+            console.log('=== WebSocket Handler Diagnostics ===');
+            let totalHandlers = 0;
+            for (const [type, handlers] of this.messageHandlers.entries()) {
+                console.log(`  ${type}: ${handlers.length} handler(s)`);
+                totalHandlers += handlers.length;
+            }
+            console.log(`Total: ${totalHandlers} handlers across ${this.messageHandlers.size} event types`);
+            console.log('====================================');
+        }
     }
 
     // Create and export singleton instance
@@ -3492,6 +3507,22 @@
                 })),
                 pendingCallbacks: this.debounceTimers.size
             };
+        }
+
+        /**
+         * Debug helper: Log detailed handler information
+         * TEMPORARY: For testing handler accumulation fix
+         */
+        debugHandlers() {
+            console.log('=== DOM Observer Diagnostics ===');
+            console.log('Total handlers:', this.handlers.length);
+            console.log('Active observers:', this.isObserving);
+            console.log('Pending callbacks:', this.debounceTimers.size);
+            console.log('\nHandler list:');
+            this.handlers.forEach((h, i) => {
+                console.log(`  ${i + 1}. ${h.name}${h.debounce ? ' (debounced)' : ''}`);
+            });
+            console.log('================================');
         }
     }
 
@@ -9579,16 +9610,24 @@
         constructor() {
             this.unregisterObserver = null;
             this.isActive = false;
+            this.isInitialized = false;
         }
 
         /**
          * Initialize the tooltip prices feature
          */
         async initialize() {
+            // Guard against duplicate initialization
+            if (this.isInitialized) {
+                return;
+            }
+
             // Check if feature is enabled
             if (!config.getSetting('itemTooltip_prices')) {
                 return;
             }
+
+            this.isInitialized = true;
 
             // Wait for market data to load
             if (!marketAPI.isLoaded()) {
@@ -10404,6 +10443,7 @@
             }
 
             this.isActive = false;
+            this.isInitialized = false;
         }
     }
 
@@ -10423,16 +10463,24 @@
         constructor() {
             this.unregisterObserver = null;
             this.isActive = false;
+            this.isInitialized = false;
         }
 
         /**
          * Initialize the consumable tooltips feature
          */
         async initialize() {
+            // Guard against duplicate initialization
+            if (this.isInitialized) {
+                return;
+            }
+
             // Check if feature is enabled
             if (!config.getSetting('showConsumTips')) {
                 return;
             }
+
+            this.isInitialized = true;
 
             // Wait for market data to load (needed for cost calculations)
             if (!marketAPI.isLoaded()) {
@@ -10723,6 +10771,7 @@
             }
 
             this.isActive = false;
+            this.isInitialized = false;
         }
     }
 
@@ -10739,6 +10788,7 @@
         constructor() {
             this.isActive = false;
             this.unregisterHandlers = [];
+            this.isInitialized = false;
 
             // Filter state
             this.minLevel = 1;
@@ -10754,9 +10804,18 @@
          * Initialize market filter
          */
         initialize() {
+            // Guard FIRST (before feature check)
+            if (this.isInitialized) {
+                console.log('[MarketFilter] ⚠️ BLOCKED duplicate initialization (fix working!)');
+                return;
+            }
+
             if (!config.getSetting('marketFilter')) {
                 return;
             }
+
+            console.log('[MarketFilter] ✓ Initializing (first time)');
+            this.isInitialized = true;
 
             // Register DOM observer for marketplace panel
             this.registerDOMObservers();
@@ -11094,6 +11153,7 @@
             }
 
             this.isActive = false;
+            this.isInitialized = false;
         }
     }
 
@@ -11111,15 +11171,25 @@
             this.isActive = false;
             this.unregisterHandlers = [];
             this.processedModals = new WeakSet(); // Track processed modals to prevent duplicates
+            this.isInitialized = false;
         }
 
         /**
          * Initialize auto-fill price feature
          */
         initialize() {
+            // Guard FIRST (before feature check)
+            if (this.isInitialized) {
+                console.log('[AutoFillPrice] ⚠️ BLOCKED duplicate initialization (fix working!)');
+                return;
+            }
+
             if (!config.getSetting('fillMarketOrderPrice')) {
                 return;
             }
+
+            console.log('[AutoFillPrice] ✓ Initializing (first time)');
+            this.isInitialized = true;
 
             // Register DOM observer for marketplace order modals
             this.registerDOMObservers();
@@ -11228,6 +11298,7 @@
             this.unregisterHandlers.forEach(unregister => unregister());
             this.unregisterHandlers = [];
             this.isActive = false;
+            this.isInitialized = false;
         }
     }
 
@@ -11245,16 +11316,23 @@
     class ItemCountDisplay {
         constructor() {
             this.unregisterObserver = null;
+            this.isInitialized = false;
         }
 
         /**
          * Initialize the item count display
          */
         initialize() {
+            // Guard against duplicate initialization
+            if (this.isInitialized) {
+                return;
+            }
+
             if (!config.getSetting('market_visibleItemCount')) {
                 return;
             }
 
+            this.isInitialized = true;
             this.setupObserver();
         }
 
@@ -11396,6 +11474,8 @@
             document.querySelectorAll('[class*="Item_clickable"]').forEach(tile => {
                 tile.style.opacity = '1.0';
             });
+
+            this.isInitialized = false;
         }
     }
 
@@ -11421,6 +11501,7 @@
             this.unregisterObserver = null;
             this.storageKey = 'marketListingTimestamps';
             this.maxAge = 30 * 24 * 60 * 60 * 1000; // 30 days in ms
+            this.isInitialized = false;
         }
 
         /**
@@ -11457,9 +11538,16 @@
          * Initialize the estimated listing age feature
          */
         async initialize() {
+            // Guard against duplicate initialization
+            if (this.isInitialized) {
+                return;
+            }
+
             if (!config.getSetting('market_showEstimatedListingAge')) {
                 return;
             }
+
+            this.isInitialized = true;
 
             // Load historical data from storage
             await this.loadHistoricalData();
@@ -11976,6 +12064,7 @@
             }
 
             this.clearDisplays();
+            this.isInitialized = false;
         }
     }
 
@@ -11997,15 +12086,25 @@
             this.allListings = {}; // Maintained listing state
             this.unregisterWebSocket = null;
             this.unregisterObserver = null;
+            this.isInitialized = false;
         }
 
         /**
          * Initialize the listing price display
          */
         initialize() {
+            // Guard against duplicate initialization
+            if (this.isInitialized) {
+                console.log('[ListingPriceDisplay] ⚠️ BLOCKED duplicate initialization (fix working!)');
+                return;
+            }
+
             if (!config.getSetting('market_showListingPrices')) {
                 return;
             }
+
+            console.log('[ListingPriceDisplay] ✓ Initializing (first time)');
+            this.isInitialized = true;
 
             // Load initial listings from dataManager
             this.loadInitialListings();
@@ -12704,6 +12803,8 @@
          * Disable the listing price display
          */
         disable() {
+            console.log('[ListingPriceDisplay] 🧹 Cleaning up handlers');
+
             if (this.unregisterWebSocket) {
                 this.unregisterWebSocket();
                 this.unregisterWebSocket = null;
@@ -12716,6 +12817,7 @@
 
             this.clearDisplays();
             this.allListings = {};
+            this.isInitialized = false;
         }
     }
 
@@ -12737,6 +12839,7 @@
             this.isInitialized = false;
             this.isLoaded = false;
             this.characterId = null;
+            this.marketUpdateHandler = null; // Store handler reference for cleanup
         }
 
         /**
@@ -12767,13 +12870,17 @@
          * Initialize trade history tracking
          */
         async initialize() {
+            // Guard FIRST (before feature check)
+            if (this.isInitialized) {
+                console.log('[TradeHistory] ⚠️ BLOCKED duplicate initialization (fix working!)');
+                return;
+            }
+
             if (!config.getSetting('market_tradeHistory')) {
                 return;
             }
 
-            if (this.isInitialized) {
-                return;
-            }
+            console.log('[TradeHistory] ✓ Initializing (first time)');
 
             // Get current character ID
             this.characterId = dataManager.getCurrentCharacterId();
@@ -12781,10 +12888,13 @@
             // Load existing history from storage
             await this.loadHistory();
 
-            // Hook into WebSocket for market listing updates
-            webSocketHook.on('market_listings_updated', (data) => {
+            // Store handler reference for cleanup
+            this.marketUpdateHandler = (data) => {
                 this.handleMarketUpdate(data);
-            });
+            };
+
+            // Hook into WebSocket for market listing updates
+            webSocketHook.on('market_listings_updated', this.marketUpdateHandler);
 
             this.isInitialized = true;
         }
@@ -12884,6 +12994,14 @@
          * Disable the feature
          */
         disable() {
+            console.log('[TradeHistory] 🧹 Cleaning up handlers');
+
+            // Unregister WebSocket handler
+            if (this.marketUpdateHandler) {
+                webSocketHook.off('market_listings_updated', this.marketUpdateHandler);
+                this.marketUpdateHandler = null;
+            }
+
             // Don't clear history data, just stop tracking
             this.isInitialized = false;
         }
@@ -12892,10 +13010,12 @@
          * Handle character switch - clear old data and reinitialize
          */
         async handleCharacterSwitch() {
+            // Disable first to clean up old handlers
+            this.disable();
+
             // Clear old character's data from memory
             this.history = {};
             this.isLoaded = false;
-            this.isInitialized = false;
 
             // Reinitialize with new character
             await this.initialize();
@@ -12925,16 +13045,23 @@
             this.unregisterObserver = null;
             this.currentItemHrid = null;
             this.currentEnhancementLevel = 0;
+            this.isInitialized = false;
         }
 
         /**
          * Initialize the display system
          */
         initialize() {
+            // Guard against duplicate initialization
+            if (this.isInitialized) {
+                return;
+            }
+
             if (!config.getSetting('market_tradeHistory')) {
                 return;
             }
 
+            this.isInitialized = true;
             this.setupObserver();
             this.isActive = true;
         }
@@ -13226,6 +13353,7 @@
             this.isActive = false;
             this.currentItemHrid = null;
             this.currentEnhancementLevel = 0;
+            this.isInitialized = false;
         }
     }
 
@@ -19172,16 +19300,23 @@
         constructor() {
             this.observedInputs = new Map(); // input element → cleanup function
             this.unregisterObserver = null;
+            this.isInitialized = false;
         }
 
         /**
          * Initialize the output totals display
          */
         initialize() {
+            // Guard against duplicate initialization
+            if (this.isInitialized) {
+                return;
+            }
+
             if (!config.getSetting('actionPanel_outputTotals')) {
                 return;
             }
 
+            this.isInitialized = true;
             this.setupObserver();
         }
 
@@ -19494,6 +19629,8 @@
 
             // Remove all injected elements
             document.querySelectorAll('.mwi-output-total').forEach(el => el.remove());
+
+            this.isInitialized = false;
         }
     }
 
@@ -19764,15 +19901,23 @@
             this.characterSwitchingHandler = null; // Handler for character switch cleanup
             this.profitCalcTimeout = null; // Debounce timer for deferred profit calculations
             this.actionNameToHridCache = null; // Cached reverse lookup map (name → hrid)
+            this.isInitialized = false;
         }
 
         /**
          * Initialize the max produceable display
          */
         async initialize() {
+            // Guard against duplicate initialization
+            if (this.isInitialized) {
+                return;
+            }
+
             if (!config.getSetting('actionPanel_maxProduceable')) {
                 return;
             }
+
+            this.isInitialized = true;
 
             // Initialize shared sort manager
             await actionPanelSort.initialize();
@@ -20284,6 +20429,8 @@
             document.querySelectorAll('.mwi-max-produceable').forEach(el => el.remove());
             document.querySelectorAll('.mwi-action-pin').forEach(el => el.remove());
             this.actionElements.clear();
+
+            this.isInitialized = false;
         }
     }
 
@@ -20305,15 +20452,23 @@
             this.itemsUpdatedHandler = null;
             this.actionCompletedHandler = null;
             this.characterSwitchingHandler = null; // Handler for character switch cleanup
+            this.isInitialized = false;
         }
 
         /**
          * Initialize the gathering stats display
          */
         async initialize() {
+            // Guard against duplicate initialization
+            if (this.isInitialized) {
+                return;
+            }
+
             if (!config.getSetting('actionPanel_gatheringStats')) {
                 return;
             }
+
+            this.isInitialized = true;
 
             // Initialize shared sort manager
             await actionPanelSort.initialize();
@@ -20602,6 +20757,8 @@
             // Remove all injected elements
             document.querySelectorAll('.mwi-gathering-stats').forEach(el => el.remove());
             this.actionElements.clear();
+
+            this.isInitialized = false;
         }
     }
 
@@ -21030,10 +21187,19 @@
          * Initialize the ability book calculator
          */
         initialize() {
+            // Guard FIRST (before feature check)
+            if (this.isInitialized) {
+                console.log('[AbilityBookCalculator] ⚠️ BLOCKED duplicate initialization (fix working!)');
+                return;
+            }
+
             // Check if feature is enabled
             if (!config.getSetting('skillbook')) {
                 return;
             }
+
+            console.log('[AbilityBookCalculator] ✓ Initializing (first time)');
+            this.isInitialized = true;
 
             // Register with centralized observer to watch for Item Dictionary modal
             this.unregisterObserver = domObserver.onClass(
@@ -21045,7 +21211,6 @@
             );
 
             this.isActive = true;
-            this.isInitialized = true;
         }
 
         /**
@@ -23199,6 +23364,7 @@
             this.isActive = false;
             this.currentPanel = null;
             this.isInitialized = false;
+            this.profileSharedHandler = null; // Store handler reference for cleanup
         }
 
         /**
@@ -23224,18 +23390,29 @@
          * Initialize combat score feature
          */
         initialize() {
+            // Guard FIRST (before feature check)
+            if (this.isInitialized) {
+                console.log('[CombatScore] ⚠️ BLOCKED duplicate initialization (fix working!)');
+                return;
+            }
+
             // Check if feature is enabled
             if (!config.getSetting('combatScore')) {
                 return;
             }
 
-            // Listen for profile_shared WebSocket messages
-            webSocketHook.on('profile_shared', (data) => {
+            console.log('[CombatScore] ✓ Initializing (first time)');
+            this.isInitialized = true;
+
+            // Store handler reference for cleanup
+            this.profileSharedHandler = (data) => {
                 this.handleProfileShared(data);
-            });
+            };
+
+            // Listen for profile_shared WebSocket messages
+            webSocketHook.on('profile_shared', this.profileSharedHandler);
 
             this.isActive = true;
-            this.isInitialized = true;
         }
 
         /**
@@ -23694,6 +23871,14 @@
          * Disable the feature
          */
         disable() {
+            console.log('[CombatScore] 🧹 Cleaning up handlers');
+
+            // Unregister WebSocket handler
+            if (this.profileSharedHandler) {
+                webSocketHook.off('profile_shared', this.profileSharedHandler);
+                this.profileSharedHandler = null;
+            }
+
             if (this.currentPanel) {
                 this.currentPanel.remove();
                 this.currentPanel = null;
@@ -24087,6 +24272,7 @@
             this.isActive = false;
             this.isInitialized = false;
             this.currentProfileData = null; // Store profile data for food/drinks
+            this.profileSharedHandler = null; // Store handler reference for cleanup
         }
 
         /**
@@ -24112,18 +24298,29 @@
          * Initialize character card button feature
          */
         initialize() {
+            // Guard FIRST (before feature check)
+            if (this.isInitialized) {
+                console.log('[CharacterCardButton] ⚠️ BLOCKED duplicate initialization (fix working!)');
+                return;
+            }
+
             // Check if feature is enabled
             if (!config.getSetting('characterCard')) {
                 return;
             }
 
-            // Listen for profile_shared WebSocket messages
-            webSocketHook.on('profile_shared', (data) => {
+            console.log('[CharacterCardButton] ✓ Initializing (first time)');
+            this.isInitialized = true;
+
+            // Store handler reference for cleanup
+            this.profileSharedHandler = (data) => {
                 this.handleProfileShared(data);
-            });
+            };
+
+            // Listen for profile_shared WebSocket messages
+            webSocketHook.on('profile_shared', this.profileSharedHandler);
 
             this.isActive = true;
-            this.isInitialized = true;
         }
 
         /**
@@ -24330,6 +24527,15 @@
          * Disable the feature
          */
         disable() {
+            console.log('[CharacterCardButton] 🧹 Cleaning up handlers');
+
+            // Unregister WebSocket handler
+            if (this.profileSharedHandler) {
+                webSocketHook.off('profile_shared', this.profileSharedHandler);
+                this.profileSharedHandler = null;
+            }
+
+            // Remove button from DOM
             const button = document.getElementById('mwi-character-card-btn');
             if (button) {
                 button.remove();
@@ -24614,16 +24820,26 @@
             this.unregisterObserver = null; // Unregister function from centralized observer
             this.isActive = false;
             this.processedDivs = new WeakSet(); // Track already-processed divs
+            this.isInitialized = false;
         }
 
         /**
          * Initialize the alchemy item dimming
          */
         initialize() {
+            // Guard FIRST (before feature check)
+            if (this.isInitialized) {
+                console.log('[AlchemyItemDimming] ⚠️ BLOCKED duplicate initialization (fix working!)');
+                return;
+            }
+
             // Check if feature is enabled
             if (!config.getSetting('alchemyItemDimming')) {
                 return;
             }
+
+            console.log('[AlchemyItemDimming] ✓ Initializing (first time)');
+            this.isInitialized = true;
 
             // Register with centralized observer to watch for alchemy panel
             this.unregisterObserver = domObserver.onClass(
@@ -24755,6 +24971,7 @@
             this.processedDivs = new WeakSet();
 
             this.isActive = false;
+            this.isInitialized = false;
         }
     }
 
@@ -24947,16 +25164,23 @@
         constructor() {
             this.unregisterObserver = null;
             this.linksAdded = false;
+            this.isInitialized = false;
         }
 
         /**
          * Initialize external links feature
          */
         initialize() {
+            // Guard against duplicate initialization
+            if (this.isInitialized) {
+                return;
+            }
+
             if (!config.getSetting('ui_externalLinks')) {
                 return;
             }
 
+            this.isInitialized = true;
             this.setupObserver();
         }
 
@@ -25057,6 +25281,7 @@
             }
 
             this.linksAdded = false;
+            this.isInitialized = false;
         }
     }
 
@@ -25576,9 +25801,17 @@
          * Initialize task profit display
          */
         initialize() {
+            // Guard FIRST (before feature check)
+            if (this.isInitialized) {
+                console.log('[TaskProfitDisplay] ⚠️ BLOCKED duplicate initialization (fix working!)');
+                return;
+            }
+
             if (!config.getSetting('taskProfitCalculator')) {
                 return;
             }
+
+            console.log('[TaskProfitDisplay] ✓ Initializing (first time)');
 
             // Set up retry handler for when game data loads
             if (!dataManager.getInitClientData()) {
@@ -33191,6 +33424,41 @@
                 }
             }
         }
+
+        /**
+         * Cleanup all UI resources
+         */
+        cleanup() {
+            // Clear any pending update debounces
+            if (this.updateDebounce) {
+                clearTimeout(this.updateDebounce);
+                this.updateDebounce = null;
+            }
+
+            // Clear poll interval
+            if (this.pollInterval) {
+                clearInterval(this.pollInterval);
+                this.pollInterval = null;
+            }
+
+            // Unregister DOM observer
+            if (this.unregisterScreenObserver) {
+                this.unregisterScreenObserver();
+                this.unregisterScreenObserver = null;
+            }
+
+            // Remove floating UI from DOM
+            if (this.floatingUI && this.floatingUI.parentNode) {
+                this.floatingUI.parentNode.removeChild(this.floatingUI);
+                this.floatingUI = null;
+            }
+
+            // Reset state
+            this.isOnEnhancingScreen = false;
+            this.isCollapsed = false;
+            this.currentViewingIndex = 0;
+            this.isDragging = false;
+        }
     }
 
     // Create and export singleton instance
@@ -33572,6 +33840,73 @@
         } catch (error) {
         }
     }
+
+    /**
+     * Cleanup event handlers
+     */
+    function cleanupEnhancementHandlers() {
+        webSocketHook.off('action_completed', handleActionCompleted);
+        webSocketHook.off('*', handleDebugMessage);
+    }
+
+    /**
+     * Enhancement Feature Wrapper
+     * Manages initialization and cleanup of all enhancement-related components
+     * Fixes handler accumulation by coordinating tracker, UI, and handlers
+     */
+
+
+    class EnhancementFeature {
+        constructor() {
+            this.isInitialized = false;
+        }
+
+        /**
+         * Initialize all enhancement components
+         */
+        async initialize() {
+            // Guard against duplicate initialization
+            if (this.isInitialized) {
+                console.log('[Enhancement] ⚠️ BLOCKED duplicate initialization (fix working!)');
+                return;
+            }
+
+            console.log('[Enhancement] ✓ Initializing (first time)');
+            this.isInitialized = true;
+
+            // Initialize tracker (async)
+            await enhancementTracker.initialize();
+
+            // Setup WebSocket handlers
+            setupEnhancementHandlers();
+
+            // Initialize UI
+            enhancementUI.initialize();
+        }
+
+        /**
+         * Cleanup all enhancement components
+         */
+        disable() {
+            console.log('[Enhancement] 🧹 Cleaning up all components');
+
+            // Cleanup WebSocket handlers
+            cleanupEnhancementHandlers();
+
+            // Cleanup UI
+            enhancementUI.cleanup();
+
+            // Cleanup tracker (has its own disable method)
+            if (enhancementTracker.disable) {
+                enhancementTracker.disable();
+            }
+
+            this.isInitialized = false;
+        }
+    }
+
+    // Create and export singleton instance
+    const enhancementFeature = new EnhancementFeature();
 
     /**
      * Empty Queue Notification
@@ -34177,6 +34512,7 @@
     class DungeonTracker {
         constructor() {
             this.isTracking = false;
+            this.isInitialized = false; // Guard flag
             this.currentRun = null;
             this.waveStartTime = null;
             this.waveTimes = [];
@@ -34356,6 +34692,15 @@
          * Initialize dungeon tracker
          */
         async initialize() {
+            // Guard FIRST
+            if (this.isInitialized) {
+                console.log('[DungeonTracker] ⚠️ BLOCKED duplicate initialization (fix working!)');
+                return;
+            }
+
+            console.log('[DungeonTracker] ✓ Initializing (first time)');
+            this.isInitialized = true;
+
             // Get character ID from URL for data isolation
             this.characterId = this.getCharacterIdFromURL();
 
@@ -35369,6 +35714,8 @@
          * Cleanup for character switching
          */
         async cleanup() {
+            console.log('[DungeonTracker] 🧹 Cleaning up handlers');
+
             // Unregister all WebSocket handlers
             if (this.handlers.newBattle) {
                 webSocketHook.off('new_battle', this.handlers.newBattle);
@@ -35413,6 +35760,9 @@
 
             // Clear saved in-progress run
             await this.clearInProgressRun();
+
+            // Reset initialization flag
+            this.isInitialized = false;
         }
 
         /**
@@ -38252,21 +38602,35 @@
     class CombatSummary {
         constructor() {
             this.isActive = false;
+            this.isInitialized = false;
+            this.battleUnitFetchedHandler = null; // Store handler reference for cleanup
         }
 
         /**
          * Initialize combat summary feature
          */
         initialize() {
+            // Guard FIRST (before feature check)
+            if (this.isInitialized) {
+                console.log('[CombatSummary] ⚠️ BLOCKED duplicate initialization (fix working!)');
+                return;
+            }
+
             // Check if feature is enabled
             if (!config.getSetting('combatSummary')) {
                 return;
             }
 
-            // Listen for battle_unit_fetched WebSocket message
-            webSocketHook.on('battle_unit_fetched', (data) => {
+            console.log('[CombatSummary] ✓ Initializing (first time)');
+            this.isInitialized = true;
+
+            // Store handler reference for cleanup
+            this.battleUnitFetchedHandler = (data) => {
                 this.handleBattleSummary(data);
-            });
+            };
+
+            // Listen for battle_unit_fetched WebSocket message
+            webSocketHook.on('battle_unit_fetched', this.battleUnitFetchedHandler);
 
             this.isActive = true;
         }
@@ -38462,8 +38826,16 @@
          * Disable the combat summary feature
          */
         disable() {
+            console.log('[CombatSummary] 🧹 Cleaning up handlers');
+
+            // Unregister WebSocket handler
+            if (this.battleUnitFetchedHandler) {
+                webSocketHook.off('battle_unit_fetched', this.battleUnitFetchedHandler);
+                this.battleUnitFetchedHandler = null;
+            }
+
             this.isActive = false;
-            // Note: WebSocket listeners remain registered (no cleanup needed for settings toggle)
+            this.isInitialized = false;
         }
     }
 
@@ -39567,16 +39939,23 @@
             this.updateTimeout = null;
             this.lastFingerprint = null;
             this.pollInterval = null;
+            this.isInitialized = false;
         }
 
         /**
          * Initialize the display system
          */
         initialize() {
+            // Guard against duplicate initialization
+            if (this.isInitialized) {
+                return;
+            }
+
             if (!config.getSetting('alchemy_profitDisplay')) {
                 return;
             }
 
+            this.isInitialized = true;
             this.setupObserver();
             this.isActive = true;
         }
@@ -40282,6 +40661,7 @@
             this.removeDisplay();
             this.lastFingerprint = null; // Clear fingerprint on disable
             this.isActive = false;
+            this.isInitialized = false;
         }
     }
 
@@ -40911,9 +41291,7 @@
             name: 'Enhancement Tracker',
             category: 'Enhancement',
             initialize: async () => {
-                await enhancementTracker.initialize();
-                setupEnhancementHandlers();
-                enhancementUI.initialize();
+                await enhancementFeature.initialize();
             },
             async: true
         },
@@ -41196,7 +41574,7 @@
             'networth': networthFeature,
             'inventorySort': inventorySort,
             'inventoryBadgePrices': inventoryBadgePrices,
-            'enhancementTracker': enhancementTracker,
+            'enhancementTracker': enhancementFeature,
             'notifiEmptyAction': emptyQueueNotification
         };
 
@@ -41632,7 +42010,7 @@
         const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
         targetWindow.Toolasha = {
-            version: '0.5.03',
+            version: '0.5.04',
 
             // Feature toggle API (for users to manage settings via console)
             features: {
@@ -41642,6 +42020,21 @@
                 toggle: (key) => config.toggleFeature(key),
                 status: (key) => config.isFeatureEnabled(key),
                 info: (key) => config.getFeatureInfo(key)
+            },
+
+            // Debug API (TEMPORARY: for testing handler accumulation fix)
+            debug: {
+                domHandlers: () => domObserver.debugHandlers(),
+                wsHandlers: () => webSocketHook.debugHandlers(),
+                domStats: () => domObserver.getStats(),
+                runTest: () => {
+                    console.log('🧪 Handler Accumulation Test');
+                    console.log('📊 DOM Observer:');
+                    domObserver.debugHandlers();
+                    console.log('\n📊 WebSocket:');
+                    webSocketHook.debugHandlers();
+                    console.log('\n👉 Switch characters 3 times, then run: Toolasha.debug.runTest()');
+                }
             }
         };
     }
