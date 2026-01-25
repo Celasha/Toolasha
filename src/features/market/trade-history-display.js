@@ -7,7 +7,7 @@ import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
 import dataManager from '../../core/data-manager.js';
 import tradeHistory from './trade-history.js';
-import { formatKMB } from '../../utils/formatters.js';
+import { formatKMB3Digits } from '../../utils/formatters.js';
 
 class TradeHistoryDisplay {
     constructor() {
@@ -181,7 +181,7 @@ class TradeHistoryDisplay {
         if (history.buy) {
             const buyColor = this.getBuyColor(history.buy, currentPrices?.ask);
             console.log('[TradeHistoryDisplay] Buy color:', buyColor, 'lastBuy:', history.buy, 'currentAsk:', currentPrices?.ask);
-            parts.push(`<span style="color: ${buyColor}; font-weight: 600;" title="Your last buy price">Buy ${formatKMB(history.buy)}</span>`);
+            parts.push(`<span style="color: ${buyColor}; font-weight: 600;" title="Your last buy price">Buy ${formatKMB3Digits(history.buy)}</span>`);
         }
 
         if (history.buy && history.sell) {
@@ -191,7 +191,7 @@ class TradeHistoryDisplay {
         if (history.sell) {
             const sellColor = this.getSellColor(history.sell, currentPrices?.bid);
             console.log('[TradeHistoryDisplay] Sell color:', sellColor, 'lastSell:', history.sell, 'currentBid:', currentPrices?.bid);
-            parts.push(`<span style="color: ${sellColor}; font-weight: 600;" title="Your last sell price">Sell ${formatKMB(history.sell)}</span>`);
+            parts.push(`<span style="color: ${sellColor}; font-weight: 600;" title="Your last sell price">Sell ${formatKMB3Digits(history.sell)}</span>`);
         }
 
         historyDiv.innerHTML = parts.join('');
