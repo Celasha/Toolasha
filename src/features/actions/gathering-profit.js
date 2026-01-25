@@ -40,6 +40,45 @@ const PRODUCTION_TYPES = [
 ];
 
 /**
+ * Cache for processing action conversions (inputItemHrid → conversion data)
+ * Built once per game data load to avoid O(n) searches through action map
+ */
+let processingConversionCache = null;
+
+/**
+ * Build processing conversion cache from game data
+ * @param {Object} gameData - Game data from dataManager
+ * @returns {Map} Map of inputItemHrid → {actionHrid, outputItemHrid, conversionRatio}
+ */
+function buildProcessingConversionCache(gameData) {
+    const cache = new Map();
+    const validProcessingTypes = [
+        '/action_types/cheesesmithing',  // Milk → Cheese conversions
+        '/action_types/crafting',         // Log → Lumber conversions
+        '/action_types/tailoring'         // Cotton/Flax/Bamboo/Cocoon/Radiant → Fabric conversions
+    ];
+
+    for (const [actionHrid, action] of Object.entries(gameData.actionDetailMap)) {
+        if (!validProcessingTypes.includes(action.type)) {
+            continue;
+        }
+
+        const inputItem = action.inputItems?.[0];
+        const outputItem = action.outputItems?.[0];
+
+        if (inputItem && outputItem) {
+            cache.set(inputItem.itemHrid, {
+                actionHrid: actionHrid,
+                outputItemHrid: outputItem.itemHrid,
+                conversionRatio: inputItem.count
+            });
+        }
+    }
+
+    return cache;
+}
+
+/**
  * Calculate comprehensive profit for a gathering action
  * @param {string} actionHrid - Action HRID (e.g., "/actions/foraging/asteroid_belt")
  * @returns {Object|null} Profit data or null if not applicable
@@ -60,6 +99,11 @@ export async function calculateGatheringProfit(actionHrid) {
 
     if (!actionDetail.dropTable) {
         return null; // No drop table - nothing to calculate
+    }
+
+    // Build processing conversion cache once (lazy initialization)
+    if (!processingConversionCache) {
+        processingConversionCache = buildProcessingConversionCache(gameData);
     }
 
     // Ensure market data is loaded (check in-memory first to avoid storage reads)
@@ -237,33 +281,19 @@ export async function calculateGatheringProfit(actionHrid) {
         const baseAvgAmount = (drop.minCount + drop.maxCount) / 2;
         const avgAmountPerAction = baseAvgAmount * (1 + totalGathering);
 
-        // Check if this item has a Processing Tea conversion
+        // Check if this item has a Processing Tea conversion (using cache for O(1) lookup)
         // Processing Tea only applies to: Milk→Cheese, Log→Lumber, Cotton/Flax/Bamboo/Cocoon/Radiant→Fabric
-        // These are Cheesesmithing, Crafting (lumber), and Tailoring (fabric) actions
-        const validProcessingTypes = [
-            '/action_types/cheesesmithing',  // Milk → Cheese conversions
-            '/action_types/crafting',         // Log → Lumber conversions
-            '/action_types/tailoring'         // Cotton/Flax/Bamboo/Cocoon/Radiant → Fabric conversions
-        ];
-
-        const processingActionHrid = Object.keys(gameData.actionDetailMap).find(actionHrid => {
-            const action = gameData.actionDetailMap[actionHrid];
-            return validProcessingTypes.includes(action.type) &&
-                   action.inputItems?.[0]?.itemHrid === drop.itemHrid &&
-                   action.outputItems?.[0]?.itemHrid; // Has an output
-        });
-
-        const processedItemHrid = processingActionHrid
-            ? gameData.actionDetailMap[processingActionHrid].outputItems[0].itemHrid
-            : null;
+        const conversionData = processingConversionCache.get(drop.itemHrid);
+        const processedItemHrid = conversionData?.outputItemHrid || null;
+        const processingActionHrid = conversionData?.actionHrid || null;
 
         // Per-action calculations (efficiency will be applied when converting to items per hour)
         let rawPerAction = 0;
         let processedPerAction = 0;
 
         if (processedItemHrid && processingBonus > 0) {
-            // Get conversion ratio from the processing action we already found
-            const conversionRatio = gameData.actionDetailMap[processingActionHrid].inputItems[0].count;
+            // Get conversion ratio from cache (e.g., 1 Milk → 1 Cheese)
+            const conversionRatio = conversionData.conversionRatio;
 
             // Processing Tea check happens per action:
             // If procs (processingBonus% chance): Convert to processed + leftover

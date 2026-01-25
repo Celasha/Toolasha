@@ -8825,7 +8825,7 @@
     /**
      * Action types for gathering skills (3 skills)
      */
-    const GATHERING_TYPES$1 = [
+    const GATHERING_TYPES$2 = [
         '/action_types/foraging',
         '/action_types/woodcutting',
         '/action_types/milking'
@@ -8834,13 +8834,52 @@
     /**
      * Action types for production skills that benefit from Gourmet Tea (5 skills)
      */
-    const PRODUCTION_TYPES$2 = [
+    const PRODUCTION_TYPES$3 = [
         '/action_types/brewing',
         '/action_types/cooking',
         '/action_types/cheesesmithing',
         '/action_types/crafting',
         '/action_types/tailoring'
     ];
+
+    /**
+     * Cache for processing action conversions (inputItemHrid → conversion data)
+     * Built once per game data load to avoid O(n) searches through action map
+     */
+    let processingConversionCache = null;
+
+    /**
+     * Build processing conversion cache from game data
+     * @param {Object} gameData - Game data from dataManager
+     * @returns {Map} Map of inputItemHrid → {actionHrid, outputItemHrid, conversionRatio}
+     */
+    function buildProcessingConversionCache(gameData) {
+        const cache = new Map();
+        const validProcessingTypes = [
+            '/action_types/cheesesmithing',  // Milk → Cheese conversions
+            '/action_types/crafting',         // Log → Lumber conversions
+            '/action_types/tailoring'         // Cotton/Flax/Bamboo/Cocoon/Radiant → Fabric conversions
+        ];
+
+        for (const [actionHrid, action] of Object.entries(gameData.actionDetailMap)) {
+            if (!validProcessingTypes.includes(action.type)) {
+                continue;
+            }
+
+            const inputItem = action.inputItems?.[0];
+            const outputItem = action.outputItems?.[0];
+
+            if (inputItem && outputItem) {
+                cache.set(inputItem.itemHrid, {
+                    actionHrid: actionHrid,
+                    outputItemHrid: outputItem.itemHrid,
+                    conversionRatio: inputItem.count
+                });
+            }
+        }
+
+        return cache;
+    }
 
     /**
      * Calculate comprehensive profit for a gathering action
@@ -8857,12 +8896,17 @@
         }
 
         // Only process gathering actions (Foraging, Woodcutting, Milking) with drop tables
-        if (!GATHERING_TYPES$1.includes(actionDetail.type)) {
+        if (!GATHERING_TYPES$2.includes(actionDetail.type)) {
             return null;
         }
 
         if (!actionDetail.dropTable) {
             return null; // No drop table - nothing to calculate
+        }
+
+        // Build processing conversion cache once (lazy initialization)
+        if (!processingConversionCache) {
+            processingConversionCache = buildProcessingConversionCache(gameData);
         }
 
         // Ensure market data is loaded (check in-memory first to avoid storage reads)
@@ -8907,13 +8951,13 @@
 
         // Gourmet Tea only applies to production skills (Brewing, Cooking, Cheesesmithing, Crafting, Tailoring)
         // NOT gathering skills (Foraging, Woodcutting, Milking)
-        const gourmetBonus = PRODUCTION_TYPES$2.includes(actionDetail.type)
+        const gourmetBonus = PRODUCTION_TYPES$3.includes(actionDetail.type)
             ? parseGourmetBonus(drinkSlots, gameData.itemDetailMap, drinkConcentration)
             : 0;
 
         // Processing Tea: 15% base chance to convert raw → processed (Cotton → Cotton Fabric, etc.)
         // Only applies to gathering skills (Foraging, Woodcutting, Milking)
-        const processingBonus = GATHERING_TYPES$1.includes(actionDetail.type)
+        const processingBonus = GATHERING_TYPES$2.includes(actionDetail.type)
             ? parseProcessingBonus(drinkSlots, gameData.itemDetailMap, drinkConcentration)
             : 0;
 
@@ -8924,7 +8968,7 @@
         let gatheringTea = 0;
         let communityGathering = 0;
         let achievementGathering = 0;
-        if (GATHERING_TYPES$1.includes(actionDetail.type)) {
+        if (GATHERING_TYPES$2.includes(actionDetail.type)) {
             // Parse Gathering Tea bonus
             gatheringTea = parseGatheringBonus(drinkSlots, gameData.itemDetailMap, drinkConcentration);
 
@@ -9039,33 +9083,19 @@
             const baseAvgAmount = (drop.minCount + drop.maxCount) / 2;
             const avgAmountPerAction = baseAvgAmount * (1 + totalGathering);
 
-            // Check if this item has a Processing Tea conversion
+            // Check if this item has a Processing Tea conversion (using cache for O(1) lookup)
             // Processing Tea only applies to: Milk→Cheese, Log→Lumber, Cotton/Flax/Bamboo/Cocoon/Radiant→Fabric
-            // These are Cheesesmithing, Crafting (lumber), and Tailoring (fabric) actions
-            const validProcessingTypes = [
-                '/action_types/cheesesmithing',  // Milk → Cheese conversions
-                '/action_types/crafting',         // Log → Lumber conversions
-                '/action_types/tailoring'         // Cotton/Flax/Bamboo/Cocoon/Radiant → Fabric conversions
-            ];
-
-            const processingActionHrid = Object.keys(gameData.actionDetailMap).find(actionHrid => {
-                const action = gameData.actionDetailMap[actionHrid];
-                return validProcessingTypes.includes(action.type) &&
-                       action.inputItems?.[0]?.itemHrid === drop.itemHrid &&
-                       action.outputItems?.[0]?.itemHrid; // Has an output
-            });
-
-            const processedItemHrid = processingActionHrid
-                ? gameData.actionDetailMap[processingActionHrid].outputItems[0].itemHrid
-                : null;
+            const conversionData = processingConversionCache.get(drop.itemHrid);
+            const processedItemHrid = conversionData?.outputItemHrid || null;
+            conversionData?.actionHrid || null;
 
             // Per-action calculations (efficiency will be applied when converting to items per hour)
             let rawPerAction = 0;
             let processedPerAction = 0;
 
             if (processedItemHrid && processingBonus > 0) {
-                // Get conversion ratio from the processing action we already found
-                const conversionRatio = gameData.actionDetailMap[processingActionHrid].inputItems[0].count;
+                // Get conversion ratio from cache (e.g., 1 Milk → 1 Cheese)
+                const conversionRatio = conversionData.conversionRatio;
 
                 // Processing Tea check happens per action:
                 // If procs (processingBonus% chance): Convert to processed + leftover
@@ -13183,7 +13213,7 @@
     /**
      * Action types for production skills (5 skills)
      */
-    const PRODUCTION_TYPES$1 = [
+    const PRODUCTION_TYPES$2 = [
         '/action_types/brewing',
         '/action_types/cooking',
         '/action_types/cheesesmithing',
@@ -13207,7 +13237,7 @@
         }
 
         // Only process production actions with outputs
-        if (!PRODUCTION_TYPES$1.includes(actionDetail.type)) {
+        if (!PRODUCTION_TYPES$2.includes(actionDetail.type)) {
             return null;
         }
 
@@ -15442,7 +15472,7 @@
     /**
      * Action types for gathering skills (3 skills)
      */
-    const GATHERING_TYPES = [
+    const GATHERING_TYPES$1 = [
         '/action_types/foraging',
         '/action_types/woodcutting',
         '/action_types/milking'
@@ -15451,7 +15481,7 @@
     /**
      * Action types for production skills (5 skills)
      */
-    const PRODUCTION_TYPES = [
+    const PRODUCTION_TYPES$1 = [
         '/action_types/brewing',
         '/action_types/cooking',
         '/action_types/cheesesmithing',
@@ -15697,7 +15727,7 @@
         if (!actionDetail) return;
 
         // Check if this is a gathering action
-        if (GATHERING_TYPES.includes(actionDetail.type)) {
+        if (GATHERING_TYPES$1.includes(actionDetail.type)) {
             const dropTableElement = panel.querySelector(SELECTORS.DROP_TABLE);
             if (dropTableElement) {
                 await displayGatheringProfit(panel, actionHrid, SELECTORS.DROP_TABLE);
@@ -15705,7 +15735,7 @@
         }
 
         // Check if this is a production action
-        if (PRODUCTION_TYPES.includes(actionDetail.type)) {
+        if (PRODUCTION_TYPES$1.includes(actionDetail.type)) {
             const dropTableElement = panel.querySelector(SELECTORS.DROP_TABLE);
             if (dropTableElement) {
                 await displayProductionProfit(panel, actionHrid, SELECTORS.DROP_TABLE);
@@ -19670,6 +19700,27 @@
      */
 
 
+    /**
+     * Action type constants for classification
+     */
+    const GATHERING_TYPES = ['/action_types/foraging', '/action_types/woodcutting', '/action_types/milking'];
+    const PRODUCTION_TYPES = ['/action_types/brewing', '/action_types/cooking', '/action_types/cheesesmithing', '/action_types/crafting', '/action_types/tailoring'];
+
+    /**
+     * Build inventory index map for O(1) lookups
+     * @param {Array} inventory - Inventory array from dataManager
+     * @returns {Map} Map of itemHrid → inventory item
+     */
+    function buildInventoryIndex(inventory) {
+        const index = new Map();
+        for (const item of inventory) {
+            if (item.itemLocationHrid === '/item_locations/inventory') {
+                index.set(item.itemHrid, item);
+            }
+        }
+        return index;
+    }
+
     class MaxProduceable {
         constructor() {
             this.actionElements = new Map(); // actionPanel → {actionHrid, displayElement, pinElement}
@@ -19728,7 +19779,7 @@
                     clearTimeout(this.profitCalcTimeout);
                     this.profitCalcTimeout = setTimeout(() => {
                         this.updateAllCounts();
-                    }, 1000); // Wait 1 second after last panel appears
+                    }, 300); // Wait 300ms after last panel appears (reduced from 1000ms for better responsiveness)
                 }
             );
 
@@ -19743,7 +19794,7 @@
                 clearTimeout(this.profitCalcTimeout);
                 this.profitCalcTimeout = setTimeout(() => {
                     this.updateAllCounts();
-                }, 1000);
+                }, 300); // Reduced from 1000ms for better responsiveness
             }
         }
 
@@ -19904,19 +19955,20 @@
         /**
          * Calculate max produceable count for an action
          * @param {string} actionHrid - The action HRID
-         * @param {Array} inventory - Inventory array (optional, will fetch if not provided)
+         * @param {Map} inventoryIndex - Inventory index map (itemHrid → item)
          * @param {Object} gameData - Game data (optional, will fetch if not provided)
          * @returns {number|null} Max produceable count or null
          */
-        calculateMaxProduceable(actionHrid, inventory = null, gameData = null) {
+        calculateMaxProduceable(actionHrid, inventoryIndex = null, gameData = null) {
             const actionDetails = dataManager.getActionDetails(actionHrid);
 
-            // Get inventory if not provided
-            if (!inventory) {
-                inventory = dataManager.getInventory();
+            // Get inventory index if not provided
+            if (!inventoryIndex) {
+                const inventory = dataManager.getInventory();
+                inventoryIndex = buildInventoryIndex(inventory);
             }
 
-            if (!actionDetails || !inventory) {
+            if (!actionDetails || !inventoryIndex) {
                 return null;
             }
 
@@ -19927,13 +19979,9 @@
             const activeDrinks = dataManager.getActionDrinkSlots(actionDetails.type);
             const artisanBonus = parseArtisanBonus(activeDrinks, itemDetailMap, drinkConcentration);
 
-            // Calculate max crafts per input
+            // Calculate max crafts per input (using O(1) Map lookup instead of O(n) array find)
             const maxCraftsPerInput = actionDetails.inputItems.map(input => {
-                const invItem = inventory.find(item =>
-                    item.itemHrid === input.itemHrid &&
-                    item.itemLocationHrid === '/item_locations/inventory'
-                );
-
+                const invItem = inventoryIndex.get(input.itemHrid);
                 const invCount = invItem?.count || 0;
 
                 // Apply Artisan reduction (10% base, scaled by Drink Concentration)
@@ -19949,11 +19997,7 @@
             // Check upgrade item (e.g., Enhancement Stones)
             // NOTE: Upgrade items are NOT affected by Artisan Tea (only regular inputItems are)
             if (actionDetails.upgradeItemHrid) {
-                const upgradeItem = inventory.find(item =>
-                    item.itemHrid === actionDetails.upgradeItemHrid &&
-                    item.itemLocationHrid === '/item_locations/inventory'
-                );
-
+                const upgradeItem = inventoryIndex.get(actionDetails.upgradeItemHrid);
                 const upgradeCount = upgradeItem?.count || 0;
                 minCrafts = Math.min(minCrafts, upgradeCount);
             }
@@ -19964,9 +20008,9 @@
         /**
          * Update display count for a single action panel
          * @param {HTMLElement} actionPanel - The action panel element
-         * @param {Array} inventory - Inventory array (optional)
+         * @param {Map} inventoryIndex - Inventory index map (optional)
          */
-        async updateCount(actionPanel, inventory = null) {
+        async updateCount(actionPanel, inventoryIndex = null) {
             const data = this.actionElements.get(actionPanel);
 
             if (!data) {
@@ -19976,7 +20020,7 @@
             // Only calculate max crafts for production actions with display element
             let maxCrafts = null;
             if (data.displayElement) {
-                maxCrafts = this.calculateMaxProduceable(data.actionHrid, inventory, dataManager.getInitClientData());
+                maxCrafts = this.calculateMaxProduceable(data.actionHrid, inventoryIndex, dataManager.getInitClientData());
 
                 if (maxCrafts === null) {
                     data.displayElement.style.display = 'none';
@@ -19989,13 +20033,10 @@
             const actionDetails = dataManager.getActionDetails(data.actionHrid);
 
             if (actionDetails) {
-                const gatheringTypes = ['/action_types/foraging', '/action_types/woodcutting', '/action_types/milking'];
-                const productionTypes = ['/action_types/brewing', '/action_types/cooking', '/action_types/cheesesmithing', '/action_types/crafting', '/action_types/tailoring'];
-
-                if (gatheringTypes.includes(actionDetails.type)) {
+                if (GATHERING_TYPES.includes(actionDetails.type)) {
                     const profitData = await calculateGatheringProfit(data.actionHrid);
                     profitPerHour = profitData?.profitPerHour || null;
-                } else if (productionTypes.includes(actionDetails.type)) {
+                } else if (PRODUCTION_TYPES.includes(actionDetails.type)) {
                     const profitData = await calculateProductionProfit(data.actionHrid);
                     profitPerHour = profitData?.profitPerHour || null;
                 }
@@ -20059,18 +20100,21 @@
          * Update all counts
          */
         async updateAllCounts() {
-            // Get inventory once for all calculations (like MWIT-E does)
+            // Get inventory once and build index for O(1) lookups
             const inventory = dataManager.getInventory();
 
             if (!inventory) {
                 return;
             }
 
+            // Build inventory index once (O(n) cost, but amortized across all panels)
+            const inventoryIndex = buildInventoryIndex(inventory);
+
             // Clean up stale references and update valid ones
             const updatePromises = [];
             for (const actionPanel of [...this.actionElements.keys()]) {
                 if (document.body.contains(actionPanel)) {
-                    updatePromises.push(this.updateCount(actionPanel, inventory));
+                    updatePromises.push(this.updateCount(actionPanel, inventoryIndex));
                 } else {
                     // Panel no longer in DOM, remove from tracking
                     this.actionElements.delete(actionPanel);
