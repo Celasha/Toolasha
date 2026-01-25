@@ -439,10 +439,12 @@ class MaxProduceable {
                 const data = this.actionElements.get(actionPanel);
                 if (data) {
                     if (data.displayElement) {
+                        data.displayElement.innerHTML = '';  // Clear innerHTML to break references
                         data.displayElement.remove();
                         data.displayElement = null;  // Null out reference for GC
                     }
                     if (data.pinElement) {
+                        data.pinElement.innerHTML = '';  // Clear innerHTML to break references
                         data.pinElement.remove();
                         data.pinElement = null;  // Null out reference for GC
                     }
@@ -508,10 +510,12 @@ class MaxProduceable {
         // Note: .remove() is safe to call even if element is already detached
         for (const [actionPanel, data] of this.actionElements.entries()) {
             if (data.displayElement) {
+                data.displayElement.innerHTML = '';  // Clear innerHTML to break event listener references
                 data.displayElement.remove();
                 data.displayElement = null;  // Null out reference for GC
             }
             if (data.pinElement) {
+                data.pinElement.innerHTML = '';  // Clear innerHTML to break event listener references
                 data.pinElement.remove();
                 data.pinElement = null;  // Null out reference for GC
             }

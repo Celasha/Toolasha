@@ -249,6 +249,7 @@ class GatheringStats {
                 // Panel no longer in DOM - remove injected elements BEFORE deleting from Map
                 const data = this.actionElements.get(actionPanel);
                 if (data && data.displayElement) {
+                    data.displayElement.innerHTML = '';  // Clear innerHTML to break references
                     data.displayElement.remove();
                     data.displayElement = null;  // Null out reference for GC
                 }
@@ -273,6 +274,7 @@ class GatheringStats {
         // Note: .remove() is safe to call even if element is already detached
         for (const [actionPanel, data] of this.actionElements.entries()) {
             if (data.displayElement) {
+                data.displayElement.innerHTML = '';  // Clear innerHTML to break event listener references
                 data.displayElement.remove();
                 data.displayElement = null;  // Null out reference for GC
             }
