@@ -20124,9 +20124,11 @@
                     if (data) {
                         if (data.displayElement) {
                             data.displayElement.remove();
+                            data.displayElement = null;  // Null out reference for GC
                         }
                         if (data.pinElement) {
                             data.pinElement.remove();
+                            data.pinElement = null;  // Null out reference for GC
                         }
                     }
                     this.actionElements.delete(actionPanel);
@@ -20191,9 +20193,11 @@
             for (const [actionPanel, data] of this.actionElements.entries()) {
                 if (data.displayElement) {
                     data.displayElement.remove();
+                    data.displayElement = null;  // Null out reference for GC
                 }
                 if (data.pinElement) {
                     data.pinElement.remove();
+                    data.pinElement = null;  // Null out reference for GC
                 }
             }
 
@@ -20497,6 +20501,7 @@
                     const data = this.actionElements.get(actionPanel);
                     if (data && data.displayElement) {
                         data.displayElement.remove();
+                        data.displayElement = null;  // Null out reference for GC
                     }
                     this.actionElements.delete(actionPanel);
                     actionPanelSort.unregisterPanel(actionPanel);
@@ -20520,6 +20525,7 @@
             for (const [actionPanel, data] of this.actionElements.entries()) {
                 if (data.displayElement) {
                     data.displayElement.remove();
+                    data.displayElement = null;  // Null out reference for GC
                 }
             }
 

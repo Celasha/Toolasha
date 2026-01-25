@@ -440,9 +440,11 @@ class MaxProduceable {
                 if (data) {
                     if (data.displayElement) {
                         data.displayElement.remove();
+                        data.displayElement = null;  // Null out reference for GC
                     }
                     if (data.pinElement) {
                         data.pinElement.remove();
+                        data.pinElement = null;  // Null out reference for GC
                     }
                 }
                 this.actionElements.delete(actionPanel);
@@ -507,9 +509,11 @@ class MaxProduceable {
         for (const [actionPanel, data] of this.actionElements.entries()) {
             if (data.displayElement) {
                 data.displayElement.remove();
+                data.displayElement = null;  // Null out reference for GC
             }
             if (data.pinElement) {
                 data.pinElement.remove();
+                data.pinElement = null;  // Null out reference for GC
             }
         }
 

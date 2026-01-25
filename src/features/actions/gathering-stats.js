@@ -250,6 +250,7 @@ class GatheringStats {
                 const data = this.actionElements.get(actionPanel);
                 if (data && data.displayElement) {
                     data.displayElement.remove();
+                    data.displayElement = null;  // Null out reference for GC
                 }
                 this.actionElements.delete(actionPanel);
                 actionPanelSort.unregisterPanel(actionPanel);
@@ -273,6 +274,7 @@ class GatheringStats {
         for (const [actionPanel, data] of this.actionElements.entries()) {
             if (data.displayElement) {
                 data.displayElement.remove();
+                data.displayElement = null;  // Null out reference for GC
             }
         }
 
