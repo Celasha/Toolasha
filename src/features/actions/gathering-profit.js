@@ -302,16 +302,18 @@ export async function calculateGatheringProfit(actionHrid) {
                 name: rawItemName,
                 itemsPerHour: rawItemsPerHour,
                 dropRate: drop.dropRate,
-                priceEach: rawPriceAfterTax,
-                revenuePerHour: rawItemsPerHour * rawPriceAfterTax
+                priceEach: rawPrice,
+                priceAfterTax: rawPriceAfterTax,
+                revenuePerHour: rawItemsPerHour * rawPrice
             });
 
             baseOutputs.push({
                 name: processedItemName,
                 itemsPerHour: processedItemsPerHour,
                 dropRate: drop.dropRate * processingBonus,
-                priceEach: processedPriceAfterTax,
-                revenuePerHour: processedItemsPerHour * processedPriceAfterTax,
+                priceEach: processedPrice,
+                priceAfterTax: processedPriceAfterTax,
+                revenuePerHour: processedItemsPerHour * processedPrice,
                 isProcessed: true, // Flag to show processing percentage
                 processingChance: processingBonus // Store the processing chance (e.g., 0.15 for 15%)
             });
@@ -326,8 +328,9 @@ export async function calculateGatheringProfit(actionHrid) {
                 name: itemName,
                 itemsPerHour: rawItemsPerHour,
                 dropRate: drop.dropRate,
-                priceEach: rawPriceAfterTax,
-                revenuePerHour: rawItemsPerHour * rawPriceAfterTax
+                priceEach: rawPrice,
+                priceAfterTax: rawPriceAfterTax,
+                revenuePerHour: rawItemsPerHour * rawPrice
             });
         }
 

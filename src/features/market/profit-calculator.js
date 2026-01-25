@@ -297,6 +297,7 @@ class ProfitCalculator {
             totalTeaCostPerHour,      // Total tea costs per hour
             costPerItem,
             itemPrice,
+            outputPrice,              // Output price before tax (bid or ask based on mode)
             priceAfterTax,            // Output price after 2% tax (bid or ask based on mode)
             profitPerItem,
             profitPerHour,

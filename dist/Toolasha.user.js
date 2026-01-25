@@ -7098,6 +7098,7 @@
                 totalTeaCostPerHour,      // Total tea costs per hour
                 costPerItem,
                 itemPrice,
+                outputPrice,              // Output price before tax (bid or ask based on mode)
                 priceAfterTax,            // Output price after 2% tax (bid or ask based on mode)
                 profitPerItem,
                 profitPerHour,
@@ -9026,16 +9027,18 @@
                     name: rawItemName,
                     itemsPerHour: rawItemsPerHour,
                     dropRate: drop.dropRate,
-                    priceEach: rawPriceAfterTax,
-                    revenuePerHour: rawItemsPerHour * rawPriceAfterTax
+                    priceEach: rawPrice,
+                    priceAfterTax: rawPriceAfterTax,
+                    revenuePerHour: rawItemsPerHour * rawPrice
                 });
 
                 baseOutputs.push({
                     name: processedItemName,
                     itemsPerHour: processedItemsPerHour,
                     dropRate: drop.dropRate * processingBonus,
-                    priceEach: processedPriceAfterTax,
-                    revenuePerHour: processedItemsPerHour * processedPriceAfterTax,
+                    priceEach: processedPrice,
+                    priceAfterTax: processedPriceAfterTax,
+                    revenuePerHour: processedItemsPerHour * processedPrice,
                     isProcessed: true, // Flag to show processing percentage
                     processingChance: processingBonus // Store the processing chance (e.g., 0.15 for 15%)
                 });
@@ -9050,8 +9053,9 @@
                     name: itemName,
                     itemsPerHour: rawItemsPerHour,
                     dropRate: drop.dropRate,
-                    priceEach: rawPriceAfterTax,
-                    revenuePerHour: rawItemsPerHour * rawPriceAfterTax
+                    priceEach: rawPrice,
+                    priceAfterTax: rawPriceAfterTax,
+                    revenuePerHour: rawItemsPerHour * rawPrice
                 });
             }
 
@@ -14222,8 +14226,11 @@
         // Create top-level summary
         const profit = Math.round(profitData.profitPerHour);
         const profitPerDay = Math.round(profitData.profitPerDay);
-        const revenue = Math.round(profitData.revenuePerHour);
-        const costs = Math.round(profitData.drinkCostPerHour);
+        // Revenue is already after tax (calculated with 0.98 multiplier), so calculate gross revenue
+        const grossRevenue = Math.round(profitData.revenuePerHour / 0.98);
+        const marketTax = Math.round(grossRevenue * 0.02);
+        const revenue = grossRevenue;
+        const costs = Math.round(profitData.drinkCostPerHour + marketTax);
         const summary = `${formatLargeNumber(profit)}/hr, ${formatLargeNumber(profitPerDay)}/day`;
 
         // ===== Build Detailed Breakdown Content =====
@@ -14352,6 +14359,24 @@
         );
 
         costsDiv.appendChild(drinkCostsSection);
+
+        // Market Tax subsection
+        const marketTaxContent = document.createElement('div');
+        const marketTaxLine = document.createElement('div');
+        marketTaxLine.style.marginLeft = '8px';
+        marketTaxLine.textContent = `• Market Tax: 2% of revenue → ${formatLargeNumber(marketTax)}/hr`;
+        marketTaxContent.appendChild(marketTaxLine);
+
+        const marketTaxSection = createCollapsibleSection(
+            '',
+            `Market Tax: ${formatLargeNumber(marketTax)}/hr (2%)`,
+            null,
+            marketTaxContent,
+            false,
+            1
+        );
+
+        costsDiv.appendChild(marketTaxSection);
 
         // Modifiers Section
         const modifiersDiv = document.createElement('div');
@@ -14530,8 +14555,11 @@
         const profit = Math.round(profitData.profitPerHour);
         const profitPerDay = Math.round(profit * 24);
         const bonusRevenueTotal = profitData.bonusRevenue?.totalBonusRevenue || 0;
-        const revenue = Math.round(profitData.itemsPerHour * profitData.priceAfterTax + profitData.gourmetBonusItems * profitData.priceAfterTax + bonusRevenueTotal);
-        const costs = Math.round(profitData.materialCostPerHour + profitData.totalTeaCostPerHour);
+        // Use outputPrice (pre-tax) for revenue display
+        const revenue = Math.round(profitData.itemsPerHour * profitData.outputPrice + profitData.gourmetBonusItems * profitData.outputPrice + bonusRevenueTotal);
+        // Calculate market tax (2% of revenue)
+        const marketTax = Math.round(revenue * 0.02);
+        const costs = Math.round(profitData.materialCostPerHour + profitData.totalTeaCostPerHour + marketTax);
         const summary = `${formatLargeNumber(profit)}/hr, ${formatLargeNumber(profitPerDay)}/day`;
 
         // ===== Build Detailed Breakdown Content =====
@@ -14545,10 +14573,10 @@
         const baseOutputContent = document.createElement('div');
         const baseOutputLine = document.createElement('div');
         baseOutputLine.style.marginLeft = '8px';
-        baseOutputLine.textContent = `• Base Output: ${profitData.itemsPerHour.toFixed(1)}/hr @ ${formatWithSeparator(Math.round(profitData.priceAfterTax))} each → ${formatLargeNumber(Math.round(profitData.itemsPerHour * profitData.priceAfterTax))}/hr`;
+        baseOutputLine.textContent = `• Base Output: ${profitData.itemsPerHour.toFixed(1)}/hr @ ${formatWithSeparator(Math.round(profitData.outputPrice))} each → ${formatLargeNumber(Math.round(profitData.itemsPerHour * profitData.outputPrice))}/hr`;
         baseOutputContent.appendChild(baseOutputLine);
 
-        const baseRevenue = profitData.itemsPerHour * profitData.priceAfterTax;
+        const baseRevenue = profitData.itemsPerHour * profitData.outputPrice;
         const baseOutputSection = createCollapsibleSection(
             '',
             `Base Output: ${formatWithSeparator(Math.round(baseRevenue))}/hr`,
@@ -14564,10 +14592,10 @@
             const gourmetContent = document.createElement('div');
             const gourmetLine = document.createElement('div');
             gourmetLine.style.marginLeft = '8px';
-            gourmetLine.textContent = `• Gourmet Bonus: ${profitData.gourmetBonusItems.toFixed(1)}/hr @ ${formatWithSeparator(Math.round(profitData.priceAfterTax))} each → ${formatLargeNumber(Math.round(profitData.gourmetBonusItems * profitData.priceAfterTax))}/hr`;
+            gourmetLine.textContent = `• Gourmet Bonus: ${profitData.gourmetBonusItems.toFixed(1)}/hr @ ${formatWithSeparator(Math.round(profitData.outputPrice))} each → ${formatLargeNumber(Math.round(profitData.gourmetBonusItems * profitData.outputPrice))}/hr`;
             gourmetContent.appendChild(gourmetLine);
 
-            const gourmetRevenue = profitData.gourmetBonusItems * profitData.priceAfterTax;
+            const gourmetRevenue = profitData.gourmetBonusItems * profitData.outputPrice;
             gourmetSection = createCollapsibleSection(
                 '',
                 `Gourmet Bonus: ${formatLargeNumber(Math.round(gourmetRevenue))}/hr (${formatPercentage(profitData.gourmetBonus, 1)} gourmet)`,
@@ -14708,6 +14736,24 @@
 
         costsDiv.appendChild(materialCostsSection);
         costsDiv.appendChild(teaCostsSection);
+
+        // Market Tax subsection
+        const marketTaxContent = document.createElement('div');
+        const marketTaxLine = document.createElement('div');
+        marketTaxLine.style.marginLeft = '8px';
+        marketTaxLine.textContent = `• Market Tax: 2% of revenue → ${formatLargeNumber(marketTax)}/hr`;
+        marketTaxContent.appendChild(marketTaxLine);
+
+        const marketTaxSection = createCollapsibleSection(
+            '',
+            `Market Tax: ${formatLargeNumber(marketTax)}/hr (2%)`,
+            null,
+            marketTaxContent,
+            false,
+            1
+        );
+
+        costsDiv.appendChild(marketTaxSection);
 
         // Modifiers Section
         const modifiersDiv = document.createElement('div');
@@ -15021,8 +15067,11 @@
 
         // Calculate totals
         const bonusRevenueTotal = profitData.bonusRevenue?.totalBonusRevenue || 0;
-        const totalRevenue = Math.round((profitData.itemsPerHour * profitData.priceAfterTax + profitData.gourmetBonusItems * profitData.priceAfterTax + bonusRevenueTotal) * hoursNeeded);
-        const totalCosts = Math.round((profitData.materialCostPerHour + profitData.totalTeaCostPerHour) * hoursNeeded);
+        // Use outputPrice (pre-tax) for revenue display
+        const totalRevenue = Math.round((profitData.itemsPerHour * profitData.outputPrice + profitData.gourmetBonusItems * profitData.outputPrice + bonusRevenueTotal) * hoursNeeded);
+        // Calculate market tax (2% of revenue)
+        const totalMarketTax = Math.round(totalRevenue * 0.02);
+        const totalCosts = Math.round((profitData.materialCostPerHour + profitData.totalTeaCostPerHour) * hoursNeeded + totalMarketTax);
         const totalProfit = totalRevenue - totalCosts;
 
         const detailsContent = document.createElement('div');
@@ -15034,10 +15083,10 @@
         // Base Output subsection
         const baseOutputContent = document.createElement('div');
         const totalBaseItems = profitData.itemsPerHour * hoursNeeded;
-        const totalBaseRevenue = totalBaseItems * profitData.priceAfterTax;
+        const totalBaseRevenue = totalBaseItems * profitData.outputPrice;
         const baseOutputLine = document.createElement('div');
         baseOutputLine.style.marginLeft = '8px';
-        baseOutputLine.textContent = `• Base Output: ${totalBaseItems.toFixed(1)} items @ ${formatWithSeparator(Math.round(profitData.priceAfterTax))} each → ${formatLargeNumber(Math.round(totalBaseRevenue))}`;
+        baseOutputLine.textContent = `• Base Output: ${totalBaseItems.toFixed(1)} items @ ${formatWithSeparator(Math.round(profitData.outputPrice))} each → ${formatLargeNumber(Math.round(totalBaseRevenue))}`;
         baseOutputContent.appendChild(baseOutputLine);
 
         const baseOutputSection = createCollapsibleSection(
@@ -15054,10 +15103,10 @@
         if (profitData.gourmetBonusItems > 0) {
             const gourmetContent = document.createElement('div');
             const totalGourmetItems = profitData.gourmetBonusItems * hoursNeeded;
-            const totalGourmetRevenue = totalGourmetItems * profitData.priceAfterTax;
+            const totalGourmetRevenue = totalGourmetItems * profitData.outputPrice;
             const gourmetLine = document.createElement('div');
             gourmetLine.style.marginLeft = '8px';
-            gourmetLine.textContent = `• Gourmet Bonus: ${totalGourmetItems.toFixed(1)} items @ ${formatWithSeparator(Math.round(profitData.priceAfterTax))} each → ${formatLargeNumber(Math.round(totalGourmetRevenue))}`;
+            gourmetLine.textContent = `• Gourmet Bonus: ${totalGourmetItems.toFixed(1)} items @ ${formatWithSeparator(Math.round(profitData.outputPrice))} each → ${formatLargeNumber(Math.round(totalGourmetRevenue))}`;
             gourmetContent.appendChild(gourmetLine);
 
             gourmetSection = createCollapsibleSection(
@@ -15203,6 +15252,24 @@
 
         costsDiv.appendChild(materialCostsSection);
         costsDiv.appendChild(teaCostsSection);
+
+        // Market Tax subsection
+        const marketTaxContent = document.createElement('div');
+        const marketTaxLine = document.createElement('div');
+        marketTaxLine.style.marginLeft = '8px';
+        marketTaxLine.textContent = `• Market Tax: 2% of revenue → ${formatLargeNumber(totalMarketTax)}`;
+        marketTaxContent.appendChild(marketTaxLine);
+
+        const marketTaxSection = createCollapsibleSection(
+            '',
+            `Market Tax: ${formatLargeNumber(totalMarketTax)} (2%)`,
+            null,
+            marketTaxContent,
+            false,
+            1
+        );
+
+        costsDiv.appendChild(marketTaxSection);
 
         // Assemble breakdown
         detailsContent.appendChild(revenueDiv);
