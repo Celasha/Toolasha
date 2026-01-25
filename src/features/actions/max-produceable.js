@@ -26,6 +26,7 @@ class MaxProduceable {
         this.lastCrimsonMilkCount = null; // For debugging inventory updates
         this.itemsUpdatedHandler = null;
         this.actionCompletedHandler = null;
+        this.characterSwitchingHandler = null; // Handler for character switch cleanup
         this.profitCalcTimeout = null; // Debounce timer for deferred profit calculations
         this.actionNameToHridCache = null; // Cached reverse lookup map (name → hrid)
     }
@@ -50,10 +51,14 @@ class MaxProduceable {
         this.actionCompletedHandler = () => {
             this.updateAllCounts();
         };
+        this.characterSwitchingHandler = () => {
+            this.clearAllReferences();
+        };
 
         // Event-driven updates (no polling needed)
         dataManager.on('items_updated', this.itemsUpdatedHandler);
         dataManager.on('action_completed', this.actionCompletedHandler);
+        dataManager.on('character_switching', this.characterSwitchingHandler);
     }
 
     /**
@@ -464,6 +469,29 @@ class MaxProduceable {
     }
 
     /**
+     * Clear all DOM references to prevent memory leaks during character switch
+     */
+    clearAllReferences() {
+        // Clear profit calculation timeout
+        if (this.profitCalcTimeout) {
+            clearTimeout(this.profitCalcTimeout);
+            this.profitCalcTimeout = null;
+        }
+
+        // Clear all action element references (prevents detached DOM memory leak)
+        this.actionElements.clear();
+
+        // Clear action name cache
+        if (this.actionNameToHridCache) {
+            this.actionNameToHridCache.clear();
+            this.actionNameToHridCache = null;
+        }
+
+        // Clear shared sort manager's panel references
+        actionPanelSort.clearAllPanels();
+    }
+
+    /**
      * Disable the max produceable display
      */
     disable() {
@@ -476,18 +504,13 @@ class MaxProduceable {
             dataManager.off('action_completed', this.actionCompletedHandler);
             this.actionCompletedHandler = null;
         }
-
-        // Clear profit calculation timeout
-        if (this.profitCalcTimeout) {
-            clearTimeout(this.profitCalcTimeout);
-            this.profitCalcTimeout = null;
+        if (this.characterSwitchingHandler) {
+            dataManager.off('character_switching', this.characterSwitchingHandler);
+            this.characterSwitchingHandler = null;
         }
 
-        // Clear action name cache
-        if (this.actionNameToHridCache) {
-            this.actionNameToHridCache.clear();
-            this.actionNameToHridCache = null;
-        }
+        // Clear all DOM references
+        this.clearAllReferences();
 
         // Remove DOM observer
         if (this.unregisterObserver) {

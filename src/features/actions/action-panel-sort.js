@@ -97,6 +97,20 @@ class ActionPanelSort {
     }
 
     /**
+     * Clear all panel references (called during character switch to prevent memory leaks)
+     */
+    clearAllPanels() {
+        // Clear sort timeout
+        if (this.sortTimeout) {
+            clearTimeout(this.sortTimeout);
+            this.sortTimeout = null;
+        }
+
+        // Clear all panel references
+        this.panels.clear();
+    }
+
+    /**
      * Trigger a debounced sort
      */
     triggerSort() {

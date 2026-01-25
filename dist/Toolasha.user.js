@@ -19537,6 +19537,20 @@
         }
 
         /**
+         * Clear all panel references (called during character switch to prevent memory leaks)
+         */
+        clearAllPanels() {
+            // Clear sort timeout
+            if (this.sortTimeout) {
+                clearTimeout(this.sortTimeout);
+                this.sortTimeout = null;
+            }
+
+            // Clear all panel references
+            this.panels.clear();
+        }
+
+        /**
          * Trigger a debounced sort
          */
         triggerSort() {
@@ -19663,6 +19677,7 @@
             this.lastCrimsonMilkCount = null; // For debugging inventory updates
             this.itemsUpdatedHandler = null;
             this.actionCompletedHandler = null;
+            this.characterSwitchingHandler = null; // Handler for character switch cleanup
             this.profitCalcTimeout = null; // Debounce timer for deferred profit calculations
             this.actionNameToHridCache = null; // Cached reverse lookup map (name → hrid)
         }
@@ -19687,10 +19702,14 @@
             this.actionCompletedHandler = () => {
                 this.updateAllCounts();
             };
+            this.characterSwitchingHandler = () => {
+                this.clearAllReferences();
+            };
 
             // Event-driven updates (no polling needed)
             dataManager.on('items_updated', this.itemsUpdatedHandler);
             dataManager.on('action_completed', this.actionCompletedHandler);
+            dataManager.on('character_switching', this.characterSwitchingHandler);
         }
 
         /**
@@ -20101,6 +20120,29 @@
         }
 
         /**
+         * Clear all DOM references to prevent memory leaks during character switch
+         */
+        clearAllReferences() {
+            // Clear profit calculation timeout
+            if (this.profitCalcTimeout) {
+                clearTimeout(this.profitCalcTimeout);
+                this.profitCalcTimeout = null;
+            }
+
+            // Clear all action element references (prevents detached DOM memory leak)
+            this.actionElements.clear();
+
+            // Clear action name cache
+            if (this.actionNameToHridCache) {
+                this.actionNameToHridCache.clear();
+                this.actionNameToHridCache = null;
+            }
+
+            // Clear shared sort manager's panel references
+            actionPanelSort.clearAllPanels();
+        }
+
+        /**
          * Disable the max produceable display
          */
         disable() {
@@ -20113,18 +20155,13 @@
                 dataManager.off('action_completed', this.actionCompletedHandler);
                 this.actionCompletedHandler = null;
             }
-
-            // Clear profit calculation timeout
-            if (this.profitCalcTimeout) {
-                clearTimeout(this.profitCalcTimeout);
-                this.profitCalcTimeout = null;
+            if (this.characterSwitchingHandler) {
+                dataManager.off('character_switching', this.characterSwitchingHandler);
+                this.characterSwitchingHandler = null;
             }
 
-            // Clear action name cache
-            if (this.actionNameToHridCache) {
-                this.actionNameToHridCache.clear();
-                this.actionNameToHridCache = null;
-            }
+            // Clear all DOM references
+            this.clearAllReferences();
 
             // Remove DOM observer
             if (this.unregisterObserver) {
@@ -20161,6 +20198,7 @@
             this.unregisterObserver = null;
             this.itemsUpdatedHandler = null;
             this.actionCompletedHandler = null;
+            this.characterSwitchingHandler = null; // Handler for character switch cleanup
         }
 
         /**
@@ -20184,9 +20222,14 @@
                 this.updateAllStats();
             };
 
+            this.characterSwitchingHandler = () => {
+                this.clearAllReferences();
+            };
+
             // Event-driven updates (no polling needed)
             dataManager.on('items_updated', this.itemsUpdatedHandler);
             dataManager.on('action_completed', this.actionCompletedHandler);
+            dataManager.on('character_switching', this.characterSwitchingHandler);
         }
 
         /**
@@ -20396,6 +20439,17 @@
         }
 
         /**
+         * Clear all DOM references to prevent memory leaks during character switch
+         */
+        clearAllReferences() {
+            // Clear all action element references (prevents detached DOM memory leak)
+            this.actionElements.clear();
+
+            // Clear shared sort manager's panel references
+            actionPanelSort.clearAllPanels();
+        }
+
+        /**
          * Disable the gathering stats display
          */
         disable() {
@@ -20408,6 +20462,13 @@
                 dataManager.off('action_completed', this.actionCompletedHandler);
                 this.actionCompletedHandler = null;
             }
+            if (this.characterSwitchingHandler) {
+                dataManager.off('character_switching', this.characterSwitchingHandler);
+                this.characterSwitchingHandler = null;
+            }
+
+            // Clear all DOM references
+            this.clearAllReferences();
 
             // Remove DOM observer
             if (this.unregisterObserver) {

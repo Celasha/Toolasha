@@ -19,6 +19,7 @@ class GatheringStats {
         this.unregisterObserver = null;
         this.itemsUpdatedHandler = null;
         this.actionCompletedHandler = null;
+        this.characterSwitchingHandler = null; // Handler for character switch cleanup
     }
 
     /**
@@ -42,9 +43,14 @@ class GatheringStats {
             this.updateAllStats();
         };
 
+        this.characterSwitchingHandler = () => {
+            this.clearAllReferences();
+        };
+
         // Event-driven updates (no polling needed)
         dataManager.on('items_updated', this.itemsUpdatedHandler);
         dataManager.on('action_completed', this.actionCompletedHandler);
+        dataManager.on('character_switching', this.characterSwitchingHandler);
     }
 
     /**
@@ -254,6 +260,17 @@ class GatheringStats {
     }
 
     /**
+     * Clear all DOM references to prevent memory leaks during character switch
+     */
+    clearAllReferences() {
+        // Clear all action element references (prevents detached DOM memory leak)
+        this.actionElements.clear();
+
+        // Clear shared sort manager's panel references
+        actionPanelSort.clearAllPanels();
+    }
+
+    /**
      * Disable the gathering stats display
      */
     disable() {
@@ -266,6 +283,13 @@ class GatheringStats {
             dataManager.off('action_completed', this.actionCompletedHandler);
             this.actionCompletedHandler = null;
         }
+        if (this.characterSwitchingHandler) {
+            dataManager.off('character_switching', this.characterSwitchingHandler);
+            this.characterSwitchingHandler = null;
+        }
+
+        // Clear all DOM references
+        this.clearAllReferences();
 
         // Remove DOM observer
         if (this.unregisterObserver) {
