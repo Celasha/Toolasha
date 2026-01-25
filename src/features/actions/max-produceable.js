@@ -492,6 +492,17 @@ class MaxProduceable {
             this.profitCalcTimeout = null;
         }
 
+        // CRITICAL: Remove injected DOM elements BEFORE clearing Maps
+        // This prevents detached SVG elements from accumulating
+        for (const [actionPanel, data] of this.actionElements.entries()) {
+            if (data.displayElement && data.displayElement.parentNode) {
+                data.displayElement.remove();
+            }
+            if (data.pinElement && data.pinElement.parentNode) {
+                data.pinElement.remove();
+            }
+        }
+
         // Clear all action element references (prevents detached DOM memory leak)
         this.actionElements.clear();
 
