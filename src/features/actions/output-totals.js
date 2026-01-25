@@ -72,7 +72,7 @@ class OutputTotals {
         }
 
         // Attach input listeners using utility
-        const cleanup = attachInputListeners(detailPanel, inputBox, (value) => {
+        const cleanup = attachInputListeners(detailPanel, inputBox, (_value) => {
             this.updateOutputTotals(detailPanel, inputBox);
         });
 
@@ -132,7 +132,7 @@ class OutputTotals {
 
             // Check for rares (< 5% drop rate, not essences)
             if (container.innerText.includes('%')) {
-                const percentageMatch = container.innerText.match(/([\d\.]+)%/);
+                const percentageMatch = container.innerText.match(/([\d.]+)%/);
                 if (percentageMatch && parseFloat(percentageMatch[1]) < 5) {
                     this.processDropContainer(container, amount);
                     processedContainers.add(container);

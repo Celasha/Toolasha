@@ -9,7 +9,7 @@ import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import { getEnhancingParams } from '../../utils/enhancement-config.js';
 import { calculateEnhancement, calculatePerActionTime } from '../../utils/enhancement-calculator.js';
-import { timeReadable, numberFormatter } from '../../utils/formatters.js';
+import { timeReadable } from '../../utils/formatters.js';
 import marketAPI from '../../api/marketplace.js';
 
 /**

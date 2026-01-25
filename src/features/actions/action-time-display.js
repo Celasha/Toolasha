@@ -22,7 +22,6 @@ import {
     parseGatheringBonus,
     parseGourmetBonus,
 } from '../../utils/tea-parser.js';
-import { calculateExpPerHour } from '../../utils/experience-calculator.js';
 import { calculateGatheringProfit } from './gathering-profit.js';
 import profitCalculator from '../market/profit-calculator.js';
 import marketAPI from '../../api/marketplace.js';
@@ -553,13 +552,11 @@ class ActionTimeDisplay {
         // Queue size (with thousand separators)
         if (queueSizeDisplay !== Infinity) {
             statsToAppend.push(`(${queueSizeDisplay.toLocaleString()} queued)`);
-        } else {
+        } else if (materialLimit !== null) {
             // Show infinity with optional material limit
-            if (materialLimit !== null) {
-                statsToAppend.push(`(∞ · max: ${this.formatLargeNumber(materialLimit)})`);
-            } else {
-                statsToAppend.push(`(∞)`);
-            }
+            statsToAppend.push(`(∞ · max: ${this.formatLargeNumber(materialLimit)})`);
+        } else {
+            statsToAppend.push(`(∞)`);
         }
 
         // Time per action and actions/hour
@@ -707,7 +704,7 @@ class ActionTimeDisplay {
         // Average actions per attempt = 1 + floor(eff/100) + (eff%100)/100
         const guaranteedActions = 1 + Math.floor(totalEfficiency / 100);
         const chanceForExtra = totalEfficiency % 100;
-        const avgActionsPerAttempt = guaranteedActions + chanceForExtra / 100;
+        const _avgActionsPerAttempt = guaranteedActions + chanceForExtra / 100;
 
         // Check for primaryItemHash (ONLY for Alchemy actions: Coinify, Decompose, Transmute)
         // Crafting actions also have primaryItemHash but should use the standard input/upgrade logic

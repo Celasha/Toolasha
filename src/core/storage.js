@@ -36,7 +36,7 @@ class Storage {
      * @returns {Promise<void>}
      */
     openDatabase() {
-        return new Promise((resolve, _reject) => {
+        return new Promise((resolve, reject) => {
             const request = indexedDB.open(this.dbName, this.dbVersion);
 
             request.onerror = () => {

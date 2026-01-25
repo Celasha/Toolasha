@@ -66,7 +66,7 @@
          * @returns {Promise<void>}
          */
         openDatabase() {
-            return new Promise((resolve, _reject) => {
+            return new Promise((resolve, reject) => {
                 const request = indexedDB.open(this.dbName, this.dbVersion);
 
                 request.onerror = () => {
@@ -15606,380 +15606,6 @@
     }
 
     /**
-     * Experience Parser Utility
-     * Parses wisdom and experience bonuses from all sources
-     *
-     * Experience Formula (Skilling):
-     * Final XP = Base XP × (1 + Wisdom + Charm Experience)
-     *
-     * Where Wisdom and Charm Experience are ADDITIVE
-     */
-
-
-    /**
-     * Parse equipment wisdom bonus (skillingExperience stat)
-     * @param {Map} equipment - Character equipment map
-     * @param {Object} itemDetailMap - Item details from game data
-     * @returns {Object} {total: number, breakdown: Array} Total wisdom and item breakdown
-     */
-    function parseEquipmentWisdom(equipment, itemDetailMap) {
-        let totalWisdom = 0;
-        const breakdown = [];
-
-        for (const [slot, item] of equipment) {
-            const itemDetails = itemDetailMap[item.itemHrid];
-            if (!itemDetails?.equipmentDetail) continue;
-
-            const noncombatStats = itemDetails.equipmentDetail.noncombatStats || {};
-            const noncombatEnhancement = itemDetails.equipmentDetail.noncombatEnhancementBonuses || {};
-
-            // Get base skillingExperience
-            const baseWisdom = noncombatStats.skillingExperience || 0;
-            if (baseWisdom === 0) continue;
-
-            // Get enhancement scaling
-            const enhancementBonus = noncombatEnhancement.skillingExperience || 0;
-            const enhancementLevel = item.enhancementLevel || 0;
-
-            // Determine multiplier based on slot (5× for accessories, 1× for armor)
-            const accessorySlots = [
-                '/equipment_types/neck',
-                '/equipment_types/ring',
-                '/equipment_types/earrings',
-                '/equipment_types/back',
-                '/equipment_types/trinket',
-                '/equipment_types/charm',
-            ];
-            const multiplier = accessorySlots.includes(itemDetails.equipmentDetail.type) ? 5 : 1;
-
-            // Calculate total wisdom from this item
-            const itemWisdom = (baseWisdom + enhancementBonus * enhancementLevel * multiplier) * 100;
-            totalWisdom += itemWisdom;
-
-            // Add to breakdown
-            breakdown.push({
-                name: itemDetails.name,
-                value: itemWisdom,
-                enhancementLevel: enhancementLevel,
-            });
-        }
-
-        return {
-            total: totalWisdom,
-            breakdown: breakdown,
-        };
-    }
-
-    /**
-     * Parse skill-specific charm experience (e.g., foragingExperience)
-     * @param {Map} equipment - Character equipment map
-     * @param {string} skillHrid - Skill HRID (e.g., "/skills/foraging")
-     * @param {Object} itemDetailMap - Item details from game data
-     * @returns {Object} {total: number, breakdown: Array} Total charm XP and item breakdown
-     */
-    function parseCharmExperience(equipment, skillHrid, itemDetailMap) {
-        let totalCharmXP = 0;
-        const breakdown = [];
-
-        // Convert skill HRID to stat name (e.g., "/skills/foraging" → "foragingExperience")
-        const skillName = skillHrid.replace('/skills/', '');
-        const statName = `${skillName}Experience`;
-
-        for (const [slot, item] of equipment) {
-            const itemDetails = itemDetailMap[item.itemHrid];
-            if (!itemDetails?.equipmentDetail) continue;
-
-            const noncombatStats = itemDetails.equipmentDetail.noncombatStats || {};
-            const noncombatEnhancement = itemDetails.equipmentDetail.noncombatEnhancementBonuses || {};
-
-            // Get base charm experience
-            const baseCharmXP = noncombatStats[statName] || 0;
-            if (baseCharmXP === 0) continue;
-
-            // Get enhancement scaling
-            const enhancementBonus = noncombatEnhancement[statName] || 0;
-            const enhancementLevel = item.enhancementLevel || 0;
-
-            // Determine multiplier based on slot (5× for accessories/charms, 1× for armor)
-            const accessorySlots = [
-                '/equipment_types/neck',
-                '/equipment_types/ring',
-                '/equipment_types/earrings',
-                '/equipment_types/back',
-                '/equipment_types/trinket',
-                '/equipment_types/charm',
-            ];
-            const multiplier = accessorySlots.includes(itemDetails.equipmentDetail.type) ? 5 : 1;
-
-            // Calculate total charm XP from this item
-            const itemCharmXP = (baseCharmXP + enhancementBonus * enhancementLevel * multiplier) * 100;
-            totalCharmXP += itemCharmXP;
-
-            // Add to breakdown
-            breakdown.push({
-                name: itemDetails.name,
-                value: itemCharmXP,
-                enhancementLevel: enhancementLevel,
-            });
-        }
-
-        return {
-            total: totalCharmXP,
-            breakdown: breakdown,
-        };
-    }
-
-    /**
-     * Parse house room wisdom bonus
-     * All house rooms provide +0.05% wisdom per level
-     * @returns {number} Total wisdom from house rooms (e.g., 0.4 for 8 total levels)
-     */
-    function parseHouseRoomWisdom() {
-        const houseRooms = dataManager.getHouseRooms();
-        if (!houseRooms || houseRooms.size === 0) {
-            return 0;
-        }
-
-        // Sum all house room levels
-        let totalLevels = 0;
-        for (const [hrid, room] of houseRooms) {
-            totalLevels += room.level || 0;
-        }
-
-        // Formula: totalLevels × 0.05% per level
-        return totalLevels * 0.05;
-    }
-
-    /**
-     * Parse community buff wisdom bonus
-     * Formula: 20% + ((level - 1) × 0.5%)
-     * @returns {number} Wisdom percentage from community buff (e.g., 29.5 for T20)
-     */
-    function parseCommunityBuffWisdom() {
-        const buffLevel = dataManager.getCommunityBuffLevel('/community_buff_types/experience');
-        if (!buffLevel) {
-            return 0;
-        }
-
-        // Formula: 20% base + 0.5% per level above 1
-        return 20 + (buffLevel - 1) * 0.5;
-    }
-
-    /**
-     * Parse wisdom from active consumables (Wisdom Tea/Coffee)
-     * @param {Array} drinkSlots - Active drink slots for the action type
-     * @param {Object} itemDetailMap - Item details from game data
-     * @param {number} drinkConcentration - Drink concentration bonus (e.g., 12.16 for 12.16%)
-     * @returns {number} Wisdom percentage from consumables (e.g., 13.46 for 12% × 1.1216)
-     */
-    function parseConsumableWisdom(drinkSlots, itemDetailMap, drinkConcentration) {
-        if (!drinkSlots || drinkSlots.length === 0) {
-            return 0;
-        }
-
-        let totalWisdom = 0;
-
-        for (const drink of drinkSlots) {
-            if (!drink || !drink.itemHrid) continue; // Skip empty slots
-
-            const itemDetails = itemDetailMap[drink.itemHrid];
-            if (!itemDetails?.consumableDetail) continue;
-
-            // Check for wisdom buff (typeHrid === "/buff_types/wisdom")
-            const buffs = itemDetails.consumableDetail.buffs || [];
-            for (const buff of buffs) {
-                // Check if this is a wisdom buff by typeHrid
-                if (buff.typeHrid === '/buff_types/wisdom' && buff.flatBoost) {
-                    // Base wisdom (e.g., 0.12 for 12%)
-                    const baseWisdom = buff.flatBoost * 100;
-
-                    // Scale with drink concentration
-                    const scaledWisdom = baseWisdom * (1 + drinkConcentration / 100);
-
-                    totalWisdom += scaledWisdom;
-                }
-            }
-        }
-
-        return totalWisdom;
-    }
-
-    /**
-     * Calculate total experience multiplier and breakdown
-     * @param {string} skillHrid - Skill HRID (e.g., "/skills/foraging")
-     * @param {string} actionTypeHrid - Action type HRID (e.g., "/action_types/foraging")
-     * @returns {Object} Experience data with breakdown
-     */
-    function calculateExperienceMultiplier(skillHrid, actionTypeHrid) {
-        const equipment = dataManager.getEquipment();
-        const gameData = dataManager.getInitClientData();
-        const itemDetailMap = gameData?.itemDetailMap || {};
-
-        // Get drink concentration
-        const drinkConcentration = equipment ? calculateDrinkConcentration(equipment, itemDetailMap) : 0;
-
-        // Get active drinks for this action type
-        const activeDrinks = dataManager.getActionDrinkSlots(actionTypeHrid);
-
-        // Parse wisdom from all sources
-        const equipmentWisdomData = parseEquipmentWisdom(equipment, itemDetailMap);
-        const equipmentWisdom = equipmentWisdomData.total;
-        const houseWisdom = parseHouseRoomWisdom();
-        const communityWisdom = parseCommunityBuffWisdom();
-        const consumableWisdom = parseConsumableWisdom(activeDrinks, itemDetailMap, drinkConcentration);
-
-        const totalWisdom = equipmentWisdom + houseWisdom + communityWisdom + consumableWisdom;
-
-        // Parse charm experience (skill-specific) - now returns object with total and breakdown
-        const charmData = parseCharmExperience(equipment, skillHrid, itemDetailMap);
-        const charmExperience = charmData.total;
-
-        // Total multiplier (additive)
-        const totalMultiplier = 1 + totalWisdom / 100 + charmExperience / 100;
-
-        return {
-            totalMultiplier,
-            totalWisdom,
-            charmExperience,
-            charmBreakdown: charmData.breakdown,
-            wisdomBreakdown: equipmentWisdomData.breakdown,
-            breakdown: {
-                equipmentWisdom,
-                houseWisdom,
-                communityWisdom,
-                consumableWisdom,
-                charmExperience,
-            },
-        };
-    }
-
-    /**
-     * Calculate drink concentration from Guzzling Pouch
-     * @param {Map} equipment - Character equipment map
-     * @param {Object} itemDetailMap - Item details from game data
-     * @returns {number} Drink concentration percentage (e.g., 12.16 for 12.16%)
-     */
-    function calculateDrinkConcentration(equipment, itemDetailMap) {
-        // Find Guzzling Pouch in equipment
-        const pouchItem = equipment.get('/equipment_types/pouch');
-        if (!pouchItem || !pouchItem.itemHrid.includes('guzzling_pouch')) {
-            return 0;
-        }
-
-        const itemDetails = itemDetailMap[pouchItem.itemHrid];
-        if (!itemDetails?.equipmentDetail) {
-            return 0;
-        }
-
-        // Get base drink concentration
-        const noncombatStats = itemDetails.equipmentDetail.noncombatStats || {};
-        const baseDrinkConcentration = noncombatStats.drinkConcentration || 0;
-
-        if (baseDrinkConcentration === 0) {
-            return 0;
-        }
-
-        // Get enhancement scaling (pouch is armor slot, 1× multiplier)
-        const noncombatEnhancement = itemDetails.equipmentDetail.noncombatEnhancementBonuses || {};
-        const enhancementBonus = noncombatEnhancement.drinkConcentration || 0;
-        const enhancementLevel = pouchItem.enhancementLevel || 0;
-
-        // Calculate total (1× multiplier for pouch)
-        return (baseDrinkConcentration + enhancementBonus * enhancementLevel) * 100;
-    }
-
-    /**
-     * Experience Calculator
-     * Shared utility for calculating experience per hour across features
-     *
-     * Calculates accurate XP/hour including:
-     * - Base experience from action
-     * - Experience multipliers (Wisdom + Charm Experience)
-     * - Action time with speed bonuses
-     * - Efficiency repeats (critical for accuracy)
-     */
-
-
-    /**
-     * Calculate experience per hour for an action
-     * @param {string} actionHrid - The action HRID (e.g., "/actions/cheesesmithing/cheese")
-     * @returns {Object|null} Experience data or null if not applicable
-     *   {
-     *     expPerHour: number,           // Total XP per hour (with all bonuses)
-     *     baseExp: number,              // Base XP per action
-     *     modifiedXP: number,           // XP per action after multipliers
-     *     actionsPerHour: number,       // Actions per hour (with efficiency)
-     *     xpMultiplier: number,         // Total XP multiplier (Wisdom + Charm)
-     *     actionTime: number,           // Time per action in seconds
-     *     totalEfficiency: number       // Total efficiency percentage
-     *   }
-     */
-    function calculateExpPerHour(actionHrid) {
-        const actionDetails = dataManager.getActionDetails(actionHrid);
-
-        // Validate action has experience gain
-        if (!actionDetails || !actionDetails.experienceGain || !actionDetails.experienceGain.value) {
-            return null;
-        }
-
-        // Get character data
-        const skills = dataManager.getSkills();
-        const equipment = dataManager.getEquipment();
-        const gameData = dataManager.getInitClientData();
-
-        if (!gameData || !skills || !equipment) {
-            return null;
-        }
-
-        // Calculate action stats (time + efficiency)
-        const stats = calculateActionStats(actionDetails, {
-            skills,
-            equipment,
-            itemDetailMap: gameData.itemDetailMap,
-            includeCommunityBuff: true,
-            includeBreakdown: false,
-            floorActionLevel: true,
-        });
-
-        if (!stats) {
-            return null;
-        }
-
-        const { actionTime, totalEfficiency } = stats;
-
-        // Calculate actions per hour (base rate)
-        const baseActionsPerHour = 3600 / actionTime;
-
-        // Calculate average actions per attempt from efficiency
-        // Efficiency gives guaranteed repeats + chance for extra
-        const guaranteedActions = 1 + Math.floor(totalEfficiency / 100);
-        const chanceForExtra = totalEfficiency % 100;
-        const avgActionsPerAttempt = guaranteedActions + chanceForExtra / 100;
-
-        // Calculate actions per hour WITH efficiency (total completions including free repeats)
-        const actionsPerHourWithEfficiency = baseActionsPerHour * avgActionsPerAttempt;
-
-        // Calculate experience multiplier (Wisdom + Charm Experience)
-        const skillHrid = actionDetails.experienceGain.skillHrid;
-        const xpData = calculateExperienceMultiplier(skillHrid, actionDetails.type);
-
-        // Calculate exp per hour with all bonuses
-        const baseExp = actionDetails.experienceGain.value;
-        const modifiedXP = baseExp * xpData.totalMultiplier;
-        const expPerHour = actionsPerHourWithEfficiency * modifiedXP;
-
-        return {
-            expPerHour: Math.floor(expPerHour),
-            baseExp,
-            modifiedXP,
-            actionsPerHour: actionsPerHourWithEfficiency,
-            xpMultiplier: xpData.totalMultiplier,
-            actionTime,
-            totalEfficiency,
-        };
-    }
-
-    /**
      * Action Time Display Module
      *
      * Displays estimated completion time for queued actions.
@@ -16519,13 +16145,11 @@
             // Queue size (with thousand separators)
             if (queueSizeDisplay !== Infinity) {
                 statsToAppend.push(`(${queueSizeDisplay.toLocaleString()} queued)`);
-            } else {
+            } else if (materialLimit !== null) {
                 // Show infinity with optional material limit
-                if (materialLimit !== null) {
-                    statsToAppend.push(`(∞ · max: ${this.formatLargeNumber(materialLimit)})`);
-                } else {
-                    statsToAppend.push(`(∞)`);
-                }
+                statsToAppend.push(`(∞ · max: ${this.formatLargeNumber(materialLimit)})`);
+            } else {
+                statsToAppend.push(`(∞)`);
             }
 
             // Time per action and actions/hour
@@ -17320,6 +16944,289 @@
     const actionTimeDisplay = new ActionTimeDisplay();
 
     /**
+     * Experience Parser Utility
+     * Parses wisdom and experience bonuses from all sources
+     *
+     * Experience Formula (Skilling):
+     * Final XP = Base XP × (1 + Wisdom + Charm Experience)
+     *
+     * Where Wisdom and Charm Experience are ADDITIVE
+     */
+
+
+    /**
+     * Parse equipment wisdom bonus (skillingExperience stat)
+     * @param {Map} equipment - Character equipment map
+     * @param {Object} itemDetailMap - Item details from game data
+     * @returns {Object} {total: number, breakdown: Array} Total wisdom and item breakdown
+     */
+    function parseEquipmentWisdom(equipment, itemDetailMap) {
+        let totalWisdom = 0;
+        const breakdown = [];
+
+        for (const [slot, item] of equipment) {
+            const itemDetails = itemDetailMap[item.itemHrid];
+            if (!itemDetails?.equipmentDetail) continue;
+
+            const noncombatStats = itemDetails.equipmentDetail.noncombatStats || {};
+            const noncombatEnhancement = itemDetails.equipmentDetail.noncombatEnhancementBonuses || {};
+
+            // Get base skillingExperience
+            const baseWisdom = noncombatStats.skillingExperience || 0;
+            if (baseWisdom === 0) continue;
+
+            // Get enhancement scaling
+            const enhancementBonus = noncombatEnhancement.skillingExperience || 0;
+            const enhancementLevel = item.enhancementLevel || 0;
+
+            // Determine multiplier based on slot (5× for accessories, 1× for armor)
+            const accessorySlots = [
+                '/equipment_types/neck',
+                '/equipment_types/ring',
+                '/equipment_types/earrings',
+                '/equipment_types/back',
+                '/equipment_types/trinket',
+                '/equipment_types/charm',
+            ];
+            const multiplier = accessorySlots.includes(itemDetails.equipmentDetail.type) ? 5 : 1;
+
+            // Calculate total wisdom from this item
+            const itemWisdom = (baseWisdom + enhancementBonus * enhancementLevel * multiplier) * 100;
+            totalWisdom += itemWisdom;
+
+            // Add to breakdown
+            breakdown.push({
+                name: itemDetails.name,
+                value: itemWisdom,
+                enhancementLevel: enhancementLevel,
+            });
+        }
+
+        return {
+            total: totalWisdom,
+            breakdown: breakdown,
+        };
+    }
+
+    /**
+     * Parse skill-specific charm experience (e.g., foragingExperience)
+     * @param {Map} equipment - Character equipment map
+     * @param {string} skillHrid - Skill HRID (e.g., "/skills/foraging")
+     * @param {Object} itemDetailMap - Item details from game data
+     * @returns {Object} {total: number, breakdown: Array} Total charm XP and item breakdown
+     */
+    function parseCharmExperience(equipment, skillHrid, itemDetailMap) {
+        let totalCharmXP = 0;
+        const breakdown = [];
+
+        // Convert skill HRID to stat name (e.g., "/skills/foraging" → "foragingExperience")
+        const skillName = skillHrid.replace('/skills/', '');
+        const statName = `${skillName}Experience`;
+
+        for (const [slot, item] of equipment) {
+            const itemDetails = itemDetailMap[item.itemHrid];
+            if (!itemDetails?.equipmentDetail) continue;
+
+            const noncombatStats = itemDetails.equipmentDetail.noncombatStats || {};
+            const noncombatEnhancement = itemDetails.equipmentDetail.noncombatEnhancementBonuses || {};
+
+            // Get base charm experience
+            const baseCharmXP = noncombatStats[statName] || 0;
+            if (baseCharmXP === 0) continue;
+
+            // Get enhancement scaling
+            const enhancementBonus = noncombatEnhancement[statName] || 0;
+            const enhancementLevel = item.enhancementLevel || 0;
+
+            // Determine multiplier based on slot (5× for accessories/charms, 1× for armor)
+            const accessorySlots = [
+                '/equipment_types/neck',
+                '/equipment_types/ring',
+                '/equipment_types/earrings',
+                '/equipment_types/back',
+                '/equipment_types/trinket',
+                '/equipment_types/charm',
+            ];
+            const multiplier = accessorySlots.includes(itemDetails.equipmentDetail.type) ? 5 : 1;
+
+            // Calculate total charm XP from this item
+            const itemCharmXP = (baseCharmXP + enhancementBonus * enhancementLevel * multiplier) * 100;
+            totalCharmXP += itemCharmXP;
+
+            // Add to breakdown
+            breakdown.push({
+                name: itemDetails.name,
+                value: itemCharmXP,
+                enhancementLevel: enhancementLevel,
+            });
+        }
+
+        return {
+            total: totalCharmXP,
+            breakdown: breakdown,
+        };
+    }
+
+    /**
+     * Parse house room wisdom bonus
+     * All house rooms provide +0.05% wisdom per level
+     * @returns {number} Total wisdom from house rooms (e.g., 0.4 for 8 total levels)
+     */
+    function parseHouseRoomWisdom() {
+        const houseRooms = dataManager.getHouseRooms();
+        if (!houseRooms || houseRooms.size === 0) {
+            return 0;
+        }
+
+        // Sum all house room levels
+        let totalLevels = 0;
+        for (const [hrid, room] of houseRooms) {
+            totalLevels += room.level || 0;
+        }
+
+        // Formula: totalLevels × 0.05% per level
+        return totalLevels * 0.05;
+    }
+
+    /**
+     * Parse community buff wisdom bonus
+     * Formula: 20% + ((level - 1) × 0.5%)
+     * @returns {number} Wisdom percentage from community buff (e.g., 29.5 for T20)
+     */
+    function parseCommunityBuffWisdom() {
+        const buffLevel = dataManager.getCommunityBuffLevel('/community_buff_types/experience');
+        if (!buffLevel) {
+            return 0;
+        }
+
+        // Formula: 20% base + 0.5% per level above 1
+        return 20 + (buffLevel - 1) * 0.5;
+    }
+
+    /**
+     * Parse wisdom from active consumables (Wisdom Tea/Coffee)
+     * @param {Array} drinkSlots - Active drink slots for the action type
+     * @param {Object} itemDetailMap - Item details from game data
+     * @param {number} drinkConcentration - Drink concentration bonus (e.g., 12.16 for 12.16%)
+     * @returns {number} Wisdom percentage from consumables (e.g., 13.46 for 12% × 1.1216)
+     */
+    function parseConsumableWisdom(drinkSlots, itemDetailMap, drinkConcentration) {
+        if (!drinkSlots || drinkSlots.length === 0) {
+            return 0;
+        }
+
+        let totalWisdom = 0;
+
+        for (const drink of drinkSlots) {
+            if (!drink || !drink.itemHrid) continue; // Skip empty slots
+
+            const itemDetails = itemDetailMap[drink.itemHrid];
+            if (!itemDetails?.consumableDetail) continue;
+
+            // Check for wisdom buff (typeHrid === "/buff_types/wisdom")
+            const buffs = itemDetails.consumableDetail.buffs || [];
+            for (const buff of buffs) {
+                // Check if this is a wisdom buff by typeHrid
+                if (buff.typeHrid === '/buff_types/wisdom' && buff.flatBoost) {
+                    // Base wisdom (e.g., 0.12 for 12%)
+                    const baseWisdom = buff.flatBoost * 100;
+
+                    // Scale with drink concentration
+                    const scaledWisdom = baseWisdom * (1 + drinkConcentration / 100);
+
+                    totalWisdom += scaledWisdom;
+                }
+            }
+        }
+
+        return totalWisdom;
+    }
+
+    /**
+     * Calculate total experience multiplier and breakdown
+     * @param {string} skillHrid - Skill HRID (e.g., "/skills/foraging")
+     * @param {string} actionTypeHrid - Action type HRID (e.g., "/action_types/foraging")
+     * @returns {Object} Experience data with breakdown
+     */
+    function calculateExperienceMultiplier(skillHrid, actionTypeHrid) {
+        const equipment = dataManager.getEquipment();
+        const gameData = dataManager.getInitClientData();
+        const itemDetailMap = gameData?.itemDetailMap || {};
+
+        // Get drink concentration
+        const drinkConcentration = equipment ? calculateDrinkConcentration(equipment, itemDetailMap) : 0;
+
+        // Get active drinks for this action type
+        const activeDrinks = dataManager.getActionDrinkSlots(actionTypeHrid);
+
+        // Parse wisdom from all sources
+        const equipmentWisdomData = parseEquipmentWisdom(equipment, itemDetailMap);
+        const equipmentWisdom = equipmentWisdomData.total;
+        const houseWisdom = parseHouseRoomWisdom();
+        const communityWisdom = parseCommunityBuffWisdom();
+        const consumableWisdom = parseConsumableWisdom(activeDrinks, itemDetailMap, drinkConcentration);
+
+        const totalWisdom = equipmentWisdom + houseWisdom + communityWisdom + consumableWisdom;
+
+        // Parse charm experience (skill-specific) - now returns object with total and breakdown
+        const charmData = parseCharmExperience(equipment, skillHrid, itemDetailMap);
+        const charmExperience = charmData.total;
+
+        // Total multiplier (additive)
+        const totalMultiplier = 1 + totalWisdom / 100 + charmExperience / 100;
+
+        return {
+            totalMultiplier,
+            totalWisdom,
+            charmExperience,
+            charmBreakdown: charmData.breakdown,
+            wisdomBreakdown: equipmentWisdomData.breakdown,
+            breakdown: {
+                equipmentWisdom,
+                houseWisdom,
+                communityWisdom,
+                consumableWisdom,
+                charmExperience,
+            },
+        };
+    }
+
+    /**
+     * Calculate drink concentration from Guzzling Pouch
+     * @param {Map} equipment - Character equipment map
+     * @param {Object} itemDetailMap - Item details from game data
+     * @returns {number} Drink concentration percentage (e.g., 12.16 for 12.16%)
+     */
+    function calculateDrinkConcentration(equipment, itemDetailMap) {
+        // Find Guzzling Pouch in equipment
+        const pouchItem = equipment.get('/equipment_types/pouch');
+        if (!pouchItem || !pouchItem.itemHrid.includes('guzzling_pouch')) {
+            return 0;
+        }
+
+        const itemDetails = itemDetailMap[pouchItem.itemHrid];
+        if (!itemDetails?.equipmentDetail) {
+            return 0;
+        }
+
+        // Get base drink concentration
+        const noncombatStats = itemDetails.equipmentDetail.noncombatStats || {};
+        const baseDrinkConcentration = noncombatStats.drinkConcentration || 0;
+
+        if (baseDrinkConcentration === 0) {
+            return 0;
+        }
+
+        // Get enhancement scaling (pouch is armor slot, 1× multiplier)
+        const noncombatEnhancement = itemDetails.equipmentDetail.noncombatEnhancementBonuses || {};
+        const enhancementBonus = noncombatEnhancement.drinkConcentration || 0;
+        const enhancementLevel = pouchItem.enhancementLevel || 0;
+
+        // Calculate total (1× multiplier for pouch)
+        return (baseDrinkConcentration + enhancementBonus * enhancementLevel) * 100;
+    }
+
+    /**
      * React Input Utility
      * Handles programmatic updates to React-controlled input elements
      *
@@ -17378,6 +17285,97 @@
         if (focus) {
             input.focus();
         }
+    }
+
+    /**
+     * Experience Calculator
+     * Shared utility for calculating experience per hour across features
+     *
+     * Calculates accurate XP/hour including:
+     * - Base experience from action
+     * - Experience multipliers (Wisdom + Charm Experience)
+     * - Action time with speed bonuses
+     * - Efficiency repeats (critical for accuracy)
+     */
+
+
+    /**
+     * Calculate experience per hour for an action
+     * @param {string} actionHrid - The action HRID (e.g., "/actions/cheesesmithing/cheese")
+     * @returns {Object|null} Experience data or null if not applicable
+     *   {
+     *     expPerHour: number,           // Total XP per hour (with all bonuses)
+     *     baseExp: number,              // Base XP per action
+     *     modifiedXP: number,           // XP per action after multipliers
+     *     actionsPerHour: number,       // Actions per hour (with efficiency)
+     *     xpMultiplier: number,         // Total XP multiplier (Wisdom + Charm)
+     *     actionTime: number,           // Time per action in seconds
+     *     totalEfficiency: number       // Total efficiency percentage
+     *   }
+     */
+    function calculateExpPerHour(actionHrid) {
+        const actionDetails = dataManager.getActionDetails(actionHrid);
+
+        // Validate action has experience gain
+        if (!actionDetails || !actionDetails.experienceGain || !actionDetails.experienceGain.value) {
+            return null;
+        }
+
+        // Get character data
+        const skills = dataManager.getSkills();
+        const equipment = dataManager.getEquipment();
+        const gameData = dataManager.getInitClientData();
+
+        if (!gameData || !skills || !equipment) {
+            return null;
+        }
+
+        // Calculate action stats (time + efficiency)
+        const stats = calculateActionStats(actionDetails, {
+            skills,
+            equipment,
+            itemDetailMap: gameData.itemDetailMap,
+            includeCommunityBuff: true,
+            includeBreakdown: false,
+            floorActionLevel: true,
+        });
+
+        if (!stats) {
+            return null;
+        }
+
+        const { actionTime, totalEfficiency } = stats;
+
+        // Calculate actions per hour (base rate)
+        const baseActionsPerHour = 3600 / actionTime;
+
+        // Calculate average actions per attempt from efficiency
+        // Efficiency gives guaranteed repeats + chance for extra
+        const guaranteedActions = 1 + Math.floor(totalEfficiency / 100);
+        const chanceForExtra = totalEfficiency % 100;
+        const avgActionsPerAttempt = guaranteedActions + chanceForExtra / 100;
+
+        // Calculate actions per hour WITH efficiency (total completions including free repeats)
+        const actionsPerHourWithEfficiency = baseActionsPerHour * avgActionsPerAttempt;
+
+        // Calculate experience multiplier (Wisdom + Charm Experience)
+        const skillHrid = actionDetails.experienceGain.skillHrid;
+        const xpData = calculateExperienceMultiplier(skillHrid, actionDetails.type);
+
+        // Calculate exp per hour with all bonuses
+        const baseExp = actionDetails.experienceGain.value;
+        const modifiedXP = baseExp * xpData.totalMultiplier;
+        const expPerHour = actionsPerHourWithEfficiency * modifiedXP;
+
+        return {
+            expPerHour: Math.floor(expPerHour),
+            baseExp,
+            modifiedXP,
+            actionsPerHour: actionsPerHourWithEfficiency,
+            xpMultiplier: xpData.totalMultiplier,
+            actionTime,
+            totalEfficiency,
+        };
     }
 
     /**
@@ -18660,7 +18658,7 @@
             }
 
             // Attach input listeners using utility
-            const cleanup = attachInputListeners(detailPanel, inputBox, (value) => {
+            const cleanup = attachInputListeners(detailPanel, inputBox, (_value) => {
                 this.updateOutputTotals(detailPanel, inputBox);
             });
 
@@ -18720,7 +18718,7 @@
 
                 // Check for rares (< 5% drop rate, not essences)
                 if (container.innerText.includes('%')) {
-                    const percentageMatch = container.innerText.match(/([\d\.]+)%/);
+                    const percentageMatch = container.innerText.match(/([\d.]+)%/);
                     if (percentageMatch && parseFloat(percentageMatch[1]) < 5) {
                         this.processDropContainer(container, amount);
                         processedContainers.add(container);
@@ -19686,7 +19684,7 @@
             // CRITICAL: Remove injected DOM elements BEFORE clearing Maps
             // This prevents detached SVG elements from accumulating
             // Note: .remove() is safe to call even if element is already detached
-            for (const [actionPanel, data] of this.actionElements.entries()) {
+            for (const [_actionPanel, data] of this.actionElements.entries()) {
                 if (data.displayElement) {
                     data.displayElement.innerHTML = ''; // Clear innerHTML to break event listener references
                     data.displayElement.remove();
@@ -20027,7 +20025,7 @@
             // CRITICAL: Remove injected DOM elements BEFORE clearing Maps
             // This prevents detached SVG elements from accumulating
             // Note: .remove() is safe to call even if element is already detached
-            for (const [actionPanel, data] of this.actionElements.entries()) {
+            for (const [_actionPanel, data] of this.actionElements.entries()) {
                 if (data.displayElement) {
                     data.displayElement.innerHTML = ''; // Clear innerHTML to break event listener references
                     data.displayElement.remove();

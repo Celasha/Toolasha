@@ -518,7 +518,7 @@ class MaxProduceable {
         // CRITICAL: Remove injected DOM elements BEFORE clearing Maps
         // This prevents detached SVG elements from accumulating
         // Note: .remove() is safe to call even if element is already detached
-        for (const [actionPanel, data] of this.actionElements.entries()) {
+        for (const [_actionPanel, data] of this.actionElements.entries()) {
             if (data.displayElement) {
                 data.displayElement.innerHTML = ''; // Clear innerHTML to break event listener references
                 data.displayElement.remove();

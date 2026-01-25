@@ -121,7 +121,7 @@ export async function calculateGatheringProfit(actionHrid) {
     const equipment = dataManager.getEquipment();
     const skills = dataManager.getSkills();
     const houseRooms = Array.from(dataManager.getHouseRooms().values());
-    const activeBuffs = []; // Not currently used
+    const _activeBuffs = []; // Not currently used
 
     // Calculate action time per action (with speed bonuses)
     const baseTimePerActionSec = actionDetail.baseTimeCost / 1000000000;
@@ -270,7 +270,7 @@ export async function calculateGatheringProfit(actionHrid) {
         // Processing Tea only applies to: Milk→Cheese, Log→Lumber, Cotton/Flax/Bamboo/Cocoon/Radiant→Fabric
         const conversionData = processingConversionCache.get(drop.itemHrid);
         const processedItemHrid = conversionData?.outputItemHrid || null;
-        const processingActionHrid = conversionData?.actionHrid || null;
+        const _processingActionHrid = conversionData?.actionHrid || null;
 
         // Per-action calculations (efficiency will be applied when converting to items per hour)
         let rawPerAction = 0;
