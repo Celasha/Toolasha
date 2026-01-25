@@ -212,5 +212,5 @@ export function buildCharacterSheetLink(
   const segments = parseModalToSegments(modal);
   const urpt = buildUrptString(segments);
   const base = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
-  return `${base}?urpt=${encodeURIComponent(urpt)}`;
+  return `${base}?urpt=${urpt}`;
 }
