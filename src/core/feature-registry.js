@@ -5,7 +5,6 @@
 
 import config from './config.js';
 import dataManager from './data-manager.js';
-import settingsUI from '../features/settings/settings-ui.js';
 
 // Import all features
 import tooltipPrices from '../features/market/tooltip-prices.js';

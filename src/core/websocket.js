@@ -5,7 +5,6 @@
  * Uses WebSocket constructor wrapper for better performance than MessageEvent.prototype.data hooking
  */
 
-import storage from './storage.js';
 import { setCurrentProfile } from '../features/combat/profile-cache.js';
 
 class WebSocketHook {
@@ -59,9 +58,6 @@ class WebSocketHook {
 
         // Capture hook instance for closure
         const hookInstance = this;
-
-        // Get target window - unsafeWindow in Firefox, window in Chrome/Chromium
-        const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
         // Hook MessageEvent.prototype.data (same as MWI Tools)
         const dataProperty = Object.getOwnPropertyDescriptor(MessageEvent.prototype, 'data');

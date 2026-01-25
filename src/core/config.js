@@ -3,7 +3,6 @@
  * Manages all script constants and user settings
  */
 
-import storage from './storage.js';
 import settingsStorage from '../features/settings/settings-storage.js';
 import { settingsGroups } from '../features/settings/settings-config.js';
 import dataManager from './data-manager.js';

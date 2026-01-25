@@ -411,7 +411,7 @@ class DataManager {
         }
 
         this.characterHouseRooms.clear();
-        for (const [hrid, room] of Object.entries(houseRoomMap)) {
+        for (const [_hrid, room] of Object.entries(houseRoomMap)) {
             this.characterHouseRooms.set(room.houseRoomHrid, room);
         }
     }
@@ -680,7 +680,7 @@ class DataManager {
         this.monsterSortIndexMap.clear();
 
         // Extract combat zones (non-dungeon only)
-        for (const [zoneHrid, action] of Object.entries(this.initClientData.actionDetailMap)) {
+        for (const [_zoneHrid, action] of Object.entries(this.initClientData.actionDetailMap)) {
             // Skip non-combat actions and dungeons
             if (action.type !== '/action_types/combat' || action.combatZoneInfo?.isDungeon) {
                 continue;

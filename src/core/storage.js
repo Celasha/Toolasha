@@ -36,7 +36,7 @@ class Storage {
      * @returns {Promise<void>}
      */
     openDatabase() {
-        return new Promise((resolve, reject) => {
+        return new Promise((resolve, _reject) => {
             const request = indexedDB.open(this.dbName, this.dbVersion);
 
             request.onerror = () => {
@@ -103,7 +103,7 @@ class Storage {
             return defaultValue;
         }
 
-        return new Promise((resolve, reject) => {
+        return new Promise((resolve, _reject) => {
             try {
                 const transaction = this.db.transaction([storeName], 'readonly');
                 const store = transaction.objectStore(storeName);
@@ -150,7 +150,7 @@ class Storage {
      * @private
      */
     async _saveToIndexedDB(key, value, storeName) {
-        return new Promise((resolve, reject) => {
+        return new Promise((resolve, _reject) => {
             try {
                 const transaction = this.db.transaction([storeName], 'readwrite');
                 const store = transaction.objectStore(storeName);
@@ -257,7 +257,7 @@ class Storage {
             return false;
         }
 
-        return new Promise((resolve, reject) => {
+        return new Promise((resolve, _reject) => {
             try {
                 const transaction = this.db.transaction([storeName], 'readwrite');
                 const store = transaction.objectStore(storeName);
@@ -304,7 +304,7 @@ class Storage {
             return [];
         }
 
-        return new Promise((resolve, reject) => {
+        return new Promise((resolve, _reject) => {
             try {
                 const transaction = this.db.transaction([storeName], 'readonly');
                 const store = transaction.objectStore(storeName);
