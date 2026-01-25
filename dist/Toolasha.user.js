@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.5.02
+// @version      0.5.03
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -12182,7 +12182,9 @@
                 orderQuantity: listing.orderQuantity,
                 filledQuantity: listing.filledQuantity,
                 price: listing.price,
-                createdTimestamp: listing.createdTimestamp
+                createdTimestamp: listing.createdTimestamp,
+                unclaimedCoinCount: listing.unclaimedCoinCount || 0,
+                unclaimedItemCount: listing.unclaimedItemCount || 0
             };
         }
 
@@ -12349,6 +12351,8 @@
                     row.dataset.orderQuantity = matchedListing.orderQuantity;
                     row.dataset.filledQuantity = matchedListing.filledQuantity;
                     row.dataset.createdTimestamp = matchedListing.createdTimestamp;
+                    row.dataset.unclaimedCoinCount = matchedListing.unclaimedCoinCount;
+                    row.dataset.unclaimedItemCount = matchedListing.unclaimedItemCount;
                 }
             }
         }
@@ -12458,23 +12462,12 @@
                 const price = Number(dataset.price);
                 const orderQuantity = Number(dataset.orderQuantity);
                 const filledQuantity = Number(dataset.filledQuantity);
+                const unclaimedCoinCount = Number(dataset.unclaimedCoinCount) || 0;
+                const unclaimedItemCount = Number(dataset.unclaimedItemCount) || 0;
 
-                // Find insertion point: BEFORE the first button cell (Collect/Link/Cancel)
-                // These buttons contain specific text and are styled as buttons
-                let insertBeforeCell = null;
-                for (const cell of row.children) {
-                    const text = cell.textContent.trim();
-                    // Look for button cells containing Link, Cancel, or Collect
-                    if (text === 'Link' || text === 'Cancel' || text === 'Collect') {
-                        insertBeforeCell = cell;
-                        break;
-                    }
-                }
-
-                // Fallback to index 4 if no button found (shouldn't happen)
-                if (!insertBeforeCell) {
-                    insertBeforeCell = row.children[4] || null;
-                }
+                // Insert at index 4 (same as headers) to maintain alignment
+                const insertIndex = 4;
+                const insertBeforeCell = row.children[insertIndex] || null;
 
                 // Create Top Order Price cell
                 const topOrderCell = this.createTopOrderPriceCell(itemHrid, enhancementLevel, isSell, price, priceCache);
@@ -12483,17 +12476,19 @@
                 // Create Top Order Age cell (if setting enabled)
                 if (config.getSetting('market_showTopOrderAge')) {
                     const topOrderAgeCell = this.createTopOrderAgeCell(itemHrid, enhancementLevel, isSell);
-                    row.insertBefore(topOrderAgeCell, insertBeforeCell);
+                    row.insertBefore(topOrderAgeCell, row.children[insertIndex + 1]);
                 }
 
                 // Create Total Price cell
-                const totalPriceCell = this.createTotalPriceCell(itemHrid, isSell, price, orderQuantity, filledQuantity);
-                row.insertBefore(totalPriceCell, insertBeforeCell);
+                const currentInsertIndex = insertIndex + (config.getSetting('market_showTopOrderAge') ? 2 : 1);
+                const totalPriceCell = this.createTotalPriceCell(itemHrid, isSell, price, orderQuantity, filledQuantity, unclaimedCoinCount, unclaimedItemCount);
+                row.insertBefore(totalPriceCell, row.children[currentInsertIndex]);
 
                 // Create Listed Age cell (if setting enabled)
                 if (config.getSetting('market_showListingAge') && dataset.createdTimestamp) {
+                    const listedInsertIndex = currentInsertIndex + 1;
                     const listedAgeCell = this.createListedAgeCell(dataset.createdTimestamp);
-                    row.insertBefore(listedAgeCell, insertBeforeCell);
+                    row.insertBefore(listedAgeCell, row.children[listedInsertIndex]);
                 }
             }
         }
@@ -12619,20 +12614,34 @@
          * @param {number} price - Unit price
          * @param {number} orderQuantity - Total quantity ordered
          * @param {number} filledQuantity - Quantity already filled
+         * @param {number} unclaimedCoinCount - Unclaimed coins (for filled sell orders)
+         * @param {number} unclaimedItemCount - Unclaimed items (for filled buy orders)
          * @returns {HTMLElement} Table cell element
          */
-        createTotalPriceCell(itemHrid, isSell, price, orderQuantity, filledQuantity) {
+        createTotalPriceCell(itemHrid, isSell, price, orderQuantity, filledQuantity, unclaimedCoinCount, unclaimedItemCount) {
             const cell = document.createElement('td');
             cell.classList.add('mwi-listing-price-cell');
 
             const span = document.createElement('span');
             span.classList.add('mwi-listing-price-value');
 
-            // Calculate tax (0.82 for cowbells, 0.98 for others, 1.0 for buy orders)
-            const tax = isSell ? (itemHrid === '/items/bag_of_10_cowbells' ? 0.82 : 0.98) : 1.0;
+            let totalPrice;
 
-            // Calculate total price for remaining quantity
-            const totalPrice = (orderQuantity - filledQuantity) * Math.floor(price * tax);
+            // For filled listings, show unclaimed amount
+            if (filledQuantity === orderQuantity) {
+                if (isSell) {
+                    // Sell order: show unclaimed coins
+                    totalPrice = unclaimedCoinCount;
+                } else {
+                    // Buy order: show value of unclaimed items
+                    totalPrice = unclaimedItemCount * price;
+                }
+            } else {
+                // For active listings, calculate remaining value
+                // Calculate tax (0.82 for cowbells, 0.98 for others, 1.0 for buy orders)
+                const tax = isSell ? (itemHrid === '/items/bag_of_10_cowbells' ? 0.82 : 0.98) : 1.0;
+                totalPrice = (orderQuantity - filledQuantity) * Math.floor(price * tax);
+            }
 
             // Format and color code
             span.textContent = coinFormatter(totalPrice);
@@ -23729,11 +23738,22 @@
       const character = characterData.sharableCharacter || characterData;
       const name = character.name || 'Player';
 
-      // Avatar/outfit/icon - need to extract from equipment or use defaults
+      // Avatar/outfit/icon - extract from sharableCharacter first, then fall back to items
       let avatar = 'person_default';
       let outfit = 'tshirt_default';
       let nameIcon = '';
       let nameColor = '';
+
+      // Extract from sharableCharacter object (profile_shared data)
+      if (character.avatarHrid) {
+        avatar = character.avatarHrid.replace('/avatars/', '');
+      }
+      if (character.avatarOutfitHrid) {
+        outfit = character.avatarOutfitHrid.replace('/avatar_outfits/', '');
+      }
+      if (character.chatIconHrid) {
+        nameIcon = character.chatIconHrid.replace('/chat_icons/', '');
+      }
 
       // Try to get avatar/outfit from character items
       if (characterData.characterItems) {
@@ -23745,6 +23765,18 @@
           } else if (item.itemLocationHrid === '/item_locations/chat_icon') {
             nameIcon = item.itemHrid.replace('/items/', '');
           }
+        }
+      }
+      // Check wearableItemMap (for profile_shared data)
+      else if (characterData.wearableItemMap) {
+        if (characterData.wearableItemMap['/item_locations/avatar']) {
+          avatar = characterData.wearableItemMap['/item_locations/avatar'].itemHrid.replace('/items/', '');
+        }
+        if (characterData.wearableItemMap['/item_locations/outfit']) {
+          outfit = characterData.wearableItemMap['/item_locations/outfit'].itemHrid.replace('/items/', '');
+        }
+        if (characterData.wearableItemMap['/item_locations/chat_icon']) {
+          nameIcon = characterData.wearableItemMap['/item_locations/chat_icon'].itemHrid.replace('/items/', '');
         }
       }
 
@@ -24038,7 +24070,7 @@
 
       const urpt = buildUrptString(segments);
       const base = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
-      return `${base}?urpt=${encodeURIComponent(urpt)}`;
+      return `${base}?urpt=${urpt}`;
     }
 
     /**
@@ -24210,20 +24242,30 @@
                     return;
                 }
 
-                // Get own character data for consumables (profile_shared doesn't have them)
-                const ownCharacterData = dataManager.characterData;
+                // Determine consumables data source
+                let consumablesData = null;
+
+                // If viewing own profile, use own character data (has actionTypeFoodSlotsMap/actionTypeDrinkSlotsMap)
+                if (!this.currentProfileData?.profile) {
+                    consumablesData = dataManager.characterData;
+                }
+                // If viewing other player, check if they have combatConsumables (only visible in party)
+                else if (characterData.combatConsumables && characterData.combatConsumables.length > 0) {
+                    // Convert combatConsumables array to expected format
+                    consumablesData = this.convertCombatConsumablesToSlots(characterData.combatConsumables, clientData);
+                }
+                // Otherwise leave consumables empty (can't see other player's consumables outside party)
 
                 // Find the profile modal for fallback
                 const modal = document.querySelector('.SharableProfile_modal__2OmCQ');
 
                 // Build character sheet link using cached data (preferred) or DOM fallback
-                // Pass ownCharacterData for consumables (profile_shared doesn't have consumables)
                 const url = buildCharacterSheetLink(
                     modal,
                     'https://tib-san.github.io/mwi-character-sheet/',
                     characterData,
                     clientData,
-                    ownCharacterData  // Always use own character data for consumables
+                    consumablesData
                 );
 
                 // Open in new tab
@@ -24232,6 +24274,46 @@
             } catch (error) {
                 console.error('[CharacterCardButton] Failed to open character card:', error);
             }
+        }
+
+        /**
+         * Convert combatConsumables array to actionTypeFoodSlotsMap/actionTypeDrinkSlotsMap format
+         * @param {Array} combatConsumables - Array of consumable items from profile data
+         * @param {Object} clientData - Init client data for item type lookups
+         * @returns {Object} Object with actionTypeFoodSlotsMap and actionTypeDrinkSlotsMap
+         */
+        convertCombatConsumablesToSlots(combatConsumables, clientData) {
+            const foodSlots = [];
+            const drinkSlots = [];
+
+            // Separate food and drinks (matching combat sim logic)
+            combatConsumables.forEach(consumable => {
+                const itemHrid = consumable.itemHrid;
+
+                // Check if it's a drink
+                const isDrink = itemHrid.includes('coffee') ||
+                    itemHrid.includes('tea') ||
+                    clientData?.itemDetailMap?.[itemHrid]?.tags?.includes('drink');
+
+                if (isDrink && drinkSlots.length < 3) {
+                    drinkSlots.push({ itemHrid });
+                } else if (!isDrink && foodSlots.length < 3) {
+                    foodSlots.push({ itemHrid });
+                }
+            });
+
+            // Pad to 4 slots (3 used + 1 null)
+            while (foodSlots.length < 4) foodSlots.push(null);
+            while (drinkSlots.length < 4) drinkSlots.push(null);
+
+            return {
+                actionTypeFoodSlotsMap: {
+                    '/action_types/combat': foodSlots
+                },
+                actionTypeDrinkSlotsMap: {
+                    '/action_types/combat': drinkSlots
+                }
+            };
         }
 
         /**
@@ -41550,7 +41632,7 @@
         const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
         targetWindow.Toolasha = {
-            version: '0.5.02',
+            version: '0.5.03',
 
             // Feature toggle API (for users to manage settings via console)
             features: {

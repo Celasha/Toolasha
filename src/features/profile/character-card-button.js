@@ -171,20 +171,30 @@ class CharacterCardButton {
                 return;
             }
 
-            // Get own character data for consumables (profile_shared doesn't have them)
-            const ownCharacterData = dataManager.characterData;
+            // Determine consumables data source
+            let consumablesData = null;
+
+            // If viewing own profile, use own character data (has actionTypeFoodSlotsMap/actionTypeDrinkSlotsMap)
+            if (!this.currentProfileData?.profile) {
+                consumablesData = dataManager.characterData;
+            }
+            // If viewing other player, check if they have combatConsumables (only visible in party)
+            else if (characterData.combatConsumables && characterData.combatConsumables.length > 0) {
+                // Convert combatConsumables array to expected format
+                consumablesData = this.convertCombatConsumablesToSlots(characterData.combatConsumables, clientData);
+            }
+            // Otherwise leave consumables empty (can't see other player's consumables outside party)
 
             // Find the profile modal for fallback
             const modal = document.querySelector('.SharableProfile_modal__2OmCQ');
 
             // Build character sheet link using cached data (preferred) or DOM fallback
-            // Pass ownCharacterData for consumables (profile_shared doesn't have consumables)
             const url = buildCharacterSheetLink(
                 modal,
                 'https://tib-san.github.io/mwi-character-sheet/',
                 characterData,
                 clientData,
-                ownCharacterData  // Always use own character data for consumables
+                consumablesData
             );
 
             // Open in new tab
@@ -193,6 +203,46 @@ class CharacterCardButton {
         } catch (error) {
             console.error('[CharacterCardButton] Failed to open character card:', error);
         }
+    }
+
+    /**
+     * Convert combatConsumables array to actionTypeFoodSlotsMap/actionTypeDrinkSlotsMap format
+     * @param {Array} combatConsumables - Array of consumable items from profile data
+     * @param {Object} clientData - Init client data for item type lookups
+     * @returns {Object} Object with actionTypeFoodSlotsMap and actionTypeDrinkSlotsMap
+     */
+    convertCombatConsumablesToSlots(combatConsumables, clientData) {
+        const foodSlots = [];
+        const drinkSlots = [];
+
+        // Separate food and drinks (matching combat sim logic)
+        combatConsumables.forEach(consumable => {
+            const itemHrid = consumable.itemHrid;
+
+            // Check if it's a drink
+            const isDrink = itemHrid.includes('coffee') ||
+                itemHrid.includes('tea') ||
+                clientData?.itemDetailMap?.[itemHrid]?.tags?.includes('drink');
+
+            if (isDrink && drinkSlots.length < 3) {
+                drinkSlots.push({ itemHrid });
+            } else if (!isDrink && foodSlots.length < 3) {
+                foodSlots.push({ itemHrid });
+            }
+        });
+
+        // Pad to 4 slots (3 used + 1 null)
+        while (foodSlots.length < 4) foodSlots.push(null);
+        while (drinkSlots.length < 4) drinkSlots.push(null);
+
+        return {
+            actionTypeFoodSlotsMap: {
+                '/action_types/combat': foodSlots
+            },
+            actionTypeDrinkSlotsMap: {
+                '/action_types/combat': drinkSlots
+            }
+        };
     }
 
     /**

@@ -201,11 +201,22 @@ export function buildSegmentsFromCharacterData(characterData, clientData, consum
   const character = characterData.sharableCharacter || characterData;
   const name = character.name || 'Player';
 
-  // Avatar/outfit/icon - need to extract from equipment or use defaults
+  // Avatar/outfit/icon - extract from sharableCharacter first, then fall back to items
   let avatar = 'person_default';
   let outfit = 'tshirt_default';
   let nameIcon = '';
   let nameColor = '';
+
+  // Extract from sharableCharacter object (profile_shared data)
+  if (character.avatarHrid) {
+    avatar = character.avatarHrid.replace('/avatars/', '');
+  }
+  if (character.avatarOutfitHrid) {
+    outfit = character.avatarOutfitHrid.replace('/avatar_outfits/', '');
+  }
+  if (character.chatIconHrid) {
+    nameIcon = character.chatIconHrid.replace('/chat_icons/', '');
+  }
 
   // Try to get avatar/outfit from character items
   if (characterData.characterItems) {
@@ -217,6 +228,18 @@ export function buildSegmentsFromCharacterData(characterData, clientData, consum
       } else if (item.itemLocationHrid === '/item_locations/chat_icon') {
         nameIcon = item.itemHrid.replace('/items/', '');
       }
+    }
+  }
+  // Check wearableItemMap (for profile_shared data)
+  else if (characterData.wearableItemMap) {
+    if (characterData.wearableItemMap['/item_locations/avatar']) {
+      avatar = characterData.wearableItemMap['/item_locations/avatar'].itemHrid.replace('/items/', '');
+    }
+    if (characterData.wearableItemMap['/item_locations/outfit']) {
+      outfit = characterData.wearableItemMap['/item_locations/outfit'].itemHrid.replace('/items/', '');
+    }
+    if (characterData.wearableItemMap['/item_locations/chat_icon']) {
+      nameIcon = characterData.wearableItemMap['/item_locations/chat_icon'].itemHrid.replace('/items/', '');
     }
   }
 
@@ -510,5 +533,5 @@ export function buildCharacterSheetLink(
 
   const urpt = buildUrptString(segments);
   const base = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
-  return `${base}?urpt=${encodeURIComponent(urpt)}`;
+  return `${base}?urpt=${urpt}`;
 }

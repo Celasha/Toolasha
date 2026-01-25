@@ -205,7 +205,9 @@ class ListingPriceDisplay {
             orderQuantity: listing.orderQuantity,
             filledQuantity: listing.filledQuantity,
             price: listing.price,
-            createdTimestamp: listing.createdTimestamp
+            createdTimestamp: listing.createdTimestamp,
+            unclaimedCoinCount: listing.unclaimedCoinCount || 0,
+            unclaimedItemCount: listing.unclaimedItemCount || 0
         };
     }
 
@@ -372,6 +374,8 @@ class ListingPriceDisplay {
                 row.dataset.orderQuantity = matchedListing.orderQuantity;
                 row.dataset.filledQuantity = matchedListing.filledQuantity;
                 row.dataset.createdTimestamp = matchedListing.createdTimestamp;
+                row.dataset.unclaimedCoinCount = matchedListing.unclaimedCoinCount;
+                row.dataset.unclaimedItemCount = matchedListing.unclaimedItemCount;
             }
         }
     }
@@ -481,23 +485,12 @@ class ListingPriceDisplay {
             const price = Number(dataset.price);
             const orderQuantity = Number(dataset.orderQuantity);
             const filledQuantity = Number(dataset.filledQuantity);
+            const unclaimedCoinCount = Number(dataset.unclaimedCoinCount) || 0;
+            const unclaimedItemCount = Number(dataset.unclaimedItemCount) || 0;
 
-            // Find insertion point: BEFORE the first button cell (Collect/Link/Cancel)
-            // These buttons contain specific text and are styled as buttons
-            let insertBeforeCell = null;
-            for (const cell of row.children) {
-                const text = cell.textContent.trim();
-                // Look for button cells containing Link, Cancel, or Collect
-                if (text === 'Link' || text === 'Cancel' || text === 'Collect') {
-                    insertBeforeCell = cell;
-                    break;
-                }
-            }
-
-            // Fallback to index 4 if no button found (shouldn't happen)
-            if (!insertBeforeCell) {
-                insertBeforeCell = row.children[4] || null;
-            }
+            // Insert at index 4 (same as headers) to maintain alignment
+            const insertIndex = 4;
+            const insertBeforeCell = row.children[insertIndex] || null;
 
             // Create Top Order Price cell
             const topOrderCell = this.createTopOrderPriceCell(itemHrid, enhancementLevel, isSell, price, priceCache);
@@ -506,17 +499,19 @@ class ListingPriceDisplay {
             // Create Top Order Age cell (if setting enabled)
             if (config.getSetting('market_showTopOrderAge')) {
                 const topOrderAgeCell = this.createTopOrderAgeCell(itemHrid, enhancementLevel, isSell);
-                row.insertBefore(topOrderAgeCell, insertBeforeCell);
+                row.insertBefore(topOrderAgeCell, row.children[insertIndex + 1]);
             }
 
             // Create Total Price cell
-            const totalPriceCell = this.createTotalPriceCell(itemHrid, isSell, price, orderQuantity, filledQuantity);
-            row.insertBefore(totalPriceCell, insertBeforeCell);
+            const currentInsertIndex = insertIndex + (config.getSetting('market_showTopOrderAge') ? 2 : 1);
+            const totalPriceCell = this.createTotalPriceCell(itemHrid, isSell, price, orderQuantity, filledQuantity, unclaimedCoinCount, unclaimedItemCount);
+            row.insertBefore(totalPriceCell, row.children[currentInsertIndex]);
 
             // Create Listed Age cell (if setting enabled)
             if (config.getSetting('market_showListingAge') && dataset.createdTimestamp) {
+                const listedInsertIndex = currentInsertIndex + 1;
                 const listedAgeCell = this.createListedAgeCell(dataset.createdTimestamp);
-                row.insertBefore(listedAgeCell, insertBeforeCell);
+                row.insertBefore(listedAgeCell, row.children[listedInsertIndex]);
             }
         }
     }
@@ -642,20 +637,34 @@ class ListingPriceDisplay {
      * @param {number} price - Unit price
      * @param {number} orderQuantity - Total quantity ordered
      * @param {number} filledQuantity - Quantity already filled
+     * @param {number} unclaimedCoinCount - Unclaimed coins (for filled sell orders)
+     * @param {number} unclaimedItemCount - Unclaimed items (for filled buy orders)
      * @returns {HTMLElement} Table cell element
      */
-    createTotalPriceCell(itemHrid, isSell, price, orderQuantity, filledQuantity) {
+    createTotalPriceCell(itemHrid, isSell, price, orderQuantity, filledQuantity, unclaimedCoinCount, unclaimedItemCount) {
         const cell = document.createElement('td');
         cell.classList.add('mwi-listing-price-cell');
 
         const span = document.createElement('span');
         span.classList.add('mwi-listing-price-value');
 
-        // Calculate tax (0.82 for cowbells, 0.98 for others, 1.0 for buy orders)
-        const tax = isSell ? (itemHrid === '/items/bag_of_10_cowbells' ? 0.82 : 0.98) : 1.0;
+        let totalPrice;
 
-        // Calculate total price for remaining quantity
-        const totalPrice = (orderQuantity - filledQuantity) * Math.floor(price * tax);
+        // For filled listings, show unclaimed amount
+        if (filledQuantity === orderQuantity) {
+            if (isSell) {
+                // Sell order: show unclaimed coins
+                totalPrice = unclaimedCoinCount;
+            } else {
+                // Buy order: show value of unclaimed items
+                totalPrice = unclaimedItemCount * price;
+            }
+        } else {
+            // For active listings, calculate remaining value
+            // Calculate tax (0.82 for cowbells, 0.98 for others, 1.0 for buy orders)
+            const tax = isSell ? (itemHrid === '/items/bag_of_10_cowbells' ? 0.82 : 0.98) : 1.0;
+            totalPrice = (orderQuantity - filledQuantity) * Math.floor(price * tax);
+        }
 
         // Format and color code
         span.textContent = coinFormatter(totalPrice);
