@@ -21,7 +21,7 @@ function initialize() {
  * Wait for profile page to load
  */
 function waitForProfilePage() {
-    const checkInterval = setInterval(() => {
+    const _checkInterval = setInterval(() => {
         const profileTab = document.querySelector('div.SharableProfile_overviewTab__W4dCV');
 
         // Only inject if we're on the profile page AND button doesn't exist yet

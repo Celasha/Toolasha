@@ -5,7 +5,6 @@
 
 import dataManager from '../../core/data-manager.js';
 import webSocketHook from '../../core/websocket.js';
-import storage from '../../core/storage.js';
 
 // Detect if we're running on Tampermonkey or Steam
 const hasScriptManager = typeof GM_info !== 'undefined';

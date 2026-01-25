@@ -32852,9 +32852,9 @@
 
     /**
      * Debug handler to log all messages temporarily
-     * @param {Object} data - WebSocket message data
+     * @param {Object} _data - WebSocket message data
      */
-    function handleDebugMessage(data) {
+    function handleDebugMessage(_data) {
         // Debug logging removed
     }
 
@@ -32945,7 +32945,7 @@
             }
 
             return { itemHrid, level };
-        } catch (error) {
+        } catch {
             return { itemHrid: null, level: 0 };
         }
     }
@@ -32993,7 +32993,7 @@
             );
 
             return materials.length > 0 ? materials : null;
-        } catch (error) {
+        } catch {
             return null;
         }
     }
@@ -33031,9 +33031,9 @@
     /**
      * Handle enhancement result (success or failure)
      * @param {Object} action - Enhancement action data
-     * @param {Object} data - Full WebSocket message data
+     * @param {Object} _data - Full WebSocket message data
      */
-    async function handleEnhancementResult(action, data) {
+    async function handleEnhancementResult(action, _data) {
         try {
             const { itemHrid, level: newLevel } = parseItemHash(action.primaryItemHash);
             const rawCount = action.currentCount || 0;
@@ -33127,7 +33127,7 @@
             const adjustedCount = calculateAdjustedAttemptCount(currentSession);
 
             // Track costs for EVERY attempt (including first)
-            const { materialCost, coinCost } = await trackMaterialCosts(itemHrid);
+            const { materialCost: _materialCost, coinCost: _coinCost } = await trackMaterialCosts(itemHrid);
 
             // Get previous level from lastAttempt
             const previousLevel = currentSession.lastAttempt?.level ?? currentSession.startLevel;
@@ -34271,8 +34271,8 @@
                                 if (timestampMatch) {
                                     const date = timestampMatch[1];
                                     let hour = parseInt(timestampMatch[2], 10);
-                                    let min = parseInt(timestampMatch[3], 10);
-                                    let sec = parseInt(timestampMatch[4], 10);
+                                    const min = parseInt(timestampMatch[3], 10);
+                                    const sec = parseInt(timestampMatch[4], 10);
                                     const period = timestampMatch[5];
 
                                     const [month, day] = date.split('/').map((x) => parseInt(x, 10));
@@ -35156,8 +35156,8 @@
 
                     const date = timestampMatch[1];
                     let hour = parseInt(timestampMatch[2], 10);
-                    let min = parseInt(timestampMatch[3], 10);
-                    let sec = parseInt(timestampMatch[4], 10);
+                    const min = parseInt(timestampMatch[3], 10);
+                    const sec = parseInt(timestampMatch[4], 10);
                     const period = timestampMatch[5];
 
                     const [month, day] = date.split('/').map((x) => parseInt(x, 10));
@@ -35714,7 +35714,10 @@
             }
 
             if (!match) {
-                console.warn('[Dungeon Tracker] Found key counts but could not parse timestamp from:', text.match(/\[.*?\]/)?.[0]);
+                console.warn(
+                    '[Dungeon Tracker] Found key counts but could not parse timestamp from:',
+                    text.match(/\[.*?\]/)?.[0]
+                );
                 return null;
             }
 

@@ -439,7 +439,10 @@ class DungeonTrackerChatAnnotations {
         }
 
         if (!match) {
-            console.warn('[Dungeon Tracker] Found key counts but could not parse timestamp from:', text.match(/\[.*?\]/)?.[0]);
+            console.warn(
+                '[Dungeon Tracker] Found key counts but could not parse timestamp from:',
+                text.match(/\[.*?\]/)?.[0]
+            );
             return null;
         }
 

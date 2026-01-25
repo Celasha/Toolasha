@@ -24,9 +24,9 @@ export function setupEnhancementHandlers() {
 
 /**
  * Debug handler to log all messages temporarily
- * @param {Object} data - WebSocket message data
+ * @param {Object} _data - WebSocket message data
  */
-function handleDebugMessage(data) {
+function handleDebugMessage(_data) {
     // Debug logging removed
 }
 
@@ -82,7 +82,7 @@ function getProtectionItemHrid(action) {
  * Handle enhancement action start
  * @param {Object} action - Enhancement action data
  */
-async function handleEnhancementStart(action) {
+async function _handleEnhancementStart(action) {
     try {
         // Parse item hash to get HRID and level
         const { itemHrid, level: currentLevel } = parseItemHash(action.primaryItemHash);
@@ -132,7 +132,9 @@ async function handleEnhancementStart(action) {
         const sessionId = await enhancementTracker.startSession(itemHrid, currentLevel, targetLevel, protectFrom);
         enhancementUI.switchToSession(sessionId);
         enhancementUI.scheduleUpdate();
-    } catch (error) {}
+    } catch {
+        // Silent failure
+    }
 }
 
 /**
@@ -174,7 +176,7 @@ function parseItemHash(primaryItemHash) {
         }
 
         return { itemHrid, level };
-    } catch (error) {
+    } catch {
         return { itemHrid: null, level: 0 };
     }
 }
@@ -222,7 +224,7 @@ function getEnhancementMaterials(itemHrid) {
         );
 
         return materials.length > 0 ? materials : null;
-    } catch (error) {
+    } catch {
         return null;
     }
 }
@@ -260,9 +262,9 @@ async function trackMaterialCosts(itemHrid) {
 /**
  * Handle enhancement result (success or failure)
  * @param {Object} action - Enhancement action data
- * @param {Object} data - Full WebSocket message data
+ * @param {Object} _data - Full WebSocket message data
  */
-async function handleEnhancementResult(action, data) {
+async function handleEnhancementResult(action, _data) {
     try {
         const { itemHrid, level: newLevel } = parseItemHash(action.primaryItemHash);
         const rawCount = action.currentCount || 0;
@@ -356,7 +358,7 @@ async function handleEnhancementResult(action, data) {
         const adjustedCount = calculateAdjustedAttemptCount(currentSession);
 
         // Track costs for EVERY attempt (including first)
-        const { materialCost, coinCost } = await trackMaterialCosts(itemHrid);
+        const { materialCost: _materialCost, coinCost: _coinCost } = await trackMaterialCosts(itemHrid);
 
         // Get previous level from lastAttempt
         const previousLevel = currentSession.lastAttempt?.level ?? currentSession.startLevel;
