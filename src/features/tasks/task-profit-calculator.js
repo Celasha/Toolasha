@@ -6,7 +6,6 @@
 
 import dataManager from '../../core/data-manager.js';
 import expectedValueCalculator from '../market/expected-value-calculator.js';
-import marketAPI from '../../api/marketplace.js';
 import { calculateGatheringProfit } from '../actions/gathering-profit.js';
 import { calculateProductionProfit } from '../actions/production-profit.js';
 
@@ -177,7 +176,7 @@ async function calculateGatheringTaskProfit(actionHrid, quantity) {
     let profitData;
     try {
         profitData = await calculateGatheringProfit(actionHrid);
-    } catch (error) {
+    } catch {
         profitData = null;
     }
 
@@ -224,7 +223,7 @@ async function calculateProductionTaskProfit(actionHrid, quantity) {
     let profitData;
     try {
         profitData = await calculateProductionProfit(actionHrid);
-    } catch (error) {
+    } catch {
         profitData = null;
     }
 

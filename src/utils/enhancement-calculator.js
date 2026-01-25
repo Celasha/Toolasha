@@ -104,7 +104,7 @@ export function calculatePerActionTime(enhancingLevel, itemLevel, speedBonus = 0
 export function calculateEnhancement(params) {
     const {
         enhancingLevel,
-        houseLevel,
+        _houseLevel,
         toolBonus,
         speedBonus = 0,
         itemLevel,

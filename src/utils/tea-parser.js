@@ -202,7 +202,7 @@ export function getDrinkConcentration(characterEquipment, itemDetailMap) {
     let totalDrinkConcentration = 0;
 
     // Iterate through all equipped items
-    for (const [slotHrid, equippedItem] of characterEquipment) {
+    for (const [_slotHrid, equippedItem] of characterEquipment) {
         const itemDetails = itemDetailMap[equippedItem.itemHrid];
 
         if (!itemDetails || !itemDetails.equipmentDetail) {

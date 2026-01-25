@@ -112,7 +112,7 @@ class SettingsUI {
                 return;
             }
 
-            const observer = new MutationObserver((mutations) => {
+            const observer = new MutationObserver((_mutations) => {
                 // Look for the settings tabs container
                 const tabsContainer = document.querySelector('div[class*="SettingsPanel_tabsComponentContainer"]');
 

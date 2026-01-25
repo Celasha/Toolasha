@@ -357,16 +357,14 @@ class InventoryBadgeManager {
                     if (craftingCost > 0) {
                         askPrice = craftingCost;
                         bidPrice = craftingCost;
-                    } else {
+                    } else if (!this.warnedItems.has(itemHrid)) {
                         // No crafting recipe found (likely drop-only item)
-                        if (!this.warnedItems.has(itemHrid)) {
-                            console.warn(
-                                '[InventoryBadgeManager] No market data or crafting recipe for equipment:',
-                                itemName,
-                                itemHrid
-                            );
-                            this.warnedItems.add(itemHrid);
-                        }
+                        console.warn(
+                            '[InventoryBadgeManager] No market data or crafting recipe for equipment:',
+                            itemName,
+                            itemHrid
+                        );
+                        this.warnedItems.add(itemHrid);
                     }
                 } else if (!isEquipment && askPrice === 0 && bidPrice === 0) {
                     // Non-equipment with no market data

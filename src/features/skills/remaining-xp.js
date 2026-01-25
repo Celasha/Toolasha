@@ -150,7 +150,7 @@ class RemainingXP {
 
             // Insert after the progress bar
             progressContainer.insertBefore(xpDisplay, progressBar.nextSibling);
-        } catch (error) {
+        } catch {
             // Silent fail - don't spam console with errors
         }
     }

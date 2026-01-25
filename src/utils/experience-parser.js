@@ -20,7 +20,7 @@ export function parseEquipmentWisdom(equipment, itemDetailMap) {
     let totalWisdom = 0;
     const breakdown = [];
 
-    for (const [slot, item] of equipment) {
+    for (const [_slot, item] of equipment) {
         const itemDetails = itemDetailMap[item.itemHrid];
         if (!itemDetails?.equipmentDetail) continue;
 
@@ -79,7 +79,7 @@ export function parseCharmExperience(equipment, skillHrid, itemDetailMap) {
     const skillName = skillHrid.replace('/skills/', '');
     const statName = `${skillName}Experience`;
 
-    for (const [slot, item] of equipment) {
+    for (const [_slot, item] of equipment) {
         const itemDetails = itemDetailMap[item.itemHrid];
         if (!itemDetails?.equipmentDetail) continue;
 
@@ -136,7 +136,7 @@ export function parseHouseRoomWisdom() {
 
     // Sum all house room levels
     let totalLevels = 0;
-    for (const [hrid, room] of houseRooms) {
+    for (const [_hrid, room] of houseRooms) {
         totalLevels += room.level || 0;
     }
 

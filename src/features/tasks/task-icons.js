@@ -363,7 +363,7 @@ class TaskIcons {
     countDungeonsForMonster(monsterHrid) {
         let count = 0;
 
-        for (const [actionHrid, action] of this.actionsByHrid) {
+        for (const [_actionHrid, action] of this.actionsByHrid) {
             if (!action.combatZoneInfo?.isDungeon) continue;
 
             const dungeonInfo = action.combatZoneInfo.dungeonInfo;

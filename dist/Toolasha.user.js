@@ -4391,7 +4391,7 @@
 
         // Sum all house room levels
         let totalLevels = 0;
-        for (const [hrid, room] of houseRooms) {
+        for (const [_hrid, room] of houseRooms) {
             totalLevels += room.level || 0;
         }
 
@@ -4672,7 +4672,7 @@
         let totalDrinkConcentration = 0;
 
         // Iterate through all equipped items
-        for (const [slotHrid, equippedItem] of characterEquipment) {
+        for (const [_slotHrid, equippedItem] of characterEquipment) {
             const itemDetails = itemDetailMap[equippedItem.itemHrid];
 
             if (!itemDetails || !itemDetails.equipmentDetail) {
@@ -6328,7 +6328,7 @@
      * @param {Object} itemDetailMap - Item details map from init_client_data
      * @returns {Object} Active teas { enhancing, superEnhancing, ultraEnhancing, blessed }
      */
-    function detectEnhancingTeas(drinkSlots, itemDetailMap) {
+    function detectEnhancingTeas(drinkSlots, _itemDetailMap) {
         const teas = {
             enhancing: false, // Enhancing Tea (+3 levels)
             superEnhancing: false, // Super Enhancing Tea (+6 levels)
@@ -6500,7 +6500,7 @@
         let houseRareFindBonus = 0;
         let houseWisdomBonus = 0;
 
-        for (const [hrid, room] of houseRooms) {
+        for (const [_hrid, room] of houseRooms) {
             const level = room.level || 0;
             if (level >= 1) {
                 // Each room: 0.2% per level (NOT 0.2% base + 0.2% per level)
@@ -6742,7 +6742,7 @@
     function calculateEnhancement(params) {
         const {
             enhancingLevel,
-            houseLevel,
+            _houseLevel,
             toolBonus,
             speedBonus = 0,
             itemLevel,
@@ -16964,7 +16964,7 @@
         let totalWisdom = 0;
         const breakdown = [];
 
-        for (const [slot, item] of equipment) {
+        for (const [_slot, item] of equipment) {
             const itemDetails = itemDetailMap[item.itemHrid];
             if (!itemDetails?.equipmentDetail) continue;
 
@@ -17023,7 +17023,7 @@
         const skillName = skillHrid.replace('/skills/', '');
         const statName = `${skillName}Experience`;
 
-        for (const [slot, item] of equipment) {
+        for (const [_slot, item] of equipment) {
             const itemDetails = itemDetailMap[item.itemHrid];
             if (!itemDetails?.equipmentDetail) continue;
 
@@ -17080,7 +17080,7 @@
 
         // Sum all house room levels
         let totalLevels = 0;
-        for (const [hrid, room] of houseRooms) {
+        for (const [_hrid, room] of houseRooms) {
             totalLevels += room.level || 0;
         }
 
@@ -23573,7 +23573,7 @@
      * @returns {string} Character sheet URL
      */
     function buildCharacterSheetLink(
-        modal = document.querySelector('.SharableProfile_modal__2OmCQ'),
+        _modal = document.querySelector('.SharableProfile_modal__2OmCQ'),
         baseUrl = 'https://tib-san.github.io/mwi-character-sheet/',
         characterData = null,
         clientData = null,
@@ -24791,7 +24791,7 @@
         let profitData;
         try {
             profitData = await calculateGatheringProfit(actionHrid);
-        } catch (error) {
+        } catch {
             profitData = null;
         }
 
@@ -24838,7 +24838,7 @@
         let profitData;
         try {
             profitData = await calculateProductionProfit(actionHrid);
-        } catch (error) {
+        } catch {
             profitData = null;
         }
 
@@ -26709,7 +26709,7 @@
         countDungeonsForMonster(monsterHrid) {
             let count = 0;
 
-            for (const [actionHrid, action] of this.actionsByHrid) {
+            for (const [_actionHrid, action] of this.actionsByHrid) {
                 if (!action.combatZoneInfo?.isDungeon) continue;
 
                 const dungeonInfo = action.combatZoneInfo.dungeonInfo;
@@ -27284,7 +27284,7 @@
 
                 // Insert after the progress bar
                 progressContainer.insertBefore(xpDisplay, progressBar.nextSibling);
-            } catch (error) {
+            } catch {
                 // Silent fail - don't spam console with errors
             }
         }
@@ -29955,16 +29955,14 @@
                         if (craftingCost > 0) {
                             askPrice = craftingCost;
                             bidPrice = craftingCost;
-                        } else {
+                        } else if (!this.warnedItems.has(itemHrid)) {
                             // No crafting recipe found (likely drop-only item)
-                            if (!this.warnedItems.has(itemHrid)) {
-                                console.warn(
-                                    '[InventoryBadgeManager] No market data or crafting recipe for equipment:',
-                                    itemName,
-                                    itemHrid
-                                );
-                                this.warnedItems.add(itemHrid);
-                            }
+                            console.warn(
+                                '[InventoryBadgeManager] No market data or crafting recipe for equipment:',
+                                itemName,
+                                itemHrid
+                            );
+                            this.warnedItems.add(itemHrid);
                         }
                     } else if (!isEquipment && askPrice === 0 && bidPrice === 0) {
                         // Non-equipment with no market data
@@ -41489,7 +41487,7 @@
                     return;
                 }
 
-                const observer = new MutationObserver((mutations) => {
+                const observer = new MutationObserver((_mutations) => {
                     // Look for the settings tabs container
                     const tabsContainer = document.querySelector('div[class*="SettingsPanel_tabsComponentContainer"]');
 
@@ -42406,7 +42404,7 @@
         // Setup character switch handler once (NOT inside character_initialized listener)
         featureRegistry$1.setupCharacterSwitchHandler();
 
-        dataManager.on('character_initialized', (data) => {
+        dataManager.on('character_initialized', (_data) => {
             // Initialize all features using the feature registry
             setTimeout(async () => {
                 try {
@@ -42455,7 +42453,7 @@
         const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
         targetWindow.Toolasha = {
-            version: '0.5.07',
+            version: '0.5.08',
 
             // Feature toggle API (for users to manage settings via console)
             features: {

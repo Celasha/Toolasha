@@ -101,7 +101,7 @@ export function calculateHouseRareFind() {
 
     // Sum all house room levels
     let totalLevels = 0;
-    for (const [hrid, room] of houseRooms) {
+    for (const [_hrid, room] of houseRooms) {
         totalLevels += room.level || 0;
     }
 

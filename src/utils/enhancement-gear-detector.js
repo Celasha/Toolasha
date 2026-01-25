@@ -219,7 +219,7 @@ export function detectSkillGear(skillName, equipment, itemDetailMap) {
  * @param {Object} itemDetailMap - Item details map from init_client_data
  * @returns {Object} Active teas { enhancing, superEnhancing, ultraEnhancing, blessed }
  */
-export function detectEnhancingTeas(drinkSlots, itemDetailMap) {
+export function detectEnhancingTeas(drinkSlots, _itemDetailMap) {
     const teas = {
         enhancing: false, // Enhancing Tea (+3 levels)
         superEnhancing: false, // Super Enhancing Tea (+6 levels)

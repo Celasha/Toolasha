@@ -107,7 +107,7 @@ export function createTrackedObserver(name, classNames, handler, options = {}) {
     // Return enhanced unregister that also calls all cleanup functions
     return () => {
         // Call all cleanup functions
-        for (const [element, cleanup] of trackedElements.entries()) {
+        for (const [_element, cleanup] of trackedElements.entries()) {
             if (cleanup && typeof cleanup === 'function') {
                 try {
                     cleanup();

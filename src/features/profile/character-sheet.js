@@ -10,7 +10,7 @@
 
 const CLASS_COLORS_BLOCKLIST = ['_name__', '_characterName__', '_xlarge__', '_large__', '_medium__', '_small__'];
 
-const SKILL_ORDER = ['combat', 'stamina', 'intelligence', 'attack', 'defense', 'melee', 'ranged', 'magic'];
+const _SKILL_ORDER = ['combat', 'stamina', 'intelligence', 'attack', 'defense', 'melee', 'ranged', 'magic'];
 const EQUIPMENT_ORDER = [
     'back',
     'head',
@@ -78,7 +78,7 @@ const getNum = (txt) => {
     return m ? m[0] : '';
 };
 
-const extractGeneral = (modal) => {
+const _extractGeneral = (modal) => {
     const name =
         modal.querySelector('.CharacterName_name__1amXp')?.dataset?.name?.trim() ||
         modal.querySelector('.CharacterName_name__1amXp span')?.textContent?.trim() ||
@@ -89,7 +89,7 @@ const extractGeneral = (modal) => {
     return [name, getId(avatarUse), getId(outfitUse), getId(iconUse), nameColor].join(',');
 };
 
-const extractSkills = (modal) => {
+const _extractSkills = (modal) => {
     const statRows = [...modal.querySelectorAll('.SharableProfile_statRow__2bT8_')];
     const combat = getNum(statRows.find((r) => r.textContent?.toLowerCase().includes('combat level'))?.textContent);
     const skillMap = {};
@@ -111,7 +111,7 @@ const extractSkills = (modal) => {
     ].join(',');
 };
 
-const extractEquipment = (modal) => {
+const _extractEquipment = (modal) => {
     const equipment = {};
     modal
         .querySelectorAll('.SharableProfile_playerModel__o34sV .SharableProfile_equipmentSlot__kOrug')
@@ -130,7 +130,7 @@ const extractEquipment = (modal) => {
     return EQUIPMENT_ORDER.map((k) => equipment[k] || '').join(',');
 };
 
-const extractAbilities = (modal) => {
+const _extractAbilities = (modal) => {
     const abilitiesRaw = [];
     modal.querySelectorAll('.SharableProfile_equippedAbilities__1NNpC > div').forEach((wrap) => {
         const id = getId(wrap.querySelector('use'));
@@ -147,7 +147,7 @@ const extractAbilities = (modal) => {
     return abilities.slice(0, 8).join(',');
 };
 
-const extractHousing = (modal) => {
+const _extractHousing = (modal) => {
     const housing = {};
     modal.querySelectorAll('.SharableProfile_houseRooms__3QGPc .SharableProfile_houseRoom__2FW_d').forEach((room) => {
         const nameText = room.querySelector('.SharableProfile_name__1RDS1')?.textContent?.trim();
@@ -158,7 +158,7 @@ const extractHousing = (modal) => {
     return HOUSING_ORDER.map((k) => housing[k] || '').join(',');
 };
 
-const extractAchievements = (modal) => {
+const _extractAchievements = (modal) => {
     const achievements = {};
     modal.querySelectorAll('.SharableProfile_achievementTier__2izCL').forEach((tier) => {
         const header = tier.querySelector('.SharableProfile_tierHeader__1iNyx');
@@ -534,7 +534,7 @@ export function formatFoodData(foodSlots, drinkSlots) {
  * @returns {string} Character sheet URL
  */
 export function buildCharacterSheetLink(
-    modal = document.querySelector('.SharableProfile_modal__2OmCQ'),
+    _modal = document.querySelector('.SharableProfile_modal__2OmCQ'),
     baseUrl = 'https://tib-san.github.io/mwi-character-sheet/',
     characterData = null,
     clientData = null,
