@@ -424,7 +424,7 @@ const featureRegistry = [
         name: 'Inventory Sort',
         category: 'Economy',
         initialize: () => inventorySort.initialize(),
-        async: false,
+        async: true,
     },
     {
         key: 'inventoryBadgePrices',

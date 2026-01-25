@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.5.13
+// @version      0.5.14
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -40763,7 +40763,7 @@
             name: 'Inventory Sort',
             category: 'Economy',
             initialize: () => inventorySort.initialize(),
-            async: false,
+            async: true,
         },
         {
             key: 'inventoryBadgePrices',
@@ -42465,7 +42465,7 @@
         const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
         targetWindow.Toolasha = {
-            version: '0.5.13',
+            version: '0.5.14',
 
             // Feature toggle API (for users to manage settings via console)
             features: {
