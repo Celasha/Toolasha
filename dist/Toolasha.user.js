@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.5.09
+// @version      0.5.10
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -29545,12 +29545,12 @@
             if (this.isActive) return;
 
             // Initialize header display (always enabled with networth feature)
-            if (dataManager.getSetting('networth')) {
+            if (config.isFeatureEnabled('networth')) {
                 networthHeaderDisplay.initialize();
             }
 
             // Initialize inventory panel display (separate toggle)
-            if (dataManager.getSetting('inventorySummary')) {
+            if (config.isFeatureEnabled('inventorySummary')) {
                 networthInventoryDisplay.initialize();
             }
 
@@ -29573,11 +29573,11 @@
                 this.currentData = networthData;
 
                 // Update displays
-                if (dataManager.getSetting('networth')) {
+                if (config.isFeatureEnabled('networth')) {
                     networthHeaderDisplay.update(networthData);
                 }
 
-                if (dataManager.getSetting('inventorySummary')) {
+                if (config.isFeatureEnabled('inventorySummary')) {
                     networthInventoryDisplay.update(networthData);
                 }
             } catch (error) {
@@ -42468,7 +42468,7 @@
         const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
         targetWindow.Toolasha = {
-            version: '0.5.09',
+            version: '0.5.10',
 
             // Feature toggle API (for users to manage settings via console)
             features: {

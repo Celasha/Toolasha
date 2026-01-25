@@ -3,7 +3,7 @@
  * Manages networth calculation and display updates
  */
 
-import dataManager from '../../core/data-manager.js';
+import config from '../../core/config.js';
 import { calculateNetworth } from './networth-calculator.js';
 import { networthHeaderDisplay, networthInventoryDisplay } from './networth-display.js';
 
@@ -21,12 +21,12 @@ class NetworthFeature {
         if (this.isActive) return;
 
         // Initialize header display (always enabled with networth feature)
-        if (dataManager.getSetting('networth')) {
+        if (config.isFeatureEnabled('networth')) {
             networthHeaderDisplay.initialize();
         }
 
         // Initialize inventory panel display (separate toggle)
-        if (dataManager.getSetting('inventorySummary')) {
+        if (config.isFeatureEnabled('inventorySummary')) {
             networthInventoryDisplay.initialize();
         }
 
@@ -49,11 +49,11 @@ class NetworthFeature {
             this.currentData = networthData;
 
             // Update displays
-            if (dataManager.getSetting('networth')) {
+            if (config.isFeatureEnabled('networth')) {
                 networthHeaderDisplay.update(networthData);
             }
 
-            if (dataManager.getSetting('inventorySummary')) {
+            if (config.isFeatureEnabled('inventorySummary')) {
                 networthInventoryDisplay.update(networthData);
             }
         } catch (error) {
