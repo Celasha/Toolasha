@@ -58,7 +58,7 @@ class InventoryBadgeManager {
                     this.renderAllBadges();
                 }
             },
-            { debounce: true, debounceDelay: 10 } // Very fast debounce for responsiveness
+            { debounce: true, debounceDelay: 150 } // 150ms debounce to reduce calculation frequency
         );
         this.unregisterHandlers.push(badgeRefreshUnregister);
     }

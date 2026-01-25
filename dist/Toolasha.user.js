@@ -29656,7 +29656,7 @@
                         this.renderAllBadges();
                     }
                 },
-                { debounce: true, debounceDelay: 10 } // Very fast debounce for responsiveness
+                { debounce: true, debounceDelay: 150 } // 150ms debounce to reduce calculation frequency
             );
             this.unregisterHandlers.push(badgeRefreshUnregister);
         }
@@ -35593,11 +35593,13 @@
                 if (node.dataset.processed === '1') continue;
 
                 const text = node.textContent.trim();
-                const timestamp = this.getTimestampFromMessage(node);
-                if (!timestamp) continue;
 
+                // Check message relevance FIRST before parsing timestamp
                 // Battle started message
                 if (text.includes('Battle started:')) {
+                    const timestamp = this.getTimestampFromMessage(node);
+                    if (!timestamp) continue;
+
                     const dungeonName = text.split('Battle started:')[1]?.split(']')[0]?.trim();
                     if (dungeonName) {
                         // Cache the dungeon name (survives chat scrolling)
@@ -35612,8 +35614,11 @@
                     }
                     node.dataset.processed = '1';
                 }
-                // Key counts message
+                // Key counts message (warn if timestamp fails - these should always have timestamps)
                 else if (text.includes('Key counts:')) {
+                    const timestamp = this.getTimestampFromMessage(node, true);
+                    if (!timestamp) continue;
+
                     const team = this.getTeamFromMessage(node);
                     if (!team.length) continue;
 
@@ -35626,6 +35631,9 @@
                 }
                 // Party failed message
                 else if (text.match(/Party failed on wave \d+/)) {
+                    const timestamp = this.getTimestampFromMessage(node);
+                    if (!timestamp) continue;
+
                     events.push({
                         type: 'fail',
                         timestamp,
@@ -35635,6 +35643,9 @@
                 }
                 // Battle ended (canceled/fled)
                 else if (text.includes('Battle ended:')) {
+                    const timestamp = this.getTimestampFromMessage(node);
+                    if (!timestamp) continue;
+
                     events.push({
                         type: 'cancel',
                         timestamp,
@@ -35702,9 +35713,10 @@
          * Get timestamp from message DOM element
          * Handles both American (M/D HH:MM:SS AM/PM) and international (DD-M HH:MM:SS) formats
          * @param {HTMLElement} msg - Message element
+         * @param {boolean} warnOnFailure - Whether to log warning if parsing fails (default: false)
          * @returns {Date|null} Parsed timestamp or null
          */
-        getTimestampFromMessage(msg) {
+        getTimestampFromMessage(msg, warnOnFailure = false) {
             const text = msg.textContent.trim();
 
             // Try American format: [M/D HH:MM:SS AM/PM] or [M/D HH:MM:SS] (24-hour)
@@ -35718,10 +35730,13 @@
             }
 
             if (!match) {
-                console.warn(
-                    '[Dungeon Tracker] Found key counts but could not parse timestamp from:',
-                    text.match(/\[.*?\]/)?.[0]
-                );
+                // Only warn if explicitly requested (for important messages like "Key counts:")
+                if (warnOnFailure) {
+                    console.warn(
+                        '[Dungeon Tracker] Found key counts but could not parse timestamp from:',
+                        text.match(/\[.*?\]/)?.[0]
+                    );
+                }
                 return null;
             }
 
@@ -42440,20 +42455,20 @@
                                         '[Toolasha] Try refreshing the page or reopening the relevant game panels'
                                     );
                                 }
-                            }, 3000);
+                            }, 1000);
                         }
-                    }, 2000); // Wait 2s after initialization to check health
+                    }, 500); // Wait 500ms after initialization to check health
                 } catch (error) {
                     console.error('[Toolasha] Feature initialization failed:', error);
                 }
-            }, 1000);
+            }, 100);
         });
 
         // Expose minimal user-facing API
         const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
         targetWindow.Toolasha = {
-            version: '0.5.08',
+            version: '0.5.09',
 
             // Feature toggle API (for users to manage settings via console)
             features: {

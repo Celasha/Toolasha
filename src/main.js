@@ -112,20 +112,20 @@ if (isCombatSimulatorPage()) {
                                     '[Toolasha] Try refreshing the page or reopening the relevant game panels'
                                 );
                             }
-                        }, 3000);
+                        }, 1000);
                     }
-                }, 2000); // Wait 2s after initialization to check health
+                }, 500); // Wait 500ms after initialization to check health
             } catch (error) {
                 console.error('[Toolasha] Feature initialization failed:', error);
             }
-        }, 1000);
+        }, 100);
     });
 
     // Expose minimal user-facing API
     const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
     targetWindow.Toolasha = {
-        version: '0.5.08',
+        version: '0.5.09',
 
         // Feature toggle API (for users to manage settings via console)
         features: {
