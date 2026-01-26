@@ -5590,6 +5590,220 @@
     }
 
     /**
+     * Profit Calculation Constants
+     * Shared constants used across profit calculators
+     */
+
+    /**
+     * Marketplace tax rate (2%)
+     */
+    const MARKET_TAX = 0.02;
+
+    /**
+     * Base drink consumption rate per hour (before Drink Concentration)
+     */
+    const DRINKS_PER_HOUR_BASE = 12;
+
+    /**
+     * Seconds per hour (for rate conversions)
+     */
+    const SECONDS_PER_HOUR = 3600;
+
+    /**
+     * Hours per day (for daily profit calculations)
+     */
+    const HOURS_PER_DAY = 24;
+
+    /**
+     * Gathering skill action types
+     * Skills that gather raw materials from the world
+     */
+    const GATHERING_TYPES$2 = ['/action_types/foraging', '/action_types/woodcutting', '/action_types/milking'];
+
+    /**
+     * Production skill action types
+     * Skills that craft items from materials
+     */
+    const PRODUCTION_TYPES$3 = [
+        '/action_types/brewing',
+        '/action_types/cooking',
+        '/action_types/cheesesmithing',
+        '/action_types/crafting',
+        '/action_types/tailoring',
+    ];
+
+    /**
+     * Profit Calculation Helpers
+     * Pure functions for profit/rate calculations used across features
+     *
+     * These functions consolidate duplicated calculations from:
+     * - profit-calculator.js
+     * - gathering-profit.js
+     * - task-profit-calculator.js
+     * - action-time-display.js
+     * - tooltip-prices.js
+     */
+
+
+    // ============ Rate Conversions ============
+
+    /**
+     * Calculate actions per hour from action time
+     * @param {number} actionTimeSeconds - Time per action in seconds
+     * @returns {number} Actions per hour (0 if invalid input)
+     *
+     * @example
+     * calculateActionsPerHour(6) // Returns 600 (3600 / 6)
+     * calculateActionsPerHour(0) // Returns 0 (invalid)
+     */
+    function calculateActionsPerHour(actionTimeSeconds) {
+        if (!actionTimeSeconds || actionTimeSeconds <= 0) {
+            return 0;
+        }
+        return SECONDS_PER_HOUR / actionTimeSeconds;
+    }
+
+    /**
+     * Calculate hours needed for a number of actions
+     * @param {number} actionCount - Number of actions/attempts
+     * @param {number} actionsPerHour - Actions per hour rate
+     * @returns {number} Hours needed (0 if invalid input)
+     *
+     * @example
+     * calculateHoursForActions(600, 600) // Returns 1
+     * calculateHoursForActions(1200, 600) // Returns 2
+     */
+    function calculateHoursForActions(actionCount, actionsPerHour) {
+        if (!actionsPerHour || actionsPerHour <= 0) {
+            return 0;
+        }
+        return actionCount / actionsPerHour;
+    }
+
+    /**
+     * Calculate seconds needed for a number of actions
+     * @param {number} actionCount - Number of actions/attempts
+     * @param {number} actionsPerHour - Actions per hour rate
+     * @returns {number} Seconds needed (0 if invalid input)
+     *
+     * @example
+     * calculateSecondsForActions(100, 600) // Returns 600 (100/600 * 3600)
+     */
+    function calculateSecondsForActions(actionCount, actionsPerHour) {
+        return calculateHoursForActions(actionCount, actionsPerHour) * SECONDS_PER_HOUR;
+    }
+
+    // ============ Profit Calculations ============
+
+    /**
+     * Calculate profit per action from hourly profit data
+     *
+     * IMPORTANT: This assumes profitPerHour already includes efficiency.
+     * The formula works because:
+     * - profitPerHour = actionsPerHour × efficiencyMultiplier × profitPerItem
+     * - profitPerHour / actionsPerHour = efficiencyMultiplier × profitPerItem
+     * - This gives profit per ATTEMPT (what the queue shows)
+     *
+     * @param {number} profitPerHour - Profit per hour (includes efficiency)
+     * @param {number} actionsPerHour - Base actions per hour (without efficiency)
+     * @returns {number} Profit per action/attempt (0 if invalid input)
+     *
+     * @example
+     * // With 150% efficiency (2.5x), 600 actions/hr, 50 profit/item:
+     * // profitPerHour = 600 × 2.5 × 50 = 75,000
+     * calculateProfitPerAction(75000, 600) // Returns 125 (profit per attempt)
+     */
+    function calculateProfitPerAction(profitPerHour, actionsPerHour) {
+        if (!actionsPerHour || actionsPerHour <= 0) {
+            return 0;
+        }
+        return profitPerHour / actionsPerHour;
+    }
+
+    /**
+     * Calculate profit per day from hourly profit
+     * @param {number} profitPerHour - Profit per hour
+     * @returns {number} Profit per day
+     *
+     * @example
+     * calculateProfitPerDay(10000) // Returns 240,000
+     */
+    function calculateProfitPerDay(profitPerHour) {
+        return profitPerHour * HOURS_PER_DAY;
+    }
+
+    // ============ Cost Calculations ============
+
+    /**
+     * Calculate drink consumption rate with Drink Concentration
+     * @param {number} drinkConcentration - Drink Concentration stat as decimal (e.g., 0.15 for 15%)
+     * @returns {number} Drinks consumed per hour
+     *
+     * @example
+     * calculateDrinksPerHour(0)    // Returns 12 (base rate)
+     * calculateDrinksPerHour(0.15) // Returns 13.8 (12 × 1.15)
+     */
+    function calculateDrinksPerHour(drinkConcentration = 0) {
+        return DRINKS_PER_HOUR_BASE * (1 + drinkConcentration);
+    }
+
+    // ============ Composite Calculations ============
+
+    /**
+     * Calculate complete profit breakdown for queued actions
+     * Takes raw inputs and returns all intermediate + final values
+     *
+     * @param {Object} params - Calculation parameters
+     * @param {number} params.profitPerHour - Profit per hour (from profit calculator)
+     * @param {number} params.actionsPerHour - Base actions per hour (from profit calculator)
+     * @param {number} params.actionCount - Number of queued actions/attempts
+     * @param {number} [params.revenuePerHour] - Revenue per hour (optional, for estimated value mode)
+     * @param {string} [params.valueMode='profit'] - 'profit' or 'estimated_value'
+     * @returns {Object} Profit breakdown with all calculated values
+     *
+     * @example
+     * calculateQueueProfitBreakdown({
+     *     profitPerHour: 75000,
+     *     actionsPerHour: 600,
+     *     actionCount: 100,
+     * })
+     * // Returns: { totalProfit: 12500, profitPerAction: 125, hoursNeeded: 0.167, ... }
+     */
+    function calculateQueueProfitBreakdown({
+        profitPerHour,
+        actionsPerHour,
+        actionCount,
+        revenuePerHour,
+        valueMode = 'profit',
+    }) {
+        // Determine which value to use based on mode
+        const valuePerHour =
+            valueMode === 'estimated_value' && revenuePerHour !== undefined ? revenuePerHour : profitPerHour;
+
+        // Calculate derived values
+        const profitPerAction = calculateProfitPerAction(valuePerHour, actionsPerHour);
+        const totalProfit = profitPerAction * actionCount;
+        const hoursNeeded = calculateHoursForActions(actionCount, actionsPerHour);
+        const secondsNeeded = hoursNeeded * SECONDS_PER_HOUR;
+
+        return {
+            // Final values
+            totalProfit,
+            profitPerAction,
+
+            // Time values
+            hoursNeeded,
+            secondsNeeded,
+
+            // Input values (for reference)
+            valuePerHour,
+            actionsPerHour,
+            actionCount,
+            valueMode,
+        };
+    }
+
+    /**
      * Profit Calculator Module
      * Calculates production costs and profit for crafted items
      */
@@ -5600,10 +5814,6 @@
      */
     class ProfitCalculator {
         constructor() {
-            // Constants
-            this.MARKET_TAX = 0.02; // 2% marketplace tax
-            this.DRINKS_PER_HOUR = 12; // Average drink consumption per hour
-
             // Cached static game data (never changes during session)
             this._itemDetailMap = null;
             this._actionDetailMap = null;
@@ -5740,7 +5950,7 @@
             const communityEfficiency = this.calculateCommunityBuffBonus(communityBuffLevel, actionDetails.type);
 
             // Total efficiency bonus (all sources additive)
-            const efficiencyBonus =
+            const totalEfficiency =
                 levelEfficiency + houseEfficiency + equipmentEfficiency + teaEfficiency + communityEfficiency;
 
             // Calculate equipment speed bonus
@@ -5765,7 +5975,7 @@
             // Calculate efficiency multiplier
             // Formula matches original MWI Tools: 1 + efficiency%
             // Example: 150% efficiency → 1 + 1.5 = 2.5x multiplier
-            const efficiencyMultiplier = 1 + efficiencyBonus / 100;
+            const efficiencyMultiplier = 1 + totalEfficiency / 100;
 
             // Items produced per hour (with efficiency multiplier)
             const itemsPerHour = actionsPerHour * outputAmount * efficiencyMultiplier;
@@ -5792,7 +6002,7 @@
             const outputPrice = getItemPrice(itemHrid, { context: 'profit', side: 'sell' }) || 0;
 
             // Apply market tax (2% tax on sales)
-            const priceAfterTax = outputPrice * (1 - this.MARKET_TAX);
+            const priceAfterTax = outputPrice * (1 - MARKET_TAX);
 
             // Cost per item (without efficiency scaling)
             const costPerItem = totalMaterialCost / outputAmount;
@@ -5841,11 +6051,13 @@
                 itemPrice,
                 outputPrice, // Output price before tax (bid or ask based on mode)
                 priceAfterTax, // Output price after 2% tax (bid or ask based on mode)
+                revenuePerHour,
                 profitPerItem,
                 profitPerHour,
-                profitPerDay: profitPerHour * 24, // Profit per day
+                profitPerAction: calculateProfitPerAction(profitPerHour, actionsPerHour), // Profit per attempt
+                profitPerDay: calculateProfitPerDay(profitPerHour), // Profit per day
                 bonusRevenue, // Bonus revenue from essences and rare finds
-                efficiencyBonus, // Total efficiency
+                totalEfficiency, // Total efficiency percentage
                 levelEfficiency, // Level advantage efficiency
                 houseEfficiency, // House room efficiency
                 equipmentEfficiency, // Equipment efficiency
@@ -6087,8 +6299,8 @@
                 // Get tea price based on pricing mode (uses 'profit' context with 'buy' side)
                 const teaPrice = getItemPrice(drink.itemHrid, { context: 'profit', side: 'buy' }) || 0;
 
-                // Drink Concentration increases consumption rate: base 12/hour × (1 + DC%)
-                const drinksPerHour = 12 * (1 + drinkConcentration);
+                // Drink Concentration increases consumption rate
+                const drinksPerHour = calculateDrinksPerHour(drinkConcentration);
 
                 costs.push({
                     itemHrid: drink.itemHrid,
@@ -6105,539 +6317,6 @@
 
     // Create and export singleton instance
     const profitCalculator = new ProfitCalculator();
-
-    /**
-     * Skill Gear Detector
-     *
-     * Auto-detects gear and buffs from character equipment for any skill.
-     * Originally designed for enhancing, now works generically for all skills.
-     */
-
-
-    /**
-     * Detect best gear for a specific skill by equipment slot
-     * @param {string} skillName - Skill name (e.g., 'enhancing', 'cooking', 'milking')
-     * @param {Map} equipment - Character equipment map (equipped items only)
-     * @param {Object} itemDetailMap - Item details map from init_client_data
-     * @returns {Object} Best gear per slot with bonuses
-     */
-    function detectSkillGear(skillName, equipment, itemDetailMap) {
-        const gear = {
-            // Totals for calculations
-            toolBonus: 0,
-            speedBonus: 0,
-            rareFindBonus: 0,
-            experienceBonus: 0,
-
-            // Best items per slot for display
-            toolSlot: null, // main_hand or two_hand
-            bodySlot: null, // body
-            legsSlot: null, // legs
-            handsSlot: null, // hands
-        };
-
-        // Get items to scan - only use equipment map (already filtered to equipped items only)
-        let itemsToScan = [];
-
-        if (equipment) {
-            // Scan only equipped items from equipment map
-            itemsToScan = Array.from(equipment.values()).filter((item) => item && item.itemHrid);
-        }
-
-        // Track best item per slot (by item level, then enhancement level)
-        const slotCandidates = {
-            tool: [], // main_hand or two_hand or skill-specific tool
-            body: [], // body
-            legs: [], // legs
-            hands: [], // hands
-            neck: [], // neck (accessories have 5× multiplier)
-            ring: [], // ring (accessories have 5× multiplier)
-            earring: [], // earring (accessories have 5× multiplier)
-        };
-
-        // Dynamic stat names based on skill
-        const successStat = `${skillName}Success`;
-        const speedStat = `${skillName}Speed`;
-        const rareFindStat = `${skillName}RareFind`;
-        const experienceStat = `${skillName}Experience`;
-
-        // Search all items for skill-related bonuses and group by slot
-        for (const item of itemsToScan) {
-            const itemDetails = itemDetailMap[item.itemHrid];
-            if (!itemDetails?.equipmentDetail?.noncombatStats) continue;
-
-            const stats = itemDetails.equipmentDetail.noncombatStats;
-            const enhancementLevel = item.enhancementLevel || 0;
-            const multiplier = getEnhancementMultiplier(itemDetails, enhancementLevel);
-            const equipmentType = itemDetails.equipmentDetail.type;
-
-            // Generic stat calculation: Loop over ALL stats and apply multiplier
-            const allStats = {};
-            for (const [statName, statValue] of Object.entries(stats)) {
-                if (typeof statValue !== 'number') continue; // Skip non-numeric values
-                allStats[statName] = statValue * 100 * multiplier;
-            }
-
-            // Check if item has any skill-related stats (including universal skills)
-            const hasSkillStats =
-                allStats[successStat] ||
-                allStats[speedStat] ||
-                allStats[rareFindStat] ||
-                allStats[experienceStat] ||
-                allStats.skillingSpeed ||
-                allStats.skillingExperience;
-
-            if (!hasSkillStats) continue;
-
-            // Calculate bonuses for this item (backward-compatible output)
-            const itemBonuses = {
-                item: item,
-                itemDetails: itemDetails,
-                itemLevel: itemDetails.itemLevel || 0,
-                enhancementLevel: enhancementLevel,
-                // Named bonuses (dynamic based on skill)
-                toolBonus: allStats[successStat] || 0,
-                speedBonus: (allStats[speedStat] || 0) + (allStats.skillingSpeed || 0), // Combine speed sources
-                rareFindBonus: allStats[rareFindStat] || 0,
-                experienceBonus: (allStats[experienceStat] || 0) + (allStats.skillingExperience || 0), // Combine experience sources
-                // Generic access to all stats
-                allStats: allStats,
-            };
-
-            // Group by slot
-            // Tool slots: skill-specific tools (e.g., enhancing_tool, cooking_tool) plus main_hand/two_hand
-            const skillToolType = `/equipment_types/${skillName}_tool`;
-            if (
-                equipmentType === skillToolType ||
-                equipmentType === '/equipment_types/main_hand' ||
-                equipmentType === '/equipment_types/two_hand'
-            ) {
-                slotCandidates.tool.push(itemBonuses);
-            } else if (equipmentType === '/equipment_types/body') {
-                slotCandidates.body.push(itemBonuses);
-            } else if (equipmentType === '/equipment_types/legs') {
-                slotCandidates.legs.push(itemBonuses);
-            } else if (equipmentType === '/equipment_types/hands') {
-                slotCandidates.hands.push(itemBonuses);
-            } else if (equipmentType === '/equipment_types/neck') {
-                slotCandidates.neck.push(itemBonuses);
-            } else if (equipmentType === '/equipment_types/ring') {
-                slotCandidates.ring.push(itemBonuses);
-            } else if (equipmentType === '/equipment_types/earring') {
-                slotCandidates.earring.push(itemBonuses);
-            }
-        }
-
-        // Select best item per slot (highest item level, then highest enhancement level)
-        const selectBest = (candidates) => {
-            if (candidates.length === 0) return null;
-
-            return candidates.reduce((best, current) => {
-                // Compare by item level first
-                if (current.itemLevel > best.itemLevel) return current;
-                if (current.itemLevel < best.itemLevel) return best;
-
-                // If item levels are equal, compare by enhancement level
-                if (current.enhancementLevel > best.enhancementLevel) return current;
-                return best;
-            });
-        };
-
-        const bestTool = selectBest(slotCandidates.tool);
-        const bestBody = selectBest(slotCandidates.body);
-        const bestLegs = selectBest(slotCandidates.legs);
-        const bestHands = selectBest(slotCandidates.hands);
-        const bestNeck = selectBest(slotCandidates.neck);
-        const bestRing = selectBest(slotCandidates.ring);
-        const bestEarring = selectBest(slotCandidates.earring);
-
-        // Add bonuses from best items in each slot
-        if (bestTool) {
-            gear.toolBonus += bestTool.toolBonus;
-            gear.speedBonus += bestTool.speedBonus;
-            gear.rareFindBonus += bestTool.rareFindBonus;
-            gear.experienceBonus += bestTool.experienceBonus;
-            gear.toolSlot = {
-                name: bestTool.itemDetails.name,
-                enhancementLevel: bestTool.enhancementLevel,
-            };
-        }
-
-        if (bestBody) {
-            gear.toolBonus += bestBody.toolBonus;
-            gear.speedBonus += bestBody.speedBonus;
-            gear.rareFindBonus += bestBody.rareFindBonus;
-            gear.experienceBonus += bestBody.experienceBonus;
-            gear.bodySlot = {
-                name: bestBody.itemDetails.name,
-                enhancementLevel: bestBody.enhancementLevel,
-            };
-        }
-
-        if (bestLegs) {
-            gear.toolBonus += bestLegs.toolBonus;
-            gear.speedBonus += bestLegs.speedBonus;
-            gear.rareFindBonus += bestLegs.rareFindBonus;
-            gear.experienceBonus += bestLegs.experienceBonus;
-            gear.legsSlot = {
-                name: bestLegs.itemDetails.name,
-                enhancementLevel: bestLegs.enhancementLevel,
-            };
-        }
-
-        if (bestHands) {
-            gear.toolBonus += bestHands.toolBonus;
-            gear.speedBonus += bestHands.speedBonus;
-            gear.rareFindBonus += bestHands.rareFindBonus;
-            gear.experienceBonus += bestHands.experienceBonus;
-            gear.handsSlot = {
-                name: bestHands.itemDetails.name,
-                enhancementLevel: bestHands.enhancementLevel,
-            };
-        }
-
-        if (bestNeck) {
-            gear.toolBonus += bestNeck.toolBonus;
-            gear.speedBonus += bestNeck.speedBonus;
-            gear.rareFindBonus += bestNeck.rareFindBonus;
-            gear.experienceBonus += bestNeck.experienceBonus;
-        }
-
-        if (bestRing) {
-            gear.toolBonus += bestRing.toolBonus;
-            gear.speedBonus += bestRing.speedBonus;
-            gear.rareFindBonus += bestRing.rareFindBonus;
-            gear.experienceBonus += bestRing.experienceBonus;
-        }
-
-        if (bestEarring) {
-            gear.toolBonus += bestEarring.toolBonus;
-            gear.speedBonus += bestEarring.speedBonus;
-            gear.rareFindBonus += bestEarring.rareFindBonus;
-            gear.experienceBonus += bestEarring.experienceBonus;
-        }
-
-        return gear;
-    }
-
-    /**
-     * Detect active enhancing teas from drink slots
-     * @param {Array} drinkSlots - Active drink slots for enhancing action type
-     * @param {Object} itemDetailMap - Item details map from init_client_data
-     * @returns {Object} Active teas { enhancing, superEnhancing, ultraEnhancing, blessed }
-     */
-    function detectEnhancingTeas(drinkSlots, _itemDetailMap) {
-        const teas = {
-            enhancing: false, // Enhancing Tea (+3 levels)
-            superEnhancing: false, // Super Enhancing Tea (+6 levels)
-            ultraEnhancing: false, // Ultra Enhancing Tea (+8 levels)
-            blessed: false, // Blessed Tea (1% double jump)
-        };
-
-        if (!drinkSlots || drinkSlots.length === 0) {
-            return teas;
-        }
-
-        // Tea HRIDs to check for
-        const teaMap = {
-            '/items/enhancing_tea': 'enhancing',
-            '/items/super_enhancing_tea': 'superEnhancing',
-            '/items/ultra_enhancing_tea': 'ultraEnhancing',
-            '/items/blessed_tea': 'blessed',
-        };
-
-        for (const drink of drinkSlots) {
-            if (!drink || !drink.itemHrid) continue;
-
-            const teaKey = teaMap[drink.itemHrid];
-            if (teaKey) {
-                teas[teaKey] = true;
-            }
-        }
-
-        return teas;
-    }
-
-    /**
-     * Get enhancing tea level bonus
-     * @param {Object} teas - Active teas from detectEnhancingTeas()
-     * @returns {number} Total level bonus from teas
-     */
-    function getEnhancingTeaLevelBonus(teas) {
-        // Teas don't stack - highest one wins
-        if (teas.ultraEnhancing) return 8;
-        if (teas.superEnhancing) return 6;
-        if (teas.enhancing) return 3;
-
-        return 0;
-    }
-
-    /**
-     * Get enhancing tea speed bonus (base, before concentration)
-     * @param {Object} teas - Active teas from detectEnhancingTeas()
-     * @returns {number} Base speed bonus % from teas
-     */
-    function getEnhancingTeaSpeedBonus(teas) {
-        // Teas don't stack - highest one wins
-        // Base speed bonuses (before drink concentration):
-        if (teas.ultraEnhancing) return 6; // +6% base
-        if (teas.superEnhancing) return 4; // +4% base
-        if (teas.enhancing) return 2; // +2% base
-
-        return 0;
-    }
-
-    /**
-     * Backward-compatible wrapper for enhancing gear detection
-     * @param {Map} equipment - Character equipment map (equipped items only)
-     * @param {Object} itemDetailMap - Item details map from init_client_data
-     * @returns {Object} Best enhancing gear per slot with bonuses
-     */
-    function detectEnhancingGear(equipment, itemDetailMap) {
-        return detectSkillGear('enhancing', equipment, itemDetailMap);
-    }
-
-    /**
-     * Enhancement Configuration Manager
-     *
-     * Combines auto-detected enhancing parameters with manual overrides from settings.
-     * Provides single source of truth for enhancement simulator inputs.
-     */
-
-
-    /**
-     * Get enhancing parameters (auto-detected or manual)
-     * @returns {Object} Enhancement parameters for simulator
-     */
-    function getEnhancingParams() {
-        const autoDetect = config.getSettingValue('enhanceSim_autoDetect', false);
-
-        if (autoDetect) {
-            return getAutoDetectedParams();
-        } else {
-            return getManualParams();
-        }
-    }
-
-    /**
-     * Get auto-detected enhancing parameters from character data
-     * @returns {Object} Auto-detected parameters
-     */
-    function getAutoDetectedParams() {
-        // Get character data
-        const equipment = dataManager.getEquipment();
-        const skills = dataManager.getSkills();
-        const drinkSlots = dataManager.getActionDrinkSlots('/action_types/enhancing');
-        const itemDetailMap = dataManager.getInitClientData()?.itemDetailMap || {};
-
-        // Detect gear from equipped items only
-        const gear = detectEnhancingGear(equipment, itemDetailMap);
-
-        // Detect drink concentration from equipment (Guzzling Pouch)
-        // IMPORTANT: Only scan equipped items, not entire inventory
-        let drinkConcentration = 0;
-        const itemsToScan = equipment ? Array.from(equipment.values()).filter((item) => item && item.itemHrid) : [];
-
-        for (const item of itemsToScan) {
-            const itemDetails = itemDetailMap[item.itemHrid];
-            if (!itemDetails?.equipmentDetail?.noncombatStats?.drinkConcentration) continue;
-
-            const concentration = itemDetails.equipmentDetail.noncombatStats.drinkConcentration;
-            const enhancementLevel = item.enhancementLevel || 0;
-            const multiplier = getEnhancementMultiplier(itemDetails, enhancementLevel);
-            const scaledConcentration = concentration * 100 * multiplier;
-
-            // Only keep the highest concentration (shouldn't have multiple, but just in case)
-            if (scaledConcentration > drinkConcentration) {
-                drinkConcentration = scaledConcentration;
-            }
-        }
-
-        // Detect teas
-        const teas = detectEnhancingTeas(drinkSlots);
-
-        // Get tea level bonus (base, then scale with concentration)
-        const baseTeaLevel = getEnhancingTeaLevelBonus(teas);
-        const teaLevelBonus = baseTeaLevel > 0 ? baseTeaLevel * (1 + drinkConcentration / 100) : 0;
-
-        // Get tea speed bonus (base, then scale with concentration)
-        const baseTeaSpeed = getEnhancingTeaSpeedBonus(teas);
-        const teaSpeedBonus = baseTeaSpeed > 0 ? baseTeaSpeed * (1 + drinkConcentration / 100) : 0;
-
-        // Get tea wisdom bonus (base, then scale with concentration)
-        // Wisdom Tea/Coffee provide 12% wisdom, scales with drink concentration
-        let baseTeaWisdom = 0;
-        if (drinkSlots && drinkSlots.length > 0) {
-            for (const drink of drinkSlots) {
-                if (!drink || !drink.itemHrid) continue;
-                const drinkDetails = itemDetailMap[drink.itemHrid];
-                if (!drinkDetails?.consumableDetail?.buffs) continue;
-
-                const wisdomBuff = drinkDetails.consumableDetail.buffs.find(
-                    (buff) => buff.typeHrid === '/buff_types/wisdom'
-                );
-
-                if (wisdomBuff && wisdomBuff.flatBoost) {
-                    baseTeaWisdom += wisdomBuff.flatBoost * 100; // Convert to percentage
-                }
-            }
-        }
-        const teaWisdomBonus = baseTeaWisdom > 0 ? baseTeaWisdom * (1 + drinkConcentration / 100) : 0;
-
-        // Get Enhancing skill level
-        const enhancingSkill = skills.find((s) => s.skillHrid === '/skills/enhancing');
-        const enhancingLevel = enhancingSkill?.level || 1;
-
-        // Get Observatory house room level (enhancing uses observatory, NOT laboratory!)
-        const houseLevel = dataManager.getHouseRoomLevel('/house_rooms/observatory');
-
-        // Calculate global house buffs from ALL house rooms
-        // Rare Find: 0.2% base + 0.2% per level (per room, only if level >= 1)
-        // Wisdom: 0.05% base + 0.05% per level (per room, only if level >= 1)
-        const houseRooms = dataManager.getHouseRooms();
-        let houseRareFindBonus = 0;
-        let houseWisdomBonus = 0;
-
-        for (const [_hrid, room] of houseRooms) {
-            const level = room.level || 0;
-            if (level >= 1) {
-                // Each room: 0.2% per level (NOT 0.2% base + 0.2% per level)
-                houseRareFindBonus += 0.2 * level;
-                // Each room: 0.05% per level (NOT 0.05% base + 0.05% per level)
-                houseWisdomBonus += 0.05 * level;
-            }
-        }
-
-        // Get Enhancing Speed community buff level
-        const communityBuffLevel = dataManager.getCommunityBuffLevel('/community_buff_types/enhancing_speed');
-        // Formula: 20% base + 0.5% per level
-        const communitySpeedBonus = communityBuffLevel > 0 ? 20 + (communityBuffLevel - 1) * 0.5 : 0;
-
-        // Get Experience (Wisdom) community buff level
-        const communityWisdomLevel = dataManager.getCommunityBuffLevel('/community_buff_types/experience');
-        // Formula: 20% base + 0.5% per level (same as other community buffs)
-        const communityWisdomBonus = communityWisdomLevel > 0 ? 20 + (communityWisdomLevel - 1) * 0.5 : 0;
-
-        // Calculate total success rate bonus
-        // Equipment + house + (check for other sources)
-        const houseSuccessBonus = houseLevel * 0.05; // 0.05% per level for success
-        const equipmentSuccessBonus = gear.toolBonus;
-        const totalSuccessBonus = equipmentSuccessBonus + houseSuccessBonus;
-
-        // Calculate total speed bonus
-        // Speed bonus (from equipment) + house bonus (1% per level) + community buff + tea speed
-        const houseSpeedBonus = houseLevel * 1.0; // 1% per level for action speed
-        const totalSpeedBonus = gear.speedBonus + houseSpeedBonus + communitySpeedBonus + teaSpeedBonus;
-
-        // Calculate total experience bonus
-        // Equipment + house wisdom + tea wisdom + community wisdom
-        const totalExperienceBonus = gear.experienceBonus + houseWisdomBonus + teaWisdomBonus + communityWisdomBonus;
-
-        // Calculate guzzling bonus multiplier (1.0 at level 0, scales with drink concentration)
-        const guzzlingBonus = 1 + drinkConcentration / 100;
-
-        return {
-            // Core values for calculations
-            enhancingLevel: enhancingLevel + teaLevelBonus, // Base level + tea bonus
-            houseLevel: houseLevel,
-            toolBonus: totalSuccessBonus, // Tool + house combined
-            speedBonus: totalSpeedBonus, // Speed + house + community + tea combined
-            rareFindBonus: gear.rareFindBonus + houseRareFindBonus, // Rare find (equipment + all house rooms)
-            experienceBonus: totalExperienceBonus, // Experience (equipment + house + tea + community wisdom)
-            guzzlingBonus: guzzlingBonus, // Drink concentration multiplier for blessed tea
-            teas: teas,
-
-            // Display info (for UI) - show best item per slot
-            toolSlot: gear.toolSlot,
-            bodySlot: gear.bodySlot,
-            legsSlot: gear.legsSlot,
-            handsSlot: gear.handsSlot,
-            detectedTeaBonus: teaLevelBonus,
-            communityBuffLevel: communityBuffLevel, // For display (speed)
-            communitySpeedBonus: communitySpeedBonus, // For display
-            communityWisdomLevel: communityWisdomLevel, // For display
-            communityWisdomBonus: communityWisdomBonus, // For display
-            teaSpeedBonus: teaSpeedBonus, // For display
-            teaWisdomBonus: teaWisdomBonus, // For display
-            drinkConcentration: drinkConcentration, // For display
-            houseRareFindBonus: houseRareFindBonus, // For display
-            houseWisdomBonus: houseWisdomBonus, // For display
-            equipmentRareFind: gear.rareFindBonus, // For display
-            equipmentExperience: gear.experienceBonus, // For display
-            equipmentSuccessBonus: equipmentSuccessBonus, // For display
-            houseSuccessBonus: houseSuccessBonus, // For display
-            equipmentSpeedBonus: gear.speedBonus, // For display
-            houseSpeedBonus: houseSpeedBonus, // For display
-        };
-    }
-
-    /**
-     * Get manual enhancing parameters from config settings
-     * @returns {Object} Manual parameters
-     */
-    function getManualParams() {
-        // Get values directly from config
-        const getValue = (key, defaultValue) => {
-            return config.getSettingValue(key, defaultValue);
-        };
-
-        const houseLevel = getValue('enhanceSim_houseLevel', 8);
-
-        // Get tea selection from dropdown (replaces 3 separate checkboxes)
-        const teaSelection = getValue('enhanceSim_tea', 'ultra');
-        const teas = {
-            enhancing: teaSelection === 'basic',
-            superEnhancing: teaSelection === 'super',
-            ultraEnhancing: teaSelection === 'ultra',
-            blessed: getValue('enhanceSim_blessedTea', true),
-        };
-
-        // Calculate tea bonuses based on selection
-        const teaLevelBonus =
-            teaSelection === 'ultra' ? 8 : teaSelection === 'super' ? 6 : teaSelection === 'basic' ? 3 : 0;
-        const teaSpeedBonus =
-            teaSelection === 'ultra' ? 6 : teaSelection === 'super' ? 4 : teaSelection === 'basic' ? 2 : 0;
-
-        // Calculate house bonuses
-        const houseSpeedBonus = houseLevel * 1.0; // 1% per level
-        const houseSuccessBonus = houseLevel * 0.05; // 0.05% per level
-
-        // Get community buffs
-        const communityBuffLevel = dataManager.getCommunityBuffLevel('/community_buff_types/enhancing_speed');
-        const communitySpeedBonus = communityBuffLevel > 0 ? 20 + (communityBuffLevel - 1) * 0.5 : 0;
-
-        // Equipment speed is whatever's left after house/community/tea
-        const totalSpeed = getValue('enhanceSim_speedBonus', 48.5);
-        const equipmentSpeedBonus = Math.max(0, totalSpeed - houseSpeedBonus - communitySpeedBonus - teaSpeedBonus);
-
-        const toolBonusEquipment = getValue('enhanceSim_toolBonus', 6.05);
-        const totalToolBonus = toolBonusEquipment + houseSuccessBonus;
-
-        return {
-            enhancingLevel: getValue('enhanceSim_enhancingLevel', 140) + teaLevelBonus,
-            houseLevel: houseLevel,
-            toolBonus: totalToolBonus, // Total = equipment + house
-            speedBonus: totalSpeed,
-            rareFindBonus: getValue('enhanceSim_rareFindBonus', 0),
-            experienceBonus: getValue('enhanceSim_experienceBonus', 0),
-            guzzlingBonus: 1 + getValue('enhanceSim_drinkConcentration', 12.9) / 100,
-            teas: teas,
-
-            // Display info for manual mode
-            toolSlot: null,
-            bodySlot: null,
-            legsSlot: null,
-            handsSlot: null,
-            detectedTeaBonus: teaLevelBonus,
-            communityBuffLevel: communityBuffLevel,
-            communitySpeedBonus: communitySpeedBonus,
-            teaSpeedBonus: teaSpeedBonus,
-            equipmentSpeedBonus: equipmentSpeedBonus,
-            houseSpeedBonus: houseSpeedBonus,
-            equipmentSuccessBonus: toolBonusEquipment, // Just equipment
-            houseSuccessBonus: houseSuccessBonus,
-        };
-    }
 
     /**
      * Enhancement Calculator
@@ -7908,22 +7587,6 @@
 
 
     /**
-     * Action types for gathering skills (3 skills)
-     */
-    const GATHERING_TYPES$2 = ['/action_types/foraging', '/action_types/woodcutting', '/action_types/milking'];
-
-    /**
-     * Action types for production skills that benefit from Gourmet Tea (5 skills)
-     */
-    const PRODUCTION_TYPES$3 = [
-        '/action_types/brewing',
-        '/action_types/cooking',
-        '/action_types/cheesesmithing',
-        '/action_types/crafting',
-        '/action_types/tailoring',
-    ];
-
-    /**
      * Cache for processing action conversions (inputItemHrid → conversion data)
      * Built once per game data load to avoid O(n) searches through action map
      */
@@ -8005,7 +7668,7 @@
         const actualTimePerActionSec = baseTimePerActionSec / (1 + speedBonus);
 
         // Calculate actions per hour
-        const actionsPerHour = 3600 / actualTimePerActionSec;
+        const actionsPerHour = calculateActionsPerHour(actualTimePerActionSec);
 
         // Get character's actual equipped drink slots for this action type (from WebSocket data)
         const drinkSlots = dataManager.getActionDrinkSlots(actionDetail.type);
@@ -8060,8 +7723,7 @@
         }
 
         // Calculate drink consumption costs
-        // Drink Concentration increases consumption rate: base 12/hour × (1 + DC%)
-        const drinksPerHour = 12 * (1 + drinkConcentration);
+        const drinksPerHour = calculateDrinksPerHour(drinkConcentration);
         let drinkCostPerHour = 0;
         const drinkCosts = [];
         for (const drink of drinkSlots) {
@@ -8263,11 +7925,11 @@
 
         // Calculate net profit
         const profitPerHour = revenuePerHour - drinkCostPerHour;
-        const profitPerDay = profitPerHour * 24;
 
         return {
             profitPerHour,
-            profitPerDay,
+            profitPerAction: calculateProfitPerAction(profitPerHour, actionsPerHour), // Profit per attempt
+            profitPerDay: calculateProfitPerDay(profitPerHour), // Profit per day
             revenuePerHour,
             drinkCostPerHour,
             drinkCosts, // Array of individual drink costs {name, priceEach, costPerHour}
@@ -8290,6 +7952,539 @@
                 gatheringTeaBonus: gatheringTea, // Gathering Tea component (as decimal)
                 achievementGathering: achievementGathering, // Achievement Tier component (as decimal)
             },
+        };
+    }
+
+    /**
+     * Skill Gear Detector
+     *
+     * Auto-detects gear and buffs from character equipment for any skill.
+     * Originally designed for enhancing, now works generically for all skills.
+     */
+
+
+    /**
+     * Detect best gear for a specific skill by equipment slot
+     * @param {string} skillName - Skill name (e.g., 'enhancing', 'cooking', 'milking')
+     * @param {Map} equipment - Character equipment map (equipped items only)
+     * @param {Object} itemDetailMap - Item details map from init_client_data
+     * @returns {Object} Best gear per slot with bonuses
+     */
+    function detectSkillGear(skillName, equipment, itemDetailMap) {
+        const gear = {
+            // Totals for calculations
+            toolBonus: 0,
+            speedBonus: 0,
+            rareFindBonus: 0,
+            experienceBonus: 0,
+
+            // Best items per slot for display
+            toolSlot: null, // main_hand or two_hand
+            bodySlot: null, // body
+            legsSlot: null, // legs
+            handsSlot: null, // hands
+        };
+
+        // Get items to scan - only use equipment map (already filtered to equipped items only)
+        let itemsToScan = [];
+
+        if (equipment) {
+            // Scan only equipped items from equipment map
+            itemsToScan = Array.from(equipment.values()).filter((item) => item && item.itemHrid);
+        }
+
+        // Track best item per slot (by item level, then enhancement level)
+        const slotCandidates = {
+            tool: [], // main_hand or two_hand or skill-specific tool
+            body: [], // body
+            legs: [], // legs
+            hands: [], // hands
+            neck: [], // neck (accessories have 5× multiplier)
+            ring: [], // ring (accessories have 5× multiplier)
+            earring: [], // earring (accessories have 5× multiplier)
+        };
+
+        // Dynamic stat names based on skill
+        const successStat = `${skillName}Success`;
+        const speedStat = `${skillName}Speed`;
+        const rareFindStat = `${skillName}RareFind`;
+        const experienceStat = `${skillName}Experience`;
+
+        // Search all items for skill-related bonuses and group by slot
+        for (const item of itemsToScan) {
+            const itemDetails = itemDetailMap[item.itemHrid];
+            if (!itemDetails?.equipmentDetail?.noncombatStats) continue;
+
+            const stats = itemDetails.equipmentDetail.noncombatStats;
+            const enhancementLevel = item.enhancementLevel || 0;
+            const multiplier = getEnhancementMultiplier(itemDetails, enhancementLevel);
+            const equipmentType = itemDetails.equipmentDetail.type;
+
+            // Generic stat calculation: Loop over ALL stats and apply multiplier
+            const allStats = {};
+            for (const [statName, statValue] of Object.entries(stats)) {
+                if (typeof statValue !== 'number') continue; // Skip non-numeric values
+                allStats[statName] = statValue * 100 * multiplier;
+            }
+
+            // Check if item has any skill-related stats (including universal skills)
+            const hasSkillStats =
+                allStats[successStat] ||
+                allStats[speedStat] ||
+                allStats[rareFindStat] ||
+                allStats[experienceStat] ||
+                allStats.skillingSpeed ||
+                allStats.skillingExperience;
+
+            if (!hasSkillStats) continue;
+
+            // Calculate bonuses for this item (backward-compatible output)
+            const itemBonuses = {
+                item: item,
+                itemDetails: itemDetails,
+                itemLevel: itemDetails.itemLevel || 0,
+                enhancementLevel: enhancementLevel,
+                // Named bonuses (dynamic based on skill)
+                toolBonus: allStats[successStat] || 0,
+                speedBonus: (allStats[speedStat] || 0) + (allStats.skillingSpeed || 0), // Combine speed sources
+                rareFindBonus: allStats[rareFindStat] || 0,
+                experienceBonus: (allStats[experienceStat] || 0) + (allStats.skillingExperience || 0), // Combine experience sources
+                // Generic access to all stats
+                allStats: allStats,
+            };
+
+            // Group by slot
+            // Tool slots: skill-specific tools (e.g., enhancing_tool, cooking_tool) plus main_hand/two_hand
+            const skillToolType = `/equipment_types/${skillName}_tool`;
+            if (
+                equipmentType === skillToolType ||
+                equipmentType === '/equipment_types/main_hand' ||
+                equipmentType === '/equipment_types/two_hand'
+            ) {
+                slotCandidates.tool.push(itemBonuses);
+            } else if (equipmentType === '/equipment_types/body') {
+                slotCandidates.body.push(itemBonuses);
+            } else if (equipmentType === '/equipment_types/legs') {
+                slotCandidates.legs.push(itemBonuses);
+            } else if (equipmentType === '/equipment_types/hands') {
+                slotCandidates.hands.push(itemBonuses);
+            } else if (equipmentType === '/equipment_types/neck') {
+                slotCandidates.neck.push(itemBonuses);
+            } else if (equipmentType === '/equipment_types/ring') {
+                slotCandidates.ring.push(itemBonuses);
+            } else if (equipmentType === '/equipment_types/earring') {
+                slotCandidates.earring.push(itemBonuses);
+            }
+        }
+
+        // Select best item per slot (highest item level, then highest enhancement level)
+        const selectBest = (candidates) => {
+            if (candidates.length === 0) return null;
+
+            return candidates.reduce((best, current) => {
+                // Compare by item level first
+                if (current.itemLevel > best.itemLevel) return current;
+                if (current.itemLevel < best.itemLevel) return best;
+
+                // If item levels are equal, compare by enhancement level
+                if (current.enhancementLevel > best.enhancementLevel) return current;
+                return best;
+            });
+        };
+
+        const bestTool = selectBest(slotCandidates.tool);
+        const bestBody = selectBest(slotCandidates.body);
+        const bestLegs = selectBest(slotCandidates.legs);
+        const bestHands = selectBest(slotCandidates.hands);
+        const bestNeck = selectBest(slotCandidates.neck);
+        const bestRing = selectBest(slotCandidates.ring);
+        const bestEarring = selectBest(slotCandidates.earring);
+
+        // Add bonuses from best items in each slot
+        if (bestTool) {
+            gear.toolBonus += bestTool.toolBonus;
+            gear.speedBonus += bestTool.speedBonus;
+            gear.rareFindBonus += bestTool.rareFindBonus;
+            gear.experienceBonus += bestTool.experienceBonus;
+            gear.toolSlot = {
+                name: bestTool.itemDetails.name,
+                enhancementLevel: bestTool.enhancementLevel,
+            };
+        }
+
+        if (bestBody) {
+            gear.toolBonus += bestBody.toolBonus;
+            gear.speedBonus += bestBody.speedBonus;
+            gear.rareFindBonus += bestBody.rareFindBonus;
+            gear.experienceBonus += bestBody.experienceBonus;
+            gear.bodySlot = {
+                name: bestBody.itemDetails.name,
+                enhancementLevel: bestBody.enhancementLevel,
+            };
+        }
+
+        if (bestLegs) {
+            gear.toolBonus += bestLegs.toolBonus;
+            gear.speedBonus += bestLegs.speedBonus;
+            gear.rareFindBonus += bestLegs.rareFindBonus;
+            gear.experienceBonus += bestLegs.experienceBonus;
+            gear.legsSlot = {
+                name: bestLegs.itemDetails.name,
+                enhancementLevel: bestLegs.enhancementLevel,
+            };
+        }
+
+        if (bestHands) {
+            gear.toolBonus += bestHands.toolBonus;
+            gear.speedBonus += bestHands.speedBonus;
+            gear.rareFindBonus += bestHands.rareFindBonus;
+            gear.experienceBonus += bestHands.experienceBonus;
+            gear.handsSlot = {
+                name: bestHands.itemDetails.name,
+                enhancementLevel: bestHands.enhancementLevel,
+            };
+        }
+
+        if (bestNeck) {
+            gear.toolBonus += bestNeck.toolBonus;
+            gear.speedBonus += bestNeck.speedBonus;
+            gear.rareFindBonus += bestNeck.rareFindBonus;
+            gear.experienceBonus += bestNeck.experienceBonus;
+        }
+
+        if (bestRing) {
+            gear.toolBonus += bestRing.toolBonus;
+            gear.speedBonus += bestRing.speedBonus;
+            gear.rareFindBonus += bestRing.rareFindBonus;
+            gear.experienceBonus += bestRing.experienceBonus;
+        }
+
+        if (bestEarring) {
+            gear.toolBonus += bestEarring.toolBonus;
+            gear.speedBonus += bestEarring.speedBonus;
+            gear.rareFindBonus += bestEarring.rareFindBonus;
+            gear.experienceBonus += bestEarring.experienceBonus;
+        }
+
+        return gear;
+    }
+
+    /**
+     * Detect active enhancing teas from drink slots
+     * @param {Array} drinkSlots - Active drink slots for enhancing action type
+     * @param {Object} itemDetailMap - Item details map from init_client_data
+     * @returns {Object} Active teas { enhancing, superEnhancing, ultraEnhancing, blessed }
+     */
+    function detectEnhancingTeas(drinkSlots, _itemDetailMap) {
+        const teas = {
+            enhancing: false, // Enhancing Tea (+3 levels)
+            superEnhancing: false, // Super Enhancing Tea (+6 levels)
+            ultraEnhancing: false, // Ultra Enhancing Tea (+8 levels)
+            blessed: false, // Blessed Tea (1% double jump)
+        };
+
+        if (!drinkSlots || drinkSlots.length === 0) {
+            return teas;
+        }
+
+        // Tea HRIDs to check for
+        const teaMap = {
+            '/items/enhancing_tea': 'enhancing',
+            '/items/super_enhancing_tea': 'superEnhancing',
+            '/items/ultra_enhancing_tea': 'ultraEnhancing',
+            '/items/blessed_tea': 'blessed',
+        };
+
+        for (const drink of drinkSlots) {
+            if (!drink || !drink.itemHrid) continue;
+
+            const teaKey = teaMap[drink.itemHrid];
+            if (teaKey) {
+                teas[teaKey] = true;
+            }
+        }
+
+        return teas;
+    }
+
+    /**
+     * Get enhancing tea level bonus
+     * @param {Object} teas - Active teas from detectEnhancingTeas()
+     * @returns {number} Total level bonus from teas
+     */
+    function getEnhancingTeaLevelBonus(teas) {
+        // Teas don't stack - highest one wins
+        if (teas.ultraEnhancing) return 8;
+        if (teas.superEnhancing) return 6;
+        if (teas.enhancing) return 3;
+
+        return 0;
+    }
+
+    /**
+     * Get enhancing tea speed bonus (base, before concentration)
+     * @param {Object} teas - Active teas from detectEnhancingTeas()
+     * @returns {number} Base speed bonus % from teas
+     */
+    function getEnhancingTeaSpeedBonus(teas) {
+        // Teas don't stack - highest one wins
+        // Base speed bonuses (before drink concentration):
+        if (teas.ultraEnhancing) return 6; // +6% base
+        if (teas.superEnhancing) return 4; // +4% base
+        if (teas.enhancing) return 2; // +2% base
+
+        return 0;
+    }
+
+    /**
+     * Backward-compatible wrapper for enhancing gear detection
+     * @param {Map} equipment - Character equipment map (equipped items only)
+     * @param {Object} itemDetailMap - Item details map from init_client_data
+     * @returns {Object} Best enhancing gear per slot with bonuses
+     */
+    function detectEnhancingGear(equipment, itemDetailMap) {
+        return detectSkillGear('enhancing', equipment, itemDetailMap);
+    }
+
+    /**
+     * Enhancement Configuration Manager
+     *
+     * Combines auto-detected enhancing parameters with manual overrides from settings.
+     * Provides single source of truth for enhancement simulator inputs.
+     */
+
+
+    /**
+     * Get enhancing parameters (auto-detected or manual)
+     * @returns {Object} Enhancement parameters for simulator
+     */
+    function getEnhancingParams() {
+        const autoDetect = config.getSettingValue('enhanceSim_autoDetect', false);
+
+        if (autoDetect) {
+            return getAutoDetectedParams();
+        } else {
+            return getManualParams();
+        }
+    }
+
+    /**
+     * Get auto-detected enhancing parameters from character data
+     * @returns {Object} Auto-detected parameters
+     */
+    function getAutoDetectedParams() {
+        // Get character data
+        const equipment = dataManager.getEquipment();
+        const skills = dataManager.getSkills();
+        const drinkSlots = dataManager.getActionDrinkSlots('/action_types/enhancing');
+        const itemDetailMap = dataManager.getInitClientData()?.itemDetailMap || {};
+
+        // Detect gear from equipped items only
+        const gear = detectEnhancingGear(equipment, itemDetailMap);
+
+        // Detect drink concentration from equipment (Guzzling Pouch)
+        // IMPORTANT: Only scan equipped items, not entire inventory
+        let drinkConcentration = 0;
+        const itemsToScan = equipment ? Array.from(equipment.values()).filter((item) => item && item.itemHrid) : [];
+
+        for (const item of itemsToScan) {
+            const itemDetails = itemDetailMap[item.itemHrid];
+            if (!itemDetails?.equipmentDetail?.noncombatStats?.drinkConcentration) continue;
+
+            const concentration = itemDetails.equipmentDetail.noncombatStats.drinkConcentration;
+            const enhancementLevel = item.enhancementLevel || 0;
+            const multiplier = getEnhancementMultiplier(itemDetails, enhancementLevel);
+            const scaledConcentration = concentration * 100 * multiplier;
+
+            // Only keep the highest concentration (shouldn't have multiple, but just in case)
+            if (scaledConcentration > drinkConcentration) {
+                drinkConcentration = scaledConcentration;
+            }
+        }
+
+        // Detect teas
+        const teas = detectEnhancingTeas(drinkSlots);
+
+        // Get tea level bonus (base, then scale with concentration)
+        const baseTeaLevel = getEnhancingTeaLevelBonus(teas);
+        const teaLevelBonus = baseTeaLevel > 0 ? baseTeaLevel * (1 + drinkConcentration / 100) : 0;
+
+        // Get tea speed bonus (base, then scale with concentration)
+        const baseTeaSpeed = getEnhancingTeaSpeedBonus(teas);
+        const teaSpeedBonus = baseTeaSpeed > 0 ? baseTeaSpeed * (1 + drinkConcentration / 100) : 0;
+
+        // Get tea wisdom bonus (base, then scale with concentration)
+        // Wisdom Tea/Coffee provide 12% wisdom, scales with drink concentration
+        let baseTeaWisdom = 0;
+        if (drinkSlots && drinkSlots.length > 0) {
+            for (const drink of drinkSlots) {
+                if (!drink || !drink.itemHrid) continue;
+                const drinkDetails = itemDetailMap[drink.itemHrid];
+                if (!drinkDetails?.consumableDetail?.buffs) continue;
+
+                const wisdomBuff = drinkDetails.consumableDetail.buffs.find(
+                    (buff) => buff.typeHrid === '/buff_types/wisdom'
+                );
+
+                if (wisdomBuff && wisdomBuff.flatBoost) {
+                    baseTeaWisdom += wisdomBuff.flatBoost * 100; // Convert to percentage
+                }
+            }
+        }
+        const teaWisdomBonus = baseTeaWisdom > 0 ? baseTeaWisdom * (1 + drinkConcentration / 100) : 0;
+
+        // Get Enhancing skill level
+        const enhancingSkill = skills.find((s) => s.skillHrid === '/skills/enhancing');
+        const enhancingLevel = enhancingSkill?.level || 1;
+
+        // Get Observatory house room level (enhancing uses observatory, NOT laboratory!)
+        const houseLevel = dataManager.getHouseRoomLevel('/house_rooms/observatory');
+
+        // Calculate global house buffs from ALL house rooms
+        // Rare Find: 0.2% base + 0.2% per level (per room, only if level >= 1)
+        // Wisdom: 0.05% base + 0.05% per level (per room, only if level >= 1)
+        const houseRooms = dataManager.getHouseRooms();
+        let houseRareFindBonus = 0;
+        let houseWisdomBonus = 0;
+
+        for (const [_hrid, room] of houseRooms) {
+            const level = room.level || 0;
+            if (level >= 1) {
+                // Each room: 0.2% per level (NOT 0.2% base + 0.2% per level)
+                houseRareFindBonus += 0.2 * level;
+                // Each room: 0.05% per level (NOT 0.05% base + 0.05% per level)
+                houseWisdomBonus += 0.05 * level;
+            }
+        }
+
+        // Get Enhancing Speed community buff level
+        const communityBuffLevel = dataManager.getCommunityBuffLevel('/community_buff_types/enhancing_speed');
+        // Formula: 20% base + 0.5% per level
+        const communitySpeedBonus = communityBuffLevel > 0 ? 20 + (communityBuffLevel - 1) * 0.5 : 0;
+
+        // Get Experience (Wisdom) community buff level
+        const communityWisdomLevel = dataManager.getCommunityBuffLevel('/community_buff_types/experience');
+        // Formula: 20% base + 0.5% per level (same as other community buffs)
+        const communityWisdomBonus = communityWisdomLevel > 0 ? 20 + (communityWisdomLevel - 1) * 0.5 : 0;
+
+        // Calculate total success rate bonus
+        // Equipment + house + (check for other sources)
+        const houseSuccessBonus = houseLevel * 0.05; // 0.05% per level for success
+        const equipmentSuccessBonus = gear.toolBonus;
+        const totalSuccessBonus = equipmentSuccessBonus + houseSuccessBonus;
+
+        // Calculate total speed bonus
+        // Speed bonus (from equipment) + house bonus (1% per level) + community buff + tea speed
+        const houseSpeedBonus = houseLevel * 1.0; // 1% per level for action speed
+        const totalSpeedBonus = gear.speedBonus + houseSpeedBonus + communitySpeedBonus + teaSpeedBonus;
+
+        // Calculate total experience bonus
+        // Equipment + house wisdom + tea wisdom + community wisdom
+        const totalExperienceBonus = gear.experienceBonus + houseWisdomBonus + teaWisdomBonus + communityWisdomBonus;
+
+        // Calculate guzzling bonus multiplier (1.0 at level 0, scales with drink concentration)
+        const guzzlingBonus = 1 + drinkConcentration / 100;
+
+        return {
+            // Core values for calculations
+            enhancingLevel: enhancingLevel + teaLevelBonus, // Base level + tea bonus
+            houseLevel: houseLevel,
+            toolBonus: totalSuccessBonus, // Tool + house combined
+            speedBonus: totalSpeedBonus, // Speed + house + community + tea combined
+            rareFindBonus: gear.rareFindBonus + houseRareFindBonus, // Rare find (equipment + all house rooms)
+            experienceBonus: totalExperienceBonus, // Experience (equipment + house + tea + community wisdom)
+            guzzlingBonus: guzzlingBonus, // Drink concentration multiplier for blessed tea
+            teas: teas,
+
+            // Display info (for UI) - show best item per slot
+            toolSlot: gear.toolSlot,
+            bodySlot: gear.bodySlot,
+            legsSlot: gear.legsSlot,
+            handsSlot: gear.handsSlot,
+            detectedTeaBonus: teaLevelBonus,
+            communityBuffLevel: communityBuffLevel, // For display (speed)
+            communitySpeedBonus: communitySpeedBonus, // For display
+            communityWisdomLevel: communityWisdomLevel, // For display
+            communityWisdomBonus: communityWisdomBonus, // For display
+            teaSpeedBonus: teaSpeedBonus, // For display
+            teaWisdomBonus: teaWisdomBonus, // For display
+            drinkConcentration: drinkConcentration, // For display
+            houseRareFindBonus: houseRareFindBonus, // For display
+            houseWisdomBonus: houseWisdomBonus, // For display
+            equipmentRareFind: gear.rareFindBonus, // For display
+            equipmentExperience: gear.experienceBonus, // For display
+            equipmentSuccessBonus: equipmentSuccessBonus, // For display
+            houseSuccessBonus: houseSuccessBonus, // For display
+            equipmentSpeedBonus: gear.speedBonus, // For display
+            houseSpeedBonus: houseSpeedBonus, // For display
+        };
+    }
+
+    /**
+     * Get manual enhancing parameters from config settings
+     * @returns {Object} Manual parameters
+     */
+    function getManualParams() {
+        // Get values directly from config
+        const getValue = (key, defaultValue) => {
+            return config.getSettingValue(key, defaultValue);
+        };
+
+        const houseLevel = getValue('enhanceSim_houseLevel', 8);
+
+        // Get tea selection from dropdown (replaces 3 separate checkboxes)
+        const teaSelection = getValue('enhanceSim_tea', 'ultra');
+        const teas = {
+            enhancing: teaSelection === 'basic',
+            superEnhancing: teaSelection === 'super',
+            ultraEnhancing: teaSelection === 'ultra',
+            blessed: getValue('enhanceSim_blessedTea', true),
+        };
+
+        // Calculate tea bonuses based on selection
+        const teaLevelBonus =
+            teaSelection === 'ultra' ? 8 : teaSelection === 'super' ? 6 : teaSelection === 'basic' ? 3 : 0;
+        const teaSpeedBonus =
+            teaSelection === 'ultra' ? 6 : teaSelection === 'super' ? 4 : teaSelection === 'basic' ? 2 : 0;
+
+        // Calculate house bonuses
+        const houseSpeedBonus = houseLevel * 1.0; // 1% per level
+        const houseSuccessBonus = houseLevel * 0.05; // 0.05% per level
+
+        // Get community buffs
+        const communityBuffLevel = dataManager.getCommunityBuffLevel('/community_buff_types/enhancing_speed');
+        const communitySpeedBonus = communityBuffLevel > 0 ? 20 + (communityBuffLevel - 1) * 0.5 : 0;
+
+        // Equipment speed is whatever's left after house/community/tea
+        const totalSpeed = getValue('enhanceSim_speedBonus', 48.5);
+        const equipmentSpeedBonus = Math.max(0, totalSpeed - houseSpeedBonus - communitySpeedBonus - teaSpeedBonus);
+
+        const toolBonusEquipment = getValue('enhanceSim_toolBonus', 6.05);
+        const totalToolBonus = toolBonusEquipment + houseSuccessBonus;
+
+        return {
+            enhancingLevel: getValue('enhanceSim_enhancingLevel', 140) + teaLevelBonus,
+            houseLevel: houseLevel,
+            toolBonus: totalToolBonus, // Total = equipment + house
+            speedBonus: totalSpeed,
+            rareFindBonus: getValue('enhanceSim_rareFindBonus', 0),
+            experienceBonus: getValue('enhanceSim_experienceBonus', 0),
+            guzzlingBonus: 1 + getValue('enhanceSim_drinkConcentration', 12.9) / 100,
+            teas: teas,
+
+            // Display info for manual mode
+            toolSlot: null,
+            bodySlot: null,
+            legsSlot: null,
+            handsSlot: null,
+            detectedTeaBonus: teaLevelBonus,
+            communityBuffLevel: communityBuffLevel,
+            communitySpeedBonus: communitySpeedBonus,
+            teaSpeedBonus: teaSpeedBonus,
+            equipmentSpeedBonus: equipmentSpeedBonus,
+            houseSpeedBonus: houseSpeedBonus,
+            equipmentSuccessBonus: toolBonusEquipment, // Just equipment
+            houseSuccessBonus: houseSuccessBonus,
         };
     }
 
@@ -9038,7 +9233,7 @@
                 html += '<div style="font-weight: bold; margin-bottom: 4px;">PROFIT</div>';
                 html += '<div style="font-size: 0.9em; margin-left: 8px;">';
 
-                const profitPerDay = profitData.profitPerHour * 24;
+                const profitPerDay = profitData.profitPerDay;
                 const profitColor = profitData.profitPerHour >= 0 ? config.COLOR_TOOLTIP_PROFIT : config.COLOR_TOOLTIP_LOSS;
 
                 html += `<div style="color: ${profitColor}; font-weight: bold;">Net: ${numberFormatter(profitData.profitPerHour)}/hr (${formatKMB(profitPerDay)}/day)</div>`;
@@ -9127,8 +9322,8 @@
 
             // Detailed profit breakdown
             html += '<div style="margin-top: 8px; font-size: 0.85em;">';
-            const profitPerAction = profitData.profitPerHour / profitData.actionsPerHour;
-            const profitPerDay = profitData.profitPerHour * 24;
+            const profitPerAction = profitData.profitPerAction;
+            const profitPerDay = profitData.profitPerDay;
             const profitColor = profitData.profitPerHour >= 0 ? config.COLOR_TOOLTIP_PROFIT : config.COLOR_TOOLTIP_LOSS;
 
             html += `<div style="color: ${profitColor};">Profit: ${numberFormatter(profitPerAction)}/action, ${numberFormatter(profitData.profitPerHour)}/hour, ${formatKMB(profitPerDay)}/day</div>`;
@@ -9320,7 +9515,7 @@
                 // Calculate base actions per hour
                 const baseTimeCost = actionDetail.baseTimeCost; // in nanoseconds
                 const timeInSeconds = baseTimeCost / 1e9;
-                const actionsPerHour = 3600 / timeInSeconds;
+                const actionsPerHour = calculateActionsPerHour(timeInSeconds);
 
                 // Calculate items per hour
                 const itemsPerHour = actionsPerHour * action.dropRate;
@@ -13934,9 +14129,8 @@
                     profitSummaryDiv.textContent = `${baseSummary} | Total profit: ∞`;
                 } else if (newValue > 0) {
                     // Calculate total profit for selected actions
-                    const efficiencyMultiplier = 1 + profitData.totalEfficiency / 100;
-                    const actualAttempts = Math.ceil(newValue / efficiencyMultiplier);
-                    const hoursNeeded = actualAttempts / profitData.actionsPerHour;
+                    const actualAttempts = Math.ceil(newValue / profitData.efficiencyMultiplier);
+                    const hoursNeeded = calculateHoursForActions(actualAttempts, profitData.actionsPerHour);
                     const totalProfit = Math.round(profitData.profitPerHour * hoursNeeded);
                     profitSummaryDiv.textContent = `${baseSummary} | Total profit: ${formatLargeNumber(totalProfit)}`;
                 } else {
@@ -13996,7 +14190,7 @@
             'materialCostPerHour',
             'totalTeaCostPerHour',
             'actionsPerHour',
-            'efficiencyBonus',
+            'totalEfficiency',
             'levelEfficiency',
             'houseEfficiency',
             'teaEfficiency',
@@ -14022,7 +14216,7 @@
 
         // Create top-level summary (bonus revenue now included in profitPerHour)
         const profit = Math.round(profitData.profitPerHour);
-        const profitPerDay = Math.round(profit * 24);
+        const profitPerDay = Math.round(profitData.profitPerDay);
         const bonusRevenueTotal = profitData.bonusRevenue?.totalBonusRevenue || 0;
         // Use outputPrice (pre-tax) for revenue display
         const revenue = Math.round(
@@ -14158,7 +14352,7 @@
                 line.style.marginLeft = '8px';
                 // Material structure: { itemName, amount, askPrice, totalCost, baseAmount }
                 const amountPerAction = material.amount || 0;
-                const efficiencyMultiplier = 1 + profitData.efficiencyBonus / 100;
+                const efficiencyMultiplier = profitData.efficiencyMultiplier;
                 const amountPerHour = amountPerAction * profitData.actionsPerHour * efficiencyMultiplier;
 
                 // Build material line with embedded Artisan information
@@ -14261,7 +14455,7 @@
                 `<div style="font-weight: 500; color: var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY});">Modifiers:</div>`
             );
             modifierLines.push(
-                `<div style="margin-left: 8px;">• Efficiency: +${profitData.efficiencyBonus.toFixed(1)}% (${effParts.join(', ')})</div>`
+                `<div style="margin-left: 8px;">• Efficiency: +${profitData.totalEfficiency.toFixed(1)}% (${effParts.join(', ')})</div>`
             );
         }
 
@@ -14371,9 +14565,9 @@
                     profitSummaryDiv.textContent = `${baseSummary} | Total profit: ∞`;
                 } else if (newValue > 0) {
                     // Calculate total profit for selected actions
-                    const efficiencyMultiplier = 1 + profitData.efficiencyBonus / 100;
+                    const efficiencyMultiplier = profitData.efficiencyMultiplier;
                     const actualAttempts = Math.ceil(newValue / efficiencyMultiplier);
-                    const hoursNeeded = actualAttempts / profitData.actionsPerHour;
+                    const hoursNeeded = calculateHoursForActions(actualAttempts, profitData.actionsPerHour);
                     const totalProfit = Math.round(profitData.profitPerHour * hoursNeeded);
                     profitSummaryDiv.textContent = `${baseSummary} | Total profit: ${formatLargeNumber(totalProfit)}`;
                 } else {
@@ -14417,9 +14611,8 @@
      */
     function buildGatheringActionsBreakdown(profitData, actionsCount) {
         // Calculate actual attempts needed (input is desired output actions)
-        const efficiencyMultiplier = 1 + profitData.totalEfficiency / 100;
-        const actualAttempts = Math.ceil(actionsCount / efficiencyMultiplier);
-        const hoursNeeded = actualAttempts / profitData.actionsPerHour;
+        const actualAttempts = Math.ceil(actionsCount / profitData.efficiencyMultiplier);
+        const hoursNeeded = calculateHoursForActions(actualAttempts, profitData.actionsPerHour);
 
         // Calculate totals
         const totalRevenue = Math.round(profitData.revenuePerHour * hoursNeeded);
@@ -14603,9 +14796,9 @@
      */
     function buildProductionActionsBreakdown(profitData, actionsCount) {
         // Calculate actual attempts needed (input is desired output actions)
-        const efficiencyMultiplier = 1 + profitData.efficiencyBonus / 100;
+        const efficiencyMultiplier = profitData.efficiencyMultiplier;
         const actualAttempts = Math.ceil(actionsCount / efficiencyMultiplier);
-        const hoursNeeded = actualAttempts / profitData.actionsPerHour;
+        const hoursNeeded = calculateHoursForActions(actualAttempts, profitData.actionsPerHour);
 
         // Calculate totals
         const bonusRevenueTotal = profitData.bonusRevenue?.totalBonusRevenue || 0;
@@ -14744,7 +14937,7 @@
         // Material Costs subsection
         const materialCostsContent = document.createElement('div');
         if (profitData.materialCosts && profitData.materialCosts.length > 0) {
-            const efficiencyMultiplier = 1 + profitData.efficiencyBonus / 100;
+            const efficiencyMultiplier = profitData.efficiencyMultiplier;
             for (const material of profitData.materialCosts) {
                 const totalMaterial = material.amount * actionsCount * efficiencyMultiplier;
                 const totalMaterialCost = material.totalCost * actionsCount * efficiencyMultiplier;
@@ -15964,7 +16157,7 @@
             }
 
             const { actionTime, totalEfficiency } = stats;
-            const baseActionsPerHour = 3600 / actionTime;
+            const baseActionsPerHour = calculateActionsPerHour(actionTime);
 
             // Calculate average actions per attempt from efficiency
             const guaranteedActions = 1 + Math.floor(totalEfficiency / 100);
@@ -16913,7 +17106,7 @@
 
             const valueMode = config.getSettingValue('actionQueue_valueMode', 'profit');
 
-            // Get profit data (already has profitPerHour and actionsPerHour calculated)
+            // Get profit data (already has profitPerAction calculated)
             let profitData = null;
             const gatheringProfit = await calculateGatheringProfit(action.actionHrid);
             if (gatheringProfit) {
@@ -16926,29 +17119,24 @@
                 return null;
             }
 
-            // Get value per hour based on mode
-            let valuePerHour = null;
-            if (valueMode === 'estimated_value' && profitData.revenuePerHour !== undefined) {
-                valuePerHour = profitData.revenuePerHour;
-            } else if (profitData.profitPerHour !== undefined) {
-                valuePerHour = profitData.profitPerHour;
+            const attemptsForValue = action.actualAttempts ?? action.count ?? 0;
+            if (!attemptsForValue) {
+                return 0;
             }
 
-            if (valuePerHour === null || !profitData.actionsPerHour) {
+            if (typeof profitData.actionsPerHour !== 'number') {
                 return null;
             }
 
-            // CRITICAL: Queue always displays ATTEMPTS, never item counts
-            // - GATHERING: "Gather 726 times" = 726 attempts
-            // - PRODUCTION: "Produce 237 times" = 237 attempts
-            // Use action.count directly for both - no efficiency division needed
-            const actualAttempts = action.count;
+            const breakdown = calculateQueueProfitBreakdown({
+                profitPerHour: profitData.profitPerHour,
+                actionsPerHour: profitData.actionsPerHour,
+                actionCount: attemptsForValue,
+                revenuePerHour: profitData.revenuePerHour,
+                valueMode,
+            });
 
-            // Calculate total profit using EXACT same formula as task calculator
-            // Task uses: (profitPerHour / actionsPerHour) * quantity
-            // This ensures identical floating point results
-            const profitPerAction = valuePerHour / profitData.actionsPerHour;
-            return profitPerAction * actualAttempts;
+            return breakdown.totalProfit;
         }
 
         /**
@@ -24886,8 +25074,8 @@
             };
         }
 
-        // Calculate per-action profit from per-hour profit
-        const profitPerAction = profitData.profitPerHour / profitData.actionsPerHour;
+        // Use pre-calculated profitPerAction from profit calculator
+        const profitPerAction = profitData.profitPerAction;
 
         return {
             totalValue: profitPerAction * quantity,
@@ -24935,8 +25123,10 @@
             };
         }
 
-        // Calculate per-action values from per-hour values
-        const profitPerAction = profitData.profitPerHour / profitData.actionsPerHour;
+        // Use pre-calculated profitPerAction from profit calculator
+        const profitPerAction = profitData.profitPerAction;
+
+        // Calculate per-action values for breakdown display
         const revenuePerAction =
             (profitData.itemsPerHour * profitData.priceAfterTax + profitData.gourmetBonusItems * profitData.priceAfterTax) /
             profitData.actionsPerHour;
@@ -24962,7 +25152,7 @@
                 actionsPerHour: profitData.actionsPerHour,
                 itemsPerAction: profitData.itemsPerHour / profitData.actionsPerHour,
                 bonusRevenue: profitData.bonusRevenue, // Pass through bonus revenue data
-                efficiencyMultiplier: profitData.details?.efficiencyMultiplier || 1, // Pass through efficiency multiplier
+                efficiencyMultiplier: profitData.efficiencyMultiplier || 1, // Pass through efficiency multiplier
             },
         };
     }
@@ -25556,7 +25746,7 @@
 
                 // Efficiency reduces the number of actions needed
                 const actualActionsNeeded = remainingActions / efficiencyMultiplier;
-                const totalSeconds = (actualActionsNeeded / actionsPerHour) * 3600;
+                const totalSeconds = calculateSecondsForActions(actualActionsNeeded, actionsPerHour);
                 timeEstimate = timeReadable(totalSeconds);
             }
 

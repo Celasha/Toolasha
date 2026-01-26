@@ -4,17 +4,18 @@
  */
 
 import config from '../../core/config.js';
-import marketAPI from '../../api/marketplace.js';
 import dataManager from '../../core/data-manager.js';
+import domObserver from '../../core/dom-observer.js';
+import marketAPI from '../../api/marketplace.js';
 import profitCalculator from './profit-calculator.js';
 import expectedValueCalculator from './expected-value-calculator.js';
-import { getEnhancingParams } from '../../utils/enhancement-config.js';
 import { calculateEnhancementPath, buildEnhancementTooltipHTML } from '../enhancement/tooltip-enhancement.js';
 import { calculateGatheringProfit } from '../actions/gathering-profit.js';
+import { getEnhancingParams } from '../../utils/enhancement-config.js';
 import { numberFormatter, formatKMB, networthFormatter, formatPercentage } from '../../utils/formatters.js';
 import { getItemPrices } from '../../utils/market-data.js';
+import { calculateActionsPerHour } from '../../utils/profit-helpers.js';
 import dom from '../../utils/dom.js';
-import domObserver from '../../core/dom-observer.js';
 
 // Compiled regex patterns (created once, reused for performance)
 const REGEX_ENHANCEMENT_LEVEL = /\+(\d+)$/;
@@ -451,7 +452,7 @@ class TooltipPrices {
             html += '<div style="font-weight: bold; margin-bottom: 4px;">PROFIT</div>';
             html += '<div style="font-size: 0.9em; margin-left: 8px;">';
 
-            const profitPerDay = profitData.profitPerHour * 24;
+            const profitPerDay = profitData.profitPerDay;
             const profitColor = profitData.profitPerHour >= 0 ? config.COLOR_TOOLTIP_PROFIT : config.COLOR_TOOLTIP_LOSS;
 
             html += `<div style="color: ${profitColor}; font-weight: bold;">Net: ${numberFormatter(profitData.profitPerHour)}/hr (${formatKMB(profitPerDay)}/day)</div>`;
@@ -540,8 +541,8 @@ class TooltipPrices {
 
         // Detailed profit breakdown
         html += '<div style="margin-top: 8px; font-size: 0.85em;">';
-        const profitPerAction = profitData.profitPerHour / profitData.actionsPerHour;
-        const profitPerDay = profitData.profitPerHour * 24;
+        const profitPerAction = profitData.profitPerAction;
+        const profitPerDay = profitData.profitPerDay;
         const profitColor = profitData.profitPerHour >= 0 ? config.COLOR_TOOLTIP_PROFIT : config.COLOR_TOOLTIP_LOSS;
 
         html += `<div style="color: ${profitColor};">Profit: ${numberFormatter(profitPerAction)}/action, ${numberFormatter(profitData.profitPerHour)}/hour, ${formatKMB(profitPerDay)}/day</div>`;
@@ -733,7 +734,7 @@ class TooltipPrices {
             // Calculate base actions per hour
             const baseTimeCost = actionDetail.baseTimeCost; // in nanoseconds
             const timeInSeconds = baseTimeCost / 1e9;
-            const actionsPerHour = 3600 / timeInSeconds;
+            const actionsPerHour = calculateActionsPerHour(timeInSeconds);
 
             // Calculate items per hour
             const itemsPerHour = actionsPerHour * action.dropRate;

@@ -12,6 +12,7 @@ import { calculateProductionProfit } from './production-profit.js';
 import { formatWithSeparator, formatPercentage, formatLargeNumber } from '../../utils/formatters.js';
 import { createCollapsibleSection } from '../../utils/ui-components.js';
 import { findActionInput, attachInputListeners } from '../../utils/action-panel-helper.js';
+import { calculateHoursForActions } from '../../utils/profit-helpers.js';
 
 /**
  * Display gathering profit calculation in panel
@@ -318,9 +319,8 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
                 profitSummaryDiv.textContent = `${baseSummary} | Total profit: ∞`;
             } else if (newValue > 0) {
                 // Calculate total profit for selected actions
-                const efficiencyMultiplier = 1 + profitData.totalEfficiency / 100;
-                const actualAttempts = Math.ceil(newValue / efficiencyMultiplier);
-                const hoursNeeded = actualAttempts / profitData.actionsPerHour;
+                const actualAttempts = Math.ceil(newValue / profitData.efficiencyMultiplier);
+                const hoursNeeded = calculateHoursForActions(actualAttempts, profitData.actionsPerHour);
                 const totalProfit = Math.round(profitData.profitPerHour * hoursNeeded);
                 profitSummaryDiv.textContent = `${baseSummary} | Total profit: ${formatLargeNumber(totalProfit)}`;
             } else {
@@ -380,7 +380,7 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
         'materialCostPerHour',
         'totalTeaCostPerHour',
         'actionsPerHour',
-        'efficiencyBonus',
+        'totalEfficiency',
         'levelEfficiency',
         'houseEfficiency',
         'teaEfficiency',
@@ -406,7 +406,7 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
 
     // Create top-level summary (bonus revenue now included in profitPerHour)
     const profit = Math.round(profitData.profitPerHour);
-    const profitPerDay = Math.round(profit * 24);
+    const profitPerDay = Math.round(profitData.profitPerDay);
     const bonusRevenueTotal = profitData.bonusRevenue?.totalBonusRevenue || 0;
     // Use outputPrice (pre-tax) for revenue display
     const revenue = Math.round(
@@ -542,7 +542,7 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
             line.style.marginLeft = '8px';
             // Material structure: { itemName, amount, askPrice, totalCost, baseAmount }
             const amountPerAction = material.amount || 0;
-            const efficiencyMultiplier = 1 + profitData.efficiencyBonus / 100;
+            const efficiencyMultiplier = profitData.efficiencyMultiplier;
             const amountPerHour = amountPerAction * profitData.actionsPerHour * efficiencyMultiplier;
 
             // Build material line with embedded Artisan information
@@ -645,7 +645,7 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
             `<div style="font-weight: 500; color: var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY});">Modifiers:</div>`
         );
         modifierLines.push(
-            `<div style="margin-left: 8px;">• Efficiency: +${profitData.efficiencyBonus.toFixed(1)}% (${effParts.join(', ')})</div>`
+            `<div style="margin-left: 8px;">• Efficiency: +${profitData.totalEfficiency.toFixed(1)}% (${effParts.join(', ')})</div>`
         );
     }
 
@@ -755,9 +755,9 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
                 profitSummaryDiv.textContent = `${baseSummary} | Total profit: ∞`;
             } else if (newValue > 0) {
                 // Calculate total profit for selected actions
-                const efficiencyMultiplier = 1 + profitData.efficiencyBonus / 100;
+                const efficiencyMultiplier = profitData.efficiencyMultiplier;
                 const actualAttempts = Math.ceil(newValue / efficiencyMultiplier);
-                const hoursNeeded = actualAttempts / profitData.actionsPerHour;
+                const hoursNeeded = calculateHoursForActions(actualAttempts, profitData.actionsPerHour);
                 const totalProfit = Math.round(profitData.profitPerHour * hoursNeeded);
                 profitSummaryDiv.textContent = `${baseSummary} | Total profit: ${formatLargeNumber(totalProfit)}`;
             } else {
@@ -801,9 +801,8 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
  */
 function buildGatheringActionsBreakdown(profitData, actionsCount) {
     // Calculate actual attempts needed (input is desired output actions)
-    const efficiencyMultiplier = 1 + profitData.totalEfficiency / 100;
-    const actualAttempts = Math.ceil(actionsCount / efficiencyMultiplier);
-    const hoursNeeded = actualAttempts / profitData.actionsPerHour;
+    const actualAttempts = Math.ceil(actionsCount / profitData.efficiencyMultiplier);
+    const hoursNeeded = calculateHoursForActions(actualAttempts, profitData.actionsPerHour);
 
     // Calculate totals
     const totalRevenue = Math.round(profitData.revenuePerHour * hoursNeeded);
@@ -987,9 +986,9 @@ function buildGatheringActionsBreakdown(profitData, actionsCount) {
  */
 function buildProductionActionsBreakdown(profitData, actionsCount) {
     // Calculate actual attempts needed (input is desired output actions)
-    const efficiencyMultiplier = 1 + profitData.efficiencyBonus / 100;
+    const efficiencyMultiplier = profitData.efficiencyMultiplier;
     const actualAttempts = Math.ceil(actionsCount / efficiencyMultiplier);
-    const hoursNeeded = actualAttempts / profitData.actionsPerHour;
+    const hoursNeeded = calculateHoursForActions(actualAttempts, profitData.actionsPerHour);
 
     // Calculate totals
     const bonusRevenueTotal = profitData.bonusRevenue?.totalBonusRevenue || 0;
@@ -1128,7 +1127,7 @@ function buildProductionActionsBreakdown(profitData, actionsCount) {
     // Material Costs subsection
     const materialCostsContent = document.createElement('div');
     if (profitData.materialCosts && profitData.materialCosts.length > 0) {
-        const efficiencyMultiplier = 1 + profitData.efficiencyBonus / 100;
+        const efficiencyMultiplier = profitData.efficiencyMultiplier;
         for (const material of profitData.materialCosts) {
             const totalMaterial = material.amount * actionsCount * efficiencyMultiplier;
             const totalMaterialCost = material.totalCost * actionsCount * efficiencyMultiplier;

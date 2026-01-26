@@ -18,16 +18,14 @@ import {
 } from '../../utils/tea-parser.js';
 import { calculateBonusRevenue } from '../../utils/bonus-revenue-calculator.js';
 import { getItemPrice } from '../../utils/market-data.js';
+import { MARKET_TAX } from '../../utils/profit-constants.js';
+import { calculateProfitPerAction, calculateProfitPerDay, calculateDrinksPerHour } from '../../utils/profit-helpers.js';
 
 /**
  * ProfitCalculator class handles profit calculations for production actions
  */
 class ProfitCalculator {
     constructor() {
-        // Constants
-        this.MARKET_TAX = 0.02; // 2% marketplace tax
-        this.DRINKS_PER_HOUR = 12; // Average drink consumption per hour
-
         // Cached static game data (never changes during session)
         this._itemDetailMap = null;
         this._actionDetailMap = null;
@@ -164,7 +162,7 @@ class ProfitCalculator {
         const communityEfficiency = this.calculateCommunityBuffBonus(communityBuffLevel, actionDetails.type);
 
         // Total efficiency bonus (all sources additive)
-        const efficiencyBonus =
+        const totalEfficiency =
             levelEfficiency + houseEfficiency + equipmentEfficiency + teaEfficiency + communityEfficiency;
 
         // Calculate equipment speed bonus
@@ -189,7 +187,7 @@ class ProfitCalculator {
         // Calculate efficiency multiplier
         // Formula matches original MWI Tools: 1 + efficiency%
         // Example: 150% efficiency → 1 + 1.5 = 2.5x multiplier
-        const efficiencyMultiplier = 1 + efficiencyBonus / 100;
+        const efficiencyMultiplier = 1 + totalEfficiency / 100;
 
         // Items produced per hour (with efficiency multiplier)
         const itemsPerHour = actionsPerHour * outputAmount * efficiencyMultiplier;
@@ -216,7 +214,7 @@ class ProfitCalculator {
         const outputPrice = getItemPrice(itemHrid, { context: 'profit', side: 'sell' }) || 0;
 
         // Apply market tax (2% tax on sales)
-        const priceAfterTax = outputPrice * (1 - this.MARKET_TAX);
+        const priceAfterTax = outputPrice * (1 - MARKET_TAX);
 
         // Cost per item (without efficiency scaling)
         const costPerItem = totalMaterialCost / outputAmount;
@@ -265,11 +263,13 @@ class ProfitCalculator {
             itemPrice,
             outputPrice, // Output price before tax (bid or ask based on mode)
             priceAfterTax, // Output price after 2% tax (bid or ask based on mode)
+            revenuePerHour,
             profitPerItem,
             profitPerHour,
-            profitPerDay: profitPerHour * 24, // Profit per day
+            profitPerAction: calculateProfitPerAction(profitPerHour, actionsPerHour), // Profit per attempt
+            profitPerDay: calculateProfitPerDay(profitPerHour), // Profit per day
             bonusRevenue, // Bonus revenue from essences and rare finds
-            efficiencyBonus, // Total efficiency
+            totalEfficiency, // Total efficiency percentage
             levelEfficiency, // Level advantage efficiency
             houseEfficiency, // House room efficiency
             equipmentEfficiency, // Equipment efficiency
@@ -511,8 +511,8 @@ class ProfitCalculator {
             // Get tea price based on pricing mode (uses 'profit' context with 'buy' side)
             const teaPrice = getItemPrice(drink.itemHrid, { context: 'profit', side: 'buy' }) || 0;
 
-            // Drink Concentration increases consumption rate: base 12/hour × (1 + DC%)
-            const drinksPerHour = 12 * (1 + drinkConcentration);
+            // Drink Concentration increases consumption rate
+            const drinksPerHour = calculateDrinksPerHour(drinkConcentration);
 
             costs.push({
                 itemHrid: drink.itemHrid,

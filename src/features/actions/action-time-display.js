@@ -13,18 +13,19 @@
 
 import dataManager from '../../core/data-manager.js';
 import config from '../../core/config.js';
+import domObserver from '../../core/dom-observer.js';
+import marketAPI from '../../api/marketplace.js';
+import { calculateGatheringProfit } from './gathering-profit.js';
+import profitCalculator from '../market/profit-calculator.js';
 import { calculateActionStats } from '../../utils/action-calculator.js';
 import { timeReadable, formatWithSeparator } from '../../utils/formatters.js';
-import domObserver from '../../core/dom-observer.js';
 import {
     parseArtisanBonus,
     getDrinkConcentration,
     parseGatheringBonus,
     parseGourmetBonus,
 } from '../../utils/tea-parser.js';
-import { calculateGatheringProfit } from './gathering-profit.js';
-import profitCalculator from '../market/profit-calculator.js';
-import marketAPI from '../../api/marketplace.js';
+import { calculateQueueProfitBreakdown, calculateActionsPerHour } from '../../utils/profit-helpers.js';
 
 /**
  * ActionTimeDisplay class manages the time display panel and queue tooltips
@@ -378,7 +379,7 @@ class ActionTimeDisplay {
         }
 
         const { actionTime, totalEfficiency } = stats;
-        const baseActionsPerHour = 3600 / actionTime;
+        const baseActionsPerHour = calculateActionsPerHour(actionTime);
 
         // Calculate average actions per attempt from efficiency
         const guaranteedActions = 1 + Math.floor(totalEfficiency / 100);
@@ -1334,7 +1335,7 @@ class ActionTimeDisplay {
 
         const valueMode = config.getSettingValue('actionQueue_valueMode', 'profit');
 
-        // Get profit data (already has profitPerHour and actionsPerHour calculated)
+        // Get profit data (already has profitPerAction calculated)
         let profitData = null;
         const gatheringProfit = await calculateGatheringProfit(action.actionHrid);
         if (gatheringProfit) {
@@ -1347,29 +1348,24 @@ class ActionTimeDisplay {
             return null;
         }
 
-        // Get value per hour based on mode
-        let valuePerHour = null;
-        if (valueMode === 'estimated_value' && profitData.revenuePerHour !== undefined) {
-            valuePerHour = profitData.revenuePerHour;
-        } else if (profitData.profitPerHour !== undefined) {
-            valuePerHour = profitData.profitPerHour;
+        const attemptsForValue = action.actualAttempts ?? action.count ?? 0;
+        if (!attemptsForValue) {
+            return 0;
         }
 
-        if (valuePerHour === null || !profitData.actionsPerHour) {
+        if (typeof profitData.actionsPerHour !== 'number') {
             return null;
         }
 
-        // CRITICAL: Queue always displays ATTEMPTS, never item counts
-        // - GATHERING: "Gather 726 times" = 726 attempts
-        // - PRODUCTION: "Produce 237 times" = 237 attempts
-        // Use action.count directly for both - no efficiency division needed
-        const actualAttempts = action.count;
+        const breakdown = calculateQueueProfitBreakdown({
+            profitPerHour: profitData.profitPerHour,
+            actionsPerHour: profitData.actionsPerHour,
+            actionCount: attemptsForValue,
+            revenuePerHour: profitData.revenuePerHour,
+            valueMode,
+        });
 
-        // Calculate total profit using EXACT same formula as task calculator
-        // Task uses: (profitPerHour / actionsPerHour) * quantity
-        // This ensures identical floating point results
-        const profitPerAction = valuePerHour / profitData.actionsPerHour;
-        return profitPerAction * actualAttempts;
+        return breakdown.totalProfit;
     }
 
     /**

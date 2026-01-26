@@ -24,22 +24,13 @@ import { stackAdditive } from '../../utils/efficiency.js';
 import { formatWithSeparator, formatPercentage } from '../../utils/formatters.js';
 import { calculateBonusRevenue } from '../../utils/bonus-revenue-calculator.js';
 import { getItemPrice } from '../../utils/market-data.js';
-
-/**
- * Action types for gathering skills (3 skills)
- */
-const GATHERING_TYPES = ['/action_types/foraging', '/action_types/woodcutting', '/action_types/milking'];
-
-/**
- * Action types for production skills that benefit from Gourmet Tea (5 skills)
- */
-const PRODUCTION_TYPES = [
-    '/action_types/brewing',
-    '/action_types/cooking',
-    '/action_types/cheesesmithing',
-    '/action_types/crafting',
-    '/action_types/tailoring',
-];
+import { GATHERING_TYPES, PRODUCTION_TYPES } from '../../utils/profit-constants.js';
+import {
+    calculateProfitPerAction,
+    calculateProfitPerDay,
+    calculateDrinksPerHour,
+    calculateActionsPerHour,
+} from '../../utils/profit-helpers.js';
 
 /**
  * Cache for processing action conversions (inputItemHrid → conversion data)
@@ -124,7 +115,7 @@ export async function calculateGatheringProfit(actionHrid) {
     const actualTimePerActionSec = baseTimePerActionSec / (1 + speedBonus);
 
     // Calculate actions per hour
-    const actionsPerHour = 3600 / actualTimePerActionSec;
+    const actionsPerHour = calculateActionsPerHour(actualTimePerActionSec);
 
     // Get character's actual equipped drink slots for this action type (from WebSocket data)
     const drinkSlots = dataManager.getActionDrinkSlots(actionDetail.type);
@@ -179,8 +170,7 @@ export async function calculateGatheringProfit(actionHrid) {
     }
 
     // Calculate drink consumption costs
-    // Drink Concentration increases consumption rate: base 12/hour × (1 + DC%)
-    const drinksPerHour = 12 * (1 + drinkConcentration);
+    const drinksPerHour = calculateDrinksPerHour(drinkConcentration);
     let drinkCostPerHour = 0;
     const drinkCosts = [];
     for (const drink of drinkSlots) {
@@ -382,11 +372,11 @@ export async function calculateGatheringProfit(actionHrid) {
 
     // Calculate net profit
     const profitPerHour = revenuePerHour - drinkCostPerHour;
-    const profitPerDay = profitPerHour * 24;
 
     return {
         profitPerHour,
-        profitPerDay,
+        profitPerAction: calculateProfitPerAction(profitPerHour, actionsPerHour), // Profit per attempt
+        profitPerDay: calculateProfitPerDay(profitPerHour), // Profit per day
         revenuePerHour,
         drinkCostPerHour,
         drinkCosts, // Array of individual drink costs {name, priceEach, costPerHour}

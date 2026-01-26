@@ -8,9 +8,10 @@ import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
 import webSocketHook from '../../core/websocket.js';
-import { numberFormatter, timeReadable, formatPercentage } from '../../utils/formatters.js';
 import { calculateTaskProfit } from './task-profit-calculator.js';
+import { numberFormatter, timeReadable, formatPercentage } from '../../utils/formatters.js';
 import { GAME, TOOLASHA } from '../../utils/selectors.js';
+import { calculateSecondsForActions } from '../../utils/profit-helpers.js';
 
 // Compiled regex pattern (created once, reused for performance)
 const REGEX_TASK_PROGRESS = /(\d+)\s*\/\s*(\d+)/;
@@ -408,7 +409,7 @@ class TaskProfitDisplay {
 
             // Efficiency reduces the number of actions needed
             const actualActionsNeeded = remainingActions / efficiencyMultiplier;
-            const totalSeconds = (actualActionsNeeded / actionsPerHour) * 3600;
+            const totalSeconds = calculateSecondsForActions(actualActionsNeeded, actionsPerHour);
             timeEstimate = timeReadable(totalSeconds);
         }
 

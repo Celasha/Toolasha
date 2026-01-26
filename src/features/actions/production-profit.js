@@ -76,7 +76,7 @@ export function formatProfitDisplay(profitData) {
         ),
         costs: Math.round(profitData.materialCostPerHour + profitData.totalTeaCostPerHour),
         actionsPerHour: profitData.actionsPerHour,
-        totalEfficiency: profitData.efficiencyBonus,
+        totalEfficiency: profitData.totalEfficiency,
 
         // Output details
         baseOutputItems: profitData.itemsPerHour,

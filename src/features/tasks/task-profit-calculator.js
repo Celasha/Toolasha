@@ -191,8 +191,8 @@ async function calculateGatheringTaskProfit(actionHrid, quantity) {
         };
     }
 
-    // Calculate per-action profit from per-hour profit
-    const profitPerAction = profitData.profitPerHour / profitData.actionsPerHour;
+    // Use pre-calculated profitPerAction from profit calculator
+    const profitPerAction = profitData.profitPerAction;
 
     return {
         totalValue: profitPerAction * quantity,
@@ -240,8 +240,10 @@ async function calculateProductionTaskProfit(actionHrid, quantity) {
         };
     }
 
-    // Calculate per-action values from per-hour values
-    const profitPerAction = profitData.profitPerHour / profitData.actionsPerHour;
+    // Use pre-calculated profitPerAction from profit calculator
+    const profitPerAction = profitData.profitPerAction;
+
+    // Calculate per-action values for breakdown display
     const revenuePerAction =
         (profitData.itemsPerHour * profitData.priceAfterTax + profitData.gourmetBonusItems * profitData.priceAfterTax) /
         profitData.actionsPerHour;
@@ -267,7 +269,7 @@ async function calculateProductionTaskProfit(actionHrid, quantity) {
             actionsPerHour: profitData.actionsPerHour,
             itemsPerAction: profitData.itemsPerHour / profitData.actionsPerHour,
             bonusRevenue: profitData.bonusRevenue, // Pass through bonus revenue data
-            efficiencyMultiplier: profitData.details?.efficiencyMultiplier || 1, // Pass through efficiency multiplier
+            efficiencyMultiplier: profitData.efficiencyMultiplier || 1, // Pass through efficiency multiplier
         },
     };
 }
