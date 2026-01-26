@@ -79,9 +79,9 @@ class EmptyQueueNotification {
 
     /**
      * Check if action queue is empty and send notification
-     * @param {Object} data - WebSocket data (unused, but kept for handler signature)
+     * @param {Object} _data - WebSocket data (unused, but kept for handler signature)
      */
-    checkActionQueue(data) {
+    checkActionQueue(_data) {
         if (!config.getSetting('notifiEmptyAction')) {
             return;
         }
