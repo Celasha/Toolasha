@@ -1,46 +1,57 @@
 {
-  "name": "toolasha",
-  "version": "0.5.15",
-  "description": "Toolasha - Enhanced tools for Milky Way Idle",
-  "type": "module",
-  "scripts": {
-    "build": "rollup -c",
-    "watch": "rollup -c -w",
-    "dev": "rollup -c -w",
-    "test": "echo \"Tests coming soon\" && exit 0",
-    "lint": "eslint src/",
-    "lint:fix": "eslint src/ --fix",
-    "format": "prettier --write \"src/**/*.js\" \"*.config.js\"",
-    "format:check": "prettier --check \"src/**/*.js\" \"*.config.js\"",
-    "prepare": "husky"
-  },
-  "keywords": [
-    "userscript",
-    "milkywayidle",
-    "tampermonkey"
-  ],
-  "author": "bot7420",
-  "license": "CC-BY-NC-SA-4.0",
-  "devDependencies": {
-    "@rollup/plugin-commonjs": "^25.0.7",
-    "@rollup/plugin-node-resolve": "^15.2.3",
-    "@rollup/plugin-terser": "^0.4.4",
-    "eslint": "^9.39.2",
-    "eslint-config-prettier": "^10.1.8",
-    "globals": "^17.1.0",
-    "husky": "^9.1.7",
-    "lint-staged": "^16.2.7",
-    "prettier": "^3.8.1",
-    "rollup": "^4.9.5",
-    "rollup-plugin-banner2": "^1.2.2"
-  },
-  "lint-staged": {
-    "src/**/*.js": [
-      "eslint --fix",
-      "prettier --write"
+    "name": "toolasha",
+    "version": "0.5.15",
+    "description": "Toolasha - Enhanced tools for Milky Way Idle",
+    "type": "module",
+    "scripts": {
+        "build": "rollup -c",
+        "build:check": "npm run build && git diff --exit-code dist/Toolasha.user.js",
+        "watch": "rollup -c -w",
+        "dev": "rollup -c -w",
+        "test": "echo \"Tests coming soon\" && exit 0",
+        "lint": "eslint src/",
+        "lint:fix": "eslint src/ --fix",
+        "format": "prettier --write \"src/**/*.js\" \"*.config.js\"",
+        "format:check": "prettier --check \"src/**/*.js\" \"*.config.js\"",
+        "version:sync": "node scripts/sync-version.js",
+        "version:patch": "npm version patch --no-git-tag-version && npm run version:sync",
+        "version:minor": "npm version minor --no-git-tag-version && npm run version:sync",
+        "version:major": "npm version major --no-git-tag-version && npm run version:sync",
+        "prepare": "husky"
+    },
+    "keywords": [
+        "userscript",
+        "milkywayidle",
+        "tampermonkey"
     ],
-    "*.config.js": [
-      "prettier --write"
-    ]
-  }
+    "author": "bot7420",
+    "license": "CC-BY-NC-SA-4.0",
+    "devDependencies": {
+        "@rollup/plugin-commonjs": "^25.0.7",
+        "@rollup/plugin-node-resolve": "^15.2.3",
+        "@rollup/plugin-terser": "^0.4.4",
+        "eslint": "^9.39.2",
+        "eslint-config-prettier": "^10.1.8",
+        "globals": "^17.1.0",
+        "husky": "^9.1.7",
+        "lint-staged": "^16.2.7",
+        "prettier": "^3.8.1",
+        "rollup": "^4.9.5",
+        "rollup-plugin-banner2": "^1.2.2"
+    },
+    "lint-staged": {
+        "package.json": [
+            "node scripts/sync-version.js",
+            "git add userscript-header.txt README.md src/main.js"
+        ],
+        "src/**/*.js": [
+            "eslint --fix",
+            "prettier --write",
+            "bash -c 'npm run build'",
+            "git add dist/Toolasha.user.js"
+        ],
+        "*.config.js": [
+            "prettier --write"
+        ]
+    }
 }

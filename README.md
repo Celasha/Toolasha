@@ -1,6 +1,6 @@
 # Toolasha
 
-![Version](https://img.shields.io/badge/version-0.4.5-orange?style=flat-square) ![Status](https://img.shields.io/badge/status-pre--release-yellow?style=flat-square) ![License](https://img.shields.io/badge/license-CC--BY--NC--SA--4.0-blue?style=flat-square)
+![Version](https://img.shields.io/badge/version-0.5.15-orange?style=flat-square) ![Status](https://img.shields.io/badge/status-pre--release-yellow?style=flat-square) ![License](https://img.shields.io/badge/license-CC--BY--NC--SA--4.0-blue?style=flat-square)
 
 Modular, maintainable rewrite of MWITools userscript for Milky Way Idle.
 
@@ -48,9 +48,43 @@ npm run format
 # Build the userscript
 npm run build
 
+# Build and verify it's up-to-date (useful before pushing)
+npm run build:check
+
 # Watch mode (auto-rebuild)
 npm run dev
 ```
+
+### Version Management
+
+This project keeps version numbers in sync across three files automatically:
+
+**How to bump version:**
+
+```bash
+# Option 1: Edit package.json manually (simple!)
+# Just change the version number in package.json
+# Pre-commit hook will auto-sync to other files
+
+# Option 2: Use npm scripts (creates git tag)
+npm run version:patch   # 0.5.09 → 0.5.10 (bug fixes)
+npm run version:minor   # 0.5.09 → 0.6.0  (new features)
+npm run version:major   # 0.5.09 → 1.0.0  (breaking changes)
+```
+
+**Files with version info:**
+
+- `package.json` - Source of truth
+- `userscript-header.txt` - Auto-synced on commit
+- `README.md` - Auto-synced on commit (badge & footer)
+- `src/main.js` - Auto-synced on commit (Toolasha.version)
+- `dist/Toolasha.user.js` - Auto-generated on build
+
+**Safety nets:**
+
+- Pre-commit hook syncs versions automatically
+- CI verifies all versions match
+- Can't accidentally get out of sync!
 
 ### Pre-commit Hooks
 
@@ -58,9 +92,18 @@ This project uses **Husky** to automatically run checks before each commit:
 
 - ✅ ESLint checks for errors (warnings won't block)
 - ✅ Prettier formats your code automatically
+- ✅ **Version sync** - When you edit `package.json`, version auto-syncs to `userscript-header.txt`
+- ✅ **Automatic rebuild** - When you commit source changes, the userscript is automatically rebuilt
+- ✅ **Auto-stage files** - Updated `dist/Toolasha.user.js` and `userscript-header.txt` are automatically staged
 - ✅ Only runs on files you're committing (fast!)
 
 **No setup needed** - hooks install automatically when you run `npm install`.
+
+**How it works:**
+
+- When you commit changes to `package.json`, the version is synced to `userscript-header.txt`
+- When you commit changes to `src/**/*.js` files, the userscript is automatically rebuilt
+- All updated files are staged automatically
 
 ### CI/CD
 
@@ -69,6 +112,12 @@ GitHub Actions runs on every push and PR:
 - Linting checks (ESLint)
 - Formatting checks (Prettier)
 - Build verification
+- **Build sync verification** - Ensures `dist/Toolasha.user.js` is up-to-date with source code
+- **Version sync verification** - Ensures all version numbers match across files
+
+**Build Sync Check:** The CI workflow rebuilds the userscript and verifies that the committed `dist/Toolasha.user.js` matches the source code. If someone bypasses the pre-commit hook (e.g., `git commit --no-verify`) or manually edits the dist file, the CI build will fail with a clear error message.
+
+**Version Sync Check:** The CI workflow verifies that the version in `userscript-header.txt` matches `package.json`. This catches manual edits that bypass the sync script.
 
 ### Code Style
 
@@ -415,7 +464,7 @@ node tests/MODULE_NAME.test.js
 
 ---
 
-**Version:** 0.4.5 (Pre-release)
+**Version:** 0.5.15 (Pre-release)
 **Status:** Development/Testing
 **Original Author:** bot7420
 **Updated By:** Celasha and Claude
