@@ -5505,7 +5505,7 @@
     /**
      * Calculate bonus revenue from essence and rare find drops
      * @param {Object} actionDetails - Action details from game data
-     * @param {number} actionsPerHour - Actions per hour
+     * @param {number} actionsPerHour - Base actions per hour (efficiency not applied)
      * @param {Map} characterEquipment - Equipment map
      * @param {Object} itemDetailMap - Item details map
      * @returns {Object} Bonus revenue data with essence and rare find drops
@@ -5763,23 +5763,6 @@
             return 0;
         }
         return profitPerHour / actionsPerHour;
-    }
-
-    /**
-     * Calculate total profit for a number of actions/attempts
-     *
-     * @param {number} profitPerHour - Profit per hour (includes efficiency)
-     * @param {number} actionsPerHour - Base actions per hour (without efficiency)
-     * @param {number} actionCount - Number of actions/attempts
-     * @returns {number} Total profit (0 if invalid input)
-     *
-     * @example
-     * // Queue shows "Produce 100 times" with 75,000 profit/hr and 600 actions/hr
-     * calculateTotalProfitForActions(75000, 600, 100) // Returns 12,500
-     */
-    function calculateTotalProfitForActions(profitPerHour, actionsPerHour, actionCount) {
-        const profitPerAction = calculateProfitPerAction(profitPerHour, actionsPerHour);
-        return profitPerAction * actionCount;
     }
 
     /**
@@ -7869,13 +7852,11 @@
         let revenuePerHour = 0;
         let processingRevenueBonus = 0; // Track extra revenue from Processing Tea
         const processingConversions = []; // Track conversion details for display
-        const baseOutputs = []; // Track base item outputs for display
+        const baseOutputs = []; // Display-only base item outputs (not used for totals)
         const dropTable = actionDetail.dropTable;
 
         for (const drop of dropTable) {
             const rawPrice = getItemPrice(drop.itemHrid, { context: 'profit', side: 'sell' }) || 0;
-            const rawPriceAfterTax = calculatePriceAfterTax(rawPrice);
-
             // Apply gathering quantity bonus to drop amounts
             const baseAvgAmount = (drop.minCount + drop.maxCount) / 2;
             const avgAmountPerAction = baseAvgAmount * (1 + totalGathering);
@@ -7939,7 +7920,6 @@
                     itemsPerHour: rawItemsPerHour,
                     dropRate: drop.dropRate,
                     priceEach: rawPrice,
-                    priceAfterTax: rawPriceAfterTax,
                     revenuePerHour: rawItemsPerHour * rawPrice + processedItemsPerHour * processedPrice,
                 });
             } else {
@@ -7954,7 +7934,6 @@
                     itemsPerHour: rawItemsPerHour,
                     dropRate: drop.dropRate,
                     priceEach: rawPrice,
-                    priceAfterTax: rawPriceAfterTax,
                     revenuePerHour: rawItemsPerHour * rawPrice,
                 });
             }
@@ -8001,7 +7980,7 @@
             drinkCostPerHour,
             drinkCosts, // Array of individual drink costs {name, priceEach, costPerHour}
             actionsPerHour, // Base actions per hour (without efficiency)
-            baseOutputs, // Array of base item outputs {name, itemsPerHour, dropRate, priceEach, revenuePerHour}
+            baseOutputs, // Display-only base outputs {name, itemsPerHour, dropRate, priceEach, revenuePerHour}
             totalEfficiency, // Total efficiency percentage
             efficiencyMultiplier, // Efficiency as multiplier (1 + totalEfficiency / 100)
             speedBonus,
@@ -13992,7 +13971,7 @@
             1
         );
 
-        // Bonus Drops subsections - split by type
+        // Bonus Drops subsections - split by type (bonus drops are base actions/hour)
         const bonusDrops = profitData.bonusRevenue?.bonusDrops || [];
         const efficiencyMultiplier = profitData.efficiencyMultiplier || 1;
         const essenceDrops = bonusDrops.filter((drop) => drop.type === 'essence');
@@ -14260,9 +14239,12 @@
                 } else if (newValue > 0) {
                     // Calculate total profit for selected actions
                     const actualAttempts = Math.ceil(newValue / profitData.efficiencyMultiplier);
-                    const totalProfit = Math.round(
-                        calculateTotalProfitForActions(profitData.profitPerHour, profitData.actionsPerHour, actualAttempts)
-                    );
+                    const queueBreakdown = calculateQueueProfitBreakdown({
+                        profitPerHour: profitData.profitPerHour,
+                        actionsPerHour: profitData.actionsPerHour,
+                        actionCount: actualAttempts,
+                    });
+                    const totalProfit = Math.round(queueBreakdown.totalProfit);
                     profitSummaryDiv.textContent = `${baseSummary} | Total profit: ${formatLargeNumber(totalProfit)}`;
                 } else {
                     profitSummaryDiv.textContent = `${baseSummary} | Total profit: 0`;
@@ -14698,9 +14680,12 @@
                     // Calculate total profit for selected actions
                     const efficiencyMultiplier = profitData.efficiencyMultiplier;
                     const actualAttempts = Math.ceil(newValue / efficiencyMultiplier);
-                    const totalProfit = Math.round(
-                        calculateTotalProfitForActions(profitData.profitPerHour, profitData.actionsPerHour, actualAttempts)
-                    );
+                    const queueBreakdown = calculateQueueProfitBreakdown({
+                        profitPerHour: profitData.profitPerHour,
+                        actionsPerHour: profitData.actionsPerHour,
+                        actionCount: actualAttempts,
+                    });
+                    const totalProfit = Math.round(queueBreakdown.totalProfit);
                     profitSummaryDiv.textContent = `${baseSummary} | Total profit: ${formatLargeNumber(totalProfit)}`;
                 } else {
                     profitSummaryDiv.textContent = `${baseSummary} | Total profit: 0`;
@@ -14788,7 +14773,7 @@
             1
         );
 
-        // Bonus Drops subsections
+        // Bonus Drops subsections (bonus drops are base actions/hour)
         const bonusDrops = profitData.bonusRevenue?.bonusDrops || [];
         const essenceDrops = bonusDrops.filter((drop) => drop.type === 'essence');
         const rareFinds = bonusDrops.filter((drop) => drop.type === 'rare_find');

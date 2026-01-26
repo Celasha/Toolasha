@@ -31,7 +31,6 @@ import {
     calculateProfitPerDay,
     calculateDrinksPerHour,
     calculateActionsPerHour,
-    calculatePriceAfterTax,
 } from '../../utils/profit-helpers.js';
 
 /**
@@ -241,13 +240,11 @@ export async function calculateGatheringProfit(actionHrid) {
     let revenuePerHour = 0;
     let processingRevenueBonus = 0; // Track extra revenue from Processing Tea
     const processingConversions = []; // Track conversion details for display
-    const baseOutputs = []; // Track base item outputs for display
+    const baseOutputs = []; // Display-only base item outputs (not used for totals)
     const dropTable = actionDetail.dropTable;
 
     for (const drop of dropTable) {
         const rawPrice = getItemPrice(drop.itemHrid, { context: 'profit', side: 'sell' }) || 0;
-        const rawPriceAfterTax = calculatePriceAfterTax(rawPrice);
-
         // Apply gathering quantity bonus to drop amounts
         const baseAvgAmount = (drop.minCount + drop.maxCount) / 2;
         const avgAmountPerAction = baseAvgAmount * (1 + totalGathering);
@@ -311,7 +308,6 @@ export async function calculateGatheringProfit(actionHrid) {
                 itemsPerHour: rawItemsPerHour,
                 dropRate: drop.dropRate,
                 priceEach: rawPrice,
-                priceAfterTax: rawPriceAfterTax,
                 revenuePerHour: rawItemsPerHour * rawPrice + processedItemsPerHour * processedPrice,
             });
         } else {
@@ -326,7 +322,6 @@ export async function calculateGatheringProfit(actionHrid) {
                 itemsPerHour: rawItemsPerHour,
                 dropRate: drop.dropRate,
                 priceEach: rawPrice,
-                priceAfterTax: rawPriceAfterTax,
                 revenuePerHour: rawItemsPerHour * rawPrice,
             });
         }
@@ -373,7 +368,7 @@ export async function calculateGatheringProfit(actionHrid) {
         drinkCostPerHour,
         drinkCosts, // Array of individual drink costs {name, priceEach, costPerHour}
         actionsPerHour, // Base actions per hour (without efficiency)
-        baseOutputs, // Array of base item outputs {name, itemsPerHour, dropRate, priceEach, revenuePerHour}
+        baseOutputs, // Display-only base outputs {name, itemsPerHour, dropRate, priceEach, revenuePerHour}
         totalEfficiency, // Total efficiency percentage
         efficiencyMultiplier, // Efficiency as multiplier (1 + totalEfficiency / 100)
         speedBonus,

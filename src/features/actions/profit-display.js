@@ -12,7 +12,7 @@ import { calculateProductionProfit } from './production-profit.js';
 import { formatWithSeparator, formatPercentage, formatLargeNumber } from '../../utils/formatters.js';
 import { createCollapsibleSection } from '../../utils/ui-components.js';
 import { findActionInput, attachInputListeners } from '../../utils/action-panel-helper.js';
-import { calculateQueueProfitBreakdown, calculateTotalProfitForActions } from '../../utils/profit-helpers.js';
+import { calculateQueueProfitBreakdown } from '../../utils/profit-helpers.js';
 import { MARKET_TAX } from '../../utils/profit-constants.js';
 
 /**
@@ -73,7 +73,7 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
         1
     );
 
-    // Bonus Drops subsections - split by type
+    // Bonus Drops subsections - split by type (bonus drops are base actions/hour)
     const bonusDrops = profitData.bonusRevenue?.bonusDrops || [];
     const efficiencyMultiplier = profitData.efficiencyMultiplier || 1;
     const essenceDrops = bonusDrops.filter((drop) => drop.type === 'essence');
@@ -341,9 +341,12 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
             } else if (newValue > 0) {
                 // Calculate total profit for selected actions
                 const actualAttempts = Math.ceil(newValue / profitData.efficiencyMultiplier);
-                const totalProfit = Math.round(
-                    calculateTotalProfitForActions(profitData.profitPerHour, profitData.actionsPerHour, actualAttempts)
-                );
+                const queueBreakdown = calculateQueueProfitBreakdown({
+                    profitPerHour: profitData.profitPerHour,
+                    actionsPerHour: profitData.actionsPerHour,
+                    actionCount: actualAttempts,
+                });
+                const totalProfit = Math.round(queueBreakdown.totalProfit);
                 profitSummaryDiv.textContent = `${baseSummary} | Total profit: ${formatLargeNumber(totalProfit)}`;
             } else {
                 profitSummaryDiv.textContent = `${baseSummary} | Total profit: 0`;
@@ -779,9 +782,12 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
                 // Calculate total profit for selected actions
                 const efficiencyMultiplier = profitData.efficiencyMultiplier;
                 const actualAttempts = Math.ceil(newValue / efficiencyMultiplier);
-                const totalProfit = Math.round(
-                    calculateTotalProfitForActions(profitData.profitPerHour, profitData.actionsPerHour, actualAttempts)
-                );
+                const queueBreakdown = calculateQueueProfitBreakdown({
+                    profitPerHour: profitData.profitPerHour,
+                    actionsPerHour: profitData.actionsPerHour,
+                    actionCount: actualAttempts,
+                });
+                const totalProfit = Math.round(queueBreakdown.totalProfit);
                 profitSummaryDiv.textContent = `${baseSummary} | Total profit: ${formatLargeNumber(totalProfit)}`;
             } else {
                 profitSummaryDiv.textContent = `${baseSummary} | Total profit: 0`;
@@ -869,7 +875,7 @@ function buildGatheringActionsBreakdown(profitData, actionsCount) {
         1
     );
 
-    // Bonus Drops subsections
+    // Bonus Drops subsections (bonus drops are base actions/hour)
     const bonusDrops = profitData.bonusRevenue?.bonusDrops || [];
     const essenceDrops = bonusDrops.filter((drop) => drop.type === 'essence');
     const rareFinds = bonusDrops.filter((drop) => drop.type === 'rare_find');

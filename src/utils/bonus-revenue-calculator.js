@@ -12,7 +12,7 @@ import { calculateHouseRareFind } from './house-efficiency.js';
 /**
  * Calculate bonus revenue from essence and rare find drops
  * @param {Object} actionDetails - Action details from game data
- * @param {number} actionsPerHour - Actions per hour
+ * @param {number} actionsPerHour - Base actions per hour (efficiency not applied)
  * @param {Map} characterEquipment - Equipment map
  * @param {Object} itemDetailMap - Item details map
  * @returns {Object} Bonus revenue data with essence and rare find drops
