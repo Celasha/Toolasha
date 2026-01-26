@@ -670,12 +670,15 @@ class ActionTimeDisplay {
                 white-space: nowrap;
                 vertical-align: bottom;
             `;
-            // Set full text as tooltip
+            // Set full text as tooltip on both stats span and parent element
             const fullText = cleanActionName + ' ' + statsText;
             statsSpan.setAttribute('title', fullText);
+            actionNameElement.setAttribute('title', fullText);
         } else {
             // FULL WIDTH MODE: Show all stats
             statsSpan.style.cssText = `color: var(--text-color-secondary, ${config.COLOR_TEXT_SECONDARY});`;
+            // Remove tooltip in full width mode
+            actionNameElement.removeAttribute('title');
         }
 
         statsSpan.textContent = ' ' + statsText;
