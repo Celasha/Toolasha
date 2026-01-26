@@ -24,12 +24,14 @@ import { stackAdditive } from '../../utils/efficiency.js';
 import { formatWithSeparator, formatPercentage } from '../../utils/formatters.js';
 import { calculateBonusRevenue } from '../../utils/bonus-revenue-calculator.js';
 import { getItemPrice } from '../../utils/market-data.js';
-import { GATHERING_TYPES, PRODUCTION_TYPES } from '../../utils/profit-constants.js';
+import { GATHERING_TYPES, PRODUCTION_TYPES, MARKET_TAX } from '../../utils/profit-constants.js';
 import {
+    calculateEfficiencyMultiplier,
     calculateProfitPerAction,
     calculateProfitPerDay,
     calculateDrinksPerHour,
     calculateActionsPerHour,
+    calculatePriceAfterTax,
 } from '../../utils/profit-helpers.js';
 
 /**
@@ -231,7 +233,7 @@ export async function calculateGatheringProfit(actionHrid) {
 
     // Calculate efficiency multiplier (matches production profit calculator pattern)
     // Efficiency "repeats the action" - we apply it to item outputs, not action rate
-    const efficiencyMultiplier = 1 + totalEfficiency / 100;
+    const efficiencyMultiplier = calculateEfficiencyMultiplier(totalEfficiency);
 
     // Calculate revenue from drop table
     // Processing happens PER ACTION (before efficiency multiplies the count)
@@ -244,7 +246,7 @@ export async function calculateGatheringProfit(actionHrid) {
 
     for (const drop of dropTable) {
         const rawPrice = getItemPrice(drop.itemHrid, { context: 'profit', side: 'sell' }) || 0;
-        const rawPriceAfterTax = rawPrice * 0.98;
+        const rawPriceAfterTax = calculatePriceAfterTax(rawPrice);
 
         // Apply gathering quantity bonus to drop amounts
         const baseAvgAmount = (drop.minCount + drop.maxCount) / 2;
@@ -278,21 +280,20 @@ export async function calculateGatheringProfit(actionHrid) {
 
             // Revenue per hour = per-action × actionsPerHour × efficiency
             const processedPrice = getItemPrice(processedItemHrid, { context: 'profit', side: 'sell' }) || 0;
-            const processedPriceAfterTax = processedPrice * 0.98;
 
             const rawItemsPerHour = actionsPerHour * drop.dropRate * rawPerAction * efficiencyMultiplier;
             const processedItemsPerHour = actionsPerHour * drop.dropRate * processedPerAction * efficiencyMultiplier;
 
-            revenuePerHour += rawItemsPerHour * rawPriceAfterTax;
-            revenuePerHour += processedItemsPerHour * processedPriceAfterTax;
+            revenuePerHour += rawItemsPerHour * rawPrice;
+            revenuePerHour += processedItemsPerHour * processedPrice;
 
             // Track processing details
             const rawItemName = gameData.itemDetailMap[drop.itemHrid]?.name || 'Unknown';
             const processedItemName = gameData.itemDetailMap[processedItemHrid]?.name || 'Unknown';
 
             // Value gain per conversion = cheese value - cost of milk used
-            const costOfMilkUsed = conversionRatio * rawPriceAfterTax;
-            const valueGainPerConversion = processedPriceAfterTax - costOfMilkUsed;
+            const costOfMilkUsed = conversionRatio * rawPrice;
+            const valueGainPerConversion = processedPrice - costOfMilkUsed;
             const revenueFromConversion = processedItemsPerHour * valueGainPerConversion;
 
             processingRevenueBonus += revenueFromConversion;
@@ -304,20 +305,20 @@ export async function calculateGatheringProfit(actionHrid) {
                 revenuePerHour: revenueFromConversion,
             });
 
-            // Store raw output only (processed items shown separately in Processing Bonus section)
+            // Store combined raw + processed revenue (processing bonus shown separately as extra value)
             baseOutputs.push({
                 name: rawItemName,
                 itemsPerHour: rawItemsPerHour,
                 dropRate: drop.dropRate,
                 priceEach: rawPrice,
                 priceAfterTax: rawPriceAfterTax,
-                revenuePerHour: rawItemsPerHour * rawPrice,
+                revenuePerHour: rawItemsPerHour * rawPrice + processedItemsPerHour * processedPrice,
             });
         } else {
             // No processing - simple calculation
             rawPerAction = avgAmountPerAction;
             const rawItemsPerHour = actionsPerHour * drop.dropRate * rawPerAction * efficiencyMultiplier;
-            revenuePerHour += rawItemsPerHour * rawPriceAfterTax;
+            revenuePerHour += rawItemsPerHour * rawPrice;
 
             const itemName = gameData.itemDetailMap[drop.itemHrid]?.name || 'Unknown';
             baseOutputs.push({
@@ -339,13 +340,12 @@ export async function calculateGatheringProfit(actionHrid) {
             // Use weighted average price for gourmet bonus
             if (processedItemHrid && processingBonus > 0) {
                 const processedPrice = getItemPrice(processedItemHrid, { context: 'profit', side: 'sell' }) || 0;
-                const processedPriceAfterTax = processedPrice * 0.98;
                 const weightedPrice =
-                    (rawPerAction * rawPriceAfterTax + processedPerAction * processedPriceAfterTax) /
+                    (rawPerAction * rawPrice + processedPerAction * processedPrice) /
                     (rawPerAction + processedPerAction);
                 revenuePerHour += bonusItemsPerHour * weightedPrice;
             } else {
-                revenuePerHour += bonusItemsPerHour * rawPriceAfterTax;
+                revenuePerHour += bonusItemsPerHour * rawPrice;
             }
         }
     }
@@ -359,8 +359,11 @@ export async function calculateGatheringProfit(actionHrid) {
     // Add bonus revenue to total revenue
     revenuePerHour += efficiencyBoostedBonusRevenue;
 
-    // Calculate net profit
-    const profitPerHour = revenuePerHour - drinkCostPerHour;
+    // Calculate market tax (2% of gross revenue)
+    const marketTax = revenuePerHour * MARKET_TAX;
+
+    // Calculate net profit (revenue - market tax - drink costs)
+    const profitPerHour = revenuePerHour - marketTax - drinkCostPerHour;
 
     return {
         profitPerHour,

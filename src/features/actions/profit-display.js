@@ -12,7 +12,8 @@ import { calculateProductionProfit } from './production-profit.js';
 import { formatWithSeparator, formatPercentage, formatLargeNumber } from '../../utils/formatters.js';
 import { createCollapsibleSection } from '../../utils/ui-components.js';
 import { findActionInput, attachInputListeners } from '../../utils/action-panel-helper.js';
-import { calculateHoursForActions } from '../../utils/profit-helpers.js';
+import { calculateQueueProfitBreakdown, calculateTotalProfitForActions } from '../../utils/profit-helpers.js';
+import { MARKET_TAX } from '../../utils/profit-constants.js';
 
 /**
  * Display gathering profit calculation in panel
@@ -37,10 +38,9 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
     // Create top-level summary
     const profit = Math.round(profitData.profitPerHour);
     const profitPerDay = Math.round(profitData.profitPerDay);
-    // Revenue is already after tax (calculated with 0.98 multiplier), so calculate gross revenue
-    const grossRevenue = Math.round(profitData.revenuePerHour / 0.98);
-    const marketTax = Math.round(grossRevenue * 0.02);
-    const revenue = grossRevenue;
+    // Revenue is now gross (pre-tax)
+    const revenue = Math.round(profitData.revenuePerHour);
+    const marketTax = Math.round(revenue * MARKET_TAX);
     const costs = Math.round(profitData.drinkCostPerHour + marketTax);
     const summary = `${formatLargeNumber(profit)}/hr, ${formatLargeNumber(profitPerDay)}/day | Total profit: 0`;
 
@@ -75,6 +75,7 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
 
     // Bonus Drops subsections - split by type
     const bonusDrops = profitData.bonusRevenue?.bonusDrops || [];
+    const efficiencyMultiplier = profitData.efficiencyMultiplier || 1;
     const essenceDrops = bonusDrops.filter((drop) => drop.type === 'essence');
     const rareFinds = bonusDrops.filter((drop) => drop.type === 'rare_find');
 
@@ -83,15 +84,17 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
     if (essenceDrops.length > 0) {
         const essenceContent = document.createElement('div');
         for (const drop of essenceDrops) {
-            const decimals = drop.dropsPerHour < 1 ? 2 : 1;
+            const adjustedDropsPerHour = drop.dropsPerHour * efficiencyMultiplier;
+            const adjustedRevenuePerHour = drop.revenuePerHour * efficiencyMultiplier;
+            const decimals = adjustedDropsPerHour < 1 ? 2 : 1;
             const line = document.createElement('div');
             line.style.marginLeft = '8px';
             const dropRatePct = formatPercentage(drop.dropRate, drop.dropRate < 0.01 ? 3 : 2);
-            line.textContent = `• ${drop.itemName}: ${drop.dropsPerHour.toFixed(decimals)}/hr (${dropRatePct}) → ${formatLargeNumber(Math.round(drop.revenuePerHour))}/hr`;
+            line.textContent = `• ${drop.itemName}: ${adjustedDropsPerHour.toFixed(decimals)}/hr (${dropRatePct}) → ${formatLargeNumber(Math.round(adjustedRevenuePerHour))}/hr`;
             essenceContent.appendChild(line);
         }
 
-        const essenceRevenue = essenceDrops.reduce((sum, d) => sum + d.revenuePerHour, 0);
+        const essenceRevenue = essenceDrops.reduce((sum, d) => sum + d.revenuePerHour * efficiencyMultiplier, 0);
         const essenceFindBonus = profitData.bonusRevenue?.essenceFindBonus || 0;
         essenceSection = createCollapsibleSection(
             '',
@@ -108,15 +111,17 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
     if (rareFinds.length > 0) {
         const rareFindContent = document.createElement('div');
         for (const drop of rareFinds) {
-            const decimals = drop.dropsPerHour < 1 ? 2 : 1;
+            const adjustedDropsPerHour = drop.dropsPerHour * efficiencyMultiplier;
+            const adjustedRevenuePerHour = drop.revenuePerHour * efficiencyMultiplier;
+            const decimals = adjustedDropsPerHour < 1 ? 2 : 1;
             const line = document.createElement('div');
             line.style.marginLeft = '8px';
             const dropRatePct = formatPercentage(drop.dropRate, drop.dropRate < 0.01 ? 3 : 2);
-            line.textContent = `• ${drop.itemName}: ${drop.dropsPerHour.toFixed(decimals)}/hr (${dropRatePct}) → ${formatLargeNumber(Math.round(drop.revenuePerHour))}/hr`;
+            line.textContent = `• ${drop.itemName}: ${adjustedDropsPerHour.toFixed(decimals)}/hr (${dropRatePct}) → ${formatLargeNumber(Math.round(adjustedRevenuePerHour))}/hr`;
             rareFindContent.appendChild(line);
         }
 
-        const rareFindRevenue = rareFinds.reduce((sum, d) => sum + d.revenuePerHour, 0);
+        const rareFindRevenue = rareFinds.reduce((sum, d) => sum + d.revenuePerHour * efficiencyMultiplier, 0);
         const rareFindBonus = profitData.bonusRevenue?.rareFindBonus || 0;
         rareFindSection = createCollapsibleSection(
             '',
@@ -178,7 +183,7 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
     const drinkCount = profitData.drinkCosts?.length || 0;
     const drinkCostsSection = createCollapsibleSection(
         '',
-        `Drink Costs: ${formatLargeNumber(costs)}/hr (${drinkCount} drink${drinkCount !== 1 ? 's' : ''})`,
+        `Drink Costs: ${formatLargeNumber(Math.round(profitData.drinkCostPerHour))}/hr (${drinkCount} drink${drinkCount !== 1 ? 's' : ''})`,
         null,
         drinkCostsContent,
         false,
@@ -336,8 +341,9 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
             } else if (newValue > 0) {
                 // Calculate total profit for selected actions
                 const actualAttempts = Math.ceil(newValue / profitData.efficiencyMultiplier);
-                const hoursNeeded = calculateHoursForActions(actualAttempts, profitData.actionsPerHour);
-                const totalProfit = Math.round(profitData.profitPerHour * hoursNeeded);
+                const totalProfit = Math.round(
+                    calculateTotalProfitForActions(profitData.profitPerHour, profitData.actionsPerHour, actualAttempts)
+                );
                 profitSummaryDiv.textContent = `${baseSummary} | Total profit: ${formatLargeNumber(totalProfit)}`;
             } else {
                 profitSummaryDiv.textContent = `${baseSummary} | Total profit: 0`;
@@ -431,7 +437,7 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
             bonusRevenueTotal
     );
     // Calculate market tax (2% of revenue)
-    const marketTax = Math.round(revenue * 0.02);
+    const marketTax = Math.round(revenue * MARKET_TAX);
     const costs = Math.round(profitData.materialCostPerHour + profitData.totalTeaCostPerHour + marketTax);
     const summary = `${formatLargeNumber(profit)}/hr, ${formatLargeNumber(profitPerDay)}/day | Total profit: 0`;
 
@@ -773,8 +779,9 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
                 // Calculate total profit for selected actions
                 const efficiencyMultiplier = profitData.efficiencyMultiplier;
                 const actualAttempts = Math.ceil(newValue / efficiencyMultiplier);
-                const hoursNeeded = calculateHoursForActions(actualAttempts, profitData.actionsPerHour);
-                const totalProfit = Math.round(profitData.profitPerHour * hoursNeeded);
+                const totalProfit = Math.round(
+                    calculateTotalProfitForActions(profitData.profitPerHour, profitData.actionsPerHour, actualAttempts)
+                );
                 profitSummaryDiv.textContent = `${baseSummary} | Total profit: ${formatLargeNumber(totalProfit)}`;
             } else {
                 profitSummaryDiv.textContent = `${baseSummary} | Total profit: 0`;
@@ -817,13 +824,21 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
  */
 function buildGatheringActionsBreakdown(profitData, actionsCount) {
     // Calculate actual attempts needed (input is desired output actions)
-    const actualAttempts = Math.ceil(actionsCount / profitData.efficiencyMultiplier);
-    const hoursNeeded = calculateHoursForActions(actualAttempts, profitData.actionsPerHour);
+    const efficiencyMultiplier = profitData.efficiencyMultiplier || 1;
+    const actualAttempts = Math.ceil(actionsCount / efficiencyMultiplier);
+    const queueBreakdown = calculateQueueProfitBreakdown({
+        profitPerHour: profitData.profitPerHour,
+        actionsPerHour: profitData.actionsPerHour,
+        actionCount: actualAttempts,
+    });
+    const hoursNeeded = queueBreakdown.hoursNeeded;
 
     // Calculate totals
     const totalRevenue = Math.round(profitData.revenuePerHour * hoursNeeded);
-    const totalCosts = Math.round(profitData.drinkCostPerHour * hoursNeeded);
-    const totalProfit = totalRevenue - totalCosts;
+    const totalMarketTax = Math.round(totalRevenue * MARKET_TAX);
+    const totalDrinkCosts = Math.round(profitData.drinkCostPerHour * hoursNeeded);
+    const totalCosts = totalDrinkCosts + totalMarketTax;
+    const totalProfit = Math.round(queueBreakdown.totalProfit);
 
     const detailsContent = document.createElement('div');
 
@@ -864,8 +879,10 @@ function buildGatheringActionsBreakdown(profitData, actionsCount) {
     if (essenceDrops.length > 0) {
         const essenceContent = document.createElement('div');
         for (const drop of essenceDrops) {
-            const totalDrops = drop.dropsPerHour * hoursNeeded;
-            const totalRevenueLine = drop.revenuePerHour * hoursNeeded;
+            const adjustedDropsPerHour = drop.dropsPerHour * efficiencyMultiplier;
+            const adjustedRevenuePerHour = drop.revenuePerHour * efficiencyMultiplier;
+            const totalDrops = adjustedDropsPerHour * hoursNeeded;
+            const totalRevenueLine = adjustedRevenuePerHour * hoursNeeded;
             const line = document.createElement('div');
             line.style.marginLeft = '8px';
             const dropRatePct = formatPercentage(drop.dropRate, drop.dropRate < 0.01 ? 3 : 2);
@@ -873,7 +890,10 @@ function buildGatheringActionsBreakdown(profitData, actionsCount) {
             essenceContent.appendChild(line);
         }
 
-        const essenceRevenue = essenceDrops.reduce((sum, d) => sum + d.revenuePerHour * hoursNeeded, 0);
+        const essenceRevenue = essenceDrops.reduce(
+            (sum, d) => sum + d.revenuePerHour * efficiencyMultiplier * hoursNeeded,
+            0
+        );
         const essenceFindBonus = profitData.bonusRevenue?.essenceFindBonus || 0;
         essenceSection = createCollapsibleSection(
             '',
@@ -890,8 +910,10 @@ function buildGatheringActionsBreakdown(profitData, actionsCount) {
     if (rareFinds.length > 0) {
         const rareFindContent = document.createElement('div');
         for (const drop of rareFinds) {
-            const totalDrops = drop.dropsPerHour * hoursNeeded;
-            const totalRevenueLine = drop.revenuePerHour * hoursNeeded;
+            const adjustedDropsPerHour = drop.dropsPerHour * efficiencyMultiplier;
+            const adjustedRevenuePerHour = drop.revenuePerHour * efficiencyMultiplier;
+            const totalDrops = adjustedDropsPerHour * hoursNeeded;
+            const totalRevenueLine = adjustedRevenuePerHour * hoursNeeded;
             const line = document.createElement('div');
             line.style.marginLeft = '8px';
             const dropRatePct = formatPercentage(drop.dropRate, drop.dropRate < 0.01 ? 3 : 2);
@@ -899,7 +921,10 @@ function buildGatheringActionsBreakdown(profitData, actionsCount) {
             rareFindContent.appendChild(line);
         }
 
-        const rareFindRevenue = rareFinds.reduce((sum, d) => sum + d.revenuePerHour * hoursNeeded, 0);
+        const rareFindRevenue = rareFinds.reduce(
+            (sum, d) => sum + d.revenuePerHour * efficiencyMultiplier * hoursNeeded,
+            0
+        );
         const rareFindBonus = profitData.bonusRevenue?.rareFindBonus || 0;
         rareFindSection = createCollapsibleSection(
             '',
@@ -965,7 +990,7 @@ function buildGatheringActionsBreakdown(profitData, actionsCount) {
     const drinkCount = profitData.drinkCosts?.length || 0;
     const drinkCostsSection = createCollapsibleSection(
         '',
-        `Drink Costs: ${formatLargeNumber(totalCosts)} (${drinkCount} drink${drinkCount !== 1 ? 's' : ''})`,
+        `Drink Costs: ${formatLargeNumber(totalDrinkCosts)} (${drinkCount} drink${drinkCount !== 1 ? 's' : ''})`,
         null,
         drinkCostsContent,
         false,
@@ -973,6 +998,24 @@ function buildGatheringActionsBreakdown(profitData, actionsCount) {
     );
 
     costsDiv.appendChild(drinkCostsSection);
+
+    // Market Tax subsection
+    const marketTaxContent = document.createElement('div');
+    const marketTaxLine = document.createElement('div');
+    marketTaxLine.style.marginLeft = '8px';
+    marketTaxLine.textContent = `• Market Tax: 2% of revenue → ${formatLargeNumber(totalMarketTax)}`;
+    marketTaxContent.appendChild(marketTaxLine);
+
+    const marketTaxSection = createCollapsibleSection(
+        '',
+        `Market Tax: ${formatLargeNumber(totalMarketTax)} (2%)`,
+        null,
+        marketTaxContent,
+        false,
+        1
+    );
+
+    costsDiv.appendChild(marketTaxSection);
 
     // Assemble breakdown
     detailsContent.appendChild(revenueDiv);
@@ -1023,7 +1066,12 @@ function buildProductionActionsBreakdown(profitData, actionsCount) {
     // Calculate actual attempts needed (input is desired output actions)
     const efficiencyMultiplier = profitData.efficiencyMultiplier;
     const actualAttempts = Math.ceil(actionsCount / efficiencyMultiplier);
-    const hoursNeeded = calculateHoursForActions(actualAttempts, profitData.actionsPerHour);
+    const queueBreakdown = calculateQueueProfitBreakdown({
+        profitPerHour: profitData.profitPerHour,
+        actionsPerHour: profitData.actionsPerHour,
+        actionCount: actualAttempts,
+    });
+    const hoursNeeded = queueBreakdown.hoursNeeded;
 
     // Calculate totals
     const bonusRevenueTotal = profitData.bonusRevenue?.totalBonusRevenue || 0;
@@ -1035,11 +1083,11 @@ function buildProductionActionsBreakdown(profitData, actionsCount) {
             hoursNeeded
     );
     // Calculate market tax (2% of revenue)
-    const totalMarketTax = Math.round(totalRevenue * 0.02);
+    const totalMarketTax = Math.round(totalRevenue * MARKET_TAX);
     const totalCosts = Math.round(
         (profitData.materialCostPerHour + profitData.totalTeaCostPerHour) * hoursNeeded + totalMarketTax
     );
-    const totalProfit = totalRevenue - totalCosts;
+    const totalProfit = Math.round(queueBreakdown.totalProfit);
 
     const detailsContent = document.createElement('div');
 

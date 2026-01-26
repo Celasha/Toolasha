@@ -19,7 +19,12 @@ import {
 import { calculateBonusRevenue } from '../../utils/bonus-revenue-calculator.js';
 import { getItemPrice } from '../../utils/market-data.js';
 import { MARKET_TAX } from '../../utils/profit-constants.js';
-import { calculateProfitPerAction, calculateProfitPerDay, calculateDrinksPerHour } from '../../utils/profit-helpers.js';
+import {
+    calculatePriceAfterTax,
+    calculateProfitPerAction,
+    calculateProfitPerDay,
+    calculateDrinksPerHour,
+} from '../../utils/profit-helpers.js';
 
 /**
  * ProfitCalculator class handles profit calculations for production actions
@@ -214,7 +219,7 @@ class ProfitCalculator {
         const outputPrice = getItemPrice(itemHrid, { context: 'profit', side: 'sell' }) || 0;
 
         // Apply market tax (2% tax on sales)
-        const priceAfterTax = outputPrice * (1 - MARKET_TAX);
+        const priceAfterTax = calculatePriceAfterTax(outputPrice);
 
         // Cost per item (without efficiency scaling)
         const costPerItem = totalMaterialCost / outputAmount;
@@ -223,21 +228,24 @@ class ProfitCalculator {
         // Efficiency repeats the action, consuming materials each time
         const materialCostPerHour = actionsPerHour * totalMaterialCost * efficiencyMultiplier;
 
-        // Revenue per hour (already accounts for efficiency in itemsPerHour calculation)
-        const revenuePerHour = itemsPerHour * priceAfterTax + gourmetBonusItems * priceAfterTax;
+        // Revenue per hour (gross, before tax)
+        const revenuePerHour = itemsPerHour * outputPrice + gourmetBonusItems * outputPrice;
 
         // Calculate tea consumption costs (drinks consumed per hour)
         const teaCosts = this.calculateTeaCosts(actionDetails.type, actionsPerHour, drinkConcentration);
         const totalTeaCostPerHour = teaCosts.reduce((sum, tea) => sum + tea.totalCost, 0);
-
-        // Total costs per hour (materials + teas)
-        const totalCostPerHour = materialCostPerHour + totalTeaCostPerHour;
 
         // Calculate bonus revenue from essence and rare find drops (before profit calculation)
         const bonusRevenue = calculateBonusRevenue(actionDetails, actionsPerHour, characterEquipment, itemDetailMap);
 
         // Apply efficiency multiplier to bonus revenue (efficiency repeats the action, including bonus rolls)
         const efficiencyBoostedBonusRevenue = (bonusRevenue?.totalBonusRevenue || 0) * efficiencyMultiplier;
+
+        // Calculate market tax (2% of gross revenue including bonus revenue)
+        const marketTax = (revenuePerHour + efficiencyBoostedBonusRevenue) * MARKET_TAX;
+
+        // Total costs per hour (materials + teas + market tax)
+        const totalCostPerHour = materialCostPerHour + totalTeaCostPerHour + marketTax;
 
         // Profit per hour (revenue + bonus revenue - total costs)
         const profitPerHour = revenuePerHour + efficiencyBoostedBonusRevenue - totalCostPerHour;
