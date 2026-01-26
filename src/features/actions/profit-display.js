@@ -820,7 +820,7 @@ function buildGatheringActionsBreakdown(profitData, actionsCount) {
     const baseOutputContent = document.createElement('div');
     if (profitData.baseOutputs && profitData.baseOutputs.length > 0) {
         for (const output of profitData.baseOutputs) {
-            const totalItems = (output.itemsPerHour / profitData.actionsPerHour) * actionsCount;
+            const totalItems = output.itemsPerHour * hoursNeeded;
             const totalRevenueLine = output.revenuePerHour * hoursNeeded;
             const line = document.createElement('div');
             line.style.marginLeft = '8px';
@@ -1128,10 +1128,9 @@ function buildProductionActionsBreakdown(profitData, actionsCount) {
     // Material Costs subsection
     const materialCostsContent = document.createElement('div');
     if (profitData.materialCosts && profitData.materialCosts.length > 0) {
-        const efficiencyMultiplier = 1 + profitData.efficiencyBonus / 100;
         for (const material of profitData.materialCosts) {
-            const totalMaterial = material.amount * actionsCount * efficiencyMultiplier;
-            const totalMaterialCost = material.totalCost * actionsCount * efficiencyMultiplier;
+            const totalMaterial = material.amount * actionsCount;
+            const totalMaterialCost = material.totalCost * actionsCount;
             const line = document.createElement('div');
             line.style.marginLeft = '8px';
 
@@ -1139,7 +1138,7 @@ function buildProductionActionsBreakdown(profitData, actionsCount) {
 
             // Add Artisan reduction info if present
             if (profitData.artisanBonus > 0 && material.baseAmount && material.amount !== material.baseAmount) {
-                const baseTotalAmount = material.baseAmount * actionsCount * efficiencyMultiplier;
+                const baseTotalAmount = material.baseAmount * actionsCount;
                 materialText += ` (${baseTotalAmount.toFixed(1)} base -${formatPercentage(profitData.artisanBonus, 1)} 🍵)`;
             }
 
