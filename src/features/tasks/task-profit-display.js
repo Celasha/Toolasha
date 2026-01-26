@@ -542,13 +542,18 @@ class TaskProfitDisplay {
                 const details = profitData.action.details;
                 const quantity = profitData.action.breakdown.quantity;
                 const actionsPerHour = details.actionsPerHour;
-                const hoursNeeded = quantity / actionsPerHour;
+                const efficiencyMultiplier = details.efficiencyMultiplier || 1;
+
+                // Calculate actual attempts needed (quantity is successful completions)
+                const actualAttempts = Math.ceil(quantity / efficiencyMultiplier);
+                const hoursNeeded = actualAttempts / actionsPerHour;
 
                 // Base outputs (gathered items)
                 if (details.baseOutputs && details.baseOutputs.length > 0) {
                     lines.push(`<div style="margin-top: 2px; color: #aaa;">Items Gathered:</div>`);
                     for (const output of details.baseOutputs) {
-                        const itemsForTask = (output.itemsPerHour / actionsPerHour) * quantity;
+                        // output.itemsPerHour includes efficiency, so divide it out for per-action rate
+                        const itemsForTask = (output.itemsPerHour / actionsPerHour / efficiencyMultiplier) * quantity;
                         const revenueForTask = output.revenuePerHour * hoursNeeded;
                         const dropRateText =
                             output.dropRate < 1.0 ? ` (${formatPercentage(output.dropRate, 1)} drop)` : '';
@@ -565,8 +570,7 @@ class TaskProfitDisplay {
                     details.bonusRevenue.bonusDrops.length > 0
                 ) {
                     const bonusRevenue = details.bonusRevenue;
-                    const efficiencyMultiplier = details.efficiencyMultiplier || 1;
-                    const totalBonusRevenue = bonusRevenue.totalBonusRevenue * efficiencyMultiplier * hoursNeeded;
+                    const totalBonusRevenue = bonusRevenue.totalBonusRevenue * hoursNeeded;
 
                     lines.push(
                         `<div style="margin-top: 4px; color: #aaa;">Bonus Drops: ${numberFormatter(Math.round(totalBonusRevenue))}</div>`
@@ -579,8 +583,9 @@ class TaskProfitDisplay {
                     // Show essence drops
                     if (essenceDrops.length > 0) {
                         for (const drop of essenceDrops) {
-                            const dropsForTask = drop.dropsPerHour * efficiencyMultiplier * hoursNeeded;
-                            const revenueForTask = drop.revenuePerHour * efficiencyMultiplier * hoursNeeded;
+                            // drop.dropsPerHour doesn't include efficiency, so multiply by hoursNeeded only
+                            const dropsForTask = drop.dropsPerHour * hoursNeeded;
+                            const revenueForTask = drop.revenuePerHour * hoursNeeded;
                             lines.push(
                                 `<div>• ${drop.itemName}: ${dropsForTask.toFixed(2)} drops @ ${numberFormatter(Math.round(drop.priceEach))} = ${numberFormatter(Math.round(revenueForTask))}</div>`
                             );
@@ -590,8 +595,9 @@ class TaskProfitDisplay {
                     // Show rare find drops
                     if (rareFindDrops.length > 0) {
                         for (const drop of rareFindDrops) {
-                            const dropsForTask = drop.dropsPerHour * efficiencyMultiplier * hoursNeeded;
-                            const revenueForTask = drop.revenuePerHour * efficiencyMultiplier * hoursNeeded;
+                            // drop.dropsPerHour doesn't include efficiency, so multiply by hoursNeeded only
+                            const dropsForTask = drop.dropsPerHour * hoursNeeded;
+                            const revenueForTask = drop.revenuePerHour * hoursNeeded;
                             lines.push(
                                 `<div>• ${drop.itemName}: ${dropsForTask.toFixed(2)} drops @ ${numberFormatter(Math.round(drop.priceEach))} = ${numberFormatter(Math.round(revenueForTask))}</div>`
                             );
