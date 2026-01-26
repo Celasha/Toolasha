@@ -15,7 +15,7 @@ class MarketAPI {
         this.API_URL = 'https://www.milkywayidle.com/game_data/marketplace.json';
 
         // Cache settings
-        this.CACHE_DURATION = 60 * 60 * 1000; // 1 hour in milliseconds
+        this.CACHE_DURATION = 30 * 60 * 1000; // 30 minutes in milliseconds
         this.CACHE_KEY_DATA = 'MWITools_marketAPI_json';
         this.CACHE_KEY_TIMESTAMP = 'MWITools_marketAPI_timestamp';
 
