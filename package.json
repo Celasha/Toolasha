@@ -8,7 +8,8 @@
         "build:check": "npm run build && git diff --exit-code dist/Toolasha.user.js",
         "watch": "rollup -c -w",
         "dev": "rollup -c -w",
-        "test": "echo \"Tests coming soon\" && exit 0",
+        "test": "vitest run",
+        "test:watch": "vitest",
         "lint": "eslint src/",
         "lint:fix": "eslint src/ --fix",
         "format": "prettier --write \"src/**/*.js\" \"*.config.js\"",
@@ -37,7 +38,8 @@
         "lint-staged": "^16.2.7",
         "prettier": "^3.8.1",
         "rollup": "^4.9.5",
-        "rollup-plugin-banner2": "^1.2.2"
+        "rollup-plugin-banner2": "^1.2.2",
+        "vitest": "^4.0.18"
     },
     "lint-staged": {
         "package.json": [
@@ -47,6 +49,7 @@
         "src/**/*.js": [
             "eslint --fix",
             "prettier --write",
+            "bash -c 'npm test'",
             "bash -c 'npm run build'",
             "git add dist/Toolasha.user.js"
         ],

@@ -6,6 +6,9 @@ Guide for AI coding agents working on this Tampermonkey userscript for Milky Way
 
 ```bash
 npm install          # Install dependencies
+npm test             # Run test suite (143 tests)
+npm run test:watch   # Watch mode for tests
+
 npm run build        # Build userscript → dist/Toolasha.user.js
 npm run build:check  # Build and verify dist is in sync with source
 npm run watch        # Watch mode (auto-rebuild on changes)
@@ -22,14 +25,11 @@ npm run version:minor # Bump minor version (0.5.9 → 0.6.0)
 npm run version:major # Bump major version (0.5.9 → 1.0.0)
 ```
 
-**Testing:** No automated tests yet. Manual testing workflow:
+**Testing:** Vitest with 143 tests covering utility modules (formatters, efficiency, enhancement-multipliers). Tests run automatically on commit and in CI.
 
-1. Run `npm run build`
-2. Install `dist/Toolasha.user.js` in Tampermonkey
-3. Visit https://www.milkywayidle.com/game
-4. Check browser console for errors
+**Manual testing:** Install `dist/Toolasha.user.js` in Tampermonkey, visit https://www.milkywayidle.com/game
 
-**Pre-commit hooks:** ESLint, Prettier, and auto-rebuild run automatically on commit.
+**Pre-commit hooks:** ESLint, Prettier, tests, and auto-rebuild run automatically on commit.
 
 ## Project Structure
 

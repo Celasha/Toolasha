@@ -33,9 +33,17 @@ cd Toolasha
 npm install
 ```
 
+**Important:** After pulling changes that add or update dependencies, always run `npm install` to ensure your local environment is up to date.
+
 ### Development Workflow
 
 ```bash
+# Run tests
+npm test
+
+# Run tests in watch mode (auto-rerun on changes)
+npm run test:watch
+
 # Check code for issues
 npm run lint
 
@@ -92,6 +100,7 @@ This project uses **Husky** to automatically run checks before each commit:
 
 - ✅ ESLint checks for errors (warnings won't block)
 - ✅ Prettier formats your code automatically
+- ✅ **Tests** - All tests run automatically before commit
 - ✅ **Version sync** - When you edit `package.json`, version auto-syncs to `userscript-header.txt`
 - ✅ **Automatic rebuild** - When you commit source changes, the userscript is automatically rebuilt
 - ✅ **Auto-stage files** - Updated `dist/Toolasha.user.js` and `userscript-header.txt` are automatically staged
@@ -101,9 +110,13 @@ This project uses **Husky** to automatically run checks before each commit:
 
 **How it works:**
 
+- When you commit changes to `src/**/*.js` files:
+    1. ESLint checks for errors
+    2. Prettier formats the code
+    3. **Tests run** (all 143 tests must pass)
+    4. Userscript is automatically rebuilt
+    5. All updated files are staged automatically
 - When you commit changes to `package.json`, the version is synced to `userscript-header.txt`
-- When you commit changes to `src/**/*.js` files, the userscript is automatically rebuilt
-- All updated files are staged automatically
 
 ### CI/CD
 
@@ -111,9 +124,12 @@ GitHub Actions runs on every push and PR:
 
 - Linting checks (ESLint)
 - Formatting checks (Prettier)
+- **Test suite** - All 143 tests must pass
 - Build verification
 - **Build sync verification** - Ensures `dist/Toolasha.user.js` is up-to-date with source code
 - **Version sync verification** - Ensures all version numbers match across files
+
+**Test Suite:** The CI workflow runs the full test suite (143 tests across formatters, efficiency, and enhancement multipliers). All tests must pass before the build proceeds.
 
 **Build Sync Check:** The CI workflow rebuilds the userscript and verifies that the committed `dist/Toolasha.user.js` matches the source code. If someone bypasses the pre-commit hook (e.g., `git commit --no-verify`) or manually edits the dist file, the CI build will fail with a clear error message.
 
@@ -409,13 +425,38 @@ All efficiency sources are automatically detected from character data - no manua
 
 ## 🧪 Testing
 
-Each module has a corresponding test file in `tests/`. Run tests with:
+This project uses **Vitest** for testing with comprehensive coverage of utility modules.
+
+### Running Tests
 
 ```bash
-node tests/MODULE_NAME.test.js
+# Run all tests once
+npm test
+
+# Run tests in watch mode (auto-rerun on changes)
+npm run test:watch
+
+# Run tests with coverage report
+npm test -- --coverage
 ```
 
-**Note**: Storage tests use mocks since IndexedDB is not available in Node.js test environment.
+### Test Coverage
+
+**143 tests across 3 test files:**
+
+- ✅ **formatters.test.js** (65 tests) - Number/time formatting, K/M/B notation
+- ✅ **efficiency.test.js** (49 tests) - Game mechanics calculations
+- ✅ **enhancement-multipliers.test.js** (29 tests) - Enhancement bonus system
+
+**Coverage:**
+
+- `src/utils/formatters.js` - 100% (all 12 functions)
+- `src/utils/efficiency.js` - 100% (all 9 functions)
+- `src/utils/enhancement-multipliers.js` - 100% (1 function + 2 constants)
+
+### Pre-commit Testing
+
+Tests run automatically before every commit via Husky hooks. All tests must pass before the commit succeeds.
 
 ## 📚 Documentation
 
