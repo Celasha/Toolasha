@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.5.23
+// @version      0.5.24
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -21281,6 +21281,24 @@
      */
     function initialize$1() {
         console.log('[MissingMats] Initializing missing materials button feature');
+
+        // Set up game object reference on window (like mooket does with window.mwi.game)
+        const setupScript = document.createElement('script');
+        setupScript.textContent = `
+        window.__toolashaGame = (function() {
+            const gamePage = document.querySelector('[class^="GamePage"]');
+            if (gamePage) {
+                const fiberKey = Object.keys(gamePage).find(k => k.startsWith('__reactFiber$'));
+                if (fiberKey) {
+                    return gamePage[fiberKey]?.return?.stateNode;
+                }
+            }
+            return null;
+        })();
+    `;
+        document.head.appendChild(setupScript);
+        document.head.removeChild(setupScript);
+
         setupMarketplaceCleanupObserver();
 
         // Watch for action panels appearing
@@ -21512,8 +21530,6 @@
      * @param {number} numActions - Number of actions for recalculating materials
      */
     async function handleMissingMaterialsClick(missingMaterials, actionHrid, numActions) {
-        console.log('[MissingMats] Button clicked with materials:', missingMaterials);
-
         // Store context for live updates
         storedActionHrid = actionHrid;
         storedNumActions = numActions;
@@ -21622,8 +21638,6 @@
             tabsContainer.appendChild(tab);
             currentMaterialsTabs.push(tab);
         }
-
-        console.log('[MissingMats] Created', currentMaterialsTabs.length, 'custom tabs');
     }
 
     /**
@@ -21814,8 +21828,11 @@
                 return;
             }
 
-            // Use game API to open order book (works without inventory requirement)
-            unsafeWindow.mwi?.game?.handleGoToMarketplace(material.itemHrid, 0);
+            // Call game API using the reference set up during initialization
+            const script = document.createElement('script');
+            script.textContent = `window.__toolashaGame?.handleGoToMarketplace('${material.itemHrid}', 0);`;
+            document.head.appendChild(script);
+            document.head.removeChild(script);
         });
 
         return tab;
@@ -44189,7 +44206,7 @@
         const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
         targetWindow.Toolasha = {
-            version: '0.5.23',
+            version: '0.5.24',
 
             // Feature toggle API (for users to manage settings via console)
             features: {

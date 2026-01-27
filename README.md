@@ -1,6 +1,6 @@
 # Toolasha
 
-![Version](https://img.shields.io/badge/version-0.5.23-orange?style=flat-square) ![Status](https://img.shields.io/badge/status-pre--release-yellow?style=flat-square) ![License](https://img.shields.io/badge/license-CC--BY--NC--SA--4.0-blue?style=flat-square)
+![Version](https://img.shields.io/badge/version-0.5.24-orange?style=flat-square) ![Status](https://img.shields.io/badge/status-pre--release-yellow?style=flat-square) ![License](https://img.shields.io/badge/license-CC--BY--NC--SA--4.0-blue?style=flat-square)
 
 Modular, maintainable rewrite of MWITools userscript for Milky Way Idle.
 
@@ -505,7 +505,7 @@ Tests run automatically before every commit via Husky hooks. All tests must pass
 
 ---
 
-**Version:** 0.5.23 (Pre-release)
+**Version:** 0.5.24 (Pre-release)
 **Status:** Development/Testing
 **Original Author:** bot7420
 **Updated By:** Celasha and Claude
