@@ -14,8 +14,8 @@ import { createCollapsibleSection } from '../../utils/ui-components.js';
 import { findActionInput, attachInputListeners } from '../../utils/action-panel-helper.js';
 import {
     calculateProfitPerAction,
-    calculateProductionAttemptTotalsFromBase,
-    calculateGatheringAttemptTotalsFromBase,
+    calculateProductionActionTotalsFromBase,
+    calculateGatheringActionTotalsFromBase,
 } from '../../utils/profit-helpers.js';
 import { MARKET_TAX } from '../../utils/profit-constants.js';
 
@@ -400,7 +400,7 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
             if (inputValue === '∞') {
                 profitSummaryDiv.textContent = `${baseSummary} | Total profit: ∞`;
             } else if (newValue > 0) {
-                const totals = calculateGatheringAttemptTotalsFromBase({
+                const totals = calculateGatheringActionTotalsFromBase({
                     actionsCount: newValue,
                     actionsPerHour: profitData.actionsPerHour,
                     baseOutputs: profitData.baseOutputs,
@@ -886,7 +886,7 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
             if (inputValue === '∞') {
                 profitSummaryDiv.textContent = `${baseSummary} | Total profit: ∞`;
             } else if (newValue > 0) {
-                const totals = calculateProductionAttemptTotalsFromBase({
+                const totals = calculateProductionActionTotalsFromBase({
                     actionsCount: newValue,
                     actionsPerHour: profitData.actionsPerHour,
                     outputAmount: profitData.outputAmount || 1,
@@ -939,7 +939,7 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
  * @returns {HTMLElement} Breakdown section element
  */
 function buildGatheringActionsBreakdown(profitData, actionsCount) {
-    const totals = calculateGatheringAttemptTotalsFromBase({
+    const totals = calculateGatheringActionTotalsFromBase({
         actionsCount,
         actionsPerHour: profitData.actionsPerHour,
         baseOutputs: profitData.baseOutputs,
@@ -1003,7 +1003,7 @@ function buildGatheringActionsBreakdown(profitData, actionsCount) {
         1
     );
 
-    // Bonus Drops subsections (bonus drops are per attempt)
+    // Bonus Drops subsections (bonus drops are per action)
     const bonusDrops = profitData.bonusRevenue?.bonusDrops || [];
     const essenceDrops = bonusDrops.filter((drop) => drop.type === 'essence');
     const rareFinds = bonusDrops.filter((drop) => drop.type === 'rare_find');
@@ -1206,7 +1206,7 @@ function buildGatheringActionsBreakdown(profitData, actionsCount) {
  * @returns {HTMLElement} Breakdown section element
  */
 function buildProductionActionsBreakdown(profitData, actionsCount) {
-    // Calculate queued attempts breakdown
+    // Calculate queued actions breakdown
     const outputMissing = profitData.outputPriceMissing || false;
     const bonusMissing = profitData.bonusRevenue?.hasMissingPrices || false;
     const materialMissing = profitData.materialCosts?.some((material) => material.missingPrice) || false;
@@ -1216,7 +1216,7 @@ function buildProductionActionsBreakdown(profitData, actionsCount) {
     const marketTaxMissing = revenueMissing;
     const netMissing = profitData.hasMissingPrices;
     const bonusDrops = profitData.bonusRevenue?.bonusDrops || [];
-    const totals = calculateProductionAttemptTotalsFromBase({
+    const totals = calculateProductionActionTotalsFromBase({
         actionsCount,
         actionsPerHour: profitData.actionsPerHour,
         outputAmount: profitData.outputAmount || 1,

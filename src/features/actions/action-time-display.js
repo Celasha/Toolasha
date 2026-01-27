@@ -25,7 +25,12 @@ import {
     parseGatheringBonus,
     parseGourmetBonus,
 } from '../../utils/tea-parser.js';
-import { calculateQueueProfitBreakdown, calculateActionsPerHour } from '../../utils/profit-helpers.js';
+import {
+    calculateProductionActionTotalsFromBase,
+    calculateGatheringActionTotalsFromBase,
+    calculateActionsPerHour,
+    calculateEfficiencyMultiplier,
+} from '../../utils/profit-helpers.js';
 
 /**
  * ActionTimeDisplay class manages the time display panel and queue tooltips
@@ -397,13 +402,16 @@ class ActionTimeDisplay {
         const { actionTime, totalEfficiency } = stats;
         const baseActionsPerHour = calculateActionsPerHour(actionTime);
 
-        // Calculate average actions per attempt from efficiency
-        const guaranteedActions = 1 + Math.floor(totalEfficiency / 100);
-        const chanceForExtra = totalEfficiency % 100;
-        const avgActionsPerAttempt = guaranteedActions + chanceForExtra / 100;
+        // Efficiency model:
+        // - Queue input counts completed actions (including instant repeats)
+        // - Efficiency adds instant repeats with no extra time
+        // - Time is based on time-consuming actions (queuedActions / avgActionsPerBaseAction)
+        // - Materials are consumed per completed action, including repeats
+        // Calculate average queued actions completed per time-consuming action
+        const avgActionsPerBaseAction = calculateEfficiencyMultiplier(totalEfficiency);
 
-        // Calculate actions per hour WITH efficiency (total action completions including free repeats)
-        const actionsPerHourWithEfficiency = baseActionsPerHour * avgActionsPerAttempt;
+        // Calculate actions per hour WITH efficiency (total action completions including instant repeats)
+        const actionsPerHourWithEfficiency = baseActionsPerHour * avgActionsPerBaseAction;
 
         // Calculate items per hour based on action type
         let itemsPerHour;
@@ -443,11 +451,11 @@ class ActionTimeDisplay {
             const avgAmountPerAction = baseAvgAmount * (1 + totalGathering);
 
             // Items per hour = actions × drop rate × avg amount × efficiency
-            itemsPerHour = baseActionsPerHour * mainDrop.dropRate * avgAmountPerAction * avgActionsPerAttempt;
+            itemsPerHour = baseActionsPerHour * mainDrop.dropRate * avgAmountPerAction * avgActionsPerBaseAction;
         } else if (actionDetails.outputItems && actionDetails.outputItems.length > 0) {
             // Production action - use outputItems
             const outputAmount = actionDetails.outputItems[0].count || 1;
-            itemsPerHour = baseActionsPerHour * outputAmount * avgActionsPerAttempt;
+            itemsPerHour = baseActionsPerHour * outputAmount * avgActionsPerBaseAction;
 
             // Apply Gourmet bonus for brewing/cooking (extra items chance)
             if (PRODUCTION_TYPES.includes(actionDetails.type)) {
@@ -473,14 +481,8 @@ class ActionTimeDisplay {
             const activeDrinks = dataManager.getActionDrinkSlots(actionDetails.type);
             const artisanBonus = parseArtisanBonus(activeDrinks, itemDetailMap, drinkConcentration);
 
-            // Calculate max actions based on materials (pass efficiency to account for free repeat actions)
-            materialLimit = this.calculateMaterialLimit(
-                actionDetails,
-                inventory,
-                artisanBonus,
-                totalEfficiency,
-                action
-            );
+            // Calculate max actions based on materials
+            materialLimit = this.calculateMaterialLimit(actionDetails, inventory, artisanBonus, action);
         }
 
         // Get queue size for display (total queued, doesn't change)
@@ -499,31 +501,30 @@ class ActionTimeDisplay {
 
         // Get remaining actions for time calculation
         // For infinite actions, use material limit if available, then inventory count
-        let remainingActions;
+        let remainingQueuedActions;
         if (action.hasMaxCount) {
             // Finite action: maxCount is the target, currentCount is progress toward that target
-            remainingActions = action.maxCount - action.currentCount;
+            remainingQueuedActions = action.maxCount - action.currentCount;
         } else if (materialLimit !== null) {
-            // Infinite action limited by materials (materialLimit is attempts, not actions)
-            remainingActions = materialLimit;
+            // Infinite action limited by materials (materialLimit is queued actions)
+            remainingQueuedActions = materialLimit;
         } else if (inventoryCount !== null) {
             // Infinite action: currentCount is lifetime total, so just use inventory count directly
-            remainingActions = inventoryCount;
+            remainingQueuedActions = inventoryCount;
         } else {
-            remainingActions = Infinity;
+            remainingQueuedActions = Infinity;
         }
 
-        // Calculate actual attempts needed (time-consuming operations)
-        // NOTE: materialLimit returns attempts, but finite/inventory counts are items
-        let actualAttempts;
+        // Calculate time-consuming actions needed
+        let baseActionsNeeded;
         if (!action.hasMaxCount && materialLimit !== null) {
-            // Material-limited infinite action - materialLimit is already attempts
-            actualAttempts = materialLimit;
+            // Material-limited infinite action - convert queued actions to time-consuming actions
+            baseActionsNeeded = Math.ceil(materialLimit / avgActionsPerBaseAction);
         } else {
-            // Finite action or inventory-count infinite - remainingActions is items, convert to attempts
-            actualAttempts = Math.ceil(remainingActions / avgActionsPerAttempt);
+            // Finite action or inventory-count infinite - remainingQueuedActions is queued actions
+            baseActionsNeeded = Math.ceil(remainingQueuedActions / avgActionsPerBaseAction);
         }
-        const totalTimeSeconds = actualAttempts * actionTime;
+        const totalTimeSeconds = baseActionsNeeded * actionTime;
 
         // Calculate completion time
         const completionTime = new Date();
@@ -585,7 +586,7 @@ class ActionTimeDisplay {
         // Line 2: Time estimates in our div
         // Show time info if we have a finite number of remaining actions
         // This includes both finite actions (hasMaxCount) and infinite actions with inventory count
-        if (remainingActions !== Infinity && !isNaN(remainingActions) && remainingActions > 0) {
+        if (remainingQueuedActions !== Infinity && !isNaN(remainingQueuedActions) && remainingQueuedActions > 0) {
             this.displayElement.innerHTML = `<span style="display: inline-block; margin-right: 0.25em;">⏱</span> ${timeStr} → ${clockTime}`;
         } else {
             this.displayElement.innerHTML = '';
@@ -730,21 +731,15 @@ class ActionTimeDisplay {
      * @param {Object} actionDetails - Action detail object
      * @param {Array} inventory - Character inventory items
      * @param {number} artisanBonus - Artisan material reduction (0-1 decimal)
-     * @param {number} totalEfficiency - Total efficiency percentage (e.g., 150 for 150%)
      * @param {Object} actionObj - Character action object (for primaryItemHash)
      * @returns {number|null} Max actions possible, or null if unlimited/no materials required
      */
-    calculateMaterialLimit(actionDetails, inventory, artisanBonus, totalEfficiency, actionObj = null) {
+    calculateMaterialLimit(actionDetails, inventory, artisanBonus, actionObj = null) {
         if (!actionDetails || !inventory) {
             return null;
         }
 
-        // Calculate average actions per material-consuming attempt based on efficiency
-        // Efficiency formula: Guaranteed = 1 + floor(eff/100), Chance = eff % 100
-        // Average actions per attempt = 1 + floor(eff/100) + (eff%100)/100
-        const guaranteedActions = 1 + Math.floor(totalEfficiency / 100);
-        const chanceForExtra = totalEfficiency % 100;
-        const _avgActionsPerAttempt = guaranteedActions + chanceForExtra / 100;
+        // Materials are consumed per queued action. Efficiency only affects time, not materials.
 
         // Check for primaryItemHash (ONLY for Alchemy actions: Coinify, Decompose, Transmute)
         // Crafting actions also have primaryItemHash but should use the standard input/upgrade logic
@@ -770,11 +765,10 @@ class ActionTimeDisplay {
                 const itemDetails = dataManager.getItemDetails(itemHrid);
                 const bulkMultiplier = itemDetails?.alchemyDetail?.bulkMultiplier || 1;
 
-                // Calculate max attempts (how many times we can perform the action)
-                // NOTE: Return attempts, not total actions - efficiency is applied separately in time calc
-                const maxAttempts = Math.floor(availableCount / bulkMultiplier);
+                // Calculate max queued actions based on available items
+                const maxActions = Math.floor(availableCount / bulkMultiplier);
 
-                return maxAttempts;
+                return maxActions;
             }
         }
 
@@ -802,11 +796,10 @@ class ActionTimeDisplay {
                 // Apply Artisan reduction to required materials
                 const requiredPerAction = inputItem.count * (1 - artisanBonus);
 
-                // Calculate max attempts for this material
-                // NOTE: Return attempts, not total actions - efficiency is applied separately in time calc
-                const maxAttempts = Math.floor(availableCount / requiredPerAction);
+                // Calculate max queued actions for this material
+                const maxActions = Math.floor(availableCount / requiredPerAction);
 
-                minLimit = Math.min(minLimit, maxAttempts);
+                minLimit = Math.min(minLimit, maxActions);
             }
         }
 
@@ -818,7 +811,7 @@ class ActionTimeDisplay {
 
             const availableCount = inventoryItem?.count || 0;
 
-            // NOTE: Return attempts, not total actions - efficiency is applied separately in time calc
+            // Upgrade items are consumed per queued action
             minLimit = Math.min(minLimit, availableCount);
         }
 
@@ -937,8 +930,10 @@ class ActionTimeDisplay {
             let hasInfinite = false;
             const actionsToCalculate = []; // Store actions for async profit calculation (with time in seconds)
 
-            // First, calculate time for current action to include in total
-            // Read from DOM to get the actual current action (not from cache)
+            // Detect current action from DOM so we can avoid double-counting
+            let currentAction = null;
+            let isCurrentActionInQueue = false;
+
             const actionNameElement = document.querySelector('div[class*="Header_actionName"]');
             if (actionNameElement && actionNameElement.textContent) {
                 // Use getCleanActionName to strip any stats we previously appended
@@ -960,7 +955,7 @@ class ActionTimeDisplay {
                 }
 
                 // Match current action from cache
-                const currentAction = currentActions.find((a) => {
+                currentAction = currentActions.find((a) => {
                     const actionDetails = dataManager.getActionDetails(a.actionHrid);
                     if (!actionDetails || actionDetails.name !== actionNameFromDom) {
                         return false;
@@ -973,79 +968,87 @@ class ActionTimeDisplay {
 
                     return true;
                 });
+            }
 
-                if (currentAction) {
-                    const actionDetails = dataManager.getActionDetails(currentAction.actionHrid);
-                    if (actionDetails) {
-                        // Check if infinite BEFORE calculating count
-                        const isInfinite = !currentAction.hasMaxCount || currentAction.actionHrid.includes('/combat/');
+            if (currentAction) {
+                for (const actionDiv of actionDivs) {
+                    const actionObj = this.matchActionFromDiv(actionDiv, currentActions);
+                    if (actionObj && actionObj.id === currentAction.id) {
+                        isCurrentActionInQueue = true;
+                        break;
+                    }
+                }
+            }
 
-                        let actionTimeSeconds = 0; // Time spent on this action (for profit calculation)
-                        let count = 0; // Item/action count for profit calculation
-                        let actualAttempts = 0; // Actual attempts for profit calculation
+            // First, calculate time for current action to include in total (if not already in queue list)
+            if (currentAction && !isCurrentActionInQueue) {
+                const actionDetails = dataManager.getActionDetails(currentAction.actionHrid);
+                if (actionDetails) {
+                    // Check if infinite BEFORE calculating count
+                    const isInfinite = !currentAction.hasMaxCount || currentAction.actionHrid.includes('/combat/');
 
-                        if (isInfinite) {
-                            // Check for material limit on infinite actions
-                            const inventory = dataManager.getInventory();
-                            const equipment = dataManager.getEquipment();
-                            const itemDetailMap = dataManager.getInitClientData()?.itemDetailMap || {};
-                            const drinkConcentration = getDrinkConcentration(equipment, itemDetailMap);
-                            const activeDrinks = dataManager.getActionDrinkSlots(actionDetails.type);
-                            const artisanBonus = parseArtisanBonus(activeDrinks, itemDetailMap, drinkConcentration);
+                    let actionTimeSeconds = 0; // Time spent on this action (for profit calculation)
+                    let count = 0; // Queued action count for profit calculation
+                    let baseActionsNeeded = 0; // Time-consuming actions for time calculation
 
-                            // Calculate action stats to get efficiency
-                            const timeData = this.calculateActionTime(actionDetails, currentAction.actionHrid);
-                            if (timeData) {
-                                const { actionTime, totalEfficiency } = timeData;
-                                const materialLimit = this.calculateMaterialLimit(
-                                    actionDetails,
-                                    inventory,
-                                    artisanBonus,
-                                    totalEfficiency,
-                                    currentAction
-                                );
+                    if (isInfinite) {
+                        // Check for material limit on infinite actions
+                        const inventory = dataManager.getInventory();
+                        const equipment = dataManager.getEquipment();
+                        const itemDetailMap = dataManager.getInitClientData()?.itemDetailMap || {};
+                        const drinkConcentration = getDrinkConcentration(equipment, itemDetailMap);
+                        const activeDrinks = dataManager.getActionDrinkSlots(actionDetails.type);
+                        const artisanBonus = parseArtisanBonus(activeDrinks, itemDetailMap, drinkConcentration);
 
-                                if (materialLimit !== null) {
-                                    // Material-limited infinite action - calculate time
-                                    // NOTE: materialLimit is already attempts, not actions
-                                    actualAttempts = materialLimit;
-                                    count = materialLimit; // For infinite actions, count = attempts
-                                    const totalTime = actualAttempts * actionTime;
-                                    accumulatedTime += totalTime;
-                                    actionTimeSeconds = totalTime;
-                                }
-                            } else {
-                                // Could not calculate action time
-                                hasInfinite = true;
-                            }
-                        } else {
-                            count = currentAction.maxCount - currentAction.currentCount;
-                            const timeData = this.calculateActionTime(actionDetails, currentAction.actionHrid);
-                            if (timeData) {
-                                const { actionTime, totalEfficiency } = timeData;
+                        // Calculate action stats to get efficiency
+                        const timeData = this.calculateActionTime(actionDetails, currentAction.actionHrid);
+                        if (timeData) {
+                            const { actionTime, totalEfficiency } = timeData;
+                            const materialLimit = this.calculateMaterialLimit(
+                                actionDetails,
+                                inventory,
+                                artisanBonus,
+                                currentAction
+                            );
 
-                                // Calculate average actions per attempt from efficiency
-                                const guaranteedActions = 1 + Math.floor(totalEfficiency / 100);
-                                const chanceForExtra = totalEfficiency % 100;
-                                const avgActionsPerAttempt = guaranteedActions + chanceForExtra / 100;
-
-                                // Calculate actual attempts needed
-                                actualAttempts = Math.ceil(count / avgActionsPerAttempt);
-                                const totalTime = actualAttempts * actionTime;
+                            if (materialLimit !== null) {
+                                // Material-limited infinite action - calculate time
+                                count = materialLimit; // Max queued actions based on materials
+                                const avgActionsPerBaseAction = calculateEfficiencyMultiplier(totalEfficiency);
+                                baseActionsNeeded = Math.ceil(count / avgActionsPerBaseAction);
+                                const totalTime = baseActionsNeeded * actionTime;
                                 accumulatedTime += totalTime;
                                 actionTimeSeconds = totalTime;
                             }
+                        } else {
+                            // Could not calculate action time
+                            hasInfinite = true;
                         }
+                    } else {
+                        count = currentAction.maxCount - currentAction.currentCount;
+                        const timeData = this.calculateActionTime(actionDetails, currentAction.actionHrid);
+                        if (timeData) {
+                            const { actionTime, totalEfficiency } = timeData;
 
-                        // Store action for profit calculation (done async after UI renders)
-                        if (actionTimeSeconds > 0 && !isInfinite) {
-                            actionsToCalculate.push({
-                                actionHrid: currentAction.actionHrid,
-                                timeSeconds: actionTimeSeconds,
-                                count: count,
-                                actualAttempts: actualAttempts,
-                            });
+                            // Calculate average queued actions per time-consuming action
+                            const avgActionsPerBaseAction = calculateEfficiencyMultiplier(totalEfficiency);
+
+                            // Calculate time-consuming actions needed
+                            baseActionsNeeded = Math.ceil(count / avgActionsPerBaseAction);
+                            const totalTime = baseActionsNeeded * actionTime;
+                            accumulatedTime += totalTime;
+                            actionTimeSeconds = totalTime;
                         }
+                    }
+
+                    // Store action for profit calculation (done async after UI renders)
+                    if (actionTimeSeconds > 0) {
+                        actionsToCalculate.push({
+                            actionHrid: currentAction.actionHrid,
+                            timeSeconds: actionTimeSeconds,
+                            count: count,
+                            baseActionsNeeded: baseActionsNeeded,
+                        });
                     }
                 }
             }
@@ -1104,13 +1107,7 @@ class ActionTimeDisplay {
                     const activeDrinks = dataManager.getActionDrinkSlots(actionDetails.type);
                     const artisanBonus = parseArtisanBonus(activeDrinks, itemDetailMap, drinkConcentration);
 
-                    materialLimit = this.calculateMaterialLimit(
-                        actionDetails,
-                        inventory,
-                        artisanBonus,
-                        totalEfficiency,
-                        actionObj
-                    );
+                    materialLimit = this.calculateMaterialLimit(actionDetails, inventory, artisanBonus, actionObj);
                 }
 
                 // Determine if truly infinite (no material limit)
@@ -1131,23 +1128,14 @@ class ActionTimeDisplay {
                 // Calculate total time for this action
                 let totalTime;
                 let actionTimeSeconds = 0; // Time spent on this action (for profit calculation)
-                let actualAttempts = 0; // Actual attempts for profit calculation
+                let baseActionsNeeded = 0; // Time-consuming actions for time calculation
                 if (isTrulyInfinite) {
                     totalTime = Infinity;
                 } else {
-                    // Calculate actual attempts needed
-                    // NOTE: materialLimit returns attempts, but finite counts are items
-                    if (materialLimit !== null) {
-                        // Material-limited - count is already attempts
-                        actualAttempts = count;
-                    } else {
-                        // Finite action - count is items, convert to attempts
-                        const guaranteedActions = 1 + Math.floor(totalEfficiency / 100);
-                        const chanceForExtra = totalEfficiency % 100;
-                        const avgActionsPerAttempt = guaranteedActions + chanceForExtra / 100;
-                        actualAttempts = Math.ceil(count / avgActionsPerAttempt);
-                    }
-                    totalTime = actualAttempts * actionTime;
+                    // Calculate time-consuming actions needed
+                    const avgActionsPerBaseAction = calculateEfficiencyMultiplier(totalEfficiency);
+                    baseActionsNeeded = Math.ceil(count / avgActionsPerBaseAction);
+                    totalTime = baseActionsNeeded * actionTime;
                     accumulatedTime += totalTime;
                     actionTimeSeconds = totalTime;
                 }
@@ -1158,7 +1146,7 @@ class ActionTimeDisplay {
                         actionHrid: actionObj.actionHrid,
                         timeSeconds: actionTimeSeconds,
                         count: count,
-                        actualAttempts: actualAttempts,
+                        baseActionsNeeded: baseActionsNeeded,
                         divIndex: divIndex, // Store index to match back to DOM element
                     });
                 }
@@ -1278,7 +1266,7 @@ class ActionTimeDisplay {
     /**
      * Calculate and display total profit asynchronously (non-blocking)
      * @param {HTMLElement} totalDiv - The total display div element
-     * @param {Array} actionsToCalculate - Array of {actionHrid, timeSeconds, count, actualAttempts, divIndex} objects
+     * @param {Array} actionsToCalculate - Array of {actionHrid, timeSeconds, count, baseActionsNeeded, divIndex} objects
      * @param {string} baseText - Base text (time) to prepend
      * @param {HTMLElement} queueMenu - Queue menu element to reconnect observer after updates
      */
@@ -1368,7 +1356,7 @@ class ActionTimeDisplay {
 
     /**
      * Calculate profit or estimated value for a single action based on action count
-     * @param {Object} action - Action object with {actionHrid, timeSeconds, count, actualAttempts}
+     * @param {Object} action - Action object with {actionHrid, timeSeconds, count, baseActionsNeeded}
      * @returns {Promise<number|null>} Total value (profit or revenue) or null if unavailable
      */
     async calculateProfitForAction(action) {
@@ -1392,8 +1380,8 @@ class ActionTimeDisplay {
             return null;
         }
 
-        const attemptsForValue = action.actualAttempts ?? action.count ?? 0;
-        if (!attemptsForValue) {
+        const actionsCount = action.count ?? 0;
+        if (!actionsCount) {
             return 0;
         }
 
@@ -1401,15 +1389,32 @@ class ActionTimeDisplay {
             return null;
         }
 
-        const breakdown = calculateQueueProfitBreakdown({
-            profitPerHour: profitData.profitPerHour,
+        if (gatheringProfit) {
+            const totals = calculateGatheringActionTotalsFromBase({
+                actionsCount,
+                actionsPerHour: profitData.actionsPerHour,
+                baseOutputs: profitData.baseOutputs,
+                bonusDrops: profitData.bonusRevenue?.bonusDrops || [],
+                processingRevenueBonusPerAction: profitData.processingRevenueBonusPerAction,
+                drinkCostPerHour: profitData.drinkCostPerHour,
+                efficiencyMultiplier: profitData.efficiencyMultiplier || 1,
+            });
+            return valueMode === 'estimated_value' ? totals.totalRevenue : totals.totalProfit;
+        }
+
+        const totals = calculateProductionActionTotalsFromBase({
+            actionsCount,
             actionsPerHour: profitData.actionsPerHour,
-            actionCount: attemptsForValue,
-            revenuePerHour: profitData.revenuePerHour,
-            valueMode,
+            outputAmount: profitData.outputAmount || 1,
+            outputPrice: profitData.outputPrice,
+            gourmetBonus: profitData.gourmetBonus || 0,
+            bonusDrops: profitData.bonusRevenue?.bonusDrops || [],
+            materialCosts: profitData.materialCosts,
+            totalTeaCostPerHour: profitData.totalTeaCostPerHour,
+            efficiencyMultiplier: profitData.efficiencyMultiplier || 1,
         });
 
-        return breakdown.totalProfit;
+        return valueMode === 'estimated_value' ? totals.totalRevenue : totals.totalProfit;
     }
 
     /**

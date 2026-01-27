@@ -333,10 +333,11 @@ class QuickInputButtons {
 
                     const queueCount = parseInt(inputValue) || 0;
                     if (queueCount > 0) {
-                        // Input is number of ACTIONS to complete (affected by efficiency)
-                        // Calculate actual attempts needed
-                        const actualAttempts = Math.ceil(queueCount / efficiencyMultiplier);
-                        const totalSeconds = actualAttempts * actionTime;
+                        // Input is number of ACTIONS to complete
+                        // With efficiency, queued actions complete more quickly
+                        // Calculate time-consuming actions needed
+                        const baseActionsNeeded = Math.ceil(queueCount / efficiencyMultiplier);
+                        const totalSeconds = baseActionsNeeded * actionTime;
                         totalTimeLine.textContent = `Total time: ${timeReadable(totalSeconds)}`;
                     } else {
                         totalTimeLine.textContent = 'Total time: 0s';
@@ -396,8 +397,8 @@ class QuickInputButtons {
                         } else {
                             const queueCount = parseInt(inputValue) || 0;
                             if (queueCount > 0) {
-                                const actualAttempts = Math.ceil(queueCount / efficiencyMultiplier);
-                                const totalSeconds = actualAttempts * actionTime;
+                                const baseActionsNeeded = Math.ceil(queueCount / efficiencyMultiplier);
+                                const totalSeconds = baseActionsNeeded * actionTime;
                                 speedSummaryDiv.textContent = `${actionsPerHourWithEfficiency}/hr | Total time: ${timeReadable(totalSeconds)}`;
                             } else {
                                 speedSummaryDiv.textContent = `${actionsPerHourWithEfficiency}/hr | Total time: 0s`;
@@ -462,15 +463,15 @@ class QuickInputButtons {
 
                 this.presetHours.forEach((hours) => {
                     const button = this.createButton(hours === 0.5 ? '0.5' : hours.toString(), () => {
-                        // How many actions (outputs) fit in X hours?
-                        // With efficiency, fewer actual attempts produce more outputs
+                        // How many actions fit in X hours?
+                        // With efficiency, queued actions complete more quickly
                         // Time (seconds) = hours × 3600
-                        // Actual attempts = Time / actionTime
-                        // Queue count (outputs) = Actual attempts × efficiencyMultiplier
+                        // Time-consuming actions = Time / actionTime
+                        // Queue count (actions) = Time-consuming actions × efficiencyMultiplier
                         // Round to whole number (input doesn't accept decimals)
                         const totalSeconds = hours * 60 * 60;
-                        const actualAttempts = totalSeconds / actionTime;
-                        const actionCount = Math.round(actualAttempts * efficiencyMultiplier);
+                        const baseActions = totalSeconds / actionTime;
+                        const actionCount = Math.round(baseActions * efficiencyMultiplier);
                         this.setInputValue(numberInput, actionCount);
                     });
                     queueContent.appendChild(button);
@@ -800,7 +801,7 @@ class QuickInputButtons {
                 const baseRequirement = 1; // Upgrade items always require exactly 1
 
                 // Upgrade items are NOT affected by Artisan Tea (only regular inputItems are)
-                // Materials are consumed PER ACTION (not per attempt)
+                // Materials are consumed PER ACTION (including instant repeats)
                 // Efficiency gives bonus actions for FREE (no material cost)
                 const materialsPerAction = baseRequirement;
 
@@ -821,7 +822,7 @@ class QuickInputButtons {
                     const baseRequirement = input.count;
 
                     // Apply Artisan reduction
-                    // Materials are consumed PER ACTION (not per attempt)
+                    // Materials are consumed PER ACTION (including instant repeats)
                     // Efficiency gives bonus actions for FREE (no material cost)
                     const materialsPerAction = baseRequirement * (1 - artisanBonus);
 
@@ -951,15 +952,15 @@ class QuickInputButtons {
             // Efficiency means each action repeats, giving more XP per performed action
             const xpPerPerformedAction = xpPerAction * efficiencyMultiplier;
 
-            // Calculate real actions needed for this level (attempts)
-            const actionsForLevel = Math.ceil(xpNeeded / xpPerPerformedAction);
+            // Calculate time-consuming actions needed for this level
+            const baseActionsForLevel = Math.ceil(xpNeeded / xpPerPerformedAction);
 
-            // Convert attempts to outputs (queue input expects outputs, not attempts)
-            const outputsToQueue = Math.round(actionsForLevel * efficiencyMultiplier);
-            totalActions += outputsToQueue;
+            // Convert time-consuming actions to queued actions (instant repeats count toward queue total)
+            const actionsToQueue = Math.round(baseActionsForLevel * efficiencyMultiplier);
+            totalActions += actionsToQueue;
 
-            // Time is based on attempts (actions performed), not outputs
-            totalTime += actionsForLevel * actionTime;
+            // Time is based on time-consuming actions, not instant repeats
+            totalTime += baseActionsForLevel * actionTime;
         }
 
         return { actionsNeeded: totalActions, timeNeeded: totalTime };

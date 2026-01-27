@@ -257,7 +257,7 @@ export async function calculateGatheringProfit(actionHrid) {
     // So we calculate per-action outputs, then multiply by actionsPerHour and efficiency
     let revenuePerHour = 0;
     let processingRevenueBonus = 0; // Track extra revenue from Processing Tea
-    let processingRevenueBonusPerAction = 0; // Per-attempt processing revenue
+    let processingRevenueBonusPerAction = 0; // Per-action processing revenue
     const processingConversions = []; // Track conversion details for display
     const baseOutputs = []; // Display-only base item outputs (not used for totals)
     const dropTable = actionDetail.dropTable;
@@ -406,7 +406,7 @@ export async function calculateGatheringProfit(actionHrid) {
 
     return {
         profitPerHour,
-        profitPerAction: calculateProfitPerAction(profitPerHour, actionsPerHour), // Profit per attempt
+        profitPerAction: calculateProfitPerAction(profitPerHour, actionsPerHour), // Profit per action
         profitPerDay: calculateProfitPerDay(profitPerHour), // Profit per day
         revenuePerHour,
         drinkCostPerHour,
@@ -420,7 +420,7 @@ export async function calculateGatheringProfit(actionHrid) {
         processingBonus, // Processing Tea chance (as decimal)
         processingRevenueBonus, // Extra revenue from Processing conversions
         processingConversions, // Array of conversion details {rawItem, processedItem, valueGain}
-        processingRevenueBonusPerAction, // Processing bonus per attempt
+        processingRevenueBonusPerAction, // Processing bonus per action
         gatheringQuantity: totalGathering, // Total gathering quantity bonus (as decimal) - renamed for display consistency
         hasMissingPrices,
         details: {

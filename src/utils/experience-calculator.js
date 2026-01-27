@@ -12,7 +12,7 @@
 import dataManager from '../core/data-manager.js';
 import { calculateActionStats } from './action-calculator.js';
 import { calculateExperienceMultiplier } from './experience-parser.js';
-import { calculateActionsPerHour } from './profit-helpers.js';
+import { calculateActionsPerHour, calculateEfficiencyMultiplier } from './profit-helpers.js';
 
 /**
  * Calculate experience per hour for an action
@@ -64,14 +64,12 @@ export function calculateExpPerHour(actionHrid) {
     // Calculate actions per hour (base rate)
     const baseActionsPerHour = calculateActionsPerHour(actionTime);
 
-    // Calculate average actions per attempt from efficiency
+    // Calculate average queued actions completed per time-consuming action
     // Efficiency gives guaranteed repeats + chance for extra
-    const guaranteedActions = 1 + Math.floor(totalEfficiency / 100);
-    const chanceForExtra = totalEfficiency % 100;
-    const avgActionsPerAttempt = guaranteedActions + chanceForExtra / 100;
+    const avgActionsPerBaseAction = calculateEfficiencyMultiplier(totalEfficiency);
 
-    // Calculate actions per hour WITH efficiency (total completions including free repeats)
-    const actionsPerHourWithEfficiency = baseActionsPerHour * avgActionsPerAttempt;
+    // Calculate actions per hour WITH efficiency (total completions including instant repeats)
+    const actionsPerHourWithEfficiency = baseActionsPerHour * avgActionsPerBaseAction;
 
     // Calculate experience multiplier (Wisdom + Charm Experience)
     const skillHrid = actionDetails.experienceGain.skillHrid;

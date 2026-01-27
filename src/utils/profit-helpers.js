@@ -32,7 +32,7 @@ export function calculateActionsPerHour(actionTimeSeconds) {
 
 /**
  * Calculate hours needed for a number of actions
- * @param {number} actionCount - Number of actions/attempts
+ * @param {number} actionCount - Number of queued actions
  * @param {number} actionsPerHour - Actions per hour rate
  * @returns {number} Hours needed (0 if invalid input)
  *
@@ -49,7 +49,7 @@ export function calculateHoursForActions(actionCount, actionsPerHour) {
 
 /**
  * Calculate seconds needed for a number of actions
- * @param {number} actionCount - Number of actions/attempts
+ * @param {number} actionCount - Number of queued actions
  * @param {number} actionsPerHour - Actions per hour rate
  * @returns {number} Seconds needed (0 if invalid input)
  *
@@ -64,7 +64,7 @@ export function calculateSecondsForActions(actionCount, actionsPerHour) {
 
 /**
  * Calculate efficiency multiplier from efficiency percentage
- * Efficiency gives bonus action completions per attempt
+ * Efficiency gives bonus action completions per time-consuming action
  *
  * @param {number} efficiencyPercent - Efficiency as percentage (e.g., 150 for 150%)
  * @returns {number} Multiplier (e.g., 2.5 for 150% efficiency)
@@ -91,12 +91,12 @@ export function calculateEfficiencyMultiplier(efficiencyPercent) {
  *
  * @param {number} profitPerHour - Profit per hour (includes efficiency)
  * @param {number} actionsPerHour - Base actions per hour (without efficiency)
- * @returns {number} Profit per action/attempt (0 if invalid input)
+ * @returns {number} Profit per action (0 if invalid input)
  *
  * @example
  * // With 150% efficiency (2.5x), 600 actions/hr, 50 profit/item:
  * // profitPerHour = 600 × 2.5 × 50 = 75,000
- * calculateProfitPerAction(75000, 600) // Returns 125 (profit per attempt)
+ * calculateProfitPerAction(75000, 600) // Returns 125 (profit per action)
  */
 export function calculateProfitPerAction(profitPerHour, actionsPerHour) {
     if (!actionsPerHour || actionsPerHour <= 0) {
@@ -106,11 +106,11 @@ export function calculateProfitPerAction(profitPerHour, actionsPerHour) {
 }
 
 /**
- * Calculate total profit for a number of actions/attempts
+ * Calculate total profit for a number of actions
  *
  * @param {number} profitPerHour - Profit per hour (includes efficiency)
  * @param {number} actionsPerHour - Base actions per hour (without efficiency)
- * @param {number} actionCount - Number of actions/attempts
+ * @param {number} actionCount - Number of queued actions
  * @returns {number} Total profit (0 if invalid input)
  *
  * @example
@@ -162,79 +162,23 @@ export function calculatePriceAfterTax(price, taxRate = MARKET_TAX) {
     return price * (1 - taxRate);
 }
 
-// ============ Composite Calculations ============
-
 /**
- * Calculate complete profit breakdown for queued actions
- * Takes raw inputs and returns all intermediate + final values
+ * Calculate action-based totals for production actions
+ * Uses per-action base inputs (efficiency only affects time)
  *
  * @param {Object} params - Calculation parameters
- * @param {number} params.profitPerHour - Profit per hour (from profit calculator)
- * @param {number} params.actionsPerHour - Base actions per hour (from profit calculator)
- * @param {number} params.actionCount - Number of queued actions/attempts
- * @param {number} [params.revenuePerHour] - Revenue per hour (optional, for estimated value mode)
- * @param {string} [params.valueMode='profit'] - 'profit' or 'estimated_value'
- * @returns {Object} Profit breakdown with all calculated values
- *
- * @example
- * calculateQueueProfitBreakdown({
- *     profitPerHour: 75000,
- *     actionsPerHour: 600,
- *     actionCount: 100,
- * })
- * // Returns: { totalProfit: 12500, profitPerAction: 125, hoursNeeded: 0.167, ... }
- */
-export function calculateQueueProfitBreakdown({
-    profitPerHour,
-    actionsPerHour,
-    actionCount,
-    revenuePerHour,
-    valueMode = 'profit',
-}) {
-    // Determine which value to use based on mode
-    const valuePerHour =
-        valueMode === 'estimated_value' && revenuePerHour !== undefined ? revenuePerHour : profitPerHour;
-
-    // Calculate derived values
-    const profitPerAction = calculateProfitPerAction(valuePerHour, actionsPerHour);
-    const totalProfit = profitPerAction * actionCount;
-    const hoursNeeded = calculateHoursForActions(actionCount, actionsPerHour);
-    const secondsNeeded = hoursNeeded * SECONDS_PER_HOUR;
-
-    return {
-        // Final values
-        totalProfit,
-        profitPerAction,
-
-        // Time values
-        hoursNeeded,
-        secondsNeeded,
-
-        // Input values (for reference)
-        valuePerHour,
-        actionsPerHour,
-        actionCount,
-        valueMode,
-    };
-}
-
-/**
- * Calculate attempt-based totals for production actions
- * Uses per-attempt base inputs (no efficiency scaling)
- *
- * @param {Object} params - Calculation parameters
- * @param {number} params.actionsCount - Number of queued attempts
+ * @param {number} params.actionsCount - Number of queued actions
  * @param {number} params.actionsPerHour - Base actions per hour
- * @param {number} params.outputAmount - Items produced per attempt
+ * @param {number} params.outputAmount - Items produced per action
  * @param {number} params.outputPrice - Output price per item (pre-tax)
  * @param {number} params.gourmetBonus - Gourmet bonus as decimal (e.g., 0.1 for 10%)
  * @param {Array} [params.bonusDrops] - Bonus drop entries with revenuePerAction
- * @param {Array} [params.materialCosts] - Material cost entries per attempt
+ * @param {Array} [params.materialCosts] - Material cost entries per action
  * @param {number} params.totalTeaCostPerHour - Tea cost per hour
  * @param {number} [params.efficiencyMultiplier=1] - Efficiency multiplier for time scaling
  * @returns {Object} Totals and time values
  */
-export function calculateProductionAttemptTotalsFromBase({
+export function calculateProductionActionTotalsFromBase({
     actionsCount,
     actionsPerHour,
     outputAmount,
@@ -292,20 +236,20 @@ export function calculateProductionAttemptTotalsFromBase({
 }
 
 /**
- * Calculate attempt-based totals for gathering actions
- * Uses per-attempt base inputs (no efficiency scaling)
+ * Calculate action-based totals for gathering actions
+ * Uses per-action base inputs (efficiency only affects time)
  *
  * @param {Object} params - Calculation parameters
- * @param {number} params.actionsCount - Number of queued attempts
+ * @param {number} params.actionsCount - Number of queued actions
  * @param {number} params.actionsPerHour - Base actions per hour
  * @param {Array} [params.baseOutputs] - Base outputs with revenuePerAction
  * @param {Array} [params.bonusDrops] - Bonus drop entries with revenuePerAction
- * @param {number} params.processingRevenueBonusPerAction - Processing bonus per attempt
+ * @param {number} params.processingRevenueBonusPerAction - Processing bonus per action
  * @param {number} params.drinkCostPerHour - Drink costs per hour
  * @param {number} [params.efficiencyMultiplier=1] - Efficiency multiplier for time scaling
  * @returns {Object} Totals and time values
  */
-export function calculateGatheringAttemptTotalsFromBase({
+export function calculateGatheringActionTotalsFromBase({
     actionsCount,
     actionsPerHour,
     baseOutputs = [],
@@ -372,8 +316,6 @@ export default {
     calculateDrinksPerHour,
     calculatePriceAfterTax,
 
-    // Composite
-    calculateQueueProfitBreakdown,
-    calculateProductionAttemptTotalsFromBase,
-    calculateGatheringAttemptTotalsFromBase,
+    calculateProductionActionTotalsFromBase,
+    calculateGatheringActionTotalsFromBase,
 };

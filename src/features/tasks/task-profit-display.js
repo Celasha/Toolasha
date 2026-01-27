@@ -408,8 +408,8 @@ class TaskProfitDisplay {
             const efficiencyMultiplier = profitData.action.details.efficiencyMultiplier || 1;
 
             // Efficiency reduces the number of actions needed
-            const actualActionsNeeded = remainingActions / efficiencyMultiplier;
-            const totalSeconds = calculateSecondsForActions(actualActionsNeeded, actionsPerHour);
+            const baseActionsNeeded = remainingActions / efficiencyMultiplier;
+            const totalSeconds = calculateSecondsForActions(baseActionsNeeded, actionsPerHour);
             timeEstimate = timeReadable(totalSeconds);
         }
 

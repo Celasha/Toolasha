@@ -9,8 +9,8 @@ import expectedValueCalculator from '../market/expected-value-calculator.js';
 import { calculateGatheringProfit } from '../actions/gathering-profit.js';
 import { calculateProductionProfit } from '../actions/production-profit.js';
 import {
-    calculateProductionAttemptTotalsFromBase,
-    calculateGatheringAttemptTotalsFromBase,
+    calculateProductionActionTotalsFromBase,
+    calculateGatheringActionTotalsFromBase,
 } from '../../utils/profit-helpers.js';
 
 /**
@@ -197,7 +197,7 @@ async function calculateGatheringTaskProfit(actionHrid, quantity) {
 
     const hasMissingPrices = profitData.hasMissingPrices;
 
-    const totals = calculateGatheringAttemptTotalsFromBase({
+    const totals = calculateGatheringActionTotalsFromBase({
         actionsCount: quantity,
         actionsPerHour: profitData.actionsPerHour,
         baseOutputs: profitData.baseOutputs,
@@ -258,7 +258,7 @@ async function calculateProductionTaskProfit(actionHrid, quantity) {
     const hasMissingPrices = profitData.hasMissingPrices;
 
     const bonusDrops = profitData.bonusRevenue?.bonusDrops || [];
-    const totals = calculateProductionAttemptTotalsFromBase({
+    const totals = calculateProductionActionTotalsFromBase({
         actionsCount: quantity,
         actionsPerHour: profitData.actionsPerHour,
         outputAmount: profitData.outputAmount || 1,

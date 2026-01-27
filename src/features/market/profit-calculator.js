@@ -25,6 +25,7 @@ import {
     calculateProfitPerAction,
     calculateProfitPerDay,
     calculateDrinksPerHour,
+    calculateEfficiencyMultiplier,
 } from '../../utils/profit-helpers.js';
 
 /**
@@ -193,7 +194,7 @@ class ProfitCalculator {
         // Calculate efficiency multiplier
         // Formula matches original MWI Tools: 1 + efficiency%
         // Example: 150% efficiency → 1 + 1.5 = 2.5x multiplier
-        const efficiencyMultiplier = 1 + totalEfficiency / 100;
+        const efficiencyMultiplier = calculateEfficiencyMultiplier(totalEfficiency);
 
         // Items produced per hour (with efficiency multiplier)
         const itemsPerHour = actionsPerHour * outputAmount * efficiencyMultiplier;
@@ -284,7 +285,7 @@ class ProfitCalculator {
             revenuePerHour,
             profitPerItem,
             profitPerHour,
-            profitPerAction: calculateProfitPerAction(profitPerHour, actionsPerHour), // Profit per attempt
+            profitPerAction: calculateProfitPerAction(profitPerHour, actionsPerHour), // Profit per action
             profitPerDay: calculateProfitPerDay(profitPerHour), // Profit per day
             bonusRevenue, // Bonus revenue from essences and rare finds
             hasMissingPrices,

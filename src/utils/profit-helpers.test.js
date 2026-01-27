@@ -14,9 +14,8 @@ import {
     calculateProfitPerDay,
     calculateDrinksPerHour,
     calculatePriceAfterTax,
-    calculateQueueProfitBreakdown,
-    calculateProductionAttemptTotalsFromBase,
-    calculateGatheringAttemptTotalsFromBase,
+    calculateProductionActionTotalsFromBase,
+    calculateGatheringActionTotalsFromBase,
 } from './profit-helpers.js';
 import { MARKET_TAX } from './profit-constants.js';
 
@@ -201,78 +200,11 @@ describe('calculatePriceAfterTax', () => {
     });
 });
 
-// ============ Composite Calculation Tests ============
-
-describe('calculateQueueProfitBreakdown', () => {
-    test('calculates complete breakdown for production action', () => {
-        const result = calculateQueueProfitBreakdown({
-            profitPerHour: 75000,
-            actionsPerHour: 600,
-            actionCount: 100,
-        });
-
-        expect(result.totalProfit).toBe(12500);
-        expect(result.profitPerAction).toBe(125);
-        expect(result.hoursNeeded).toBeCloseTo(0.167, 2);
-        expect(result.secondsNeeded).toBe(600);
-        expect(result.valueMode).toBe('profit');
-    });
-
-    test('uses revenue in estimated_value mode', () => {
-        const result = calculateQueueProfitBreakdown({
-            profitPerHour: 50000,
-            revenuePerHour: 100000,
-            actionsPerHour: 600,
-            actionCount: 100,
-            valueMode: 'estimated_value',
-        });
-
-        // Should use revenuePerHour (100,000) not profitPerHour (50,000)
-        expect(result.totalProfit).toBeCloseTo(16667, 0);
-        expect(result.profitPerAction).toBeCloseTo(166.67, 1);
-        expect(result.valuePerHour).toBe(100000);
-    });
-
-    test('falls back to profit when revenue undefined in estimated_value mode', () => {
-        const result = calculateQueueProfitBreakdown({
-            profitPerHour: 50000,
-            actionsPerHour: 600,
-            actionCount: 100,
-            valueMode: 'estimated_value',
-        });
-
-        expect(result.valuePerHour).toBe(50000);
-    });
-
-    test('handles negative profit', () => {
-        const result = calculateQueueProfitBreakdown({
-            profitPerHour: -10000,
-            actionsPerHour: 600,
-            actionCount: 100,
-        });
-
-        expect(result.totalProfit).toBeCloseTo(-1667, 0);
-        expect(result.profitPerAction).toBeCloseTo(-16.67, 1);
-    });
-
-    test('handles zero actionsPerHour gracefully', () => {
-        const result = calculateQueueProfitBreakdown({
-            profitPerHour: 75000,
-            actionsPerHour: 0,
-            actionCount: 100,
-        });
-
-        expect(result.totalProfit).toBe(0);
-        expect(result.profitPerAction).toBe(0);
-        expect(result.hoursNeeded).toBe(0);
-    });
-});
-
-describe('calculateProductionAttemptTotalsFromBase', () => {
-    test('calculates production totals from attempt-based inputs', () => {
+describe('calculateProductionActionTotalsFromBase', () => {
+    test('calculates production totals from action-based inputs', () => {
         const actionsCount = 10;
         const actionsPerHour = 5;
-        const result = calculateProductionAttemptTotalsFromBase({
+        const result = calculateProductionActionTotalsFromBase({
             actionsCount,
             actionsPerHour,
             outputAmount: 3,
@@ -300,7 +232,7 @@ describe('calculateProductionAttemptTotalsFromBase', () => {
     test('handles zero actionsPerHour without tea costs', () => {
         const actionsCount = 4;
         const actionsPerHour = 0;
-        const result = calculateProductionAttemptTotalsFromBase({
+        const result = calculateProductionActionTotalsFromBase({
             actionsCount,
             actionsPerHour,
             outputAmount: 2,
@@ -324,7 +256,7 @@ describe('calculateProductionAttemptTotalsFromBase', () => {
     });
 
     test('scales hours and tea costs by efficiency multiplier', () => {
-        const result = calculateProductionAttemptTotalsFromBase({
+        const result = calculateProductionActionTotalsFromBase({
             actionsCount: 100,
             actionsPerHour: 50,
             outputAmount: 1,
@@ -339,11 +271,11 @@ describe('calculateProductionAttemptTotalsFromBase', () => {
     });
 });
 
-describe('calculateGatheringAttemptTotalsFromBase', () => {
-    test('calculates gathering totals from attempt-based inputs', () => {
+describe('calculateGatheringActionTotalsFromBase', () => {
+    test('calculates gathering totals from action-based inputs', () => {
         const actionsCount = 10;
         const actionsPerHour = 4;
-        const result = calculateGatheringAttemptTotalsFromBase({
+        const result = calculateGatheringActionTotalsFromBase({
             actionsCount,
             actionsPerHour,
             baseOutputs: [{ revenuePerAction: 3 }, { revenuePerAction: 2 }],
@@ -364,7 +296,7 @@ describe('calculateGatheringAttemptTotalsFromBase', () => {
     });
 
     test('handles missing inputs with zero actionsPerHour', () => {
-        const result = calculateGatheringAttemptTotalsFromBase({
+        const result = calculateGatheringActionTotalsFromBase({
             actionsCount: 5,
             actionsPerHour: 0,
             drinkCostPerHour: 10,
@@ -392,7 +324,7 @@ describe('Real-world profit scenarios', () => {
         // - Cheese sells for 100, costs 50 in materials
         // - Profit per cheese = 50
         // - profitPerHour = 600 × 2.5 × 50 = 75,000 (efficiency already included)
-        // - Queue shows "Produce 100 times"
+        // - Queue shows "Produce 100 times" (completed actions)
 
         const actionsPerHour = calculateActionsPerHour(6);
         expect(actionsPerHour).toBe(600);
@@ -400,18 +332,19 @@ describe('Real-world profit scenarios', () => {
         const efficiencyMultiplier = calculateEfficiencyMultiplier(150);
         expect(efficiencyMultiplier).toBe(2.5);
 
-        // profitPerHour already includes efficiency (calculated by profit-calculator.js)
-        const profitPerHour = 75000;
-
-        const result = calculateQueueProfitBreakdown({
-            profitPerHour,
+        const result = calculateProductionActionTotalsFromBase({
+            actionsCount: 100,
             actionsPerHour,
-            actionCount: 100,
+            outputAmount: 1,
+            outputPrice: 100,
+            gourmetBonus: 0,
+            materialCosts: [{ totalCost: 50 }],
+            totalTeaCostPerHour: 0,
+            efficiencyMultiplier,
         });
 
-        // 100 attempts × 125 profit per attempt = 12,500
-        expect(result.totalProfit).toBe(12500);
-        expect(result.profitPerAction).toBe(125); // 50 profit × 2.5 efficiency
+        // 100 actions × 50 profit per action minus tax = 4,800
+        expect(result.totalProfit).toBe(4800);
     });
 
     test('Gathering with 50% efficiency', () => {
@@ -420,22 +353,21 @@ describe('Real-world profit scenarios', () => {
         // - 50% efficiency → 1.5x multiplier
         // - Average drop value = 20 per action (before efficiency)
         // - profitPerHour = 900 × 1.5 × 20 = 27,000
-        // - Queue shows "Gather 500 times"
+        // - Queue shows "Gather 500 times" (completed actions)
 
         const actionsPerHour = calculateActionsPerHour(4);
         expect(actionsPerHour).toBe(900);
 
-        const profitPerHour = 27000;
-
-        const result = calculateQueueProfitBreakdown({
-            profitPerHour,
+        const result = calculateGatheringActionTotalsFromBase({
+            actionsCount: 500,
             actionsPerHour,
-            actionCount: 500,
+            baseOutputs: [{ revenuePerAction: 20 }],
+            drinkCostPerHour: 0,
+            efficiencyMultiplier: 1.5,
         });
 
-        // 500 attempts × 30 profit per attempt = 15,000
-        expect(result.totalProfit).toBe(15000);
-        expect(result.profitPerAction).toBe(30); // 20 profit × 1.5 efficiency
+        // 500 actions × 20 profit per action minus tax = 9,800
+        expect(result.totalProfit).toBe(9800);
     });
 
     test('Loss-making action (material cost > sale price)', () => {
@@ -445,13 +377,16 @@ describe('Real-world profit scenarios', () => {
         // - profitPerHour = -6,000
         // - Queue shows "Produce 200 times"
 
-        const result = calculateQueueProfitBreakdown({
-            profitPerHour: -6000,
+        const result = calculateProductionActionTotalsFromBase({
+            actionsCount: 200,
             actionsPerHour: 600,
-            actionCount: 200,
+            outputAmount: 1,
+            outputPrice: 0,
+            gourmetBonus: 0,
+            materialCosts: [{ totalCost: 10 }],
+            totalTeaCostPerHour: 0,
         });
 
         expect(result.totalProfit).toBe(-2000);
-        expect(result.profitPerAction).toBe(-10);
     });
 });
