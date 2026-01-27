@@ -24,6 +24,7 @@ import outputTotals from '../features/actions/output-totals.js';
 import maxProduceable from '../features/actions/max-produceable.js';
 import gatheringStats from '../features/actions/gathering-stats.js';
 import requiredMaterials from '../features/actions/required-materials.js';
+import missingMaterialsButton from '../features/actions/missing-materials-button.js';
 import abilityBookCalculator from '../features/abilities/ability-book-calculator.js';
 import zoneIndices from '../features/combat/zone-indices.js';
 import combatScore from '../features/profile/combat-score.js';
@@ -270,6 +271,14 @@ const featureRegistry = [
             const profitDisplay = document.querySelector('.mwi-alchemy-profit');
             return profitDisplay !== null;
         },
+    },
+    {
+        key: 'actions_missingMaterialsButton',
+        name: 'Missing Materials Button',
+        category: 'Actions',
+        initialize: () => missingMaterialsButton.initialize(),
+        async: false,
+        healthCheck: null, // Button added by panel observer, no standalone health check
     },
 
     // Combat Features
@@ -699,6 +708,7 @@ function getFeatureInstance(key) {
         actionPanel_gatheringStats: gatheringStats,
         requiredMaterials: requiredMaterials,
         alchemy_profitDisplay: alchemyProfitDisplay,
+        actions_missingMaterialsButton: missingMaterialsButton,
         abilityBookCalculator: abilityBookCalculator,
         zoneIndices: zoneIndices,
         combatScore: combatScore,

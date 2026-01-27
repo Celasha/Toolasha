@@ -124,6 +124,13 @@ export const settingsGroups = {
                 default: true,
                 help: 'Displays profit/hour and profit/day for alchemy actions based on success rate and market prices',
             },
+            actions_missingMaterialsButton: {
+                id: 'actions_missingMaterialsButton',
+                label: 'Show "Missing Mats Marketplace" button on production panels',
+                type: 'checkbox',
+                default: true,
+                help: 'Adds button to production panels that opens marketplace with tabs for missing materials',
+            },
         },
     },
 

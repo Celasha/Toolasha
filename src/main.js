@@ -125,7 +125,7 @@ if (isCombatSimulatorPage()) {
     const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
     targetWindow.Toolasha = {
-        version: '0.5.22',
+        version: '0.5.23',
 
         // Feature toggle API (for users to manage settings via console)
         features: {
@@ -135,21 +135,6 @@ if (isCombatSimulatorPage()) {
             toggle: (key) => config.toggleFeature(key),
             status: (key) => config.isFeatureEnabled(key),
             info: (key) => config.getFeatureInfo(key),
-        },
-
-        // Debug API (TEMPORARY: for testing handler accumulation fix)
-        debug: {
-            domHandlers: () => domObserver.debugHandlers(),
-            wsHandlers: () => webSocketHook.debugHandlers(),
-            domStats: () => domObserver.getStats(),
-            runTest: () => {
-                console.log('🧪 Handler Accumulation Test');
-                console.log('📊 DOM Observer:');
-                domObserver.debugHandlers();
-                console.log('\n📊 WebSocket:');
-                webSocketHook.debugHandlers();
-                console.log('\n👉 Switch characters 3 times, then run: Toolasha.debug.runTest()');
-            },
         },
     };
 }
