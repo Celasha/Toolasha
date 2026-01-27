@@ -53,11 +53,6 @@ if (isCombatSimulatorPage()) {
             // Initialize config (loads settings from storage)
             await config.initialize();
 
-            // Initialize Settings UI (injects tab into game settings panel)
-            await settingsUI.initialize().catch((error) => {
-                console.error('[Toolasha] Settings UI initialization failed:', error);
-            });
-
             // Add beforeunload handler to flush all pending writes
             window.addEventListener('beforeunload', () => {
                 storage.flushAll();
@@ -83,6 +78,11 @@ if (isCombatSimulatorPage()) {
                 // Reload config settings with character-specific data
                 await config.loadSettings();
                 config.applyColorSettings();
+
+                // Initialize Settings UI after character data is loaded
+                await settingsUI.initialize().catch((error) => {
+                    console.error('[Toolasha] Settings UI initialization failed:', error);
+                });
 
                 await featureRegistry.initializeFeatures();
 
@@ -125,7 +125,7 @@ if (isCombatSimulatorPage()) {
     const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
     targetWindow.Toolasha = {
-        version: '0.5.27',
+        version: '0.5.28',
 
         // Feature toggle API (for users to manage settings via console)
         features: {
