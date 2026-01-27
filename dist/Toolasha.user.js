@@ -21697,27 +21697,22 @@
             return;
         }
 
-        // Determine tab state based on inventory and tradeability
-        const hasInInventory = material.have > 0;
-
+        // Color coding:
+        // - Red: Missing materials (missing > 0)
+        // - Green: Sufficient materials (missing = 0)
+        // - Gray: Not tradeable
         let statusColor;
         let statusText;
 
         if (!material.isTradeable) {
             statusColor = '#888888'; // Gray - not tradeable
             statusText = 'Not Tradeable';
-        } else if (hasInInventory) {
-            // Have inventory - check if we're missing materials
-            if (material.missing > 0) {
-                statusColor = '#ef4444'; // Red - missing materials
-                statusText = `Missing: ${formatWithSeparator(material.missing)}`;
-            } else {
-                statusColor = '#4ade80'; // Green - sufficient materials
-                statusText = 'Sufficient';
-            }
+        } else if (material.missing > 0) {
+            statusColor = '#ef4444'; // Red - missing materials
+            statusText = `Missing: ${formatWithSeparator(material.missing)}`;
         } else {
-            statusColor = '#fb923c'; // Orange - need to buy first
-            statusText = 'Need: Add 1 to inventory';
+            statusColor = '#4ade80'; // Green - sufficient materials
+            statusText = 'Sufficient';
         }
 
         // Title case: capitalize first letter of each word
@@ -21740,13 +21735,7 @@
         if (!material.isTradeable) {
             tab.style.opacity = '0.5';
             tab.style.cursor = 'not-allowed';
-        } else if (!hasInInventory) {
-            // Orange tint for zero-inventory items
-            tab.style.opacity = '0.85';
-            tab.style.cursor = 'help';
-            tab.title = 'Add at least 1 to your inventory first, then click to open order book';
         } else {
-            // Green - ready to use
             tab.style.opacity = '1';
             tab.style.cursor = 'pointer';
             tab.title = '';
@@ -21767,32 +21756,22 @@
         tab.setAttribute('data-mwi-custom-tab', 'true');
         tab.setAttribute('data-item-hrid', material.itemHrid);
 
-        // Determine tab state based on inventory and tradeability
-        const hasInInventory = material.have > 0;
-
         // Color coding:
-        // - Green: Have sufficient materials (missing = 0)
-        // - Red: Missing materials (missing > 0) but have at least 1 in inventory
-        // - Orange: No inventory at all (can't open order book)
-        // - Gray: Not tradeable at all
+        // - Red: Missing materials (missing > 0)
+        // - Green: Sufficient materials (missing = 0)
+        // - Gray: Not tradeable
         let statusColor;
         let statusText;
 
         if (!material.isTradeable) {
             statusColor = '#888888'; // Gray - not tradeable
             statusText = 'Not Tradeable';
-        } else if (hasInInventory) {
-            // Have inventory - check if we're missing materials
-            if (material.missing > 0) {
-                statusColor = '#ef4444'; // Red - missing materials
-                statusText = `Missing: ${formatWithSeparator(material.missing)}`;
-            } else {
-                statusColor = '#4ade80'; // Green - sufficient materials
-                statusText = 'Sufficient';
-            }
+        } else if (material.missing > 0) {
+            statusColor = '#ef4444'; // Red - missing materials
+            statusText = `Missing: ${formatWithSeparator(material.missing)}`;
         } else {
-            statusColor = '#fb923c'; // Orange - need to buy first
-            statusText = 'Need: Add 1 to inventory';
+            statusColor = '#4ade80'; // Green - sufficient materials
+            statusText = 'Sufficient';
         }
 
         // Update text content
@@ -21818,11 +21797,6 @@
         if (!material.isTradeable) {
             tab.style.opacity = '0.5';
             tab.style.cursor = 'not-allowed';
-        } else if (!hasInInventory) {
-            // Orange tint for zero-inventory items
-            tab.style.opacity = '0.85';
-            tab.style.cursor = 'help';
-            tab.title = 'Add at least 1 to your inventory first, then click to open order book';
         }
 
         // Remove selected state
@@ -21840,22 +21814,8 @@
                 return;
             }
 
-            if (!hasInInventory) {
-                // Show alert for zero-inventory items
-                alert(
-                    `${material.itemName} Order Book:\n\n` +
-                        `You need at least 1 ${material.itemName} in your inventory to view the order book.\n\n` +
-                        `How to fix:\n` +
-                        `1. Go to "Market Listings" tab\n` +
-                        `2. Search for "${material.itemName}"\n` +
-                        `3. Buy at least 1 from the market\n` +
-                        `4. Then you can shift+click it in your inventory to open the order book`
-                );
-                return;
-            }
-
-            // Has inventory - open order book
-            openOrderBook(material.itemHrid, material.itemName);
+            // Use mooket API to open order book (works without inventory requirement)
+            window.mwi?.game?.handleGoToMarketplace(material.itemHrid, 0);
         });
 
         return tab;
@@ -21878,51 +21838,6 @@
         // Clear stored context
         storedActionHrid = null;
         storedNumActions = 0;
-    }
-
-    /**
-     * Open order book for an item using shift+click simulation
-     * @param {string} itemHrid - Item HRID (e.g., "/items/egg")
-     * @param {string} itemName - Item name for logging
-     * @returns {boolean} True if successful
-     */
-    function openOrderBook(itemHrid, itemName) {
-        // Extract sprite ID from HRID
-        const spriteId = itemHrid.replace('/items/', '');
-
-        // Find inventory panel
-        const inventoryPanel = document.querySelector('.Inventory_inventory__17CH2');
-        if (!inventoryPanel) {
-            console.error('[MissingMats] Inventory panel not found');
-            return false;
-        }
-
-        // Find all clickable items in inventory
-        const inventoryItems = inventoryPanel.querySelectorAll('.Item_item__2De2O.Item_clickable__3viV6');
-
-        for (const itemElement of inventoryItems) {
-            const useElement = itemElement.querySelector('use');
-            if (useElement) {
-                const href = useElement.getAttribute('href');
-
-                // Match item by sprite ID
-                if (href && href.includes(`#${spriteId}`)) {
-                    // Simulate shift+click to open order book
-                    const clickEvent = new MouseEvent('click', {
-                        bubbles: true,
-                        cancelable: true,
-                        shiftKey: true,
-                    });
-
-                    itemElement.dispatchEvent(clickEvent);
-                    console.log('[MissingMats] Opened order book for:', itemName);
-                    return true;
-                }
-            }
-        }
-
-        console.warn('[MissingMats] Item not found in inventory:', itemName);
-        return false;
     }
 
     /**
