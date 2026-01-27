@@ -32,7 +32,6 @@ export default [
 
                 // Game globals (available at runtime on game page)
                 localStorageUtil: 'readonly',
-                mwi: 'readonly',
             },
         },
         rules: {

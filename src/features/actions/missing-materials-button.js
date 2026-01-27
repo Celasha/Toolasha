@@ -572,7 +572,7 @@ function createCustomTab(material, referenceTab) {
         }
 
         // Use game API to open order book (works without inventory requirement)
-        mwi.game?.handleGoToMarketplace(material.itemHrid, 0);
+        unsafeWindow.mwi?.game?.handleGoToMarketplace(material.itemHrid, 0);
     });
 
     return tab;
