@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.5.25
+// @version      0.5.26
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -21460,28 +21460,36 @@
     ];
 
     /**
+     * Get the game object via React fiber
+     * @returns {Object|null} Game component instance or null
+     */
+    function getGameObject() {
+        const gamePageEl = document.querySelector('[class^="GamePage"]');
+        if (!gamePageEl) return null;
+
+        const fiberKey = Object.keys(gamePageEl).find((k) => k.startsWith('__reactFiber$'));
+        if (!fiberKey) return null;
+
+        return gamePageEl[fiberKey]?.return?.stateNode;
+    }
+
+    /**
+     * Navigate to marketplace for a specific item
+     * @param {string} itemHrid - Item HRID
+     * @param {number} enhancementLevel - Enhancement level (default 0)
+     */
+    function goToMarketplace(itemHrid, enhancementLevel = 0) {
+        const game = getGameObject();
+        if (game?.handleGoToMarketplace) {
+            game.handleGoToMarketplace(itemHrid, enhancementLevel);
+        }
+    }
+
+    /**
      * Initialize missing materials button feature
      */
     function initialize$1() {
         console.log('[MissingMats] Initializing missing materials button feature');
-
-        // Set up game object reference on window (like mooket does with window.mwi.game)
-        const setupScript = document.createElement('script');
-        setupScript.textContent = `
-        window.__toolashaGame = (function() {
-            const gamePage = document.querySelector('[class^="GamePage"]');
-            if (gamePage) {
-                const fiberKey = Object.keys(gamePage).find(k => k.startsWith('__reactFiber$'));
-                if (fiberKey) {
-                    return gamePage[fiberKey]?.return?.stateNode;
-                }
-            }
-            return null;
-        })();
-    `;
-        document.head.appendChild(setupScript);
-        document.head.removeChild(setupScript);
-
         setupMarketplaceCleanupObserver();
 
         // Watch for action panels appearing
@@ -22011,11 +22019,8 @@
                 return;
             }
 
-            // Call game API using the reference set up during initialization
-            const script = document.createElement('script');
-            script.textContent = `window.__toolashaGame?.handleGoToMarketplace('${material.itemHrid}', 0);`;
-            document.head.appendChild(script);
-            document.head.removeChild(script);
+            // Navigate to marketplace using game API
+            goToMarketplace(material.itemHrid, 0);
         });
 
         return tab;
@@ -36868,17 +36873,31 @@
                         continue; // Skip player messages
                     }
 
-                    // Parse timestamp from message display format: [MM/DD HH:MM:SS]
-                    const timestampMatch = text.match(/\[(\d{1,2}\/\d{1,2})\s+(\d{1,2}):(\d{2}):(\d{2})\s*([AP]M)?\]/);
+                    // Parse timestamp from message display format: [MM/DD HH:MM:SS AM/PM] or [DD-M HH:MM:SS]
+                    const timestampMatch = text.match(
+                        /\[(\d{1,2})([-\/])(\d{1,2})\s+(\d{1,2}):(\d{2}):(\d{2})\s*([AP]M)?\]/
+                    );
                     if (!timestampMatch) continue;
 
-                    const date = timestampMatch[1];
-                    let hour = parseInt(timestampMatch[2], 10);
-                    const min = parseInt(timestampMatch[3], 10);
-                    const sec = parseInt(timestampMatch[4], 10);
-                    const period = timestampMatch[5];
+                    const part1 = parseInt(timestampMatch[1], 10);
+                    const separator = timestampMatch[2];
+                    const part2 = parseInt(timestampMatch[3], 10);
+                    let hour = parseInt(timestampMatch[4], 10);
+                    const min = parseInt(timestampMatch[5], 10);
+                    const sec = parseInt(timestampMatch[6], 10);
+                    const period = timestampMatch[7];
 
-                    const [month, day] = date.split('/').map((x) => parseInt(x, 10));
+                    // Determine format based on separator
+                    let month, day;
+                    if (separator === '/') {
+                        // MM/DD format
+                        month = part1;
+                        day = part2;
+                    } else {
+                        // DD-M format (dash separator)
+                        day = part1;
+                        month = part2;
+                    }
 
                     // Handle AM/PM if present
                     if (period === 'PM' && hour < 12) hour += 12;
@@ -44399,7 +44418,7 @@
         const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
         targetWindow.Toolasha = {
-            version: '0.5.25',
+            version: '0.5.26',
 
             // Feature toggle API (for users to manage settings via console)
             features: {

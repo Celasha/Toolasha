@@ -34,28 +34,36 @@ const PRODUCTION_TYPES = [
 ];
 
 /**
+ * Get the game object via React fiber
+ * @returns {Object|null} Game component instance or null
+ */
+function getGameObject() {
+    const gamePageEl = document.querySelector('[class^="GamePage"]');
+    if (!gamePageEl) return null;
+
+    const fiberKey = Object.keys(gamePageEl).find((k) => k.startsWith('__reactFiber$'));
+    if (!fiberKey) return null;
+
+    return gamePageEl[fiberKey]?.return?.stateNode;
+}
+
+/**
+ * Navigate to marketplace for a specific item
+ * @param {string} itemHrid - Item HRID
+ * @param {number} enhancementLevel - Enhancement level (default 0)
+ */
+function goToMarketplace(itemHrid, enhancementLevel = 0) {
+    const game = getGameObject();
+    if (game?.handleGoToMarketplace) {
+        game.handleGoToMarketplace(itemHrid, enhancementLevel);
+    }
+}
+
+/**
  * Initialize missing materials button feature
  */
 export function initialize() {
     console.log('[MissingMats] Initializing missing materials button feature');
-
-    // Set up game object reference on window (like mooket does with window.mwi.game)
-    const setupScript = document.createElement('script');
-    setupScript.textContent = `
-        window.__toolashaGame = (function() {
-            const gamePage = document.querySelector('[class^="GamePage"]');
-            if (gamePage) {
-                const fiberKey = Object.keys(gamePage).find(k => k.startsWith('__reactFiber$'));
-                if (fiberKey) {
-                    return gamePage[fiberKey]?.return?.stateNode;
-                }
-            }
-            return null;
-        })();
-    `;
-    document.head.appendChild(setupScript);
-    document.head.removeChild(setupScript);
-
     setupMarketplaceCleanupObserver();
 
     // Watch for action panels appearing
@@ -585,11 +593,8 @@ function createCustomTab(material, referenceTab) {
             return;
         }
 
-        // Call game API using the reference set up during initialization
-        const script = document.createElement('script');
-        script.textContent = `window.__toolashaGame?.handleGoToMarketplace('${material.itemHrid}', 0);`;
-        document.head.appendChild(script);
-        document.head.removeChild(script);
+        // Navigate to marketplace using game API
+        goToMarketplace(material.itemHrid, 0);
     });
 
     return tab;
