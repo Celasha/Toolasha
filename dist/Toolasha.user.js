@@ -5427,6 +5427,142 @@
     }
 
     /**
+     * Calculate attempt-based totals for production actions
+     * Uses per-attempt base inputs (no efficiency scaling)
+     *
+     * @param {Object} params - Calculation parameters
+     * @param {number} params.actionsCount - Number of queued attempts
+     * @param {number} params.actionsPerHour - Base actions per hour
+     * @param {number} params.outputAmount - Items produced per attempt
+     * @param {number} params.outputPrice - Output price per item (pre-tax)
+     * @param {number} params.gourmetBonus - Gourmet bonus as decimal (e.g., 0.1 for 10%)
+     * @param {Array} [params.bonusDrops] - Bonus drop entries with revenuePerAction
+     * @param {Array} [params.materialCosts] - Material cost entries per attempt
+     * @param {number} params.totalTeaCostPerHour - Tea cost per hour
+     * @param {number} [params.efficiencyMultiplier=1] - Efficiency multiplier for time scaling
+     * @returns {Object} Totals and time values
+     */
+    function calculateProductionAttemptTotalsFromBase({
+        actionsCount,
+        actionsPerHour,
+        outputAmount,
+        outputPrice,
+        gourmetBonus,
+        bonusDrops = [],
+        materialCosts = [],
+        totalTeaCostPerHour,
+        efficiencyMultiplier = 1,
+    }) {
+        const effectiveActionsPerHour = actionsPerHour * efficiencyMultiplier;
+        if (!effectiveActionsPerHour || effectiveActionsPerHour <= 0) {
+            return {
+                totalBaseItems: 0,
+                totalGourmetItems: 0,
+                totalBaseRevenue: 0,
+                totalGourmetRevenue: 0,
+                totalBonusRevenue: 0,
+                totalRevenue: 0,
+                totalMarketTax: 0,
+                totalMaterialCost: 0,
+                totalTeaCost: 0,
+                totalCosts: 0,
+                totalProfit: 0,
+                hoursNeeded: 0,
+            };
+        }
+        const totalBaseItems = outputAmount * actionsCount;
+        const totalGourmetItems = outputAmount * gourmetBonus * actionsCount;
+        const totalBaseRevenue = totalBaseItems * outputPrice;
+        const totalGourmetRevenue = totalGourmetItems * outputPrice;
+        const totalBonusRevenue = bonusDrops.reduce((sum, drop) => sum + (drop.revenuePerAction || 0) * actionsCount, 0);
+        const totalRevenue = totalBaseRevenue + totalGourmetRevenue + totalBonusRevenue;
+        const totalMarketTax = totalRevenue * MARKET_TAX;
+        const totalMaterialCost = materialCosts.reduce((sum, material) => sum + material.totalCost * actionsCount, 0);
+        const hoursNeeded = calculateHoursForActions(actionsCount, effectiveActionsPerHour);
+        const totalTeaCost = totalTeaCostPerHour * hoursNeeded;
+        const totalCosts = totalMaterialCost + totalTeaCost + totalMarketTax;
+        const totalProfit = totalRevenue - totalCosts;
+
+        return {
+            totalBaseItems,
+            totalGourmetItems,
+            totalBaseRevenue,
+            totalGourmetRevenue,
+            totalBonusRevenue,
+            totalRevenue,
+            totalMarketTax,
+            totalMaterialCost,
+            totalTeaCost,
+            totalCosts,
+            totalProfit,
+            hoursNeeded,
+        };
+    }
+
+    /**
+     * Calculate attempt-based totals for gathering actions
+     * Uses per-attempt base inputs (no efficiency scaling)
+     *
+     * @param {Object} params - Calculation parameters
+     * @param {number} params.actionsCount - Number of queued attempts
+     * @param {number} params.actionsPerHour - Base actions per hour
+     * @param {Array} [params.baseOutputs] - Base outputs with revenuePerAction
+     * @param {Array} [params.bonusDrops] - Bonus drop entries with revenuePerAction
+     * @param {number} params.processingRevenueBonusPerAction - Processing bonus per attempt
+     * @param {number} params.drinkCostPerHour - Drink costs per hour
+     * @param {number} [params.efficiencyMultiplier=1] - Efficiency multiplier for time scaling
+     * @returns {Object} Totals and time values
+     */
+    function calculateGatheringAttemptTotalsFromBase({
+        actionsCount,
+        actionsPerHour,
+        baseOutputs = [],
+        bonusDrops = [],
+        processingRevenueBonusPerAction,
+        drinkCostPerHour,
+        efficiencyMultiplier = 1,
+    }) {
+        const effectiveActionsPerHour = actionsPerHour * efficiencyMultiplier;
+        if (!effectiveActionsPerHour || effectiveActionsPerHour <= 0) {
+            return {
+                totalBaseRevenue: 0,
+                totalBonusRevenue: 0,
+                totalProcessingRevenue: 0,
+                totalRevenue: 0,
+                totalMarketTax: 0,
+                totalDrinkCost: 0,
+                totalCosts: 0,
+                totalProfit: 0,
+                hoursNeeded: 0,
+            };
+        }
+        const totalBaseRevenue = baseOutputs.reduce(
+            (sum, output) => sum + (output.revenuePerAction || 0) * actionsCount,
+            0
+        );
+        const totalBonusRevenue = bonusDrops.reduce((sum, drop) => sum + (drop.revenuePerAction || 0) * actionsCount, 0);
+        const totalProcessingRevenue = (processingRevenueBonusPerAction || 0) * actionsCount;
+        const totalRevenue = totalBaseRevenue + totalBonusRevenue + totalProcessingRevenue;
+        const totalMarketTax = totalRevenue * MARKET_TAX;
+        const hoursNeeded = calculateHoursForActions(actionsCount, effectiveActionsPerHour);
+        const totalDrinkCost = drinkCostPerHour * hoursNeeded;
+        const totalCosts = totalDrinkCost + totalMarketTax;
+        const totalProfit = totalRevenue - totalCosts;
+
+        return {
+            totalBaseRevenue,
+            totalBonusRevenue,
+            totalProcessingRevenue,
+            totalRevenue,
+            totalMarketTax,
+            totalDrinkCost,
+            totalCosts,
+            totalProfit,
+            hoursNeeded,
+        };
+    }
+
+    /**
      * Expected Value Calculator Module
      * Calculates expected value for openable containers
      */
@@ -5809,14 +5945,18 @@
 
                 // Revenue per hour from this drop
                 const revenuePerHour = dropsPerHour * itemPrice;
+                const dropsPerAction = actionsPerHour > 0 ? dropsPerHour / actionsPerHour : 0;
+                const revenuePerAction = actionsPerHour > 0 ? revenuePerHour / actionsPerHour : 0;
 
                 bonusDrops.push({
                     itemHrid: drop.itemHrid,
                     itemName: itemDetails.name,
                     dropRate: finalDropRate,
                     dropsPerHour,
+                    dropsPerAction,
                     priceEach: itemPrice,
                     revenuePerHour,
+                    revenuePerAction,
                     type: 'essence',
                     missingPrice: isMissingPrice,
                 });
@@ -5858,14 +5998,18 @@
 
                 // Revenue per hour from this drop
                 const revenuePerHour = dropsPerHour * itemPrice;
+                const dropsPerAction = actionsPerHour > 0 ? dropsPerHour / actionsPerHour : 0;
+                const revenuePerAction = actionsPerHour > 0 ? revenuePerHour / actionsPerHour : 0;
 
                 bonusDrops.push({
                     itemHrid: drop.itemHrid,
                     itemName: itemDetails.name,
                     dropRate: finalDropRate,
                     dropsPerHour,
+                    dropsPerAction,
                     priceEach: itemPrice,
                     revenuePerHour,
+                    revenuePerAction,
                     type: 'rare_find',
                     missingPrice: isMissingPrice,
                 });
@@ -7919,6 +8063,7 @@
         // So we calculate per-action outputs, then multiply by actionsPerHour and efficiency
         let revenuePerHour = 0;
         let processingRevenueBonus = 0; // Track extra revenue from Processing Tea
+        let processingRevenueBonusPerAction = 0; // Per-attempt processing revenue
         const processingConversions = []; // Track conversion details for display
         const baseOutputs = []; // Display-only base item outputs (not used for totals)
         const dropTable = actionDetail.dropTable;
@@ -7964,6 +8109,8 @@
 
                 const rawItemsPerHour = actionsPerHour * drop.dropRate * rawPerAction * efficiencyMultiplier;
                 const processedItemsPerHour = actionsPerHour * drop.dropRate * processedPerAction * efficiencyMultiplier;
+                const rawItemsPerAction = drop.dropRate * rawPerAction;
+                const processedItemsPerAction = drop.dropRate * processedPerAction;
 
                 revenuePerHour += rawItemsPerHour * resolvedRawPrice;
                 revenuePerHour += processedItemsPerHour * resolvedProcessedPrice;
@@ -7978,12 +8125,15 @@
                 const revenueFromConversion = processedItemsPerHour * valueGainPerConversion;
 
                 processingRevenueBonus += revenueFromConversion;
+                processingRevenueBonusPerAction += processedItemsPerAction * valueGainPerConversion;
                 processingConversions.push({
                     rawItem: rawItemName,
                     processedItem: processedItemName,
                     valueGain: valueGainPerConversion,
                     conversionsPerHour: processedItemsPerHour,
+                    conversionsPerAction: processedItemsPerAction,
                     revenuePerHour: revenueFromConversion,
+                    revenuePerAction: processedItemsPerAction * valueGainPerConversion,
                     missingPrice: rawPriceMissing || processedPriceMissing,
                 });
 
@@ -7991,24 +8141,30 @@
                 baseOutputs.push({
                     name: rawItemName,
                     itemsPerHour: rawItemsPerHour,
+                    itemsPerAction: rawItemsPerAction,
                     dropRate: drop.dropRate,
                     priceEach: resolvedRawPrice,
                     revenuePerHour: rawItemsPerHour * resolvedRawPrice + processedItemsPerHour * resolvedProcessedPrice,
+                    revenuePerAction:
+                        rawItemsPerAction * resolvedRawPrice + processedItemsPerAction * resolvedProcessedPrice,
                     missingPrice: rawPriceMissing,
                 });
             } else {
                 // No processing - simple calculation
                 rawPerAction = avgAmountPerAction;
                 const rawItemsPerHour = actionsPerHour * drop.dropRate * rawPerAction * efficiencyMultiplier;
+                const rawItemsPerAction = drop.dropRate * rawPerAction;
                 revenuePerHour += rawItemsPerHour * resolvedRawPrice;
 
                 const itemName = gameData.itemDetailMap[drop.itemHrid]?.name || 'Unknown';
                 baseOutputs.push({
                     name: itemName,
                     itemsPerHour: rawItemsPerHour,
+                    itemsPerAction: rawItemsPerAction,
                     dropRate: drop.dropRate,
                     priceEach: resolvedRawPrice,
                     revenuePerHour: rawItemsPerHour * resolvedRawPrice,
+                    revenuePerAction: rawItemsPerAction * resolvedRawPrice,
                     missingPrice: rawPriceMissing,
                 });
             }
@@ -8070,6 +8226,7 @@
             processingBonus, // Processing Tea chance (as decimal)
             processingRevenueBonus, // Extra revenue from Processing conversions
             processingConversions, // Array of conversion details {rawItem, processedItem, valueGain}
+            processingRevenueBonusPerAction, // Processing bonus per attempt
             gatheringQuantity: totalGathering, // Total gathering quantity bonus (as decimal) - renamed for display consistency
             hasMissingPrices,
             details: {
@@ -13999,6 +14156,21 @@
     const getMissingPriceIndicator = (isMissing) => (isMissing ? ' ⚠' : '');
     const formatMissingLabel = (isMissing, value) => (isMissing ? '-- ⚠' : value);
 
+    const getBonusDropPerHourTotals = (drop, efficiencyMultiplier = 1) => ({
+        dropsPerHour: drop.dropsPerHour * efficiencyMultiplier,
+        revenuePerHour: drop.revenuePerHour * efficiencyMultiplier,
+    });
+
+    const getBonusDropTotalsForActions = (drop, actionsCount, actionsPerHour) => {
+        const dropsPerAction = drop.dropsPerAction ?? drop.dropsPerHour / actionsPerHour;
+        const revenuePerAction = drop.revenuePerAction ?? drop.revenuePerHour / actionsPerHour;
+
+        return {
+            totalDrops: dropsPerAction * actionsCount,
+            totalRevenue: revenuePerAction * actionsCount,
+        };
+    };
+
     /**
      * Display gathering profit calculation in panel
      * @param {HTMLElement} panel - Action panel element
@@ -14030,6 +14202,7 @@
         const costsMissing = drinkCostsMissing || revenueMissing;
         const marketTaxMissing = revenueMissing;
         const netMissing = profitData.hasMissingPrices;
+        const efficiencyMultiplier = profitData.efficiencyMultiplier || 1;
         // Revenue is now gross (pre-tax)
         const revenue = Math.round(profitData.revenuePerHour);
         const marketTax = Math.round(revenue * MARKET_TAX);
@@ -14073,7 +14246,6 @@
 
         // Bonus Drops subsections - split by type (bonus drops are base actions/hour)
         const bonusDrops = profitData.bonusRevenue?.bonusDrops || [];
-        const efficiencyMultiplier = profitData.efficiencyMultiplier || 1;
         const essenceDrops = bonusDrops.filter((drop) => drop.type === 'essence');
         const rareFinds = bonusDrops.filter((drop) => drop.type === 'rare_find');
 
@@ -14082,17 +14254,19 @@
         if (essenceDrops.length > 0) {
             const essenceContent = document.createElement('div');
             for (const drop of essenceDrops) {
-                const adjustedDropsPerHour = drop.dropsPerHour * efficiencyMultiplier;
-                const adjustedRevenuePerHour = drop.revenuePerHour * efficiencyMultiplier;
-                const decimals = adjustedDropsPerHour < 1 ? 2 : 1;
+                const { dropsPerHour, revenuePerHour } = getBonusDropPerHourTotals(drop, efficiencyMultiplier);
+                const decimals = dropsPerHour < 1 ? 2 : 1;
                 const line = document.createElement('div');
                 line.style.marginLeft = '8px';
                 const dropRatePct = formatPercentage(drop.dropRate, drop.dropRate < 0.01 ? 3 : 2);
-                line.textContent = `• ${drop.itemName}: ${adjustedDropsPerHour.toFixed(decimals)}/hr (${dropRatePct}) → ${formatLargeNumber(Math.round(adjustedRevenuePerHour))}/hr`;
+                line.textContent = `• ${drop.itemName}: ${dropsPerHour.toFixed(decimals)}/hr (${dropRatePct}) → ${formatLargeNumber(Math.round(revenuePerHour))}/hr`;
                 essenceContent.appendChild(line);
             }
 
-            const essenceRevenue = essenceDrops.reduce((sum, d) => sum + d.revenuePerHour * efficiencyMultiplier, 0);
+            const essenceRevenue = essenceDrops.reduce(
+                (sum, drop) => sum + getBonusDropPerHourTotals(drop, efficiencyMultiplier).revenuePerHour,
+                0
+            );
             const essenceRevenueLabel = formatMissingLabel(bonusMissing, formatLargeNumber(Math.round(essenceRevenue)));
             const essenceFindBonus = profitData.bonusRevenue?.essenceFindBonus || 0;
             essenceSection = createCollapsibleSection(
@@ -14110,17 +14284,19 @@
         if (rareFinds.length > 0) {
             const rareFindContent = document.createElement('div');
             for (const drop of rareFinds) {
-                const adjustedDropsPerHour = drop.dropsPerHour * efficiencyMultiplier;
-                const adjustedRevenuePerHour = drop.revenuePerHour * efficiencyMultiplier;
-                const decimals = adjustedDropsPerHour < 1 ? 2 : 1;
+                const { dropsPerHour, revenuePerHour } = getBonusDropPerHourTotals(drop, efficiencyMultiplier);
+                const decimals = dropsPerHour < 1 ? 2 : 1;
                 const line = document.createElement('div');
                 line.style.marginLeft = '8px';
                 const dropRatePct = formatPercentage(drop.dropRate, drop.dropRate < 0.01 ? 3 : 2);
-                line.textContent = `• ${drop.itemName}: ${adjustedDropsPerHour.toFixed(decimals)}/hr (${dropRatePct}) → ${formatLargeNumber(Math.round(adjustedRevenuePerHour))}/hr`;
+                line.textContent = `• ${drop.itemName}: ${dropsPerHour.toFixed(decimals)}/hr (${dropRatePct}) → ${formatLargeNumber(Math.round(revenuePerHour))}/hr`;
                 rareFindContent.appendChild(line);
             }
 
-            const rareFindRevenue = rareFinds.reduce((sum, d) => sum + d.revenuePerHour * efficiencyMultiplier, 0);
+            const rareFindRevenue = rareFinds.reduce(
+                (sum, drop) => sum + getBonusDropPerHourTotals(drop, efficiencyMultiplier).revenuePerHour,
+                0
+            );
             const rareFindRevenueLabel = formatMissingLabel(bonusMissing, formatLargeNumber(Math.round(rareFindRevenue)));
             const rareFindBonus = profitData.bonusRevenue?.rareFindBonus || 0;
             rareFindSection = createCollapsibleSection(
@@ -14358,14 +14534,16 @@
                 if (inputValue === '∞') {
                     profitSummaryDiv.textContent = `${baseSummary} | Total profit: ∞`;
                 } else if (newValue > 0) {
-                    // Calculate total profit for selected actions
-                    const actualAttempts = Math.ceil(newValue / profitData.efficiencyMultiplier);
-                    const queueBreakdown = calculateQueueProfitBreakdown({
-                        profitPerHour: profitData.profitPerHour,
+                    const totals = calculateGatheringAttemptTotalsFromBase({
+                        actionsCount: newValue,
                         actionsPerHour: profitData.actionsPerHour,
-                        actionCount: actualAttempts,
+                        baseOutputs: profitData.baseOutputs,
+                        bonusDrops: profitData.bonusRevenue?.bonusDrops || [],
+                        processingRevenueBonusPerAction: profitData.processingRevenueBonusPerAction,
+                        drinkCostPerHour: profitData.drinkCostPerHour,
+                        efficiencyMultiplier: profitData.efficiencyMultiplier || 1,
                     });
-                    const totalProfit = Math.round(queueBreakdown.totalProfit);
+                    const totalProfit = Math.round(totals.totalProfit);
                     profitSummaryDiv.textContent = `${baseSummary} | Total profit: ${formatLargeNumber(totalProfit)}`;
                 } else {
                     profitSummaryDiv.textContent = `${baseSummary} | Total profit: 0`;
@@ -14459,12 +14637,14 @@
         const costsMissing = materialMissing || teaMissing || revenueMissing;
         const marketTaxMissing = revenueMissing;
         const netMissing = profitData.hasMissingPrices;
+        const bonusDrops = profitData.bonusRevenue?.bonusDrops || [];
         const bonusRevenueTotal = profitData.bonusRevenue?.totalBonusRevenue || 0;
+        const efficiencyMultiplier = profitData.efficiencyMultiplier || 1;
         // Use outputPrice (pre-tax) for revenue display
         const revenue = Math.round(
             profitData.itemsPerHour * profitData.outputPrice +
                 profitData.gourmetBonusItems * profitData.outputPrice +
-                bonusRevenueTotal
+                bonusRevenueTotal * efficiencyMultiplier
         );
         // Calculate market tax (2% of revenue)
         const marketTax = Math.round(revenue * MARKET_TAX);
@@ -14527,7 +14707,6 @@
         }
 
         // Bonus Drops subsections - split by type
-        const bonusDrops = profitData.bonusRevenue?.bonusDrops || [];
         const essenceDrops = bonusDrops.filter((drop) => drop.type === 'essence');
         const rareFinds = bonusDrops.filter((drop) => drop.type === 'rare_find');
 
@@ -14536,15 +14715,19 @@
         if (essenceDrops.length > 0) {
             const essenceContent = document.createElement('div');
             for (const drop of essenceDrops) {
-                const decimals = drop.dropsPerHour < 1 ? 2 : 1;
+                const { dropsPerHour, revenuePerHour } = getBonusDropPerHourTotals(drop, efficiencyMultiplier);
+                const decimals = dropsPerHour < 1 ? 2 : 1;
                 const line = document.createElement('div');
                 line.style.marginLeft = '8px';
                 const dropRatePct = formatPercentage(drop.dropRate, drop.dropRate < 0.01 ? 3 : 2);
-                line.textContent = `• ${drop.itemName}: ${drop.dropsPerHour.toFixed(decimals)}/hr (${dropRatePct}) → ${formatLargeNumber(Math.round(drop.revenuePerHour))}/hr`;
+                line.textContent = `• ${drop.itemName}: ${dropsPerHour.toFixed(decimals)}/hr (${dropRatePct}) → ${formatLargeNumber(Math.round(revenuePerHour))}/hr`;
                 essenceContent.appendChild(line);
             }
 
-            const essenceRevenue = essenceDrops.reduce((sum, d) => sum + d.revenuePerHour, 0);
+            const essenceRevenue = essenceDrops.reduce(
+                (sum, drop) => sum + getBonusDropPerHourTotals(drop, efficiencyMultiplier).revenuePerHour,
+                0
+            );
             const essenceRevenueLabel = bonusMissing ? '-- ⚠' : formatLargeNumber(Math.round(essenceRevenue));
             const essenceFindBonus = profitData.bonusRevenue?.essenceFindBonus || 0;
             essenceSection = createCollapsibleSection(
@@ -14562,15 +14745,19 @@
         if (rareFinds.length > 0) {
             const rareFindContent = document.createElement('div');
             for (const drop of rareFinds) {
-                const decimals = drop.dropsPerHour < 1 ? 2 : 1;
+                const { dropsPerHour, revenuePerHour } = getBonusDropPerHourTotals(drop, efficiencyMultiplier);
+                const decimals = dropsPerHour < 1 ? 2 : 1;
                 const line = document.createElement('div');
                 line.style.marginLeft = '8px';
                 const dropRatePct = formatPercentage(drop.dropRate, drop.dropRate < 0.01 ? 3 : 2);
-                line.textContent = `• ${drop.itemName}: ${drop.dropsPerHour.toFixed(decimals)}/hr (${dropRatePct}) → ${formatLargeNumber(Math.round(drop.revenuePerHour))}/hr`;
+                line.textContent = `• ${drop.itemName}: ${dropsPerHour.toFixed(decimals)}/hr (${dropRatePct}) → ${formatLargeNumber(Math.round(revenuePerHour))}/hr`;
                 rareFindContent.appendChild(line);
             }
 
-            const rareFindRevenue = rareFinds.reduce((sum, d) => sum + d.revenuePerHour, 0);
+            const rareFindRevenue = rareFinds.reduce(
+                (sum, drop) => sum + getBonusDropPerHourTotals(drop, efficiencyMultiplier).revenuePerHour,
+                0
+            );
             const rareFindRevenueLabel = bonusMissing ? '-- ⚠' : formatLargeNumber(Math.round(rareFindRevenue));
             const rareFindBonus = profitData.bonusRevenue?.rareFindBonus || 0;
             rareFindSection = createCollapsibleSection(
@@ -14833,15 +15020,18 @@
                 if (inputValue === '∞') {
                     profitSummaryDiv.textContent = `${baseSummary} | Total profit: ∞`;
                 } else if (newValue > 0) {
-                    // Calculate total profit for selected actions
-                    const efficiencyMultiplier = profitData.efficiencyMultiplier;
-                    const actualAttempts = Math.ceil(newValue / efficiencyMultiplier);
-                    const queueBreakdown = calculateQueueProfitBreakdown({
-                        profitPerHour: profitData.profitPerHour,
+                    const totals = calculateProductionAttemptTotalsFromBase({
+                        actionsCount: newValue,
                         actionsPerHour: profitData.actionsPerHour,
-                        actionCount: actualAttempts,
+                        outputAmount: profitData.outputAmount || 1,
+                        outputPrice: profitData.outputPrice,
+                        gourmetBonus: profitData.gourmetBonus || 0,
+                        bonusDrops: profitData.bonusRevenue?.bonusDrops || [],
+                        materialCosts: profitData.materialCosts,
+                        totalTeaCostPerHour: profitData.totalTeaCostPerHour,
+                        efficiencyMultiplier: profitData.efficiencyMultiplier || 1,
                     });
-                    const totalProfit = Math.round(queueBreakdown.totalProfit);
+                    const totalProfit = Math.round(totals.totalProfit);
                     profitSummaryDiv.textContent = `${baseSummary} | Total profit: ${formatLargeNumber(totalProfit)}`;
                 } else {
                     profitSummaryDiv.textContent = `${baseSummary} | Total profit: 0`;
@@ -14883,15 +15073,16 @@
      * @returns {HTMLElement} Breakdown section element
      */
     function buildGatheringActionsBreakdown(profitData, actionsCount) {
-        // Calculate actual attempts needed (input is desired output actions)
-        const efficiencyMultiplier = profitData.efficiencyMultiplier || 1;
-        const actualAttempts = Math.ceil(actionsCount / efficiencyMultiplier);
-        const queueBreakdown = calculateQueueProfitBreakdown({
-            profitPerHour: profitData.profitPerHour,
+        const totals = calculateGatheringAttemptTotalsFromBase({
+            actionsCount,
             actionsPerHour: profitData.actionsPerHour,
-            actionCount: actualAttempts,
+            baseOutputs: profitData.baseOutputs,
+            bonusDrops: profitData.bonusRevenue?.bonusDrops || [],
+            processingRevenueBonusPerAction: profitData.processingRevenueBonusPerAction,
+            drinkCostPerHour: profitData.drinkCostPerHour,
+            efficiencyMultiplier: profitData.efficiencyMultiplier || 1,
         });
-        const hoursNeeded = queueBreakdown.hoursNeeded;
+        const hoursNeeded = totals.hoursNeeded;
 
         // Calculate totals
         const baseMissing = profitData.baseOutputs?.some((output) => output.missingPrice) || false;
@@ -14902,11 +15093,11 @@
         const costsMissing = drinkCostsMissing || revenueMissing;
         const marketTaxMissing = revenueMissing;
         const netMissing = profitData.hasMissingPrices;
-        const totalRevenue = Math.round(profitData.revenuePerHour * hoursNeeded);
-        const totalMarketTax = Math.round(totalRevenue * MARKET_TAX);
-        const totalDrinkCosts = Math.round(profitData.drinkCostPerHour * hoursNeeded);
-        const totalCosts = totalDrinkCosts + totalMarketTax;
-        const totalProfit = Math.round(queueBreakdown.totalProfit);
+        const totalRevenue = Math.round(totals.totalRevenue);
+        const totalMarketTax = Math.round(totals.totalMarketTax);
+        const totalDrinkCosts = Math.round(totals.totalDrinkCost);
+        const totalCosts = Math.round(totals.totalCosts);
+        const totalProfit = Math.round(totals.totalProfit);
 
         const detailsContent = document.createElement('div');
 
@@ -14919,8 +15110,10 @@
         const baseOutputContent = document.createElement('div');
         if (profitData.baseOutputs && profitData.baseOutputs.length > 0) {
             for (const output of profitData.baseOutputs) {
-                const totalItems = (output.itemsPerHour / profitData.actionsPerHour) * actionsCount;
-                const totalRevenueLine = output.revenuePerHour * hoursNeeded;
+                const itemsPerAction = output.itemsPerAction ?? output.itemsPerHour / profitData.actionsPerHour;
+                const revenuePerAction = output.revenuePerAction ?? output.revenuePerHour / profitData.actionsPerHour;
+                const totalItems = itemsPerAction * actionsCount;
+                const totalRevenueLine = revenuePerAction * actionsCount;
                 const line = document.createElement('div');
                 line.style.marginLeft = '8px';
                 const missingPriceNote = getMissingPriceIndicator(output.missingPrice);
@@ -14929,7 +15122,11 @@
             }
         }
 
-        const baseRevenue = profitData.baseOutputs?.reduce((sum, o) => sum + o.revenuePerHour * hoursNeeded, 0) || 0;
+        const baseRevenue =
+            profitData.baseOutputs?.reduce((sum, output) => {
+                const revenuePerAction = output.revenuePerAction ?? output.revenuePerHour / profitData.actionsPerHour;
+                return sum + revenuePerAction * actionsCount;
+            }, 0) || 0;
         const baseRevenueLabel = formatMissingLabel(baseMissing, formatLargeNumber(Math.round(baseRevenue)));
         const baseOutputSection = createCollapsibleSection(
             '',
@@ -14940,7 +15137,7 @@
             1
         );
 
-        // Bonus Drops subsections (bonus drops are base actions/hour)
+        // Bonus Drops subsections (bonus drops are per attempt)
         const bonusDrops = profitData.bonusRevenue?.bonusDrops || [];
         const essenceDrops = bonusDrops.filter((drop) => drop.type === 'essence');
         const rareFinds = bonusDrops.filter((drop) => drop.type === 'rare_find');
@@ -14950,21 +15147,21 @@
         if (essenceDrops.length > 0) {
             const essenceContent = document.createElement('div');
             for (const drop of essenceDrops) {
-                const adjustedDropsPerHour = drop.dropsPerHour * efficiencyMultiplier;
-                const adjustedRevenuePerHour = drop.revenuePerHour * efficiencyMultiplier;
-                const totalDrops = adjustedDropsPerHour * hoursNeeded;
-                const totalRevenueLine = adjustedRevenuePerHour * hoursNeeded;
+                const { totalDrops, totalRevenue } = getBonusDropTotalsForActions(
+                    drop,
+                    actionsCount,
+                    profitData.actionsPerHour
+                );
                 const line = document.createElement('div');
                 line.style.marginLeft = '8px';
                 const dropRatePct = formatPercentage(drop.dropRate, drop.dropRate < 0.01 ? 3 : 2);
-                line.textContent = `• ${drop.itemName}: ${totalDrops.toFixed(2)} drops (${dropRatePct}) → ${formatLargeNumber(Math.round(totalRevenueLine))}`;
+                line.textContent = `• ${drop.itemName}: ${totalDrops.toFixed(2)} drops (${dropRatePct}) → ${formatLargeNumber(Math.round(totalRevenue))}`;
                 essenceContent.appendChild(line);
             }
 
-            const essenceRevenue = essenceDrops.reduce(
-                (sum, d) => sum + d.revenuePerHour * efficiencyMultiplier * hoursNeeded,
-                0
-            );
+            const essenceRevenue = essenceDrops.reduce((sum, drop) => {
+                return sum + getBonusDropTotalsForActions(drop, actionsCount, profitData.actionsPerHour).totalRevenue;
+            }, 0);
             const essenceRevenueLabel = formatMissingLabel(bonusMissing, formatLargeNumber(Math.round(essenceRevenue)));
             const essenceFindBonus = profitData.bonusRevenue?.essenceFindBonus || 0;
             essenceSection = createCollapsibleSection(
@@ -14982,21 +15179,21 @@
         if (rareFinds.length > 0) {
             const rareFindContent = document.createElement('div');
             for (const drop of rareFinds) {
-                const adjustedDropsPerHour = drop.dropsPerHour * efficiencyMultiplier;
-                const adjustedRevenuePerHour = drop.revenuePerHour * efficiencyMultiplier;
-                const totalDrops = adjustedDropsPerHour * hoursNeeded;
-                const totalRevenueLine = adjustedRevenuePerHour * hoursNeeded;
+                const { totalDrops, totalRevenue } = getBonusDropTotalsForActions(
+                    drop,
+                    actionsCount,
+                    profitData.actionsPerHour
+                );
                 const line = document.createElement('div');
                 line.style.marginLeft = '8px';
                 const dropRatePct = formatPercentage(drop.dropRate, drop.dropRate < 0.01 ? 3 : 2);
-                line.textContent = `• ${drop.itemName}: ${totalDrops.toFixed(2)} drops (${dropRatePct}) → ${formatLargeNumber(Math.round(totalRevenueLine))}`;
+                line.textContent = `• ${drop.itemName}: ${totalDrops.toFixed(2)} drops (${dropRatePct}) → ${formatLargeNumber(Math.round(totalRevenue))}`;
                 rareFindContent.appendChild(line);
             }
 
-            const rareFindRevenue = rareFinds.reduce(
-                (sum, d) => sum + d.revenuePerHour * efficiencyMultiplier * hoursNeeded,
-                0
-            );
+            const rareFindRevenue = rareFinds.reduce((sum, drop) => {
+                return sum + getBonusDropTotalsForActions(drop, actionsCount, profitData.actionsPerHour).totalRevenue;
+            }, 0);
             const rareFindRevenueLabel = formatMissingLabel(bonusMissing, formatLargeNumber(Math.round(rareFindRevenue)));
             const rareFindBonus = profitData.bonusRevenue?.rareFindBonus || 0;
             rareFindSection = createCollapsibleSection(
@@ -15022,8 +15219,12 @@
         if (profitData.processingConversions && profitData.processingConversions.length > 0) {
             const processingContent = document.createElement('div');
             for (const conversion of profitData.processingConversions) {
-                const totalConversions = conversion.conversionsPerHour * hoursNeeded;
-                const totalRevenueFromConversion = conversion.revenuePerHour * hoursNeeded;
+                const conversionsPerAction =
+                    conversion.conversionsPerAction ?? conversion.conversionsPerHour / profitData.actionsPerHour;
+                const revenuePerAction =
+                    conversion.revenuePerAction ?? conversion.revenuePerHour / profitData.actionsPerHour;
+                const totalConversions = conversionsPerAction * actionsCount;
+                const totalRevenueFromConversion = revenuePerAction * actionsCount;
                 const line = document.createElement('div');
                 line.style.marginLeft = '8px';
                 const missingPriceNote = getMissingPriceIndicator(conversion.missingPrice);
@@ -15031,7 +15232,7 @@
                 processingContent.appendChild(line);
             }
 
-            const totalProcessingRevenue = (profitData.processingRevenueBonus || 0) * hoursNeeded;
+            const totalProcessingRevenue = totals.totalProcessingRevenue;
             const processingChance = profitData.processingBonus || 0;
             processingSection = createCollapsibleSection(
                 '',
@@ -15139,8 +15340,7 @@
      * @returns {HTMLElement} Breakdown section element
      */
     function buildProductionActionsBreakdown(profitData, actionsCount) {
-        // Calculate actual attempts needed (input is desired output actions)
-        const efficiencyMultiplier = profitData.efficiencyMultiplier;
+        // Calculate queued attempts breakdown
         const outputMissing = profitData.outputPriceMissing || false;
         const bonusMissing = profitData.bonusRevenue?.hasMissingPrices || false;
         const materialMissing = profitData.materialCosts?.some((material) => material.missingPrice) || false;
@@ -15149,29 +15349,22 @@
         const costsMissing = materialMissing || teaMissing || revenueMissing;
         const marketTaxMissing = revenueMissing;
         const netMissing = profitData.hasMissingPrices;
-        const actualAttempts = Math.ceil(actionsCount / efficiencyMultiplier);
-        const queueBreakdown = calculateQueueProfitBreakdown({
-            profitPerHour: profitData.profitPerHour,
+        const bonusDrops = profitData.bonusRevenue?.bonusDrops || [];
+        const totals = calculateProductionAttemptTotalsFromBase({
+            actionsCount,
             actionsPerHour: profitData.actionsPerHour,
-            actionCount: actualAttempts,
+            outputAmount: profitData.outputAmount || 1,
+            outputPrice: profitData.outputPrice,
+            gourmetBonus: profitData.gourmetBonus || 0,
+            bonusDrops,
+            materialCosts: profitData.materialCosts,
+            totalTeaCostPerHour: profitData.totalTeaCostPerHour,
+            efficiencyMultiplier: profitData.efficiencyMultiplier || 1,
         });
-        const hoursNeeded = queueBreakdown.hoursNeeded;
-
-        // Calculate totals
-        const bonusRevenueTotal = profitData.bonusRevenue?.totalBonusRevenue || 0;
-        // Use outputPrice (pre-tax) for revenue display
-        const totalRevenue = Math.round(
-            (profitData.itemsPerHour * profitData.outputPrice +
-                profitData.gourmetBonusItems * profitData.outputPrice +
-                bonusRevenueTotal) *
-                hoursNeeded
-        );
-        // Calculate market tax (2% of revenue)
-        const totalMarketTax = Math.round(totalRevenue * MARKET_TAX);
-        const totalCosts = Math.round(
-            (profitData.materialCostPerHour + profitData.totalTeaCostPerHour) * hoursNeeded + totalMarketTax
-        );
-        const totalProfit = Math.round(queueBreakdown.totalProfit);
+        const totalRevenue = Math.round(totals.totalRevenue);
+        const totalMarketTax = Math.round(totals.totalMarketTax);
+        const totalCosts = Math.round(totals.totalCosts);
+        const totalProfit = Math.round(totals.totalProfit);
 
         const detailsContent = document.createElement('div');
 
@@ -15182,8 +15375,8 @@
 
         // Base Output subsection
         const baseOutputContent = document.createElement('div');
-        const totalBaseItems = profitData.itemsPerHour * hoursNeeded;
-        const totalBaseRevenue = totalBaseItems * profitData.outputPrice;
+        const totalBaseItems = totals.totalBaseItems;
+        const totalBaseRevenue = totals.totalBaseRevenue;
         const baseOutputLine = document.createElement('div');
         baseOutputLine.style.marginLeft = '8px';
         const baseOutputMissingNote = getMissingPriceIndicator(profitData.outputPriceMissing);
@@ -15202,10 +15395,10 @@
 
         // Gourmet Bonus subsection
         let gourmetSection = null;
-        if (profitData.gourmetBonusItems > 0) {
+        if (profitData.gourmetBonus > 0) {
             const gourmetContent = document.createElement('div');
-            const totalGourmetItems = profitData.gourmetBonusItems * hoursNeeded;
-            const totalGourmetRevenue = totalGourmetItems * profitData.outputPrice;
+            const totalGourmetItems = totals.totalGourmetItems;
+            const totalGourmetRevenue = totals.totalGourmetRevenue;
             const gourmetLine = document.createElement('div');
             gourmetLine.style.marginLeft = '8px';
             gourmetLine.textContent = `• Gourmet Bonus: ${totalGourmetItems.toFixed(1)} items @ ${formatWithSeparator(Math.round(profitData.outputPrice))}${baseOutputMissingNote} each → ${formatLargeNumber(Math.round(totalGourmetRevenue))}`;
@@ -15231,7 +15424,6 @@
         }
 
         // Bonus Drops subsections
-        const bonusDrops = profitData.bonusRevenue?.bonusDrops || [];
         const essenceDrops = bonusDrops.filter((drop) => drop.type === 'essence');
         const rareFinds = bonusDrops.filter((drop) => drop.type === 'rare_find');
 
@@ -15240,8 +15432,12 @@
         if (essenceDrops.length > 0) {
             const essenceContent = document.createElement('div');
             for (const drop of essenceDrops) {
-                const totalDrops = drop.dropsPerHour * hoursNeeded;
-                const totalRevenueLine = drop.revenuePerHour * hoursNeeded;
+                const dropsPerAction =
+                    drop.dropsPerAction ?? calculateProfitPerAction(drop.dropsPerHour, profitData.actionsPerHour);
+                const revenuePerAction =
+                    drop.revenuePerAction ?? calculateProfitPerAction(drop.revenuePerHour, profitData.actionsPerHour);
+                const totalDrops = dropsPerAction * actionsCount;
+                const totalRevenueLine = revenuePerAction * actionsCount;
                 const line = document.createElement('div');
                 line.style.marginLeft = '8px';
                 const dropRatePct = formatPercentage(drop.dropRate, drop.dropRate < 0.01 ? 3 : 2);
@@ -15249,7 +15445,11 @@
                 essenceContent.appendChild(line);
             }
 
-            const essenceRevenue = essenceDrops.reduce((sum, d) => sum + d.revenuePerHour * hoursNeeded, 0);
+            const essenceRevenue = essenceDrops.reduce((sum, drop) => {
+                const revenuePerAction =
+                    drop.revenuePerAction ?? calculateProfitPerAction(drop.revenuePerHour, profitData.actionsPerHour);
+                return sum + revenuePerAction * actionsCount;
+            }, 0);
             const essenceRevenueLabel = formatMissingLabel(bonusMissing, formatLargeNumber(Math.round(essenceRevenue)));
             const essenceFindBonus = profitData.bonusRevenue?.essenceFindBonus || 0;
             essenceSection = createCollapsibleSection(
@@ -15267,8 +15467,12 @@
         if (rareFinds.length > 0) {
             const rareFindContent = document.createElement('div');
             for (const drop of rareFinds) {
-                const totalDrops = drop.dropsPerHour * hoursNeeded;
-                const totalRevenueLine = drop.revenuePerHour * hoursNeeded;
+                const dropsPerAction =
+                    drop.dropsPerAction ?? calculateProfitPerAction(drop.dropsPerHour, profitData.actionsPerHour);
+                const revenuePerAction =
+                    drop.revenuePerAction ?? calculateProfitPerAction(drop.revenuePerHour, profitData.actionsPerHour);
+                const totalDrops = dropsPerAction * actionsCount;
+                const totalRevenueLine = revenuePerAction * actionsCount;
                 const line = document.createElement('div');
                 line.style.marginLeft = '8px';
                 const dropRatePct = formatPercentage(drop.dropRate, drop.dropRate < 0.01 ? 3 : 2);
@@ -15276,7 +15480,11 @@
                 rareFindContent.appendChild(line);
             }
 
-            const rareFindRevenue = rareFinds.reduce((sum, d) => sum + d.revenuePerHour * hoursNeeded, 0);
+            const rareFindRevenue = rareFinds.reduce((sum, drop) => {
+                const revenuePerAction =
+                    drop.revenuePerAction ?? calculateProfitPerAction(drop.revenuePerHour, profitData.actionsPerHour);
+                return sum + revenuePerAction * actionsCount;
+            }, 0);
             const rareFindRevenueLabel = formatMissingLabel(bonusMissing, formatLargeNumber(Math.round(rareFindRevenue)));
             const rareFindBonus = profitData.bonusRevenue?.rareFindBonus || 0;
             rareFindSection = createCollapsibleSection(
@@ -15304,10 +15512,9 @@
         // Material Costs subsection
         const materialCostsContent = document.createElement('div');
         if (profitData.materialCosts && profitData.materialCosts.length > 0) {
-            const efficiencyMultiplier = profitData.efficiencyMultiplier;
             for (const material of profitData.materialCosts) {
-                const totalMaterial = material.amount * actionsCount * efficiencyMultiplier;
-                const totalMaterialCost = material.totalCost * actionsCount * efficiencyMultiplier;
+                const totalMaterial = material.amount * actionsCount;
+                const totalMaterialCost = material.totalCost * actionsCount;
                 const line = document.createElement('div');
                 line.style.marginLeft = '8px';
 
@@ -15315,7 +15522,7 @@
 
                 // Add Artisan reduction info if present
                 if (profitData.artisanBonus > 0 && material.baseAmount && material.amount !== material.baseAmount) {
-                    const baseTotalAmount = material.baseAmount * actionsCount * efficiencyMultiplier;
+                    const baseTotalAmount = material.baseAmount * actionsCount;
                     materialText += ` (${baseTotalAmount.toFixed(1)} base -${formatPercentage(profitData.artisanBonus, 1)} 🍵)`;
                 }
 
@@ -15327,7 +15534,7 @@
             }
         }
 
-        const totalMaterialCost = profitData.materialCostPerHour * hoursNeeded;
+        const totalMaterialCost = totals.totalMaterialCost;
         const materialCostsLabel = formatMissingLabel(materialMissing, formatLargeNumber(Math.round(totalMaterialCost)));
         const materialCostsSection = createCollapsibleSection(
             '',
@@ -15342,8 +15549,8 @@
         const teaCostsContent = document.createElement('div');
         if (profitData.teaCosts && profitData.teaCosts.length > 0) {
             for (const tea of profitData.teaCosts) {
-                const totalDrinks = tea.drinksPerHour * hoursNeeded;
-                const totalTeaCost = tea.totalCost * hoursNeeded;
+                const totalDrinks = tea.drinksPerHour * totals.hoursNeeded;
+                const totalTeaCost = tea.totalCost * totals.hoursNeeded;
                 const line = document.createElement('div');
                 line.style.marginLeft = '8px';
                 const missingPriceNote = getMissingPriceIndicator(tea.missingPrice);
@@ -15352,7 +15559,7 @@
             }
         }
 
-        const totalTeaCost = profitData.totalTeaCostPerHour * hoursNeeded;
+        const totalTeaCost = totals.totalTeaCost;
         const teaCount = profitData.teaCosts?.length || 0;
         const teaCostsLabel = formatMissingLabel(teaMissing, formatLargeNumber(Math.round(totalTeaCost)));
         const teaCostsSection = createCollapsibleSection(
@@ -26256,24 +26463,25 @@
             };
         }
 
-        // Use pre-calculated profitPerAction from profit calculator
-        const profitPerAction = profitData.profitPerAction;
         const hasMissingPrices = profitData.hasMissingPrices;
-        const efficiencyMultiplier = profitData.efficiencyMultiplier || 1;
-        const actualAttempts = Math.ceil(quantity / efficiencyMultiplier);
-        const queueBreakdown = calculateQueueProfitBreakdown({
-            profitPerHour: profitData.profitPerHour,
+
+        const totals = calculateGatheringAttemptTotalsFromBase({
+            actionsCount: quantity,
             actionsPerHour: profitData.actionsPerHour,
-            actionCount: actualAttempts,
+            baseOutputs: profitData.baseOutputs,
+            bonusDrops: profitData.bonusRevenue?.bonusDrops || [],
+            processingRevenueBonusPerAction: profitData.processingRevenueBonusPerAction,
+            drinkCostPerHour: profitData.drinkCostPerHour,
+            efficiencyMultiplier: profitData.efficiencyMultiplier || 1,
         });
 
         return {
-            totalValue: hasMissingPrices ? null : queueBreakdown.totalProfit,
+            totalValue: hasMissingPrices ? null : totals.totalProfit,
             hasMissingPrices,
             breakdown: {
                 actionHrid,
                 quantity,
-                perAction: profitPerAction / efficiencyMultiplier,
+                perAction: quantity > 0 ? totals.totalProfit / quantity : 0,
             },
             // Include detailed data for expandable display
             details: {
@@ -26282,7 +26490,7 @@
                 baseOutputs: profitData.baseOutputs,
                 bonusRevenue: profitData.bonusRevenue,
                 processingConversions: profitData.processingConversions,
-                processingRevenueBonus: profitData.processingRevenueBonus,
+                processingRevenueBonusPerAction: profitData.processingRevenueBonusPerAction,
                 efficiencyMultiplier: profitData.efficiencyMultiplier,
             },
         };
@@ -26315,43 +26523,42 @@
             };
         }
 
-        // Use pre-calculated profitPerAction from profit calculator
-        const profitPerAction = profitData.profitPerAction;
         const hasMissingPrices = profitData.hasMissingPrices;
-        const efficiencyMultiplier = profitData.efficiencyMultiplier || 1;
-        const actualAttempts = Math.ceil(quantity / efficiencyMultiplier);
-        const queueBreakdown = calculateQueueProfitBreakdown({
-            profitPerHour: profitData.profitPerHour,
+
+        const bonusDrops = profitData.bonusRevenue?.bonusDrops || [];
+        const totals = calculateProductionAttemptTotalsFromBase({
+            actionsCount: quantity,
             actionsPerHour: profitData.actionsPerHour,
-            actionCount: actualAttempts,
+            outputAmount: profitData.outputAmount || 1,
+            outputPrice: profitData.outputPrice,
+            gourmetBonus: profitData.gourmetBonus || 0,
+            bonusDrops,
+            materialCosts: profitData.materialCosts,
+            totalTeaCostPerHour: profitData.totalTeaCostPerHour,
+            efficiencyMultiplier: profitData.efficiencyMultiplier || 1,
         });
 
-        const revenuePerHour = (profitData.itemsPerHour + profitData.gourmetBonusItems) * profitData.priceAfterTax;
-        const costsPerHour = profitData.materialCostPerHour + profitData.totalTeaCostPerHour;
-
         return {
-            totalProfit: hasMissingPrices ? null : queueBreakdown.totalProfit,
+            totalProfit: hasMissingPrices ? null : totals.totalProfit,
             hasMissingPrices,
             breakdown: {
                 actionHrid,
                 quantity,
-                outputValue: revenuePerHour * queueBreakdown.hoursNeeded,
-                materialCost: costsPerHour * queueBreakdown.hoursNeeded,
-                perAction: profitPerAction / efficiencyMultiplier,
+                outputValue: totals.totalRevenue,
+                materialCost: totals.totalMaterialCost + totals.totalTeaCost,
+                perAction: quantity > 0 ? totals.totalProfit / quantity : 0,
             },
             // Include detailed data for expandable display
             details: {
                 profitPerHour: profitData.profitPerHour,
                 materialCosts: profitData.materialCosts,
                 teaCosts: profitData.teaCosts,
-                baseOutputItems: profitData.itemsPerHour,
-                gourmetBonusItems: profitData.gourmetBonusItems,
-                priceEach: profitData.priceAfterTax,
+                outputAmount: profitData.outputAmount,
+                gourmetBonus: profitData.gourmetBonus,
+                priceEach: profitData.outputPrice,
                 outputPriceMissing: profitData.outputPriceMissing,
                 actionsPerHour: profitData.actionsPerHour,
-                itemsPerAction: profitData.itemsPerHour / profitData.actionsPerHour,
                 bonusRevenue: profitData.bonusRevenue, // Pass through bonus revenue data
-                efficiencyMultiplier: profitData.efficiencyMultiplier || 1, // Pass through efficiency multiplier
             },
         };
     }
@@ -27085,23 +27292,15 @@
                     const details = profitData.action.details;
                     const quantity = profitData.action.breakdown.quantity;
                     const actionsPerHour = details.actionsPerHour;
-                    const efficiencyMultiplier = details.efficiencyMultiplier || 1;
-
-                    const actualAttempts = Math.ceil(quantity / efficiencyMultiplier);
-                    const queueBreakdown = calculateQueueProfitBreakdown({
-                        profitPerHour: details.profitPerHour,
-                        actionsPerHour: actionsPerHour,
-                        actionCount: actualAttempts,
-                    });
-                    const hoursNeeded = queueBreakdown.hoursNeeded;
 
                     // Base outputs (gathered items)
                     if (details.baseOutputs && details.baseOutputs.length > 0) {
                         lines.push(`<div style="margin-top: 2px; color: #aaa;">Items Gathered:</div>`);
                         for (const output of details.baseOutputs) {
-                            // output.itemsPerHour includes efficiency, so divide it out for per-action rate
-                            const itemsForTask = (output.itemsPerHour / actionsPerHour / efficiencyMultiplier) * quantity;
-                            const revenueForTask = output.itemsPerHour * output.priceEach * hoursNeeded;
+                            const itemsPerAction = output.itemsPerAction ?? output.itemsPerHour / actionsPerHour;
+                            const revenuePerAction = output.revenuePerAction ?? output.revenuePerHour / actionsPerHour;
+                            const itemsForTask = itemsPerAction * quantity;
+                            const revenueForTask = revenuePerAction * quantity;
                             const dropRateText =
                                 output.dropRate < 1.0 ? ` (${formatPercentage(output.dropRate, 1)} drop)` : '';
                             const missingPriceNote = output.missingPrice ? ' ⚠' : '';
@@ -27118,7 +27317,10 @@
                         details.bonusRevenue.bonusDrops.length > 0
                     ) {
                         const bonusRevenue = details.bonusRevenue;
-                        const totalBonusRevenue = bonusRevenue.totalBonusRevenue * efficiencyMultiplier * hoursNeeded;
+                        const totalBonusRevenue = bonusRevenue.bonusDrops.reduce(
+                            (sum, drop) => sum + (drop.revenuePerAction || 0) * quantity,
+                            0
+                        );
 
                         lines.push(
                             `<div style="margin-top: 4px; color: #aaa;">Bonus Drops: ${formatTotalValue(Math.round(totalBonusRevenue))}</div>`
@@ -27131,8 +27333,8 @@
                         // Show essence drops
                         if (essenceDrops.length > 0) {
                             for (const drop of essenceDrops) {
-                                const dropsForTask = drop.dropsPerHour * efficiencyMultiplier * hoursNeeded;
-                                const revenueForTask = drop.revenuePerHour * efficiencyMultiplier * hoursNeeded;
+                                const dropsForTask = (drop.dropsPerAction || 0) * quantity;
+                                const revenueForTask = (drop.revenuePerAction || 0) * quantity;
                                 const missingPriceNote = drop.missingPrice ? ' ⚠' : '';
                                 lines.push(
                                     `<div>• ${drop.itemName}: ${dropsForTask.toFixed(2)} drops @ ${numberFormatter(Math.round(drop.priceEach))}${missingPriceNote} = ${numberFormatter(Math.round(revenueForTask))}</div>`
@@ -27143,8 +27345,8 @@
                         // Show rare find drops
                         if (rareFindDrops.length > 0) {
                             for (const drop of rareFindDrops) {
-                                const dropsForTask = drop.dropsPerHour * efficiencyMultiplier * hoursNeeded;
-                                const revenueForTask = drop.revenuePerHour * efficiencyMultiplier * hoursNeeded;
+                                const dropsForTask = (drop.dropsPerAction || 0) * quantity;
+                                const revenueForTask = (drop.revenuePerAction || 0) * quantity;
                                 const missingPriceNote = drop.missingPrice ? ' ⚠' : '';
                                 lines.push(
                                     `<div>• ${drop.itemName}: ${dropsForTask.toFixed(2)} drops @ ${numberFormatter(Math.round(drop.priceEach))}${missingPriceNote} = ${numberFormatter(Math.round(revenueForTask))}</div>`
@@ -27155,13 +27357,17 @@
 
                     // Processing conversions (raw → processed)
                     if (details.processingConversions && details.processingConversions.length > 0) {
-                        const processingBonus = details.processingRevenueBonus * hoursNeeded;
+                        const processingBonus = (details.processingRevenueBonusPerAction || 0) * quantity;
                         lines.push(
                             `<div style="margin-top: 4px; color: #aaa;">Processing Bonus: ${formatTotalValue(Math.round(processingBonus))}</div>`
                         );
                         for (const conversion of details.processingConversions) {
-                            const conversionsForTask = conversion.conversionsPerHour * hoursNeeded;
-                            const revenueForTask = conversion.revenuePerHour * hoursNeeded;
+                            const conversionsPerAction =
+                                conversion.conversionsPerAction ?? conversion.conversionsPerHour / actionsPerHour;
+                            const revenuePerAction =
+                                conversion.revenuePerAction ?? conversion.revenuePerHour / actionsPerHour;
+                            const conversionsForTask = conversionsPerAction * quantity;
+                            const revenueForTask = revenuePerAction * quantity;
                             const missingPriceNote = conversion.missingPrice ? ' ⚠' : '';
                             lines.push(
                                 `<div>• ${conversion.rawItem} → ${conversion.processedItem}: ${conversionsForTask.toFixed(1)} conversions, +${numberFormatter(Math.round(conversion.valueGain))}${missingPriceNote} each = ${numberFormatter(Math.round(revenueForTask))}</div>`
@@ -27185,19 +27391,16 @@
 
                 if (profitData.action.details) {
                     const details = profitData.action.details;
-                    const efficiencyMultiplier = details.efficiencyMultiplier || 1;
-                    const itemsPerAction = (details.itemsPerAction || 1) / efficiencyMultiplier;
-                    const totalItems = itemsPerAction * profitData.action.breakdown.quantity;
+                    const outputAmount = details.outputAmount || 1;
+                    const totalItems = outputAmount * profitData.action.breakdown.quantity;
                     const outputPriceNote = details.outputPriceMissing ? ' ⚠' : '';
 
                     lines.push(
                         `<div>• Base Production: ${totalItems.toFixed(1)} items @ ${numberFormatter(details.priceEach)}${outputPriceNote} = ${numberFormatter(Math.round(totalItems * details.priceEach))}</div>`
                     );
 
-                    if (details.gourmetBonusItems > 0) {
-                        const bonusItems =
-                            (details.gourmetBonusItems / details.actionsPerHour / efficiencyMultiplier) *
-                            profitData.action.breakdown.quantity;
+                    if (details.gourmetBonus > 0) {
+                        const bonusItems = outputAmount * details.gourmetBonus * profitData.action.breakdown.quantity;
                         lines.push(
                             `<div>• Gourmet Bonus: ${bonusItems.toFixed(1)} items @ ${numberFormatter(details.priceEach)}${outputPriceNote} = ${numberFormatter(Math.round(bonusItems * details.priceEach))}</div>`
                         );
@@ -27214,15 +27417,11 @@
                 ) {
                     const details = profitData.action.details;
                     const bonusRevenue = details.bonusRevenue;
-                    const efficiencyMultiplier = details.efficiencyMultiplier || 1;
-                    const actualAttempts = Math.ceil(profitData.action.breakdown.quantity / efficiencyMultiplier);
-                    const queueBreakdown = calculateQueueProfitBreakdown({
-                        profitPerHour: details.profitPerHour,
-                        actionsPerHour: details.actionsPerHour,
-                        actionCount: actualAttempts,
-                    });
-                    const hoursNeeded = queueBreakdown.hoursNeeded;
-                    const totalBonusRevenue = bonusRevenue.totalBonusRevenue * efficiencyMultiplier * hoursNeeded;
+                    const bonusDrops = bonusRevenue.bonusDrops || [];
+                    const totalBonusRevenue = bonusDrops.reduce(
+                        (sum, drop) => sum + (drop.revenuePerAction || 0) * profitData.action.breakdown.quantity,
+                        0
+                    );
 
                     lines.push(
                         `<div class="mwi-expandable-header" data-section="bonus" style="margin-left: 10px; cursor: pointer; user-select: none;">Bonus Revenue: ${formatTotalValue(totalBonusRevenue)} ▸</div>`
@@ -27239,8 +27438,8 @@
                     if (essenceDrops.length > 0) {
                         lines.push(`<div style="margin-top: 2px; color: #aaa;">Essence Drops:</div>`);
                         for (const drop of essenceDrops) {
-                            const dropsForTask = drop.dropsPerHour * efficiencyMultiplier * hoursNeeded;
-                            const revenueForTask = drop.revenuePerHour * efficiencyMultiplier * hoursNeeded;
+                            const dropsForTask = (drop.dropsPerAction || 0) * profitData.action.breakdown.quantity;
+                            const revenueForTask = (drop.revenuePerAction || 0) * profitData.action.breakdown.quantity;
                             const missingPriceNote = drop.missingPrice ? ' ⚠' : '';
                             lines.push(
                                 `<div>• ${drop.itemName}: ${dropsForTask.toFixed(2)} drops @ ${numberFormatter(Math.round(drop.priceEach))}${missingPriceNote} = ${numberFormatter(Math.round(revenueForTask))}</div>`
@@ -27254,8 +27453,8 @@
                             lines.push(`<div style="margin-top: 4px; color: #aaa;">Rare Find Drops:</div>`);
                         }
                         for (const drop of rareFindDrops) {
-                            const dropsForTask = drop.dropsPerHour * efficiencyMultiplier * hoursNeeded;
-                            const revenueForTask = drop.revenuePerHour * efficiencyMultiplier * hoursNeeded;
+                            const dropsForTask = (drop.dropsPerAction || 0) * profitData.action.breakdown.quantity;
+                            const revenueForTask = (drop.revenuePerAction || 0) * profitData.action.breakdown.quantity;
                             const missingPriceNote = drop.missingPrice ? ' ⚠' : '';
                             lines.push(
                                 `<div>• ${drop.itemName}: ${dropsForTask.toFixed(2)} drops @ ${numberFormatter(Math.round(drop.priceEach))}${missingPriceNote} = ${numberFormatter(Math.round(revenueForTask))}</div>`
@@ -27277,18 +27476,11 @@
                 if (profitData.action.details && profitData.action.details.materialCosts) {
                     const details = profitData.action.details;
                     const actionsNeeded = profitData.action.breakdown.quantity;
-                    const efficiencyMultiplier = details.efficiencyMultiplier || 1;
-                    const actualAttempts = Math.ceil(actionsNeeded / efficiencyMultiplier);
-                    const queueBreakdown = calculateQueueProfitBreakdown({
-                        profitPerHour: details.profitPerHour,
-                        actionsPerHour: details.actionsPerHour,
-                        actionCount: actualAttempts,
-                    });
-                    const hoursNeeded = queueBreakdown.hoursNeeded;
+                    const hoursNeeded = actionsNeeded / (details.actionsPerHour * (details.efficiencyMultiplier || 1));
 
                     for (const mat of details.materialCosts) {
-                        const totalAmount = mat.amount * actionsNeeded * efficiencyMultiplier;
-                        const totalCost = mat.totalCost * actionsNeeded * efficiencyMultiplier;
+                        const totalAmount = mat.amount * actionsNeeded;
+                        const totalCost = mat.totalCost * actionsNeeded;
                         const missingPriceNote = mat.missingPrice ? ' ⚠' : '';
                         lines.push(
                             `<div>• ${mat.itemName}: ${totalAmount.toFixed(1)} @ ${numberFormatter(Math.round(mat.askPrice))}${missingPriceNote} = ${numberFormatter(Math.round(totalCost))}</div>`

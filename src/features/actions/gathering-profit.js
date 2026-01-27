@@ -257,6 +257,7 @@ export async function calculateGatheringProfit(actionHrid) {
     // So we calculate per-action outputs, then multiply by actionsPerHour and efficiency
     let revenuePerHour = 0;
     let processingRevenueBonus = 0; // Track extra revenue from Processing Tea
+    let processingRevenueBonusPerAction = 0; // Per-attempt processing revenue
     const processingConversions = []; // Track conversion details for display
     const baseOutputs = []; // Display-only base item outputs (not used for totals)
     const dropTable = actionDetail.dropTable;
@@ -302,6 +303,8 @@ export async function calculateGatheringProfit(actionHrid) {
 
             const rawItemsPerHour = actionsPerHour * drop.dropRate * rawPerAction * efficiencyMultiplier;
             const processedItemsPerHour = actionsPerHour * drop.dropRate * processedPerAction * efficiencyMultiplier;
+            const rawItemsPerAction = drop.dropRate * rawPerAction;
+            const processedItemsPerAction = drop.dropRate * processedPerAction;
 
             revenuePerHour += rawItemsPerHour * resolvedRawPrice;
             revenuePerHour += processedItemsPerHour * resolvedProcessedPrice;
@@ -316,12 +319,15 @@ export async function calculateGatheringProfit(actionHrid) {
             const revenueFromConversion = processedItemsPerHour * valueGainPerConversion;
 
             processingRevenueBonus += revenueFromConversion;
+            processingRevenueBonusPerAction += processedItemsPerAction * valueGainPerConversion;
             processingConversions.push({
                 rawItem: rawItemName,
                 processedItem: processedItemName,
                 valueGain: valueGainPerConversion,
                 conversionsPerHour: processedItemsPerHour,
+                conversionsPerAction: processedItemsPerAction,
                 revenuePerHour: revenueFromConversion,
+                revenuePerAction: processedItemsPerAction * valueGainPerConversion,
                 missingPrice: rawPriceMissing || processedPriceMissing,
             });
 
@@ -329,24 +335,30 @@ export async function calculateGatheringProfit(actionHrid) {
             baseOutputs.push({
                 name: rawItemName,
                 itemsPerHour: rawItemsPerHour,
+                itemsPerAction: rawItemsPerAction,
                 dropRate: drop.dropRate,
                 priceEach: resolvedRawPrice,
                 revenuePerHour: rawItemsPerHour * resolvedRawPrice + processedItemsPerHour * resolvedProcessedPrice,
+                revenuePerAction:
+                    rawItemsPerAction * resolvedRawPrice + processedItemsPerAction * resolvedProcessedPrice,
                 missingPrice: rawPriceMissing,
             });
         } else {
             // No processing - simple calculation
             rawPerAction = avgAmountPerAction;
             const rawItemsPerHour = actionsPerHour * drop.dropRate * rawPerAction * efficiencyMultiplier;
+            const rawItemsPerAction = drop.dropRate * rawPerAction;
             revenuePerHour += rawItemsPerHour * resolvedRawPrice;
 
             const itemName = gameData.itemDetailMap[drop.itemHrid]?.name || 'Unknown';
             baseOutputs.push({
                 name: itemName,
                 itemsPerHour: rawItemsPerHour,
+                itemsPerAction: rawItemsPerAction,
                 dropRate: drop.dropRate,
                 priceEach: resolvedRawPrice,
                 revenuePerHour: rawItemsPerHour * resolvedRawPrice,
+                revenuePerAction: rawItemsPerAction * resolvedRawPrice,
                 missingPrice: rawPriceMissing,
             });
         }
@@ -408,6 +420,7 @@ export async function calculateGatheringProfit(actionHrid) {
         processingBonus, // Processing Tea chance (as decimal)
         processingRevenueBonus, // Extra revenue from Processing conversions
         processingConversions, // Array of conversion details {rawItem, processedItem, valueGain}
+        processingRevenueBonusPerAction, // Processing bonus per attempt
         gatheringQuantity: totalGathering, // Total gathering quantity bonus (as decimal) - renamed for display consistency
         hasMissingPrices,
         details: {

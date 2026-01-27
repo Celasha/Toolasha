@@ -15,6 +15,8 @@ import {
     calculateDrinksPerHour,
     calculatePriceAfterTax,
     calculateQueueProfitBreakdown,
+    calculateProductionAttemptTotalsFromBase,
+    calculateGatheringAttemptTotalsFromBase,
 } from './profit-helpers.js';
 import { MARKET_TAX } from './profit-constants.js';
 
@@ -263,6 +265,120 @@ describe('calculateQueueProfitBreakdown', () => {
         expect(result.totalProfit).toBe(0);
         expect(result.profitPerAction).toBe(0);
         expect(result.hoursNeeded).toBe(0);
+    });
+});
+
+describe('calculateProductionAttemptTotalsFromBase', () => {
+    test('calculates production totals from attempt-based inputs', () => {
+        const actionsCount = 10;
+        const actionsPerHour = 5;
+        const result = calculateProductionAttemptTotalsFromBase({
+            actionsCount,
+            actionsPerHour,
+            outputAmount: 3,
+            outputPrice: 100,
+            gourmetBonus: 0.1,
+            bonusDrops: [{ revenuePerAction: 5 }, { revenuePerAction: 7 }],
+            materialCosts: [{ totalCost: 20 }, { totalCost: 5 }],
+            totalTeaCostPerHour: 10,
+        });
+
+        expect(result.hoursNeeded).toBe(calculateHoursForActions(actionsCount, actionsPerHour));
+        expect(result.totalBaseItems).toBe(30);
+        expect(result.totalGourmetItems).toBeCloseTo(3, 6);
+        expect(result.totalBaseRevenue).toBe(3000);
+        expect(result.totalGourmetRevenue).toBeCloseTo(300, 6);
+        expect(result.totalBonusRevenue).toBe(120);
+        expect(result.totalRevenue).toBe(3420);
+        expect(result.totalMarketTax).toBeCloseTo(3420 * MARKET_TAX, 6);
+        expect(result.totalMaterialCost).toBe(250);
+        expect(result.totalTeaCost).toBe(20);
+        expect(result.totalCosts).toBeCloseTo(338.4, 6);
+        expect(result.totalProfit).toBeCloseTo(3081.6, 6);
+    });
+
+    test('handles zero actionsPerHour without tea costs', () => {
+        const actionsCount = 4;
+        const actionsPerHour = 0;
+        const result = calculateProductionAttemptTotalsFromBase({
+            actionsCount,
+            actionsPerHour,
+            outputAmount: 2,
+            outputPrice: 50,
+            gourmetBonus: 0,
+            totalTeaCostPerHour: 10,
+        });
+
+        expect(result.hoursNeeded).toBe(0);
+        expect(result.totalBaseItems).toBe(0);
+        expect(result.totalGourmetItems).toBe(0);
+        expect(result.totalBaseRevenue).toBe(0);
+        expect(result.totalGourmetRevenue).toBe(0);
+        expect(result.totalBonusRevenue).toBe(0);
+        expect(result.totalRevenue).toBe(0);
+        expect(result.totalMarketTax).toBe(0);
+        expect(result.totalMaterialCost).toBe(0);
+        expect(result.totalTeaCost).toBe(0);
+        expect(result.totalCosts).toBe(0);
+        expect(result.totalProfit).toBe(0);
+    });
+
+    test('scales hours and tea costs by efficiency multiplier', () => {
+        const result = calculateProductionAttemptTotalsFromBase({
+            actionsCount: 100,
+            actionsPerHour: 50,
+            outputAmount: 1,
+            outputPrice: 10,
+            gourmetBonus: 0,
+            totalTeaCostPerHour: 20,
+            efficiencyMultiplier: 2,
+        });
+
+        expect(result.hoursNeeded).toBe(1);
+        expect(result.totalTeaCost).toBe(20);
+    });
+});
+
+describe('calculateGatheringAttemptTotalsFromBase', () => {
+    test('calculates gathering totals from attempt-based inputs', () => {
+        const actionsCount = 10;
+        const actionsPerHour = 4;
+        const result = calculateGatheringAttemptTotalsFromBase({
+            actionsCount,
+            actionsPerHour,
+            baseOutputs: [{ revenuePerAction: 3 }, { revenuePerAction: 2 }],
+            bonusDrops: [{ revenuePerAction: 1.5 }],
+            processingRevenueBonusPerAction: 0.5,
+            drinkCostPerHour: 6,
+        });
+
+        expect(result.hoursNeeded).toBe(calculateHoursForActions(actionsCount, actionsPerHour));
+        expect(result.totalBaseRevenue).toBe(50);
+        expect(result.totalBonusRevenue).toBe(15);
+        expect(result.totalProcessingRevenue).toBe(5);
+        expect(result.totalRevenue).toBe(70);
+        expect(result.totalMarketTax).toBeCloseTo(70 * MARKET_TAX, 6);
+        expect(result.totalDrinkCost).toBeCloseTo(15, 6);
+        expect(result.totalCosts).toBeCloseTo(16.4, 6);
+        expect(result.totalProfit).toBeCloseTo(53.6, 6);
+    });
+
+    test('handles missing inputs with zero actionsPerHour', () => {
+        const result = calculateGatheringAttemptTotalsFromBase({
+            actionsCount: 5,
+            actionsPerHour: 0,
+            drinkCostPerHour: 10,
+        });
+
+        expect(result.hoursNeeded).toBe(0);
+        expect(result.totalBaseRevenue).toBe(0);
+        expect(result.totalBonusRevenue).toBe(0);
+        expect(result.totalProcessingRevenue).toBe(0);
+        expect(result.totalRevenue).toBe(0);
+        expect(result.totalMarketTax).toBe(0);
+        expect(result.totalDrinkCost).toBe(0);
+        expect(result.totalCosts).toBe(0);
+        expect(result.totalProfit).toBe(0);
     });
 });
 

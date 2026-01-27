@@ -11,7 +11,7 @@ import webSocketHook from '../../core/websocket.js';
 import { calculateTaskProfit } from './task-profit-calculator.js';
 import { numberFormatter, timeReadable, formatPercentage } from '../../utils/formatters.js';
 import { GAME, TOOLASHA } from '../../utils/selectors.js';
-import { calculateQueueProfitBreakdown, calculateSecondsForActions } from '../../utils/profit-helpers.js';
+import { calculateSecondsForActions } from '../../utils/profit-helpers.js';
 
 // Compiled regex pattern (created once, reused for performance)
 const REGEX_TASK_PROGRESS = /(\d+)\s*\/\s*(\d+)/;
@@ -547,23 +547,15 @@ class TaskProfitDisplay {
                 const details = profitData.action.details;
                 const quantity = profitData.action.breakdown.quantity;
                 const actionsPerHour = details.actionsPerHour;
-                const efficiencyMultiplier = details.efficiencyMultiplier || 1;
-
-                const actualAttempts = Math.ceil(quantity / efficiencyMultiplier);
-                const queueBreakdown = calculateQueueProfitBreakdown({
-                    profitPerHour: details.profitPerHour,
-                    actionsPerHour: actionsPerHour,
-                    actionCount: actualAttempts,
-                });
-                const hoursNeeded = queueBreakdown.hoursNeeded;
 
                 // Base outputs (gathered items)
                 if (details.baseOutputs && details.baseOutputs.length > 0) {
                     lines.push(`<div style="margin-top: 2px; color: #aaa;">Items Gathered:</div>`);
                     for (const output of details.baseOutputs) {
-                        // output.itemsPerHour includes efficiency, so divide it out for per-action rate
-                        const itemsForTask = (output.itemsPerHour / actionsPerHour / efficiencyMultiplier) * quantity;
-                        const revenueForTask = output.itemsPerHour * output.priceEach * hoursNeeded;
+                        const itemsPerAction = output.itemsPerAction ?? output.itemsPerHour / actionsPerHour;
+                        const revenuePerAction = output.revenuePerAction ?? output.revenuePerHour / actionsPerHour;
+                        const itemsForTask = itemsPerAction * quantity;
+                        const revenueForTask = revenuePerAction * quantity;
                         const dropRateText =
                             output.dropRate < 1.0 ? ` (${formatPercentage(output.dropRate, 1)} drop)` : '';
                         const missingPriceNote = output.missingPrice ? ' ⚠' : '';
@@ -580,7 +572,10 @@ class TaskProfitDisplay {
                     details.bonusRevenue.bonusDrops.length > 0
                 ) {
                     const bonusRevenue = details.bonusRevenue;
-                    const totalBonusRevenue = bonusRevenue.totalBonusRevenue * efficiencyMultiplier * hoursNeeded;
+                    const totalBonusRevenue = bonusRevenue.bonusDrops.reduce(
+                        (sum, drop) => sum + (drop.revenuePerAction || 0) * quantity,
+                        0
+                    );
 
                     lines.push(
                         `<div style="margin-top: 4px; color: #aaa;">Bonus Drops: ${formatTotalValue(Math.round(totalBonusRevenue))}</div>`
@@ -593,8 +588,8 @@ class TaskProfitDisplay {
                     // Show essence drops
                     if (essenceDrops.length > 0) {
                         for (const drop of essenceDrops) {
-                            const dropsForTask = drop.dropsPerHour * efficiencyMultiplier * hoursNeeded;
-                            const revenueForTask = drop.revenuePerHour * efficiencyMultiplier * hoursNeeded;
+                            const dropsForTask = (drop.dropsPerAction || 0) * quantity;
+                            const revenueForTask = (drop.revenuePerAction || 0) * quantity;
                             const missingPriceNote = drop.missingPrice ? ' ⚠' : '';
                             lines.push(
                                 `<div>• ${drop.itemName}: ${dropsForTask.toFixed(2)} drops @ ${numberFormatter(Math.round(drop.priceEach))}${missingPriceNote} = ${numberFormatter(Math.round(revenueForTask))}</div>`
@@ -605,8 +600,8 @@ class TaskProfitDisplay {
                     // Show rare find drops
                     if (rareFindDrops.length > 0) {
                         for (const drop of rareFindDrops) {
-                            const dropsForTask = drop.dropsPerHour * efficiencyMultiplier * hoursNeeded;
-                            const revenueForTask = drop.revenuePerHour * efficiencyMultiplier * hoursNeeded;
+                            const dropsForTask = (drop.dropsPerAction || 0) * quantity;
+                            const revenueForTask = (drop.revenuePerAction || 0) * quantity;
                             const missingPriceNote = drop.missingPrice ? ' ⚠' : '';
                             lines.push(
                                 `<div>• ${drop.itemName}: ${dropsForTask.toFixed(2)} drops @ ${numberFormatter(Math.round(drop.priceEach))}${missingPriceNote} = ${numberFormatter(Math.round(revenueForTask))}</div>`
@@ -617,13 +612,17 @@ class TaskProfitDisplay {
 
                 // Processing conversions (raw → processed)
                 if (details.processingConversions && details.processingConversions.length > 0) {
-                    const processingBonus = details.processingRevenueBonus * hoursNeeded;
+                    const processingBonus = (details.processingRevenueBonusPerAction || 0) * quantity;
                     lines.push(
                         `<div style="margin-top: 4px; color: #aaa;">Processing Bonus: ${formatTotalValue(Math.round(processingBonus))}</div>`
                     );
                     for (const conversion of details.processingConversions) {
-                        const conversionsForTask = conversion.conversionsPerHour * hoursNeeded;
-                        const revenueForTask = conversion.revenuePerHour * hoursNeeded;
+                        const conversionsPerAction =
+                            conversion.conversionsPerAction ?? conversion.conversionsPerHour / actionsPerHour;
+                        const revenuePerAction =
+                            conversion.revenuePerAction ?? conversion.revenuePerHour / actionsPerHour;
+                        const conversionsForTask = conversionsPerAction * quantity;
+                        const revenueForTask = revenuePerAction * quantity;
                         const missingPriceNote = conversion.missingPrice ? ' ⚠' : '';
                         lines.push(
                             `<div>• ${conversion.rawItem} → ${conversion.processedItem}: ${conversionsForTask.toFixed(1)} conversions, +${numberFormatter(Math.round(conversion.valueGain))}${missingPriceNote} each = ${numberFormatter(Math.round(revenueForTask))}</div>`
@@ -647,19 +646,16 @@ class TaskProfitDisplay {
 
             if (profitData.action.details) {
                 const details = profitData.action.details;
-                const efficiencyMultiplier = details.efficiencyMultiplier || 1;
-                const itemsPerAction = (details.itemsPerAction || 1) / efficiencyMultiplier;
-                const totalItems = itemsPerAction * profitData.action.breakdown.quantity;
+                const outputAmount = details.outputAmount || 1;
+                const totalItems = outputAmount * profitData.action.breakdown.quantity;
                 const outputPriceNote = details.outputPriceMissing ? ' ⚠' : '';
 
                 lines.push(
                     `<div>• Base Production: ${totalItems.toFixed(1)} items @ ${numberFormatter(details.priceEach)}${outputPriceNote} = ${numberFormatter(Math.round(totalItems * details.priceEach))}</div>`
                 );
 
-                if (details.gourmetBonusItems > 0) {
-                    const bonusItems =
-                        (details.gourmetBonusItems / details.actionsPerHour / efficiencyMultiplier) *
-                        profitData.action.breakdown.quantity;
+                if (details.gourmetBonus > 0) {
+                    const bonusItems = outputAmount * details.gourmetBonus * profitData.action.breakdown.quantity;
                     lines.push(
                         `<div>• Gourmet Bonus: ${bonusItems.toFixed(1)} items @ ${numberFormatter(details.priceEach)}${outputPriceNote} = ${numberFormatter(Math.round(bonusItems * details.priceEach))}</div>`
                     );
@@ -676,15 +672,11 @@ class TaskProfitDisplay {
             ) {
                 const details = profitData.action.details;
                 const bonusRevenue = details.bonusRevenue;
-                const efficiencyMultiplier = details.efficiencyMultiplier || 1;
-                const actualAttempts = Math.ceil(profitData.action.breakdown.quantity / efficiencyMultiplier);
-                const queueBreakdown = calculateQueueProfitBreakdown({
-                    profitPerHour: details.profitPerHour,
-                    actionsPerHour: details.actionsPerHour,
-                    actionCount: actualAttempts,
-                });
-                const hoursNeeded = queueBreakdown.hoursNeeded;
-                const totalBonusRevenue = bonusRevenue.totalBonusRevenue * efficiencyMultiplier * hoursNeeded;
+                const bonusDrops = bonusRevenue.bonusDrops || [];
+                const totalBonusRevenue = bonusDrops.reduce(
+                    (sum, drop) => sum + (drop.revenuePerAction || 0) * profitData.action.breakdown.quantity,
+                    0
+                );
 
                 lines.push(
                     `<div class="mwi-expandable-header" data-section="bonus" style="margin-left: 10px; cursor: pointer; user-select: none;">Bonus Revenue: ${formatTotalValue(totalBonusRevenue)} ▸</div>`
@@ -701,8 +693,8 @@ class TaskProfitDisplay {
                 if (essenceDrops.length > 0) {
                     lines.push(`<div style="margin-top: 2px; color: #aaa;">Essence Drops:</div>`);
                     for (const drop of essenceDrops) {
-                        const dropsForTask = drop.dropsPerHour * efficiencyMultiplier * hoursNeeded;
-                        const revenueForTask = drop.revenuePerHour * efficiencyMultiplier * hoursNeeded;
+                        const dropsForTask = (drop.dropsPerAction || 0) * profitData.action.breakdown.quantity;
+                        const revenueForTask = (drop.revenuePerAction || 0) * profitData.action.breakdown.quantity;
                         const missingPriceNote = drop.missingPrice ? ' ⚠' : '';
                         lines.push(
                             `<div>• ${drop.itemName}: ${dropsForTask.toFixed(2)} drops @ ${numberFormatter(Math.round(drop.priceEach))}${missingPriceNote} = ${numberFormatter(Math.round(revenueForTask))}</div>`
@@ -716,8 +708,8 @@ class TaskProfitDisplay {
                         lines.push(`<div style="margin-top: 4px; color: #aaa;">Rare Find Drops:</div>`);
                     }
                     for (const drop of rareFindDrops) {
-                        const dropsForTask = drop.dropsPerHour * efficiencyMultiplier * hoursNeeded;
-                        const revenueForTask = drop.revenuePerHour * efficiencyMultiplier * hoursNeeded;
+                        const dropsForTask = (drop.dropsPerAction || 0) * profitData.action.breakdown.quantity;
+                        const revenueForTask = (drop.revenuePerAction || 0) * profitData.action.breakdown.quantity;
                         const missingPriceNote = drop.missingPrice ? ' ⚠' : '';
                         lines.push(
                             `<div>• ${drop.itemName}: ${dropsForTask.toFixed(2)} drops @ ${numberFormatter(Math.round(drop.priceEach))}${missingPriceNote} = ${numberFormatter(Math.round(revenueForTask))}</div>`
@@ -739,18 +731,11 @@ class TaskProfitDisplay {
             if (profitData.action.details && profitData.action.details.materialCosts) {
                 const details = profitData.action.details;
                 const actionsNeeded = profitData.action.breakdown.quantity;
-                const efficiencyMultiplier = details.efficiencyMultiplier || 1;
-                const actualAttempts = Math.ceil(actionsNeeded / efficiencyMultiplier);
-                const queueBreakdown = calculateQueueProfitBreakdown({
-                    profitPerHour: details.profitPerHour,
-                    actionsPerHour: details.actionsPerHour,
-                    actionCount: actualAttempts,
-                });
-                const hoursNeeded = queueBreakdown.hoursNeeded;
+                const hoursNeeded = actionsNeeded / (details.actionsPerHour * (details.efficiencyMultiplier || 1));
 
                 for (const mat of details.materialCosts) {
-                    const totalAmount = mat.amount * actionsNeeded * efficiencyMultiplier;
-                    const totalCost = mat.totalCost * actionsNeeded * efficiencyMultiplier;
+                    const totalAmount = mat.amount * actionsNeeded;
+                    const totalCost = mat.totalCost * actionsNeeded;
                     const missingPriceNote = mat.missingPrice ? ' ⚠' : '';
                     lines.push(
                         `<div>• ${mat.itemName}: ${totalAmount.toFixed(1)} @ ${numberFormatter(Math.round(mat.askPrice))}${missingPriceNote} = ${numberFormatter(Math.round(totalCost))}</div>`

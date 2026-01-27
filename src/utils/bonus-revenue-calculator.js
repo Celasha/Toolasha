@@ -60,14 +60,18 @@ export function calculateBonusRevenue(actionDetails, actionsPerHour, characterEq
 
             // Revenue per hour from this drop
             const revenuePerHour = dropsPerHour * itemPrice;
+            const dropsPerAction = actionsPerHour > 0 ? dropsPerHour / actionsPerHour : 0;
+            const revenuePerAction = actionsPerHour > 0 ? revenuePerHour / actionsPerHour : 0;
 
             bonusDrops.push({
                 itemHrid: drop.itemHrid,
                 itemName: itemDetails.name,
                 dropRate: finalDropRate,
                 dropsPerHour,
+                dropsPerAction,
                 priceEach: itemPrice,
                 revenuePerHour,
+                revenuePerAction,
                 type: 'essence',
                 missingPrice: isMissingPrice,
             });
@@ -109,14 +113,18 @@ export function calculateBonusRevenue(actionDetails, actionsPerHour, characterEq
 
             // Revenue per hour from this drop
             const revenuePerHour = dropsPerHour * itemPrice;
+            const dropsPerAction = actionsPerHour > 0 ? dropsPerHour / actionsPerHour : 0;
+            const revenuePerAction = actionsPerHour > 0 ? revenuePerHour / actionsPerHour : 0;
 
             bonusDrops.push({
                 itemHrid: drop.itemHrid,
                 itemName: itemDetails.name,
                 dropRate: finalDropRate,
                 dropsPerHour,
+                dropsPerAction,
                 priceEach: itemPrice,
                 revenuePerHour,
+                revenuePerAction,
                 type: 'rare_find',
                 missingPrice: isMissingPrice,
             });

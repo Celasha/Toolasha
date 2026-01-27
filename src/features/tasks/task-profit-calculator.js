@@ -8,7 +8,10 @@ import dataManager from '../../core/data-manager.js';
 import expectedValueCalculator from '../market/expected-value-calculator.js';
 import { calculateGatheringProfit } from '../actions/gathering-profit.js';
 import { calculateProductionProfit } from '../actions/production-profit.js';
-import { calculateQueueProfitBreakdown } from '../../utils/profit-helpers.js';
+import {
+    calculateProductionAttemptTotalsFromBase,
+    calculateGatheringAttemptTotalsFromBase,
+} from '../../utils/profit-helpers.js';
 
 /**
  * Calculate Task Token value from Task Shop items
@@ -192,24 +195,25 @@ async function calculateGatheringTaskProfit(actionHrid, quantity) {
         };
     }
 
-    // Use pre-calculated profitPerAction from profit calculator
-    const profitPerAction = profitData.profitPerAction;
     const hasMissingPrices = profitData.hasMissingPrices;
-    const efficiencyMultiplier = profitData.efficiencyMultiplier || 1;
-    const actualAttempts = Math.ceil(quantity / efficiencyMultiplier);
-    const queueBreakdown = calculateQueueProfitBreakdown({
-        profitPerHour: profitData.profitPerHour,
+
+    const totals = calculateGatheringAttemptTotalsFromBase({
+        actionsCount: quantity,
         actionsPerHour: profitData.actionsPerHour,
-        actionCount: actualAttempts,
+        baseOutputs: profitData.baseOutputs,
+        bonusDrops: profitData.bonusRevenue?.bonusDrops || [],
+        processingRevenueBonusPerAction: profitData.processingRevenueBonusPerAction,
+        drinkCostPerHour: profitData.drinkCostPerHour,
+        efficiencyMultiplier: profitData.efficiencyMultiplier || 1,
     });
 
     return {
-        totalValue: hasMissingPrices ? null : queueBreakdown.totalProfit,
+        totalValue: hasMissingPrices ? null : totals.totalProfit,
         hasMissingPrices,
         breakdown: {
             actionHrid,
             quantity,
-            perAction: profitPerAction / efficiencyMultiplier,
+            perAction: quantity > 0 ? totals.totalProfit / quantity : 0,
         },
         // Include detailed data for expandable display
         details: {
@@ -218,7 +222,7 @@ async function calculateGatheringTaskProfit(actionHrid, quantity) {
             baseOutputs: profitData.baseOutputs,
             bonusRevenue: profitData.bonusRevenue,
             processingConversions: profitData.processingConversions,
-            processingRevenueBonus: profitData.processingRevenueBonus,
+            processingRevenueBonusPerAction: profitData.processingRevenueBonusPerAction,
             efficiencyMultiplier: profitData.efficiencyMultiplier,
         },
     };
@@ -251,43 +255,42 @@ async function calculateProductionTaskProfit(actionHrid, quantity) {
         };
     }
 
-    // Use pre-calculated profitPerAction from profit calculator
-    const profitPerAction = profitData.profitPerAction;
     const hasMissingPrices = profitData.hasMissingPrices;
-    const efficiencyMultiplier = profitData.efficiencyMultiplier || 1;
-    const actualAttempts = Math.ceil(quantity / efficiencyMultiplier);
-    const queueBreakdown = calculateQueueProfitBreakdown({
-        profitPerHour: profitData.profitPerHour,
+
+    const bonusDrops = profitData.bonusRevenue?.bonusDrops || [];
+    const totals = calculateProductionAttemptTotalsFromBase({
+        actionsCount: quantity,
         actionsPerHour: profitData.actionsPerHour,
-        actionCount: actualAttempts,
+        outputAmount: profitData.outputAmount || 1,
+        outputPrice: profitData.outputPrice,
+        gourmetBonus: profitData.gourmetBonus || 0,
+        bonusDrops,
+        materialCosts: profitData.materialCosts,
+        totalTeaCostPerHour: profitData.totalTeaCostPerHour,
+        efficiencyMultiplier: profitData.efficiencyMultiplier || 1,
     });
 
-    const revenuePerHour = (profitData.itemsPerHour + profitData.gourmetBonusItems) * profitData.priceAfterTax;
-    const costsPerHour = profitData.materialCostPerHour + profitData.totalTeaCostPerHour;
-
     return {
-        totalProfit: hasMissingPrices ? null : queueBreakdown.totalProfit,
+        totalProfit: hasMissingPrices ? null : totals.totalProfit,
         hasMissingPrices,
         breakdown: {
             actionHrid,
             quantity,
-            outputValue: revenuePerHour * queueBreakdown.hoursNeeded,
-            materialCost: costsPerHour * queueBreakdown.hoursNeeded,
-            perAction: profitPerAction / efficiencyMultiplier,
+            outputValue: totals.totalRevenue,
+            materialCost: totals.totalMaterialCost + totals.totalTeaCost,
+            perAction: quantity > 0 ? totals.totalProfit / quantity : 0,
         },
         // Include detailed data for expandable display
         details: {
             profitPerHour: profitData.profitPerHour,
             materialCosts: profitData.materialCosts,
             teaCosts: profitData.teaCosts,
-            baseOutputItems: profitData.itemsPerHour,
-            gourmetBonusItems: profitData.gourmetBonusItems,
-            priceEach: profitData.priceAfterTax,
+            outputAmount: profitData.outputAmount,
+            gourmetBonus: profitData.gourmetBonus,
+            priceEach: profitData.outputPrice,
             outputPriceMissing: profitData.outputPriceMissing,
             actionsPerHour: profitData.actionsPerHour,
-            itemsPerAction: profitData.itemsPerHour / profitData.actionsPerHour,
             bonusRevenue: profitData.bonusRevenue, // Pass through bonus revenue data
-            efficiencyMultiplier: profitData.efficiencyMultiplier || 1, // Pass through efficiency multiplier
         },
     };
 }

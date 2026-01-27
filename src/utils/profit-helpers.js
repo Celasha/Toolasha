@@ -218,6 +218,142 @@ export function calculateQueueProfitBreakdown({
     };
 }
 
+/**
+ * Calculate attempt-based totals for production actions
+ * Uses per-attempt base inputs (no efficiency scaling)
+ *
+ * @param {Object} params - Calculation parameters
+ * @param {number} params.actionsCount - Number of queued attempts
+ * @param {number} params.actionsPerHour - Base actions per hour
+ * @param {number} params.outputAmount - Items produced per attempt
+ * @param {number} params.outputPrice - Output price per item (pre-tax)
+ * @param {number} params.gourmetBonus - Gourmet bonus as decimal (e.g., 0.1 for 10%)
+ * @param {Array} [params.bonusDrops] - Bonus drop entries with revenuePerAction
+ * @param {Array} [params.materialCosts] - Material cost entries per attempt
+ * @param {number} params.totalTeaCostPerHour - Tea cost per hour
+ * @param {number} [params.efficiencyMultiplier=1] - Efficiency multiplier for time scaling
+ * @returns {Object} Totals and time values
+ */
+export function calculateProductionAttemptTotalsFromBase({
+    actionsCount,
+    actionsPerHour,
+    outputAmount,
+    outputPrice,
+    gourmetBonus,
+    bonusDrops = [],
+    materialCosts = [],
+    totalTeaCostPerHour,
+    efficiencyMultiplier = 1,
+}) {
+    const effectiveActionsPerHour = actionsPerHour * efficiencyMultiplier;
+    if (!effectiveActionsPerHour || effectiveActionsPerHour <= 0) {
+        return {
+            totalBaseItems: 0,
+            totalGourmetItems: 0,
+            totalBaseRevenue: 0,
+            totalGourmetRevenue: 0,
+            totalBonusRevenue: 0,
+            totalRevenue: 0,
+            totalMarketTax: 0,
+            totalMaterialCost: 0,
+            totalTeaCost: 0,
+            totalCosts: 0,
+            totalProfit: 0,
+            hoursNeeded: 0,
+        };
+    }
+    const totalBaseItems = outputAmount * actionsCount;
+    const totalGourmetItems = outputAmount * gourmetBonus * actionsCount;
+    const totalBaseRevenue = totalBaseItems * outputPrice;
+    const totalGourmetRevenue = totalGourmetItems * outputPrice;
+    const totalBonusRevenue = bonusDrops.reduce((sum, drop) => sum + (drop.revenuePerAction || 0) * actionsCount, 0);
+    const totalRevenue = totalBaseRevenue + totalGourmetRevenue + totalBonusRevenue;
+    const totalMarketTax = totalRevenue * MARKET_TAX;
+    const totalMaterialCost = materialCosts.reduce((sum, material) => sum + material.totalCost * actionsCount, 0);
+    const hoursNeeded = calculateHoursForActions(actionsCount, effectiveActionsPerHour);
+    const totalTeaCost = totalTeaCostPerHour * hoursNeeded;
+    const totalCosts = totalMaterialCost + totalTeaCost + totalMarketTax;
+    const totalProfit = totalRevenue - totalCosts;
+
+    return {
+        totalBaseItems,
+        totalGourmetItems,
+        totalBaseRevenue,
+        totalGourmetRevenue,
+        totalBonusRevenue,
+        totalRevenue,
+        totalMarketTax,
+        totalMaterialCost,
+        totalTeaCost,
+        totalCosts,
+        totalProfit,
+        hoursNeeded,
+    };
+}
+
+/**
+ * Calculate attempt-based totals for gathering actions
+ * Uses per-attempt base inputs (no efficiency scaling)
+ *
+ * @param {Object} params - Calculation parameters
+ * @param {number} params.actionsCount - Number of queued attempts
+ * @param {number} params.actionsPerHour - Base actions per hour
+ * @param {Array} [params.baseOutputs] - Base outputs with revenuePerAction
+ * @param {Array} [params.bonusDrops] - Bonus drop entries with revenuePerAction
+ * @param {number} params.processingRevenueBonusPerAction - Processing bonus per attempt
+ * @param {number} params.drinkCostPerHour - Drink costs per hour
+ * @param {number} [params.efficiencyMultiplier=1] - Efficiency multiplier for time scaling
+ * @returns {Object} Totals and time values
+ */
+export function calculateGatheringAttemptTotalsFromBase({
+    actionsCount,
+    actionsPerHour,
+    baseOutputs = [],
+    bonusDrops = [],
+    processingRevenueBonusPerAction,
+    drinkCostPerHour,
+    efficiencyMultiplier = 1,
+}) {
+    const effectiveActionsPerHour = actionsPerHour * efficiencyMultiplier;
+    if (!effectiveActionsPerHour || effectiveActionsPerHour <= 0) {
+        return {
+            totalBaseRevenue: 0,
+            totalBonusRevenue: 0,
+            totalProcessingRevenue: 0,
+            totalRevenue: 0,
+            totalMarketTax: 0,
+            totalDrinkCost: 0,
+            totalCosts: 0,
+            totalProfit: 0,
+            hoursNeeded: 0,
+        };
+    }
+    const totalBaseRevenue = baseOutputs.reduce(
+        (sum, output) => sum + (output.revenuePerAction || 0) * actionsCount,
+        0
+    );
+    const totalBonusRevenue = bonusDrops.reduce((sum, drop) => sum + (drop.revenuePerAction || 0) * actionsCount, 0);
+    const totalProcessingRevenue = (processingRevenueBonusPerAction || 0) * actionsCount;
+    const totalRevenue = totalBaseRevenue + totalBonusRevenue + totalProcessingRevenue;
+    const totalMarketTax = totalRevenue * MARKET_TAX;
+    const hoursNeeded = calculateHoursForActions(actionsCount, effectiveActionsPerHour);
+    const totalDrinkCost = drinkCostPerHour * hoursNeeded;
+    const totalCosts = totalDrinkCost + totalMarketTax;
+    const totalProfit = totalRevenue - totalCosts;
+
+    return {
+        totalBaseRevenue,
+        totalBonusRevenue,
+        totalProcessingRevenue,
+        totalRevenue,
+        totalMarketTax,
+        totalDrinkCost,
+        totalCosts,
+        totalProfit,
+        hoursNeeded,
+    };
+}
+
 export default {
     // Rate conversions
     calculateActionsPerHour,
@@ -238,4 +374,6 @@ export default {
 
     // Composite
     calculateQueueProfitBreakdown,
+    calculateProductionAttemptTotalsFromBase,
+    calculateGatheringAttemptTotalsFromBase,
 };
