@@ -377,18 +377,31 @@ class DungeonTracker {
                     // Look for "Battle started:" messages
                     if (text.includes('Battle started:')) {
                         // Try to extract timestamp
+                        // Try to extract timestamp from message display format: [MM/DD HH:MM:SS AM/PM] or [DD-M HH:MM:SS]
                         const timestampMatch = text.match(
-                            /\[(\d{1,2}\/\d{1,2})\s+(\d{1,2}):(\d{2}):(\d{2})\s*([AP]M)?\]/
+                            /\[(\d{1,2})([-\/])(\d{1,2})\s+(\d{1,2}):(\d{2}):(\d{2})\s*([AP]M)?\]/
                         );
 
                         if (timestampMatch) {
-                            const date = timestampMatch[1];
-                            let hour = parseInt(timestampMatch[2], 10);
-                            const min = parseInt(timestampMatch[3], 10);
-                            const sec = parseInt(timestampMatch[4], 10);
-                            const period = timestampMatch[5];
+                            const part1 = parseInt(timestampMatch[1], 10);
+                            const separator = timestampMatch[2];
+                            const part2 = parseInt(timestampMatch[3], 10);
+                            let hour = parseInt(timestampMatch[4], 10);
+                            const min = parseInt(timestampMatch[5], 10);
+                            const sec = parseInt(timestampMatch[6], 10);
+                            const period = timestampMatch[7];
 
-                            const [month, day] = date.split('/').map((x) => parseInt(x, 10));
+                            // Determine format based on separator
+                            let month, day;
+                            if (separator === '/') {
+                                // MM/DD format
+                                month = part1;
+                                day = part2;
+                            } else {
+                                // DD-M format (dash separator)
+                                day = part1;
+                                month = part2;
+                            }
 
                             // Handle AM/PM if present
                             if (period === 'PM' && hour < 12) hour += 12;
@@ -409,19 +422,31 @@ class DungeonTracker {
                         const keyCountsMap = this.parseKeyCountsFromMessage(text);
 
                         if (Object.keys(keyCountsMap).length > 0) {
-                            // Try to extract timestamp from message display format: [MM/DD HH:MM:SS AM/PM]
+                            // Try to extract timestamp from message display format: [MM/DD HH:MM:SS AM/PM] or [DD-M HH:MM:SS]
                             const timestampMatch = text.match(
-                                /\[(\d{1,2}\/\d{1,2})\s+(\d{1,2}):(\d{2}):(\d{2})\s*([AP]M)?\]/
+                                /\[(\d{1,2})([-\/])(\d{1,2})\s+(\d{1,2}):(\d{2}):(\d{2})\s*([AP]M)?\]/
                             );
 
                             if (timestampMatch) {
-                                const date = timestampMatch[1];
-                                let hour = parseInt(timestampMatch[2], 10);
-                                const min = parseInt(timestampMatch[3], 10);
-                                const sec = parseInt(timestampMatch[4], 10);
-                                const period = timestampMatch[5];
+                                const part1 = parseInt(timestampMatch[1], 10);
+                                const separator = timestampMatch[2];
+                                const part2 = parseInt(timestampMatch[3], 10);
+                                let hour = parseInt(timestampMatch[4], 10);
+                                const min = parseInt(timestampMatch[5], 10);
+                                const sec = parseInt(timestampMatch[6], 10);
+                                const period = timestampMatch[7];
 
-                                const [month, day] = date.split('/').map((x) => parseInt(x, 10));
+                                // Determine format based on separator
+                                let month, day;
+                                if (separator === '/') {
+                                    // MM/DD format
+                                    month = part1;
+                                    day = part2;
+                                } else {
+                                    // DD-M format (dash separator)
+                                    day = part1;
+                                    month = part2;
+                                }
 
                                 // Handle AM/PM if present
                                 if (period === 'PM' && hour < 12) hour += 12;
