@@ -812,8 +812,16 @@ class DungeonTracker {
      * @param {Object} data - new_battle message data
      */
     async onNewBattle(data) {
+        console.log('[Dungeon Tracker] onNewBattle fired:', {
+            wave: data.wave,
+            battleId: data.battleId,
+            isTracking: this.isTracking,
+            currentBattleId: this.currentBattleId,
+        });
+
         // Only track if we have wave data
         if (data.wave === undefined) {
+            console.log('[Dungeon Tracker] No wave data, skipping');
             return;
         }
 
@@ -822,19 +830,25 @@ class DungeonTracker {
 
         // Wave 0 = first wave = dungeon start
         if (data.wave === 0) {
+            console.log('[Dungeon Tracker] Wave 0 detected - starting new dungeon');
             // Clear any stale saved state first (in case previous run didn't clear properly)
             await this.clearInProgressRun();
 
             // Start fresh dungeon
             this.startDungeon(data);
         } else if (!this.isTracking) {
+            console.log('[Dungeon Tracker] Mid-dungeon start - attempting restore');
             // Mid-dungeon start - try to restore first
             const restored = await this.restoreInProgressRun(battleId);
             if (!restored) {
+                console.log('[Dungeon Tracker] Restore failed - initializing tracking');
                 // No restore - initialize tracking anyway
                 this.startDungeon(data);
+            } else {
+                console.log('[Dungeon Tracker] Restore successful');
             }
         } else {
+            console.log('[Dungeon Tracker] Subsequent wave - already tracking');
             // Subsequent wave (already tracking)
             // Update battleId in case user logged out and back in (new battle instance)
             this.currentBattleId = data.battleId;
@@ -1396,9 +1410,11 @@ class DungeonTracker {
                 }
                 // Extract "Battle ended:" messages (fled/canceled)
                 else if (text.includes('Battle ended:')) {
+                    const dungeonName = text.split('Battle ended:')[1]?.split(']')[0]?.trim();
                     events.push({
                         type: 'cancel',
                         timestamp,
+                        dungeonName,
                     });
                 }
             }
@@ -1425,12 +1441,20 @@ class DungeonTracker {
                         duration += 24 * 60 * 60 * 1000; // Add 24 hours
                     }
 
-                    // Find nearest battle_start before this run
+                    // Find nearest battle_ended or battle_start before this run
+                    // Prioritize battle_ended (appears right before key count completion)
+                    const battleEnded = events
+                        .slice(0, i)
+                        .reverse()
+                        .find((e) => e.type === 'cancel' && e.dungeonName);
+
                     const battleStart = events
                         .slice(0, i)
                         .reverse()
                         .find((e) => e.type === 'battle_start');
-                    const dungeonName = battleStart?.dungeonName || 'Unknown';
+
+                    // Use battle_ended if available, otherwise fall back to battle_start
+                    const dungeonName = battleEnded?.dungeonName || battleStart?.dungeonName || 'Unknown';
 
                     // Get team key
                     const teamKey = dungeonTrackerStorage.getTeamKey(event.team);
