@@ -7763,6 +7763,21 @@
             processingConversionCache = buildProcessingConversionCache(gameData);
         }
 
+        const priceCache = new Map();
+        const getCachedPrice = (itemHrid, options) => {
+            const side = options?.side || '';
+            const enhancementLevel = options?.enhancementLevel ?? '';
+            const cacheKey = `${itemHrid}|${side}|${enhancementLevel}`;
+
+            if (priceCache.has(cacheKey)) {
+                return priceCache.get(cacheKey);
+            }
+
+            const price = getItemPrice(itemHrid, options);
+            priceCache.set(cacheKey, price);
+            return price;
+        };
+
         // Note: Market API is pre-loaded by caller (max-produceable.js)
         // No need to check or fetch here
 
@@ -7840,7 +7855,7 @@
             if (!drink || !drink.itemHrid) {
                 continue;
             }
-            const drinkPrice = getItemPrice(drink.itemHrid, { context: 'profit', side: 'buy' });
+            const drinkPrice = getCachedPrice(drink.itemHrid, { context: 'profit', side: 'buy' });
             const isPriceMissing = drinkPrice === null;
             const resolvedPrice = isPriceMissing ? 0 : drinkPrice;
             const costPerHour = resolvedPrice * drinksPerHour;
@@ -7909,7 +7924,7 @@
         const dropTable = actionDetail.dropTable;
 
         for (const drop of dropTable) {
-            const rawPrice = getItemPrice(drop.itemHrid, { context: 'profit', side: 'sell' });
+            const rawPrice = getCachedPrice(drop.itemHrid, { context: 'profit', side: 'sell' });
             const rawPriceMissing = rawPrice === null;
             const resolvedRawPrice = rawPriceMissing ? 0 : rawPrice;
             // Apply gathering quantity bonus to drop amounts
@@ -7943,7 +7958,7 @@
                 rawPerAction = processingBonus * rawLeftoverIfProcs + (1 - processingBonus) * rawIfNoProc;
 
                 // Revenue per hour = per-action × actionsPerHour × efficiency
-                const processedPrice = getItemPrice(processedItemHrid, { context: 'profit', side: 'sell' });
+                const processedPrice = getCachedPrice(processedItemHrid, { context: 'profit', side: 'sell' });
                 const processedPriceMissing = processedPrice === null;
                 const resolvedProcessedPrice = processedPriceMissing ? 0 : processedPrice;
 
@@ -8006,7 +8021,7 @@
 
                 // Use weighted average price for gourmet bonus
                 if (processedItemHrid && processingBonus > 0) {
-                    const processedPrice = getItemPrice(processedItemHrid, { context: 'profit', side: 'sell' });
+                    const processedPrice = getCachedPrice(processedItemHrid, { context: 'profit', side: 'sell' });
                     const resolvedProcessedPrice = processedPrice === null ? 0 : processedPrice;
                     const weightedPrice =
                         (rawPerAction * resolvedRawPrice + processedPerAction * resolvedProcessedPrice) /
