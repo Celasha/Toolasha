@@ -532,7 +532,8 @@ class TooltipPrices {
             // Material rows
             for (const material of materialsWithPrices) {
                 html += '<tr>';
-                html += `<td style="padding: 2px 4px;">${material.itemName}</td>`;
+                const calcIndicator = material.isCalculated ? ' <span style="color: #ffa500;">(calc)</span>' : '';
+                html += `<td style="padding: 2px 4px;">${material.itemName}${calcIndicator}</td>`;
                 html += `<td style="padding: 2px 4px; text-align: center;">${material.amount.toFixed(1)}</td>`;
                 html += `<td style="padding: 2px 4px; text-align: right;">${formatKMB(material.askPrice)}</td>`;
                 html += `<td style="padding: 2px 4px; text-align: right;">${formatKMB(material.bidPrice)}</td>`;
@@ -550,6 +551,12 @@ class TooltipPrices {
         const profitColor = profitData.profitPerHour >= 0 ? config.COLOR_TOOLTIP_PROFIT : config.COLOR_TOOLTIP_LOSS;
 
         html += `<div style="color: ${profitColor};">Profit: ${numberFormatter(profitPerAction)}/action, ${numberFormatter(profitData.profitPerHour)}/hour, ${formatKMB(profitPerDay)}/day</div>`;
+
+        // Add warning if calculated prices were used
+        if (profitData.hasCalculatedPrices) {
+            html += '<div style="color: #ffa500; font-size: 0.9em; margin-top: 4px;">⚠️ Market unreliable</div>';
+        }
+
         html += '</div>';
 
         return html;

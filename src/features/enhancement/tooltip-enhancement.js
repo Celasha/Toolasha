@@ -369,33 +369,29 @@ function getRealisticBaseItemPrice(itemHrid) {
     // Calculate production cost as fallback
     const productionCost = getProductionCost(itemHrid);
 
-    // If both ask and bid exist
-    if (ask > 0 && bid > 0) {
-        // If ask is significantly higher than bid (>30% markup), use max(bid, production)
-        if (ask / bid > 1.3) {
-            return Math.max(bid, productionCost);
+    // If ask exists, check if it's reliable (1.5x threshold)
+    if (ask > 0) {
+        // If we have production cost and ask is unreliable (> 1.5x crafting cost)
+        if (productionCost > 0 && ask > productionCost * 1.5) {
+            // Market price unreliable - use crafting cost instead
+            return productionCost;
         }
-        // Otherwise use ask (normal market)
+        // Market price is reliable
         return ask;
     }
 
-    // If only ask exists
-    if (ask > 0) {
-        // If ask is inflated compared to production, use production
-        if (productionCost > 0 && ask / productionCost > 1.3) {
-            return productionCost;
-        }
-        // Otherwise use max of ask and production
-        return Math.max(ask, productionCost);
-    }
-
-    // If only bid exists, use max(bid, production)
+    // No ask - try bid
     if (bid > 0) {
-        return Math.max(bid, productionCost);
+        return bid;
     }
 
     // No market data - use production cost as fallback
-    return productionCost;
+    if (productionCost > 0) {
+        return productionCost;
+    }
+
+    // No price data available
+    return 0;
 }
 
 /**

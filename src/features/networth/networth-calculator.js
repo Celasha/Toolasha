@@ -123,6 +123,14 @@ function getMarketPrice(itemHrid, enhancementLevel, priceCache = null) {
     // Try ask price first
     const ask = prices?.ask;
     if (ask && ask > 0) {
+        // For base items, check if market price is unreliable (> 1.5x crafting cost)
+        if (enhancementLevel === 0) {
+            const craftingCost = calculateCraftingCost(itemHrid);
+            if (craftingCost > 0 && ask > craftingCost * 1.5) {
+                // Market price unreliable - use crafting cost instead
+                return craftingCost;
+            }
+        }
         return ask;
     }
 

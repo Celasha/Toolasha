@@ -8,6 +8,98 @@ import marketAPI from '../api/marketplace.js';
 import dataManager from '../core/data-manager.js';
 
 /**
+ * Calculate simple crafting cost for an item (for price validation)
+ * @param {string} itemHrid - Item HRID
+ * @returns {number} Crafting cost or 0 if not craftable
+ */
+function calculateSimpleCraftingCost(itemHrid) {
+    const gameData = dataManager.getInitClientData();
+    if (!gameData) return 0;
+
+    // Find the action that produces this item
+    for (const action of Object.values(gameData.actionDetailMap || {})) {
+        if (action.outputItems) {
+            for (const output of action.outputItems) {
+                if (output.itemHrid === itemHrid) {
+                    // Found the crafting action, calculate material costs
+                    let inputCost = 0;
+                    let hasAllMaterialPrices = true;
+
+                    // Add input items
+                    if (action.inputItems && action.inputItems.length > 0) {
+                        for (const input of action.inputItems) {
+                            const inputPrices = marketAPI.getPrice(input.itemHrid, 0);
+                            if (!inputPrices || inputPrices.ask <= 0) {
+                                hasAllMaterialPrices = false;
+                                break;
+                            }
+                            inputCost += inputPrices.ask * input.count;
+                        }
+                    }
+
+                    if (!hasAllMaterialPrices) {
+                        return 0;
+                    }
+
+                    // Apply Artisan Tea reduction (0.9x) to input materials
+                    inputCost *= 0.9;
+
+                    // Add upgrade item cost (not affected by Artisan Tea)
+                    let upgradeCost = 0;
+                    if (action.upgradeItemHrid) {
+                        const upgradePrices = marketAPI.getPrice(action.upgradeItemHrid, 0);
+                        if (!upgradePrices || upgradePrices.ask <= 0) {
+                            return 0;
+                        }
+                        upgradeCost = upgradePrices.ask;
+                    }
+
+                    const totalCost = inputCost + upgradeCost;
+
+                    // Divide by output count to get per-item cost
+                    return totalCost / (output.count || 1);
+                }
+            }
+        }
+    }
+
+    return 0;
+}
+
+/**
+ * Get reliable market price with 1.5x safeguard
+ * @param {string} itemHrid - Item HRID
+ * @param {Object} prices - Market prices object {ask, bid}
+ * @returns {Object} {ask, bid} with reliable prices
+ */
+function getReliableMarketPrice(itemHrid, prices) {
+    if (!prices) return { ask: 0, bid: 0 };
+
+    let reliableAsk = prices.ask || 0;
+    let reliableBid = prices.bid || 0;
+
+    // Check if ask price is unreliable (> 1.5x crafting cost)
+    if (reliableAsk > 0) {
+        const craftingCost = calculateSimpleCraftingCost(itemHrid);
+        if (craftingCost > 0 && reliableAsk > craftingCost * 1.5) {
+            // Market unreliable - use crafting cost
+            reliableAsk = craftingCost;
+        }
+    }
+
+    // Check bid price too
+    if (reliableBid > 0) {
+        const craftingCost = calculateSimpleCraftingCost(itemHrid);
+        if (craftingCost > 0 && reliableBid > craftingCost * 1.5) {
+            // Market unreliable - use crafting cost
+            reliableBid = craftingCost;
+        }
+    }
+
+    return { ask: reliableAsk, bid: reliableBid };
+}
+
+/**
  * Calculate dungeon token value based on best shop item value
  * Uses "best market value per token" approach: finds the shop item with highest (market price / token cost)
  * @param {string} tokenHrid - Token HRID (e.g., '/items/chimerical_token')
@@ -37,9 +129,11 @@ export function calculateDungeonTokenValue(
         const itemHrid = shopItem.itemHrid;
         const tokenCost = shopItem.costs[0].count;
 
-        // Get market price for this item
-        const prices = marketAPI.getPrice(itemHrid, 0);
-        if (!prices) continue;
+        // Get market price for this item (with safeguards)
+        const rawPrices = marketAPI.getPrice(itemHrid, 0);
+        if (!rawPrices) continue;
+
+        const prices = getReliableMarketPrice(itemHrid, rawPrices);
 
         // Use pricing mode to determine which price to use
         const pricingMode = config.getSettingValue(pricingModeSetting, 'conservative');
@@ -76,8 +170,9 @@ export function calculateDungeonTokenValue(
 
         const essenceHrid = essenceMap[tokenHrid];
         if (essenceHrid) {
-            const essencePrice = marketAPI.getPrice(essenceHrid, 0);
-            if (essencePrice) {
+            const rawEssencePrice = marketAPI.getPrice(essenceHrid, 0);
+            if (rawEssencePrice) {
+                const essencePrice = getReliableMarketPrice(essenceHrid, rawEssencePrice);
                 const pricingMode = config.getSettingValue(pricingModeSetting, 'conservative');
                 const respectPricingMode = config.getSettingValue(respectModeSetting, true);
 

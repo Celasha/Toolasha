@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.5.31
+// @version      0.5.32
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -4942,6 +4942,98 @@
 
 
     /**
+     * Calculate simple crafting cost for an item (for price validation)
+     * @param {string} itemHrid - Item HRID
+     * @returns {number} Crafting cost or 0 if not craftable
+     */
+    function calculateSimpleCraftingCost$1(itemHrid) {
+        const gameData = dataManager.getInitClientData();
+        if (!gameData) return 0;
+
+        // Find the action that produces this item
+        for (const action of Object.values(gameData.actionDetailMap || {})) {
+            if (action.outputItems) {
+                for (const output of action.outputItems) {
+                    if (output.itemHrid === itemHrid) {
+                        // Found the crafting action, calculate material costs
+                        let inputCost = 0;
+                        let hasAllMaterialPrices = true;
+
+                        // Add input items
+                        if (action.inputItems && action.inputItems.length > 0) {
+                            for (const input of action.inputItems) {
+                                const inputPrices = marketAPI.getPrice(input.itemHrid, 0);
+                                if (!inputPrices || inputPrices.ask <= 0) {
+                                    hasAllMaterialPrices = false;
+                                    break;
+                                }
+                                inputCost += inputPrices.ask * input.count;
+                            }
+                        }
+
+                        if (!hasAllMaterialPrices) {
+                            return 0;
+                        }
+
+                        // Apply Artisan Tea reduction (0.9x) to input materials
+                        inputCost *= 0.9;
+
+                        // Add upgrade item cost (not affected by Artisan Tea)
+                        let upgradeCost = 0;
+                        if (action.upgradeItemHrid) {
+                            const upgradePrices = marketAPI.getPrice(action.upgradeItemHrid, 0);
+                            if (!upgradePrices || upgradePrices.ask <= 0) {
+                                return 0;
+                            }
+                            upgradeCost = upgradePrices.ask;
+                        }
+
+                        const totalCost = inputCost + upgradeCost;
+
+                        // Divide by output count to get per-item cost
+                        return totalCost / (output.count || 1);
+                    }
+                }
+            }
+        }
+
+        return 0;
+    }
+
+    /**
+     * Get reliable market price with 1.5x safeguard
+     * @param {string} itemHrid - Item HRID
+     * @param {Object} prices - Market prices object {ask, bid}
+     * @returns {Object} {ask, bid} with reliable prices
+     */
+    function getReliableMarketPrice(itemHrid, prices) {
+        if (!prices) return { ask: 0, bid: 0 };
+
+        let reliableAsk = prices.ask || 0;
+        let reliableBid = prices.bid || 0;
+
+        // Check if ask price is unreliable (> 1.5x crafting cost)
+        if (reliableAsk > 0) {
+            const craftingCost = calculateSimpleCraftingCost$1(itemHrid);
+            if (craftingCost > 0 && reliableAsk > craftingCost * 1.5) {
+                // Market unreliable - use crafting cost
+                reliableAsk = craftingCost;
+            }
+        }
+
+        // Check bid price too
+        if (reliableBid > 0) {
+            const craftingCost = calculateSimpleCraftingCost$1(itemHrid);
+            if (craftingCost > 0 && reliableBid > craftingCost * 1.5) {
+                // Market unreliable - use crafting cost
+                reliableBid = craftingCost;
+            }
+        }
+
+        return { ask: reliableAsk, bid: reliableBid };
+    }
+
+    /**
      * Calculate dungeon token value based on best shop item value
      * Uses "best market value per token" approach: finds the shop item with highest (market price / token cost)
      * @param {string} tokenHrid - Token HRID (e.g., '/items/chimerical_token')
@@ -4971,9 +5063,11 @@
             const itemHrid = shopItem.itemHrid;
             const tokenCost = shopItem.costs[0].count;
 
-            // Get market price for this item
-            const prices = marketAPI.getPrice(itemHrid, 0);
-            if (!prices) continue;
+            // Get market price for this item (with safeguards)
+            const rawPrices = marketAPI.getPrice(itemHrid, 0);
+            if (!rawPrices) continue;
+
+            const prices = getReliableMarketPrice(itemHrid, rawPrices);
 
             // Use pricing mode to determine which price to use
             const pricingMode = config.getSettingValue(pricingModeSetting, 'conservative');
@@ -5010,8 +5104,9 @@
 
             const essenceHrid = essenceMap[tokenHrid];
             if (essenceHrid) {
-                const essencePrice = marketAPI.getPrice(essenceHrid, 0);
-                if (essencePrice) {
+                const rawEssencePrice = marketAPI.getPrice(essenceHrid, 0);
+                if (rawEssencePrice) {
+                    const essencePrice = getReliableMarketPrice(essenceHrid, rawEssencePrice);
                     const pricingMode = config.getSettingValue(pricingModeSetting, 'conservative');
                     const respectPricingMode = config.getSettingValue(respectModeSetting, true);
 
@@ -5673,8 +5768,77 @@
         }
 
         /**
+         * Calculate simple crafting cost for an item
+         * Used to detect manipulated prices (1.5x threshold)
+         * @param {string} itemHrid - Item HRID
+         * @returns {number} Crafting cost or 0 if not craftable
+         */
+        calculateSimpleCraftingCost(itemHrid) {
+            const gameData = dataManager.getInitClientData();
+            if (!gameData) return 0;
+
+            // Find the action that produces this item
+            for (const action of Object.values(gameData.actionDetailMap || {})) {
+                if (action.outputItems) {
+                    for (const output of action.outputItems) {
+                        if (output.itemHrid === itemHrid) {
+                            // Found the crafting action, calculate material costs
+                            let inputCost = 0;
+                            let hasAllMaterialPrices = true;
+
+                            // Add input items
+                            if (action.inputItems && action.inputItems.length > 0) {
+                                for (const input of action.inputItems) {
+                                    const inputPrice = getItemPrice(input.itemHrid, {
+                                        enhancementLevel: 0,
+                                        context: 'profit',
+                                        side: 'sell',
+                                    });
+                                    if (inputPrice === null || inputPrice === 0) {
+                                        hasAllMaterialPrices = false;
+                                        break;
+                                    }
+                                    inputCost += inputPrice * input.count;
+                                }
+                            }
+
+                            if (!hasAllMaterialPrices) {
+                                return 0;
+                            }
+
+                            // Apply Artisan Tea reduction (0.9x) to input materials
+                            inputCost *= 0.9;
+
+                            // Add upgrade item cost (not affected by Artisan Tea)
+                            let upgradeCost = 0;
+                            if (action.upgradeItemHrid) {
+                                const upgradePrice = getItemPrice(action.upgradeItemHrid, {
+                                    enhancementLevel: 0,
+                                    context: 'profit',
+                                    side: 'sell',
+                                });
+                                if (upgradePrice === null || upgradePrice === 0) {
+                                    return 0;
+                                }
+                                upgradeCost = upgradePrice;
+                            }
+
+                            const totalCost = inputCost + upgradeCost;
+
+                            // Divide by output count to get per-item cost
+                            return totalCost / (output.count || 1);
+                        }
+                    }
+                }
+            }
+
+            return 0;
+        }
+
+        /**
          * Get price for a drop item
          * Handles special cases (Coin, Cowbell, Dungeon Tokens, nested containers)
+         * Uses 1.5x threshold to detect manipulated prices
          * @param {string} itemHrid - Item HRID
          * @returns {number|null} Price or null if unavailable
          */
@@ -5708,7 +5872,19 @@
 
             // Regular market item - get price based on pricing mode (sell side - you're selling drops)
             const dropPrice = getItemPrice(itemHrid, { enhancementLevel: 0, context: 'profit', side: 'sell' });
-            return dropPrice > 0 ? dropPrice : null;
+            if (dropPrice === null || dropPrice === 0) {
+                return null;
+            }
+
+            // Check if price is unreliable (1.5x threshold)
+            const craftingCost = this.calculateSimpleCraftingCost(itemHrid);
+            if (craftingCost > 0 && dropPrice > craftingCost * 1.5) {
+                // Market price unreliable - use crafting cost instead
+                return craftingCost;
+            }
+
+            // Market price is reliable
+            return dropPrice;
         }
 
         /**
@@ -6000,6 +6176,71 @@
         }
 
         /**
+         * Get reliable price for an item with fallback to crafting cost
+         * @param {string} itemHrid - Item HRID
+         * @param {Object} options - Pricing options {context, side}
+         * @returns {Object} {price: number, isCalculated: boolean, isMissing: boolean}
+         */
+        getReliablePrice(itemHrid, options = {}) {
+            // Get market price
+            const marketPrice = getItemPrice(itemHrid, options);
+            const marketMissing = marketPrice === null;
+            const resolvedMarketPrice = marketMissing ? 0 : marketPrice;
+
+            // Special case: Coins have face value of 1
+            if (itemHrid === '/items/coin' && resolvedMarketPrice === 0) {
+                return { price: 1, isCalculated: false, isMissing: false };
+            }
+
+            // If market price is missing, return with missing flag
+            if (marketMissing) {
+                return { price: 0, isCalculated: false, isMissing: true };
+            }
+
+            // Calculate crafting cost if item is craftable
+            const action = this.findProductionAction(itemHrid);
+            if (!action) {
+                // Not craftable - use market price as-is
+                return { price: resolvedMarketPrice, isCalculated: false, isMissing: false };
+            }
+
+            // Get action details to calculate crafting cost
+            const actionDetails = dataManager.getActionDetails(action.actionHrid);
+            if (!actionDetails || !actionDetails.inputItems) {
+                // Can't calculate crafting cost - use market price
+                return { price: resolvedMarketPrice, isCalculated: false, isMissing: false };
+            }
+
+            // Calculate total crafting cost (simple sum of input materials at market price)
+            let craftingCost = 0;
+            let hasAllMaterialPrices = true;
+
+            for (const input of actionDetails.inputItems) {
+                const inputPrice = getItemPrice(input.itemHrid, options);
+                if (inputPrice === null) {
+                    hasAllMaterialPrices = false;
+                    break;
+                }
+                const inputAmount = input.count || input.amount || 1;
+                craftingCost += inputPrice * inputAmount;
+            }
+
+            // If we can't calculate crafting cost, use market price
+            if (!hasAllMaterialPrices) {
+                return { price: resolvedMarketPrice, isCalculated: false, isMissing: false };
+            }
+
+            // Check if market price is unreliable (> 1.5x crafting cost)
+            if (resolvedMarketPrice > craftingCost * 1.5) {
+                // Market unreliable - use crafting cost
+                return { price: craftingCost, isCalculated: true, isMissing: false };
+            }
+
+            // Market price is reliable
+            return { price: resolvedMarketPrice, isCalculated: false, isMissing: false };
+        }
+
+        /**
          * Get item detail map (lazy-loaded and cached)
          * @returns {Object} Item details map from init_client_data
          */
@@ -6208,6 +6449,10 @@
                 teaCosts.some((tea) => tea.missingPrice) ||
                 (bonusRevenue?.hasMissingPrices ?? false);
 
+            // Track if any calculated prices (fallback to crafting cost) were used
+            const hasCalculatedPrices =
+                materialCosts.some((material) => material.isCalculated) || teaCosts.some((tea) => tea.isCalculated);
+
             // Apply efficiency multiplier to bonus revenue (efficiency repeats the action, including bonus rolls)
             const efficiencyBoostedBonusRevenue = (bonusRevenue?.totalBonusRevenue || 0) * efficiencyMultiplier;
 
@@ -6249,6 +6494,7 @@
                 profitPerDay: calculateProfitPerDay(profitPerHour), // Profit per day
                 bonusRevenue, // Bonus revenue from essences and rare finds
                 hasMissingPrices,
+                hasCalculatedPrices, // Indicates if fallback to crafting cost was used
                 totalEfficiency, // Total efficiency percentage
                 levelEfficiency, // Level advantage efficiency
                 houseEfficiency, // House room efficiency
@@ -6309,18 +6555,11 @@
                 const itemDetails = dataManager.getItemDetails(actionDetails.upgradeItemHrid);
 
                 if (itemDetails) {
-                    // Get material price based on pricing mode (uses 'profit' context with 'buy' side)
-                    const materialPrice = getItemPrice(actionDetails.upgradeItemHrid, { context: 'profit', side: 'buy' });
-                    const isPriceMissing = materialPrice === null;
-                    const resolvedPrice = isPriceMissing ? 0 : materialPrice;
-
-                    // Special case: Coins have no market price but have face value of 1
-                    let finalPrice = resolvedPrice;
-                    let isMissing = isPriceMissing;
-                    if (actionDetails.upgradeItemHrid === '/items/coin' && finalPrice === 0) {
-                        finalPrice = 1;
-                        isMissing = false;
-                    }
+                    // Get reliable material price with fallback to crafting cost
+                    const priceData = this.getReliablePrice(actionDetails.upgradeItemHrid, {
+                        context: 'profit',
+                        side: 'buy',
+                    });
 
                     // Upgrade items are NOT affected by Artisan Tea (only regular inputItems are)
                     const reducedAmount = 1;
@@ -6330,9 +6569,10 @@
                         itemName: itemDetails.name,
                         baseAmount: 1,
                         amount: reducedAmount,
-                        askPrice: finalPrice,
-                        totalCost: finalPrice * reducedAmount,
-                        missingPrice: isMissing,
+                        askPrice: priceData.price,
+                        totalCost: priceData.price * reducedAmount,
+                        missingPrice: priceData.isMissing,
+                        isCalculated: priceData.isCalculated,
                     });
                 }
             }
@@ -6352,27 +6592,18 @@
                     // Apply artisan reduction
                     const reducedAmount = baseAmount * (1 - artisanBonus);
 
-                    // Get material price based on pricing mode (uses 'profit' context with 'buy' side)
-                    const materialPrice = getItemPrice(input.itemHrid, { context: 'profit', side: 'buy' });
-                    const isPriceMissing = materialPrice === null;
-                    const resolvedPrice = isPriceMissing ? 0 : materialPrice;
-
-                    // Special case: Coins have no market price but have face value of 1
-                    let finalPrice = resolvedPrice;
-                    let isMissing = isPriceMissing;
-                    if (input.itemHrid === '/items/coin' && finalPrice === 0) {
-                        finalPrice = 1; // 1 coin = 1 gold value
-                        isMissing = false;
-                    }
+                    // Get reliable material price with fallback to crafting cost
+                    const priceData = this.getReliablePrice(input.itemHrid, { context: 'profit', side: 'buy' });
 
                     costs.push({
                         itemHrid: input.itemHrid,
                         itemName: itemDetails.name,
                         baseAmount: baseAmount,
                         amount: reducedAmount,
-                        askPrice: finalPrice,
-                        totalCost: finalPrice * reducedAmount,
-                        missingPrice: isMissing,
+                        askPrice: priceData.price,
+                        totalCost: priceData.price * reducedAmount,
+                        missingPrice: priceData.isMissing,
+                        isCalculated: priceData.isCalculated,
                     });
                 }
             }
@@ -6499,10 +6730,8 @@
                 const itemDetails = dataManager.getItemDetails(drink.itemHrid);
                 if (!itemDetails) continue;
 
-                // Get tea price based on pricing mode (uses 'profit' context with 'buy' side)
-                const teaPrice = getItemPrice(drink.itemHrid, { context: 'profit', side: 'buy' });
-                const isPriceMissing = teaPrice === null;
-                const resolvedPrice = isPriceMissing ? 0 : teaPrice;
+                // Get reliable tea price with fallback to crafting cost
+                const priceData = this.getReliablePrice(drink.itemHrid, { context: 'profit', side: 'buy' });
 
                 // Drink Concentration increases consumption rate
                 const drinksPerHour = calculateDrinksPerHour(drinkConcentration);
@@ -6510,10 +6739,11 @@
                 costs.push({
                     itemHrid: drink.itemHrid,
                     itemName: itemDetails.name,
-                    pricePerDrink: resolvedPrice,
+                    pricePerDrink: priceData.price,
                     drinksPerHour: drinksPerHour,
-                    totalCost: resolvedPrice * drinksPerHour,
-                    missingPrice: isPriceMissing,
+                    totalCost: priceData.price * drinksPerHour,
+                    missingPrice: priceData.isMissing,
+                    isCalculated: priceData.isCalculated,
                 });
             }
 
@@ -6565,6 +6795,108 @@
                 this._itemDetailMap = initData?.itemDetailMap || {};
             }
             return this._itemDetailMap;
+        }
+
+        /**
+         * Get reliable price for an item with fallback to crafting cost
+         * Uses 1.5x threshold: if market price > crafting cost × 1.5, use crafting cost
+         * @param {string} itemHrid - Item HRID
+         * @param {Object} options - Pricing options {context, side, enhancementLevel}
+         * @returns {number|null} Reliable price or null if no data available
+         */
+        getReliablePrice(itemHrid, options = {}) {
+            // Get market price
+            const marketPrice = getItemPrice(itemHrid, options);
+            const marketMissing = marketPrice === null;
+
+            // If market price is missing, return null
+            if (marketMissing) {
+                return null;
+            }
+
+            // Only check for base items (enhancement level 0)
+            const enhancementLevel = options.enhancementLevel || 0;
+            if (enhancementLevel > 0) {
+                // Enhanced items: use market price as-is
+                return marketPrice;
+            }
+
+            // Calculate crafting cost if item is craftable
+            const craftingCost = this.calculateSimpleCraftingCost(itemHrid, options);
+
+            // If we can't calculate crafting cost, use market price
+            if (craftingCost === 0) {
+                return marketPrice;
+            }
+
+            // Check if market price is unreliable (> 1.5x crafting cost)
+            if (marketPrice > craftingCost * 1.5) {
+                // Market unreliable - use crafting cost
+                return craftingCost;
+            }
+
+            // Market price is reliable
+            return marketPrice;
+        }
+
+        /**
+         * Calculate simple crafting cost for an item (recursive for materials)
+         * @param {string} itemHrid - Item HRID
+         * @param {Object} options - Pricing options for recursive lookups
+         * @returns {number} Crafting cost or 0 if not craftable
+         */
+        calculateSimpleCraftingCost(itemHrid, options = {}) {
+            const gameData = dataManager.getInitClientData();
+            if (!gameData) return 0;
+
+            // Find the action that produces this item
+            for (const action of Object.values(gameData.actionDetailMap || {})) {
+                if (action.outputItems) {
+                    for (const output of action.outputItems) {
+                        if (output.itemHrid === itemHrid) {
+                            // Found the crafting action, calculate material costs
+                            let inputCost = 0;
+                            let hasAllMaterialPrices = true;
+
+                            // Add input items
+                            if (action.inputItems && action.inputItems.length > 0) {
+                                for (const input of action.inputItems) {
+                                    const inputPrice = getItemPrice(input.itemHrid, options);
+                                    if (inputPrice === null) {
+                                        hasAllMaterialPrices = false;
+                                        break;
+                                    }
+                                    inputCost += inputPrice * input.count;
+                                }
+                            }
+
+                            if (!hasAllMaterialPrices) {
+                                return 0;
+                            }
+
+                            // Apply Artisan Tea reduction (0.9x) to input materials
+                            inputCost *= 0.9;
+
+                            // Add upgrade item cost (not affected by Artisan Tea)
+                            let upgradeCost = 0;
+                            if (action.upgradeItemHrid) {
+                                const upgradePrice = getItemPrice(action.upgradeItemHrid, options);
+                                if (upgradePrice === null) {
+                                    return 0;
+                                }
+                                upgradeCost = upgradePrice;
+                            }
+
+                            const totalCost = inputCost + upgradeCost;
+
+                            // Divide by output count to get per-item cost
+                            return totalCost / (output.count || 1);
+                        }
+                    }
+                }
+            }
+
+            return 0;
         }
 
         /**
@@ -6679,8 +7011,8 @@
                 for (const drink of drinkSlots) {
                     if (!drink || !drink.itemHrid) continue;
 
-                    // Get tea price based on pricing mode
-                    const teaPrice = getItemPrice(drink.itemHrid, { context: 'profit', side: 'buy' });
+                    // Get tea price based on pricing mode (with safeguards)
+                    const teaPrice = this.getReliablePrice(drink.itemHrid, { context: 'profit', side: 'buy' });
                     const resolvedPrice = teaPrice === null ? 0 : teaPrice;
 
                     totalTeaCost += resolvedPrice;
@@ -6711,8 +7043,8 @@
                     return null;
                 }
 
-                // Get input cost (market price of the item)
-                const inputPrice = getItemPrice(itemHrid, { context: 'profit', side: 'buy', enhancementLevel });
+                // Get input cost (market price of the item, with safeguards)
+                const inputPrice = this.getReliablePrice(itemHrid, { context: 'profit', side: 'buy', enhancementLevel });
                 if (inputPrice === null) {
                     return null; // No market data
                 }
@@ -6781,8 +7113,8 @@
                     return null;
                 }
 
-                // Get input cost (market price of the item being decomposed)
-                const inputPrice = getItemPrice(itemHrid, { context: 'profit', side: 'buy', enhancementLevel });
+                // Get input cost (market price of the item being decomposed, with safeguards)
+                const inputPrice = this.getReliablePrice(itemHrid, { context: 'profit', side: 'buy', enhancementLevel });
                 if (inputPrice === null) {
                     return null; // No market data
                 }
@@ -6796,7 +7128,7 @@
 
                 // 1. Base decompose items (always received on success)
                 for (const output of itemDetails.alchemyDetail.decomposeItems) {
-                    const outputPrice = getItemPrice(output.itemHrid, { context: 'profit', side: 'sell' });
+                    const outputPrice = this.getReliablePrice(output.itemHrid, { context: 'profit', side: 'sell' });
                     if (outputPrice !== null) {
                         const afterTax = calculatePriceAfterTax(outputPrice);
                         outputValue += afterTax * output.count;
@@ -6810,7 +7142,10 @@
                         2 * (0.5 + 0.1 * Math.pow(1.05, itemLevel)) * Math.pow(2, enhancementLevel)
                     );
 
-                    const essencePrice = getItemPrice('/items/enhancing_essence', { context: 'profit', side: 'sell' });
+                    const essencePrice = this.getReliablePrice('/items/enhancing_essence', {
+                        context: 'profit',
+                        side: 'sell',
+                    });
                     if (essencePrice !== null) {
                         const afterTax = calculatePriceAfterTax(essencePrice);
                         outputValue += afterTax * essenceAmount;
@@ -6879,8 +7214,8 @@
                     return null; // Cannot transmute
                 }
 
-                // Get input cost (market price of the item being transmuted)
-                const inputPrice = getItemPrice(itemHrid, { context: 'profit', side: 'buy' });
+                // Get input cost (market price of the item being transmuted, with safeguards)
+                const inputPrice = this.getReliablePrice(itemHrid, { context: 'profit', side: 'buy' });
                 if (inputPrice === null) {
                     return null; // No market data
                 }
@@ -6892,7 +7227,7 @@
                 let expectedOutputValue = 0;
 
                 for (const drop of itemDetails.alchemyDetail.transmuteDropTable) {
-                    const outputPrice = getItemPrice(drop.itemHrid, { context: 'profit', side: 'sell' });
+                    const outputPrice = this.getReliablePrice(drop.itemHrid, { context: 'profit', side: 'sell' });
                     if (outputPrice !== null) {
                         const afterTax = calculatePriceAfterTax(outputPrice);
                         // Expected value: price × dropRate × averageCount
@@ -7935,33 +8270,29 @@
         // Calculate production cost as fallback
         const productionCost = getProductionCost(itemHrid);
 
-        // If both ask and bid exist
-        if (ask > 0 && bid > 0) {
-            // If ask is significantly higher than bid (>30% markup), use max(bid, production)
-            if (ask / bid > 1.3) {
-                return Math.max(bid, productionCost);
+        // If ask exists, check if it's reliable (1.5x threshold)
+        if (ask > 0) {
+            // If we have production cost and ask is unreliable (> 1.5x crafting cost)
+            if (productionCost > 0 && ask > productionCost * 1.5) {
+                // Market price unreliable - use crafting cost instead
+                return productionCost;
             }
-            // Otherwise use ask (normal market)
+            // Market price is reliable
             return ask;
         }
 
-        // If only ask exists
-        if (ask > 0) {
-            // If ask is inflated compared to production, use production
-            if (productionCost > 0 && ask / productionCost > 1.3) {
-                return productionCost;
-            }
-            // Otherwise use max of ask and production
-            return Math.max(ask, productionCost);
-        }
-
-        // If only bid exists, use max(bid, production)
+        // No ask - try bid
         if (bid > 0) {
-            return Math.max(bid, productionCost);
+            return bid;
         }
 
         // No market data - use production cost as fallback
-        return productionCost;
+        if (productionCost > 0) {
+            return productionCost;
+        }
+
+        // No price data available
+        return 0;
     }
 
     /**
@@ -8251,6 +8582,98 @@
     let processingConversionCache = null;
 
     /**
+     * Calculate simple crafting cost for an item (for price validation)
+     * @param {string} itemHrid - Item HRID
+     * @param {Object} gameData - Game data
+     * @returns {number} Crafting cost or 0 if not craftable
+     */
+    function calculateSimpleCraftingCost(itemHrid, gameData) {
+        if (!gameData) return 0;
+
+        // Find the action that produces this item
+        for (const action of Object.values(gameData.actionDetailMap || {})) {
+            if (action.outputItems) {
+                for (const output of action.outputItems) {
+                    if (output.itemHrid === itemHrid) {
+                        // Found the crafting action, calculate material costs
+                        let inputCost = 0;
+                        let hasAllMaterialPrices = true;
+
+                        // Add input items
+                        if (action.inputItems && action.inputItems.length > 0) {
+                            for (const input of action.inputItems) {
+                                const inputPrice = getItemPrice(input.itemHrid, {
+                                    context: 'profit',
+                                    side: 'sell',
+                                });
+                                if (inputPrice === null || inputPrice === 0) {
+                                    hasAllMaterialPrices = false;
+                                    break;
+                                }
+                                inputCost += inputPrice * input.count;
+                            }
+                        }
+
+                        if (!hasAllMaterialPrices) {
+                            return 0;
+                        }
+
+                        // Apply Artisan Tea reduction (0.9x) to input materials
+                        inputCost *= 0.9;
+
+                        // Add upgrade item cost (not affected by Artisan Tea)
+                        let upgradeCost = 0;
+                        if (action.upgradeItemHrid) {
+                            const upgradePrice = getItemPrice(action.upgradeItemHrid, {
+                                context: 'profit',
+                                side: 'sell',
+                            });
+                            if (upgradePrice === null || upgradePrice === 0) {
+                                return 0;
+                            }
+                            upgradeCost = upgradePrice;
+                        }
+
+                        const totalCost = inputCost + upgradeCost;
+
+                        // Divide by output count to get per-item cost
+                        return totalCost / (output.count || 1);
+                    }
+                }
+            }
+        }
+
+        return 0;
+    }
+
+    /**
+     * Get reliable price with 1.5x safeguard against market manipulation
+     * @param {string} itemHrid - Item HRID
+     * @param {Object} options - Price options
+     * @param {Object} gameData - Game data
+     * @returns {number|null} Reliable price or null if no data
+     */
+    function getReliablePrice(itemHrid, options, gameData) {
+        const marketPrice = getItemPrice(itemHrid, options);
+
+        if (marketPrice === null) {
+            return null;
+        }
+
+        // For sell-side (outputs), check if price is unreliable
+        if (options?.side === 'sell' && marketPrice > 0) {
+            const craftingCost = calculateSimpleCraftingCost(itemHrid, gameData);
+
+            // If market price > 1.5x crafting cost, use crafting cost
+            if (craftingCost > 0 && marketPrice > craftingCost * 1.5) {
+                return craftingCost;
+            }
+        }
+
+        return marketPrice;
+    }
+
+    /**
      * Build processing conversion cache from game data
      * @param {Object} gameData - Game data from dataManager
      * @returns {Map} Map of inputItemHrid → {actionHrid, outputItemHrid, conversionRatio}
@@ -8321,7 +8744,7 @@
                 return priceCache.get(cacheKey);
             }
 
-            const price = getItemPrice(itemHrid, options);
+            const price = getReliablePrice(itemHrid, options, gameData);
             priceCache.set(cacheKey, price);
             return price;
         };
@@ -10002,7 +10425,8 @@
                 // Material rows
                 for (const material of materialsWithPrices) {
                     html += '<tr>';
-                    html += `<td style="padding: 2px 4px;">${material.itemName}</td>`;
+                    const calcIndicator = material.isCalculated ? ' <span style="color: #ffa500;">(calc)</span>' : '';
+                    html += `<td style="padding: 2px 4px;">${material.itemName}${calcIndicator}</td>`;
                     html += `<td style="padding: 2px 4px; text-align: center;">${material.amount.toFixed(1)}</td>`;
                     html += `<td style="padding: 2px 4px; text-align: right;">${formatKMB(material.askPrice)}</td>`;
                     html += `<td style="padding: 2px 4px; text-align: right;">${formatKMB(material.bidPrice)}</td>`;
@@ -10020,6 +10444,12 @@
             const profitColor = profitData.profitPerHour >= 0 ? config.COLOR_TOOLTIP_PROFIT : config.COLOR_TOOLTIP_LOSS;
 
             html += `<div style="color: ${profitColor};">Profit: ${numberFormatter(profitPerAction)}/action, ${numberFormatter(profitData.profitPerHour)}/hour, ${formatKMB(profitPerDay)}/day</div>`;
+
+            // Add warning if calculated prices were used
+            if (profitData.hasCalculatedPrices) {
+                html += '<div style="color: #ffa500; font-size: 0.9em; margin-top: 4px;">⚠️ Market unreliable</div>';
+            }
+
             html += '</div>';
 
             return html;
@@ -31031,6 +31461,14 @@
         // Try ask price first
         const ask = prices?.ask;
         if (ask && ask > 0) {
+            // For base items, check if market price is unreliable (> 1.5x crafting cost)
+            if (enhancementLevel === 0) {
+                const craftingCost = calculateCraftingCost(itemHrid);
+                if (craftingCost > 0 && ask > craftingCost * 1.5) {
+                    // Market price unreliable - use crafting cost instead
+                    return craftingCost;
+                }
+            }
             return ask;
         }
 
@@ -45366,7 +45804,7 @@
         const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
         targetWindow.Toolasha = {
-            version: '0.5.31',
+            version: '0.5.32',
 
             // Feature toggle API (for users to manage settings via console)
             features: {
