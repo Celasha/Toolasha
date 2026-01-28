@@ -52,6 +52,108 @@ class AlchemyProfitCalculator {
     }
 
     /**
+     * Get reliable price for an item with fallback to crafting cost
+     * Uses 1.5x threshold: if market price > crafting cost × 1.5, use crafting cost
+     * @param {string} itemHrid - Item HRID
+     * @param {Object} options - Pricing options {context, side, enhancementLevel}
+     * @returns {number|null} Reliable price or null if no data available
+     */
+    getReliablePrice(itemHrid, options = {}) {
+        // Get market price
+        const marketPrice = getItemPrice(itemHrid, options);
+        const marketMissing = marketPrice === null;
+
+        // If market price is missing, return null
+        if (marketMissing) {
+            return null;
+        }
+
+        // Only check for base items (enhancement level 0)
+        const enhancementLevel = options.enhancementLevel || 0;
+        if (enhancementLevel > 0) {
+            // Enhanced items: use market price as-is
+            return marketPrice;
+        }
+
+        // Calculate crafting cost if item is craftable
+        const craftingCost = this.calculateSimpleCraftingCost(itemHrid, options);
+
+        // If we can't calculate crafting cost, use market price
+        if (craftingCost === 0) {
+            return marketPrice;
+        }
+
+        // Check if market price is unreliable (> 1.5x crafting cost)
+        if (marketPrice > craftingCost * 1.5) {
+            // Market unreliable - use crafting cost
+            return craftingCost;
+        }
+
+        // Market price is reliable
+        return marketPrice;
+    }
+
+    /**
+     * Calculate simple crafting cost for an item (recursive for materials)
+     * @param {string} itemHrid - Item HRID
+     * @param {Object} options - Pricing options for recursive lookups
+     * @returns {number} Crafting cost or 0 if not craftable
+     */
+    calculateSimpleCraftingCost(itemHrid, options = {}) {
+        const gameData = dataManager.getInitClientData();
+        if (!gameData) return 0;
+
+        // Find the action that produces this item
+        for (const action of Object.values(gameData.actionDetailMap || {})) {
+            if (action.outputItems) {
+                for (const output of action.outputItems) {
+                    if (output.itemHrid === itemHrid) {
+                        // Found the crafting action, calculate material costs
+                        let inputCost = 0;
+                        let hasAllMaterialPrices = true;
+
+                        // Add input items
+                        if (action.inputItems && action.inputItems.length > 0) {
+                            for (const input of action.inputItems) {
+                                const inputPrice = getItemPrice(input.itemHrid, options);
+                                if (inputPrice === null) {
+                                    hasAllMaterialPrices = false;
+                                    break;
+                                }
+                                inputCost += inputPrice * input.count;
+                            }
+                        }
+
+                        if (!hasAllMaterialPrices) {
+                            return 0;
+                        }
+
+                        // Apply Artisan Tea reduction (0.9x) to input materials
+                        inputCost *= 0.9;
+
+                        // Add upgrade item cost (not affected by Artisan Tea)
+                        let upgradeCost = 0;
+                        if (action.upgradeItemHrid) {
+                            const upgradePrice = getItemPrice(action.upgradeItemHrid, options);
+                            if (upgradePrice === null) {
+                                return 0;
+                            }
+                            upgradeCost = upgradePrice;
+                        }
+
+                        const totalCost = inputCost + upgradeCost;
+
+                        // Divide by output count to get per-item cost
+                        return totalCost / (output.count || 1);
+                    }
+                }
+            }
+        }
+
+        return 0;
+    }
+
+    /**
      * Calculate alchemy success rate with tea modifiers
      * @param {number} baseRate - Base success rate (0-1)
      * @returns {number} Final success rate after modifiers
@@ -163,8 +265,8 @@ class AlchemyProfitCalculator {
             for (const drink of drinkSlots) {
                 if (!drink || !drink.itemHrid) continue;
 
-                // Get tea price based on pricing mode
-                const teaPrice = getItemPrice(drink.itemHrid, { context: 'profit', side: 'buy' });
+                // Get tea price based on pricing mode (with safeguards)
+                const teaPrice = this.getReliablePrice(drink.itemHrid, { context: 'profit', side: 'buy' });
                 const resolvedPrice = teaPrice === null ? 0 : teaPrice;
 
                 totalTeaCost += resolvedPrice;
@@ -195,8 +297,8 @@ class AlchemyProfitCalculator {
                 return null;
             }
 
-            // Get input cost (market price of the item)
-            const inputPrice = getItemPrice(itemHrid, { context: 'profit', side: 'buy', enhancementLevel });
+            // Get input cost (market price of the item, with safeguards)
+            const inputPrice = this.getReliablePrice(itemHrid, { context: 'profit', side: 'buy', enhancementLevel });
             if (inputPrice === null) {
                 return null; // No market data
             }
@@ -265,8 +367,8 @@ class AlchemyProfitCalculator {
                 return null;
             }
 
-            // Get input cost (market price of the item being decomposed)
-            const inputPrice = getItemPrice(itemHrid, { context: 'profit', side: 'buy', enhancementLevel });
+            // Get input cost (market price of the item being decomposed, with safeguards)
+            const inputPrice = this.getReliablePrice(itemHrid, { context: 'profit', side: 'buy', enhancementLevel });
             if (inputPrice === null) {
                 return null; // No market data
             }
@@ -280,7 +382,7 @@ class AlchemyProfitCalculator {
 
             // 1. Base decompose items (always received on success)
             for (const output of itemDetails.alchemyDetail.decomposeItems) {
-                const outputPrice = getItemPrice(output.itemHrid, { context: 'profit', side: 'sell' });
+                const outputPrice = this.getReliablePrice(output.itemHrid, { context: 'profit', side: 'sell' });
                 if (outputPrice !== null) {
                     const afterTax = calculatePriceAfterTax(outputPrice);
                     outputValue += afterTax * output.count;
@@ -294,7 +396,10 @@ class AlchemyProfitCalculator {
                     2 * (0.5 + 0.1 * Math.pow(1.05, itemLevel)) * Math.pow(2, enhancementLevel)
                 );
 
-                const essencePrice = getItemPrice('/items/enhancing_essence', { context: 'profit', side: 'sell' });
+                const essencePrice = this.getReliablePrice('/items/enhancing_essence', {
+                    context: 'profit',
+                    side: 'sell',
+                });
                 if (essencePrice !== null) {
                     const afterTax = calculatePriceAfterTax(essencePrice);
                     outputValue += afterTax * essenceAmount;
@@ -363,8 +468,8 @@ class AlchemyProfitCalculator {
                 return null; // Cannot transmute
             }
 
-            // Get input cost (market price of the item being transmuted)
-            const inputPrice = getItemPrice(itemHrid, { context: 'profit', side: 'buy' });
+            // Get input cost (market price of the item being transmuted, with safeguards)
+            const inputPrice = this.getReliablePrice(itemHrid, { context: 'profit', side: 'buy' });
             if (inputPrice === null) {
                 return null; // No market data
             }
@@ -376,7 +481,7 @@ class AlchemyProfitCalculator {
             let expectedOutputValue = 0;
 
             for (const drop of itemDetails.alchemyDetail.transmuteDropTable) {
-                const outputPrice = getItemPrice(drop.itemHrid, { context: 'profit', side: 'sell' });
+                const outputPrice = this.getReliablePrice(drop.itemHrid, { context: 'profit', side: 'sell' });
                 if (outputPrice !== null) {
                     const afterTax = calculatePriceAfterTax(outputPrice);
                     // Expected value: price × dropRate × averageCount

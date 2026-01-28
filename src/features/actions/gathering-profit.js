@@ -40,6 +40,98 @@ import {
 let processingConversionCache = null;
 
 /**
+ * Calculate simple crafting cost for an item (for price validation)
+ * @param {string} itemHrid - Item HRID
+ * @param {Object} gameData - Game data
+ * @returns {number} Crafting cost or 0 if not craftable
+ */
+function calculateSimpleCraftingCost(itemHrid, gameData) {
+    if (!gameData) return 0;
+
+    // Find the action that produces this item
+    for (const action of Object.values(gameData.actionDetailMap || {})) {
+        if (action.outputItems) {
+            for (const output of action.outputItems) {
+                if (output.itemHrid === itemHrid) {
+                    // Found the crafting action, calculate material costs
+                    let inputCost = 0;
+                    let hasAllMaterialPrices = true;
+
+                    // Add input items
+                    if (action.inputItems && action.inputItems.length > 0) {
+                        for (const input of action.inputItems) {
+                            const inputPrice = getItemPrice(input.itemHrid, {
+                                context: 'profit',
+                                side: 'sell',
+                            });
+                            if (inputPrice === null || inputPrice === 0) {
+                                hasAllMaterialPrices = false;
+                                break;
+                            }
+                            inputCost += inputPrice * input.count;
+                        }
+                    }
+
+                    if (!hasAllMaterialPrices) {
+                        return 0;
+                    }
+
+                    // Apply Artisan Tea reduction (0.9x) to input materials
+                    inputCost *= 0.9;
+
+                    // Add upgrade item cost (not affected by Artisan Tea)
+                    let upgradeCost = 0;
+                    if (action.upgradeItemHrid) {
+                        const upgradePrice = getItemPrice(action.upgradeItemHrid, {
+                            context: 'profit',
+                            side: 'sell',
+                        });
+                        if (upgradePrice === null || upgradePrice === 0) {
+                            return 0;
+                        }
+                        upgradeCost = upgradePrice;
+                    }
+
+                    const totalCost = inputCost + upgradeCost;
+
+                    // Divide by output count to get per-item cost
+                    return totalCost / (output.count || 1);
+                }
+            }
+        }
+    }
+
+    return 0;
+}
+
+/**
+ * Get reliable price with 1.5x safeguard against market manipulation
+ * @param {string} itemHrid - Item HRID
+ * @param {Object} options - Price options
+ * @param {Object} gameData - Game data
+ * @returns {number|null} Reliable price or null if no data
+ */
+function getReliablePrice(itemHrid, options, gameData) {
+    const marketPrice = getItemPrice(itemHrid, options);
+
+    if (marketPrice === null) {
+        return null;
+    }
+
+    // For sell-side (outputs), check if price is unreliable
+    if (options?.side === 'sell' && marketPrice > 0) {
+        const craftingCost = calculateSimpleCraftingCost(itemHrid, gameData);
+
+        // If market price > 1.5x crafting cost, use crafting cost
+        if (craftingCost > 0 && marketPrice > craftingCost * 1.5) {
+            return craftingCost;
+        }
+    }
+
+    return marketPrice;
+}
+
+/**
  * Build processing conversion cache from game data
  * @param {Object} gameData - Game data from dataManager
  * @returns {Map} Map of inputItemHrid → {actionHrid, outputItemHrid, conversionRatio}
@@ -110,7 +202,7 @@ export async function calculateGatheringProfit(actionHrid) {
             return priceCache.get(cacheKey);
         }
 
-        const price = getItemPrice(itemHrid, options);
+        const price = getReliablePrice(itemHrid, options, gameData);
         priceCache.set(cacheKey, price);
         return price;
     };

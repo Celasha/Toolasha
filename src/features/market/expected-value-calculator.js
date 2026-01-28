@@ -164,8 +164,77 @@ class ExpectedValueCalculator {
     }
 
     /**
+     * Calculate simple crafting cost for an item
+     * Used to detect manipulated prices (1.5x threshold)
+     * @param {string} itemHrid - Item HRID
+     * @returns {number} Crafting cost or 0 if not craftable
+     */
+    calculateSimpleCraftingCost(itemHrid) {
+        const gameData = dataManager.getInitClientData();
+        if (!gameData) return 0;
+
+        // Find the action that produces this item
+        for (const action of Object.values(gameData.actionDetailMap || {})) {
+            if (action.outputItems) {
+                for (const output of action.outputItems) {
+                    if (output.itemHrid === itemHrid) {
+                        // Found the crafting action, calculate material costs
+                        let inputCost = 0;
+                        let hasAllMaterialPrices = true;
+
+                        // Add input items
+                        if (action.inputItems && action.inputItems.length > 0) {
+                            for (const input of action.inputItems) {
+                                const inputPrice = getItemPrice(input.itemHrid, {
+                                    enhancementLevel: 0,
+                                    context: 'profit',
+                                    side: 'sell',
+                                });
+                                if (inputPrice === null || inputPrice === 0) {
+                                    hasAllMaterialPrices = false;
+                                    break;
+                                }
+                                inputCost += inputPrice * input.count;
+                            }
+                        }
+
+                        if (!hasAllMaterialPrices) {
+                            return 0;
+                        }
+
+                        // Apply Artisan Tea reduction (0.9x) to input materials
+                        inputCost *= 0.9;
+
+                        // Add upgrade item cost (not affected by Artisan Tea)
+                        let upgradeCost = 0;
+                        if (action.upgradeItemHrid) {
+                            const upgradePrice = getItemPrice(action.upgradeItemHrid, {
+                                enhancementLevel: 0,
+                                context: 'profit',
+                                side: 'sell',
+                            });
+                            if (upgradePrice === null || upgradePrice === 0) {
+                                return 0;
+                            }
+                            upgradeCost = upgradePrice;
+                        }
+
+                        const totalCost = inputCost + upgradeCost;
+
+                        // Divide by output count to get per-item cost
+                        return totalCost / (output.count || 1);
+                    }
+                }
+            }
+        }
+
+        return 0;
+    }
+
+    /**
      * Get price for a drop item
      * Handles special cases (Coin, Cowbell, Dungeon Tokens, nested containers)
+     * Uses 1.5x threshold to detect manipulated prices
      * @param {string} itemHrid - Item HRID
      * @returns {number|null} Price or null if unavailable
      */
@@ -199,7 +268,19 @@ class ExpectedValueCalculator {
 
         // Regular market item - get price based on pricing mode (sell side - you're selling drops)
         const dropPrice = getItemPrice(itemHrid, { enhancementLevel: 0, context: 'profit', side: 'sell' });
-        return dropPrice > 0 ? dropPrice : null;
+        if (dropPrice === null || dropPrice === 0) {
+            return null;
+        }
+
+        // Check if price is unreliable (1.5x threshold)
+        const craftingCost = this.calculateSimpleCraftingCost(itemHrid);
+        if (craftingCost > 0 && dropPrice > craftingCost * 1.5) {
+            // Market price unreliable - use crafting cost instead
+            return craftingCost;
+        }
+
+        // Market price is reliable
+        return dropPrice;
     }
 
     /**
