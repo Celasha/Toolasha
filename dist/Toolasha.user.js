@@ -41730,10 +41730,21 @@
                     const countElements = document.querySelectorAll(
                         '[class*="SkillActionDetail_itemRequirements"] [class*="SkillActionDetail_inputCount"]'
                     );
+
                     if (countElements[index]) {
                         const text = countElements[index].textContent.trim();
-                        const cleaned = text.replace(/,/g, '');
-                        result.count = parseFloat(cleaned) || 1;
+                        // Extract number after the "/" character (format: "/ 2" or "/ 450")
+                        const match = text.match(/\/\s*([\d,]+)/);
+                        let parsedCount = 1;
+
+                        if (match) {
+                            const cleaned = match[1].replace(/,/g, '');
+                            parsedCount = parseFloat(cleaned);
+                        }
+
+                        result.count = parsedCount || 1;
+                    } else {
+                        result.count = 1;
                     }
                 } else if (!isRequirement) {
                     // Extract count and drop rate from drop by matching item HRID
