@@ -466,7 +466,37 @@ class ListingPriceDisplay {
                 text = text.replace(/M/gi, '');
             }
 
-            const numStr = text.replace(/[^0-9.]/g, '');
+            // Parse number handling both locale formats:
+            // US: "3,172" or "3,172.50" (comma = thousands, dot = decimal)
+            // EU: "3.172" or "3.172,50" (dot = thousands, comma = decimal)
+            // Strategy: Find last dot/comma (decimal separator), remove all others (thousand separators)
+            const lastDotIndex = text.lastIndexOf('.');
+            const lastCommaIndex = text.lastIndexOf(',');
+            const lastSeparatorIndex = Math.max(lastDotIndex, lastCommaIndex);
+
+            let numStr;
+            if (lastSeparatorIndex === -1) {
+                // No separators, just extract digits
+                numStr = text.replace(/[^0-9]/g, '');
+            } else {
+                // Has separator - determine if it's decimal or thousand separator
+                const beforeSeparator = text.substring(0, lastSeparatorIndex);
+                const afterSeparator = text.substring(lastSeparatorIndex + 1);
+
+                // If there are 1-2 digits after separator, it's likely a decimal point
+                // If there are exactly 3 digits after separator, it could be either (ambiguous)
+                // If there are more than 3 digits, it's definitely a decimal point
+                const digitsAfter = afterSeparator.replace(/[^0-9]/g, '').length;
+
+                if (digitsAfter <= 2 && digitsAfter > 0) {
+                    // Decimal separator (e.g., "3,172.50" or "3.172,50")
+                    numStr = beforeSeparator.replace(/[^0-9]/g, '') + '.' + afterSeparator.replace(/[^0-9]/g, '');
+                } else {
+                    // Thousand separator or no decimal (e.g., "3,172" or "3.172")
+                    numStr = text.replace(/[^0-9]/g, '');
+                }
+            }
+
             price = numStr ? Number(numStr) * multiplier : NaN;
         }
 
