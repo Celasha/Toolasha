@@ -61,9 +61,11 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
     const profit = Math.round(profitData.profitPerHour);
     const profitPerDay = Math.round(profitData.profitPerDay);
     const baseMissing = profitData.baseOutputs?.some((output) => output.missingPrice) || false;
+    const gourmetMissing = profitData.gourmetBonuses?.some((output) => output.missingPrice) || false;
     const bonusMissing = profitData.bonusRevenue?.hasMissingPrices || false;
     const processingMissing = profitData.processingConversions?.some((conversion) => conversion.missingPrice) || false;
-    const revenueMissing = baseMissing || bonusMissing || processingMissing;
+    const primaryMissing = baseMissing || gourmetMissing || processingMissing;
+    const revenueMissing = primaryMissing || bonusMissing;
     const drinkCostsMissing = profitData.drinkCosts?.some((drink) => drink.missingPrice) || false;
     const costsMissing = drinkCostsMissing || revenueMissing;
     const marketTaxMissing = revenueMissing;
@@ -86,26 +88,78 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
     const revenueLabel = formatMissingLabel(revenueMissing, `${formatLargeNumber(revenue)}/hr`);
     revenueDiv.innerHTML = `<div style="font-weight: 500; color: ${config.COLOR_TOOLTIP_PROFIT}; margin-bottom: 4px;">Revenue: ${revenueLabel}</div>`;
 
-    // Base Output subsection
-    const baseOutputContent = document.createElement('div');
+    // Primary Outputs subsection
+    const primaryDropsContent = document.createElement('div');
     if (profitData.baseOutputs && profitData.baseOutputs.length > 0) {
         for (const output of profitData.baseOutputs) {
             const decimals = output.itemsPerHour < 1 ? 2 : 1;
             const line = document.createElement('div');
             line.style.marginLeft = '8px';
             const missingPriceNote = getMissingPriceIndicator(output.missingPrice);
-            line.textContent = `• ${output.name}: ${output.itemsPerHour.toFixed(decimals)}/hr @ ${formatWithSeparator(output.priceEach)}${missingPriceNote} each → ${formatLargeNumber(Math.round(output.revenuePerHour))}/hr`;
-            baseOutputContent.appendChild(line);
+            line.textContent = `• ${output.name} (Base): ${output.itemsPerHour.toFixed(decimals)}/hr @ ${formatWithSeparator(output.priceEach)}${missingPriceNote} each → ${formatLargeNumber(Math.round(output.revenuePerHour))}/hr`;
+            primaryDropsContent.appendChild(line);
         }
     }
 
+    if (profitData.gourmetBonuses && profitData.gourmetBonuses.length > 0) {
+        for (const output of profitData.gourmetBonuses) {
+            const decimals = output.itemsPerHour < 1 ? 2 : 1;
+            const line = document.createElement('div');
+            line.style.marginLeft = '8px';
+            const missingPriceNote = getMissingPriceIndicator(output.missingPrice);
+            line.textContent = `• ${output.name} (Gourmet ${formatPercentage(profitData.gourmetBonus || 0, 1)}): ${output.itemsPerHour.toFixed(decimals)}/hr @ ${formatWithSeparator(output.priceEach)}${missingPriceNote} each → ${formatLargeNumber(Math.round(output.revenuePerHour))}/hr`;
+            primaryDropsContent.appendChild(line);
+        }
+    }
+
+    if (profitData.processingConversions && profitData.processingConversions.length > 0) {
+        const netProcessingValue = Math.round(profitData.processingRevenueBonus || 0);
+        const netProcessingLabel = formatMissingLabel(
+            processingMissing,
+            `${netProcessingValue >= 0 ? '+' : '-'}${formatLargeNumber(Math.abs(netProcessingValue))}`
+        );
+        const processingContent = document.createElement('div');
+
+        for (const conversion of profitData.processingConversions) {
+            const consumedLine = document.createElement('div');
+            consumedLine.style.marginLeft = '8px';
+            const consumedMissingNote = getMissingPriceIndicator(conversion.missingPrice);
+            const consumedRevenue = conversion.rawConsumedPerHour * conversion.rawPriceEach;
+            consumedLine.textContent = `• ${conversion.rawItem} consumed: -${conversion.rawConsumedPerHour.toFixed(1)}/hr @ ${formatWithSeparator(conversion.rawPriceEach)}${consumedMissingNote} → -${formatLargeNumber(Math.round(consumedRevenue))}/hr`;
+            processingContent.appendChild(consumedLine);
+
+            const producedLine = document.createElement('div');
+            producedLine.style.marginLeft = '8px';
+            const producedMissingNote = getMissingPriceIndicator(conversion.missingPrice);
+            const producedRevenue = conversion.conversionsPerHour * conversion.processedPriceEach;
+            producedLine.textContent = `• ${conversion.processedItem} produced: ${conversion.conversionsPerHour.toFixed(1)}/hr @ ${formatWithSeparator(conversion.processedPriceEach)}${producedMissingNote} → ${formatLargeNumber(Math.round(producedRevenue))}/hr`;
+            processingContent.appendChild(producedLine);
+        }
+
+        const processingSection = createCollapsibleSection(
+            '',
+            `• Processing (${formatPercentage(profitData.processingBonus || 0, 1)} proc): Net ${netProcessingLabel}/hr`,
+            null,
+            processingContent,
+            false,
+            1
+        );
+        primaryDropsContent.appendChild(processingSection);
+    }
+
     const baseRevenue = profitData.baseOutputs?.reduce((sum, o) => sum + o.revenuePerHour, 0) || 0;
-    const baseRevenueLabel = formatMissingLabel(baseMissing, formatLargeNumber(Math.round(baseRevenue)));
-    const baseOutputSection = createCollapsibleSection(
+    const gourmetRevenue = profitData.gourmetRevenueBonus || 0;
+    const processingRevenue = profitData.processingRevenueBonus || 0;
+    const primaryRevenue = baseRevenue + gourmetRevenue + processingRevenue;
+    const primaryRevenueLabel = formatMissingLabel(primaryMissing, formatLargeNumber(Math.round(primaryRevenue)));
+    const outputItemCount =
+        (profitData.baseOutputs?.length || 0) +
+        (profitData.processingConversions && profitData.processingConversions.length > 0 ? 1 : 0);
+    const primaryDropsSection = createCollapsibleSection(
         '',
-        `Base Output: ${baseRevenueLabel}/hr (${profitData.baseOutputs?.length || 0} item${profitData.baseOutputs?.length !== 1 ? 's' : ''})`,
+        `Primary Outputs: ${primaryRevenueLabel}/hr (${outputItemCount} item${outputItemCount !== 1 ? 's' : ''})`,
         null,
-        baseOutputContent,
+        primaryDropsContent,
         false,
         1
     );
@@ -175,41 +229,12 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
         );
     }
 
-    revenueDiv.appendChild(baseOutputSection);
+    revenueDiv.appendChild(primaryDropsSection);
     if (essenceSection) {
         revenueDiv.appendChild(essenceSection);
     }
     if (rareFindSection) {
         revenueDiv.appendChild(rareFindSection);
-    }
-
-    // Processing Bonus subsection (Processing Tea conversions)
-    let processingSection = null;
-    if (profitData.processingConversions && profitData.processingConversions.length > 0) {
-        const processingContent = document.createElement('div');
-        for (const conversion of profitData.processingConversions) {
-            const line = document.createElement('div');
-            line.style.marginLeft = '8px';
-            const missingPriceNote = getMissingPriceIndicator(conversion.missingPrice);
-            line.textContent = `• ${conversion.rawItem} → ${conversion.processedItem}: ${conversion.conversionsPerHour.toFixed(1)}/hr, +${formatWithSeparator(Math.round(conversion.valueGain))}${missingPriceNote} each → ${formatLargeNumber(Math.round(conversion.revenuePerHour))}/hr`;
-            processingContent.appendChild(line);
-        }
-
-        const processingRevenue = profitData.processingRevenueBonus || 0;
-        const processingRevenueLabel = formatMissingLabel(
-            processingMissing,
-            formatLargeNumber(Math.round(processingRevenue))
-        );
-        const processingChance = profitData.processingBonus || 0;
-        processingSection = createCollapsibleSection(
-            '',
-            `Processing Bonus: ${processingRevenueLabel}/hr (${formatPercentage(processingChance, 1)} proc)`,
-            null,
-            processingContent,
-            false,
-            1
-        );
-        revenueDiv.appendChild(processingSection);
     }
 
     // Costs Section
@@ -406,6 +431,7 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
                     baseOutputs: profitData.baseOutputs,
                     bonusDrops: profitData.bonusRevenue?.bonusDrops || [],
                     processingRevenueBonusPerAction: profitData.processingRevenueBonusPerAction,
+                    gourmetRevenueBonusPerAction: profitData.gourmetRevenueBonusPerAction,
                     drinkCostPerHour: profitData.drinkCostPerHour,
                     efficiencyMultiplier: profitData.efficiencyMultiplier || 1,
                 });
@@ -527,50 +553,37 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
     const revenueLabel = revenueMissing ? '-- ⚠' : `${formatLargeNumber(revenue)}/hr`;
     revenueDiv.innerHTML = `<div style="font-weight: 500; color: ${config.COLOR_TOOLTIP_PROFIT}; margin-bottom: 4px;">Revenue: ${revenueLabel}</div>`;
 
-    // Base Output subsection
-    const baseOutputContent = document.createElement('div');
+    // Primary Outputs subsection
+    const primaryOutputContent = document.createElement('div');
     const baseOutputLine = document.createElement('div');
     baseOutputLine.style.marginLeft = '8px';
     const baseOutputMissingNote = getMissingPriceIndicator(profitData.outputPriceMissing);
-    baseOutputLine.textContent = `• Base Output: ${profitData.itemsPerHour.toFixed(1)}/hr @ ${formatWithSeparator(Math.round(profitData.outputPrice))}${baseOutputMissingNote} each → ${formatLargeNumber(Math.round(profitData.itemsPerHour * profitData.outputPrice))}/hr`;
-    baseOutputContent.appendChild(baseOutputLine);
+    baseOutputLine.textContent = `• ${profitData.itemName} (Base): ${profitData.itemsPerHour.toFixed(1)}/hr @ ${formatWithSeparator(Math.round(profitData.outputPrice))}${baseOutputMissingNote} each → ${formatLargeNumber(Math.round(profitData.itemsPerHour * profitData.outputPrice))}/hr`;
+    primaryOutputContent.appendChild(baseOutputLine);
+
+    if (profitData.gourmetBonusItems > 0) {
+        const gourmetLine = document.createElement('div');
+        gourmetLine.style.marginLeft = '8px';
+        gourmetLine.textContent = `• ${profitData.itemName} (Gourmet +${formatPercentage(profitData.gourmetBonus, 1)}): ${profitData.gourmetBonusItems.toFixed(1)}/hr @ ${formatWithSeparator(Math.round(profitData.outputPrice))}${baseOutputMissingNote} each → ${formatLargeNumber(Math.round(profitData.gourmetBonusItems * profitData.outputPrice))}/hr`;
+        primaryOutputContent.appendChild(gourmetLine);
+    }
 
     const baseRevenue = profitData.itemsPerHour * profitData.outputPrice;
-    const baseRevenueLabel = outputMissing ? '-- ⚠' : formatWithSeparator(Math.round(baseRevenue));
-    const baseOutputSection = createCollapsibleSection(
+    const gourmetRevenue = profitData.gourmetBonusItems * profitData.outputPrice;
+    const primaryRevenue = baseRevenue + gourmetRevenue;
+    const primaryRevenueLabel = outputMissing ? '-- ⚠' : formatWithSeparator(Math.round(primaryRevenue));
+    const gourmetLabel =
+        profitData.gourmetBonus > 0 ? ` (${formatPercentage(profitData.gourmetBonus, 1)} gourmet)` : '';
+    const primaryOutputSection = createCollapsibleSection(
         '',
-        `Base Output: ${baseRevenueLabel}/hr`,
+        `Primary Outputs: ${primaryRevenueLabel}/hr${gourmetLabel}`,
         null,
-        baseOutputContent,
+        primaryOutputContent,
         false,
         1
     );
 
-    // Gourmet Bonus subsection
-    let gourmetSection = null;
-    if (profitData.gourmetBonusItems > 0) {
-        const gourmetContent = document.createElement('div');
-        const gourmetLine = document.createElement('div');
-        gourmetLine.style.marginLeft = '8px';
-        gourmetLine.textContent = `• Gourmet Bonus: ${profitData.gourmetBonusItems.toFixed(1)}/hr @ ${formatWithSeparator(Math.round(profitData.outputPrice))}${baseOutputMissingNote} each → ${formatLargeNumber(Math.round(profitData.gourmetBonusItems * profitData.outputPrice))}/hr`;
-        gourmetContent.appendChild(gourmetLine);
-
-        const gourmetRevenue = profitData.gourmetBonusItems * profitData.outputPrice;
-        const gourmetRevenueLabel = outputMissing ? '-- ⚠' : formatLargeNumber(Math.round(gourmetRevenue));
-        gourmetSection = createCollapsibleSection(
-            '',
-            `Gourmet Bonus: ${gourmetRevenueLabel}/hr (${formatPercentage(profitData.gourmetBonus, 1)} gourmet)`,
-            null,
-            gourmetContent,
-            false,
-            1
-        );
-    }
-
-    revenueDiv.appendChild(baseOutputSection);
-    if (gourmetSection) {
-        revenueDiv.appendChild(gourmetSection);
-    }
+    revenueDiv.appendChild(primaryOutputSection);
 
     // Bonus Drops subsections - split by type
     const essenceDrops = bonusDrops.filter((drop) => drop.type === 'essence');
@@ -945,6 +958,7 @@ function buildGatheringActionsBreakdown(profitData, actionsCount) {
         baseOutputs: profitData.baseOutputs,
         bonusDrops: profitData.bonusRevenue?.bonusDrops || [],
         processingRevenueBonusPerAction: profitData.processingRevenueBonusPerAction,
+        gourmetRevenueBonusPerAction: profitData.gourmetRevenueBonusPerAction,
         drinkCostPerHour: profitData.drinkCostPerHour,
         efficiencyMultiplier: profitData.efficiencyMultiplier || 1,
     });
@@ -952,9 +966,11 @@ function buildGatheringActionsBreakdown(profitData, actionsCount) {
 
     // Calculate totals
     const baseMissing = profitData.baseOutputs?.some((output) => output.missingPrice) || false;
+    const gourmetMissing = profitData.gourmetBonuses?.some((output) => output.missingPrice) || false;
     const bonusMissing = profitData.bonusRevenue?.hasMissingPrices || false;
     const processingMissing = profitData.processingConversions?.some((conversion) => conversion.missingPrice) || false;
-    const revenueMissing = baseMissing || bonusMissing || processingMissing;
+    const primaryMissing = baseMissing || gourmetMissing || processingMissing;
+    const revenueMissing = primaryMissing || bonusMissing;
     const drinkCostsMissing = profitData.drinkCosts?.some((drink) => drink.missingPrice) || false;
     const costsMissing = drinkCostsMissing || revenueMissing;
     const marketTaxMissing = revenueMissing;
@@ -972,8 +988,8 @@ function buildGatheringActionsBreakdown(profitData, actionsCount) {
     const revenueLabel = formatMissingLabel(revenueMissing, formatLargeNumber(totalRevenue));
     revenueDiv.innerHTML = `<div style="font-weight: 500; color: ${config.COLOR_TOOLTIP_PROFIT}; margin-bottom: 4px;">Revenue: ${revenueLabel}</div>`;
 
-    // Base Output subsection
-    const baseOutputContent = document.createElement('div');
+    // Primary Outputs subsection
+    const primaryDropsContent = document.createElement('div');
     if (profitData.baseOutputs && profitData.baseOutputs.length > 0) {
         for (const output of profitData.baseOutputs) {
             const itemsPerAction = output.itemsPerAction ?? output.itemsPerHour / profitData.actionsPerHour;
@@ -983,9 +999,64 @@ function buildGatheringActionsBreakdown(profitData, actionsCount) {
             const line = document.createElement('div');
             line.style.marginLeft = '8px';
             const missingPriceNote = getMissingPriceIndicator(output.missingPrice);
-            line.textContent = `• ${output.name}: ${totalItems.toFixed(1)} items @ ${formatWithSeparator(output.priceEach)}${missingPriceNote} each → ${formatLargeNumber(Math.round(totalRevenueLine))}`;
-            baseOutputContent.appendChild(line);
+            line.textContent = `• ${output.name} (Base): ${totalItems.toFixed(1)} items @ ${formatWithSeparator(output.priceEach)}${missingPriceNote} each → ${formatLargeNumber(Math.round(totalRevenueLine))}`;
+            primaryDropsContent.appendChild(line);
         }
+    }
+
+    if (profitData.gourmetBonuses && profitData.gourmetBonuses.length > 0) {
+        for (const output of profitData.gourmetBonuses) {
+            const itemsPerAction = output.itemsPerAction ?? output.itemsPerHour / profitData.actionsPerHour;
+            const revenuePerAction = output.revenuePerAction ?? output.revenuePerHour / profitData.actionsPerHour;
+            const totalItems = itemsPerAction * actionsCount;
+            const totalRevenueLine = revenuePerAction * actionsCount;
+            const line = document.createElement('div');
+            line.style.marginLeft = '8px';
+            const missingPriceNote = getMissingPriceIndicator(output.missingPrice);
+            line.textContent = `• ${output.name} (Gourmet ${formatPercentage(profitData.gourmetBonus || 0, 1)}): ${totalItems.toFixed(1)} items @ ${formatWithSeparator(output.priceEach)}${missingPriceNote} each → ${formatLargeNumber(Math.round(totalRevenueLine))}`;
+            primaryDropsContent.appendChild(line);
+        }
+    }
+
+    if (profitData.processingConversions && profitData.processingConversions.length > 0) {
+        const totalProcessingRevenue = totals.totalProcessingRevenue;
+        const processingLabel = formatMissingLabel(
+            processingMissing,
+            `${totalProcessingRevenue >= 0 ? '+' : '-'}${formatLargeNumber(Math.abs(Math.round(totalProcessingRevenue)))}`
+        );
+        const processingContent = document.createElement('div');
+
+        for (const conversion of profitData.processingConversions) {
+            const conversionsPerAction =
+                conversion.conversionsPerAction ?? conversion.conversionsPerHour / profitData.actionsPerHour;
+            const rawConsumedPerAction =
+                conversion.rawConsumedPerAction ?? conversion.rawConsumedPerHour / profitData.actionsPerHour;
+            const totalConsumed = rawConsumedPerAction * actionsCount;
+            const totalProduced = conversionsPerAction * actionsCount;
+            const consumedRevenue = totalConsumed * conversion.rawPriceEach;
+            const producedRevenue = totalProduced * conversion.processedPriceEach;
+            const missingPriceNote = getMissingPriceIndicator(conversion.missingPrice);
+
+            const consumedLine = document.createElement('div');
+            consumedLine.style.marginLeft = '8px';
+            consumedLine.textContent = `• ${conversion.rawItem} consumed: -${totalConsumed.toFixed(1)} items @ ${formatWithSeparator(conversion.rawPriceEach)}${missingPriceNote} → -${formatLargeNumber(Math.round(consumedRevenue))}`;
+            processingContent.appendChild(consumedLine);
+
+            const producedLine = document.createElement('div');
+            producedLine.style.marginLeft = '8px';
+            producedLine.textContent = `• ${conversion.processedItem} produced: ${totalProduced.toFixed(1)} items @ ${formatWithSeparator(conversion.processedPriceEach)}${missingPriceNote} → ${formatLargeNumber(Math.round(producedRevenue))}`;
+            processingContent.appendChild(producedLine);
+        }
+
+        const processingSection = createCollapsibleSection(
+            '',
+            `• Processing (${formatPercentage(profitData.processingBonus || 0, 1)} proc): Net ${processingLabel}`,
+            null,
+            processingContent,
+            false,
+            1
+        );
+        primaryDropsContent.appendChild(processingSection);
     }
 
     const baseRevenue =
@@ -993,12 +1064,18 @@ function buildGatheringActionsBreakdown(profitData, actionsCount) {
             const revenuePerAction = output.revenuePerAction ?? output.revenuePerHour / profitData.actionsPerHour;
             return sum + revenuePerAction * actionsCount;
         }, 0) || 0;
-    const baseRevenueLabel = formatMissingLabel(baseMissing, formatLargeNumber(Math.round(baseRevenue)));
-    const baseOutputSection = createCollapsibleSection(
+    const gourmetRevenue = totals.totalGourmetRevenue;
+    const processingRevenue = totals.totalProcessingRevenue;
+    const primaryRevenue = baseRevenue + gourmetRevenue + processingRevenue;
+    const primaryRevenueLabel = formatMissingLabel(primaryMissing, formatLargeNumber(Math.round(primaryRevenue)));
+    const outputItemCount =
+        (profitData.baseOutputs?.length || 0) +
+        (profitData.processingConversions && profitData.processingConversions.length > 0 ? 1 : 0);
+    const primaryDropsSection = createCollapsibleSection(
         '',
-        `Base Output: ${baseRevenueLabel} (${profitData.baseOutputs?.length || 0} item${profitData.baseOutputs?.length !== 1 ? 's' : ''})`,
+        `Primary Outputs: ${primaryRevenueLabel} (${outputItemCount} item${outputItemCount !== 1 ? 's' : ''})`,
         null,
-        baseOutputContent,
+        primaryDropsContent,
         false,
         1
     );
@@ -1072,43 +1149,12 @@ function buildGatheringActionsBreakdown(profitData, actionsCount) {
         );
     }
 
-    revenueDiv.appendChild(baseOutputSection);
+    revenueDiv.appendChild(primaryDropsSection);
     if (essenceSection) {
         revenueDiv.appendChild(essenceSection);
     }
     if (rareFindSection) {
         revenueDiv.appendChild(rareFindSection);
-    }
-
-    // Processing Bonus subsection (Processing Tea conversions)
-    let processingSection = null;
-    if (profitData.processingConversions && profitData.processingConversions.length > 0) {
-        const processingContent = document.createElement('div');
-        for (const conversion of profitData.processingConversions) {
-            const conversionsPerAction =
-                conversion.conversionsPerAction ?? conversion.conversionsPerHour / profitData.actionsPerHour;
-            const revenuePerAction =
-                conversion.revenuePerAction ?? conversion.revenuePerHour / profitData.actionsPerHour;
-            const totalConversions = conversionsPerAction * actionsCount;
-            const totalRevenueFromConversion = revenuePerAction * actionsCount;
-            const line = document.createElement('div');
-            line.style.marginLeft = '8px';
-            const missingPriceNote = getMissingPriceIndicator(conversion.missingPrice);
-            line.textContent = `• ${conversion.rawItem} → ${conversion.processedItem}: ${totalConversions.toFixed(1)} conversions, +${formatWithSeparator(Math.round(conversion.valueGain))}${missingPriceNote} each → ${formatLargeNumber(Math.round(totalRevenueFromConversion))}`;
-            processingContent.appendChild(line);
-        }
-
-        const totalProcessingRevenue = totals.totalProcessingRevenue;
-        const processingChance = profitData.processingBonus || 0;
-        processingSection = createCollapsibleSection(
-            '',
-            `Processing Bonus: ${formatMissingLabel(processingMissing, formatLargeNumber(Math.round(totalProcessingRevenue)))} (${formatPercentage(processingChance, 1)} proc)`,
-            null,
-            processingContent,
-            false,
-            1
-        );
-        revenueDiv.appendChild(processingSection);
     }
 
     // Costs Section
@@ -1239,55 +1285,39 @@ function buildProductionActionsBreakdown(profitData, actionsCount) {
     const revenueLabel = formatMissingLabel(revenueMissing, formatLargeNumber(totalRevenue));
     revenueDiv.innerHTML = `<div style="font-weight: 500; color: ${config.COLOR_TOOLTIP_PROFIT}; margin-bottom: 4px;">Revenue: ${revenueLabel}</div>`;
 
-    // Base Output subsection
-    const baseOutputContent = document.createElement('div');
+    // Primary Outputs subsection
+    const primaryOutputContent = document.createElement('div');
     const totalBaseItems = totals.totalBaseItems;
     const totalBaseRevenue = totals.totalBaseRevenue;
     const baseOutputLine = document.createElement('div');
     baseOutputLine.style.marginLeft = '8px';
     const baseOutputMissingNote = getMissingPriceIndicator(profitData.outputPriceMissing);
-    baseOutputLine.textContent = `• Base Output: ${totalBaseItems.toFixed(1)} items @ ${formatWithSeparator(Math.round(profitData.outputPrice))}${baseOutputMissingNote} each → ${formatLargeNumber(Math.round(totalBaseRevenue))}`;
-    baseOutputContent.appendChild(baseOutputLine);
+    baseOutputLine.textContent = `• ${profitData.itemName} (Base): ${totalBaseItems.toFixed(1)} items @ ${formatWithSeparator(Math.round(profitData.outputPrice))}${baseOutputMissingNote} each → ${formatLargeNumber(Math.round(totalBaseRevenue))}`;
+    primaryOutputContent.appendChild(baseOutputLine);
 
-    const baseOutputLabel = formatMissingLabel(outputMissing, formatLargeNumber(Math.round(totalBaseRevenue)));
-    const baseOutputSection = createCollapsibleSection(
-        '',
-        `Base Output: ${baseOutputLabel}`,
-        null,
-        baseOutputContent,
-        false,
-        1
-    );
-
-    // Gourmet Bonus subsection
-    let gourmetSection = null;
     if (profitData.gourmetBonus > 0) {
-        const gourmetContent = document.createElement('div');
         const totalGourmetItems = totals.totalGourmetItems;
         const totalGourmetRevenue = totals.totalGourmetRevenue;
         const gourmetLine = document.createElement('div');
         gourmetLine.style.marginLeft = '8px';
-        gourmetLine.textContent = `• Gourmet Bonus: ${totalGourmetItems.toFixed(1)} items @ ${formatWithSeparator(Math.round(profitData.outputPrice))}${baseOutputMissingNote} each → ${formatLargeNumber(Math.round(totalGourmetRevenue))}`;
-        gourmetContent.appendChild(gourmetLine);
-
-        const gourmetRevenueLabel = formatMissingLabel(
-            outputMissing,
-            formatLargeNumber(Math.round(totalGourmetRevenue))
-        );
-        gourmetSection = createCollapsibleSection(
-            '',
-            `Gourmet Bonus: ${gourmetRevenueLabel} (${formatPercentage(profitData.gourmetBonus, 1)} gourmet)`,
-            null,
-            gourmetContent,
-            false,
-            1
-        );
+        gourmetLine.textContent = `• ${profitData.itemName} (Gourmet +${formatPercentage(profitData.gourmetBonus, 1)}): ${totalGourmetItems.toFixed(1)} items @ ${formatWithSeparator(Math.round(profitData.outputPrice))}${baseOutputMissingNote} each → ${formatLargeNumber(Math.round(totalGourmetRevenue))}`;
+        primaryOutputContent.appendChild(gourmetLine);
     }
 
-    revenueDiv.appendChild(baseOutputSection);
-    if (gourmetSection) {
-        revenueDiv.appendChild(gourmetSection);
-    }
+    const primaryRevenue = totals.totalBaseRevenue + totals.totalGourmetRevenue;
+    const primaryOutputLabel = formatMissingLabel(outputMissing, formatLargeNumber(Math.round(primaryRevenue)));
+    const gourmetLabel =
+        profitData.gourmetBonus > 0 ? ` (${formatPercentage(profitData.gourmetBonus, 1)} gourmet)` : '';
+    const primaryOutputSection = createCollapsibleSection(
+        '',
+        `Primary Outputs: ${primaryOutputLabel}${gourmetLabel}`,
+        null,
+        primaryOutputContent,
+        false,
+        1
+    );
+
+    revenueDiv.appendChild(primaryOutputSection);
 
     // Bonus Drops subsections
     const essenceDrops = bonusDrops.filter((drop) => drop.type === 'essence');

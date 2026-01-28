@@ -548,9 +548,18 @@ class TaskProfitDisplay {
                 const quantity = profitData.action.breakdown.quantity;
                 const actionsPerHour = details.actionsPerHour;
 
-                // Base outputs (gathered items)
+                // Primary output (base + gourmet + processing)
                 if (details.baseOutputs && details.baseOutputs.length > 0) {
-                    lines.push(`<div style="margin-top: 2px; color: #aaa;">Items Gathered:</div>`);
+                    const baseRevenueTotal = details.baseOutputs.reduce((sum, output) => {
+                        const revenuePerAction = output.revenuePerAction ?? output.revenuePerHour / actionsPerHour;
+                        return sum + revenuePerAction * quantity;
+                    }, 0);
+                    const gourmetRevenueTotal = (details.gourmetRevenueBonusPerAction || 0) * quantity;
+                    const processingRevenueTotal = (details.processingRevenueBonusPerAction || 0) * quantity;
+                    const primaryOutputTotal = baseRevenueTotal + gourmetRevenueTotal + processingRevenueTotal;
+                    lines.push(
+                        `<div style="margin-top: 2px; color: #aaa;">Primary Outputs: ${formatTotalValue(Math.round(primaryOutputTotal))}</div>`
+                    );
                     for (const output of details.baseOutputs) {
                         const itemsPerAction = output.itemsPerAction ?? output.itemsPerHour / actionsPerHour;
                         const revenuePerAction = output.revenuePerAction ?? output.revenuePerHour / actionsPerHour;
@@ -560,7 +569,46 @@ class TaskProfitDisplay {
                             output.dropRate < 1.0 ? ` (${formatPercentage(output.dropRate, 1)} drop)` : '';
                         const missingPriceNote = output.missingPrice ? ' ⚠' : '';
                         lines.push(
-                            `<div>• ${output.name}: ${itemsForTask.toFixed(1)} items @ ${numberFormatter(Math.round(output.priceEach))}${missingPriceNote} = ${numberFormatter(Math.round(revenueForTask))}${dropRateText}</div>`
+                            `<div>• ${output.name} (Base): ${itemsForTask.toFixed(1)} items @ ${numberFormatter(Math.round(output.priceEach))}${missingPriceNote} = ${numberFormatter(Math.round(revenueForTask))}${dropRateText}</div>`
+                        );
+                    }
+                }
+
+                if (details.gourmetBonuses && details.gourmetBonuses.length > 0) {
+                    for (const output of details.gourmetBonuses) {
+                        const itemsPerAction = output.itemsPerAction ?? output.itemsPerHour / actionsPerHour;
+                        const revenuePerAction = output.revenuePerAction ?? output.revenuePerHour / actionsPerHour;
+                        const itemsForTask = itemsPerAction * quantity;
+                        const revenueForTask = revenuePerAction * quantity;
+                        const missingPriceNote = output.missingPrice ? ' ⚠' : '';
+                        lines.push(
+                            `<div>• ${output.name} (Gourmet ${formatPercentage(details.gourmetBonus || 0, 1)}): ${itemsForTask.toFixed(1)} items @ ${numberFormatter(Math.round(output.priceEach))}${missingPriceNote} = ${numberFormatter(Math.round(revenueForTask))}</div>`
+                        );
+                    }
+                }
+
+                if (details.processingConversions && details.processingConversions.length > 0) {
+                    const processingBonusTotal = (details.processingRevenueBonusPerAction || 0) * quantity;
+                    const processingLabel = `${processingBonusTotal >= 0 ? '+' : '-'}${numberFormatter(Math.abs(Math.round(processingBonusTotal)))}`;
+                    lines.push(
+                        `<div>• Processing (${formatPercentage(details.processingBonus || 0, 1)} proc): Net ${processingLabel}</div>`
+                    );
+
+                    for (const conversion of details.processingConversions) {
+                        const conversionsPerAction =
+                            conversion.conversionsPerAction ?? conversion.conversionsPerHour / actionsPerHour;
+                        const rawConsumedPerAction =
+                            conversion.rawConsumedPerAction ?? conversion.rawConsumedPerHour / actionsPerHour;
+                        const totalConsumed = rawConsumedPerAction * quantity;
+                        const totalProduced = conversionsPerAction * quantity;
+                        const consumedRevenue = totalConsumed * conversion.rawPriceEach;
+                        const producedRevenue = totalProduced * conversion.processedPriceEach;
+                        const missingPriceNote = conversion.missingPrice ? ' ⚠' : '';
+                        lines.push(
+                            `<div style="margin-left: 10px;">• ${conversion.rawItem} consumed: -${totalConsumed.toFixed(1)} items @ ${numberFormatter(Math.round(conversion.rawPriceEach))}${missingPriceNote} = -${numberFormatter(Math.round(consumedRevenue))}</div>`
+                        );
+                        lines.push(
+                            `<div style="margin-left: 10px;">• ${conversion.processedItem} produced: ${totalProduced.toFixed(1)} items @ ${numberFormatter(Math.round(conversion.processedPriceEach))}${missingPriceNote} = ${numberFormatter(Math.round(producedRevenue))}</div>`
                         );
                     }
                 }
@@ -572,21 +620,17 @@ class TaskProfitDisplay {
                     details.bonusRevenue.bonusDrops.length > 0
                 ) {
                     const bonusRevenue = details.bonusRevenue;
-                    const totalBonusRevenue = bonusRevenue.bonusDrops.reduce(
-                        (sum, drop) => sum + (drop.revenuePerAction || 0) * quantity,
-                        0
-                    );
-
-                    lines.push(
-                        `<div style="margin-top: 4px; color: #aaa;">Bonus Drops: ${formatTotalValue(Math.round(totalBonusRevenue))}</div>`
-                    );
-
-                    // Group drops by type
                     const essenceDrops = bonusRevenue.bonusDrops.filter((d) => d.type === 'essence');
                     const rareFindDrops = bonusRevenue.bonusDrops.filter((d) => d.type === 'rare_find');
 
-                    // Show essence drops
                     if (essenceDrops.length > 0) {
+                        const totalEssenceRevenue = essenceDrops.reduce(
+                            (sum, drop) => sum + (drop.revenuePerAction || 0) * quantity,
+                            0
+                        );
+                        lines.push(
+                            `<div style="margin-top: 4px; color: #aaa;">Essence Drops: ${formatTotalValue(Math.round(totalEssenceRevenue))}</div>`
+                        );
                         for (const drop of essenceDrops) {
                             const dropsForTask = (drop.dropsPerAction || 0) * quantity;
                             const revenueForTask = (drop.revenuePerAction || 0) * quantity;
@@ -597,8 +641,14 @@ class TaskProfitDisplay {
                         }
                     }
 
-                    // Show rare find drops
                     if (rareFindDrops.length > 0) {
+                        const totalRareRevenue = rareFindDrops.reduce(
+                            (sum, drop) => sum + (drop.revenuePerAction || 0) * quantity,
+                            0
+                        );
+                        lines.push(
+                            `<div style="margin-top: 4px; color: #aaa;">Rare Finds: ${formatTotalValue(Math.round(totalRareRevenue))}</div>`
+                        );
                         for (const drop of rareFindDrops) {
                             const dropsForTask = (drop.dropsPerAction || 0) * quantity;
                             const revenueForTask = (drop.revenuePerAction || 0) * quantity;
@@ -609,26 +659,6 @@ class TaskProfitDisplay {
                         }
                     }
                 }
-
-                // Processing conversions (raw → processed)
-                if (details.processingConversions && details.processingConversions.length > 0) {
-                    const processingBonus = (details.processingRevenueBonusPerAction || 0) * quantity;
-                    lines.push(
-                        `<div style="margin-top: 4px; color: #aaa;">Processing Bonus: ${formatTotalValue(Math.round(processingBonus))}</div>`
-                    );
-                    for (const conversion of details.processingConversions) {
-                        const conversionsPerAction =
-                            conversion.conversionsPerAction ?? conversion.conversionsPerHour / actionsPerHour;
-                        const revenuePerAction =
-                            conversion.revenuePerAction ?? conversion.revenuePerHour / actionsPerHour;
-                        const conversionsForTask = conversionsPerAction * quantity;
-                        const revenueForTask = revenuePerAction * quantity;
-                        const missingPriceNote = conversion.missingPrice ? ' ⚠' : '';
-                        lines.push(
-                            `<div>• ${conversion.rawItem} → ${conversion.processedItem}: ${conversionsForTask.toFixed(1)} conversions, +${numberFormatter(Math.round(conversion.valueGain))}${missingPriceNote} each = ${numberFormatter(Math.round(revenueForTask))}</div>`
-                        );
-                    }
-                }
             }
 
             lines.push(`</div>`);
@@ -636,62 +666,56 @@ class TaskProfitDisplay {
                 `<div style="margin-left: 20px; font-size: 0.65rem; color: #888;">(${profitData.action.breakdown.quantity}× @ ${formatPerActionValue(profitData.action.breakdown.perAction)} each)</div>`
             );
         } else if (profitData.type === 'production') {
-            // Output Value (expandable)
+            const details = profitData.action.details;
+            const bonusDrops = details?.bonusRevenue?.bonusDrops || [];
+            const netProductionValue = profitData.action.totalProfit;
+
+            // Net Production (expandable)
             lines.push(
-                `<div class="mwi-expandable-header" data-section="output" style="margin-left: 10px; cursor: pointer; user-select: none;">Output Value: ${formatTotalValue(profitData.action.breakdown.outputValue)} ▸</div>`
+                `<div class="mwi-expandable-header" data-section="production" style="margin-left: 10px; cursor: pointer; user-select: none;">Net Production: ${formatTotalValue(netProductionValue)} ▸</div>`
             );
             lines.push(
-                `<div class="mwi-expandable-section" data-section="output" style="display: none; margin-left: 20px; font-size: 0.65rem; color: #888; margin-top: 2px;">`
+                `<div class="mwi-expandable-section" data-section="production" style="display: none; margin-left: 20px; font-size: 0.65rem; color: #888; margin-top: 2px;">`
             );
 
-            if (profitData.action.details) {
-                const details = profitData.action.details;
+            if (details) {
                 const outputAmount = details.outputAmount || 1;
                 const totalItems = outputAmount * profitData.action.breakdown.quantity;
                 const outputPriceNote = details.outputPriceMissing ? ' ⚠' : '';
+                const baseRevenueTotal = totalItems * details.priceEach;
+                const gourmetRevenueTotal = details.gourmetBonus
+                    ? outputAmount * details.gourmetBonus * profitData.action.breakdown.quantity * details.priceEach
+                    : 0;
+                const primaryOutputTotal = baseRevenueTotal + gourmetRevenueTotal;
 
                 lines.push(
-                    `<div>• Base Production: ${totalItems.toFixed(1)} items @ ${numberFormatter(details.priceEach)}${outputPriceNote} = ${numberFormatter(Math.round(totalItems * details.priceEach))}</div>`
+                    `<div style="margin-top: 2px; color: #aaa;">Primary Outputs: ${formatTotalValue(Math.round(primaryOutputTotal))}</div>`
+                );
+
+                lines.push(
+                    `<div>• ${details.itemName} (Base): ${totalItems.toFixed(1)} items @ ${numberFormatter(details.priceEach)}${outputPriceNote} = ${numberFormatter(Math.round(totalItems * details.priceEach))}</div>`
                 );
 
                 if (details.gourmetBonus > 0) {
                     const bonusItems = outputAmount * details.gourmetBonus * profitData.action.breakdown.quantity;
                     lines.push(
-                        `<div>• Gourmet Bonus: ${bonusItems.toFixed(1)} items @ ${numberFormatter(details.priceEach)}${outputPriceNote} = ${numberFormatter(Math.round(bonusItems * details.priceEach))}</div>`
+                        `<div>• ${details.itemName} (Gourmet +${formatPercentage(details.gourmetBonus, 1)}): ${bonusItems.toFixed(1)} items @ ${numberFormatter(details.priceEach)}${outputPriceNote} = ${numberFormatter(Math.round(bonusItems * details.priceEach))}</div>`
                     );
                 }
             }
 
-            lines.push(`</div>`);
+            if (bonusDrops.length > 0) {
+                const essenceDrops = bonusDrops.filter((d) => d.type === 'essence');
+                const rareFindDrops = bonusDrops.filter((d) => d.type === 'rare_find');
 
-            // Bonus Revenue (expandable) - Essence and Rare Find drops
-            if (
-                profitData.action.details?.bonusRevenue &&
-                profitData.action.details.bonusRevenue.bonusDrops &&
-                profitData.action.details.bonusRevenue.bonusDrops.length > 0
-            ) {
-                const details = profitData.action.details;
-                const bonusRevenue = details.bonusRevenue;
-                const bonusDrops = bonusRevenue.bonusDrops || [];
-                const totalBonusRevenue = bonusDrops.reduce(
-                    (sum, drop) => sum + (drop.revenuePerAction || 0) * profitData.action.breakdown.quantity,
-                    0
-                );
-
-                lines.push(
-                    `<div class="mwi-expandable-header" data-section="bonus" style="margin-left: 10px; cursor: pointer; user-select: none;">Bonus Revenue: ${formatTotalValue(totalBonusRevenue)} ▸</div>`
-                );
-                lines.push(
-                    `<div class="mwi-expandable-section" data-section="bonus" style="display: none; margin-left: 20px; font-size: 0.65rem; color: #888; margin-top: 2px;">`
-                );
-
-                // Group drops by type
-                const essenceDrops = bonusRevenue.bonusDrops.filter((d) => d.type === 'essence');
-                const rareFindDrops = bonusRevenue.bonusDrops.filter((d) => d.type === 'rare_find');
-
-                // Show essence drops
                 if (essenceDrops.length > 0) {
-                    lines.push(`<div style="margin-top: 2px; color: #aaa;">Essence Drops:</div>`);
+                    const totalEssenceRevenue = essenceDrops.reduce(
+                        (sum, drop) => sum + (drop.revenuePerAction || 0) * profitData.action.breakdown.quantity,
+                        0
+                    );
+                    lines.push(
+                        `<div style="margin-top: 4px; color: #aaa;">Essence Drops: ${formatTotalValue(Math.round(totalEssenceRevenue))}</div>`
+                    );
                     for (const drop of essenceDrops) {
                         const dropsForTask = (drop.dropsPerAction || 0) * profitData.action.breakdown.quantity;
                         const revenueForTask = (drop.revenuePerAction || 0) * profitData.action.breakdown.quantity;
@@ -702,11 +726,14 @@ class TaskProfitDisplay {
                     }
                 }
 
-                // Show rare find drops
                 if (rareFindDrops.length > 0) {
-                    if (essenceDrops.length > 0) {
-                        lines.push(`<div style="margin-top: 4px; color: #aaa;">Rare Find Drops:</div>`);
-                    }
+                    const totalRareRevenue = rareFindDrops.reduce(
+                        (sum, drop) => sum + (drop.revenuePerAction || 0) * profitData.action.breakdown.quantity,
+                        0
+                    );
+                    lines.push(
+                        `<div style="margin-top: 4px; color: #aaa;">Rare Finds: ${formatTotalValue(Math.round(totalRareRevenue))}</div>`
+                    );
                     for (const drop of rareFindDrops) {
                         const dropsForTask = (drop.dropsPerAction || 0) * profitData.action.breakdown.quantity;
                         const revenueForTask = (drop.revenuePerAction || 0) * profitData.action.breakdown.quantity;
@@ -716,22 +743,14 @@ class TaskProfitDisplay {
                         );
                     }
                 }
-
-                lines.push(`</div>`);
             }
 
-            // Material Cost (expandable)
-            lines.push(
-                `<div class="mwi-expandable-header" data-section="materials" style="margin-left: 10px; cursor: pointer; user-select: none;">Material Cost: ${formatTotalValue(profitData.action.breakdown.materialCost)} ▸</div>`
-            );
-            lines.push(
-                `<div class="mwi-expandable-section" data-section="materials" style="display: none; margin-left: 20px; font-size: 0.65rem; color: #888; margin-top: 2px;">`
-            );
-
-            if (profitData.action.details && profitData.action.details.materialCosts) {
-                const details = profitData.action.details;
+            if (details?.materialCosts) {
                 const actionsNeeded = profitData.action.breakdown.quantity;
                 const hoursNeeded = actionsNeeded / (details.actionsPerHour * (details.efficiencyMultiplier || 1));
+                lines.push(
+                    `<div style="margin-top: 4px; color: #aaa;">Material Costs: ${formatTotalValue(profitData.action.breakdown.materialCost)}</div>`
+                );
 
                 for (const mat of details.materialCosts) {
                     const totalAmount = mat.amount * actionsNeeded;
@@ -756,10 +775,7 @@ class TaskProfitDisplay {
 
             lines.push(`</div>`);
 
-            // Net Production
-            lines.push(
-                `<div style="margin-left: 10px;">Net Production: ${formatTotalValue(profitData.action.totalProfit)}</div>`
-            );
+            // Net Production now shown in header
             lines.push(
                 `<div style="margin-left: 20px; font-size: 0.65rem; color: #888;">(${profitData.action.breakdown.quantity}× @ ${formatPerActionValue(profitData.action.breakdown.perAction)} each)</div>`
             );

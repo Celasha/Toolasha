@@ -1422,6 +1422,7 @@ class ActionTimeDisplay {
                 baseOutputs: profitData.baseOutputs,
                 bonusDrops: profitData.bonusRevenue?.bonusDrops || [],
                 processingRevenueBonusPerAction: profitData.processingRevenueBonusPerAction,
+                gourmetRevenueBonusPerAction: profitData.gourmetRevenueBonusPerAction,
                 drinkCostPerHour: profitData.drinkCostPerHour,
                 efficiencyMultiplier: profitData.efficiencyMultiplier || 1,
             });

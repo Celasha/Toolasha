@@ -281,18 +281,20 @@ describe('calculateGatheringActionTotalsFromBase', () => {
             baseOutputs: [{ revenuePerAction: 3 }, { revenuePerAction: 2 }],
             bonusDrops: [{ revenuePerAction: 1.5 }],
             processingRevenueBonusPerAction: 0.5,
+            gourmetRevenueBonusPerAction: 0.75,
             drinkCostPerHour: 6,
         });
 
         expect(result.hoursNeeded).toBe(calculateHoursForActions(actionsCount, actionsPerHour));
         expect(result.totalBaseRevenue).toBe(50);
+        expect(result.totalGourmetRevenue).toBe(7.5);
         expect(result.totalBonusRevenue).toBe(15);
         expect(result.totalProcessingRevenue).toBe(5);
-        expect(result.totalRevenue).toBe(70);
-        expect(result.totalMarketTax).toBeCloseTo(70 * MARKET_TAX, 6);
+        expect(result.totalRevenue).toBe(77.5);
+        expect(result.totalMarketTax).toBeCloseTo(77.5 * MARKET_TAX, 6);
         expect(result.totalDrinkCost).toBeCloseTo(15, 6);
-        expect(result.totalCosts).toBeCloseTo(16.4, 6);
-        expect(result.totalProfit).toBeCloseTo(53.6, 6);
+        expect(result.totalCosts).toBeCloseTo(16.55, 6);
+        expect(result.totalProfit).toBeCloseTo(60.95, 6);
     });
 
     test('handles missing inputs with zero actionsPerHour', () => {
@@ -306,6 +308,7 @@ describe('calculateGatheringActionTotalsFromBase', () => {
         expect(result.totalBaseRevenue).toBe(0);
         expect(result.totalBonusRevenue).toBe(0);
         expect(result.totalProcessingRevenue).toBe(0);
+        expect(result.totalGourmetRevenue).toBe(0);
         expect(result.totalRevenue).toBe(0);
         expect(result.totalMarketTax).toBe(0);
         expect(result.totalDrinkCost).toBe(0);

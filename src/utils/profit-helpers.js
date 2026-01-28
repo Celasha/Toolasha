@@ -245,6 +245,7 @@ export function calculateProductionActionTotalsFromBase({
  * @param {Array} [params.baseOutputs] - Base outputs with revenuePerAction
  * @param {Array} [params.bonusDrops] - Bonus drop entries with revenuePerAction
  * @param {number} params.processingRevenueBonusPerAction - Processing bonus per action
+ * @param {number} params.gourmetRevenueBonusPerAction - Gourmet bonus revenue per action
  * @param {number} params.drinkCostPerHour - Drink costs per hour
  * @param {number} [params.efficiencyMultiplier=1] - Efficiency multiplier for time scaling
  * @returns {Object} Totals and time values
@@ -255,6 +256,7 @@ export function calculateGatheringActionTotalsFromBase({
     baseOutputs = [],
     bonusDrops = [],
     processingRevenueBonusPerAction,
+    gourmetRevenueBonusPerAction,
     drinkCostPerHour,
     efficiencyMultiplier = 1,
 }) {
@@ -264,6 +266,7 @@ export function calculateGatheringActionTotalsFromBase({
             totalBaseRevenue: 0,
             totalBonusRevenue: 0,
             totalProcessingRevenue: 0,
+            totalGourmetRevenue: 0,
             totalRevenue: 0,
             totalMarketTax: 0,
             totalDrinkCost: 0,
@@ -278,7 +281,8 @@ export function calculateGatheringActionTotalsFromBase({
     );
     const totalBonusRevenue = bonusDrops.reduce((sum, drop) => sum + (drop.revenuePerAction || 0) * actionsCount, 0);
     const totalProcessingRevenue = (processingRevenueBonusPerAction || 0) * actionsCount;
-    const totalRevenue = totalBaseRevenue + totalBonusRevenue + totalProcessingRevenue;
+    const totalGourmetRevenue = (gourmetRevenueBonusPerAction || 0) * actionsCount;
+    const totalRevenue = totalBaseRevenue + totalGourmetRevenue + totalBonusRevenue + totalProcessingRevenue;
     const totalMarketTax = totalRevenue * MARKET_TAX;
     const hoursNeeded = calculateHoursForActions(actionsCount, effectiveActionsPerHour);
     const totalDrinkCost = drinkCostPerHour * hoursNeeded;
@@ -289,6 +293,7 @@ export function calculateGatheringActionTotalsFromBase({
         totalBaseRevenue,
         totalBonusRevenue,
         totalProcessingRevenue,
+        totalGourmetRevenue,
         totalRevenue,
         totalMarketTax,
         totalDrinkCost,
