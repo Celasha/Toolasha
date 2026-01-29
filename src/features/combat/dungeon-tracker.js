@@ -379,7 +379,7 @@ class DungeonTracker {
                         // Try to extract timestamp
                         // Try to extract timestamp from message display format: [MM/DD HH:MM:SS AM/PM] or [DD-M HH:MM:SS]
                         const timestampMatch = text.match(
-                            /\[(\d{1,2})([-\/])(\d{1,2})\s+(\d{1,2}):(\d{2}):(\d{2})\s*([AP]M)?\]/
+                            /\[(\d{1,2})([-/])(\d{1,2})\s+(\d{1,2}):(\d{2}):(\d{2})\s*([AP]M)?\]/
                         );
 
                         if (timestampMatch) {
@@ -424,7 +424,7 @@ class DungeonTracker {
                         if (Object.keys(keyCountsMap).length > 0) {
                             // Try to extract timestamp from message display format: [MM/DD HH:MM:SS AM/PM] or [DD-M HH:MM:SS]
                             const timestampMatch = text.match(
-                                /\[(\d{1,2})([-\/])(\d{1,2})\s+(\d{1,2}):(\d{2}):(\d{2})\s*([AP]M)?\]/
+                                /\[(\d{1,2})([-/])(\d{1,2})\s+(\d{1,2}):(\d{2}):(\d{2})\s*([AP]M)?\]/
                             );
 
                             if (timestampMatch) {
@@ -1343,7 +1343,7 @@ class DungeonTracker {
 
                 // Parse timestamp from message display format: [MM/DD HH:MM:SS AM/PM] or [DD-M HH:MM:SS]
                 const timestampMatch = text.match(
-                    /\[(\d{1,2})([-\/])(\d{1,2})\s+(\d{1,2}):(\d{2}):(\d{2})\s*([AP]M)?\]/
+                    /\[(\d{1,2})([-/])(\d{1,2})\s+(\d{1,2}):(\d{2}):(\d{2})\s*([AP]M)?\]/
                 );
                 if (!timestampMatch) continue;
 
