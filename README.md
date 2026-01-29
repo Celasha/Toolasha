@@ -4,6 +4,8 @@
 
 Modular, maintainable rewrite of MWITools userscript for Milky Way Idle.
 
+**📚 [Documentation Index](DOCUMENTATION.md)** | **✨ [Feature List](FEATURES.md)** | **📝 [Changelog](CHANGELOG.md)**
+
 ## 🚀 Quick Start
 
 ### Build the userscript
