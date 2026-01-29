@@ -21,7 +21,7 @@ jobs:
             - name: Checkout code
               uses: actions/checkout@v6
               with:
-                  ref: ${{ github.event.workflow_run.head_sha }}
+                  ref: main
                   fetch-depth: 2 # Need previous commit to detect version changes
                   token: ${{ secrets.GITHUB_TOKEN }}
 
