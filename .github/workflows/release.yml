@@ -41,20 +41,9 @@ jobs:
                   echo "version=$VERSION" >> $GITHUB_OUTPUT
                   echo "Current version: $VERSION"
 
-            - name: Check if tag exists
-              id: tag_check
-              run: |
-                  if git ls-remote --tags origin | grep -q "refs/tags/v${{ steps.current_version.outputs.version }}$"; then
-                    echo "exists=true" >> $GITHUB_OUTPUT
-                    echo "Tag v${{ steps.current_version.outputs.version }} already exists"
-                  else
-                    echo "exists=false" >> $GITHUB_OUTPUT
-                    echo "Tag v${{ steps.current_version.outputs.version }} does not exist"
-                  fi
-
+            # Step 1: Check if version was manually bumped (BEFORE tag check)
             - name: Check if version was manually bumped
               id: version_check
-              if: steps.tag_check.outputs.exists == 'false'
               run: |
                   # Get version from previous commit
                   PREV_VERSION=$(git show HEAD~1:package.json | node -p "JSON.parse(require('fs').readFileSync('/dev/stdin', 'utf8')).version")
@@ -68,9 +57,10 @@ jobs:
                     echo "Version unchanged, will auto-bump patch"
                   fi
 
+            # Step 2: Auto-bump if version was NOT manually changed
             - name: Auto-bump patch version
               id: auto_bump
-              if: steps.tag_check.outputs.exists == 'false' && steps.version_check.outputs.manually_bumped == 'false'
+              if: steps.version_check.outputs.manually_bumped == 'false'
               run: |
                   npm run version:patch
                   NEW_VERSION=$(node -p "require('./package.json').version")
@@ -86,9 +76,9 @@ jobs:
                   git commit -m "chore: bump version to ${{ steps.auto_bump.outputs.new_version }}"
                   git push
 
+            # Step 3: Determine final release version (after potential auto-bump)
             - name: Determine release version
               id: release_version
-              if: steps.tag_check.outputs.exists == 'false'
               run: |
                   if [ -n "${{ steps.auto_bump.outputs.new_version }}" ]; then
                     echo "version=${{ steps.auto_bump.outputs.new_version }}" >> $GITHUB_OUTPUT
@@ -96,6 +86,19 @@ jobs:
                     echo "version=${{ steps.current_version.outputs.version }}" >> $GITHUB_OUTPUT
                   fi
 
+            # Step 4: Check if tag exists for the FINAL version
+            - name: Check if tag exists
+              id: tag_check
+              run: |
+                  if git ls-remote --tags origin | grep -q "refs/tags/v${{ steps.release_version.outputs.version }}$"; then
+                    echo "exists=true" >> $GITHUB_OUTPUT
+                    echo "Tag v${{ steps.release_version.outputs.version }} already exists - skipping release"
+                  else
+                    echo "exists=false" >> $GITHUB_OUTPUT
+                    echo "Tag v${{ steps.release_version.outputs.version }} does not exist - will create release"
+                  fi
+
+            # Step 5: Build and release (only if tag doesn't exist)
             - name: Build
               if: steps.tag_check.outputs.exists == 'false'
               run: npm run build
