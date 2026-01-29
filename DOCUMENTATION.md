@@ -3,9 +3,15 @@
 ## Quick Links
 
 - [README](README.md) - Project overview and quick start
+- [CONTRIBUTING](CONTRIBUTING.md) - How to contribute to Toolasha
 - [AGENTS](AGENTS.md) - Developer guide for AI coding agents
 - [FEATURES](FEATURES.md) - Complete feature list
 - [CHANGELOG](CHANGELOG.md) - Version history
+
+## Developer Resources
+
+- [Architecture Overview](docs/ARCHITECTURE.md) - System architecture and design patterns
+- [Troubleshooting Guide](docs/TROUBLESHOOTING.md) - Common issues and solutions
 
 ## Planning Documents
 
