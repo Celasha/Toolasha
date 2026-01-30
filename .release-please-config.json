@@ -2,33 +2,7 @@
     "packages": {
         ".": {
             "release-type": "node",
-            "package-name": "toolasha",
-            "extra-files": [
-                {
-                    "path": "userscript-header.txt",
-                    "type": "regex",
-                    "regex": "^// @version\\s+\\d+\\.\\d+\\.\\d+$",
-                    "replacement": "// @version      {{version}}"
-                },
-                {
-                    "path": "README.md",
-                    "type": "regex",
-                    "regex": "^!\\[Version\\]\\(https://img\\.shields\\.io/badge/version-\\d+\\.\\d+\\.\\d+-orange\\?style=flat-square\\)",
-                    "replacement": "![Version](https://img.shields.io/badge/version-{{version}}-orange?style=flat-square)"
-                },
-                {
-                    "path": "README.md",
-                    "type": "regex",
-                    "regex": "^\\*\\*Version\\*\\*: \\d+\\.\\d+\\.\\d+ \\(Pre-release\\)$",
-                    "replacement": "**Version**: {{version}} (Pre-release)"
-                },
-                {
-                    "path": "src/main.js",
-                    "type": "regex",
-                    "regex": "version: '\\d+\\.\\d+\\.\\d+',",
-                    "replacement": "version: '{{version}}',"
-                }
-            ]
+            "package-name": "toolasha"
         }
     }
 }
