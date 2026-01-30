@@ -14,8 +14,39 @@ jobs:
 
         steps:
             - name: Run release-please
+              id: release
               uses: googleapis/release-please-action@v4
               with:
                   token: ${{ secrets.PAT }}
                   config-file: .release-please-config.json
                   manifest-file: .release-please-manifest.json
+
+            # Build and upload assets if a release was created
+            - name: Checkout code
+              if: ${{ steps.release.outputs.release_created }}
+              uses: actions/checkout@v6
+
+            - name: Setup Node.js
+              if: ${{ steps.release.outputs.release_created }}
+              uses: actions/setup-node@v6
+              with:
+                  node-version: '20'
+                  cache: 'npm'
+
+            - name: Install dependencies
+              if: ${{ steps.release.outputs.release_created }}
+              run: npm ci
+
+            - name: Build
+              if: ${{ steps.release.outputs.release_created }}
+              run: npm run build
+
+            - name: Upload userscript and publish release
+              if: ${{ steps.release.outputs.release_created }}
+              uses: softprops/action-gh-release@v2
+              with:
+                  tag_name: ${{ steps.release.outputs.tag_name }}
+                  files: dist/Toolasha.user.js
+                  draft: false
+              env:
+                  GITHUB_TOKEN: ${{ secrets.PAT }}
