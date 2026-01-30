@@ -6,7 +6,7 @@
 - [CONTRIBUTING](CONTRIBUTING.md) - How to contribute to Toolasha
 - [AGENTS](AGENTS.md) - Developer guide for AI coding agents
 - [FEATURES](FEATURES.md) - Complete feature list
-- [CHANGELOG](CHANGELOG.md) - Version history
+- [CHANGELOG](MWI-TOOLS-CHANGELOG.md) - Version history
 
 ## Developer Resources
 

@@ -16,10 +16,6 @@
         "lint:md": "markdownlint \"**/*.md\" --ignore node_modules",
         "lint:md:fix": "markdownlint \"**/*.md\" --ignore node_modules --fix",
         "lint:md:links": "find . -name '*.md' ! -path './node_modules/*' -exec markdown-link-check --quiet {} \\;",
-        "version:sync": "node scripts/sync-version.js",
-        "version:patch": "npm version patch --no-git-tag-version && npm run version:sync",
-        "version:minor": "npm version minor --no-git-tag-version && npm run version:sync",
-        "version:major": "npm version major --no-git-tag-version && npm run version:sync",
         "prepare": "husky"
     },
     "keywords": [
@@ -43,13 +39,11 @@
         "prettier": "^3.8.1",
         "rollup": "^4.9.5",
         "rollup-plugin-banner2": "^1.2.2",
-        "vitest": "^4.0.18"
+        "vitest": "^4.0.18",
+        "@commitlint/cli": "^19.8.0",
+        "@commitlint/config-conventional": "^19.8.0"
     },
     "lint-staged": {
-        "package.json": [
-            "node scripts/sync-version.js",
-            "git add userscript-header.txt README.md src/main.js"
-        ],
         "src/**/*.js": [
             "eslint --fix",
             "prettier --write",

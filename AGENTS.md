@@ -26,8 +26,6 @@ npm run lint:md        # Check markdown formatting
 npm run lint:md:fix    # Auto-fix markdown issues
 npm run lint:md:links  # Check for broken links
 
-npm run version:patch  # Bump patch version (0.5.9 → 0.5.10)
-npm run version:minor  # Bump minor version (0.5.9 → 0.6.0)
 ```
 
 **Pre-commit hooks:** ESLint, Prettier, tests, and build run automatically on commit.

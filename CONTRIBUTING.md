@@ -267,7 +267,7 @@ We use conventional commits with emojis:
 1. **Update documentation** if you've added/changed features
 2. **Add tests** for new functionality
 3. **Ensure all tests pass** (`npm test`)
-4. **Update CHANGELOG.md** with your changes
+4. **Update MWI-TOOLS-CHANGELOG.md** with your changes
 5. **Follow commit message conventions**
 6. **Keep PRs focused** - one feature/fix per PR
 

@@ -1,115 +1,20 @@
-name: Release
+name: Release Please
 
 on:
-    workflow_run:
-        workflows: ['CI']
-        types: [completed]
+    push:
         branches: [main]
 
 permissions:
     contents: write
+    pull-requests: write
 
 jobs:
-    release:
+    release-please:
         runs-on: ubuntu-latest
-        # Only run if CI succeeded and not triggered by bot
-        if: >
-            github.event.workflow_run.conclusion == 'success' &&
-            github.event.workflow_run.actor.login != 'github-actions[bot]'
 
         steps:
-            - name: Checkout code
-              uses: actions/checkout@v6
+            - name: Run release-please
+              uses: googleapis/release-please-action@v4
               with:
-                  ref: main
-                  fetch-depth: 2 # Need previous commit to detect version changes
-                  token: ${{ secrets.GITHUB_TOKEN }}
-
-            - name: Setup Node.js
-              uses: actions/setup-node@v6
-              with:
-                  node-version: '20'
-                  cache: 'npm'
-
-            - name: Install dependencies
-              run: npm ci
-
-            - name: Get current version
-              id: current_version
-              run: |
-                  VERSION=$(node -p "require('./package.json').version")
-                  echo "version=$VERSION" >> $GITHUB_OUTPUT
-                  echo "Current version: $VERSION"
-
-            # Step 1: Check if version was manually bumped (BEFORE tag check)
-            - name: Check if version was manually bumped
-              id: version_check
-              run: |
-                  # Get version from previous commit
-                  PREV_VERSION=$(git show HEAD~1:package.json | node -p "JSON.parse(require('fs').readFileSync('/dev/stdin', 'utf8')).version")
-                  CURR_VERSION=${{ steps.current_version.outputs.version }}
-
-                  if [ "$PREV_VERSION" != "$CURR_VERSION" ]; then
-                    echo "manually_bumped=true" >> $GITHUB_OUTPUT
-                    echo "Version was manually bumped: $PREV_VERSION -> $CURR_VERSION"
-                  else
-                    echo "manually_bumped=false" >> $GITHUB_OUTPUT
-                    echo "Version unchanged, will auto-bump patch"
-                  fi
-
-            # Step 2: Auto-bump if version was NOT manually changed
-            - name: Auto-bump patch version
-              id: auto_bump
-              if: steps.version_check.outputs.manually_bumped == 'false'
-              run: |
-                  npm run version:patch
-                  NEW_VERSION=$(node -p "require('./package.json').version")
-                  echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
-                  echo "Auto-bumped to version: $NEW_VERSION"
-
-            - name: Commit version bump
-              if: steps.auto_bump.outputs.new_version
-              run: |
-                  git config user.name "github-actions[bot]"
-                  git config user.email "github-actions[bot]@users.noreply.github.com"
-                  git add -A
-                  git commit -m "chore: bump version to ${{ steps.auto_bump.outputs.new_version }}"
-                  git push
-
-            # Step 3: Determine final release version (after potential auto-bump)
-            - name: Determine release version
-              id: release_version
-              run: |
-                  if [ -n "${{ steps.auto_bump.outputs.new_version }}" ]; then
-                    echo "version=${{ steps.auto_bump.outputs.new_version }}" >> $GITHUB_OUTPUT
-                  else
-                    echo "version=${{ steps.current_version.outputs.version }}" >> $GITHUB_OUTPUT
-                  fi
-
-            # Step 4: Check if tag exists for the FINAL version
-            - name: Check if tag exists
-              id: tag_check
-              run: |
-                  if git ls-remote --tags origin | grep -q "refs/tags/v${{ steps.release_version.outputs.version }}$"; then
-                    echo "exists=true" >> $GITHUB_OUTPUT
-                    echo "Tag v${{ steps.release_version.outputs.version }} already exists - skipping release"
-                  else
-                    echo "exists=false" >> $GITHUB_OUTPUT
-                    echo "Tag v${{ steps.release_version.outputs.version }} does not exist - will create release"
-                  fi
-
-            # Step 5: Build and release (only if tag doesn't exist)
-            - name: Build
-              if: steps.tag_check.outputs.exists == 'false'
-              run: npm run build
-
-            - name: Create Release
-              if: steps.tag_check.outputs.exists == 'false'
-              uses: softprops/action-gh-release@v2
-              with:
-                  tag_name: v${{ steps.release_version.outputs.version }}
-                  name: Toolasha v${{ steps.release_version.outputs.version }}
-                  files: dist/Toolasha.user.js
-                  generate_release_notes: true
-              env:
-                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  config-file: .release-please-config.json
+                  manifest-file: .release-please-manifest.json
