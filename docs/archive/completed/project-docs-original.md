@@ -11,7 +11,7 @@ This project aims to break apart the monolithic MWITools-25.0.user.js (~6,700 li
 **Updated By:** Celasha and Claude
 **License:** CC-BY-NC-SA-4.0
 
-See [CHANGELOG.md](CHANGELOG.md) for version history.
+See [MWI-TOOLS-CHANGELOG.md](MWI-TOOLS-CHANGELOG.md) for version history.
 
 ## Goals
 

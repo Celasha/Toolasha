@@ -4,7 +4,7 @@
 
 A modular, maintainable Tampermonkey userscript that enhances [Milky Way Idle](https://www.milkywayidle.com/game) with quality-of-life features, market tools, combat statistics, and comprehensive game data overlays.
 
-**📚 [Documentation](DOCUMENTATION.md)** | **✨ [Features](FEATURES.md)** | **📝 [Changelog](CHANGELOG.md)** | **🤝 [Contributing](CONTRIBUTING.md)**
+**📚 [Documentation](DOCUMENTATION.md)** | **✨ [Features](FEATURES.md)** | **📝 [Changelog](MWI-TOOLS-CHANGELOG.md)** | **🤝 [Contributing](CONTRIBUTING.md)**
 
 ---
 
@@ -229,4 +229,4 @@ npm test -- --coverage # Coverage report
 
 ---
 
-**Note**: This is a pre-release version (0.x.x). Version 1.0.0 will be released after comprehensive production testing. See [CHANGELOG.md](CHANGELOG.md) for version history.
+**Note**: This is a pre-release version (0.x.x). Version 1.0.0 will be released after comprehensive production testing. See [MWI-TOOLS-CHANGELOG.md](MWI-TOOLS-CHANGELOG.md) for version history.
