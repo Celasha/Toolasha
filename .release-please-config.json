@@ -2,7 +2,9 @@
     "packages": {
         ".": {
             "release-type": "node",
-            "package-name": "toolasha"
+            "package-name": "toolasha",
+            "component": "Toolasha",
+            "include-component-in-tag": false
         }
     }
 }
