@@ -2,12 +2,11 @@
 
 ## [0.6.1](https://github.com/Celasha/Toolasha/compare/toolasha-v0.6.0...toolasha-v0.6.1) (2026-01-30)
 
-
 ### Bug Fixes
 
-* correctly identify quantity input for equipment items in missing materials auto-fill ([f321760](https://github.com/Celasha/Toolasha/commit/f321760ff5fc74383d02b5917d2d50c7d8ee8ba1))
-* prettier complaining ([f5c1937](https://github.com/Celasha/Toolasha/commit/f5c193731388e4c3bf4097b31cb3b45b86eb4a92))
-* prettier complaining ([7f03751](https://github.com/Celasha/Toolasha/commit/7f0375170495cbca2bef20e352686e9c8b9d274c))
+- correctly identify quantity input for equipment items in missing materials auto-fill ([f321760](https://github.com/Celasha/Toolasha/commit/f321760ff5fc74383d02b5917d2d50c7d8ee8ba1))
+- prettier complaining ([f5c1937](https://github.com/Celasha/Toolasha/commit/f5c193731388e4c3bf4097b31cb3b45b86eb4a92))
+- prettier complaining ([7f03751](https://github.com/Celasha/Toolasha/commit/7f0375170495cbca2bef20e352686e9c8b9d274c))
 
 ## [0.6.0](https://github.com/Celasha/Toolasha/compare/toolasha-v0.5.36...toolasha-v0.6.0) (2026-01-30)
 
