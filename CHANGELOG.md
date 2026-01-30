@@ -2,10 +2,9 @@
 
 ## [0.8.0](https://github.com/Celasha/Toolasha/compare/v0.7.0...v0.8.0) (2026-01-30)
 
-
 ### Features
 
-* hide dungeon filter icons when setting disabled and highlight all best token values ([a26e640](https://github.com/Celasha/Toolasha/commit/a26e6404141b2ce73eee4f5cb9b5cf28aaffb7df))
+- hide dungeon filter icons when setting disabled and highlight all best token values ([a26e640](https://github.com/Celasha/Toolasha/commit/a26e6404141b2ce73eee4f5cb9b5cf28aaffb7df))
 
 ## [0.7.0](https://github.com/Celasha/Toolasha/compare/v0.6.2...v0.7.0) (2026-01-30)
 
