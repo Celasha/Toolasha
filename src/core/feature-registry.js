@@ -51,6 +51,7 @@ import dungeonTrackerChatAnnotations from '../features/combat/dungeon-tracker-ch
 import combatSummary from '../features/combat/combat-summary.js';
 import alchemyProfitDisplay from '../features/alchemy/alchemy-profit-display.js';
 import transmuteRates from '../features/dictionary/transmute-rates.js';
+import dungeonTokenTooltips from '../features/inventory/dungeon-token-tooltips.js';
 
 /**
  * Feature Registry
@@ -77,6 +78,13 @@ const featureRegistry = [
         name: 'Tooltip Consumables',
         category: 'Market',
         initialize: () => tooltipConsumables.initialize(),
+        async: true,
+    },
+    {
+        key: 'dungeonTokenTooltips',
+        name: 'Dungeon Token Tooltips',
+        category: 'Inventory',
+        initialize: () => dungeonTokenTooltips.initialize(),
         async: true,
     },
     {
@@ -695,6 +703,7 @@ function getFeatureInstance(key) {
         tooltipPrices: tooltipPrices,
         expectedValueCalculator: expectedValueCalculator,
         tooltipConsumables: tooltipConsumables,
+        dungeonTokenTooltips: dungeonTokenTooltips,
         marketFilter: marketFilter,
         fillMarketOrderPrice: autoFillPrice,
         market_visibleItemCount: itemCountDisplay,
