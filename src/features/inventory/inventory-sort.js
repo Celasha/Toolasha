@@ -418,7 +418,7 @@ class InventorySort {
             pointer-events: none;
             text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 0 3px #000;
         `;
-        badge.textContent = formatKMB(Math.round(stackValue), 0);
+        badge.textContent = formatKMB(stackValue, 2);
 
         // Insert into item
         const itemInner = itemElem.querySelector('[class*="Item_item"]');

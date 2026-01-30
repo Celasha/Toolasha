@@ -200,6 +200,12 @@ export const settingsGroups = {
                 type: 'checkbox',
                 default: true,
             },
+            dungeonTokenTooltips: {
+                id: 'dungeonTokenTooltips',
+                label: 'Dungeon tokens: Show shop items and costs',
+                type: 'checkbox',
+                default: true,
+            },
             enhanceSim: {
                 id: 'enhanceSim',
                 label: 'Show enhancement simulator calculations',

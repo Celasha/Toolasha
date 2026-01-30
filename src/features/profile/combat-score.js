@@ -149,7 +149,8 @@ class CombatScore {
         }
 
         const playerName = profileData.profile?.sharableCharacter?.name || 'Player';
-        const equipmentHiddenText = scoreData.equipmentHidden ? ' (Equipment hidden)' : '';
+        const equipmentHiddenText =
+            scoreData.equipmentHidden && !scoreData.hasEquipmentData ? ' (Equipment hidden)' : '';
 
         // Create panel element
         const panel = document.createElement('div');

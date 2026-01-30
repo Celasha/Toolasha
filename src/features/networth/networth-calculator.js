@@ -466,8 +466,16 @@ export async function calculateNetworth() {
     let abilityBooksValue = 0;
     const abilityBooksBreakdown = [];
 
+    // Track gold coins separately for header display
+    let coinCount = 0;
+
     for (const item of characterItems) {
         if (item.itemLocationHrid !== '/item_locations/inventory') continue;
+
+        // Extract coin count for header display
+        if (item.itemHrid === '/items/coin') {
+            coinCount = item.count || 0;
+        }
 
         const value = await calculateItemValue(item, priceCache);
 
@@ -565,6 +573,7 @@ export async function calculateNetworth() {
 
     return {
         totalNetworth,
+        coins: coinCount,
         currentAssets: {
             total: currentAssetsTotal,
             equipped: { value: equippedValue, breakdown: equippedBreakdown },
@@ -594,6 +603,7 @@ export async function calculateNetworth() {
 function createEmptyNetworthData() {
     return {
         totalNetworth: 0,
+        coins: 0,
         currentAssets: {
             total: 0,
             equipped: { value: 0, breakdown: [] },

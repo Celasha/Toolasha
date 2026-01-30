@@ -475,18 +475,33 @@ npm run dev      # Alias for watch
 
 ### Release Process
 
-1. **Version Bump** - Update version in `package.json`
-2. **Changelog** - Update `CHANGELOG.md`
-3. **Commit** - Commit changes
-4. **Push** - Push to `main` branch
-5. **Auto-Release** - GitHub Actions creates release
-6. **Distribution** - Users update via Tampermonkey
+This project uses [release-please](https://github.com/googleapis/release-please) with [Conventional Commits](https://www.conventionalcommits.org/).
+
+1. **Write Conventional Commits** - Use commit messages like:
+    - `feat: add new feature` (triggers minor bump)
+    - `fix: resolve bug` (triggers patch bump)
+    - `feat!: breaking change` or `BREAKING CHANGE:` in body (triggers major bump)
+2. **Push to `main`** - Release-please analyzes commits
+3. **Release PR** - Release-please opens/updates a PR with version bump + changelog
+4. **Merge Release PR** - Creates GitHub Release with `dist/Toolasha.user.js` attached
+5. **Distribution** - Users update via Tampermonkey
+
+### Conventional Commit Types
+
+- `feat` - New feature (minor version bump)
+- `fix` - Bug fix (patch version bump)
+- `docs` - Documentation only
+- `style` - Formatting, no code change
+- `refactor` - Code change, no feature/fix
+- `perf` - Performance improvement
+- `test` - Adding/fixing tests
+- `chore` - Maintenance tasks
 
 ### Version Management
 
-- **Patch** (0.5.9 → 0.5.10) - Bug fixes
-- **Minor** (0.5.9 → 0.6.0) - New features
-- **Major** (0.5.9 → 1.0.0) - Breaking changes
+- **Patch** (0.5.9 → 0.5.10) - `fix:` commits
+- **Minor** (0.5.9 → 0.6.0) - `feat:` commits
+- **Major** (0.5.9 → 1.0.0) - Breaking changes (`feat!:` or `BREAKING CHANGE:`)
 
 ## Extension Points
 

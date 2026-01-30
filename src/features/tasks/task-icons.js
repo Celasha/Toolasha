@@ -8,6 +8,7 @@ import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
 import webSocketHook from '../../core/websocket.js';
+import taskIconFilters from './task-icon-filters.js';
 
 class TaskIcons {
     constructor() {
@@ -47,6 +48,12 @@ class TaskIcons {
 
         // Listen for character switching to clean up
         dataManager.on('character_switching', this.characterSwitchingHandler);
+
+        // Listen for filter changes to refresh icons
+        this.filterChangeHandler = () => {
+            this.refreshAllIcons();
+        };
+        document.addEventListener('mwi-task-icon-filter-changed', this.filterChangeHandler);
 
         this.initialized = true;
     }
@@ -186,6 +193,14 @@ class TaskIcons {
         taskCards.forEach((card) => {
             card.removeAttribute('data-mwi-task-processed');
         });
+    }
+
+    /**
+     * Refresh all icons (called when filters change)
+     */
+    refreshAllIcons() {
+        this.clearAllProcessedMarkers();
+        this.processAllTaskCards();
     }
 
     /**
@@ -467,6 +482,11 @@ class TaskIcons {
         let position = monsterPosition - iconWidth; // Start one icon to the left of monster
 
         dungeonHrids.forEach((dungeonHrid) => {
+            // Check if this dungeon should be shown based on filter settings
+            if (!taskIconFilters.shouldShowDungeonBadge(dungeonHrid)) {
+                return; // Skip this dungeon
+            }
+
             const iconName = dungeonHrid.split('/').pop();
             this.addIconOverlay(taskCard, this.SPRITES.ACTIONS, iconName, 'dungeon', `${position}%`, `${iconWidth}%`);
             position -= iconWidth; // Move left for next dungeon
@@ -558,6 +578,11 @@ class TaskIcons {
         if (this.characterSwitchingHandler) {
             dataManager.off('character_switching', this.characterSwitchingHandler);
             this.characterSwitchingHandler = null;
+        }
+
+        if (this.filterChangeHandler) {
+            document.removeEventListener('mwi-task-icon-filter-changed', this.filterChangeHandler);
+            this.filterChangeHandler = null;
         }
 
         // Run cleanup

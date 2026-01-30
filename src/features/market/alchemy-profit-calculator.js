@@ -16,6 +16,8 @@ import dataManager from '../../core/data-manager.js';
 import { parseEquipmentSpeedBonuses } from '../../utils/equipment-parser.js';
 import { getDrinkConcentration } from '../../utils/tea-parser.js';
 import { getItemPrice } from '../../utils/market-data.js';
+import { MARKET_TAX } from '../../utils/profit-constants.js';
+import { getAlchemySuccessBonus } from '../../utils/buff-parser.js';
 import {
     calculateActionsPerHour,
     calculatePriceAfterTax,
@@ -53,46 +55,14 @@ class AlchemyProfitCalculator {
 
     /**
      * Calculate alchemy success rate with tea modifiers
+     * Uses active character buffs for accurate success rate calculation
      * @param {number} baseRate - Base success rate (0-1)
      * @returns {number} Final success rate after modifiers
      */
     getAlchemySuccessRate(baseRate) {
         try {
-            const gameData = dataManager.getInitClientData();
-            if (!gameData) {
-                return baseRate;
-            }
-
-            const actionTypeHrid = '/action_types/alchemy';
-            const drinkSlots = dataManager.getActionDrinkSlots(actionTypeHrid);
-            const equipment = dataManager.getEquipment();
-
-            // Get drink concentration from equipment
-            const drinkConcentration = getDrinkConcentration(equipment, gameData.itemDetailMap);
-
-            // Calculate tea success rate bonus
-            let teaBonus = 0;
-
-            if (drinkSlots && drinkSlots.length > 0) {
-                for (const drink of drinkSlots) {
-                    if (!drink || !drink.itemHrid) continue;
-
-                    const itemDetails = gameData.itemDetailMap[drink.itemHrid];
-                    if (!itemDetails || !itemDetails.consumableDetail || !itemDetails.consumableDetail.buffs) {
-                        continue;
-                    }
-
-                    // Check for alchemy_success buff
-                    for (const buff of itemDetails.consumableDetail.buffs) {
-                        if (buff.typeHrid === '/buff_types/alchemy_success') {
-                            // ratioBoost is a percentage multiplier (e.g., 0.05 = 5% of base)
-                            // It scales with drink concentration
-                            const ratioBoost = buff.ratioBoost * (1 + drinkConcentration);
-                            teaBonus += ratioBoost;
-                        }
-                    }
-                }
-            }
+            // Get alchemy success bonus from active buffs (already includes drink concentration scaling)
+            const teaBonus = getAlchemySuccessBonus();
 
             // Calculate final success rate
             // Formula: total = base × (1 + tea_ratio_boost)
@@ -311,11 +281,14 @@ class AlchemyProfitCalculator {
             // Revenue per attempt (only on success)
             const revenuePerAttempt = outputValue * successRate;
 
+            // Calculate market tax (2% of gross revenue)
+            const marketTaxPerAttempt = revenuePerAttempt * MARKET_TAX;
+
             // Cost per attempt (input consumed on every attempt)
             const costPerAttempt = inputPrice;
 
-            // Net profit per attempt
-            const profitPerAttempt = revenuePerAttempt - costPerAttempt;
+            // Net profit per attempt (revenue - costs - tax)
+            const profitPerAttempt = revenuePerAttempt - costPerAttempt - marketTaxPerAttempt;
 
             // Hourly calculations
             const profitPerHour = profitPerAttempt * actionsPerHour - teaCostPerHour;

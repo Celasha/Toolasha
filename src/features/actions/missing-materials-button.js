@@ -708,8 +708,8 @@ function handleBuyModal(modal) {
         return;
     }
 
-    // Find the quantity input
-    const quantityInput = modal.querySelector('input[type="number"]');
+    // Find the quantity input - need to be specific to avoid enhancement level input
+    const quantityInput = findQuantityInput(modal);
     if (!quantityInput) {
         return;
     }
@@ -723,6 +723,78 @@ function handleBuyModal(modal) {
     quantityInput.dispatchEvent(inputEvent);
 
     console.log('[MissingMats] Auto-filled quantity:', activeMissingQuantity);
+}
+
+/**
+ * Find the quantity input in the buy modal
+ * For equipment items, there are multiple number inputs (enhancement level + quantity)
+ * We need to find the correct one by checking parent containers for label text
+ * @param {HTMLElement} modal - Modal container element
+ * @returns {HTMLInputElement|null} Quantity input element or null
+ */
+function findQuantityInput(modal) {
+    // Get all number inputs in the modal
+    const allInputs = Array.from(modal.querySelectorAll('input[type="number"]'));
+
+    if (allInputs.length === 0) {
+        return null;
+    }
+
+    if (allInputs.length === 1) {
+        // Only one input - must be quantity
+        return allInputs[0];
+    }
+
+    // Multiple inputs - identify by checking CLOSEST parent first
+    // Strategy 1: Check each parent level individually, prioritizing closer parents
+    // This prevents matching on the outermost container that has all text
+    for (let level = 0; level < 4; level++) {
+        for (let i = 0; i < allInputs.length; i++) {
+            const input = allInputs[i];
+            let parent = input.parentElement;
+
+            // Navigate to the specific level
+            for (let j = 0; j < level && parent; j++) {
+                parent = parent.parentElement;
+            }
+
+            if (!parent) continue;
+
+            const text = parent.textContent;
+
+            // At this specific level, check if it contains "Quantity" but NOT "Enhancement Level"
+            if (text.includes('Quantity') && !text.includes('Enhancement Level')) {
+                return input;
+            }
+        }
+    }
+
+    // Strategy 2: Exclude inputs that have "Enhancement Level" in close parents (level 0-2)
+    for (let i = 0; i < allInputs.length; i++) {
+        const input = allInputs[i];
+        let parent = input.parentElement;
+        let isEnhancementInput = false;
+
+        // Check only the first 3 levels (not the outermost container)
+        for (let j = 0; j < 3 && parent; j++) {
+            const text = parent.textContent;
+
+            if (text.includes('Enhancement Level') && !text.includes('Quantity')) {
+                isEnhancementInput = true;
+                break;
+            }
+
+            parent = parent.parentElement;
+        }
+
+        if (!isEnhancementInput) {
+            return input;
+        }
+    }
+
+    // Fallback: Return first input and log warning
+    console.warn('[MissingMats] Could not definitively identify quantity input, using first input');
+    return allInputs[0];
 }
 
 export default {

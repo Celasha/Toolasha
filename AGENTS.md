@@ -6,31 +6,31 @@ Guide for AI coding agents working on this Tampermonkey userscript for Milky Way
 
 ```bash
 npm install          # Install dependencies
-npm test             # Run test suite (143 tests)
+npm run build        # Build userscript → dist/Toolasha.user.js
+npm run dev          # Watch mode (auto-rebuild on changes)
+
+npm test             # Run all tests (143 tests)
 npm run test:watch   # Watch mode for tests
 
-npm run build        # Build userscript → dist/Toolasha.user.js
-npm run watch        # Watch mode (auto-rebuild on changes)
-npm run dev          # Alias for watch
+# Run a single test file
+npm test -- src/utils/formatters.test.js
 
-npm run lint         # Check for code issues (errors fail, warnings don't)
+# Run tests matching a pattern
+npm test -- -t "numberFormatter"
+
+npm run lint         # Check for code issues
 npm run lint:fix     # Auto-fix linting issues
-npm run format       # Format code with Prettier
-npm run format:check # Check formatting without changes
+npm run format       # Format code and markdown with Prettier
 
-npm run version:sync  # Sync version from package.json → userscript-header.txt
-npm run version:patch # Bump patch version (0.5.9 → 0.5.10)
-npm run version:minor # Bump minor version (0.5.9 → 0.6.0)
-npm run version:major # Bump major version (0.5.9 → 1.0.0)
+npm run lint:md        # Check markdown formatting
+npm run lint:md:fix    # Auto-fix markdown issues
+npm run lint:md:links  # Check for broken links
+
 ```
-
-**Testing:** Vitest with 143 tests covering utility modules (formatters, efficiency, enhancement-multipliers). Tests run automatically on commit and in CI.
-
-**Manual testing:** Install `dist/Toolasha.user.js` in Tampermonkey, visit https://www.milkywayidle.com/game
 
 **Pre-commit hooks:** ESLint, Prettier, tests, and build run automatically on commit.
 
-**Releases:** When PRs are merged to `main`, GitHub Actions automatically bumps the patch version (if not manually bumped) and creates a release with the built userscript.
+**Manual testing:** Install `dist/Toolasha.user.js` in Tampermonkey, visit <https://www.milkywayidle.com/game>
 
 ## Project Structure
 
@@ -42,6 +42,8 @@ src/
 ├── api/              # External API integrations (marketplace)
 └── utils/            # Utility functions (formatters, dom, efficiency)
 ```
+
+Tests are co-located with source files: `formatters.js` → `formatters.test.js`
 
 ## Code Style
 
@@ -57,18 +59,18 @@ import { formatWithSeparator } from './utils/formatters.js';
 
 ### Naming Conventions
 
-- **Files:** `kebab-case.js` (e.g., `data-manager.js`)
-- **Classes:** `PascalCase` (e.g., `DataManager`)
-- **Functions/variables:** `camelCase` (e.g., `calculateProfit`)
-- **Constants:** `UPPER_SNAKE_CASE` (e.g., `SAVE_DEBOUNCE_DELAY`)
+| Type      | Convention         | Example               |
+| --------- | ------------------ | --------------------- |
+| Files     | `kebab-case.js`    | `data-manager.js`     |
+| Classes   | `PascalCase`       | `DataManager`         |
+| Functions | `camelCase`        | `calculateProfit`     |
+| Constants | `UPPER_SNAKE_CASE` | `SAVE_DEBOUNCE_DELAY` |
 
 ### Formatting (Prettier)
 
-- 4 spaces indentation
-- 120 char line length
+- 4 spaces indentation, 120 char line length
 - Single quotes, semicolons required
-- Trailing commas (ES5 style)
-- LF line endings
+- Trailing commas (ES5 style), LF line endings
 
 ### Async/Await
 
@@ -81,7 +83,7 @@ async function initialize() {
     await config.initialize();
 }
 
-// ❌ Bad
+// ❌ Bad - never use .then() chains
 function initialize() {
     storage.initialize().then(() => config.initialize());
 }
@@ -142,33 +144,26 @@ export default {
 };
 ```
 
-### Data Access - Use DataManager
+### Data Access
 
 ```javascript
 import dataManager from './core/data-manager.js';
-
 const itemDetails = dataManager.getItemDetails(itemHrid);
-const equipment = dataManager.getEquipment();
-const skills = dataManager.getSkills();
 ```
 
-### Storage - Use storage module
+### Storage
 
 ```javascript
 import storage from './core/storage.js';
-
 await storage.set('key', value, 'storeName');
 const value = await storage.get('key', 'storeName', defaultValue);
-await storage.setJSON('key', object, 'storeName');
 ```
 
-### DOM - Use dom utilities
+### DOM Utilities
 
 ```javascript
 import { waitForElement, createStyledDiv } from './utils/dom.js';
-
 const element = await waitForElement('.selector');
-const div = createStyledDiv({ color: 'red' }, 'Text');
 ```
 
 ### Shared Utilities
@@ -244,6 +239,21 @@ import { MARKET_TAX, DRINKS_PER_HOUR_BASE, SECONDS_PER_HOUR } from './utils/prof
 
 ## Globals Available
 
-Tampermonkey: `GM_addStyle`, `GM`, `unsafeWindow`
-External libs: `math`, `Chart`, `ChartDataLabels`, `LZString`
-Game: `localStorageUtil`
+**Tampermonkey:** `GM_addStyle`, `GM`, `unsafeWindow`
+**External libs:** `math`, `Chart`, `ChartDataLabels`, `LZString`
+**Game:** `localStorageUtil`
+
+## ESLint Rules
+
+Key rules enforced (see `eslint.config.js` for full list):
+
+- `no-var: error` - Use `const` or `let`
+- `no-undef: error` - No undefined variables
+- `eqeqeq: warn` - Use `===` instead of `==`
+- `no-eval: error` - No eval()
+- `prefer-const: warn` - Use const when not reassigned
+- `no-duplicate-imports: error` - No duplicate imports
+
+## Commit message rules
+
+- For commits that will result in a new release the commit message should just be "release <version>"

@@ -202,11 +202,8 @@ class TooltipPrices {
             this.injectPriceDisplay(tooltipElement, price, amount, isCollectionTooltip);
         }
 
-        // Check if profit calculator is enabled
-        if (config.getSetting('itemTooltip_multiActionProfit')) {
-            // Multi-action profit display (craft + alchemy actions)
-            await this.injectMultiActionProfitDisplay(tooltipElement, itemHrid, enhancementLevel, isCollectionTooltip);
-        } else if (config.getSetting('itemTooltip_profit') && enhancementLevel === 0) {
+        // Always show detailed craft profit if enabled
+        if (config.getSetting('itemTooltip_profit') && enhancementLevel === 0) {
             // Original single-action craft profit display
             // Only run for base items (enhancementLevel = 0), not enhanced items
             // Enhanced items show their cost in the enhancement path section instead
@@ -214,6 +211,12 @@ class TooltipPrices {
             if (profitData) {
                 this.injectProfitDisplay(tooltipElement, profitData, isCollectionTooltip);
             }
+        }
+
+        // Optionally show alternative alchemy actions below craft profit
+        if (config.getSetting('itemTooltip_multiActionProfit')) {
+            // Multi-action profit display (alchemy actions only - craft shown above)
+            await this.injectMultiActionProfitDisplay(tooltipElement, itemHrid, enhancementLevel, isCollectionTooltip);
         }
 
         // Check for gathering sources (Foraging, Woodcutting, Milking)
@@ -868,25 +871,12 @@ class TooltipPrices {
         }
 
         // Check if we already injected (prevent duplicates)
-        if (tooltipText.querySelector('.market-profit-injected')) {
+        if (tooltipText.querySelector('.market-multi-action-injected')) {
             return;
         }
 
-        // Collect all profit data
+        // Collect alchemy profit data (craft profit is shown separately via injectProfitDisplay)
         const allProfits = [];
-
-        // Try craft profit (only for base items)
-        if (enhancementLevel === 0) {
-            const craftProfit = await profitCalculator.calculateProfit(itemHrid);
-            if (craftProfit) {
-                allProfits.push({
-                    actionType: 'craft',
-                    profitPerHour: craftProfit.profitPerHour,
-                    profitPerDay: craftProfit.profitPerDay,
-                    data: craftProfit,
-                });
-            }
-        }
 
         // Try alchemy profits (coinify, decompose, transmute)
         const alchemyProfits = alchemyProfitCalculator.calculateAllProfits(itemHrid, enhancementLevel);
@@ -909,42 +899,39 @@ class TooltipPrices {
         // Sort by profitPerHour descending
         allProfits.sort((a, b) => b.profitPerHour - a.profitPerHour);
 
+        // Check if item is craftable (has a production action)
+        const isCraftable = profitCalculator.findProductionAction(itemHrid) !== null;
+
         // Create profit display container
         const profitDiv = dom.createStyledDiv(
             { color: config.COLOR_TOOLTIP_INFO, marginTop: '8px' },
             '',
-            'market-profit-injected'
+            'market-multi-action-injected'
         );
 
         // Build display
         let html = '<div style="border-top: 1px solid rgba(255,255,255,0.2); padding-top: 8px;">';
 
-        // Best profit section
-        const best = allProfits[0];
-        const actionLabel = best.actionType.charAt(0).toUpperCase() + best.actionType.slice(1);
-        const profitColor = best.profitPerHour >= 0 ? config.COLOR_TOOLTIP_PROFIT : config.COLOR_TOOLTIP_LOSS;
-
-        html += `<div style="font-weight: bold; margin-bottom: 4px;">BEST PROFIT: ${actionLabel}</div>`;
+        // Show heading based on whether item is craftable
+        const heading = isCraftable ? 'Alternative Actions:' : 'Profits:';
+        html += `<div style="font-weight: bold; margin-bottom: 4px;">${heading}</div>`;
         html += '<div style="font-size: 0.9em; margin-left: 8px;">';
-        html += `<div style="color: ${profitColor}; font-weight: bold;">${numberFormatter(best.profitPerHour)}/hr | ${formatKMB(best.profitPerDay)}/day</div>`;
-        html += '</div>';
 
-        // Other options (if more than one action)
-        if (allProfits.length > 1) {
-            html += '<div style="margin-top: 8px; font-size: 0.85em; color: ${config.COLOR_TEXT_SECONDARY};">';
-            html += '<div style="font-weight: 500; margin-bottom: 2px;">Other Options:</div>';
-            html += '<div style="margin-left: 8px;">';
+        for (let i = 0; i < allProfits.length; i++) {
+            const profit = allProfits[i];
+            const label = profit.actionType.charAt(0).toUpperCase() + profit.actionType.slice(1);
+            const color = profit.profitPerHour >= 0 ? config.COLOR_TOOLTIP_INFO : config.COLOR_TOOLTIP_LOSS;
+            html += `<div style="color: ${color};">• ${label}: ${numberFormatter(profit.profitPerHour)}/hr`;
 
-            for (let i = 1; i < allProfits.length; i++) {
-                const profit = allProfits[i];
-                const label = profit.actionType.charAt(0).toUpperCase() + profit.actionType.slice(1);
-                const color = profit.profitPerHour >= 0 ? config.COLOR_TOOLTIP_INFO : config.COLOR_TOOLTIP_LOSS;
-                html += `<div style="color: ${color};">• ${label}: ${numberFormatter(profit.profitPerHour)}/hr</div>`;
+            // Show success rate for alchemy actions
+            if (profit.successRate !== undefined) {
+                html += ` <span style="opacity: 0.7;">(${(profit.successRate * 100).toFixed(0)}% success)</span>`;
             }
 
             html += '</div>';
-            html += '</div>';
         }
+
+        html += '</div>';
 
         html += '</div>';
 

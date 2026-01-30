@@ -1,7 +1,7 @@
 /**
  * Networth Display Components
  * Handles UI rendering for networth in two locations:
- * 1. Header (top right) - Current Assets: Ask / Bid
+ * 1. Header (top right) - Gold: [amount]
  * 2. Inventory Panel - Detailed breakdown with collapsible sections
  */
 
@@ -11,7 +11,7 @@ import { networthFormatter, formatKMB } from '../../utils/formatters.js';
 
 /**
  * Header Display Component
- * Shows "Current Assets: Ask / Bid" next to total level
+ * Shows "Gold: [amount]" next to total level
  */
 class NetworthHeaderDisplay {
     constructor() {
@@ -68,7 +68,7 @@ class NetworthHeaderDisplay {
         totalLevelElem.insertAdjacentElement('afterend', this.container);
 
         // Initial render with loading state
-        this.container.textContent = 'Current Assets: Loading...';
+        this.container.textContent = 'Gold: Loading...';
     }
 
     /**
@@ -80,10 +80,9 @@ class NetworthHeaderDisplay {
             return;
         }
 
-        const { currentAssets } = networthData;
-        const valueFormatted = networthFormatter(Math.round(currentAssets.total));
+        const valueFormatted = networthFormatter(Math.round(networthData.coins));
 
-        this.container.textContent = `Current Assets: ${valueFormatted}`;
+        this.container.textContent = `Gold: ${valueFormatted}`;
     }
 
     /**

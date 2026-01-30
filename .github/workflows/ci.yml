@@ -2,17 +2,29 @@ name: CI
 
 on:
     push:
-        branches: [main, develop]
+        branches: [main]
     pull_request:
-        branches: [main, develop]
+        branches: [main]
+    workflow_run:
+        workflows: ['Format Release Please']
+        types: [completed]
 
 jobs:
     lint-and-build:
+        if: >
+            github.event_name == 'workflow_run' ||
+            !startsWith(github.head_ref, 'release-please--')
         runs-on: ubuntu-latest
-
         steps:
             - name: Checkout code
+              if: github.event_name != 'workflow_run'
               uses: actions/checkout@v6
+
+            - name: Checkout code (workflow_run)
+              if: github.event_name == 'workflow_run'
+              uses: actions/checkout@v6
+              with:
+                  ref: ${{ github.event.workflow_run.head_sha }}
 
             - name: Setup Node.js
               uses: actions/setup-node@v6
@@ -34,13 +46,3 @@ jobs:
 
             - name: Build
               run: npm run build
-
-            - name: Verify version sync
-              run: |
-                  npm run version:sync
-                  if ! git diff --exit-code userscript-header.txt; then
-                    echo "❌ Error: Version in userscript-header.txt is out of sync with package.json!"
-                    echo "Please run 'npm run version:sync' locally and commit the updated userscript-header.txt"
-                    exit 1
-                  fi
-                  echo "✅ Version is synced across all files"

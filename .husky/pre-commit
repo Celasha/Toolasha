@@ -1,1 +1,2 @@
+node scripts/check-version-bump.js
 npx lint-staged

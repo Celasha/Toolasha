@@ -74,6 +74,7 @@ export async function calculateCombatScore(profileData) {
             ability: abilityResult.score,
             equipment: equipmentResult.score,
             equipmentHidden: profileData.profile?.hideWearableItems || false,
+            hasEquipmentData: equipmentResult.hasEquipmentData,
             breakdown: {
                 houses: houseResult.breakdown,
                 abilities: abilityResult.breakdown,
@@ -88,6 +89,7 @@ export async function calculateCombatScore(profileData) {
             ability: 0,
             equipment: 0,
             equipmentHidden: false,
+            hasEquipmentData: false,
             breakdown: { houses: [], abilities: [], equipment: [] },
         };
     }
@@ -278,19 +280,24 @@ function calculateTokenBasedItemValue(itemHrid) {
 /**
  * Calculate equipment score from equipped items
  * @param {Object} profileData - Profile data
- * @returns {Object} {score, breakdown}
+ * @returns {Object} {score, breakdown, hasEquipmentData}
  */
 function calculateEquipmentScore(profileData) {
     const equippedItems = profileData.profile?.wearableItemMap || {};
     const hideEquipment = profileData.profile?.hideWearableItems || false;
 
-    // If equipment is hidden, return 0
-    if (hideEquipment) {
-        return { score: 0, breakdown: [] };
+    // Check if equipment data is actually available
+    // If wearableItemMap is populated, calculate score even if hideEquipment is true
+    // (This happens when viewing party members - game sends equipment data despite privacy setting)
+    const hasEquipmentData = Object.keys(equippedItems).length > 0;
+
+    // If equipment is hidden AND no data available, return 0
+    if (hideEquipment && !hasEquipmentData) {
+        return { score: 0, breakdown: [], hasEquipmentData: false };
     }
 
     const gameData = dataManager.getInitClientData();
-    if (!gameData) return { score: 0, breakdown: [] };
+    if (!gameData) return { score: 0, breakdown: [], hasEquipmentData: false };
 
     let totalValue = 0;
     const breakdown = [];
@@ -378,5 +385,5 @@ function calculateEquipmentScore(profileData) {
     // Sort by value descending
     breakdown.sort((a, b) => parseFloat(b.value) - parseFloat(a.value));
 
-    return { score, breakdown };
+    return { score, breakdown, hasEquipmentData };
 }

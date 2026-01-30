@@ -68,6 +68,14 @@ export function formatProfitDisplay(profitData) {
         return null;
     }
 
+    // Helper: Format number with appropriate decimals (2 if < 1, else 1)
+    const formatWithDecimals = (value) => {
+        if (value < 1) {
+            return parseFloat(value.toFixed(2));
+        }
+        return parseFloat(value.toFixed(1));
+    };
+
     return {
         profit: Math.round(profitData.profitPerHour),
         profitPerDay: Math.round(profitData.profitPerDay),
@@ -75,12 +83,12 @@ export function formatProfitDisplay(profitData) {
             profitData.itemsPerHour * profitData.priceAfterTax + profitData.gourmetBonusItems * profitData.priceAfterTax
         ),
         costs: Math.round(profitData.materialCostPerHour + profitData.totalTeaCostPerHour),
-        actionsPerHour: profitData.actionsPerHour,
+        actionsPerHour: formatWithDecimals(profitData.actionsPerHour),
         totalEfficiency: profitData.totalEfficiency,
 
-        // Output details
-        baseOutputItems: profitData.itemsPerHour,
-        gourmetBonusItems: profitData.gourmetBonusItems,
+        // Output details (preserve decimals for items/hour)
+        baseOutputItems: formatWithDecimals(profitData.itemsPerHour),
+        gourmetBonusItems: formatWithDecimals(profitData.gourmetBonusItems),
         priceEach: Math.round(profitData.priceAfterTax),
 
         // Material breakdown
