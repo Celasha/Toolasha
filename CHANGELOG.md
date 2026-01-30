@@ -2,12 +2,11 @@
 
 ## [0.6.2](https://github.com/Celasha/Toolasha/compare/toolasha-v0.6.1...toolasha-v0.6.2) (2026-01-30)
 
-
 ### Bug Fixes
 
-* create corrrect commit messages ([f4431c2](https://github.com/Celasha/Toolasha/commit/f4431c2808b8d7227a34308b301d1a1d4762f169))
-* fix ci and bump version ([0b1303d](https://github.com/Celasha/Toolasha/commit/0b1303dfabb9a478298e952d3e1df9b879d01538))
-* fix ci and bump version ([8bf07dd](https://github.com/Celasha/Toolasha/commit/8bf07ddf77a7e65d55937af5520fd1089fcb2312))
+- create corrrect commit messages ([f4431c2](https://github.com/Celasha/Toolasha/commit/f4431c2808b8d7227a34308b301d1a1d4762f169))
+- fix ci and bump version ([0b1303d](https://github.com/Celasha/Toolasha/commit/0b1303dfabb9a478298e952d3e1df9b879d01538))
+- fix ci and bump version ([8bf07dd](https://github.com/Celasha/Toolasha/commit/8bf07ddf77a7e65d55937af5520fd1089fcb2312))
 
 ## [0.6.1](https://github.com/Celasha/Toolasha/compare/toolasha-v0.6.0...toolasha-v0.6.1) (2026-01-30)
 
