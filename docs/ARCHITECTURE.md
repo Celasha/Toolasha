@@ -526,6 +526,150 @@ This project uses [release-please](https://github.com/googleapis/release-please)
 3. Write tests
 4. Document usage
 
+## Utility Modules
+
+### Shared Calculation Helpers
+
+Toolasha provides shared utility modules for common calculations to avoid duplication across features.
+
+#### Efficiency Utilities (`utils/efficiency.js`)
+
+Pure functions for calculating efficiency breakdowns and multipliers:
+
+```javascript
+import { calculateEfficiencyBreakdown, calculateEfficiencyMultiplier } from './utils/efficiency.js';
+
+const breakdown = calculateEfficiencyBreakdown({
+    requiredLevel: 50,
+    skillLevel: 75,
+    teaSkillLevelBonus: 5,
+    actionLevelBonus: 0,
+    houseEfficiency: 10,
+    equipmentEfficiency: 20,
+    teaEfficiency: 15,
+    communityEfficiency: 5,
+    achievementEfficiency: 3,
+});
+
+// Returns:
+// {
+//   totalEfficiency: 78,
+//   levelEfficiency: 30,
+//   effectiveRequirement: 50,
+//   effectiveLevel: 80,
+//   breakdown: { houseEfficiency: 10, equipmentEfficiency: 20, ... }
+// }
+
+const multiplier = calculateEfficiencyMultiplier(150); // 2.5x
+```
+
+**Key Features:**
+
+- Handles all efficiency sources (level, house, equipment, tea, community, achievements)
+- Calculates effective level and requirement with bonuses
+- Converts efficiency percentage to action speed multiplier
+- Returns detailed breakdown for UI display
+- Pure functions - no side effects
+
+#### Profit Helpers (`utils/profit-helpers.js`)
+
+Shared profit and rate calculation functions used across multiple features:
+
+**Rate Conversions:**
+
+```javascript
+import { calculateActionsPerHour, calculateHoursForActions } from './utils/profit-helpers.js';
+
+const actionsPerHour = calculateActionsPerHour(6); // 600 actions/hr
+const hoursNeeded = calculateHoursForActions(1200, 600); // 2 hours
+```
+
+**Efficiency Calculations:**
+
+```javascript
+import { calculateEfficiencyMultiplier } from './utils/efficiency.js';
+
+const multiplier = calculateEfficiencyMultiplier(150); // 2.5x
+```
+
+**Tea Cost Calculations:**
+
+```javascript
+import { calculateTeaCostsPerHour } from './utils/profit-helpers.js';
+
+const teaCosts = calculateTeaCostsPerHour({
+    drinkSlots: player.drinkSlots,
+    drinkConcentration: 0.15,
+    itemDetailMap,
+    getItemPrice: (hrid) => marketPrices.get(hrid),
+});
+
+// Returns:
+// {
+//   costs: [{ itemHrid, itemName, pricePerDrink, drinksPerHour, totalCost, missingPrice }],
+//   totalCostPerHour: 12500,
+//   hasMissingPrices: false,
+//   drinksPerHour: 13.8
+// }
+```
+
+**Profit Calculations:**
+
+```javascript
+import { calculateProfitPerAction, calculateTotalProfitForActions } from './utils/profit-helpers.js';
+
+const profitPerAction = calculateProfitPerAction(75000, 600); // 125 per action
+const totalProfit = calculateTotalProfitForActions(75000, 600, 100); // 12,500 for 100 actions
+```
+
+**Action-Based Totals:**
+
+```javascript
+import { calculateProductionActionTotalsFromBase } from './utils/profit-helpers.js';
+
+const totals = calculateProductionActionTotalsFromBase({
+    actionsCount: 100,
+    actionsPerHour: 600,
+    outputAmount: 1,
+    outputPrice: 1000,
+    gourmetBonus: 0.1,
+    bonusDrops: [],
+    materialCosts: [],
+    totalTeaCostPerHour: 12000,
+    efficiencyMultiplier: 2.5,
+});
+
+// Returns: { totalRevenue, totalCosts, totalProfit, hoursNeeded, ... }
+```
+
+**Key Features:**
+
+- Consolidates duplicated calculations from multiple features
+- Pure functions with clear inputs/outputs
+- Handles edge cases (zero division, missing data)
+- Comprehensive JSDoc documentation with examples
+
+#### Profit Constants (`utils/profit-constants.js`)
+
+Shared constants for profit calculations:
+
+```javascript
+import {
+    MARKET_TAX, // 0.02 (2%)
+    DRINKS_PER_HOUR_BASE, // 12
+    SECONDS_PER_HOUR, // 3600
+    HOURS_PER_DAY, // 24
+    GATHERING_TYPES, // ['/action_types/foraging', ...]
+    PRODUCTION_TYPES, // ['/action_types/brewing', ...]
+} from './utils/profit-constants.js';
+```
+
+**Usage Pattern:**
+
+- Import only the constants you need
+- Use for consistent calculations across features
+- Centralized location for game mechanic constants
+
 ## Best Practices
 
 ### Do's

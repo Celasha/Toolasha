@@ -1,142 +1,7 @@
 /**
  * Efficiency Utilities Module
- * Calculations for game mechanics (efficiency, buffs, time)
+ * Calculations for efficiency stacking and breakdowns
  */
-
-/**
- * Calculate actual action count from efficiency percentage
- * Uses floor + modulo system
- *
- * @param {number} efficiencyPercent - Efficiency percentage (e.g., 150 for 150%)
- * @returns {Object} { guaranteed: number, chanceForMore: number, min: number, max: number }
- *
- * @example
- * calculateEfficiency(150)
- * // Returns: { guaranteed: 2, chanceForMore: 50, min: 2, max: 3 }
- * // Means: Always 2 actions, plus 50% chance for 3rd
- */
-export function calculateEfficiency(efficiencyPercent) {
-    // Base action + floor of efficiency/100
-    const guaranteed = 1 + Math.floor(efficiencyPercent / 100);
-
-    // Chance for one more action
-    const chanceForMore = efficiencyPercent % 100;
-
-    return {
-        guaranteed,
-        chanceForMore,
-        min: guaranteed,
-        max: guaranteed + (chanceForMore > 0 ? 1 : 0),
-    };
-}
-
-/**
- * Calculate expected output from efficiency
- * @param {number} efficiencyPercent - Efficiency percentage
- * @param {number} baseOutput - Base output per action (default: 1)
- * @returns {number} Expected output (weighted average)
- *
- * @example
- * calculateExpectedOutput(150, 1)
- * // Returns: 2.5
- * // Because: 50% chance of 2, 50% chance of 3 = average 2.5
- */
-export function calculateExpectedOutput(efficiencyPercent, baseOutput = 1) {
-    const eff = calculateEfficiency(efficiencyPercent);
-    const expectedActions = eff.guaranteed + eff.chanceForMore / 100;
-    return expectedActions * baseOutput;
-}
-
-/**
- * Calculate action time with speed buffs
- * @param {number} baseTime - Base action time in seconds
- * @param {number} speedPercent - Total speed bonus percentage (e.g., 30 for 30%)
- * @returns {number} Modified action time in seconds
- *
- * @example
- * calculateActionTime(6, 30)
- * // Returns: 4.615
- * // Formula: 6 / (1 + 0.30) = 4.615s
- */
-export function calculateActionTime(baseTime, speedPercent) {
-    return baseTime / (1 + speedPercent / 100);
-}
-
-/**
- * Calculate total time for multiple actions
- * @param {number} actionTime - Time per action in seconds
- * @param {number} actionCount - Number of actions
- * @param {number} efficiencyPercent - Efficiency percentage (default: 0)
- * @returns {number} Total time in seconds
- *
- * @example
- * calculateTotalTime(5, 100, 0)
- * // Returns: 500 (5s × 100 actions)
- *
- * calculateTotalTime(5, 100, 50)
- * // Returns: ~333.33 (efficiency reduces effective action count)
- */
-export function calculateTotalTime(actionTime, actionCount, efficiencyPercent = 0) {
-    if (efficiencyPercent > 0) {
-        const expectedOutput = calculateExpectedOutput(efficiencyPercent);
-        // Divide by expected output per action to get actual actions needed
-        const actualActionsNeeded = actionCount / expectedOutput;
-        return actionTime * actualActionsNeeded;
-    }
-
-    return actionTime * actionCount;
-}
-
-/**
- * Calculate actions needed to reach target with efficiency
- * @param {number} targetCount - Target output count
- * @param {number} efficiencyPercent - Efficiency percentage
- * @returns {Object} { min: number, max: number, expected: number }
- *
- * @example
- * calculateActionsForTarget(100, 150)
- * // Returns: { min: 34, max: 100, expected: 40 }
- */
-export function calculateActionsForTarget(targetCount, efficiencyPercent) {
-    const expectedOutput = calculateExpectedOutput(efficiencyPercent);
-    const expectedActions = Math.ceil(targetCount / expectedOutput);
-
-    const eff = calculateEfficiency(efficiencyPercent);
-    const minOutput = eff.min;
-    const maxOutput = eff.max;
-
-    return {
-        min: Math.ceil(targetCount / maxOutput), // Best case (always max output)
-        max: Math.ceil(targetCount / minOutput), // Worst case (always min output)
-        expected: expectedActions, // Average case
-    };
-}
-
-/**
- * Calculate XP per hour
- * @param {number} xpPerAction - XP gained per action
- * @param {number} actionTime - Time per action in seconds
- * @returns {number} XP per hour
- *
- * @example
- * calculateXpPerHour(50, 5)
- * // Returns: 36000
- * // Because: (50 XP / 5s) × 3600s = 36,000 XP/hour
- */
-export function calculateXpPerHour(xpPerAction, actionTime) {
-    return (xpPerAction / actionTime) * 3600;
-}
-
-/**
- * Calculate level progress percentage
- * @param {number} currentXp - Current XP in level
- * @param {number} xpNeeded - Total XP needed for level
- * @returns {number} Percentage (0-100)
- */
-export function calculateLevelProgress(currentXp, xpNeeded) {
-    if (xpNeeded === 0) return 100;
-    return Math.min(100, (currentXp / xpNeeded) * 100);
-}
 
 /**
  * Stack additive bonuses (most game bonuses)
@@ -153,28 +18,78 @@ export function stackAdditive(...bonuses) {
 }
 
 /**
- * Stack multiplicative bonuses (rare in MWI)
- * @param {number[]} bonuses - Array of bonus percentages
- * @returns {number} Total stacked bonus percentage
+ * Calculate efficiency multiplier from efficiency percentage
+ * Efficiency gives bonus action completions per time-consuming action
+ *
+ * @param {number} efficiencyPercent - Efficiency as percentage (e.g., 150 for 150%)
+ * @returns {number} Multiplier (e.g., 2.5 for 150% efficiency)
  *
  * @example
- * stackMultiplicative([10, 20])
- * // Returns: 32
- * // Because: 1.10 × 1.20 = 1.32 (32% total)
+ * calculateEfficiencyMultiplier(0)   // Returns 1.0 (no bonus)
+ * calculateEfficiencyMultiplier(50)  // Returns 1.5
+ * calculateEfficiencyMultiplier(150) // Returns 2.5
  */
-export function stackMultiplicative(...bonuses) {
-    const multiplier = bonuses.reduce((total, bonus) => total * (1 + bonus / 100), 1);
-    return (multiplier - 1) * 100;
+export function calculateEfficiencyMultiplier(efficiencyPercent) {
+    return 1 + (efficiencyPercent || 0) / 100;
+}
+
+/**
+ * Calculate efficiency breakdown from supplied sources
+ * @param {Object} params - Efficiency inputs
+ * @param {number} params.requiredLevel - Action required level
+ * @param {number} params.skillLevel - Player skill level
+ * @param {number} [params.teaSkillLevelBonus=0] - Bonus skill levels from tea
+ * @param {number} [params.actionLevelBonus=0] - Action level bonus from tea (affects requirement)
+ * @param {number} [params.houseEfficiency=0] - House room efficiency bonus
+ * @param {number} [params.equipmentEfficiency=0] - Equipment efficiency bonus
+ * @param {number} [params.teaEfficiency=0] - Tea efficiency bonus
+ * @param {number} [params.communityEfficiency=0] - Community buff efficiency bonus
+ * @param {number} [params.achievementEfficiency=0] - Achievement efficiency bonus
+ * @returns {Object} Efficiency breakdown
+ */
+export function calculateEfficiencyBreakdown({
+    requiredLevel,
+    skillLevel,
+    teaSkillLevelBonus = 0,
+    actionLevelBonus = 0,
+    houseEfficiency = 0,
+    equipmentEfficiency = 0,
+    teaEfficiency = 0,
+    communityEfficiency = 0,
+    achievementEfficiency = 0,
+}) {
+    const effectiveRequirement = (requiredLevel || 0) + actionLevelBonus;
+    const baseSkillLevel = Math.max(skillLevel || 0, requiredLevel || 0);
+    const effectiveLevel = baseSkillLevel + teaSkillLevelBonus;
+    const levelEfficiency = Math.max(0, effectiveLevel - effectiveRequirement);
+    const totalEfficiency = stackAdditive(
+        levelEfficiency,
+        houseEfficiency,
+        equipmentEfficiency,
+        teaEfficiency,
+        communityEfficiency,
+        achievementEfficiency
+    );
+
+    return {
+        totalEfficiency,
+        levelEfficiency,
+        effectiveRequirement,
+        effectiveLevel,
+        breakdown: {
+            houseEfficiency,
+            equipmentEfficiency,
+            teaEfficiency,
+            communityEfficiency,
+            achievementEfficiency,
+            actionLevelBonus,
+            teaSkillLevelBonus,
+        },
+    };
 }
 
 export default {
-    calculateEfficiency,
-    calculateExpectedOutput,
-    calculateActionTime,
-    calculateTotalTime,
-    calculateActionsForTarget,
-    calculateXpPerHour,
-    calculateLevelProgress,
     stackAdditive,
-    stackMultiplicative,
+    calculateEfficiencyMultiplier,
+    calculateEfficiencyBreakdown,
 };

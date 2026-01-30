@@ -14,12 +14,12 @@ import expectedValueCalculator from '../market/expected-value-calculator.js';
 import { SECONDS_PER_HOUR } from '../../utils/profit-constants.js';
 import { parseEquipmentSpeedBonuses, parseEquipmentEfficiencyBonuses } from '../../utils/equipment-parser.js';
 import { parseTeaEfficiency, getDrinkConcentration, parseTeaSkillLevelBonus } from '../../utils/tea-parser.js';
-import { stackAdditive } from '../../utils/efficiency.js';
+import { calculateEfficiencyBreakdown } from '../../utils/efficiency.js';
 import {
     calculateActionsPerHour,
     calculatePriceAfterTax,
     calculateProfitPerDay,
-    calculateDrinksPerHour,
+    calculateTeaCostsPerHour,
 } from '../../utils/profit-helpers.js';
 
 class AlchemyProfit {
@@ -254,11 +254,6 @@ class AlchemyProfit {
                 drinkConcentration
             );
 
-            // Calculate level efficiency bonus (+1% per level above requirement)
-            // Apply tea level bonus to effective level
-            const effectiveLevel = currentLevel + teaLevelBonus;
-            const levelEfficiency = Math.max(0, effectiveLevel - requiredLevel);
-
             // Calculate equipment efficiency bonus using utility
             const equipmentEfficiency = parseEquipmentEfficiencyBonuses(
                 equipment,
@@ -281,15 +276,18 @@ class AlchemyProfit {
             const achievementEfficiency =
                 dataManager.getAchievementBuffFlatBoost(actionTypeHrid, '/buff_types/efficiency') * 100;
 
-            // Stack all efficiency bonuses additively
-            const totalEfficiency = stackAdditive(
-                levelEfficiency,
+            const efficiencyBreakdown = calculateEfficiencyBreakdown({
+                requiredLevel,
+                skillLevel: currentLevel,
+                teaSkillLevelBonus: teaLevelBonus,
                 houseEfficiency,
                 teaEfficiency,
                 equipmentEfficiency,
                 communityEfficiency,
-                achievementEfficiency
-            );
+                achievementEfficiency,
+            });
+            const totalEfficiency = efficiencyBreakdown.totalEfficiency;
+            const levelEfficiency = efficiencyBreakdown.levelEfficiency;
 
             return {
                 total: totalEfficiency / 100, // Convert percentage to decimal
@@ -936,17 +934,21 @@ class AlchemyProfit {
             const equipment = dataManager.getEquipment();
             const drinkConcentration =
                 gameData && equipment ? getDrinkConcentration(equipment, gameData.itemDetailMap) : 0;
-            const drinksPerHour = calculateDrinksPerHour(drinkConcentration);
-
-            // Calculate tea cost per second
-            let teaCostPerSecond = 0;
-            if (data.consumables.length > 0) {
-                const totalTeaCost = data.consumables.reduce((sum, consumable) => {
-                    const price = buyType === 'ask' ? consumable.ask : consumable.bid;
-                    return sum + price;
-                }, 0);
-                teaCostPerSecond = (totalTeaCost * drinksPerHour) / SECONDS_PER_HOUR;
-            }
+            const itemDetailMap = gameData?.itemDetailMap || {};
+            const consumableMap = new Map(data.consumables.map((consumable) => [consumable.itemHrid, consumable]));
+            const teaCostData = calculateTeaCostsPerHour({
+                drinkSlots: data.consumables.map((consumable) => ({ itemHrid: consumable.itemHrid })),
+                drinkConcentration,
+                itemDetailMap,
+                getItemPrice: (itemHrid) => {
+                    const consumable = consumableMap.get(itemHrid);
+                    if (!consumable) {
+                        return null;
+                    }
+                    return buyType === 'ask' ? consumable.ask : consumable.bid;
+                },
+            });
+            const teaCostPerSecond = teaCostData.totalCostPerHour / SECONDS_PER_HOUR;
 
             // Final profit accounting for tea costs
             const finalProfitPerSecond = profitPerSecond - teaCostPerSecond;
@@ -1042,22 +1044,17 @@ class AlchemyProfit {
             };
 
             // Build consumable costs breakdown
-            const consumableCosts = data.consumables.map((c) => {
-                const price = buyType === 'ask' ? c.ask : c.bid;
-                const costPerHour = price * drinksPerHour;
-
-                return {
-                    itemHrid: c.itemHrid,
-                    price: price,
-                    drinksPerHour: drinksPerHour,
-                    costPerHour: costPerHour,
-                };
-            });
+            const consumableCosts = teaCostData.costs.map((cost) => ({
+                itemHrid: cost.itemHrid,
+                price: cost.pricePerDrink,
+                drinksPerHour: cost.drinksPerHour,
+                costPerHour: cost.totalCost,
+            }));
 
             // Calculate total costs per hour for summary
             const materialCostPerHour = materialCost * actionsPerHour;
             const catalystCostPerHour = catalystCost.costPerHour;
-            const totalTeaCostPerHour = teaCostPerSecond * 3600;
+            const totalTeaCostPerHour = teaCostData.totalCostPerHour;
 
             // Calculate total revenue per hour
             const revenuePerHour = incomePerAttempt * actionsPerHour;

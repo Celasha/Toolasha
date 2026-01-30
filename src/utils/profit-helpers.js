@@ -60,24 +60,6 @@ export function calculateSecondsForActions(actionCount, actionsPerHour) {
     return calculateHoursForActions(actionCount, actionsPerHour) * SECONDS_PER_HOUR;
 }
 
-// ============ Efficiency Calculations ============
-
-/**
- * Calculate efficiency multiplier from efficiency percentage
- * Efficiency gives bonus action completions per time-consuming action
- *
- * @param {number} efficiencyPercent - Efficiency as percentage (e.g., 150 for 150%)
- * @returns {number} Multiplier (e.g., 2.5 for 150% efficiency)
- *
- * @example
- * calculateEfficiencyMultiplier(0)   // Returns 1.0 (no bonus)
- * calculateEfficiencyMultiplier(50)  // Returns 1.5
- * calculateEfficiencyMultiplier(150) // Returns 2.5
- */
-export function calculateEfficiencyMultiplier(efficiencyPercent) {
-    return 1 + (efficiencyPercent || 0) / 100;
-}
-
 // ============ Profit Calculations ============
 
 /**
@@ -147,6 +129,70 @@ export function calculateProfitPerDay(profitPerHour) {
  */
 export function calculateDrinksPerHour(drinkConcentration = 0) {
     return DRINKS_PER_HOUR_BASE * (1 + drinkConcentration);
+}
+
+/**
+ * Calculate tea consumption costs per hour
+ * @param {Object} params - Tea cost inputs
+ * @param {Array} params.drinkSlots - Equipped drink slots
+ * @param {number} params.drinkConcentration - Drink Concentration stat as decimal
+ * @param {Object} params.itemDetailMap - Item detail map for names
+ * @param {Function} params.getItemPrice - Price resolver function
+ * @returns {Object} Tea costs breakdown
+ */
+export function calculateTeaCostsPerHour({
+    drinkSlots = [],
+    drinkConcentration = 0,
+    itemDetailMap = {},
+    getItemPrice,
+}) {
+    if (!Array.isArray(drinkSlots) || drinkSlots.length === 0) {
+        return {
+            costs: [],
+            totalCostPerHour: 0,
+            hasMissingPrices: false,
+            drinksPerHour: calculateDrinksPerHour(drinkConcentration),
+        };
+    }
+
+    const drinksPerHour = calculateDrinksPerHour(drinkConcentration);
+
+    const costs = drinkSlots.reduce((entries, drink) => {
+        if (!drink || !drink.itemHrid) {
+            return entries;
+        }
+
+        const itemDetails = itemDetailMap[drink.itemHrid];
+        const itemName = itemDetails?.name || 'Unknown';
+        const price =
+            typeof getItemPrice === 'function'
+                ? getItemPrice(drink.itemHrid, { context: 'profit', side: 'buy' })
+                : null;
+        const isPriceMissing = price === null;
+        const resolvedPrice = isPriceMissing ? 0 : price;
+        const totalCost = resolvedPrice * drinksPerHour;
+
+        entries.push({
+            itemHrid: drink.itemHrid,
+            itemName,
+            pricePerDrink: resolvedPrice,
+            drinksPerHour,
+            totalCost,
+            missingPrice: isPriceMissing,
+        });
+
+        return entries;
+    }, []);
+
+    const totalCostPerHour = costs.reduce((sum, entry) => sum + entry.totalCost, 0);
+    const hasMissingPrices = costs.some((entry) => entry.missingPrice);
+
+    return {
+        costs,
+        totalCostPerHour,
+        hasMissingPrices,
+        drinksPerHour,
+    };
 }
 
 /**
@@ -309,9 +355,6 @@ export default {
     calculateHoursForActions,
     calculateSecondsForActions,
 
-    // Efficiency
-    calculateEfficiencyMultiplier,
-
     // Profit
     calculateProfitPerAction,
     calculateTotalProfitForActions,
@@ -319,6 +362,7 @@ export default {
 
     // Costs
     calculateDrinksPerHour,
+    calculateTeaCostsPerHour,
     calculatePriceAfterTax,
 
     calculateProductionActionTotalsFromBase,

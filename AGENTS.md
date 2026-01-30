@@ -166,6 +166,52 @@ import { waitForElement, createStyledDiv } from './utils/dom.js';
 const element = await waitForElement('.selector');
 ```
 
+### Shared Utilities
+
+**Efficiency Calculations** (`utils/efficiency.js`):
+
+```javascript
+import { calculateEfficiencyBreakdown, calculateEfficiencyMultiplier } from './utils/efficiency.js';
+
+const breakdown = calculateEfficiencyBreakdown({
+    requiredLevel: 50,
+    skillLevel: 75,
+    teaSkillLevelBonus: 5,
+    houseEfficiency: 10,
+    equipmentEfficiency: 20,
+    teaEfficiency: 15,
+});
+// Returns: { totalEfficiency, levelEfficiency, breakdown, ... }
+
+const multiplier = calculateEfficiencyMultiplier(150); // 2.5x
+```
+
+**Profit Calculations** (`utils/profit-helpers.js`):
+
+```javascript
+import { calculateActionsPerHour, calculateTeaCostsPerHour, calculateProfitPerAction } from './utils/profit-helpers.js';
+
+// Rate conversions
+const actionsPerHour = calculateActionsPerHour(6); // 600 actions/hr
+
+// Tea costs
+const teaCosts = calculateTeaCostsPerHour({
+    drinkSlots: player.drinkSlots,
+    drinkConcentration: 0.15,
+    itemDetailMap,
+    getItemPrice,
+});
+
+// Profit per action
+const profitPerAction = calculateProfitPerAction(75000, 600); // 125 per action
+```
+
+**Constants** (`utils/profit-constants.js`):
+
+```javascript
+import { MARKET_TAX, DRINKS_PER_HOUR_BASE, SECONDS_PER_HOUR } from './utils/profit-constants.js';
+```
+
 ## Anti-Patterns to Avoid
 
 - ❌ `.then()` chains → use async/await
@@ -188,6 +234,8 @@ const element = await waitForElement('.selector');
 | `src/core/websocket.js`        | WebSocket message interception                 |
 | `src/core/feature-registry.js` | Feature initialization system                  |
 | `src/utils/formatters.js`      | Number/time formatting utilities               |
+| `src/utils/efficiency.js`      | Efficiency calculations                        |
+| `src/utils/profit-helpers.js`  | Shared profit/rate calculation helpers         |
 
 ## Globals Available
 

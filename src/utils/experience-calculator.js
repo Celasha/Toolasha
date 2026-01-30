@@ -12,7 +12,8 @@
 import dataManager from '../core/data-manager.js';
 import { calculateActionStats } from './action-calculator.js';
 import { calculateExperienceMultiplier } from './experience-parser.js';
-import { calculateActionsPerHour, calculateEfficiencyMultiplier } from './profit-helpers.js';
+import { calculateEfficiencyMultiplier } from './efficiency.js';
+import { calculateActionsPerHour } from './profit-helpers.js';
 
 /**
  * Calculate experience per hour for an action

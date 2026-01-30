@@ -19,6 +19,7 @@ import { calculateGatheringProfit } from './gathering-profit.js';
 import profitCalculator from '../market/profit-calculator.js';
 import { calculateActionStats } from '../../utils/action-calculator.js';
 import { timeReadable, formatWithSeparator } from '../../utils/formatters.js';
+import { calculateEfficiencyMultiplier } from '../../utils/efficiency.js';
 import {
     parseArtisanBonus,
     getDrinkConcentration,
@@ -29,7 +30,6 @@ import {
     calculateProductionActionTotalsFromBase,
     calculateGatheringActionTotalsFromBase,
     calculateActionsPerHour,
-    calculateEfficiencyMultiplier,
 } from '../../utils/profit-helpers.js';
 
 /**

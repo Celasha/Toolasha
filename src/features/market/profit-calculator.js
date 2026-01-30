@@ -7,6 +7,7 @@ import dataManager from '../../core/data-manager.js';
 import marketAPI from '../../api/marketplace.js';
 import { parseEquipmentSpeedBonuses, parseEquipmentEfficiencyBonuses } from '../../utils/equipment-parser.js';
 import { calculateHouseEfficiency } from '../../utils/house-efficiency.js';
+import { calculateEfficiencyBreakdown, calculateEfficiencyMultiplier } from '../../utils/efficiency.js';
 import {
     parseTeaEfficiency,
     getDrinkConcentration,
@@ -24,8 +25,7 @@ import {
     calculatePriceAfterTax,
     calculateProfitPerAction,
     calculateProfitPerDay,
-    calculateDrinksPerHour,
-    calculateEfficiencyMultiplier,
+    calculateTeaCostsPerHour,
 } from '../../utils/profit-helpers.js';
 
 /**
@@ -145,8 +145,6 @@ class ProfitCalculator {
         // Calculate efficiency components
         // Action Level bonus increases the effective requirement
         const baseRequirement = actionDetails.levelRequirement?.level || 1;
-        const effectiveRequirement = baseRequirement + actionLevelBonus;
-
         // Calculate tea skill level bonus (e.g., +8 Cheesesmithing from Ultra Cheesesmithing Tea)
         const teaSkillLevelBonus = parseTeaSkillLevelBonus(
             actionDetails.type,
@@ -154,25 +152,6 @@ class ProfitCalculator {
             itemDetailMap,
             drinkConcentration
         );
-
-        // Apply tea skill level bonus to effective player level
-        const effectiveLevel = skillLevel + teaSkillLevelBonus;
-        const levelEfficiency = Math.max(0, effectiveLevel - effectiveRequirement);
-
-        const houseEfficiency = calculateHouseEfficiency(actionDetails.type);
-
-        // Calculate equipment efficiency bonus
-        const equipmentEfficiency = parseEquipmentEfficiencyBonuses(
-            characterEquipment,
-            actionDetails.type,
-            itemDetailMap
-        );
-
-        // Calculate tea efficiency bonus
-        const teaEfficiency = parseTeaEfficiency(actionDetails.type, activeDrinks, itemDetailMap, drinkConcentration);
-
-        const achievementEfficiency =
-            dataManager.getAchievementBuffFlatBoost(actionDetails.type, '/buff_types/efficiency') * 100;
 
         // Calculate artisan material cost reduction
         const artisanBonus = parseArtisanBonus(activeDrinks, itemDetailMap, drinkConcentration);
@@ -188,13 +167,36 @@ class ProfitCalculator {
         const communityEfficiency = this.calculateCommunityBuffBonus(communityBuffLevel, actionDetails.type);
 
         // Total efficiency bonus (all sources additive)
-        const totalEfficiency =
-            levelEfficiency +
-            houseEfficiency +
-            equipmentEfficiency +
-            teaEfficiency +
-            communityEfficiency +
-            achievementEfficiency;
+        const houseEfficiency = calculateHouseEfficiency(actionDetails.type);
+
+        // Calculate equipment efficiency bonus
+        const equipmentEfficiency = parseEquipmentEfficiencyBonuses(
+            characterEquipment,
+            actionDetails.type,
+            itemDetailMap
+        );
+
+        // Calculate tea efficiency bonus
+        const teaEfficiency = parseTeaEfficiency(actionDetails.type, activeDrinks, itemDetailMap, drinkConcentration);
+
+        const achievementEfficiency =
+            dataManager.getAchievementBuffFlatBoost(actionDetails.type, '/buff_types/efficiency') * 100;
+
+        const efficiencyBreakdown = calculateEfficiencyBreakdown({
+            requiredLevel: baseRequirement,
+            skillLevel,
+            teaSkillLevelBonus,
+            actionLevelBonus,
+            houseEfficiency,
+            equipmentEfficiency,
+            teaEfficiency,
+            communityEfficiency,
+            achievementEfficiency,
+        });
+
+        const totalEfficiency = efficiencyBreakdown.totalEfficiency;
+        const levelEfficiency = efficiencyBreakdown.levelEfficiency;
+        const effectiveRequirement = efficiencyBreakdown.effectiveRequirement;
 
         // Calculate equipment speed bonus
         const equipmentSpeedBonus = parseEquipmentSpeedBonuses(characterEquipment, actionDetails.type, itemDetailMap);
@@ -260,8 +262,14 @@ class ProfitCalculator {
         const revenuePerHour = itemsPerHour * outputPrice + gourmetBonusItems * outputPrice;
 
         // Calculate tea consumption costs (drinks consumed per hour)
-        const teaCosts = this.calculateTeaCosts(actionDetails.type, actionsPerHour, drinkConcentration, getCachedPrice);
-        const totalTeaCostPerHour = teaCosts.reduce((sum, tea) => sum + tea.totalCost, 0);
+        const teaCostData = calculateTeaCostsPerHour({
+            drinkSlots: activeDrinks,
+            drinkConcentration,
+            itemDetailMap,
+            getItemPrice: getCachedPrice,
+        });
+        const teaCosts = teaCostData.costs;
+        const totalTeaCostPerHour = teaCostData.totalCostPerHour;
 
         // Calculate bonus revenue from essence and rare find drops (before profit calculation)
         const bonusRevenue = calculateBonusRevenue(actionDetails, actionsPerHour, characterEquipment, itemDetailMap);
@@ -269,7 +277,7 @@ class ProfitCalculator {
         const hasMissingPrices =
             outputPriceMissing ||
             materialCosts.some((material) => material.missingPrice) ||
-            teaCosts.some((tea) => tea.missingPrice) ||
+            teaCostData.hasMissingPrices ||
             (bonusRevenue?.hasMissingPrices ?? false);
 
         // Apply efficiency multiplier to bonus revenue (efficiency repeats the action, including bonus rolls)
@@ -543,49 +551,6 @@ class ProfitCalculator {
         const levelBonus = (buffLevel - 1) * buffDef.buff.flatBoostLevelBonus * 100; // 0.3% per level
 
         return baseBonus + levelBonus;
-    }
-
-    /**
-     * Calculate tea consumption costs
-     * @param {string} actionTypeHrid - Action type HRID
-     * @param {number} actionsPerHour - Actions per hour (not used, but kept for consistency)
-     * @param {number} drinkConcentration - Drink Concentration stat value
-     * @param {Function} getCachedPrice - Price lookup function with caching
-     * @returns {Array} Array of tea cost objects
-     */
-    calculateTeaCosts(actionTypeHrid, actionsPerHour, drinkConcentration = 0, getCachedPrice) {
-        const activeDrinks = dataManager.getActionDrinkSlots(actionTypeHrid);
-        if (!activeDrinks || activeDrinks.length === 0) {
-            return [];
-        }
-
-        const costs = [];
-
-        for (const drink of activeDrinks) {
-            if (!drink || !drink.itemHrid) continue;
-
-            const itemDetails = dataManager.getItemDetails(drink.itemHrid);
-            if (!itemDetails) continue;
-
-            // Get tea price based on pricing mode (uses 'profit' context with 'buy' side)
-            const teaPrice = getCachedPrice(drink.itemHrid, { context: 'profit', side: 'buy' });
-            const isPriceMissing = teaPrice === null;
-            const resolvedPrice = isPriceMissing ? 0 : teaPrice;
-
-            // Drink Concentration increases consumption rate
-            const drinksPerHour = calculateDrinksPerHour(drinkConcentration);
-
-            costs.push({
-                itemHrid: drink.itemHrid,
-                itemName: itemDetails.name,
-                pricePerDrink: resolvedPrice,
-                drinksPerHour: drinksPerHour,
-                totalCost: resolvedPrice * drinksPerHour,
-                missingPrice: isPriceMissing,
-            });
-        }
-
-        return costs;
     }
 }
 

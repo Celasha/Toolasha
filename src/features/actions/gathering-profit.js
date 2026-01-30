@@ -20,17 +20,16 @@ import {
     getDrinkConcentration,
     parseTeaSkillLevelBonus,
 } from '../../utils/tea-parser.js';
-import { stackAdditive } from '../../utils/efficiency.js';
 import { formatWithSeparator, formatPercentage } from '../../utils/formatters.js';
 import { calculateBonusRevenue } from '../../utils/bonus-revenue-calculator.js';
 import { getItemPrice } from '../../utils/market-data.js';
 import { GATHERING_TYPES, PRODUCTION_TYPES, MARKET_TAX } from '../../utils/profit-constants.js';
+import { calculateEfficiencyBreakdown, calculateEfficiencyMultiplier } from '../../utils/efficiency.js';
 import {
-    calculateEfficiencyMultiplier,
     calculateProfitPerAction,
     calculateProfitPerDay,
-    calculateDrinksPerHour,
     calculateActionsPerHour,
+    calculateTeaCostsPerHour,
 } from '../../utils/profit-helpers.js';
 
 /**
@@ -176,30 +175,20 @@ export async function calculateGatheringProfit(actionHrid) {
         totalGathering = gatheringTea + communityGathering + achievementGathering;
     }
 
-    // Calculate drink consumption costs
-    const drinksPerHour = calculateDrinksPerHour(drinkConcentration);
-    let drinkCostPerHour = 0;
-    const drinkCosts = [];
-    for (const drink of drinkSlots) {
-        if (!drink || !drink.itemHrid) {
-            continue;
-        }
-        const drinkPrice = getCachedPrice(drink.itemHrid, { context: 'profit', side: 'buy' });
-        const isPriceMissing = drinkPrice === null;
-        const resolvedPrice = isPriceMissing ? 0 : drinkPrice;
-        const costPerHour = resolvedPrice * drinksPerHour;
-        drinkCostPerHour += costPerHour;
-
-        // Store individual drink cost details
-        const drinkName = gameData.itemDetailMap[drink.itemHrid]?.name || 'Unknown';
-        drinkCosts.push({
-            name: drinkName,
-            priceEach: resolvedPrice,
-            drinksPerHour: drinksPerHour,
-            costPerHour: costPerHour,
-            missingPrice: isPriceMissing,
-        });
-    }
+    const teaCostData = calculateTeaCostsPerHour({
+        drinkSlots,
+        drinkConcentration,
+        itemDetailMap: gameData.itemDetailMap,
+        getItemPrice: getCachedPrice,
+    });
+    const drinkCostPerHour = teaCostData.totalCostPerHour;
+    const drinkCosts = teaCostData.costs.map((tea) => ({
+        name: tea.itemName,
+        priceEach: tea.pricePerDrink,
+        drinksPerHour: tea.drinksPerHour,
+        costPerHour: tea.totalCost,
+        missingPrice: tea.missingPrice,
+    }));
 
     // Calculate level efficiency bonus
     const requiredLevel = actionDetail.levelRequirement?.level || 1;
@@ -220,10 +209,6 @@ export async function calculateGatheringProfit(actionHrid) {
         drinkConcentration
     );
 
-    // Apply tea skill level bonus to effective player level
-    const effectiveLevel = currentLevel + teaSkillLevelBonus;
-    const levelEfficiency = Math.max(0, effectiveLevel - requiredLevel);
-
     // Calculate house efficiency bonus
     let houseEfficiency = 0;
     for (const room of houseRooms) {
@@ -238,14 +223,17 @@ export async function calculateGatheringProfit(actionHrid) {
     const achievementEfficiency =
         dataManager.getAchievementBuffFlatBoost(actionDetail.type, '/buff_types/efficiency') * 100;
 
-    // Total efficiency (all additive)
-    const totalEfficiency = stackAdditive(
-        levelEfficiency,
+    const efficiencyBreakdown = calculateEfficiencyBreakdown({
+        requiredLevel,
+        skillLevel: currentLevel,
+        teaSkillLevelBonus,
         houseEfficiency,
         teaEfficiency,
         equipmentEfficiency,
-        achievementEfficiency
-    );
+        achievementEfficiency,
+    });
+    const totalEfficiency = efficiencyBreakdown.totalEfficiency;
+    const levelEfficiency = efficiencyBreakdown.levelEfficiency;
 
     // Calculate efficiency multiplier (matches production profit calculator pattern)
     // Efficiency "repeats the action" - we apply it to item outputs, not action rate

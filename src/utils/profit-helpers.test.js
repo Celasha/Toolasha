@@ -8,16 +8,17 @@ import {
     calculateActionsPerHour,
     calculateHoursForActions,
     calculateSecondsForActions,
-    calculateEfficiencyMultiplier,
     calculateProfitPerAction,
     calculateTotalProfitForActions,
     calculateProfitPerDay,
     calculateDrinksPerHour,
+    calculateTeaCostsPerHour,
     calculatePriceAfterTax,
     calculateProductionActionTotalsFromBase,
     calculateGatheringActionTotalsFromBase,
 } from './profit-helpers.js';
 import { MARKET_TAX } from './profit-constants.js';
+import { calculateEfficiencyMultiplier } from './efficiency.js';
 
 // ============ Rate Conversion Tests ============
 
@@ -70,27 +71,6 @@ describe('calculateSecondsForActions', () => {
 
     test('returns 0 for invalid inputs', () => {
         expect(calculateSecondsForActions(100, 0)).toBe(0);
-    });
-});
-
-// ============ Efficiency Tests ============
-
-describe('calculateEfficiencyMultiplier', () => {
-    test('calculates multiplier from efficiency percentage', () => {
-        expect(calculateEfficiencyMultiplier(0)).toBe(1);
-        expect(calculateEfficiencyMultiplier(50)).toBe(1.5);
-        expect(calculateEfficiencyMultiplier(100)).toBe(2);
-        expect(calculateEfficiencyMultiplier(150)).toBe(2.5);
-        expect(calculateEfficiencyMultiplier(250)).toBe(3.5);
-    });
-
-    test('handles null/undefined as 0%', () => {
-        expect(calculateEfficiencyMultiplier(null)).toBe(1);
-        expect(calculateEfficiencyMultiplier(undefined)).toBe(1);
-    });
-
-    test('handles fractional efficiency', () => {
-        expect(calculateEfficiencyMultiplier(33.5)).toBe(1.335);
     });
 });
 
@@ -170,6 +150,77 @@ describe('calculateDrinksPerHour', () => {
         expect(calculateDrinksPerHour(0.15)).toBeCloseTo(13.8, 1); // 12 × 1.15
         expect(calculateDrinksPerHour(0.3)).toBeCloseTo(15.6, 1); // 12 × 1.30
         expect(calculateDrinksPerHour(0.5)).toBe(18); // 12 × 1.50
+    });
+});
+
+describe('calculateTeaCostsPerHour', () => {
+    test('returns empty costs when no drink slots', () => {
+        const result = calculateTeaCostsPerHour({
+            drinkSlots: [],
+            drinkConcentration: 0.1,
+            itemDetailMap: {},
+            getItemPrice: () => 100,
+        });
+
+        expect(result.costs).toEqual([]);
+        expect(result.totalCostPerHour).toBe(0);
+        expect(result.hasMissingPrices).toBe(false);
+    });
+
+    test('calculates tea costs with drink concentration', () => {
+        const itemDetailMap = {
+            '/items/tea': { name: 'Tea' },
+        };
+        const getItemPrice = () => 50;
+
+        const result = calculateTeaCostsPerHour({
+            drinkSlots: [{ itemHrid: '/items/tea' }],
+            drinkConcentration: 0.25,
+            itemDetailMap,
+            getItemPrice,
+        });
+
+        expect(result.costs).toHaveLength(1);
+        expect(result.costs[0].itemName).toBe('Tea');
+        expect(result.costs[0].pricePerDrink).toBe(50);
+        expect(result.costs[0].drinksPerHour).toBeCloseTo(15, 6);
+        expect(result.totalCostPerHour).toBeCloseTo(750, 6);
+    });
+
+    test('flags missing prices as zero cost', () => {
+        const itemDetailMap = {
+            '/items/unknown_tea': { name: 'Unknown Tea' },
+        };
+
+        const result = calculateTeaCostsPerHour({
+            drinkSlots: [{ itemHrid: '/items/unknown_tea' }],
+            drinkConcentration: 0,
+            itemDetailMap,
+            getItemPrice: () => null,
+        });
+
+        expect(result.totalCostPerHour).toBe(0);
+        expect(result.hasMissingPrices).toBe(true);
+        expect(result.costs[0].missingPrice).toBe(true);
+    });
+
+    test('propagates missing prices when mixed with valid costs', () => {
+        const itemDetailMap = {
+            '/items/tea': { name: 'Tea' },
+            '/items/unknown_tea': { name: 'Unknown Tea' },
+        };
+        const getItemPrice = (itemHrid) => (itemHrid === '/items/tea' ? 100 : null);
+
+        const result = calculateTeaCostsPerHour({
+            drinkSlots: [{ itemHrid: '/items/tea' }, { itemHrid: '/items/unknown_tea' }],
+            drinkConcentration: 0,
+            itemDetailMap,
+            getItemPrice,
+        });
+
+        expect(result.hasMissingPrices).toBe(true);
+        expect(result.totalCostPerHour).toBe(1200);
+        expect(result.costs).toHaveLength(2);
     });
 });
 
