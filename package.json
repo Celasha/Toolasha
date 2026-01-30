@@ -11,8 +11,11 @@
         "test:watch": "vitest",
         "lint": "eslint src/",
         "lint:fix": "eslint src/ --fix",
-        "format": "prettier --write \"src/**/*.js\" \"*.config.js\"",
-        "format:check": "prettier --check \"src/**/*.js\" \"*.config.js\"",
+        "format": "prettier --write \"src/**/*.js\" \"*.config.js\" \"**/*.md\"",
+        "format:check": "prettier --check \"src/**/*.js\" \"*.config.js\" \"**/*.md\"",
+        "lint:md": "markdownlint \"**/*.md\" --ignore node_modules",
+        "lint:md:fix": "markdownlint \"**/*.md\" --ignore node_modules --fix",
+        "lint:md:links": "find . -name '*.md' ! -path './node_modules/*' -exec markdown-link-check --quiet {} \\;",
         "version:sync": "node scripts/sync-version.js",
         "version:patch": "npm version patch --no-git-tag-version && npm run version:sync",
         "version:minor": "npm version minor --no-git-tag-version && npm run version:sync",
@@ -35,6 +38,8 @@
         "globals": "^17.1.0",
         "husky": "^9.1.7",
         "lint-staged": "^16.2.7",
+        "markdown-link-check": "^3.14.2",
+        "markdownlint-cli": "^0.47.0",
         "prettier": "^3.8.1",
         "rollup": "^4.9.5",
         "rollup-plugin-banner2": "^1.2.2",
@@ -53,6 +58,10 @@
         ],
         "*.config.js": [
             "prettier --write"
+        ],
+        "*.md": [
+            "prettier --write",
+            "markdownlint --fix"
         ]
     }
 }

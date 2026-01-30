@@ -59,8 +59,8 @@ function syncVersion() {
 
         // Update badge: ![Version](https://img.shields.io/badge/version-X.X.X-orange?style=flat-square)
         const badgeRegex = /(!\[Version\]\(https:\/\/img\.shields\.io\/badge\/version-)[\d.]+(-.+?\))/;
-        // Update footer: **Version:** X.X.X (Pre-release)
-        const footerRegex = /(\*\*Version:\*\* )[\d.]+( \(Pre-release\))/;
+        // Update footer: **Version**: X.X.X (Pre-release)
+        const footerRegex = /(\*\*Version\*\*: )[\d.]+( \(Pre-release\))/;
 
         let updatedReadme = readmeContent;
         updatedReadme = updatedReadme.replace(badgeRegex, `$1${version}$2`);
