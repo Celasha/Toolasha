@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.9.1
+// @version      0.9.2
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -11811,7 +11811,7 @@
                 const ageMs = Date.now() - timestamp;
                 return formatRelativeTime(ageMs);
             } else {
-                // Show date/time (e.g., "01-13 14:30" or "01-13 2:30 PM")
+                // Show date/time (e.g., "01-13 14:30:45" or "01-13 2:30:45 PM")
                 const timeFormat = config.getSettingValue('market_listingTimeFormat', '24hour');
                 const use12Hour = timeFormat === '12hour';
 
@@ -11822,6 +11822,7 @@
                         day: '2-digit',
                         hour: '2-digit',
                         minute: '2-digit',
+                        second: '2-digit',
                         hour12: use12Hour,
                     })
                     .replace(/\//g, '-')
@@ -47043,7 +47044,7 @@
         const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
         targetWindow.Toolasha = {
-            version: '0.9.1',
+            version: '0.9.2',
 
             // Feature toggle API (for users to manage settings via console)
             features: {
