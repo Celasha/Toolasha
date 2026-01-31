@@ -11,7 +11,7 @@ import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
 import config from '../../core/config.js';
 import webSocketHook from '../../core/websocket.js';
-import { numberFormatter } from '../../utils/formatters.js';
+import { formatKMB } from '../../utils/formatters.js';
 
 class MarketOrderTotals {
     constructor() {
@@ -159,15 +159,15 @@ class MarketOrderTotals {
         // Format values or show marketplace icon
         const boDisplay = hasNoData
             ? '<svg width="16" height="16"><use href="/static/media/misc_sprite.f614f988.svg#marketplace"></use></svg>'
-            : `<span style="color: #ffd700;">${numberFormatter(totals.buyOrders)}</span>`;
+            : `<span style="color: #ffd700;">${formatKMB(totals.buyOrders)}</span>`;
 
         const soDisplay = hasNoData
             ? '<svg width="16" height="16"><use href="/static/media/misc_sprite.f614f988.svg#marketplace"></use></svg>'
-            : `<span style="color: #ffd700;">${numberFormatter(totals.sellOrders)}</span>`;
+            : `<span style="color: #ffd700;">${formatKMB(totals.sellOrders)}</span>`;
 
         const unclaimedDisplay = hasNoData
             ? '<svg width="16" height="16"><use href="/static/media/misc_sprite.f614f988.svg#marketplace"></use></svg>'
-            : `<span style="color: #ffd700;">${numberFormatter(totals.unclaimed)}</span>`;
+            : `<span style="color: #ffd700;">${formatKMB(totals.unclaimed)}</span>`;
 
         // Update display
         this.displayElement.innerHTML = `
