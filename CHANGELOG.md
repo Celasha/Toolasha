@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.9.2](https://github.com/Celasha/Toolasha/compare/v0.9.1...v0.9.2) (2026-01-31)
+
+### Bug Fixes
+
+- add seconds to estimated listing age datetime format ([49b3947](https://github.com/Celasha/Toolasha/commit/49b3947962da1dcdcd838079ce9b111780d9d302))
+
 ## [0.9.1](https://github.com/Celasha/Toolasha/compare/v0.9.0...v0.9.1) (2026-01-31)
 
 ### Bug Fixes
