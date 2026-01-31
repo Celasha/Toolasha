@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.8.2
+// @version      0.8.3
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -12062,13 +12062,25 @@
             // Add age cells to each row
             const rows = tbody.querySelectorAll('tr');
 
-            rows.forEach((row, rowIndex) => {
+            rows.forEach((row) => {
                 const cell = document.createElement('td');
                 cell.classList.add('mwi-estimated-age-cell');
 
-                // Check if this row has data within the order book range
-                if (rowIndex < listings.length) {
-                    const listing = listings[rowIndex];
+                // Extract price and quantity from DOM row
+                const priceText = row.querySelector('[class*="price"]')?.textContent || '';
+                const quantityText = row.children[0]?.textContent || '';
+
+                const price = this.parsePrice(priceText);
+                const quantity = this.parseQuantity(quantityText);
+
+                // Find matching listing by price + quantity
+                const listing = listings.find((l) => {
+                    const priceMatch = Math.abs(l.price - price) < 0.01;
+                    const qtyMatch = l.quantity === quantity;
+                    return priceMatch && qtyMatch;
+                });
+
+                if (listing) {
                     const listingId = listing.listingId;
 
                     // Check if this is YOUR listing
@@ -12089,17 +12101,10 @@
                         cell.style.fontSize = '0.9em';
                     }
                 } else {
-                    // Row beyond order book data (ellipsis row or YOUR listings not in top 20)
+                    // No matching listing in order book data
                     const hasCancel = row.textContent.includes('Cancel');
                     if (hasCancel) {
-                        // This is YOUR listing beyond top 20
-                        // Try to match by price + quantity
-                        const priceText = row.querySelector('[class*="price"]')?.textContent || '';
-                        const quantityText = row.children[0]?.textContent || '';
-
-                        const price = this.parsePrice(priceText);
-                        const quantity = this.parseQuantity(quantityText);
-
+                        // This is YOUR listing beyond top 20 - match from knownListings
                         const matchedListing = this.knownListings.find((listing) => {
                             const itemMatch = listing.itemHrid === currentItemHrid;
                             const priceMatch = Math.abs(listing.price - price) < 0.01;
@@ -46801,7 +46806,7 @@
         const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
         targetWindow.Toolasha = {
-            version: '0.8.2',
+            version: '0.8.3',
 
             // Feature toggle API (for users to manage settings via console)
             features: {
