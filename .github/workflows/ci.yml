@@ -11,9 +11,14 @@ on:
 
 jobs:
     lint-and-build:
+        # Run CI when:
+        # - push: normal commits (not release-please's unformatted commits)
+        # - pull_request: normal PRs (not release-please branches)
+        # - workflow_run: after Format Release Please completes (for release-please PRs)
         if: >
-            (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
-            (github.event_name != 'workflow_run' && !startsWith(github.head_ref, 'release-please--'))
+            (github.event_name == 'push' && !startsWith(github.event.head_commit.message, 'chore(main): release')) ||
+            (github.event_name == 'pull_request' && !startsWith(github.head_ref, 'release-please--')) ||
+            (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
         runs-on: ubuntu-latest
         steps:
             - name: Checkout code
@@ -24,7 +29,8 @@ jobs:
               if: github.event_name == 'workflow_run'
               uses: actions/checkout@v6
               with:
-                  ref: ${{ github.event.workflow_run.head_sha }}
+                  # Use head_branch to get latest commit including formatting changes
+                  ref: ${{ github.event.workflow_run.head_branch }}
 
             - name: Setup Node.js
               uses: actions/setup-node@v6
