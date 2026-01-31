@@ -1,6 +1,6 @@
 # Toolasha
 
-![Version](https://img.shields.io/badge/version-0.9.0-orange?style=flat-square) ![Status](https://img.shields.io/badge/status-pre--release-yellow?style=flat-square) ![License](https://img.shields.io/badge/license-CC--BY--NC--SA--4.0-blue?style=flat-square)
+![Version](https://img.shields.io/badge/version-0.9.1-orange?style=flat-square) ![Status](https://img.shields.io/badge/status-pre--release-yellow?style=flat-square) ![License](https://img.shields.io/badge/license-CC--BY--NC--SA--4.0-blue?style=flat-square)
 
 A modular, maintainable Tampermonkey userscript that enhances [Milky Way Idle](https://www.milkywayidle.com/game) with quality-of-life features, market tools, combat statistics, and comprehensive game data overlays.
 

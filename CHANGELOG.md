@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.9.1](https://github.com/Celasha/Toolasha/compare/v0.9.0...v0.9.1) (2026-01-31)
+
+### Bug Fixes
+
+- use KMB formatting for market order totals ([33d937a](https://github.com/Celasha/Toolasha/commit/33d937af1139b84f2621dd0a982b4f3d2be9b828))
+
 ## [0.9.0](https://github.com/Celasha/Toolasha/compare/v0.8.3...v0.9.0) (2026-01-31)
 
 ### Features
