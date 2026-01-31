@@ -6,7 +6,8 @@
             "component": "Toolasha",
             "include-component-in-tag": false,
             "draft": true,
-            "bootstrap-sha": "ed1fb8f6dbb6e7f0f1c29a3917632c5e26459a72"
+            "bootstrap-sha": "ed1fb8f6dbb6e7f0f1c29a3917632c5e26459a72",
+            "force-tag-creation": true
         }
     }
 }
