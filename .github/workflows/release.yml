@@ -41,6 +41,30 @@ jobs:
               if: ${{ steps.release.outputs.release_created }}
               run: npm run build
 
+            - name: Commit built file to releases branch
+              if: ${{ steps.release.outputs.release_created }}
+              run: |
+                  # Configure git
+                  git config user.name "github-actions[bot]"
+                  git config user.email "github-actions[bot]@users.noreply.github.com"
+
+                  # Save the built file
+                  cp dist/Toolasha.user.js /tmp/Toolasha.user.js
+
+                  # Fetch and checkout releases branch (create if doesn't exist)
+                  git fetch origin releases:releases 2>/dev/null || git checkout --orphan releases
+                  git checkout releases 2>/dev/null || git checkout --orphan releases
+
+                  # Clean the branch and add only the built file
+                  git rm -rf . 2>/dev/null || true
+                  mkdir -p dist
+                  cp /tmp/Toolasha.user.js dist/Toolasha.user.js
+                  git add dist/Toolasha.user.js
+
+                  # Commit and push
+                  git commit -m "chore(main): release ${{ steps.release.outputs.version }}"
+                  git push origin releases
+
             - name: Upload userscript and publish release
               if: ${{ steps.release.outputs.release_created }}
               uses: softprops/action-gh-release@v2
