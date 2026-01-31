@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.8.3](https://github.com/Celasha/Toolasha/compare/v0.8.2...v0.8.3) (2026-01-31)
+
+### Bug Fixes
+
+- correct marketplace listing age ordering for same-price listings ([414aa6d](https://github.com/Celasha/Toolasha/commit/414aa6de721b778c7588639de15d4e49629bacc2))
+
 ## [0.8.2](https://github.com/Celasha/Toolasha/compare/v0.8.1...v0.8.2) (2026-01-31)
 
 ### Bug Fixes
