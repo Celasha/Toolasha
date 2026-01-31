@@ -2,11 +2,10 @@
 
 ## [0.8.2](https://github.com/Celasha/Toolasha/compare/v0.8.1...v0.8.2) (2026-01-31)
 
-
 ### Bug Fixes
 
-* skip CI on unformatted release-please commits ([b457415](https://github.com/Celasha/Toolasha/commit/b457415de11c1fc7161de1ee937b5b86069dbc96))
-* skip CI on unformatted release-please commits ([e628733](https://github.com/Celasha/Toolasha/commit/e628733435f5970c912d815eb9867ed53e145496))
+- skip CI on unformatted release-please commits ([b457415](https://github.com/Celasha/Toolasha/commit/b457415de11c1fc7161de1ee937b5b86069dbc96))
+- skip CI on unformatted release-please commits ([e628733](https://github.com/Celasha/Toolasha/commit/e628733435f5970c912d815eb9867ed53e145496))
 
 ## [0.8.1](https://github.com/Celasha/Toolasha/compare/v0.8.0...v0.8.1) (2026-01-31)
 
