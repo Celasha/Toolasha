@@ -15,6 +15,101 @@ import { calculateSecondsForActions } from '../../utils/profit-helpers.js';
 
 // Compiled regex pattern (created once, reused for performance)
 const REGEX_TASK_PROGRESS = /(\d+)\s*\/\s*(\d+)/;
+const RATING_MODE_TOKENS = 'tokens';
+const RATING_MODE_GOLD = 'gold';
+const MAX_TOKENS_PER_HOUR = 10;
+const GOLD_LOG_RANGE = 6;
+
+/**
+ * Calculate task completion time in seconds based on task progress and action rates
+ * @param {Object} profitData - Profit calculation result
+ * @returns {number|null} Completion time in seconds or null if unavailable
+ */
+function calculateTaskCompletionSeconds(profitData) {
+    const actionsPerHour = profitData?.action?.details?.actionsPerHour;
+    const totalQuantity = profitData?.taskInfo?.quantity;
+
+    if (!actionsPerHour || !totalQuantity) {
+        return null;
+    }
+
+    const currentProgress = profitData.taskInfo.currentProgress || 0;
+    const remainingActions = Math.max(totalQuantity - currentProgress, 0);
+    if (remainingActions <= 0) {
+        return 0;
+    }
+
+    const efficiencyMultiplier = profitData.action.details.efficiencyMultiplier || 1;
+    const baseActionsNeeded = efficiencyMultiplier > 0 ? remainingActions / efficiencyMultiplier : remainingActions;
+
+    return calculateSecondsForActions(baseActionsNeeded, actionsPerHour);
+}
+
+/**
+ * Calculate task efficiency rating data
+ * @param {Object} profitData - Profit calculation result
+ * @param {string} ratingMode - Rating mode (tokens or gold)
+ * @returns {Object|null} Rating data or null if unavailable
+ */
+function calculateTaskEfficiencyRating(profitData, ratingMode) {
+    const completionSeconds = calculateTaskCompletionSeconds(profitData);
+    if (!completionSeconds || completionSeconds <= 0) {
+        return null;
+    }
+
+    const hours = completionSeconds / 3600;
+
+    if (ratingMode === RATING_MODE_GOLD) {
+        if (
+            profitData.rewards?.error ||
+            profitData.rewards?.total === null ||
+            profitData.rewards?.total === undefined
+        ) {
+            return {
+                value: null,
+                unitLabel: 'gold/hr',
+                error: profitData.rewards?.error || 'Market data not loaded',
+            };
+        }
+
+        return {
+            value: profitData.rewards.total / hours,
+            unitLabel: 'gold/hr',
+            error: null,
+        };
+    }
+
+    const tokensReceived = profitData.rewards?.breakdown?.tokensReceived ?? 0;
+    return {
+        value: tokensReceived / hours,
+        unitLabel: 'tokens/hr',
+        error: null,
+    };
+}
+
+/**
+ * Convert a rating value into a gradient color
+ * @param {number} value - Rating value
+ * @param {string} ratingMode - Rating mode (tokens or gold)
+ * @param {string} fallbackColor - Color to use when value is invalid
+ * @returns {string} CSS color value
+ */
+function getEfficiencyGradientColor(value, ratingMode, fallbackColor) {
+    if (!Number.isFinite(value) || value <= 0) {
+        return fallbackColor;
+    }
+
+    let normalized = 0;
+    if (ratingMode === RATING_MODE_GOLD) {
+        normalized = Math.log10(value + 1) / GOLD_LOG_RANGE;
+    } else {
+        normalized = value / MAX_TOKENS_PER_HOUR;
+    }
+
+    const clamped = Math.min(Math.max(normalized, 0), 1);
+    const hue = Math.round(120 * clamped);
+    return `hsl(${hue} 70% 50%)`;
+}
 
 /**
  * TaskProfitDisplay class manages task profit UI
@@ -39,6 +134,18 @@ class TaskProfitDisplay {
                 this.initialize();
             } else {
                 this.disable();
+            }
+        });
+
+        config.onSettingChange('taskEfficiencyRating', () => {
+            if (this.isInitialized) {
+                this.updateTaskProfits(true);
+            }
+        });
+
+        config.onSettingChange('taskEfficiencyRatingMode', () => {
+            if (this.isInitialized) {
+                this.updateTaskProfits(true);
             }
         });
 
@@ -137,7 +244,7 @@ class TaskProfitDisplay {
     /**
      * Update all task profit displays
      */
-    updateTaskProfits() {
+    updateTaskProfits(forceRefresh = false) {
         if (!config.getSetting('taskProfitCalculator')) {
             return;
         }
@@ -158,7 +265,7 @@ class TaskProfitDisplay {
             if (existingProfit) {
                 // Check if task has changed (rerolled)
                 const savedTaskKey = existingProfit.dataset.taskKey;
-                if (savedTaskKey === currentTaskKey) {
+                if (!forceRefresh && savedTaskKey === currentTaskKey) {
                     continue; // Same task, skip
                 }
 
@@ -399,19 +506,8 @@ class TaskProfitDisplay {
         }
 
         // Calculate time estimate for task completion
-        let timeEstimate = '???';
-        if (profitData.action?.details?.actionsPerHour && profitData.taskInfo?.quantity) {
-            const actionsPerHour = profitData.action.details.actionsPerHour;
-            const totalQuantity = profitData.taskInfo.quantity;
-            const currentProgress = profitData.taskInfo.currentProgress || 0;
-            const remainingActions = totalQuantity - currentProgress;
-            const efficiencyMultiplier = profitData.action.details.efficiencyMultiplier || 1;
-
-            // Efficiency reduces the number of actions needed
-            const baseActionsNeeded = remainingActions / efficiencyMultiplier;
-            const totalSeconds = calculateSecondsForActions(baseActionsNeeded, actionsPerHour);
-            timeEstimate = timeReadable(totalSeconds);
-        }
+        const completionSeconds = calculateTaskCompletionSeconds(profitData);
+        const timeEstimate = completionSeconds !== null ? timeReadable(completionSeconds) : '???';
 
         // Create main profit display (Option B format: compact with time)
         const profitLine = document.createElement('div');
@@ -481,6 +577,32 @@ class TaskProfitDisplay {
         this.eventListeners.set(profitContainer, listeners);
 
         profitContainer.appendChild(profitLine);
+
+        if (config.getSetting('taskEfficiencyRating')) {
+            const ratingMode = config.getSettingValue('taskEfficiencyRatingMode', RATING_MODE_TOKENS);
+            const ratingData = calculateTaskEfficiencyRating(profitData, ratingMode);
+            const ratingLine = document.createElement('div');
+            ratingLine.className = 'mwi-task-profit-rating';
+            ratingLine.style.cssText = 'margin-top: 2px; font-size: 0.7rem;';
+
+            if (!ratingData || ratingData.value === null) {
+                const warningText = ratingData?.error ? ' ⚠' : '';
+                ratingLine.style.color = config.COLOR_WARNING;
+                ratingLine.textContent = `⚡ --${warningText} ${ratingData?.unitLabel || ''}`.trim();
+            } else {
+                const ratingValue = numberFormatter(ratingData.value, 2);
+                const ratingColor = getEfficiencyGradientColor(
+                    ratingData.value,
+                    ratingMode,
+                    config.COLOR_TEXT_SECONDARY
+                );
+                ratingLine.style.color = ratingColor;
+                ratingLine.textContent = `⚡ ${ratingValue} ${ratingData.unitLabel}`;
+            }
+
+            profitContainer.appendChild(ratingLine);
+        }
+
         profitContainer.appendChild(breakdownSection);
         actionNode.appendChild(profitContainer);
     }
@@ -900,4 +1022,5 @@ class TaskProfitDisplay {
 const taskProfitDisplay = new TaskProfitDisplay();
 taskProfitDisplay.setupSettingListener();
 
+export { calculateTaskCompletionSeconds, calculateTaskEfficiencyRating, getEfficiencyGradientColor };
 export default taskProfitDisplay;

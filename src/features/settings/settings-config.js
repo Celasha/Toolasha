@@ -545,6 +545,25 @@ export const settingsGroups = {
                 type: 'checkbox',
                 default: true,
             },
+            taskEfficiencyRating: {
+                id: 'taskEfficiencyRating',
+                label: 'Show task efficiency rating (tokens/gold per hour)',
+                type: 'checkbox',
+                default: true,
+                help: 'Displays a color-graded efficiency score based on expected completion time.',
+            },
+            taskEfficiencyRatingMode: {
+                id: 'taskEfficiencyRatingMode',
+                label: '  └─ Efficiency algorithm',
+                type: 'select',
+                default: 'tokens',
+                options: [
+                    { value: 'tokens', label: 'Task tokens per hour' },
+                    { value: 'gold', label: 'Task reward gold value per hour' },
+                ],
+                dependencies: ['taskEfficiencyRating'],
+                help: 'Choose whether to rate by task token payout or expected gold value.',
+            },
             taskRerollTracker: {
                 id: 'taskRerollTracker',
                 label: 'Track task reroll costs',

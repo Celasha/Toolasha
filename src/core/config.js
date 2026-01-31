@@ -233,6 +233,13 @@ class Config {
                 description: 'Shows expected profit from task rewards',
                 settingKey: 'taskProfitCalculator',
             },
+            taskEfficiencyRating: {
+                enabled: true,
+                name: 'Task Efficiency Rating',
+                category: 'Tasks',
+                description: 'Shows tokens or gold value per hour on task cards',
+                settingKey: 'taskEfficiencyRating',
+            },
             taskRerollTracker: {
                 enabled: true,
                 name: 'Task Reroll Tracker',
