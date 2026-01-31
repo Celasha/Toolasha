@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1](https://github.com/Celasha/Toolasha/compare/v0.8.0...v0.8.1) (2026-01-31)
+
+### Bug Fixes
+
+- prevent CI from double-triggering on PRs ([518cce8](https://github.com/Celasha/Toolasha/commit/518cce86e7d4752527470b093a562650f970e58d))
+- prevent CI from double-triggering on PRs ([f2c3719](https://github.com/Celasha/Toolasha/commit/f2c37196efa34d45f66336b9cac3e9aec9bf9d2b))
+
 ## [0.8.0](https://github.com/Celasha/Toolasha/compare/v0.7.0...v0.8.0) (2026-01-30)
 
 ### Features
