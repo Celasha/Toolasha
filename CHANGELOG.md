@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.9.0](https://github.com/Celasha/Toolasha/compare/v0.8.3...v0.9.0) (2026-01-31)
+
+### Features
+
+- add market order totals to header ([15bb121](https://github.com/Celasha/Toolasha/commit/15bb121f8526d6e221f7e12eafbffc31c2b095af))
+
 ## [0.8.3](https://github.com/Celasha/Toolasha/compare/v0.8.2...v0.8.3) (2026-01-31)
 
 ### Bug Fixes
