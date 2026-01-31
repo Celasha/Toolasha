@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.9.0
+// @version      0.9.1
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -13374,15 +13374,15 @@
             // Format values or show marketplace icon
             const boDisplay = hasNoData
                 ? '<svg width="16" height="16"><use href="/static/media/misc_sprite.f614f988.svg#marketplace"></use></svg>'
-                : `<span style="color: #ffd700;">${numberFormatter(totals.buyOrders)}</span>`;
+                : `<span style="color: #ffd700;">${formatKMB(totals.buyOrders)}</span>`;
 
             const soDisplay = hasNoData
                 ? '<svg width="16" height="16"><use href="/static/media/misc_sprite.f614f988.svg#marketplace"></use></svg>'
-                : `<span style="color: #ffd700;">${numberFormatter(totals.sellOrders)}</span>`;
+                : `<span style="color: #ffd700;">${formatKMB(totals.sellOrders)}</span>`;
 
             const unclaimedDisplay = hasNoData
                 ? '<svg width="16" height="16"><use href="/static/media/misc_sprite.f614f988.svg#marketplace"></use></svg>'
-                : `<span style="color: #ffd700;">${numberFormatter(totals.unclaimed)}</span>`;
+                : `<span style="color: #ffd700;">${formatKMB(totals.unclaimed)}</span>`;
 
             // Update display
             this.displayElement.innerHTML = `
@@ -47043,7 +47043,7 @@
         const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
         targetWindow.Toolasha = {
-            version: '0.9.0',
+            version: '0.9.1',
 
             // Feature toggle API (for users to manage settings via console)
             features: {
