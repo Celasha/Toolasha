@@ -3,10 +3,9 @@
  * Tracks your buy/sell prices for marketplace items
  */
 
-import webSocketHook from '../../core/websocket.js';
+import dataManager from '../../core/data-manager.js';
 import storage from '../../core/storage.js';
 import config from '../../core/config.js';
-import dataManager from '../../core/data-manager.js';
 
 /**
  * TradeHistory class manages personal buy/sell price tracking
@@ -68,8 +67,8 @@ class TradeHistory {
             this.handleMarketUpdate(data);
         };
 
-        // Hook into WebSocket for market listing updates
-        webSocketHook.on('market_listings_updated', this.marketUpdateHandler);
+        // Hook into data manager for market listing updates
+        dataManager.on('market_listings_updated', this.marketUpdateHandler);
 
         this.isInitialized = true;
     }
@@ -173,7 +172,7 @@ class TradeHistory {
 
         // Unregister WebSocket handler
         if (this.marketUpdateHandler) {
-            webSocketHook.off('market_listings_updated', this.marketUpdateHandler);
+            dataManager.off('market_listings_updated', this.marketUpdateHandler);
             this.marketUpdateHandler = null;
         }
 

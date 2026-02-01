@@ -8,6 +8,7 @@
 
 import webSocketHook from './websocket.js';
 import storage from './storage.js';
+import { mergeMarketListings } from '../utils/market-listings.js';
 
 class DataManager {
     constructor() {
@@ -346,6 +347,33 @@ class DataManager {
             }
 
             this.emit('items_updated', data);
+        });
+
+        // Handle market_listings_updated (market order changes)
+        this.webSocketHook.on('market_listings_updated', (data) => {
+            if (!this.characterData || !Array.isArray(data?.endMarketListings)) {
+                return;
+            }
+
+            const currentListings = Array.isArray(this.characterData.myMarketListings)
+                ? this.characterData.myMarketListings
+                : [];
+            const updatedListings = mergeMarketListings(currentListings, data.endMarketListings);
+
+            this.characterData = {
+                ...this.characterData,
+                myMarketListings: updatedListings,
+            };
+
+            this.emit('market_listings_updated', {
+                ...data,
+                myMarketListings: updatedListings,
+            });
+        });
+
+        // Handle market_item_order_books_updated (order book updates)
+        this.webSocketHook.on('market_item_order_books_updated', (data) => {
+            this.emit('market_item_order_books_updated', data);
         });
 
         // Handle action_type_consumable_slots_updated (when user changes tea assignments)

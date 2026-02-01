@@ -10,7 +10,6 @@
 import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
 import config from '../../core/config.js';
-import webSocketHook from '../../core/websocket.js';
 import marketAPI from '../../api/marketplace.js';
 import estimatedListingAge from './estimated-listing-age.js';
 import { coinFormatter, formatRelativeTime } from '../../utils/formatters.js';
@@ -88,8 +87,8 @@ class ListingPriceDisplay {
             }
         };
 
-        webSocketHook.on('init_character_data', initHandler);
-        webSocketHook.on('market_listings_updated', updateHandler);
+        dataManager.on('character_initialized', initHandler);
+        dataManager.on('market_listings_updated', updateHandler);
 
         // Handle order book updates to re-render with populated cache (if Top Order Age enabled)
         let orderBookHandler = null;
@@ -105,15 +104,15 @@ class ListingPriceDisplay {
                     }, 10);
                 }
             };
-            webSocketHook.on('market_item_order_books_updated', orderBookHandler);
+            dataManager.on('market_item_order_books_updated', orderBookHandler);
         }
 
         // Store for cleanup
         this.unregisterWebSocket = () => {
-            webSocketHook.off('init_character_data', initHandler);
-            webSocketHook.off('market_listings_updated', updateHandler);
+            dataManager.off('character_initialized', initHandler);
+            dataManager.off('market_listings_updated', updateHandler);
             if (orderBookHandler) {
-                webSocketHook.off('market_item_order_books_updated', orderBookHandler);
+                dataManager.off('market_item_order_books_updated', orderBookHandler);
             }
         };
     }

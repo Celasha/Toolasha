@@ -10,7 +10,6 @@
 import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
 import config from '../../core/config.js';
-import webSocketHook from '../../core/websocket.js';
 import storage from '../../core/storage.js';
 import { formatRelativeTime } from '../../utils/formatters.js';
 
@@ -167,15 +166,15 @@ class EstimatedListingAge {
             }
         };
 
-        webSocketHook.on('init_character_data', initHandler);
-        webSocketHook.on('market_listings_updated', updateHandler);
-        webSocketHook.on('market_item_order_books_updated', orderBookHandler);
+        dataManager.on('character_initialized', initHandler);
+        dataManager.on('market_listings_updated', updateHandler);
+        dataManager.on('market_item_order_books_updated', orderBookHandler);
 
         // Store for cleanup
         this.unregisterWebSocket = () => {
-            webSocketHook.off('init_character_data', initHandler);
-            webSocketHook.off('market_listings_updated', updateHandler);
-            webSocketHook.off('market_item_order_books_updated', orderBookHandler);
+            dataManager.off('character_initialized', initHandler);
+            dataManager.off('market_listings_updated', updateHandler);
+            dataManager.off('market_item_order_books_updated', orderBookHandler);
         };
     }
 
