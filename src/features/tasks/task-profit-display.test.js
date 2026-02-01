@@ -6,7 +6,7 @@ import { describe, test, expect } from 'vitest';
 import {
     calculateTaskCompletionSeconds,
     calculateTaskEfficiencyRating,
-    getEfficiencyGradientColor,
+    getRelativeEfficiencyGradientColor,
 } from './task-profit-display.js';
 
 const createProfitData = ({
@@ -17,6 +17,7 @@ const createProfitData = ({
     rewardTotal = 0,
     rewardError = null,
     tokensReceived = 0,
+    totalProfit = rewardTotal,
 } = {}) => ({
     action: {
         details: {
@@ -35,6 +36,7 @@ const createProfitData = ({
             tokensReceived,
         },
     },
+    totalProfit,
 });
 
 describe('calculateTaskCompletionSeconds', () => {
@@ -83,6 +85,7 @@ describe('calculateTaskEfficiencyRating', () => {
             actionsPerHour: 30,
             quantity: 60,
             rewardTotal: 1200,
+            totalProfit: 1200,
         });
 
         const result = calculateTaskEfficiencyRating(profitData, 'gold');
@@ -99,21 +102,30 @@ describe('calculateTaskEfficiencyRating', () => {
         const result = calculateTaskEfficiencyRating(profitData, 'gold');
         expect(result).toEqual({ value: null, unitLabel: 'gold/hr', error: 'Market data not loaded' });
     });
+
+    test('returns warning when total profit is unavailable', () => {
+        const profitData = createProfitData({
+            actionsPerHour: 60,
+            quantity: 60,
+            totalProfit: null,
+        });
+
+        const result = calculateTaskEfficiencyRating(profitData, 'gold');
+        expect(result).toEqual({ value: null, unitLabel: 'gold/hr', error: 'Missing price data' });
+    });
 });
 
-describe('getEfficiencyGradientColor', () => {
+describe('getRelativeEfficiencyGradientColor', () => {
     test('returns fallback color for invalid values', () => {
-        expect(getEfficiencyGradientColor(0, 'tokens', '#888')).toBe('#888');
-        expect(getEfficiencyGradientColor(-5, 'gold', '#888')).toBe('#888');
-        expect(getEfficiencyGradientColor(Number.NaN, 'tokens', '#888')).toBe('#888');
+        expect(getRelativeEfficiencyGradientColor(Number.NaN, 0, 10, '#ff0000', '#00ff00', '#888')).toBe('#888');
+        expect(getRelativeEfficiencyGradientColor(5, 10, 10, '#ff0000', '#00ff00', '#888')).toBe('#888');
+        expect(getRelativeEfficiencyGradientColor(5, 0, 10, '#ff', '#00ff00', '#888')).toBe('#888');
     });
 
-    test('maps token efficiency to green gradient', () => {
-        expect(getEfficiencyGradientColor(10, 'tokens', '#888')).toBe('hsl(120 70% 50%)');
-        expect(getEfficiencyGradientColor(5, 'tokens', '#888')).toBe('hsl(60 70% 50%)');
-    });
-
-    test('clamps gold efficiency to max gradient', () => {
-        expect(getEfficiencyGradientColor(1000000, 'gold', '#888')).toBe('hsl(120 70% 50%)');
+    test('maps relative values to gradient', () => {
+        expect(getRelativeEfficiencyGradientColor(-5, 0, 10, '#ff0000', '#00ff00', '#888')).toBe('rgb(255, 0, 0)');
+        expect(getRelativeEfficiencyGradientColor(10, 0, 10, '#ff0000', '#00ff00', '#888')).toBe('rgb(0, 255, 0)');
+        expect(getRelativeEfficiencyGradientColor(5, 0, 10, '#ff0000', '#00ff00', '#888')).toBe('rgb(128, 128, 0)');
+        expect(getRelativeEfficiencyGradientColor(0, 0, 10, '#ff0000', '#00ff00', '#888')).toBe('rgb(255, 0, 0)');
     });
 });

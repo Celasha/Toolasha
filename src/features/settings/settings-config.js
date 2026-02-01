@@ -547,7 +547,7 @@ export const settingsGroups = {
             },
             taskEfficiencyRating: {
                 id: 'taskEfficiencyRating',
-                label: 'Show task efficiency rating (tokens/gold per hour)',
+                label: 'Show task efficiency rating (tokens/profit per hour)',
                 type: 'checkbox',
                 default: true,
                 help: 'Displays a color-graded efficiency score based on expected completion time.',
@@ -556,13 +556,21 @@ export const settingsGroups = {
                 id: 'taskEfficiencyRatingMode',
                 label: '  └─ Efficiency algorithm',
                 type: 'select',
-                default: 'tokens',
+                default: 'gold',
                 options: [
                     { value: 'tokens', label: 'Task tokens per hour' },
-                    { value: 'gold', label: 'Task reward gold value per hour' },
+                    { value: 'gold', label: 'Task profit per hour' },
                 ],
                 dependencies: ['taskEfficiencyRating'],
-                help: 'Choose whether to rate by task token payout or expected gold value.',
+                help: 'Choose whether to rate by task token payout or total profit.',
+            },
+            taskEfficiencyGradient: {
+                id: 'taskEfficiencyGradient',
+                label: '  └─ Use relative gradient colors',
+                type: 'checkbox',
+                default: false,
+                dependencies: ['taskEfficiencyRating'],
+                help: 'Colors efficiency ratings relative to visible tasks.',
             },
             taskRerollTracker: {
                 id: 'taskRerollTracker',

@@ -244,7 +244,7 @@ class Config {
                 enabled: true,
                 name: 'Task Efficiency Rating',
                 category: 'Tasks',
-                description: 'Shows tokens or gold value per hour on task cards',
+                description: 'Shows tokens or profit per hour on task cards',
                 settingKey: 'taskEfficiencyRating',
             },
             taskRerollTracker: {
