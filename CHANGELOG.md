@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.10.0](https://github.com/Celasha/Toolasha/compare/v0.9.2...v0.10.0) (2026-02-01)
+
+### Features
+
+- add market history viewer with filtering and export capabilities ([1d2f391](https://github.com/Celasha/Toolasha/commit/1d2f3918b885dce782b2b80b6bbfc97c28eb36af))
+- reduce market history table row height for better space efficiency ([4e0dd36](https://github.com/Celasha/Toolasha/commit/4e0dd3616443e4c71ac37c6ea3e5b8f41b185656))
+
+### Bug Fixes
+
+- correct alchemy essence drop rate display ([1d2f391](https://github.com/Celasha/Toolasha/commit/1d2f3918b885dce782b2b80b6bbfc97c28eb36af))
+- resolve SVG memory leaks in market history filter system ([1d2f391](https://github.com/Celasha/Toolasha/commit/1d2f3918b885dce782b2b80b6bbfc97c28eb36af))
+
 ## [0.9.2](https://github.com/Celasha/Toolasha/compare/v0.9.1...v0.9.2) (2026-01-31)
 
 ### Bug Fixes
