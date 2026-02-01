@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.9.2
+// @version      0.10.0
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -1126,6 +1126,13 @@
                     type: 'checkbox',
                     default: true,
                     help: 'Displays buy orders (BO), sell orders (SO), and unclaimed coins (💰) in the header area below gold',
+                },
+                market_showHistoryViewer: {
+                    id: 'market_showHistoryViewer',
+                    label: 'Market: Show history viewer button in settings',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Adds "View Market History" button to settings panel for viewing and exporting all market listing history',
                 },
                 itemDictionary_transmuteRates: {
                     id: 'itemDictionary_transmuteRates',
@@ -2796,6 +2803,13 @@
                     category: 'Market',
                     description: 'Shows buy orders, sell orders, and unclaimed coins in header',
                     settingKey: 'market_showOrderTotals',
+                },
+                market_showHistoryViewer: {
+                    enabled: true,
+                    name: 'Market History Viewer',
+                    category: 'Market',
+                    description: 'View and export all market listing history',
+                    settingKey: 'market_showHistoryViewer',
                 },
 
                 // Action Features
@@ -11788,13 +11802,12 @@
 
     class EstimatedListingAge {
         constructor() {
-            this.knownListings = []; // Array of {id, timestamp} sorted by id
+            this.knownListings = []; // Array of {id, timestamp, createdTimestamp, enhancementLevel, ...} sorted by id
             this.orderBooksCache = {}; // Cache of order book data from WebSocket
             this.currentItemHrid = null; // Track current item from WebSocket
             this.unregisterWebSocket = null;
             this.unregisterObserver = null;
             this.storageKey = 'marketListingTimestamps';
-            this.maxAge = 30 * 24 * 60 * 60 * 1000; // 30 days in ms
             this.isInitialized = false;
         }
 
@@ -11880,16 +11893,8 @@
             try {
                 const stored = await storage.getJSON(this.storageKey, 'marketListings', []);
 
-                // Filter out old entries (> 30 days)
-                const now = Date.now();
-                const filtered = stored.filter((entry) => now - entry.timestamp < this.maxAge);
-
-                this.knownListings = filtered.sort((a, b) => a.id - b.id);
-
-                // Save cleaned data back if we filtered anything
-                if (filtered.length < stored.length) {
-                    await this.saveHistoricalData();
-                }
+                // Load all historical data (no time-based filtering)
+                this.knownListings = stored.sort((a, b) => a.id - b.id);
             } catch (error) {
                 console.error('[EstimatedListingAge] Failed to load historical data:', error);
                 this.knownListings = [];
@@ -11978,7 +11983,9 @@
             const entry = {
                 id: listing.id,
                 timestamp: timestamp,
+                createdTimestamp: listing.createdTimestamp, // ISO string for display
                 itemHrid: listing.itemHrid,
+                enhancementLevel: listing.enhancementLevel || 0, // For accurate row matching
                 price: listing.price,
                 orderQuantity: listing.orderQuantity,
                 filledQuantity: listing.filledQuantity,
@@ -12261,16 +12268,10 @@
 
             // CRITICAL: Clamp to reasonable bounds
             const now = Date.now();
-            const maxAgeTimestamp = now - this.maxAge; // 30 days ago
 
             // Never allow future timestamps (listings cannot be created in the future)
             if (estimate > now) {
                 estimate = now;
-            }
-
-            // Never allow timestamps older than maxAge (we filter these out anyway)
-            if (estimate < maxAgeTimestamp) {
-                estimate = maxAgeTimestamp;
             }
 
             return estimate;
@@ -13433,6 +13434,3700 @@
 
     // Create and export singleton instance
     const marketOrderTotals = new MarketOrderTotals();
+
+    var settingsCSS = "/* Toolasha Settings UI Styles\n * Modern, compact design\n */\n\n/* CSS Variables */\n:root {\n    --toolasha-accent: #5b8def;\n    --toolasha-accent-hover: #7aa3f3;\n    --toolasha-accent-dim: rgba(91, 141, 239, 0.15);\n    --toolasha-secondary: #8A2BE2;\n    --toolasha-text: rgba(255, 255, 255, 0.9);\n    --toolasha-text-dim: rgba(255, 255, 255, 0.5);\n    --toolasha-bg: rgba(20, 25, 35, 0.6);\n    --toolasha-border: rgba(91, 141, 239, 0.2);\n    --toolasha-toggle-off: rgba(100, 100, 120, 0.4);\n    --toolasha-toggle-on: var(--toolasha-accent);\n}\n\n/* Settings Card Container */\n.toolasha-settings-card {\n    display: flex;\n    flex-direction: column;\n    padding: 12px 16px;\n    font-size: 12px;\n    line-height: 1.3;\n    color: var(--toolasha-text);\n    position: relative;\n    overflow-y: auto;\n    gap: 6px;\n    max-height: calc(100vh - 250px);\n}\n\n/* Top gradient line */\n.toolasha-settings-card::before {\n    display: none;\n}\n\n/* Scrollbar styling */\n.toolasha-settings-card::-webkit-scrollbar {\n    width: 6px;\n}\n\n.toolasha-settings-card::-webkit-scrollbar-track {\n    background: transparent;\n}\n\n.toolasha-settings-card::-webkit-scrollbar-thumb {\n    background: var(--toolasha-accent);\n    border-radius: 3px;\n    opacity: 0.5;\n}\n\n.toolasha-settings-card::-webkit-scrollbar-thumb:hover {\n    opacity: 1;\n}\n\n/* Collapsible Settings Groups */\n.toolasha-settings-group {\n    margin-bottom: 8px;\n}\n\n.toolasha-settings-group-header {\n    cursor: pointer;\n    user-select: none;\n    margin: 10px 0 4px 0;\n    color: var(--toolasha-accent);\n    font-weight: 600;\n    font-size: 13px;\n    display: flex;\n    align-items: center;\n    gap: 6px;\n    border-bottom: 1px solid var(--toolasha-border);\n    padding-bottom: 3px;\n    text-transform: uppercase;\n    letter-spacing: 0.5px;\n    transition: color 0.2s ease;\n}\n\n.toolasha-settings-group-header:hover {\n    color: var(--toolasha-accent-hover);\n}\n\n.toolasha-settings-group-header .collapse-icon {\n    font-size: 10px;\n    transition: transform 0.2s ease;\n}\n\n.toolasha-settings-group.collapsed .collapse-icon {\n    transform: rotate(-90deg);\n}\n\n.toolasha-settings-group-content {\n    max-height: 5000px;\n    overflow: hidden;\n    transition: max-height 0.3s ease-out;\n}\n\n.toolasha-settings-group.collapsed .toolasha-settings-group-content {\n    max-height: 0;\n}\n\n/* Section Headers */\n.toolasha-settings-card h3 {\n    margin: 10px 0 4px 0;\n    color: var(--toolasha-accent);\n    font-weight: 600;\n    font-size: 13px;\n    display: flex;\n    align-items: center;\n    gap: 6px;\n    border-bottom: 1px solid var(--toolasha-border);\n    padding-bottom: 3px;\n    text-transform: uppercase;\n    letter-spacing: 0.5px;\n}\n\n.toolasha-settings-card h3:first-child {\n    margin-top: 0;\n}\n\n.toolasha-settings-card h3 .icon {\n    font-size: 14px;\n}\n\n/* Individual Setting Row */\n.toolasha-setting {\n    display: flex;\n    align-items: center;\n    justify-content: space-between;\n    gap: 10px;\n    margin: 0;\n    padding: 6px 8px;\n    background: var(--toolasha-bg);\n    border: 1px solid var(--toolasha-border);\n    border-radius: 4px;\n    min-height: unset;\n    transition: all 0.2s ease;\n}\n\n.toolasha-setting:hover {\n    background: rgba(30, 35, 45, 0.7);\n    border-color: var(--toolasha-accent);\n}\n\n.toolasha-setting.disabled {\n    opacity: 0.3;\n    pointer-events: none;\n}\n\n.toolasha-setting.not-implemented .toolasha-setting-label {\n    color: #ff6b6b;\n}\n\n.toolasha-setting.not-implemented .toolasha-setting-help {\n    color: rgba(255, 107, 107, 0.7);\n}\n\n.toolasha-setting-label {\n    text-align: left;\n    flex: 1;\n    margin-right: 10px;\n    line-height: 1.3;\n    font-size: 12px;\n}\n\n.toolasha-setting-help {\n    display: block;\n    font-size: 10px;\n    color: var(--toolasha-text-dim);\n    margin-top: 2px;\n    font-style: italic;\n}\n\n.toolasha-setting-input {\n    flex-shrink: 0;\n}\n\n/* Modern Toggle Switch */\n.toolasha-switch {\n    position: relative;\n    width: 38px;\n    height: 20px;\n    flex-shrink: 0;\n    display: inline-block;\n}\n\n.toolasha-switch input {\n    opacity: 0;\n    width: 0;\n    height: 0;\n    position: absolute;\n}\n\n.toolasha-slider {\n    position: absolute;\n    top: 0;\n    left: 0;\n    right: 0;\n    bottom: 0;\n    background: var(--toolasha-toggle-off);\n    border-radius: 20px;\n    cursor: pointer;\n    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);\n    border: 2px solid transparent;\n}\n\n.toolasha-slider:before {\n    content: \"\";\n    position: absolute;\n    height: 12px;\n    width: 12px;\n    left: 2px;\n    bottom: 2px;\n    background: white;\n    border-radius: 50%;\n    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);\n    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);\n}\n\n.toolasha-switch input:checked + .toolasha-slider {\n    background: var(--toolasha-toggle-on);\n    border-color: var(--toolasha-accent-hover);\n    box-shadow: 0 0 6px var(--toolasha-accent-dim);\n}\n\n.toolasha-switch input:checked + .toolasha-slider:before {\n    transform: translateX(18px);\n}\n\n.toolasha-switch:hover .toolasha-slider {\n    border-color: var(--toolasha-accent);\n}\n\n/* Text Input */\n.toolasha-text-input {\n    padding: 5px 8px;\n    border: 1px solid var(--toolasha-border);\n    border-radius: 3px;\n    background: rgba(0, 0, 0, 0.3);\n    color: var(--toolasha-text);\n    min-width: 100px;\n    font-size: 12px;\n    transition: all 0.2s ease;\n}\n\n.toolasha-text-input:focus {\n    outline: none;\n    border-color: var(--toolasha-accent);\n    box-shadow: 0 0 0 2px var(--toolasha-accent-dim);\n}\n\n/* Number Input */\n.toolasha-number-input {\n    padding: 5px 8px;\n    border: 1px solid var(--toolasha-border);\n    border-radius: 3px;\n    background: rgba(0, 0, 0, 0.3);\n    color: var(--toolasha-text);\n    min-width: 80px;\n    font-size: 12px;\n    transition: all 0.2s ease;\n}\n\n.toolasha-number-input:focus {\n    outline: none;\n    border-color: var(--toolasha-accent);\n    box-shadow: 0 0 0 2px var(--toolasha-accent-dim);\n}\n\n/* Select Dropdown */\n.toolasha-select-input {\n    padding: 5px 8px;\n    border: 1px solid var(--toolasha-border);\n    border-radius: 3px;\n    background: rgba(0, 0, 0, 0.3);\n    color: var(--toolasha-accent);\n    font-weight: 600;\n    min-width: 150px;\n    cursor: pointer;\n    font-size: 12px;\n    -webkit-appearance: none;\n    -moz-appearance: none;\n    appearance: none;\n    background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20width%3D%2220%22%20height%3D%2220%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cpath%20d%3D%22M5%207l5%205%205-5z%22%20fill%3D%22%235b8def%22%2F%3E%3C%2Fsvg%3E');\n    background-repeat: no-repeat;\n    background-position: right 6px center;\n    background-size: 14px;\n    padding-right: 28px;\n    transition: all 0.2s ease;\n}\n\n.toolasha-select-input:focus {\n    outline: none;\n    border-color: var(--toolasha-accent);\n    box-shadow: 0 0 0 2px var(--toolasha-accent-dim);\n}\n\n.toolasha-select-input option {\n    background: #1a1a2e;\n    color: var(--toolasha-text);\n    padding: 8px;\n}\n\n/* Utility Buttons Container */\n.toolasha-utility-buttons {\n    display: flex;\n    gap: 8px;\n    margin-top: 12px;\n    padding-top: 10px;\n    border-top: 1px solid var(--toolasha-border);\n    flex-wrap: wrap;\n}\n\n.toolasha-utility-button {\n    background: linear-gradient(135deg, var(--toolasha-secondary), #6A1B9A);\n    border: 1px solid rgba(138, 43, 226, 0.4);\n    color: #ffffff;\n    padding: 6px 12px;\n    border-radius: 4px;\n    font-size: 11px;\n    font-weight: 600;\n    cursor: pointer;\n    transition: all 0.2s ease;\n    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);\n}\n\n.toolasha-utility-button:hover {\n    background: linear-gradient(135deg, #9A4BCF, var(--toolasha-secondary));\n    box-shadow: 0 0 10px rgba(138, 43, 226, 0.3);\n    transform: translateY(-1px);\n}\n\n.toolasha-utility-button:active {\n    transform: translateY(0);\n}\n\n/* Sync button - special styling for prominence */\n.toolasha-sync-button {\n    background: linear-gradient(135deg, #047857, #059669) !important;\n    border: 1px solid rgba(4, 120, 87, 0.4) !important;\n    flex: 1 1 auto; /* Allow it to grow and take more space */\n    min-width: 200px; /* Ensure it's wide enough for the text */\n}\n\n.toolasha-sync-button:hover {\n    background: linear-gradient(135deg, #059669, #10b981) !important;\n    box-shadow: 0 0 10px rgba(16, 185, 129, 0.3) !important;\n}\n\n/* Refresh Notice */\n.toolasha-refresh-notice {\n    background: rgba(255, 152, 0, 0.1);\n    border: 1px solid rgba(255, 152, 0, 0.3);\n    border-radius: 4px;\n    padding: 8px 12px;\n    margin-top: 10px;\n    color: #ffa726;\n    font-size: 11px;\n    display: flex;\n    align-items: center;\n    gap: 8px;\n}\n\n.toolasha-refresh-notice::before {\n    content: \"⚠️\";\n    font-size: 14px;\n}\n\n/* Dependency Indicator */\n.toolasha-setting.has-dependency::before {\n    content: \"↳\";\n    position: absolute;\n    left: -4px;\n    color: var(--toolasha-accent);\n    font-size: 14px;\n    opacity: 0.5;\n}\n\n.toolasha-setting.has-dependency {\n    margin-left: 16px;\n    position: relative;\n}\n\n/* Nested setting collapse icons */\n.setting-collapse-icon {\n    flex-shrink: 0;\n    color: var(--toolasha-accent);\n    opacity: 0.7;\n}\n\n.toolasha-setting.dependents-collapsed .setting-collapse-icon {\n    opacity: 1;\n}\n\n.toolasha-setting-label-container:hover .setting-collapse-icon {\n    opacity: 1;\n}\n\n/* Tab Panel Override (for game's settings panel) */\n.TabPanel_tabPanel__tXMJF#toolasha-settings {\n    display: block !important;\n}\n\n.TabPanel_tabPanel__tXMJF#toolasha-settings.TabPanel_hidden__26UM3 {\n    display: none !important;\n}\n";
+
+    /**
+     * Settings UI Module
+     * Injects Toolasha settings tab into the game's settings panel
+     * Based on MWITools Extended approach
+     */
+
+
+    class SettingsUI {
+        constructor() {
+            this.config = config;
+            this.settingsPanel = null;
+            this.settingsObserver = null;
+            this.currentSettings = {};
+            this.isInjecting = false; // Guard against concurrent injection
+            this.characterSwitchHandler = null; // Store listener reference to prevent duplicates
+            this.settingsPanelCallbacks = []; // Callbacks to run when settings panel appears
+        }
+
+        /**
+         * Initialize the settings UI
+         */
+        async initialize() {
+            // Inject CSS styles (check if already injected)
+            if (!document.getElementById('toolasha-settings-styles')) {
+                this.injectStyles();
+            }
+
+            // Load current settings
+            this.currentSettings = await settingsStorage.loadSettings();
+
+            // Set up handler for character switching (ONLY if not already registered)
+            if (!this.characterSwitchHandler) {
+                this.characterSwitchHandler = () => {
+                    this.handleCharacterSwitch();
+                };
+                dataManager.on('character_initialized', this.characterSwitchHandler);
+            }
+
+            // Wait for game's settings panel to load
+            this.observeSettingsPanel();
+        }
+
+        /**
+         * Register a callback to be called when settings panel appears
+         * @param {Function} callback - Function to call when settings panel is detected
+         */
+        onSettingsPanelAppear(callback) {
+            if (typeof callback === 'function') {
+                this.settingsPanelCallbacks.push(callback);
+            }
+        }
+
+        /**
+         * Handle character switch
+         * Clean up old observers and re-initialize for new character's settings panel
+         */
+        handleCharacterSwitch() {
+            // Clean up old DOM references and observers (but keep listener registered)
+            this.cleanupDOM();
+
+            // Wait for settings panel to stabilize before re-observing
+            setTimeout(() => {
+                this.observeSettingsPanel();
+            }, 500);
+        }
+
+        /**
+         * Cleanup DOM elements and observers only (internal cleanup during character switch)
+         */
+        cleanupDOM() {
+            // Stop observer
+            if (this.settingsObserver) {
+                this.settingsObserver.disconnect();
+                this.settingsObserver = null;
+            }
+
+            // Remove settings tab
+            const tab = document.querySelector('#toolasha-settings-tab');
+            if (tab) {
+                tab.remove();
+            }
+
+            // Remove settings panel
+            const panel = document.querySelector('#toolasha-settings');
+            if (panel) {
+                panel.remove();
+            }
+
+            // Clear state
+            this.settingsPanel = null;
+            this.currentSettings = {};
+            this.isInjecting = false;
+
+            // Clear config cache
+            this.config.clearSettingsCache();
+        }
+
+        /**
+         * Inject CSS styles into page
+         */
+        injectStyles() {
+            const styleEl = document.createElement('style');
+            styleEl.id = 'toolasha-settings-styles';
+            styleEl.textContent = settingsCSS;
+            document.head.appendChild(styleEl);
+        }
+
+        /**
+         * Observe for game's settings panel
+         * Uses MutationObserver to detect when settings panel appears
+         */
+        observeSettingsPanel() {
+            // Wait for DOM to be ready before observing
+            const startObserver = () => {
+                if (!document.body) {
+                    setTimeout(startObserver, 10);
+                    return;
+                }
+
+                const observer = new MutationObserver((_mutations) => {
+                    // Look for the settings tabs container
+                    const tabsContainer = document.querySelector('div[class*="SettingsPanel_tabsComponentContainer"]');
+
+                    if (tabsContainer) {
+                        // Check if our tab already exists before injecting
+                        if (!tabsContainer.querySelector('#toolasha-settings-tab')) {
+                            this.injectSettingsTab();
+                        }
+
+                        // Call registered callbacks for other features
+                        this.settingsPanelCallbacks.forEach((callback) => {
+                            try {
+                                callback();
+                            } catch (error) {
+                                console.error('[Toolasha Settings] Callback error:', error);
+                            }
+                        });
+
+                        // Keep observer running - panel might be removed/re-added if user navigates away and back
+                    }
+                });
+
+                // Observe the main game panel for changes
+                const gamePanel = document.querySelector('div[class*="GamePage_gamePanel"]');
+                if (gamePanel) {
+                    observer.observe(gamePanel, {
+                        childList: true,
+                        subtree: true,
+                    });
+                } else {
+                    // Fallback: observe entire body if game panel not found (Firefox timing issue)
+                    console.warn('[Toolasha Settings] Could not find game panel, observing body instead');
+                    observer.observe(document.body, {
+                        childList: true,
+                        subtree: true,
+                    });
+                }
+
+                // Store observer reference
+                this.settingsObserver = observer;
+
+                // Also check immediately in case settings is already open
+                const existingTabsContainer = document.querySelector('div[class*="SettingsPanel_tabsComponentContainer"]');
+                if (existingTabsContainer && !existingTabsContainer.querySelector('#toolasha-settings-tab')) {
+                    this.injectSettingsTab();
+
+                    // Call registered callbacks for other features
+                    this.settingsPanelCallbacks.forEach((callback) => {
+                        try {
+                            callback();
+                        } catch (error) {
+                            console.error('[Toolasha Settings] Callback error:', error);
+                        }
+                    });
+                }
+            };
+
+            startObserver();
+        }
+
+        /**
+         * Inject Toolasha settings tab into game's settings panel
+         */
+        async injectSettingsTab() {
+            // Guard against concurrent injection
+            if (this.isInjecting) {
+                return;
+            }
+            this.isInjecting = true;
+
+            try {
+                // Find tabs container (MWIt-E approach)
+                const tabsComponentContainer = document.querySelector('div[class*="SettingsPanel_tabsComponentContainer"]');
+
+                if (!tabsComponentContainer) {
+                    console.warn('[Toolasha Settings] Could not find tabsComponentContainer');
+                    return;
+                }
+
+                // Find the MUI tabs flexContainer
+                const tabsContainer = tabsComponentContainer.querySelector('[class*="MuiTabs-flexContainer"]');
+                const tabPanelsContainer = tabsComponentContainer.querySelector(
+                    '[class*="TabsComponent_tabPanelsContainer"]'
+                );
+
+                if (!tabsContainer || !tabPanelsContainer) {
+                    console.warn('[Toolasha Settings] Could not find tabs or panels container');
+                    return;
+                }
+
+                // Check if already injected
+                if (tabsContainer.querySelector('#toolasha-settings-tab')) {
+                    return;
+                }
+
+                // Reload current settings from storage to ensure latest values
+                this.currentSettings = await settingsStorage.loadSettings();
+
+                // Get existing tabs for reference
+                const existingTabs = Array.from(tabsContainer.querySelectorAll('button[role="tab"]'));
+
+                // Create new tab button
+                const tabButton = this.createTabButton();
+
+                // Create tab panel
+                const tabPanel = this.createTabPanel();
+
+                // Setup tab switching
+                this.setupTabSwitching(tabButton, tabPanel, existingTabs, tabPanelsContainer);
+
+                // Append to DOM
+                tabsContainer.appendChild(tabButton);
+                tabPanelsContainer.appendChild(tabPanel);
+
+                // Store reference
+                this.settingsPanel = tabPanel;
+            } catch (error) {
+                console.error('[Toolasha Settings] Error during tab injection:', error);
+            } finally {
+                // Always reset the guard flag
+                this.isInjecting = false;
+            }
+        }
+
+        /**
+         * Create tab button
+         * @returns {HTMLElement} Tab button element
+         */
+        createTabButton() {
+            const button = document.createElement('button');
+            button.id = 'toolasha-settings-tab';
+            button.setAttribute('role', 'tab');
+            button.setAttribute('aria-selected', 'false');
+            button.setAttribute('tabindex', '-1');
+            button.className = 'MuiButtonBase-root MuiTab-root MuiTab-textColorPrimary';
+            button.style.minWidth = '90px';
+
+            const span = document.createElement('span');
+            span.className = 'MuiTab-wrapper';
+            span.textContent = 'Toolasha';
+
+            button.appendChild(span);
+
+            return button;
+        }
+
+        /**
+         * Create tab panel with all settings
+         * @returns {HTMLElement} Tab panel element
+         */
+        createTabPanel() {
+            const panel = document.createElement('div');
+            panel.id = 'toolasha-settings';
+            panel.className = 'TabPanel_tabPanel__tXMJF TabPanel_hidden__26UM3';
+            panel.setAttribute('role', 'tabpanel');
+            panel.style.display = 'none';
+
+            // Create settings card
+            const card = document.createElement('div');
+            card.className = 'toolasha-settings-card';
+            card.id = 'toolasha-settings-content';
+
+            // Add search box at the top
+            this.addSearchBox(card);
+
+            // Generate settings from config
+            this.generateSettings(card);
+
+            // Add utility buttons
+            this.addUtilityButtons(card);
+
+            // Add refresh notice
+            this.addRefreshNotice(card);
+
+            panel.appendChild(card);
+
+            // Add change listener
+            card.addEventListener('change', (e) => this.handleSettingChange(e));
+
+            return panel;
+        }
+
+        /**
+         * Generate all settings UI from config
+         * @param {HTMLElement} container - Container element
+         */
+        generateSettings(container) {
+            for (const [groupKey, group] of Object.entries(settingsGroups)) {
+                // Create collapsible group container
+                const groupContainer = document.createElement('div');
+                groupContainer.className = 'toolasha-settings-group';
+                groupContainer.dataset.group = groupKey;
+
+                // Add section header with collapse toggle
+                const header = document.createElement('h3');
+                header.className = 'toolasha-settings-group-header';
+                header.innerHTML = `
+                <span class="collapse-icon">▼</span>
+                <span class="icon">${group.icon}</span>
+                ${group.title}
+            `;
+                // Bind toggleGroup method to this instance
+                header.addEventListener('click', this.toggleGroup.bind(this, groupContainer));
+
+                // Create content container for this group
+                const content = document.createElement('div');
+                content.className = 'toolasha-settings-group-content';
+
+                // Add settings in this group
+                for (const [settingId, settingDef] of Object.entries(group.settings)) {
+                    const settingEl = this.createSettingElement(settingId, settingDef);
+                    content.appendChild(settingEl);
+                }
+
+                groupContainer.appendChild(header);
+                groupContainer.appendChild(content);
+                container.appendChild(groupContainer);
+            }
+
+            // After all settings are created, set up collapse functionality for parent settings
+            this.setupParentCollapseIcons(container);
+
+            // Restore collapse states from localStorage
+            this.restoreCollapseStates(container);
+        }
+
+        /**
+         * Setup collapse icons for parent settings (settings that have dependents)
+         * @param {HTMLElement} container - Settings container
+         */
+        setupParentCollapseIcons(container) {
+            const allSettings = container.querySelectorAll('.toolasha-setting');
+
+            allSettings.forEach((setting) => {
+                const settingId = setting.dataset.settingId;
+
+                // Find all dependents of this setting
+                const dependents = Array.from(allSettings).filter(
+                    (s) => s.dataset.dependencies && s.dataset.dependencies.split(',').includes(settingId)
+                );
+
+                if (dependents.length > 0) {
+                    // This setting has dependents - show collapse icon
+                    const collapseIcon = setting.querySelector('.setting-collapse-icon');
+                    if (collapseIcon) {
+                        collapseIcon.style.display = 'inline-block';
+
+                        // Add click handler to toggle dependents - bind to preserve this context
+                        const labelContainer = setting.querySelector('.toolasha-setting-label-container');
+                        labelContainer.style.cursor = 'pointer';
+                        labelContainer.addEventListener('click', (e) => {
+                            // Don't toggle if clicking the input itself
+                            if (e.target.closest('.toolasha-setting-input')) return;
+
+                            this.toggleDependents(setting, dependents);
+                        });
+                    }
+                }
+            });
+        }
+
+        /**
+         * Toggle group collapse/expand
+         * @param {HTMLElement} groupContainer - Group container element
+         */
+        toggleGroup(groupContainer) {
+            groupContainer.classList.toggle('collapsed');
+
+            // Save collapse state to localStorage
+            const groupKey = groupContainer.dataset.group;
+            const isCollapsed = groupContainer.classList.contains('collapsed');
+            this.saveCollapseState('group', groupKey, isCollapsed);
+        }
+
+        /**
+         * Toggle dependent settings visibility
+         * @param {HTMLElement} parentSetting - Parent setting element
+         * @param {HTMLElement[]} dependents - Array of dependent setting elements
+         */
+        toggleDependents(parentSetting, dependents) {
+            const collapseIcon = parentSetting.querySelector('.setting-collapse-icon');
+            const isCollapsed = parentSetting.classList.contains('dependents-collapsed');
+
+            if (isCollapsed) {
+                // Expand
+                parentSetting.classList.remove('dependents-collapsed');
+                collapseIcon.style.transform = 'rotate(0deg)';
+                dependents.forEach((dep) => (dep.style.display = 'flex'));
+            } else {
+                // Collapse
+                parentSetting.classList.add('dependents-collapsed');
+                collapseIcon.style.transform = 'rotate(-90deg)';
+                dependents.forEach((dep) => (dep.style.display = 'none'));
+            }
+
+            // Save collapse state to localStorage
+            const settingId = parentSetting.dataset.settingId;
+            const newState = !isCollapsed; // Inverted because we just toggled
+            this.saveCollapseState('setting', settingId, newState);
+        }
+
+        /**
+         * Save collapse state to IndexedDB
+         * @param {string} type - 'group' or 'setting'
+         * @param {string} key - Group key or setting ID
+         * @param {boolean} isCollapsed - Whether collapsed
+         */
+        async saveCollapseState(type, key, isCollapsed) {
+            try {
+                const states = await storage.getJSON('collapse-states', 'settings', {});
+
+                if (!states[type]) {
+                    states[type] = {};
+                }
+                states[type][key] = isCollapsed;
+
+                await storage.setJSON('collapse-states', states, 'settings');
+            } catch (e) {
+                console.warn('[Toolasha Settings] Failed to save collapse states:', e);
+            }
+        }
+
+        /**
+         * Load collapse state from IndexedDB
+         * @param {string} type - 'group' or 'setting'
+         * @param {string} key - Group key or setting ID
+         * @returns {Promise<boolean|null>} Collapse state or null if not found
+         */
+        async loadCollapseState(type, key) {
+            try {
+                const states = await storage.getJSON('collapse-states', 'settings', {});
+                return states[type]?.[key] ?? null;
+            } catch (e) {
+                console.warn('[Toolasha Settings] Failed to load collapse states:', e);
+                return null;
+            }
+        }
+
+        /**
+         * Restore collapse states from IndexedDB
+         * @param {HTMLElement} container - Settings container
+         */
+        async restoreCollapseStates(container) {
+            try {
+                // Restore group collapse states
+                const groups = container.querySelectorAll('.toolasha-settings-group');
+                for (const group of groups) {
+                    const groupKey = group.dataset.group;
+                    const isCollapsed = await this.loadCollapseState('group', groupKey);
+                    if (isCollapsed === true) {
+                        group.classList.add('collapsed');
+                    }
+                }
+
+                // Restore setting collapse states
+                const settings = container.querySelectorAll('.toolasha-setting');
+                for (const setting of settings) {
+                    const settingId = setting.dataset.settingId;
+                    const isCollapsed = await this.loadCollapseState('setting', settingId);
+
+                    if (isCollapsed === true) {
+                        setting.classList.add('dependents-collapsed');
+
+                        // Update collapse icon rotation
+                        const collapseIcon = setting.querySelector('.setting-collapse-icon');
+                        if (collapseIcon) {
+                            collapseIcon.style.transform = 'rotate(-90deg)';
+                        }
+
+                        // Hide dependents
+                        const allSettings = container.querySelectorAll('.toolasha-setting');
+                        const dependents = Array.from(allSettings).filter(
+                            (s) => s.dataset.dependencies && s.dataset.dependencies.split(',').includes(settingId)
+                        );
+                        dependents.forEach((dep) => (dep.style.display = 'none'));
+                    }
+                }
+            } catch (e) {
+                console.warn('[Toolasha Settings] Failed to restore collapse states:', e);
+            }
+        }
+
+        /**
+         * Create a single setting UI element
+         * @param {string} settingId - Setting ID
+         * @param {Object} settingDef - Setting definition
+         * @returns {HTMLElement} Setting element
+         */
+        createSettingElement(settingId, settingDef) {
+            const div = document.createElement('div');
+            div.className = 'toolasha-setting';
+            div.dataset.settingId = settingId;
+            div.dataset.type = settingDef.type || 'checkbox';
+
+            // Add dependency class and store dependency info
+            if (settingDef.dependencies) {
+                div.classList.add('has-dependency');
+
+                // Handle both array format (legacy, AND logic) and object format (supports OR logic)
+                if (Array.isArray(settingDef.dependencies)) {
+                    // Legacy format: ['dep1', 'dep2'] means AND logic
+                    div.dataset.dependencies = settingDef.dependencies.join(',');
+                    div.dataset.dependencyMode = 'all'; // AND logic
+                } else if (typeof settingDef.dependencies === 'object') {
+                    // New format: {mode: 'any', settings: ['dep1', 'dep2']}
+                    div.dataset.dependencies = settingDef.dependencies.settings.join(',');
+                    div.dataset.dependencyMode = settingDef.dependencies.mode || 'all'; // 'any' = OR, 'all' = AND
+                }
+            }
+
+            // Add not-implemented class for red text
+            if (settingDef.notImplemented) {
+                div.classList.add('not-implemented');
+            }
+
+            // Create label container (clickable for collapse if has dependents)
+            const labelContainer = document.createElement('div');
+            labelContainer.className = 'toolasha-setting-label-container';
+            labelContainer.style.display = 'flex';
+            labelContainer.style.alignItems = 'center';
+            labelContainer.style.flex = '1';
+            labelContainer.style.gap = '6px';
+
+            // Add collapse icon if this setting has dependents (will be populated by checkDependents)
+            const collapseIcon = document.createElement('span');
+            collapseIcon.className = 'setting-collapse-icon';
+            collapseIcon.textContent = '▼';
+            collapseIcon.style.display = 'none'; // Hidden by default, shown if dependents exist
+            collapseIcon.style.cursor = 'pointer';
+            collapseIcon.style.fontSize = '10px';
+            collapseIcon.style.transition = 'transform 0.2s ease';
+
+            // Create label
+            const label = document.createElement('span');
+            label.className = 'toolasha-setting-label';
+            label.textContent = settingDef.label;
+
+            // Add help text if present
+            if (settingDef.help) {
+                const help = document.createElement('span');
+                help.className = 'toolasha-setting-help';
+                help.textContent = settingDef.help;
+                label.appendChild(help);
+            }
+
+            labelContainer.appendChild(collapseIcon);
+            labelContainer.appendChild(label);
+
+            // Create input
+            const inputHTML = this.generateSettingInput(settingId, settingDef);
+            const inputContainer = document.createElement('div');
+            inputContainer.className = 'toolasha-setting-input';
+            inputContainer.innerHTML = inputHTML;
+
+            div.appendChild(labelContainer);
+            div.appendChild(inputContainer);
+
+            return div;
+        }
+
+        /**
+         * Generate input HTML for a setting
+         * @param {string} settingId - Setting ID
+         * @param {Object} settingDef - Setting definition
+         * @returns {string} Input HTML
+         */
+        generateSettingInput(settingId, settingDef) {
+            const currentSetting = this.currentSettings[settingId];
+            const type = settingDef.type || 'checkbox';
+
+            switch (type) {
+                case 'checkbox': {
+                    const checked = currentSetting?.isTrue ?? settingDef.default ?? false;
+                    return `
+                    <label class="toolasha-switch">
+                        <input type="checkbox" id="${settingId}" ${checked ? 'checked' : ''}>
+                        <span class="toolasha-slider"></span>
+                    </label>
+                `;
+                }
+
+                case 'text': {
+                    const value = currentSetting?.value ?? settingDef.default ?? '';
+                    return `
+                    <input type="text"
+                        id="${settingId}"
+                        class="toolasha-text-input"
+                        value="${value}"
+                        placeholder="${settingDef.placeholder || ''}">
+                `;
+                }
+
+                case 'number': {
+                    const value = currentSetting?.value ?? settingDef.default ?? 0;
+                    return `
+                    <input type="number"
+                        id="${settingId}"
+                        class="toolasha-number-input"
+                        value="${value}"
+                        min="${settingDef.min ?? ''}"
+                        max="${settingDef.max ?? ''}"
+                        step="${settingDef.step ?? '1'}">
+                `;
+                }
+
+                case 'select': {
+                    const value = currentSetting?.value ?? settingDef.default ?? '';
+                    const options = settingDef.options || [];
+                    const optionsHTML = options
+                        .map((option) => {
+                            const optValue = typeof option === 'object' ? option.value : option;
+                            const optLabel = typeof option === 'object' ? option.label : option;
+                            const selected = optValue === value ? 'selected' : '';
+                            return `<option value="${optValue}" ${selected}>${optLabel}</option>`;
+                        })
+                        .join('');
+
+                    return `
+                    <select id="${settingId}" class="toolasha-select-input">
+                        ${optionsHTML}
+                    </select>
+                `;
+                }
+
+                case 'color': {
+                    const value = currentSetting?.value ?? settingDef.value ?? settingDef.default ?? '#000000';
+                    return `
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <input type="color"
+                            id="${settingId}"
+                            class="toolasha-color-input"
+                            value="${value}">
+                        <input type="text"
+                            id="${settingId}_text"
+                            class="toolasha-color-text-input"
+                            value="${value}"
+                            style="width: 80px; padding: 4px; background: #2a2a2a; color: white; border: 1px solid #555; border-radius: 3px;"
+                            readonly>
+                    </div>
+                `;
+                }
+
+                case 'slider': {
+                    const value = currentSetting?.value ?? settingDef.default ?? 0;
+                    return `
+                    <div style="display: flex; align-items: center; gap: 12px; width: 100%;">
+                        <input type="range"
+                            id="${settingId}"
+                            class="toolasha-slider-input"
+                            value="${value}"
+                            min="${settingDef.min ?? 0}"
+                            max="${settingDef.max ?? 1}"
+                            step="${settingDef.step ?? 0.01}"
+                            style="flex: 1;">
+                        <span id="${settingId}_value" class="toolasha-slider-value" style="min-width: 50px; color: #aaa; font-size: 0.9em;">${value}</span>
+                    </div>
+                `;
+                }
+
+                default:
+                    return `<span style="color: red;">Unknown type: ${type}</span>`;
+            }
+        }
+
+        /**
+         * Add search box to filter settings
+         * @param {HTMLElement} container - Container element
+         */
+        addSearchBox(container) {
+            const searchContainer = document.createElement('div');
+            searchContainer.className = 'toolasha-search-container';
+            searchContainer.style.cssText = `
+            margin-bottom: 20px;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        `;
+
+            // Search input
+            const searchInput = document.createElement('input');
+            searchInput.type = 'text';
+            searchInput.className = 'toolasha-search-input';
+            searchInput.placeholder = 'Search settings...';
+            searchInput.style.cssText = `
+            flex: 1;
+            padding: 8px 12px;
+            background: #2a2a2a;
+            color: white;
+            border: 1px solid #555;
+            border-radius: 4px;
+            font-size: 14px;
+        `;
+
+            // Clear button
+            const clearButton = document.createElement('button');
+            clearButton.textContent = 'Clear';
+            clearButton.className = 'toolasha-search-clear';
+            clearButton.style.cssText = `
+            padding: 8px 16px;
+            background: #444;
+            color: white;
+            border: 1px solid #555;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        `;
+            clearButton.style.display = 'none'; // Hidden by default
+
+            // Filter function
+            const filterSettings = (query) => {
+                const lowerQuery = query.toLowerCase().trim();
+
+                // If query is empty, show everything
+                if (!lowerQuery) {
+                    // Show all settings
+                    document.querySelectorAll('.toolasha-setting').forEach((setting) => {
+                        setting.style.display = 'flex';
+                    });
+                    // Show all groups
+                    document.querySelectorAll('.toolasha-settings-group').forEach((group) => {
+                        group.style.display = 'block';
+                    });
+                    clearButton.style.display = 'none';
+                    return;
+                }
+
+                clearButton.style.display = 'block';
+
+                // Filter settings
+                document.querySelectorAll('.toolasha-settings-group').forEach((group) => {
+                    let visibleCount = 0;
+
+                    group.querySelectorAll('.toolasha-setting').forEach((setting) => {
+                        const label = setting.querySelector('.toolasha-setting-label')?.textContent || '';
+                        const help = setting.querySelector('.toolasha-setting-help')?.textContent || '';
+                        const searchText = (label + ' ' + help).toLowerCase();
+
+                        if (searchText.includes(lowerQuery)) {
+                            setting.style.display = 'flex';
+                            visibleCount++;
+                        } else {
+                            setting.style.display = 'none';
+                        }
+                    });
+
+                    // Hide group if no visible settings
+                    if (visibleCount === 0) {
+                        group.style.display = 'none';
+                    } else {
+                        group.style.display = 'block';
+                    }
+                });
+            };
+
+            // Input event listener
+            searchInput.addEventListener('input', (e) => {
+                filterSettings(e.target.value);
+            });
+
+            // Clear button event listener
+            clearButton.addEventListener('click', () => {
+                searchInput.value = '';
+                filterSettings('');
+                searchInput.focus();
+            });
+
+            searchContainer.appendChild(searchInput);
+            searchContainer.appendChild(clearButton);
+            container.appendChild(searchContainer);
+        }
+
+        /**
+         * Add utility buttons (Reset, Export, Import, Fetch Prices)
+         * @param {HTMLElement} container - Container element
+         */
+        addUtilityButtons(container) {
+            const buttonsDiv = document.createElement('div');
+            buttonsDiv.className = 'toolasha-utility-buttons';
+
+            // Sync button (at top - most important)
+            const syncBtn = document.createElement('button');
+            syncBtn.textContent = 'Copy Settings to All Characters';
+            syncBtn.className = 'toolasha-utility-button toolasha-sync-button';
+            syncBtn.addEventListener('click', () => this.handleSync());
+
+            // Fetch Latest Prices button
+            const fetchPricesBtn = document.createElement('button');
+            fetchPricesBtn.textContent = '🔄 Fetch Latest Prices';
+            fetchPricesBtn.className = 'toolasha-utility-button toolasha-fetch-prices-button';
+            fetchPricesBtn.addEventListener('click', () => this.handleFetchPrices(fetchPricesBtn));
+
+            // Reset button
+            const resetBtn = document.createElement('button');
+            resetBtn.textContent = 'Reset to Defaults';
+            resetBtn.className = 'toolasha-utility-button';
+            resetBtn.addEventListener('click', () => this.handleReset());
+
+            // Export button
+            const exportBtn = document.createElement('button');
+            exportBtn.textContent = 'Export Settings';
+            exportBtn.className = 'toolasha-utility-button';
+            exportBtn.addEventListener('click', () => this.handleExport());
+
+            // Import button
+            const importBtn = document.createElement('button');
+            importBtn.textContent = 'Import Settings';
+            importBtn.className = 'toolasha-utility-button';
+            importBtn.addEventListener('click', () => this.handleImport());
+
+            buttonsDiv.appendChild(syncBtn);
+            buttonsDiv.appendChild(fetchPricesBtn);
+            buttonsDiv.appendChild(resetBtn);
+            buttonsDiv.appendChild(exportBtn);
+            buttonsDiv.appendChild(importBtn);
+
+            container.appendChild(buttonsDiv);
+        }
+
+        /**
+         * Add refresh notice
+         * @param {HTMLElement} container - Container element
+         */
+        addRefreshNotice(container) {
+            const notice = document.createElement('div');
+            notice.className = 'toolasha-refresh-notice';
+            notice.textContent = 'Some settings require a page refresh to take effect';
+            container.appendChild(notice);
+        }
+
+        /**
+         * Setup tab switching functionality
+         * @param {HTMLElement} tabButton - Toolasha tab button
+         * @param {HTMLElement} tabPanel - Toolasha tab panel
+         * @param {HTMLElement[]} existingTabs - Existing tab buttons
+         * @param {HTMLElement} tabPanelsContainer - Tab panels container
+         */
+        setupTabSwitching(tabButton, tabPanel, existingTabs, tabPanelsContainer) {
+            const switchToTab = (targetButton, targetPanel) => {
+                // Hide all panels
+                const allPanels = tabPanelsContainer.querySelectorAll('[class*="TabPanel_tabPanel"]');
+                allPanels.forEach((panel) => {
+                    panel.style.display = 'none';
+                    panel.classList.add('TabPanel_hidden__26UM3');
+                });
+
+                // Deactivate all buttons
+                const allButtons = document.querySelectorAll('button[role="tab"]');
+                allButtons.forEach((btn) => {
+                    btn.setAttribute('aria-selected', 'false');
+                    btn.setAttribute('tabindex', '-1');
+                    btn.classList.remove('Mui-selected');
+                });
+
+                // Activate target
+                targetButton.setAttribute('aria-selected', 'true');
+                targetButton.setAttribute('tabindex', '0');
+                targetButton.classList.add('Mui-selected');
+                targetPanel.style.display = 'block';
+                targetPanel.classList.remove('TabPanel_hidden__26UM3');
+
+                // Update title
+                const titleEl = document.querySelector('[class*="SettingsPanel_title"]');
+                if (titleEl) {
+                    if (targetButton.id === 'toolasha-settings-tab') {
+                        titleEl.textContent = '⚙️ Toolasha Settings (refresh to apply)';
+                    } else {
+                        titleEl.textContent = 'Settings';
+                    }
+                }
+            };
+
+            // Click handler for Toolasha tab
+            tabButton.addEventListener('click', () => {
+                switchToTab(tabButton, tabPanel);
+            });
+
+            // Click handlers for existing tabs
+            existingTabs.forEach((existingTab, index) => {
+                existingTab.addEventListener('click', () => {
+                    const correspondingPanel = tabPanelsContainer.children[index];
+                    if (correspondingPanel) {
+                        switchToTab(existingTab, correspondingPanel);
+                    }
+                });
+            });
+        }
+
+        /**
+         * Handle setting change
+         * @param {Event} event - Change event
+         */
+        async handleSettingChange(event) {
+            const input = event.target;
+            if (!input.id) return;
+
+            const settingId = input.id;
+            const type = input.closest('.toolasha-setting')?.dataset.type || 'checkbox';
+
+            let value;
+
+            // Get value based on type
+            if (type === 'checkbox') {
+                value = input.checked;
+            } else if (type === 'number' || type === 'slider') {
+                value = parseFloat(input.value) || 0;
+                // Update the slider value display if it's a slider
+                if (type === 'slider') {
+                    const valueDisplay = document.getElementById(`${settingId}_value`);
+                    if (valueDisplay) {
+                        valueDisplay.textContent = value;
+                    }
+                }
+            } else if (type === 'color') {
+                value = input.value;
+                // Update the text display
+                const textInput = document.getElementById(`${settingId}_text`);
+                if (textInput) {
+                    textInput.value = value;
+                }
+            } else {
+                value = input.value;
+            }
+
+            // Save to storage
+            await settingsStorage.setSetting(settingId, value);
+
+            // Update local cache immediately
+            if (!this.currentSettings[settingId]) {
+                this.currentSettings[settingId] = {};
+            }
+            if (type === 'checkbox') {
+                this.currentSettings[settingId].isTrue = value;
+            } else {
+                this.currentSettings[settingId].value = value;
+            }
+
+            // Update config module (for backward compatibility)
+            if (type === 'checkbox') {
+                this.config.setSetting(settingId, value);
+            } else {
+                this.config.setSettingValue(settingId, value);
+            }
+
+            // Apply color settings immediately if this is a color setting
+            if (type === 'color') {
+                this.config.applyColorSettings();
+            }
+
+            // Update dependencies
+            this.updateDependencies();
+        }
+
+        /**
+         * Update dependency states (enable/disable dependent settings)
+         */
+        updateDependencies() {
+            const settings = document.querySelectorAll('.toolasha-setting[data-dependencies]');
+
+            settings.forEach((settingEl) => {
+                const dependencies = settingEl.dataset.dependencies.split(',');
+                const mode = settingEl.dataset.dependencyMode || 'all'; // 'all' = AND, 'any' = OR
+                let enabled = false;
+
+                if (mode === 'any') {
+                    // OR logic: at least one dependency must be met
+                    for (const depId of dependencies) {
+                        const depInput = document.getElementById(depId);
+                        if (depInput && depInput.type === 'checkbox' && depInput.checked) {
+                            enabled = true;
+                            break; // Found at least one enabled, that's enough
+                        }
+                    }
+                } else {
+                    // AND logic (default): all dependencies must be met
+                    enabled = true; // Assume enabled, then check all
+                    for (const depId of dependencies) {
+                        const depInput = document.getElementById(depId);
+                        if (depInput && depInput.type === 'checkbox' && !depInput.checked) {
+                            enabled = false;
+                            break; // Found one disabled, no need to check rest
+                        }
+                    }
+                }
+
+                // Enable or disable
+                if (enabled) {
+                    settingEl.classList.remove('disabled');
+                } else {
+                    settingEl.classList.add('disabled');
+                }
+            });
+        }
+
+        /**
+         * Handle sync settings to all characters
+         */
+        async handleSync() {
+            // Get character count to show in confirmation
+            const characterCount = await this.config.getKnownCharacterCount();
+
+            // If only 1 character (current), no need to sync
+            if (characterCount <= 1) {
+                alert('You only have one character. Settings are already saved for this character.');
+                return;
+            }
+
+            // Confirm action
+            const otherCharacters = characterCount - 1;
+            const message = `This will copy your current settings to ${otherCharacters} other character${otherCharacters > 1 ? 's' : ''}. Their existing settings will be overwritten.\n\nContinue?`;
+
+            if (!confirm(message)) {
+                return;
+            }
+
+            // Perform sync
+            const result = await this.config.syncSettingsToAllCharacters();
+
+            // Show result
+            if (result.success) {
+                alert(`Settings successfully copied to ${result.count} character${result.count > 1 ? 's' : ''}!`);
+            } else {
+                alert(`Failed to sync settings: ${result.error || 'Unknown error'}`);
+            }
+        }
+
+        /**
+         * Handle fetch latest prices
+         * @param {HTMLElement} button - Button element for state updates
+         */
+        async handleFetchPrices(button) {
+            // Disable button and show loading state
+            const originalText = button.textContent;
+            button.disabled = true;
+            button.textContent = '⏳ Fetching...';
+
+            try {
+                // Clear cache and fetch fresh data
+                const result = await marketAPI.clearCacheAndRefetch();
+
+                if (result) {
+                    // Success - clear listing price display cache to force re-render
+                    document.querySelectorAll('.mwi-listing-prices-set').forEach((table) => {
+                        table.classList.remove('mwi-listing-prices-set');
+                    });
+
+                    // Show success state
+                    button.textContent = '✅ Updated!';
+                    button.style.backgroundColor = '#00ff00';
+                    button.style.color = '#000';
+
+                    // Reset button after 2 seconds
+                    setTimeout(() => {
+                        button.textContent = originalText;
+                        button.style.backgroundColor = '';
+                        button.style.color = '';
+                        button.disabled = false;
+                    }, 2000);
+                } else {
+                    // Failed - show error state
+                    button.textContent = '❌ Failed';
+                    button.style.backgroundColor = '#ff0000';
+
+                    // Reset button after 3 seconds
+                    setTimeout(() => {
+                        button.textContent = originalText;
+                        button.style.backgroundColor = '';
+                        button.disabled = false;
+                    }, 3000);
+                }
+            } catch (error) {
+                console.error('[SettingsUI] Fetch prices failed:', error);
+
+                // Show error state
+                button.textContent = '❌ Error';
+                button.style.backgroundColor = '#ff0000';
+
+                // Reset button after 3 seconds
+                setTimeout(() => {
+                    button.textContent = originalText;
+                    button.style.backgroundColor = '';
+                    button.disabled = false;
+                }, 3000);
+            }
+        }
+
+        /**
+         * Handle reset to defaults
+         */
+        async handleReset() {
+            if (!confirm('Reset all settings to defaults? This cannot be undone.')) {
+                return;
+            }
+
+            await settingsStorage.resetToDefaults();
+            await this.config.resetToDefaults();
+
+            alert('Settings reset to defaults. Please refresh the page.');
+            window.location.reload();
+        }
+
+        /**
+         * Handle export settings
+         */
+        async handleExport() {
+            const json = await settingsStorage.exportSettings();
+
+            // Create download
+            const blob = new Blob([json], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `toolasha-settings-${new Date().toISOString().slice(0, 10)}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        /**
+         * Handle import settings
+         */
+        async handleImport() {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.json';
+
+            input.addEventListener('change', async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+
+                try {
+                    const text = await file.text();
+                    const success = await settingsStorage.importSettings(text);
+
+                    if (success) {
+                        alert('Settings imported successfully. Please refresh the page.');
+                        window.location.reload();
+                    } else {
+                        alert('Failed to import settings. Please check the file format.');
+                    }
+                } catch (error) {
+                    console.error('[Toolasha Settings] Import error:', error);
+                    alert('Failed to import settings.');
+                }
+            });
+
+            input.click();
+        }
+
+        /**
+         * Cleanup for full shutdown (not character switching)
+         * Unregisters event listeners and removes all DOM elements
+         */
+        cleanup() {
+            // Clean up DOM elements first
+            this.cleanupDOM();
+
+            // Unregister character switch listener
+            if (this.characterSwitchHandler) {
+                dataManager.off('character_initialized', this.characterSwitchHandler);
+                this.characterSwitchHandler = null;
+            }
+        }
+    }
+
+    // Create and export singleton instance
+    const settingsUI = new SettingsUI();
+
+    /**
+     * Market History Viewer Module
+     *
+     * Displays a comprehensive table of all market listings with:
+     * - Sortable columns
+     * - Search/filter functionality
+     * - Pagination with user-configurable rows per page
+     * - CSV export
+     * - Summary statistics
+     */
+
+
+    class MarketHistoryViewer {
+        constructor() {
+            this.isInitialized = false;
+            this.modal = null;
+            this.listings = [];
+            this.filteredListings = [];
+            this.currentPage = 1;
+            this.rowsPerPage = 50;
+            this.showAll = false;
+            this.sortColumn = 'createdTimestamp';
+            this.sortDirection = 'desc'; // Most recent first
+            this.searchTerm = '';
+            this.typeFilter = 'all'; // 'all', 'buy', 'sell'
+            this.useKMBFormat = false; // K/M/B formatting toggle
+            this.storageKey = 'marketListingTimestamps';
+
+            // Column filters
+            this.filters = {
+                dateFrom: null, // Date object or null
+                dateTo: null, // Date object or null
+                selectedItems: [], // Array of itemHrids
+                selectedEnhLevels: [], // Array of enhancement levels (numbers)
+                selectedTypes: [], // Array of 'buy' and/or 'sell'
+            };
+            this.activeFilterPopup = null; // Track currently open filter popup
+            this.popupCloseHandler = null; // Track the close handler to clean it up properly
+        }
+
+        /**
+         * Initialize the feature
+         */
+        async initialize() {
+            if (this.isInitialized) {
+                return;
+            }
+
+            if (!config.getSetting('market_showHistoryViewer')) {
+                return;
+            }
+
+            this.isInitialized = true;
+
+            // Load K/M/B format preference
+            this.useKMBFormat = await storage.get('marketHistoryKMBFormat', 'settings', false);
+
+            // Load saved filters
+            await this.loadFilters();
+
+            // Add button to settings panel
+            this.addSettingsButton();
+        }
+
+        /**
+         * Load saved filters from storage
+         */
+        async loadFilters() {
+            try {
+                const savedFilters = await storage.getJSON('marketHistoryFilters', 'settings', null);
+                if (savedFilters) {
+                    // Convert date strings back to Date objects
+                    this.filters.dateFrom = savedFilters.dateFrom ? new Date(savedFilters.dateFrom) : null;
+                    this.filters.dateTo = savedFilters.dateTo ? new Date(savedFilters.dateTo) : null;
+                    this.filters.selectedItems = savedFilters.selectedItems || [];
+                    this.filters.selectedEnhLevels = savedFilters.selectedEnhLevels || [];
+                    this.filters.selectedTypes = savedFilters.selectedTypes || [];
+                }
+            } catch (error) {
+                console.error('[MarketHistoryViewer] Failed to load filters:', error);
+            }
+        }
+
+        /**
+         * Save filters to storage
+         */
+        async saveFilters() {
+            try {
+                // Convert Date objects to strings for storage
+                const filtersToSave = {
+                    dateFrom: this.filters.dateFrom ? this.filters.dateFrom.toISOString() : null,
+                    dateTo: this.filters.dateTo ? this.filters.dateTo.toISOString() : null,
+                    selectedItems: this.filters.selectedItems,
+                    selectedEnhLevels: this.filters.selectedEnhLevels,
+                    selectedTypes: this.filters.selectedTypes,
+                };
+                await storage.setJSON('marketHistoryFilters', filtersToSave, 'settings', true);
+            } catch (error) {
+                console.error('[MarketHistoryViewer] Failed to save filters:', error);
+            }
+        }
+
+        /**
+         * Add "View Market History" button to settings panel
+         */
+        addSettingsButton() {
+            // Function to check and add button if needed
+            const ensureButtonExists = () => {
+                const settingsPanel = document.querySelector('[class*="SettingsPanel"]');
+                if (!settingsPanel) return;
+
+                // Check if button already exists
+                if (settingsPanel.querySelector('.mwi-market-history-button')) {
+                    return;
+                }
+
+                // Create button
+                const button = document.createElement('button');
+                button.className = 'mwi-market-history-button';
+                button.textContent = 'View Market History';
+                button.style.cssText = `
+                margin: 10px;
+                padding: 8px 16px;
+                background: #4a90e2;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 14px;
+            `;
+
+                button.addEventListener('mouseenter', () => {
+                    button.style.background = '#357abd';
+                });
+
+                button.addEventListener('mouseleave', () => {
+                    button.style.background = '#4a90e2';
+                });
+
+                button.addEventListener('click', () => {
+                    this.openModal();
+                });
+
+                // Insert button at top of settings panel
+                settingsPanel.insertBefore(button, settingsPanel.firstChild);
+            };
+
+            // Register callback with settings UI to be notified when settings panel appears
+            settingsUI.onSettingsPanelAppear(ensureButtonExists);
+
+            // Also try immediately in case settings is already open
+            ensureButtonExists();
+        }
+
+        /**
+         * Load listings from storage
+         */
+        async loadListings() {
+            try {
+                const stored = await storage.getJSON(this.storageKey, 'marketListings', []);
+                this.listings = stored;
+                this.cachedDateRange = null; // Clear cache when loading new data
+                this.applyFilters();
+            } catch (error) {
+                console.error('[MarketHistoryViewer] Failed to load listings:', error);
+                this.listings = [];
+                this.filteredListings = [];
+            }
+        }
+
+        /**
+         * Apply filters and search to listings
+         */
+        applyFilters() {
+            let filtered = [...this.listings];
+
+            // Clear cached date range when filters change
+            this.cachedDateRange = null;
+
+            // Apply type filter (legacy - kept for backwards compatibility)
+            if (this.typeFilter === 'buy') {
+                filtered = filtered.filter((listing) => !listing.isSell);
+            } else if (this.typeFilter === 'sell') {
+                filtered = filtered.filter((listing) => listing.isSell);
+            }
+
+            // Apply search term (search in item name)
+            if (this.searchTerm) {
+                const term = this.searchTerm.toLowerCase();
+                filtered = filtered.filter((listing) => {
+                    const itemName = this.getItemName(listing.itemHrid).toLowerCase();
+                    return itemName.includes(term);
+                });
+            }
+
+            // Apply date range filter
+            if (this.filters.dateFrom || this.filters.dateTo) {
+                filtered = filtered.filter((listing) => {
+                    const listingDate = new Date(listing.createdTimestamp || listing.timestamp);
+
+                    if (this.filters.dateFrom && listingDate < this.filters.dateFrom) {
+                        return false;
+                    }
+
+                    if (this.filters.dateTo) {
+                        // Set dateTo to end of day (23:59:59.999)
+                        const endOfDay = new Date(this.filters.dateTo);
+                        endOfDay.setHours(23, 59, 59, 999);
+                        if (listingDate > endOfDay) {
+                            return false;
+                        }
+                    }
+
+                    return true;
+                });
+            }
+
+            // Apply item filter
+            if (this.filters.selectedItems.length > 0) {
+                filtered = filtered.filter((listing) => this.filters.selectedItems.includes(listing.itemHrid));
+            }
+
+            // Apply enhancement level filter
+            if (this.filters.selectedEnhLevels.length > 0) {
+                filtered = filtered.filter((listing) => this.filters.selectedEnhLevels.includes(listing.enhancementLevel));
+            }
+
+            // Apply type filter (column filter)
+            if (this.filters.selectedTypes.length > 0 && this.filters.selectedTypes.length < 2) {
+                // Only filter if not both selected (both selected = show all)
+                const showBuy = this.filters.selectedTypes.includes('buy');
+                const showSell = this.filters.selectedTypes.includes('sell');
+
+                filtered = filtered.filter((listing) => {
+                    if (showBuy && !listing.isSell) return true;
+                    if (showSell && listing.isSell) return true;
+                    return false;
+                });
+            }
+
+            // Apply sorting
+            filtered.sort((a, b) => {
+                let aVal = a[this.sortColumn];
+                let bVal = b[this.sortColumn];
+
+                // Handle timestamp sorting
+                if (this.sortColumn === 'createdTimestamp') {
+                    aVal = a.timestamp; // Use numeric timestamp for sorting
+                    bVal = b.timestamp;
+                }
+
+                // Handle item name sorting
+                if (this.sortColumn === 'itemHrid') {
+                    aVal = this.getItemName(a.itemHrid);
+                    bVal = this.getItemName(b.itemHrid);
+                }
+
+                // Handle total (price × filled) sorting
+                if (this.sortColumn === 'total') {
+                    aVal = a.price * a.filledQuantity;
+                    bVal = b.price * b.filledQuantity;
+                }
+
+                if (typeof aVal === 'string') {
+                    return this.sortDirection === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+                } else {
+                    return this.sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
+                }
+            });
+
+            this.filteredListings = filtered;
+            this.currentPage = 1; // Reset to first page when filters change
+
+            // Auto-cleanup invalid filter selections (only on first pass to prevent infinite recursion)
+            if (!this._cleanupInProgress) {
+                this._cleanupInProgress = true;
+                const cleaned = this.cleanupInvalidSelections();
+
+                if (cleaned) {
+                    // Selections were cleaned - re-apply filters with the cleaned selections
+                    this.applyFilters();
+                }
+
+                this._cleanupInProgress = false;
+
+                // Re-render table if modal is open and cleanup happened (only on outermost call)
+                if (cleaned && this.modal && this.modal.style.display !== 'none') {
+                    this.renderTable();
+                }
+            }
+        }
+
+        /**
+         * Remove filter selections that yield no results with current filters
+         * @returns {boolean} True if any selections were cleaned up
+         */
+        cleanupInvalidSelections() {
+            let changed = false;
+
+            // Check item selections
+            if (this.filters.selectedItems.length > 0) {
+                const validItems = new Set(this.filteredListings.map((l) => l.itemHrid));
+                const originalLength = this.filters.selectedItems.length;
+                this.filters.selectedItems = this.filters.selectedItems.filter((hrid) => validItems.has(hrid));
+
+                if (this.filters.selectedItems.length !== originalLength) {
+                    console.log(
+                        `[MarketHistoryViewer] Cleaned up ${originalLength - this.filters.selectedItems.length} invalid item selections`
+                    );
+                    changed = true;
+                }
+            }
+
+            // Check enhancement level selections
+            if (this.filters.selectedEnhLevels.length > 0) {
+                const validLevels = new Set(this.filteredListings.map((l) => l.enhancementLevel));
+                const originalLength = this.filters.selectedEnhLevels.length;
+                this.filters.selectedEnhLevels = this.filters.selectedEnhLevels.filter((level) => validLevels.has(level));
+
+                if (this.filters.selectedEnhLevels.length !== originalLength) {
+                    console.log(
+                        `[MarketHistoryViewer] Cleaned up ${originalLength - this.filters.selectedEnhLevels.length} invalid enhancement level selections`
+                    );
+                    changed = true;
+                }
+            }
+
+            // Check type selections
+            if (this.filters.selectedTypes.length > 0) {
+                const hasBuy = this.filteredListings.some((l) => !l.isSell);
+                const hasSell = this.filteredListings.some((l) => l.isSell);
+                const originalLength = this.filters.selectedTypes.length;
+
+                this.filters.selectedTypes = this.filters.selectedTypes.filter((type) => {
+                    if (type === 'buy') return hasBuy;
+                    if (type === 'sell') return hasSell;
+                    return false;
+                });
+
+                if (this.filters.selectedTypes.length !== originalLength) {
+                    console.log(
+                        `[MarketHistoryViewer] Cleaned up ${originalLength - this.filters.selectedTypes.length} invalid type selections`
+                    );
+                    changed = true;
+                }
+            }
+
+            // Save changes to storage
+            if (changed) {
+                this.saveFilters();
+            }
+
+            return changed;
+        }
+
+        /**
+         * Get item name from HRID
+         */
+        getItemName(itemHrid) {
+            const itemDetails = dataManager.getItemDetails(itemHrid);
+            return itemDetails?.name || itemHrid.split('/').pop().replace(/_/g, ' ');
+        }
+
+        /**
+         * Format number based on K/M/B toggle
+         * @param {number} num - Number to format
+         * @returns {string} Formatted number
+         */
+        formatNumber(num) {
+            return this.useKMBFormat ? formatKMB(num, 1) : formatWithSeparator(num);
+        }
+
+        /**
+         * Get paginated listings for current page
+         */
+        getPaginatedListings() {
+            if (this.showAll) {
+                return this.filteredListings;
+            }
+
+            const start = (this.currentPage - 1) * this.rowsPerPage;
+            const end = start + this.rowsPerPage;
+            return this.filteredListings.slice(start, end);
+        }
+
+        /**
+         * Get total pages
+         */
+        getTotalPages() {
+            if (this.showAll) {
+                return 1;
+            }
+            return Math.ceil(this.filteredListings.length / this.rowsPerPage);
+        }
+
+        /**
+         * Open the market history modal
+         */
+        async openModal() {
+            // Load listings
+            await this.loadListings();
+
+            // Create modal if it doesn't exist
+            if (!this.modal) {
+                this.createModal();
+            }
+
+            // Show modal
+            this.modal.style.display = 'flex';
+
+            // Render table
+            this.renderTable();
+        }
+
+        /**
+         * Close the modal
+         */
+        closeModal() {
+            if (this.modal) {
+                this.modal.style.display = 'none';
+            }
+        }
+
+        /**
+         * Create modal structure
+         */
+        createModal() {
+            // Modal overlay
+            this.modal = document.createElement('div');
+            this.modal.className = 'mwi-market-history-modal';
+            this.modal.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 10000;
+        `;
+
+            // Modal content
+            const content = document.createElement('div');
+            content.className = 'mwi-market-history-content';
+            content.style.cssText = `
+            background: #2a2a2a;
+            border-radius: 8px;
+            padding: 20px;
+            max-width: 95%;
+            max-height: 90%;
+            overflow: auto;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+        `;
+
+            // Header
+            const header = document.createElement('div');
+            header.style.cssText = `
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        `;
+
+            const title = document.createElement('h2');
+            title.textContent = 'Market History';
+            title.style.cssText = `
+            margin: 0;
+            color: #fff;
+        `;
+
+            const closeBtn = document.createElement('button');
+            closeBtn.textContent = '✕';
+            closeBtn.style.cssText = `
+            background: none;
+            border: none;
+            color: #fff;
+            font-size: 24px;
+            cursor: pointer;
+            padding: 0;
+            width: 30px;
+            height: 30px;
+        `;
+            closeBtn.addEventListener('click', () => this.closeModal());
+
+            header.appendChild(title);
+            header.appendChild(closeBtn);
+
+            // Controls container
+            const controls = document.createElement('div');
+            controls.className = 'mwi-market-history-controls';
+            controls.style.cssText = `
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+        `;
+
+            content.appendChild(header);
+            content.appendChild(controls);
+
+            // Table container
+            const tableContainer = document.createElement('div');
+            tableContainer.className = 'mwi-market-history-table-container';
+            content.appendChild(tableContainer);
+
+            // Pagination container
+            const pagination = document.createElement('div');
+            pagination.className = 'mwi-market-history-pagination';
+            pagination.style.cssText = `
+            margin-top: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        `;
+            content.appendChild(pagination);
+
+            this.modal.appendChild(content);
+            document.body.appendChild(this.modal);
+
+            // Close on background click
+            this.modal.addEventListener('click', (e) => {
+                if (e.target === this.modal) {
+                    this.closeModal();
+                }
+            });
+        }
+
+        /**
+         * Render controls (search, filters, export)
+         */
+        renderControls() {
+            const controls = this.modal.querySelector('.mwi-market-history-controls');
+
+            // Only render if controls are empty (prevents re-rendering on every keystroke)
+            if (controls.children.length > 0) {
+                // Just update the stats text
+                this.updateStats();
+                return;
+            }
+
+            // Left group: Search and filters
+            const leftGroup = document.createElement('div');
+            leftGroup.style.cssText = `
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        `;
+
+            // Search box
+            const searchBox = document.createElement('input');
+            searchBox.type = 'text';
+            searchBox.placeholder = 'Search items...';
+            searchBox.value = this.searchTerm;
+            searchBox.className = 'mwi-search-box';
+            searchBox.style.cssText = `
+            padding: 6px 12px;
+            border: 1px solid #555;
+            border-radius: 4px;
+            background: #1a1a1a;
+            color: #fff;
+            min-width: 200px;
+        `;
+            searchBox.addEventListener('input', (e) => {
+                this.searchTerm = e.target.value;
+                this.applyFilters();
+                this.renderTable();
+            });
+
+            // Type filter
+            const typeFilter = document.createElement('select');
+            typeFilter.style.cssText = `
+            padding: 6px 12px;
+            border: 1px solid #555;
+            border-radius: 4px;
+            background: #1a1a1a;
+            color: #fff;
+        `;
+            const typeOptions = [
+                { value: 'all', label: 'All Types' },
+                { value: 'buy', label: 'Buy Orders' },
+                { value: 'sell', label: 'Sell Orders' },
+            ];
+            typeOptions.forEach((opt) => {
+                const option = document.createElement('option');
+                option.value = opt.value;
+                option.textContent = opt.label;
+                if (opt.value === this.typeFilter) {
+                    option.selected = true;
+                }
+                typeFilter.appendChild(option);
+            });
+            typeFilter.addEventListener('change', (e) => {
+                this.typeFilter = e.target.value;
+                this.applyFilters();
+                this.renderTable();
+            });
+
+            leftGroup.appendChild(searchBox);
+            leftGroup.appendChild(typeFilter);
+
+            // Middle group: Active filter badges
+            const middleGroup = document.createElement('div');
+            middleGroup.className = 'mwi-active-filters';
+            middleGroup.style.cssText = `
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-wrap: wrap;
+            flex: 1;
+            min-height: 32px;
+        `;
+
+            // Action buttons group
+            const actionGroup = document.createElement('div');
+            actionGroup.style.cssText = `
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        `;
+
+            // Export button
+            const exportBtn = document.createElement('button');
+            exportBtn.textContent = 'Export CSV';
+            exportBtn.style.cssText = `
+            padding: 6px 12px;
+            background: #4a90e2;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        `;
+            exportBtn.addEventListener('click', () => this.exportCSV());
+
+            // Import button
+            const importBtn = document.createElement('button');
+            importBtn.textContent = 'Import Market Data';
+            importBtn.style.cssText = `
+            padding: 6px 12px;
+            background: #9b59b6;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        `;
+            importBtn.addEventListener('click', () => this.showImportDialog());
+
+            // Clear History button (destructive action - red)
+            const clearBtn = document.createElement('button');
+            clearBtn.textContent = 'Clear History';
+            clearBtn.style.cssText = `
+            padding: 6px 12px;
+            background: #dc2626;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        `;
+            clearBtn.addEventListener('mouseenter', () => {
+                clearBtn.style.background = '#b91c1c';
+            });
+            clearBtn.addEventListener('mouseleave', () => {
+                clearBtn.style.background = '#dc2626';
+            });
+            clearBtn.addEventListener('click', () => this.clearHistory());
+
+            actionGroup.appendChild(exportBtn);
+            actionGroup.appendChild(importBtn);
+            actionGroup.appendChild(clearBtn);
+
+            // Right group: Options and stats
+            const rightGroup = document.createElement('div');
+            rightGroup.style.cssText = `
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            margin-left: auto;
+        `;
+
+            // K/M/B Format checkbox
+            const kmbCheckbox = document.createElement('input');
+            kmbCheckbox.type = 'checkbox';
+            kmbCheckbox.checked = this.useKMBFormat;
+            kmbCheckbox.id = 'mwi-kmb-format';
+            kmbCheckbox.style.cssText = `
+            cursor: pointer;
+        `;
+            kmbCheckbox.addEventListener('change', (e) => {
+                this.useKMBFormat = e.target.checked;
+                // Save preference to storage
+                storage.set('marketHistoryKMBFormat', this.useKMBFormat, 'settings');
+                this.renderTable(); // Re-render to apply formatting
+            });
+
+            const kmbLabel = document.createElement('label');
+            kmbLabel.htmlFor = 'mwi-kmb-format';
+            kmbLabel.textContent = 'K/M/B Format';
+            kmbLabel.style.cssText = `
+            cursor: pointer;
+            color: #aaa;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        `;
+            kmbLabel.prepend(kmbCheckbox);
+
+            // Summary stats
+            const stats = document.createElement('div');
+            stats.className = 'mwi-market-history-stats';
+            stats.style.cssText = `
+            color: #aaa;
+            font-size: 14px;
+            white-space: nowrap;
+        `;
+            stats.textContent = `Total: ${this.filteredListings.length} listings`;
+
+            rightGroup.appendChild(kmbLabel);
+            rightGroup.appendChild(stats);
+
+            controls.appendChild(leftGroup);
+            controls.appendChild(middleGroup);
+            controls.appendChild(actionGroup);
+            controls.appendChild(rightGroup);
+
+            // Add Clear All Filters button if needed (handled dynamically)
+            this.updateClearFiltersButton();
+
+            // Render active filter badges
+            this.renderActiveFilters();
+        }
+
+        /**
+         * Update just the stats text (without re-rendering controls)
+         */
+        updateStats() {
+            const stats = this.modal.querySelector('.mwi-market-history-stats');
+            if (stats) {
+                stats.textContent = `Total: ${this.filteredListings.length} listings`;
+            }
+
+            // Update Clear All Filters button visibility
+            this.updateClearFiltersButton();
+
+            // Update active filter badges
+            this.renderActiveFilters();
+        }
+
+        /**
+         * Render active filter badges in the middle section
+         */
+        renderActiveFilters() {
+            const container = this.modal.querySelector('.mwi-active-filters');
+            if (!container) return;
+
+            // Explicitly remove all children to ensure SVG elements are garbage collected
+            while (container.firstChild) {
+                container.removeChild(container.firstChild);
+            }
+
+            const badges = [];
+
+            // Date filter
+            if (this.filters.dateFrom || this.filters.dateTo) {
+                const dateText = [];
+                if (this.filters.dateFrom) {
+                    dateText.push(this.filters.dateFrom.toLocaleDateString());
+                }
+                if (this.filters.dateTo) {
+                    dateText.push(this.filters.dateTo.toLocaleDateString());
+                }
+                badges.push({
+                    label: `Date: ${dateText.join(' - ')}`,
+                    onRemove: () => {
+                        this.filters.dateFrom = null;
+                        this.filters.dateTo = null;
+                        this.saveFilters();
+                        this.applyFilters();
+                        this.renderTable();
+                    },
+                });
+            }
+
+            // Item filters
+            if (this.filters.selectedItems.length > 0) {
+                if (this.filters.selectedItems.length === 1) {
+                    badges.push({
+                        label: this.getItemName(this.filters.selectedItems[0]),
+                        icon: this.filters.selectedItems[0],
+                        onRemove: () => {
+                            this.filters.selectedItems = [];
+                            this.saveFilters();
+                            this.applyFilters();
+                            this.renderTable();
+                        },
+                    });
+                } else {
+                    badges.push({
+                        label: `${this.filters.selectedItems.length} items selected`,
+                        icon: this.filters.selectedItems[0], // Show first item's icon
+                        onRemove: () => {
+                            this.filters.selectedItems = [];
+                            this.saveFilters();
+                            this.applyFilters();
+                            this.renderTable();
+                        },
+                    });
+                }
+            }
+
+            // Enhancement level filters
+            if (this.filters.selectedEnhLevels.length > 0) {
+                const levels = this.filters.selectedEnhLevels.sort((a, b) => a - b);
+                if (levels.length === 1) {
+                    const levelText = levels[0] > 0 ? `+${levels[0]}` : 'No Enhancement';
+                    badges.push({
+                        label: `Enh Lvl: ${levelText}`,
+                        onRemove: () => {
+                            this.filters.selectedEnhLevels = [];
+                            this.saveFilters();
+                            this.applyFilters();
+                            this.renderTable();
+                        },
+                    });
+                } else {
+                    badges.push({
+                        label: `Enh Lvl: ${levels.length} selected`,
+                        onRemove: () => {
+                            this.filters.selectedEnhLevels = [];
+                            this.saveFilters();
+                            this.applyFilters();
+                            this.renderTable();
+                        },
+                    });
+                }
+            }
+
+            // Type filters
+            if (this.filters.selectedTypes.length > 0 && this.filters.selectedTypes.length < 2) {
+                badges.push({
+                    label: `Type: ${this.filters.selectedTypes.includes('buy') ? 'Buy' : 'Sell'}`,
+                    onRemove: () => {
+                        this.filters.selectedTypes = [];
+                        this.saveFilters();
+                        this.applyFilters();
+                        this.renderTable();
+                    },
+                });
+            }
+
+            // Render badges
+            badges.forEach((badge) => {
+                const badgeEl = document.createElement('div');
+                badgeEl.style.cssText = `
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                padding: 4px 8px;
+                background: #3a3a3a;
+                border: 1px solid #555;
+                border-radius: 4px;
+                color: #aaa;
+                font-size: 13px;
+            `;
+
+                // Add icon if provided
+                if (badge.icon) {
+                    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                    svg.setAttribute('width', '16');
+                    svg.setAttribute('height', '16');
+                    svg.style.flexShrink = '0';
+                    const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+                    const iconName = badge.icon.split('/').pop();
+                    use.setAttribute('href', `/static/media/items_sprite.328d6606.svg#${iconName}`);
+                    svg.appendChild(use);
+                    badgeEl.appendChild(svg);
+                }
+
+                const label = document.createElement('span');
+                label.textContent = badge.label;
+
+                const removeBtn = document.createElement('button');
+                removeBtn.textContent = '✕';
+                removeBtn.style.cssText = `
+                background: none;
+                border: none;
+                color: #aaa;
+                cursor: pointer;
+                padding: 0;
+                font-size: 14px;
+                line-height: 1;
+            `;
+                removeBtn.addEventListener('mouseenter', () => {
+                    removeBtn.style.color = '#fff';
+                });
+                removeBtn.addEventListener('mouseleave', () => {
+                    removeBtn.style.color = '#aaa';
+                });
+                removeBtn.addEventListener('click', badge.onRemove);
+
+                badgeEl.appendChild(label);
+                badgeEl.appendChild(removeBtn);
+                container.appendChild(badgeEl);
+            });
+        }
+
+        /**
+         * Update Clear All Filters button visibility based on filter state
+         */
+        updateClearFiltersButton() {
+            const controls = this.modal.querySelector('.mwi-market-history-controls');
+            if (!controls) return;
+
+            const hasActiveFilters =
+                this.filters.dateFrom !== null ||
+                this.filters.dateTo !== null ||
+                this.filters.selectedItems.length > 0 ||
+                this.filters.selectedEnhLevels.length > 0 ||
+                (this.filters.selectedTypes.length > 0 && this.filters.selectedTypes.length < 2);
+
+            const existingBtn = controls.querySelector('.mwi-clear-filters-button');
+
+            if (hasActiveFilters && !existingBtn) {
+                // Create button
+                const clearFiltersBtn = document.createElement('button');
+                clearFiltersBtn.className = 'mwi-clear-filters-button';
+                clearFiltersBtn.textContent = 'Clear All Filters';
+                clearFiltersBtn.style.cssText = `
+                padding: 6px 12px;
+                background: #e67e22;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+                white-space: nowrap;
+            `;
+                clearFiltersBtn.addEventListener('mouseenter', () => {
+                    clearFiltersBtn.style.background = '#d35400';
+                });
+                clearFiltersBtn.addEventListener('mouseleave', () => {
+                    clearFiltersBtn.style.background = '#e67e22';
+                });
+                clearFiltersBtn.addEventListener('click', () => this.clearAllFilters());
+
+                // Insert into right group (before K/M/B checkbox)
+                const rightGroup = controls.children[3]; // Fourth child is rightGroup
+                if (rightGroup) {
+                    rightGroup.insertBefore(clearFiltersBtn, rightGroup.firstChild);
+                }
+            } else if (!hasActiveFilters && existingBtn) {
+                // Remove button
+                existingBtn.remove();
+            }
+        }
+
+        /**
+         * Render table with listings
+         */
+        renderTable() {
+            this.renderControls();
+
+            const tableContainer = this.modal.querySelector('.mwi-market-history-table-container');
+
+            // Explicitly remove all children to ensure SVG elements are garbage collected
+            while (tableContainer.firstChild) {
+                tableContainer.removeChild(tableContainer.firstChild);
+            }
+
+            const table = document.createElement('table');
+            table.style.cssText = `
+            width: 100%;
+            border-collapse: collapse;
+            color: #fff;
+        `;
+
+            // Header
+            const thead = document.createElement('thead');
+            const headerRow = document.createElement('tr');
+            headerRow.style.cssText = `
+            background: #1a1a1a;
+        `;
+
+            const columns = [
+                { key: 'createdTimestamp', label: 'Date' },
+                { key: 'itemHrid', label: 'Item' },
+                { key: 'enhancementLevel', label: 'Enh Lvl' },
+                { key: 'isSell', label: 'Type' },
+                { key: 'price', label: 'Price' },
+                { key: 'orderQuantity', label: 'Quantity' },
+                { key: 'filledQuantity', label: 'Filled' },
+                { key: 'total', label: 'Total' },
+            ];
+
+            columns.forEach((col) => {
+                const th = document.createElement('th');
+                th.style.cssText = `
+                padding: 10px;
+                text-align: left;
+                border-bottom: 2px solid #555;
+                user-select: none;
+                position: relative;
+            `;
+
+                // Create header content container
+                const headerContent = document.createElement('div');
+                headerContent.style.cssText = `
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            `;
+
+                // Label and sort indicator
+                const labelSpan = document.createElement('span');
+                labelSpan.textContent = col.label;
+                labelSpan.style.cursor = 'pointer';
+
+                // Sort indicator
+                if (this.sortColumn === col.key) {
+                    labelSpan.textContent += this.sortDirection === 'asc' ? ' ▲' : ' ▼';
+                }
+
+                // Sort click handler
+                labelSpan.addEventListener('click', () => {
+                    if (this.sortColumn === col.key) {
+                        this.sortDirection = this.sortDirection === 'asc' ? 'desc' : 'asc';
+                    } else {
+                        this.sortColumn = col.key;
+                        this.sortDirection = 'desc';
+                    }
+                    this.applyFilters();
+                    this.renderTable();
+                });
+
+                headerContent.appendChild(labelSpan);
+
+                // Add filter button for filterable columns
+                const filterableColumns = ['createdTimestamp', 'itemHrid', 'enhancementLevel', 'isSell'];
+                if (filterableColumns.includes(col.key)) {
+                    const filterBtn = document.createElement('button');
+                    filterBtn.textContent = '⋮';
+                    filterBtn.style.cssText = `
+                    background: none;
+                    border: none;
+                    color: #aaa;
+                    cursor: pointer;
+                    font-size: 16px;
+                    padding: 2px 4px;
+                    font-weight: bold;
+                `;
+
+                    // Check if filter is active
+                    const hasActiveFilter = this.hasActiveFilter(col.key);
+                    if (hasActiveFilter) {
+                        filterBtn.style.color = '#4a90e2';
+                        filterBtn.textContent = '⋮';
+                    }
+
+                    filterBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        this.showFilterPopup(col.key, filterBtn);
+                    });
+
+                    headerContent.appendChild(filterBtn);
+                }
+
+                th.appendChild(headerContent);
+                headerRow.appendChild(th);
+            });
+
+            thead.appendChild(headerRow);
+            table.appendChild(thead);
+
+            // Body
+            const tbody = document.createElement('tbody');
+            const paginatedListings = this.getPaginatedListings();
+
+            if (paginatedListings.length === 0) {
+                const row = document.createElement('tr');
+                const cell = document.createElement('td');
+                cell.colSpan = columns.length;
+                cell.textContent = 'No listings found';
+                cell.style.cssText = `
+                padding: 20px;
+                text-align: center;
+                color: #888;
+            `;
+                row.appendChild(cell);
+                tbody.appendChild(row);
+            } else {
+                paginatedListings.forEach((listing, index) => {
+                    const row = document.createElement('tr');
+                    row.style.cssText = `
+                    border-bottom: 1px solid #333;
+                    background: ${index % 2 === 0 ? '#2a2a2a' : '#252525'};
+                `;
+
+                    // Date
+                    const dateCell = document.createElement('td');
+                    // Use createdTimestamp if available, otherwise fall back to numeric timestamp
+                    const dateValue = listing.createdTimestamp || listing.timestamp;
+                    dateCell.textContent = new Date(dateValue).toLocaleString();
+                    dateCell.style.padding = '4px 10px';
+                    row.appendChild(dateCell);
+
+                    // Item (with icon)
+                    const itemCell = document.createElement('td');
+                    itemCell.style.cssText = `
+                    padding: 4px 10px;
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                `;
+
+                    // Create SVG icon
+                    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                    svg.setAttribute('width', '20');
+                    svg.setAttribute('height', '20');
+                    const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+                    const iconName = listing.itemHrid.split('/').pop();
+                    use.setAttribute('href', `/static/media/items_sprite.328d6606.svg#${iconName}`);
+                    svg.appendChild(use);
+
+                    // Add icon and text
+                    itemCell.appendChild(svg);
+                    const textSpan = document.createElement('span');
+                    textSpan.textContent = this.getItemName(listing.itemHrid);
+                    itemCell.appendChild(textSpan);
+
+                    row.appendChild(itemCell);
+
+                    // Enhancement
+                    const enhCell = document.createElement('td');
+                    enhCell.textContent = listing.enhancementLevel > 0 ? `+${listing.enhancementLevel}` : '-';
+                    enhCell.style.padding = '4px 10px';
+                    row.appendChild(enhCell);
+
+                    // Type
+                    const typeCell = document.createElement('td');
+                    typeCell.textContent = listing.isSell ? 'Sell' : 'Buy';
+                    typeCell.style.cssText = `
+                    padding: 4px 10px;
+                    color: ${listing.isSell ? '#4ade80' : '#60a5fa'};
+                `;
+                    row.appendChild(typeCell);
+
+                    // Price
+                    const priceCell = document.createElement('td');
+                    priceCell.textContent = this.formatNumber(listing.price);
+                    priceCell.style.padding = '4px 10px';
+                    row.appendChild(priceCell);
+
+                    // Quantity
+                    const qtyCell = document.createElement('td');
+                    qtyCell.textContent = this.formatNumber(listing.orderQuantity);
+                    qtyCell.style.padding = '4px 10px';
+                    row.appendChild(qtyCell);
+
+                    // Filled
+                    const filledCell = document.createElement('td');
+                    filledCell.textContent = this.formatNumber(listing.filledQuantity);
+                    filledCell.style.padding = '4px 10px';
+                    row.appendChild(filledCell);
+
+                    // Total (Price × Filled)
+                    const totalCell = document.createElement('td');
+                    const totalValue = listing.price * listing.filledQuantity;
+                    totalCell.textContent = this.formatNumber(totalValue);
+                    totalCell.style.padding = '4px 10px';
+                    row.appendChild(totalCell);
+
+                    tbody.appendChild(row);
+                });
+            }
+
+            table.appendChild(tbody);
+            tableContainer.appendChild(table);
+
+            // Render pagination
+            this.renderPagination();
+        }
+
+        /**
+         * Render pagination controls
+         */
+        renderPagination() {
+            const pagination = this.modal.querySelector('.mwi-market-history-pagination');
+
+            // Explicitly remove all children to ensure proper cleanup
+            while (pagination.firstChild) {
+                pagination.removeChild(pagination.firstChild);
+            }
+
+            // Left side: Rows per page
+            const leftSide = document.createElement('div');
+            leftSide.style.cssText = `
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            color: #aaa;
+        `;
+
+            const label = document.createElement('span');
+            label.textContent = 'Rows per page:';
+
+            const rowsInput = document.createElement('input');
+            rowsInput.type = 'number';
+            rowsInput.value = this.rowsPerPage;
+            rowsInput.min = '1';
+            rowsInput.disabled = this.showAll;
+            rowsInput.style.cssText = `
+            width: 60px;
+            padding: 4px 8px;
+            border: 1px solid #555;
+            border-radius: 4px;
+            background: ${this.showAll ? '#333' : '#1a1a1a'};
+            color: ${this.showAll ? '#666' : '#fff'};
+        `;
+            rowsInput.addEventListener('change', (e) => {
+                this.rowsPerPage = Math.max(1, parseInt(e.target.value) || 50);
+                this.currentPage = 1;
+                this.renderTable();
+            });
+
+            const showAllCheckbox = document.createElement('input');
+            showAllCheckbox.type = 'checkbox';
+            showAllCheckbox.checked = this.showAll;
+            showAllCheckbox.style.cssText = `
+            cursor: pointer;
+        `;
+            showAllCheckbox.addEventListener('change', (e) => {
+                this.showAll = e.target.checked;
+                rowsInput.disabled = this.showAll;
+                rowsInput.style.background = this.showAll ? '#333' : '#1a1a1a';
+                rowsInput.style.color = this.showAll ? '#666' : '#fff';
+                this.currentPage = 1;
+                this.renderTable();
+            });
+
+            const showAllLabel = document.createElement('label');
+            showAllLabel.textContent = 'Show All';
+            showAllLabel.style.cssText = `
+            cursor: pointer;
+            color: #aaa;
+        `;
+            showAllLabel.prepend(showAllCheckbox);
+
+            leftSide.appendChild(label);
+            leftSide.appendChild(rowsInput);
+            leftSide.appendChild(showAllLabel);
+
+            // Right side: Page navigation
+            const rightSide = document.createElement('div');
+            rightSide.style.cssText = `
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            color: #aaa;
+        `;
+
+            if (!this.showAll) {
+                const totalPages = this.getTotalPages();
+
+                const prevBtn = document.createElement('button');
+                prevBtn.textContent = '◀';
+                prevBtn.disabled = this.currentPage === 1;
+                prevBtn.style.cssText = `
+                padding: 4px 12px;
+                background: ${this.currentPage === 1 ? '#333' : '#4a90e2'};
+                color: ${this.currentPage === 1 ? '#666' : 'white'};
+                border: none;
+                border-radius: 4px;
+                cursor: ${this.currentPage === 1 ? 'default' : 'pointer'};
+            `;
+                prevBtn.addEventListener('click', () => {
+                    if (this.currentPage > 1) {
+                        this.currentPage--;
+                        this.renderTable();
+                    }
+                });
+
+                const pageInfo = document.createElement('span');
+                pageInfo.textContent = `Page ${this.currentPage} of ${totalPages}`;
+
+                const nextBtn = document.createElement('button');
+                nextBtn.textContent = '▶';
+                nextBtn.disabled = this.currentPage === totalPages;
+                nextBtn.style.cssText = `
+                padding: 4px 12px;
+                background: ${this.currentPage === totalPages ? '#333' : '#4a90e2'};
+                color: ${this.currentPage === totalPages ? '#666' : 'white'};
+                border: none;
+                border-radius: 4px;
+                cursor: ${this.currentPage === totalPages ? 'default' : 'pointer'};
+            `;
+                nextBtn.addEventListener('click', () => {
+                    if (this.currentPage < totalPages) {
+                        this.currentPage++;
+                        this.renderTable();
+                    }
+                });
+
+                rightSide.appendChild(prevBtn);
+                rightSide.appendChild(pageInfo);
+                rightSide.appendChild(nextBtn);
+            } else {
+                const showingInfo = document.createElement('span');
+                showingInfo.textContent = `Showing all ${this.filteredListings.length} listings`;
+                rightSide.appendChild(showingInfo);
+            }
+
+            pagination.appendChild(leftSide);
+            pagination.appendChild(rightSide);
+        }
+
+        /**
+         * Export listings to CSV
+         */
+        exportCSV() {
+            const headers = ['Date', 'Item', 'Enhancement', 'Type', 'Price', 'Quantity', 'Filled', 'Total', 'ID'];
+            const rows = this.filteredListings.map((listing) => [
+                new Date(listing.createdTimestamp || listing.timestamp).toISOString(),
+                this.getItemName(listing.itemHrid),
+                listing.enhancementLevel || 0,
+                listing.isSell ? 'Sell' : 'Buy',
+                listing.price,
+                listing.orderQuantity,
+                listing.filledQuantity,
+                listing.price * listing.filledQuantity, // Total
+                listing.id,
+            ]);
+
+            const csv = [headers, ...rows].map((row) => row.map((cell) => `"${cell}"`).join(',')).join('\n');
+
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `market-history-${new Date().toISOString().split('T')[0]}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        /**
+         * Import listings from CSV
+         */
+        async importCSV(csvText) {
+            try {
+                // Parse CSV
+                const lines = csvText.trim().split('\n');
+                if (lines.length < 2) {
+                    throw new Error('CSV file is empty or invalid');
+                }
+
+                // Parse header
+                const headerLine = lines[0];
+                const expectedHeaders = [
+                    'Date',
+                    'Item',
+                    'Enhancement',
+                    'Type',
+                    'Price',
+                    'Quantity',
+                    'Filled',
+                    'Total',
+                    'ID',
+                ];
+
+                // Show progress message
+                const progressMsg = document.createElement('div');
+                progressMsg.style.cssText = `
+                position: fixed;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                background: #2a2a2a;
+                padding: 20px;
+                border-radius: 8px;
+                color: #fff;
+                z-index: 10001;
+                box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+            `;
+                progressMsg.textContent = `Importing ${lines.length - 1} listings from CSV...`;
+                document.body.appendChild(progressMsg);
+
+                // Load existing listings
+                const existingListings = await storage.getJSON(this.storageKey, 'marketListings', []);
+                const existingIds = new Set(existingListings.map((l) => l.id));
+
+                let imported = 0;
+                let skipped = 0;
+
+                // Build item name to HRID map
+                const itemNameToHrid = {};
+                const gameData = dataManager.getInitClientData();
+                if (gameData?.itemDetailMap) {
+                    for (const [hrid, details] of Object.entries(gameData.itemDetailMap)) {
+                        if (details.name) {
+                            itemNameToHrid[details.name] = hrid;
+                        }
+                    }
+                }
+
+                // Process each line
+                for (let i = 1; i < lines.length; i++) {
+                    const line = lines[i].trim();
+                    if (!line) continue;
+
+                    // Parse CSV row (handle quoted fields)
+                    const fields = [];
+                    let currentField = '';
+                    let inQuotes = false;
+
+                    for (let j = 0; j < line.length; j++) {
+                        const char = line[j];
+                        if (char === '"') {
+                            inQuotes = !inQuotes;
+                        } else if (char === ',' && !inQuotes) {
+                            fields.push(currentField);
+                            currentField = '';
+                        } else {
+                            currentField += char;
+                        }
+                    }
+                    fields.push(currentField); // Add last field
+
+                    if (fields.length < 9) {
+                        console.warn(`[MarketHistoryViewer] Skipping invalid CSV row ${i}: ${line}`);
+                        continue;
+                    }
+
+                    const [dateStr, itemName, enhStr, typeStr, priceStr, qtyStr, filledStr, totalStr, idStr] = fields;
+
+                    // Parse ID
+                    const id = parseInt(idStr);
+                    if (isNaN(id)) {
+                        console.warn(`[MarketHistoryViewer] Skipping row with invalid ID: ${idStr}`);
+                        continue;
+                    }
+
+                    // Skip duplicates
+                    if (existingIds.has(id)) {
+                        skipped++;
+                        continue;
+                    }
+
+                    // Find item HRID from name
+                    const itemHrid = itemNameToHrid[itemName];
+                    if (!itemHrid) {
+                        console.warn(`[MarketHistoryViewer] Could not find HRID for item: ${itemName}`);
+                        skipped++;
+                        continue;
+                    }
+
+                    // Create listing object
+                    const listing = {
+                        id: id,
+                        timestamp: new Date(dateStr).getTime(),
+                        createdTimestamp: dateStr,
+                        itemHrid: itemHrid,
+                        enhancementLevel: parseInt(enhStr) || 0,
+                        price: parseFloat(priceStr),
+                        orderQuantity: parseFloat(qtyStr),
+                        filledQuantity: parseFloat(filledStr),
+                        isSell: typeStr.toLowerCase() === 'sell',
+                    };
+
+                    existingListings.push(listing);
+                    imported++;
+                }
+
+                // Save to storage
+                await storage.setJSON(this.storageKey, existingListings, 'marketListings', true);
+
+                // Remove progress message
+                document.body.removeChild(progressMsg);
+
+                // Show success message
+                alert(
+                    `Import complete!\n\nImported: ${imported} new listings\nSkipped: ${skipped} duplicates or invalid rows\nTotal: ${existingListings.length} listings`
+                );
+
+                // Reload and render table
+                await this.loadListings();
+                this.renderTable();
+            } catch (error) {
+                console.error('[MarketHistoryViewer] CSV import error:', error);
+                throw error;
+            }
+        }
+
+        /**
+         * Show import dialog
+         */
+        showImportDialog() {
+            // Create file input
+            const fileInput = document.createElement('input');
+            fileInput.type = 'file';
+            fileInput.accept = '.txt,.json,.csv';
+            fileInput.style.display = 'none';
+
+            fileInput.addEventListener('change', async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+
+                try {
+                    const text = await file.text();
+
+                    // Detect file type and use appropriate import method
+                    if (file.name.endsWith('.csv')) {
+                        await this.importCSV(text);
+                    } else {
+                        await this.importEdibleToolsData(text);
+                    }
+                } catch (error) {
+                    console.error('[MarketHistoryViewer] Import failed:', error);
+                    alert(`Import failed: ${error.message}`);
+                }
+            });
+
+            document.body.appendChild(fileInput);
+            fileInput.click();
+            document.body.removeChild(fileInput);
+        }
+
+        /**
+         * Import market listing data (supports Edible Tools format)
+         */
+        async importEdibleToolsData(jsonText) {
+            try {
+                // Check for truncated file
+                if (!jsonText.trim().endsWith('}')) {
+                    throw new Error(
+                        'File appears to be truncated or incomplete. The JSON does not end properly. ' +
+                            'Try exporting from Edible Tools again, or export to CSV from the Market History Viewer and import that instead.'
+                    );
+                }
+
+                // Parse the storage file
+                const data = JSON.parse(jsonText);
+
+                if (!data.market_list) {
+                    throw new Error('No market_list found in file. Expected format: {"market_list": "[...]"}');
+                }
+
+                // Parse the market_list JSON string
+                const marketList = JSON.parse(data.market_list);
+
+                if (!Array.isArray(marketList) || marketList.length === 0) {
+                    throw new Error('market_list is empty or invalid');
+                }
+
+                // Show progress message
+                const progressMsg = document.createElement('div');
+                progressMsg.style.cssText = `
+                position: fixed;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                background: #2a2a2a;
+                padding: 20px;
+                border-radius: 8px;
+                color: #fff;
+                z-index: 10001;
+                box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+            `;
+                progressMsg.textContent = `Importing ${marketList.length} listings...`;
+                document.body.appendChild(progressMsg);
+
+                // Convert imported format to Toolasha format
+                const existingListings = await storage.getJSON(this.storageKey, 'marketListings', []);
+                const existingIds = new Set(existingListings.map((l) => l.id));
+
+                let imported = 0;
+                let skipped = 0;
+
+                for (const etListing of marketList) {
+                    // Skip if we already have this listing
+                    if (existingIds.has(etListing.id)) {
+                        skipped++;
+                        continue;
+                    }
+
+                    // Convert to Toolasha format
+                    const toolashaListing = {
+                        id: etListing.id,
+                        timestamp: new Date(etListing.createdTimestamp).getTime(),
+                        createdTimestamp: etListing.createdTimestamp,
+                        itemHrid: etListing.itemHrid,
+                        enhancementLevel: etListing.enhancementLevel || 0,
+                        price: etListing.price,
+                        orderQuantity: etListing.orderQuantity,
+                        filledQuantity: etListing.filledQuantity,
+                        isSell: etListing.isSell,
+                    };
+
+                    existingListings.push(toolashaListing);
+                    imported++;
+                }
+
+                // Save to storage
+                await storage.setJSON(this.storageKey, existingListings, 'marketListings', true);
+
+                // Remove progress message
+                document.body.removeChild(progressMsg);
+
+                // Show success message
+                alert(
+                    `Import complete!\n\nImported: ${imported} new listings\nSkipped: ${skipped} duplicates\nTotal: ${existingListings.length} listings`
+                );
+
+                // Reload and render table
+                await this.loadListings();
+                this.renderTable();
+            } catch (error) {
+                console.error('[MarketHistoryViewer] Import error:', error);
+                throw error;
+            }
+        }
+
+        /**
+         * Clear all market history data
+         */
+        async clearHistory() {
+            // Strong confirmation dialog
+            const confirmed = confirm(
+                `⚠️ WARNING: This will permanently delete ALL market history data!\n` +
+                    `You are about to delete ${this.listings.length} listings.\n` +
+                    `RECOMMENDATION: Export to CSV first using the "Export CSV" button.\n` +
+                    `This action CANNOT be undone!\n` +
+                    `Are you absolutely sure you want to continue?`
+            );
+
+            if (!confirmed) {
+                return;
+            }
+
+            try {
+                // Clear from storage
+                await storage.setJSON(this.storageKey, [], 'marketListings', true);
+
+                // Clear local data
+                this.listings = [];
+                this.filteredListings = [];
+
+                // Show success message
+                alert('Market history cleared successfully.');
+
+                // Reload and render table (will show empty state)
+                await this.loadListings();
+                this.renderTable();
+            } catch (error) {
+                console.error('[MarketHistoryViewer] Failed to clear history:', error);
+                alert(`Failed to clear history: ${error.message}`);
+            }
+        }
+
+        /**
+         * Get filtered listings excluding a specific filter type
+         * Used for dynamic filter options - shows what's available given OTHER active filters
+         * @param {string} excludeFilterType - Filter to exclude: 'date', 'item', 'enhancementLevel', 'type'
+         * @returns {Array} Filtered listings
+         */
+        getFilteredListingsExcluding(excludeFilterType) {
+            let filtered = [...this.listings];
+
+            // Apply legacy type filter if set
+            if (this.typeFilter === 'buy') {
+                filtered = filtered.filter((listing) => !listing.isSell);
+            } else if (this.typeFilter === 'sell') {
+                filtered = filtered.filter((listing) => listing.isSell);
+            }
+
+            // Apply search term
+            if (this.searchTerm) {
+                const term = this.searchTerm.toLowerCase();
+                filtered = filtered.filter((listing) => {
+                    const itemName = this.getItemName(listing.itemHrid).toLowerCase();
+                    return itemName.includes(term);
+                });
+            }
+
+            // Apply date range filter (unless excluded)
+            if (excludeFilterType !== 'date' && (this.filters.dateFrom || this.filters.dateTo)) {
+                filtered = filtered.filter((listing) => {
+                    const listingDate = new Date(listing.createdTimestamp || listing.timestamp);
+
+                    if (this.filters.dateFrom && listingDate < this.filters.dateFrom) {
+                        return false;
+                    }
+
+                    if (this.filters.dateTo) {
+                        const endOfDay = new Date(this.filters.dateTo);
+                        endOfDay.setHours(23, 59, 59, 999);
+                        if (listingDate > endOfDay) {
+                            return false;
+                        }
+                    }
+
+                    return true;
+                });
+            }
+
+            // Apply item filter (unless excluded)
+            if (excludeFilterType !== 'item' && this.filters.selectedItems.length > 0) {
+                filtered = filtered.filter((listing) => this.filters.selectedItems.includes(listing.itemHrid));
+            }
+
+            // Apply enhancement level filter (unless excluded)
+            if (excludeFilterType !== 'enhancementLevel' && this.filters.selectedEnhLevels.length > 0) {
+                filtered = filtered.filter((listing) => this.filters.selectedEnhLevels.includes(listing.enhancementLevel));
+            }
+
+            // Apply type filter (unless excluded)
+            if (
+                excludeFilterType !== 'type' &&
+                this.filters.selectedTypes.length > 0 &&
+                this.filters.selectedTypes.length < 2
+            ) {
+                const showBuy = this.filters.selectedTypes.includes('buy');
+                const showSell = this.filters.selectedTypes.includes('sell');
+
+                filtered = filtered.filter((listing) => {
+                    if (showBuy && !listing.isSell) return true;
+                    if (showSell && listing.isSell) return true;
+                    return false;
+                });
+            }
+
+            return filtered;
+        }
+
+        /**
+         * Check if a column has an active filter
+         * @param {string} columnKey - Column key to check
+         * @returns {boolean} True if filter is active
+         */
+        hasActiveFilter(columnKey) {
+            switch (columnKey) {
+                case 'createdTimestamp':
+                    return this.filters.dateFrom !== null || this.filters.dateTo !== null;
+                case 'itemHrid':
+                    return this.filters.selectedItems.length > 0;
+                case 'enhancementLevel':
+                    return this.filters.selectedEnhLevels.length > 0;
+                case 'isSell':
+                    return this.filters.selectedTypes.length > 0 && this.filters.selectedTypes.length < 2;
+                default:
+                    return false;
+            }
+        }
+
+        /**
+         * Show filter popup for a column
+         * @param {string} columnKey - Column key
+         * @param {HTMLElement} buttonElement - Button that triggered popup
+         */
+        showFilterPopup(columnKey, buttonElement) {
+            // If clicking the same button that opened the current popup, close it (toggle behavior)
+            if (this.activeFilterPopup && this.activeFilterButton === buttonElement) {
+                this.activeFilterPopup.remove();
+                this.activeFilterPopup = null;
+                this.activeFilterButton = null;
+                if (this.popupCloseHandler) {
+                    document.removeEventListener('click', this.popupCloseHandler);
+                    this.popupCloseHandler = null;
+                }
+                return;
+            }
+
+            // Close any existing popup and remove its event listener
+            if (this.activeFilterPopup) {
+                this.activeFilterPopup.remove();
+                this.activeFilterPopup = null;
+            }
+            if (this.popupCloseHandler) {
+                document.removeEventListener('click', this.popupCloseHandler);
+                this.popupCloseHandler = null;
+            }
+
+            // Create popup based on column type
+            let popup;
+            switch (columnKey) {
+                case 'createdTimestamp':
+                    popup = this.createDateFilterPopup();
+                    break;
+                case 'itemHrid':
+                    popup = this.createItemFilterPopup();
+                    break;
+                case 'enhancementLevel':
+                    popup = this.createEnhancementFilterPopup();
+                    break;
+                case 'isSell':
+                    popup = this.createTypeFilterPopup();
+                    break;
+                default:
+                    return;
+            }
+
+            // Position popup below button
+            const buttonRect = buttonElement.getBoundingClientRect();
+            popup.style.position = 'fixed';
+            popup.style.top = `${buttonRect.bottom + 5}px`;
+            popup.style.left = `${buttonRect.left}px`;
+            popup.style.zIndex = '10002';
+
+            document.body.appendChild(popup);
+            this.activeFilterPopup = popup;
+            this.activeFilterButton = buttonElement; // Track which button opened this popup
+
+            // Close popup when clicking outside
+            this.popupCloseHandler = (e) => {
+                // Don't close if clicking on date inputs or their calendar pickers
+                if (e.target.type === 'date' || e.target.closest('input[type="date"]')) {
+                    return;
+                }
+
+                if (!popup.contains(e.target) && e.target !== buttonElement) {
+                    popup.remove();
+                    this.activeFilterPopup = null;
+                    this.activeFilterButton = null;
+                    document.removeEventListener('click', this.popupCloseHandler);
+                    this.popupCloseHandler = null;
+                }
+            };
+            setTimeout(() => document.addEventListener('click', this.popupCloseHandler), 10);
+        }
+
+        /**
+         * Create date filter popup
+         * @returns {HTMLElement} Popup element
+         */
+        createDateFilterPopup() {
+            const popup = document.createElement('div');
+            popup.style.cssText = `
+            background: #2a2a2a;
+            border: 1px solid #555;
+            border-radius: 4px;
+            padding: 12px;
+            min-width: 250px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+        `;
+
+            // Title
+            const title = document.createElement('div');
+            title.textContent = 'Filter by Date';
+            title.style.cssText = `
+            color: #fff;
+            font-weight: bold;
+            margin-bottom: 10px;
+        `;
+            popup.appendChild(title);
+
+            // Get date range from filtered listings (excluding date filter itself)
+            // Cache the result to avoid recalculating on every popup open
+            if (!this.cachedDateRange) {
+                const filteredListings = this.getFilteredListingsExcluding('date');
+
+                if (filteredListings.length > 0) {
+                    // Use timestamps directly to avoid creating Date objects unnecessarily
+                    const timestamps = filteredListings.map((l) => l.timestamp || new Date(l.createdTimestamp).getTime());
+                    this.cachedDateRange = {
+                        minDate: new Date(Math.min(...timestamps)),
+                        maxDate: new Date(Math.max(...timestamps)),
+                    };
+                } else {
+                    this.cachedDateRange = { minDate: null, maxDate: null };
+                }
+            }
+
+            const { minDate, maxDate } = this.cachedDateRange;
+
+            if (minDate && maxDate) {
+                // Show available date range
+                const rangeInfo = document.createElement('div');
+                rangeInfo.style.cssText = `
+                color: #aaa;
+                font-size: 11px;
+                margin-bottom: 10px;
+                padding: 6px;
+                background: #1a1a1a;
+                border-radius: 3px;
+            `;
+                rangeInfo.textContent = `Available: ${minDate.toLocaleDateString()} - ${maxDate.toLocaleDateString()}`;
+                popup.appendChild(rangeInfo);
+            }
+
+            // From date
+            const fromLabel = document.createElement('label');
+            fromLabel.textContent = 'From:';
+            fromLabel.style.cssText = `
+            display: block;
+            color: #aaa;
+            margin-bottom: 4px;
+            font-size: 12px;
+        `;
+
+            const fromInput = document.createElement('input');
+            fromInput.type = 'date';
+            fromInput.value = this.filters.dateFrom ? this.filters.dateFrom.toISOString().split('T')[0] : '';
+            if (minDate) fromInput.min = minDate.toISOString().split('T')[0];
+            if (maxDate) fromInput.max = maxDate.toISOString().split('T')[0];
+            fromInput.style.cssText = `
+            width: 100%;
+            padding: 6px;
+            background: #1a1a1a;
+            border: 1px solid #555;
+            border-radius: 3px;
+            color: #fff;
+            margin-bottom: 10px;
+        `;
+
+            // To date
+            const toLabel = document.createElement('label');
+            toLabel.textContent = 'To:';
+            toLabel.style.cssText = `
+            display: block;
+            color: #aaa;
+            margin-bottom: 4px;
+            font-size: 12px;
+        `;
+
+            const toInput = document.createElement('input');
+            toInput.type = 'date';
+            toInput.value = this.filters.dateTo ? this.filters.dateTo.toISOString().split('T')[0] : '';
+            if (minDate) toInput.min = minDate.toISOString().split('T')[0];
+            if (maxDate) toInput.max = maxDate.toISOString().split('T')[0];
+            toInput.style.cssText = `
+            width: 100%;
+            padding: 6px;
+            background: #1a1a1a;
+            border: 1px solid #555;
+            border-radius: 3px;
+            color: #fff;
+            margin-bottom: 10px;
+        `;
+
+            // Buttons
+            const buttonContainer = document.createElement('div');
+            buttonContainer.style.cssText = `
+            display: flex;
+            gap: 8px;
+            margin-top: 10px;
+        `;
+
+            const applyBtn = document.createElement('button');
+            applyBtn.textContent = 'Apply';
+            applyBtn.style.cssText = `
+            flex: 1;
+            padding: 6px;
+            background: #4a90e2;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+        `;
+            applyBtn.addEventListener('click', () => {
+                this.filters.dateFrom = fromInput.value ? new Date(fromInput.value) : null;
+                this.filters.dateTo = toInput.value ? new Date(toInput.value) : null;
+                this.saveFilters();
+                this.applyFilters();
+                this.renderTable();
+                popup.remove();
+                this.activeFilterPopup = null;
+                this.activeFilterButton = null;
+            });
+
+            const clearBtn = document.createElement('button');
+            clearBtn.textContent = 'Clear';
+            clearBtn.style.cssText = `
+            flex: 1;
+            padding: 6px;
+            background: #666;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+        `;
+            clearBtn.addEventListener('click', () => {
+                this.filters.dateFrom = null;
+                this.filters.dateTo = null;
+                this.saveFilters();
+                this.applyFilters();
+                this.renderTable();
+                popup.remove();
+                this.activeFilterPopup = null;
+                this.activeFilterButton = null;
+            });
+
+            buttonContainer.appendChild(applyBtn);
+            buttonContainer.appendChild(clearBtn);
+
+            popup.appendChild(fromLabel);
+            popup.appendChild(fromInput);
+            popup.appendChild(toLabel);
+            popup.appendChild(toInput);
+            popup.appendChild(buttonContainer);
+
+            return popup;
+        }
+
+        /**
+         * Create item filter popup
+         * @returns {HTMLElement} Popup element
+         */
+        createItemFilterPopup() {
+            const popup = document.createElement('div');
+            popup.style.cssText = `
+            background: #2a2a2a;
+            border: 1px solid #555;
+            border-radius: 4px;
+            padding: 12px;
+            min-width: 300px;
+            max-height: 400px;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+        `;
+
+            // Title
+            const title = document.createElement('div');
+            title.textContent = 'Filter by Item';
+            title.style.cssText = `
+            color: #fff;
+            font-weight: bold;
+            margin-bottom: 10px;
+        `;
+            popup.appendChild(title);
+
+            // Search box
+            const searchInput = document.createElement('input');
+            searchInput.type = 'text';
+            searchInput.placeholder = 'Search items...';
+            searchInput.style.cssText = `
+            width: 100%;
+            padding: 6px;
+            background: #1a1a1a;
+            border: 1px solid #555;
+            border-radius: 3px;
+            color: #fff;
+            margin-bottom: 8px;
+        `;
+
+            popup.appendChild(searchInput);
+
+            // Get unique items from filtered listings (excluding item filter itself)
+            const filteredListings = this.getFilteredListingsExcluding('item');
+            const itemHrids = [...new Set(filteredListings.map((l) => l.itemHrid))];
+            const itemsWithNames = itemHrids.map((hrid) => ({
+                hrid,
+                name: this.getItemName(hrid),
+            }));
+            itemsWithNames.sort((a, b) => a.name.localeCompare(b.name));
+
+            // Checkboxes container
+            const checkboxContainer = document.createElement('div');
+            checkboxContainer.style.cssText = `
+            flex: 1;
+            overflow-y: auto;
+            margin-bottom: 10px;
+            max-height: 250px;
+        `;
+
+            const renderCheckboxes = (filterText = '') => {
+                // Explicitly remove all children to ensure proper cleanup
+                while (checkboxContainer.firstChild) {
+                    checkboxContainer.removeChild(checkboxContainer.firstChild);
+                }
+
+                const filtered = filterText
+                    ? itemsWithNames.filter((item) => item.name.toLowerCase().includes(filterText.toLowerCase()))
+                    : itemsWithNames;
+
+                filtered.forEach((item) => {
+                    const label = document.createElement('label');
+                    label.style.cssText = `
+                    display: block;
+                    color: #fff;
+                    padding: 4px;
+                    cursor: pointer;
+                `;
+
+                    const checkbox = document.createElement('input');
+                    checkbox.type = 'checkbox';
+                    checkbox.checked = this.filters.selectedItems.includes(item.hrid);
+                    checkbox.style.marginRight = '6px';
+
+                    label.appendChild(checkbox);
+                    label.appendChild(document.createTextNode(item.name));
+                    checkboxContainer.appendChild(label);
+
+                    checkbox.addEventListener('change', (e) => {
+                        if (e.target.checked) {
+                            if (!this.filters.selectedItems.includes(item.hrid)) {
+                                this.filters.selectedItems.push(item.hrid);
+                            }
+                        } else {
+                            const index = this.filters.selectedItems.indexOf(item.hrid);
+                            if (index > -1) {
+                                this.filters.selectedItems.splice(index, 1);
+                            }
+                        }
+                    });
+                });
+            };
+
+            renderCheckboxes();
+            searchInput.addEventListener('input', (e) => renderCheckboxes(e.target.value));
+
+            popup.appendChild(checkboxContainer);
+
+            // Buttons
+            const buttonContainer = document.createElement('div');
+            buttonContainer.style.cssText = `
+            display: flex;
+            gap: 8px;
+        `;
+
+            const applyBtn = document.createElement('button');
+            applyBtn.textContent = 'Apply';
+            applyBtn.style.cssText = `
+            flex: 1;
+            padding: 6px;
+            background: #4a90e2;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+        `;
+            applyBtn.addEventListener('click', () => {
+                this.saveFilters();
+                this.applyFilters();
+                this.renderTable();
+                popup.remove();
+                this.activeFilterPopup = null;
+                this.activeFilterButton = null;
+            });
+
+            const clearBtn = document.createElement('button');
+            clearBtn.textContent = 'Clear';
+            clearBtn.style.cssText = `
+            flex: 1;
+            padding: 6px;
+            background: #666;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+        `;
+            clearBtn.addEventListener('click', () => {
+                this.filters.selectedItems = [];
+                this.saveFilters();
+                this.applyFilters();
+                this.renderTable();
+                popup.remove();
+                this.activeFilterPopup = null;
+                this.activeFilterButton = null;
+            });
+
+            buttonContainer.appendChild(applyBtn);
+            buttonContainer.appendChild(clearBtn);
+            popup.appendChild(buttonContainer);
+
+            return popup;
+        }
+
+        /**
+         * Create enhancement level filter popup
+         * @returns {HTMLElement} Popup element
+         */
+        createEnhancementFilterPopup() {
+            const popup = document.createElement('div');
+            popup.style.cssText = `
+            background: #2a2a2a;
+            border: 1px solid #555;
+            border-radius: 4px;
+            padding: 12px;
+            min-width: 200px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+        `;
+
+            // Title
+            const title = document.createElement('div');
+            title.textContent = 'Filter by Enhancement Level';
+            title.style.cssText = `
+            color: #fff;
+            font-weight: bold;
+            margin-bottom: 10px;
+        `;
+            popup.appendChild(title);
+
+            // Get unique enhancement levels from filtered listings (excluding enhancement filter itself)
+            const filteredListings = this.getFilteredListingsExcluding('enhancementLevel');
+            const enhLevels = [...new Set(filteredListings.map((l) => l.enhancementLevel))];
+            enhLevels.sort((a, b) => a - b);
+
+            // Checkboxes
+            const checkboxContainer = document.createElement('div');
+            checkboxContainer.style.cssText = `
+            max-height: 250px;
+            overflow-y: auto;
+            margin-bottom: 10px;
+        `;
+
+            enhLevels.forEach((level) => {
+                const label = document.createElement('label');
+                label.style.cssText = `
+                display: block;
+                color: #fff;
+                padding: 4px;
+                cursor: pointer;
+            `;
+
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.checked = this.filters.selectedEnhLevels.includes(level);
+                checkbox.style.marginRight = '6px';
+
+                const levelText = level > 0 ? `+${level}` : 'No Enhancement';
+
+                label.appendChild(checkbox);
+                label.appendChild(document.createTextNode(levelText));
+                checkboxContainer.appendChild(label);
+
+                checkbox.addEventListener('change', (e) => {
+                    if (e.target.checked) {
+                        if (!this.filters.selectedEnhLevels.includes(level)) {
+                            this.filters.selectedEnhLevels.push(level);
+                        }
+                    } else {
+                        const index = this.filters.selectedEnhLevels.indexOf(level);
+                        if (index > -1) {
+                            this.filters.selectedEnhLevels.splice(index, 1);
+                        }
+                    }
+                });
+            });
+
+            popup.appendChild(checkboxContainer);
+
+            // Buttons
+            const buttonContainer = document.createElement('div');
+            buttonContainer.style.cssText = `
+            display: flex;
+            gap: 8px;
+        `;
+
+            const applyBtn = document.createElement('button');
+            applyBtn.textContent = 'Apply';
+            applyBtn.style.cssText = `
+            flex: 1;
+            padding: 6px;
+            background: #4a90e2;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+        `;
+            applyBtn.addEventListener('click', () => {
+                this.saveFilters();
+                this.applyFilters();
+                this.renderTable();
+                popup.remove();
+                this.activeFilterPopup = null;
+                this.activeFilterButton = null;
+            });
+
+            const clearBtn = document.createElement('button');
+            clearBtn.textContent = 'Clear';
+            clearBtn.style.cssText = `
+            flex: 1;
+            padding: 6px;
+            background: #666;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+        `;
+            clearBtn.addEventListener('click', () => {
+                this.filters.selectedEnhLevels = [];
+                this.saveFilters();
+                this.applyFilters();
+                this.renderTable();
+                popup.remove();
+                this.activeFilterPopup = null;
+                this.activeFilterButton = null;
+            });
+
+            buttonContainer.appendChild(applyBtn);
+            buttonContainer.appendChild(clearBtn);
+            popup.appendChild(buttonContainer);
+
+            return popup;
+        }
+
+        /**
+         * Create type filter popup (Buy/Sell)
+         * @returns {HTMLElement} Popup element
+         */
+        createTypeFilterPopup() {
+            const popup = document.createElement('div');
+            popup.style.cssText = `
+            background: #2a2a2a;
+            border: 1px solid #555;
+            border-radius: 4px;
+            padding: 12px;
+            min-width: 150px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+        `;
+
+            // Title
+            const title = document.createElement('div');
+            title.textContent = 'Filter by Type';
+            title.style.cssText = `
+            color: #fff;
+            font-weight: bold;
+            margin-bottom: 10px;
+        `;
+            popup.appendChild(title);
+
+            // Check which types exist in filtered listings (excluding type filter itself)
+            const filteredListings = this.getFilteredListingsExcluding('type');
+            const hasBuyOrders = filteredListings.some((l) => !l.isSell);
+            const hasSellOrders = filteredListings.some((l) => l.isSell);
+
+            // Buy checkbox
+            if (hasBuyOrders) {
+                const buyLabel = document.createElement('label');
+                buyLabel.style.cssText = `
+                display: block;
+                color: #fff;
+                padding: 4px;
+                cursor: pointer;
+                margin-bottom: 6px;
+            `;
+
+                const buyCheckbox = document.createElement('input');
+                buyCheckbox.type = 'checkbox';
+                buyCheckbox.checked = this.filters.selectedTypes.includes('buy');
+                buyCheckbox.style.marginRight = '6px';
+
+                buyLabel.appendChild(buyCheckbox);
+                buyLabel.appendChild(document.createTextNode('Buy Orders'));
+                popup.appendChild(buyLabel);
+
+                buyCheckbox.addEventListener('change', (e) => {
+                    if (e.target.checked) {
+                        if (!this.filters.selectedTypes.includes('buy')) {
+                            this.filters.selectedTypes.push('buy');
+                        }
+                    } else {
+                        const index = this.filters.selectedTypes.indexOf('buy');
+                        if (index > -1) {
+                            this.filters.selectedTypes.splice(index, 1);
+                        }
+                    }
+                });
+            }
+
+            // Sell checkbox
+            if (hasSellOrders) {
+                const sellLabel = document.createElement('label');
+                sellLabel.style.cssText = `
+                display: block;
+                color: #fff;
+                padding: 4px;
+                cursor: pointer;
+            `;
+
+                const sellCheckbox = document.createElement('input');
+                sellCheckbox.type = 'checkbox';
+                sellCheckbox.checked = this.filters.selectedTypes.includes('sell');
+                sellCheckbox.style.marginRight = '6px';
+
+                sellLabel.appendChild(sellCheckbox);
+                sellLabel.appendChild(document.createTextNode('Sell Orders'));
+                popup.appendChild(sellLabel);
+
+                sellCheckbox.addEventListener('change', (e) => {
+                    if (e.target.checked) {
+                        if (!this.filters.selectedTypes.includes('sell')) {
+                            this.filters.selectedTypes.push('sell');
+                        }
+                    } else {
+                        const index = this.filters.selectedTypes.indexOf('sell');
+                        if (index > -1) {
+                            this.filters.selectedTypes.splice(index, 1);
+                        }
+                    }
+                });
+            }
+
+            // Buttons
+            const buttonContainer = document.createElement('div');
+            buttonContainer.style.cssText = `
+            display: flex;
+            gap: 8px;
+            margin-top: 10px;
+        `;
+
+            const applyBtn = document.createElement('button');
+            applyBtn.textContent = 'Apply';
+            applyBtn.style.cssText = `
+            flex: 1;
+            padding: 6px;
+            background: #4a90e2;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+        `;
+            applyBtn.addEventListener('click', () => {
+                this.saveFilters();
+                this.applyFilters();
+                this.renderTable();
+                popup.remove();
+                this.activeFilterPopup = null;
+                this.activeFilterButton = null;
+            });
+
+            const clearBtn = document.createElement('button');
+            clearBtn.textContent = 'Clear';
+            clearBtn.style.cssText = `
+            flex: 1;
+            padding: 6px;
+            background: #666;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+        `;
+            clearBtn.addEventListener('click', () => {
+                this.filters.selectedTypes = [];
+                this.saveFilters();
+                this.applyFilters();
+                this.renderTable();
+                popup.remove();
+                this.activeFilterPopup = null;
+                this.activeFilterButton = null;
+            });
+
+            buttonContainer.appendChild(applyBtn);
+            buttonContainer.appendChild(clearBtn);
+            popup.appendChild(buttonContainer);
+
+            return popup;
+        }
+
+        /**
+         * Clear all active filters
+         */
+        async clearAllFilters() {
+            this.filters.dateFrom = null;
+            this.filters.dateTo = null;
+            this.filters.selectedItems = [];
+            this.filters.selectedEnhLevels = [];
+            this.filters.selectedTypes = [];
+
+            await this.saveFilters();
+            this.applyFilters();
+            this.renderTable();
+        }
+
+        /**
+         * Disable the feature
+         */
+        disable() {
+            // Note: We don't need to disconnect observer since we're using the shared settings UI observer
+
+            // Clean up any active filter popup and its event listener
+            if (this.activeFilterPopup) {
+                this.activeFilterPopup.remove();
+                this.activeFilterPopup = null;
+                this.activeFilterButton = null;
+            }
+            if (this.popupCloseHandler) {
+                document.removeEventListener('click', this.popupCloseHandler);
+                this.popupCloseHandler = null;
+            }
+
+            // Remove modal and all its event listeners
+            if (this.modal) {
+                this.modal.remove();
+                this.modal = null;
+            }
+
+            // Remove settings button
+            const button = document.querySelector('.mwi-market-history-button');
+            if (button) {
+                button.remove();
+            }
+
+            // Clear data references
+            this.listings = [];
+            this.filteredListings = [];
+            this.cachedDateRange = null;
+
+            this.isInitialized = false;
+        }
+    }
+
+    // Create and export singleton instance
+    const marketHistoryViewer = new MarketHistoryViewer();
 
     /**
      * Personal Trade History Module
@@ -43136,8 +46831,10 @@
                     }
                 } else if (!isRequirement) {
                     // Extract count and drop rate from drop by matching item HRID
-                    // Search through all drop elements to find the one containing this item
-                    const dropElements = document.querySelectorAll('[class*="SkillActionDetail_drop"]');
+                    // Search through all drop elements (including essence and rare drops)
+                    const dropElements = document.querySelectorAll(
+                        '[class*="SkillActionDetail_drop"], [class*="SkillActionDetail_essence"], [class*="SkillActionDetail_rare"]'
+                    );
 
                     for (const dropElement of dropElements) {
                         // Check if this drop element contains our item
@@ -43250,6 +46947,11 @@
                     // Get base drop rate
                     let effectiveDropRate = drop.dropRate || 1;
 
+                    // Apply Essence Find bonus to essence drops
+                    if (isEssence && data.essenceFindBreakdown) {
+                        effectiveDropRate = effectiveDropRate * (1 + data.essenceFindBreakdown.total);
+                    }
+
                     // Apply Rare Find bonus to rare drops
                     if (isRare && data.rareFindBreakdown) {
                         effectiveDropRate = effectiveDropRate * (1 + data.rareFindBreakdown.total);
@@ -43347,6 +47049,11 @@
                     // Get base drop rate
                     const baseDropRate = drop.dropRate || 1;
                     let effectiveDropRate = baseDropRate;
+
+                    // Apply Essence Find bonus to essence drops
+                    if (isEssence && data.essenceFindBreakdown) {
+                        effectiveDropRate = baseDropRate * (1 + data.essenceFindBreakdown.total);
+                    }
 
                     // Apply Rare Find bonus to rare drops
                     if (isRare && data.rareFindBreakdown) {
@@ -44818,6 +48525,13 @@
             async: true, // Uses dataManager and WebSocket hooks
         },
         {
+            key: 'market_showHistoryViewer',
+            name: 'Market History Viewer',
+            category: 'Market',
+            initialize: () => marketHistoryViewer.initialize(),
+            async: true,
+        },
+        {
             key: 'market_tradeHistory',
             name: 'Personal Trade History',
             category: 'Market',
@@ -45405,6 +49119,7 @@
             market_showListingPrices: listingPriceDisplay,
             market_showEstimatedListingAge: estimatedListingAge,
             market_showOrderTotals: marketOrderTotals,
+            market_showHistoryViewer: marketHistoryViewer,
             market_tradeHistory: tradeHistory,
             actionTimeDisplay: actionTimeDisplay,
             quickInputButtons: quickInputButtons,
@@ -45765,1164 +49480,6 @@
         }
     }
 
-    var settingsCSS = "/* Toolasha Settings UI Styles\n * Modern, compact design\n */\n\n/* CSS Variables */\n:root {\n    --toolasha-accent: #5b8def;\n    --toolasha-accent-hover: #7aa3f3;\n    --toolasha-accent-dim: rgba(91, 141, 239, 0.15);\n    --toolasha-secondary: #8A2BE2;\n    --toolasha-text: rgba(255, 255, 255, 0.9);\n    --toolasha-text-dim: rgba(255, 255, 255, 0.5);\n    --toolasha-bg: rgba(20, 25, 35, 0.6);\n    --toolasha-border: rgba(91, 141, 239, 0.2);\n    --toolasha-toggle-off: rgba(100, 100, 120, 0.4);\n    --toolasha-toggle-on: var(--toolasha-accent);\n}\n\n/* Settings Card Container */\n.toolasha-settings-card {\n    display: flex;\n    flex-direction: column;\n    padding: 12px 16px;\n    font-size: 12px;\n    line-height: 1.3;\n    color: var(--toolasha-text);\n    position: relative;\n    overflow-y: auto;\n    gap: 6px;\n    max-height: calc(100vh - 250px);\n}\n\n/* Top gradient line */\n.toolasha-settings-card::before {\n    display: none;\n}\n\n/* Scrollbar styling */\n.toolasha-settings-card::-webkit-scrollbar {\n    width: 6px;\n}\n\n.toolasha-settings-card::-webkit-scrollbar-track {\n    background: transparent;\n}\n\n.toolasha-settings-card::-webkit-scrollbar-thumb {\n    background: var(--toolasha-accent);\n    border-radius: 3px;\n    opacity: 0.5;\n}\n\n.toolasha-settings-card::-webkit-scrollbar-thumb:hover {\n    opacity: 1;\n}\n\n/* Collapsible Settings Groups */\n.toolasha-settings-group {\n    margin-bottom: 8px;\n}\n\n.toolasha-settings-group-header {\n    cursor: pointer;\n    user-select: none;\n    margin: 10px 0 4px 0;\n    color: var(--toolasha-accent);\n    font-weight: 600;\n    font-size: 13px;\n    display: flex;\n    align-items: center;\n    gap: 6px;\n    border-bottom: 1px solid var(--toolasha-border);\n    padding-bottom: 3px;\n    text-transform: uppercase;\n    letter-spacing: 0.5px;\n    transition: color 0.2s ease;\n}\n\n.toolasha-settings-group-header:hover {\n    color: var(--toolasha-accent-hover);\n}\n\n.toolasha-settings-group-header .collapse-icon {\n    font-size: 10px;\n    transition: transform 0.2s ease;\n}\n\n.toolasha-settings-group.collapsed .collapse-icon {\n    transform: rotate(-90deg);\n}\n\n.toolasha-settings-group-content {\n    max-height: 5000px;\n    overflow: hidden;\n    transition: max-height 0.3s ease-out;\n}\n\n.toolasha-settings-group.collapsed .toolasha-settings-group-content {\n    max-height: 0;\n}\n\n/* Section Headers */\n.toolasha-settings-card h3 {\n    margin: 10px 0 4px 0;\n    color: var(--toolasha-accent);\n    font-weight: 600;\n    font-size: 13px;\n    display: flex;\n    align-items: center;\n    gap: 6px;\n    border-bottom: 1px solid var(--toolasha-border);\n    padding-bottom: 3px;\n    text-transform: uppercase;\n    letter-spacing: 0.5px;\n}\n\n.toolasha-settings-card h3:first-child {\n    margin-top: 0;\n}\n\n.toolasha-settings-card h3 .icon {\n    font-size: 14px;\n}\n\n/* Individual Setting Row */\n.toolasha-setting {\n    display: flex;\n    align-items: center;\n    justify-content: space-between;\n    gap: 10px;\n    margin: 0;\n    padding: 6px 8px;\n    background: var(--toolasha-bg);\n    border: 1px solid var(--toolasha-border);\n    border-radius: 4px;\n    min-height: unset;\n    transition: all 0.2s ease;\n}\n\n.toolasha-setting:hover {\n    background: rgba(30, 35, 45, 0.7);\n    border-color: var(--toolasha-accent);\n}\n\n.toolasha-setting.disabled {\n    opacity: 0.3;\n    pointer-events: none;\n}\n\n.toolasha-setting.not-implemented .toolasha-setting-label {\n    color: #ff6b6b;\n}\n\n.toolasha-setting.not-implemented .toolasha-setting-help {\n    color: rgba(255, 107, 107, 0.7);\n}\n\n.toolasha-setting-label {\n    text-align: left;\n    flex: 1;\n    margin-right: 10px;\n    line-height: 1.3;\n    font-size: 12px;\n}\n\n.toolasha-setting-help {\n    display: block;\n    font-size: 10px;\n    color: var(--toolasha-text-dim);\n    margin-top: 2px;\n    font-style: italic;\n}\n\n.toolasha-setting-input {\n    flex-shrink: 0;\n}\n\n/* Modern Toggle Switch */\n.toolasha-switch {\n    position: relative;\n    width: 38px;\n    height: 20px;\n    flex-shrink: 0;\n    display: inline-block;\n}\n\n.toolasha-switch input {\n    opacity: 0;\n    width: 0;\n    height: 0;\n    position: absolute;\n}\n\n.toolasha-slider {\n    position: absolute;\n    top: 0;\n    left: 0;\n    right: 0;\n    bottom: 0;\n    background: var(--toolasha-toggle-off);\n    border-radius: 20px;\n    cursor: pointer;\n    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);\n    border: 2px solid transparent;\n}\n\n.toolasha-slider:before {\n    content: \"\";\n    position: absolute;\n    height: 12px;\n    width: 12px;\n    left: 2px;\n    bottom: 2px;\n    background: white;\n    border-radius: 50%;\n    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);\n    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);\n}\n\n.toolasha-switch input:checked + .toolasha-slider {\n    background: var(--toolasha-toggle-on);\n    border-color: var(--toolasha-accent-hover);\n    box-shadow: 0 0 6px var(--toolasha-accent-dim);\n}\n\n.toolasha-switch input:checked + .toolasha-slider:before {\n    transform: translateX(18px);\n}\n\n.toolasha-switch:hover .toolasha-slider {\n    border-color: var(--toolasha-accent);\n}\n\n/* Text Input */\n.toolasha-text-input {\n    padding: 5px 8px;\n    border: 1px solid var(--toolasha-border);\n    border-radius: 3px;\n    background: rgba(0, 0, 0, 0.3);\n    color: var(--toolasha-text);\n    min-width: 100px;\n    font-size: 12px;\n    transition: all 0.2s ease;\n}\n\n.toolasha-text-input:focus {\n    outline: none;\n    border-color: var(--toolasha-accent);\n    box-shadow: 0 0 0 2px var(--toolasha-accent-dim);\n}\n\n/* Number Input */\n.toolasha-number-input {\n    padding: 5px 8px;\n    border: 1px solid var(--toolasha-border);\n    border-radius: 3px;\n    background: rgba(0, 0, 0, 0.3);\n    color: var(--toolasha-text);\n    min-width: 80px;\n    font-size: 12px;\n    transition: all 0.2s ease;\n}\n\n.toolasha-number-input:focus {\n    outline: none;\n    border-color: var(--toolasha-accent);\n    box-shadow: 0 0 0 2px var(--toolasha-accent-dim);\n}\n\n/* Select Dropdown */\n.toolasha-select-input {\n    padding: 5px 8px;\n    border: 1px solid var(--toolasha-border);\n    border-radius: 3px;\n    background: rgba(0, 0, 0, 0.3);\n    color: var(--toolasha-accent);\n    font-weight: 600;\n    min-width: 150px;\n    cursor: pointer;\n    font-size: 12px;\n    -webkit-appearance: none;\n    -moz-appearance: none;\n    appearance: none;\n    background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20width%3D%2220%22%20height%3D%2220%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cpath%20d%3D%22M5%207l5%205%205-5z%22%20fill%3D%22%235b8def%22%2F%3E%3C%2Fsvg%3E');\n    background-repeat: no-repeat;\n    background-position: right 6px center;\n    background-size: 14px;\n    padding-right: 28px;\n    transition: all 0.2s ease;\n}\n\n.toolasha-select-input:focus {\n    outline: none;\n    border-color: var(--toolasha-accent);\n    box-shadow: 0 0 0 2px var(--toolasha-accent-dim);\n}\n\n.toolasha-select-input option {\n    background: #1a1a2e;\n    color: var(--toolasha-text);\n    padding: 8px;\n}\n\n/* Utility Buttons Container */\n.toolasha-utility-buttons {\n    display: flex;\n    gap: 8px;\n    margin-top: 12px;\n    padding-top: 10px;\n    border-top: 1px solid var(--toolasha-border);\n    flex-wrap: wrap;\n}\n\n.toolasha-utility-button {\n    background: linear-gradient(135deg, var(--toolasha-secondary), #6A1B9A);\n    border: 1px solid rgba(138, 43, 226, 0.4);\n    color: #ffffff;\n    padding: 6px 12px;\n    border-radius: 4px;\n    font-size: 11px;\n    font-weight: 600;\n    cursor: pointer;\n    transition: all 0.2s ease;\n    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);\n}\n\n.toolasha-utility-button:hover {\n    background: linear-gradient(135deg, #9A4BCF, var(--toolasha-secondary));\n    box-shadow: 0 0 10px rgba(138, 43, 226, 0.3);\n    transform: translateY(-1px);\n}\n\n.toolasha-utility-button:active {\n    transform: translateY(0);\n}\n\n/* Sync button - special styling for prominence */\n.toolasha-sync-button {\n    background: linear-gradient(135deg, #047857, #059669) !important;\n    border: 1px solid rgba(4, 120, 87, 0.4) !important;\n    flex: 1 1 auto; /* Allow it to grow and take more space */\n    min-width: 200px; /* Ensure it's wide enough for the text */\n}\n\n.toolasha-sync-button:hover {\n    background: linear-gradient(135deg, #059669, #10b981) !important;\n    box-shadow: 0 0 10px rgba(16, 185, 129, 0.3) !important;\n}\n\n/* Refresh Notice */\n.toolasha-refresh-notice {\n    background: rgba(255, 152, 0, 0.1);\n    border: 1px solid rgba(255, 152, 0, 0.3);\n    border-radius: 4px;\n    padding: 8px 12px;\n    margin-top: 10px;\n    color: #ffa726;\n    font-size: 11px;\n    display: flex;\n    align-items: center;\n    gap: 8px;\n}\n\n.toolasha-refresh-notice::before {\n    content: \"⚠️\";\n    font-size: 14px;\n}\n\n/* Dependency Indicator */\n.toolasha-setting.has-dependency::before {\n    content: \"↳\";\n    position: absolute;\n    left: -4px;\n    color: var(--toolasha-accent);\n    font-size: 14px;\n    opacity: 0.5;\n}\n\n.toolasha-setting.has-dependency {\n    margin-left: 16px;\n    position: relative;\n}\n\n/* Nested setting collapse icons */\n.setting-collapse-icon {\n    flex-shrink: 0;\n    color: var(--toolasha-accent);\n    opacity: 0.7;\n}\n\n.toolasha-setting.dependents-collapsed .setting-collapse-icon {\n    opacity: 1;\n}\n\n.toolasha-setting-label-container:hover .setting-collapse-icon {\n    opacity: 1;\n}\n\n/* Tab Panel Override (for game's settings panel) */\n.TabPanel_tabPanel__tXMJF#toolasha-settings {\n    display: block !important;\n}\n\n.TabPanel_tabPanel__tXMJF#toolasha-settings.TabPanel_hidden__26UM3 {\n    display: none !important;\n}\n";
-
-    /**
-     * Settings UI Module
-     * Injects Toolasha settings tab into the game's settings panel
-     * Based on MWITools Extended approach
-     */
-
-
-    class SettingsUI {
-        constructor() {
-            this.config = config;
-            this.settingsPanel = null;
-            this.settingsObserver = null;
-            this.currentSettings = {};
-            this.isInjecting = false; // Guard against concurrent injection
-            this.characterSwitchHandler = null; // Store listener reference to prevent duplicates
-        }
-
-        /**
-         * Initialize the settings UI
-         */
-        async initialize() {
-            // Inject CSS styles (check if already injected)
-            if (!document.getElementById('toolasha-settings-styles')) {
-                this.injectStyles();
-            }
-
-            // Load current settings
-            this.currentSettings = await settingsStorage.loadSettings();
-
-            // Set up handler for character switching (ONLY if not already registered)
-            if (!this.characterSwitchHandler) {
-                this.characterSwitchHandler = () => {
-                    this.handleCharacterSwitch();
-                };
-                dataManager.on('character_initialized', this.characterSwitchHandler);
-            }
-
-            // Wait for game's settings panel to load
-            this.observeSettingsPanel();
-        }
-
-        /**
-         * Handle character switch
-         * Clean up old observers and re-initialize for new character's settings panel
-         */
-        handleCharacterSwitch() {
-            // Clean up old DOM references and observers (but keep listener registered)
-            this.cleanupDOM();
-
-            // Wait for settings panel to stabilize before re-observing
-            setTimeout(() => {
-                this.observeSettingsPanel();
-            }, 500);
-        }
-
-        /**
-         * Cleanup DOM elements and observers only (internal cleanup during character switch)
-         */
-        cleanupDOM() {
-            // Stop observer
-            if (this.settingsObserver) {
-                this.settingsObserver.disconnect();
-                this.settingsObserver = null;
-            }
-
-            // Remove settings tab
-            const tab = document.querySelector('#toolasha-settings-tab');
-            if (tab) {
-                tab.remove();
-            }
-
-            // Remove settings panel
-            const panel = document.querySelector('#toolasha-settings');
-            if (panel) {
-                panel.remove();
-            }
-
-            // Clear state
-            this.settingsPanel = null;
-            this.currentSettings = {};
-            this.isInjecting = false;
-
-            // Clear config cache
-            this.config.clearSettingsCache();
-        }
-
-        /**
-         * Inject CSS styles into page
-         */
-        injectStyles() {
-            const styleEl = document.createElement('style');
-            styleEl.id = 'toolasha-settings-styles';
-            styleEl.textContent = settingsCSS;
-            document.head.appendChild(styleEl);
-        }
-
-        /**
-         * Observe for game's settings panel
-         * Uses MutationObserver to detect when settings panel appears
-         */
-        observeSettingsPanel() {
-            // Wait for DOM to be ready before observing
-            const startObserver = () => {
-                if (!document.body) {
-                    setTimeout(startObserver, 10);
-                    return;
-                }
-
-                const observer = new MutationObserver((_mutations) => {
-                    // Look for the settings tabs container
-                    const tabsContainer = document.querySelector('div[class*="SettingsPanel_tabsComponentContainer"]');
-
-                    if (tabsContainer) {
-                        // Check if our tab already exists before injecting
-                        if (!tabsContainer.querySelector('#toolasha-settings-tab')) {
-                            this.injectSettingsTab();
-                        }
-                        // Keep observer running - panel might be removed/re-added if user navigates away and back
-                    }
-                });
-
-                // Observe the main game panel for changes
-                const gamePanel = document.querySelector('div[class*="GamePage_gamePanel"]');
-                if (gamePanel) {
-                    observer.observe(gamePanel, {
-                        childList: true,
-                        subtree: true,
-                    });
-                } else {
-                    // Fallback: observe entire body if game panel not found (Firefox timing issue)
-                    console.warn('[Toolasha Settings] Could not find game panel, observing body instead');
-                    observer.observe(document.body, {
-                        childList: true,
-                        subtree: true,
-                    });
-                }
-
-                // Store observer reference
-                this.settingsObserver = observer;
-
-                // Also check immediately in case settings is already open
-                const existingTabsContainer = document.querySelector('div[class*="SettingsPanel_tabsComponentContainer"]');
-                if (existingTabsContainer && !existingTabsContainer.querySelector('#toolasha-settings-tab')) {
-                    this.injectSettingsTab();
-                }
-            };
-
-            startObserver();
-        }
-
-        /**
-         * Inject Toolasha settings tab into game's settings panel
-         */
-        async injectSettingsTab() {
-            // Guard against concurrent injection
-            if (this.isInjecting) {
-                return;
-            }
-            this.isInjecting = true;
-
-            try {
-                // Find tabs container (MWIt-E approach)
-                const tabsComponentContainer = document.querySelector('div[class*="SettingsPanel_tabsComponentContainer"]');
-
-                if (!tabsComponentContainer) {
-                    console.warn('[Toolasha Settings] Could not find tabsComponentContainer');
-                    return;
-                }
-
-                // Find the MUI tabs flexContainer
-                const tabsContainer = tabsComponentContainer.querySelector('[class*="MuiTabs-flexContainer"]');
-                const tabPanelsContainer = tabsComponentContainer.querySelector(
-                    '[class*="TabsComponent_tabPanelsContainer"]'
-                );
-
-                if (!tabsContainer || !tabPanelsContainer) {
-                    console.warn('[Toolasha Settings] Could not find tabs or panels container');
-                    return;
-                }
-
-                // Check if already injected
-                if (tabsContainer.querySelector('#toolasha-settings-tab')) {
-                    return;
-                }
-
-                // Reload current settings from storage to ensure latest values
-                this.currentSettings = await settingsStorage.loadSettings();
-
-                // Get existing tabs for reference
-                const existingTabs = Array.from(tabsContainer.querySelectorAll('button[role="tab"]'));
-
-                // Create new tab button
-                const tabButton = this.createTabButton();
-
-                // Create tab panel
-                const tabPanel = this.createTabPanel();
-
-                // Setup tab switching
-                this.setupTabSwitching(tabButton, tabPanel, existingTabs, tabPanelsContainer);
-
-                // Append to DOM
-                tabsContainer.appendChild(tabButton);
-                tabPanelsContainer.appendChild(tabPanel);
-
-                // Store reference
-                this.settingsPanel = tabPanel;
-            } catch (error) {
-                console.error('[Toolasha Settings] Error during tab injection:', error);
-            } finally {
-                // Always reset the guard flag
-                this.isInjecting = false;
-            }
-        }
-
-        /**
-         * Create tab button
-         * @returns {HTMLElement} Tab button element
-         */
-        createTabButton() {
-            const button = document.createElement('button');
-            button.id = 'toolasha-settings-tab';
-            button.setAttribute('role', 'tab');
-            button.setAttribute('aria-selected', 'false');
-            button.setAttribute('tabindex', '-1');
-            button.className = 'MuiButtonBase-root MuiTab-root MuiTab-textColorPrimary';
-            button.style.minWidth = '90px';
-
-            const span = document.createElement('span');
-            span.className = 'MuiTab-wrapper';
-            span.textContent = 'Toolasha';
-
-            button.appendChild(span);
-
-            return button;
-        }
-
-        /**
-         * Create tab panel with all settings
-         * @returns {HTMLElement} Tab panel element
-         */
-        createTabPanel() {
-            const panel = document.createElement('div');
-            panel.id = 'toolasha-settings';
-            panel.className = 'TabPanel_tabPanel__tXMJF TabPanel_hidden__26UM3';
-            panel.setAttribute('role', 'tabpanel');
-            panel.style.display = 'none';
-
-            // Create settings card
-            const card = document.createElement('div');
-            card.className = 'toolasha-settings-card';
-            card.id = 'toolasha-settings-content';
-
-            // Add search box at the top
-            this.addSearchBox(card);
-
-            // Generate settings from config
-            this.generateSettings(card);
-
-            // Add utility buttons
-            this.addUtilityButtons(card);
-
-            // Add refresh notice
-            this.addRefreshNotice(card);
-
-            panel.appendChild(card);
-
-            // Add change listener
-            card.addEventListener('change', (e) => this.handleSettingChange(e));
-
-            return panel;
-        }
-
-        /**
-         * Generate all settings UI from config
-         * @param {HTMLElement} container - Container element
-         */
-        generateSettings(container) {
-            for (const [groupKey, group] of Object.entries(settingsGroups)) {
-                // Create collapsible group container
-                const groupContainer = document.createElement('div');
-                groupContainer.className = 'toolasha-settings-group';
-                groupContainer.dataset.group = groupKey;
-
-                // Add section header with collapse toggle
-                const header = document.createElement('h3');
-                header.className = 'toolasha-settings-group-header';
-                header.innerHTML = `
-                <span class="collapse-icon">▼</span>
-                <span class="icon">${group.icon}</span>
-                ${group.title}
-            `;
-                // Bind toggleGroup method to this instance
-                header.addEventListener('click', this.toggleGroup.bind(this, groupContainer));
-
-                // Create content container for this group
-                const content = document.createElement('div');
-                content.className = 'toolasha-settings-group-content';
-
-                // Add settings in this group
-                for (const [settingId, settingDef] of Object.entries(group.settings)) {
-                    const settingEl = this.createSettingElement(settingId, settingDef);
-                    content.appendChild(settingEl);
-                }
-
-                groupContainer.appendChild(header);
-                groupContainer.appendChild(content);
-                container.appendChild(groupContainer);
-            }
-
-            // After all settings are created, set up collapse functionality for parent settings
-            this.setupParentCollapseIcons(container);
-
-            // Restore collapse states from localStorage
-            this.restoreCollapseStates(container);
-        }
-
-        /**
-         * Setup collapse icons for parent settings (settings that have dependents)
-         * @param {HTMLElement} container - Settings container
-         */
-        setupParentCollapseIcons(container) {
-            const allSettings = container.querySelectorAll('.toolasha-setting');
-
-            allSettings.forEach((setting) => {
-                const settingId = setting.dataset.settingId;
-
-                // Find all dependents of this setting
-                const dependents = Array.from(allSettings).filter(
-                    (s) => s.dataset.dependencies && s.dataset.dependencies.split(',').includes(settingId)
-                );
-
-                if (dependents.length > 0) {
-                    // This setting has dependents - show collapse icon
-                    const collapseIcon = setting.querySelector('.setting-collapse-icon');
-                    if (collapseIcon) {
-                        collapseIcon.style.display = 'inline-block';
-
-                        // Add click handler to toggle dependents - bind to preserve this context
-                        const labelContainer = setting.querySelector('.toolasha-setting-label-container');
-                        labelContainer.style.cursor = 'pointer';
-                        labelContainer.addEventListener('click', (e) => {
-                            // Don't toggle if clicking the input itself
-                            if (e.target.closest('.toolasha-setting-input')) return;
-
-                            this.toggleDependents(setting, dependents);
-                        });
-                    }
-                }
-            });
-        }
-
-        /**
-         * Toggle group collapse/expand
-         * @param {HTMLElement} groupContainer - Group container element
-         */
-        toggleGroup(groupContainer) {
-            groupContainer.classList.toggle('collapsed');
-
-            // Save collapse state to localStorage
-            const groupKey = groupContainer.dataset.group;
-            const isCollapsed = groupContainer.classList.contains('collapsed');
-            this.saveCollapseState('group', groupKey, isCollapsed);
-        }
-
-        /**
-         * Toggle dependent settings visibility
-         * @param {HTMLElement} parentSetting - Parent setting element
-         * @param {HTMLElement[]} dependents - Array of dependent setting elements
-         */
-        toggleDependents(parentSetting, dependents) {
-            const collapseIcon = parentSetting.querySelector('.setting-collapse-icon');
-            const isCollapsed = parentSetting.classList.contains('dependents-collapsed');
-
-            if (isCollapsed) {
-                // Expand
-                parentSetting.classList.remove('dependents-collapsed');
-                collapseIcon.style.transform = 'rotate(0deg)';
-                dependents.forEach((dep) => (dep.style.display = 'flex'));
-            } else {
-                // Collapse
-                parentSetting.classList.add('dependents-collapsed');
-                collapseIcon.style.transform = 'rotate(-90deg)';
-                dependents.forEach((dep) => (dep.style.display = 'none'));
-            }
-
-            // Save collapse state to localStorage
-            const settingId = parentSetting.dataset.settingId;
-            const newState = !isCollapsed; // Inverted because we just toggled
-            this.saveCollapseState('setting', settingId, newState);
-        }
-
-        /**
-         * Save collapse state to IndexedDB
-         * @param {string} type - 'group' or 'setting'
-         * @param {string} key - Group key or setting ID
-         * @param {boolean} isCollapsed - Whether collapsed
-         */
-        async saveCollapseState(type, key, isCollapsed) {
-            try {
-                const states = await storage.getJSON('collapse-states', 'settings', {});
-
-                if (!states[type]) {
-                    states[type] = {};
-                }
-                states[type][key] = isCollapsed;
-
-                await storage.setJSON('collapse-states', states, 'settings');
-            } catch (e) {
-                console.warn('[Toolasha Settings] Failed to save collapse states:', e);
-            }
-        }
-
-        /**
-         * Load collapse state from IndexedDB
-         * @param {string} type - 'group' or 'setting'
-         * @param {string} key - Group key or setting ID
-         * @returns {Promise<boolean|null>} Collapse state or null if not found
-         */
-        async loadCollapseState(type, key) {
-            try {
-                const states = await storage.getJSON('collapse-states', 'settings', {});
-                return states[type]?.[key] ?? null;
-            } catch (e) {
-                console.warn('[Toolasha Settings] Failed to load collapse states:', e);
-                return null;
-            }
-        }
-
-        /**
-         * Restore collapse states from IndexedDB
-         * @param {HTMLElement} container - Settings container
-         */
-        async restoreCollapseStates(container) {
-            try {
-                // Restore group collapse states
-                const groups = container.querySelectorAll('.toolasha-settings-group');
-                for (const group of groups) {
-                    const groupKey = group.dataset.group;
-                    const isCollapsed = await this.loadCollapseState('group', groupKey);
-                    if (isCollapsed === true) {
-                        group.classList.add('collapsed');
-                    }
-                }
-
-                // Restore setting collapse states
-                const settings = container.querySelectorAll('.toolasha-setting');
-                for (const setting of settings) {
-                    const settingId = setting.dataset.settingId;
-                    const isCollapsed = await this.loadCollapseState('setting', settingId);
-
-                    if (isCollapsed === true) {
-                        setting.classList.add('dependents-collapsed');
-
-                        // Update collapse icon rotation
-                        const collapseIcon = setting.querySelector('.setting-collapse-icon');
-                        if (collapseIcon) {
-                            collapseIcon.style.transform = 'rotate(-90deg)';
-                        }
-
-                        // Hide dependents
-                        const allSettings = container.querySelectorAll('.toolasha-setting');
-                        const dependents = Array.from(allSettings).filter(
-                            (s) => s.dataset.dependencies && s.dataset.dependencies.split(',').includes(settingId)
-                        );
-                        dependents.forEach((dep) => (dep.style.display = 'none'));
-                    }
-                }
-            } catch (e) {
-                console.warn('[Toolasha Settings] Failed to restore collapse states:', e);
-            }
-        }
-
-        /**
-         * Create a single setting UI element
-         * @param {string} settingId - Setting ID
-         * @param {Object} settingDef - Setting definition
-         * @returns {HTMLElement} Setting element
-         */
-        createSettingElement(settingId, settingDef) {
-            const div = document.createElement('div');
-            div.className = 'toolasha-setting';
-            div.dataset.settingId = settingId;
-            div.dataset.type = settingDef.type || 'checkbox';
-
-            // Add dependency class and store dependency info
-            if (settingDef.dependencies) {
-                div.classList.add('has-dependency');
-
-                // Handle both array format (legacy, AND logic) and object format (supports OR logic)
-                if (Array.isArray(settingDef.dependencies)) {
-                    // Legacy format: ['dep1', 'dep2'] means AND logic
-                    div.dataset.dependencies = settingDef.dependencies.join(',');
-                    div.dataset.dependencyMode = 'all'; // AND logic
-                } else if (typeof settingDef.dependencies === 'object') {
-                    // New format: {mode: 'any', settings: ['dep1', 'dep2']}
-                    div.dataset.dependencies = settingDef.dependencies.settings.join(',');
-                    div.dataset.dependencyMode = settingDef.dependencies.mode || 'all'; // 'any' = OR, 'all' = AND
-                }
-            }
-
-            // Add not-implemented class for red text
-            if (settingDef.notImplemented) {
-                div.classList.add('not-implemented');
-            }
-
-            // Create label container (clickable for collapse if has dependents)
-            const labelContainer = document.createElement('div');
-            labelContainer.className = 'toolasha-setting-label-container';
-            labelContainer.style.display = 'flex';
-            labelContainer.style.alignItems = 'center';
-            labelContainer.style.flex = '1';
-            labelContainer.style.gap = '6px';
-
-            // Add collapse icon if this setting has dependents (will be populated by checkDependents)
-            const collapseIcon = document.createElement('span');
-            collapseIcon.className = 'setting-collapse-icon';
-            collapseIcon.textContent = '▼';
-            collapseIcon.style.display = 'none'; // Hidden by default, shown if dependents exist
-            collapseIcon.style.cursor = 'pointer';
-            collapseIcon.style.fontSize = '10px';
-            collapseIcon.style.transition = 'transform 0.2s ease';
-
-            // Create label
-            const label = document.createElement('span');
-            label.className = 'toolasha-setting-label';
-            label.textContent = settingDef.label;
-
-            // Add help text if present
-            if (settingDef.help) {
-                const help = document.createElement('span');
-                help.className = 'toolasha-setting-help';
-                help.textContent = settingDef.help;
-                label.appendChild(help);
-            }
-
-            labelContainer.appendChild(collapseIcon);
-            labelContainer.appendChild(label);
-
-            // Create input
-            const inputHTML = this.generateSettingInput(settingId, settingDef);
-            const inputContainer = document.createElement('div');
-            inputContainer.className = 'toolasha-setting-input';
-            inputContainer.innerHTML = inputHTML;
-
-            div.appendChild(labelContainer);
-            div.appendChild(inputContainer);
-
-            return div;
-        }
-
-        /**
-         * Generate input HTML for a setting
-         * @param {string} settingId - Setting ID
-         * @param {Object} settingDef - Setting definition
-         * @returns {string} Input HTML
-         */
-        generateSettingInput(settingId, settingDef) {
-            const currentSetting = this.currentSettings[settingId];
-            const type = settingDef.type || 'checkbox';
-
-            switch (type) {
-                case 'checkbox': {
-                    const checked = currentSetting?.isTrue ?? settingDef.default ?? false;
-                    return `
-                    <label class="toolasha-switch">
-                        <input type="checkbox" id="${settingId}" ${checked ? 'checked' : ''}>
-                        <span class="toolasha-slider"></span>
-                    </label>
-                `;
-                }
-
-                case 'text': {
-                    const value = currentSetting?.value ?? settingDef.default ?? '';
-                    return `
-                    <input type="text"
-                        id="${settingId}"
-                        class="toolasha-text-input"
-                        value="${value}"
-                        placeholder="${settingDef.placeholder || ''}">
-                `;
-                }
-
-                case 'number': {
-                    const value = currentSetting?.value ?? settingDef.default ?? 0;
-                    return `
-                    <input type="number"
-                        id="${settingId}"
-                        class="toolasha-number-input"
-                        value="${value}"
-                        min="${settingDef.min ?? ''}"
-                        max="${settingDef.max ?? ''}"
-                        step="${settingDef.step ?? '1'}">
-                `;
-                }
-
-                case 'select': {
-                    const value = currentSetting?.value ?? settingDef.default ?? '';
-                    const options = settingDef.options || [];
-                    const optionsHTML = options
-                        .map((option) => {
-                            const optValue = typeof option === 'object' ? option.value : option;
-                            const optLabel = typeof option === 'object' ? option.label : option;
-                            const selected = optValue === value ? 'selected' : '';
-                            return `<option value="${optValue}" ${selected}>${optLabel}</option>`;
-                        })
-                        .join('');
-
-                    return `
-                    <select id="${settingId}" class="toolasha-select-input">
-                        ${optionsHTML}
-                    </select>
-                `;
-                }
-
-                case 'color': {
-                    const value = currentSetting?.value ?? settingDef.value ?? settingDef.default ?? '#000000';
-                    return `
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <input type="color"
-                            id="${settingId}"
-                            class="toolasha-color-input"
-                            value="${value}">
-                        <input type="text"
-                            id="${settingId}_text"
-                            class="toolasha-color-text-input"
-                            value="${value}"
-                            style="width: 80px; padding: 4px; background: #2a2a2a; color: white; border: 1px solid #555; border-radius: 3px;"
-                            readonly>
-                    </div>
-                `;
-                }
-
-                case 'slider': {
-                    const value = currentSetting?.value ?? settingDef.default ?? 0;
-                    return `
-                    <div style="display: flex; align-items: center; gap: 12px; width: 100%;">
-                        <input type="range"
-                            id="${settingId}"
-                            class="toolasha-slider-input"
-                            value="${value}"
-                            min="${settingDef.min ?? 0}"
-                            max="${settingDef.max ?? 1}"
-                            step="${settingDef.step ?? 0.01}"
-                            style="flex: 1;">
-                        <span id="${settingId}_value" class="toolasha-slider-value" style="min-width: 50px; color: #aaa; font-size: 0.9em;">${value}</span>
-                    </div>
-                `;
-                }
-
-                default:
-                    return `<span style="color: red;">Unknown type: ${type}</span>`;
-            }
-        }
-
-        /**
-         * Add search box to filter settings
-         * @param {HTMLElement} container - Container element
-         */
-        addSearchBox(container) {
-            const searchContainer = document.createElement('div');
-            searchContainer.className = 'toolasha-search-container';
-            searchContainer.style.cssText = `
-            margin-bottom: 20px;
-            display: flex;
-            gap: 8px;
-            align-items: center;
-        `;
-
-            // Search input
-            const searchInput = document.createElement('input');
-            searchInput.type = 'text';
-            searchInput.className = 'toolasha-search-input';
-            searchInput.placeholder = 'Search settings...';
-            searchInput.style.cssText = `
-            flex: 1;
-            padding: 8px 12px;
-            background: #2a2a2a;
-            color: white;
-            border: 1px solid #555;
-            border-radius: 4px;
-            font-size: 14px;
-        `;
-
-            // Clear button
-            const clearButton = document.createElement('button');
-            clearButton.textContent = 'Clear';
-            clearButton.className = 'toolasha-search-clear';
-            clearButton.style.cssText = `
-            padding: 8px 16px;
-            background: #444;
-            color: white;
-            border: 1px solid #555;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 14px;
-        `;
-            clearButton.style.display = 'none'; // Hidden by default
-
-            // Filter function
-            const filterSettings = (query) => {
-                const lowerQuery = query.toLowerCase().trim();
-
-                // If query is empty, show everything
-                if (!lowerQuery) {
-                    // Show all settings
-                    document.querySelectorAll('.toolasha-setting').forEach((setting) => {
-                        setting.style.display = 'flex';
-                    });
-                    // Show all groups
-                    document.querySelectorAll('.toolasha-settings-group').forEach((group) => {
-                        group.style.display = 'block';
-                    });
-                    clearButton.style.display = 'none';
-                    return;
-                }
-
-                clearButton.style.display = 'block';
-
-                // Filter settings
-                document.querySelectorAll('.toolasha-settings-group').forEach((group) => {
-                    let visibleCount = 0;
-
-                    group.querySelectorAll('.toolasha-setting').forEach((setting) => {
-                        const label = setting.querySelector('.toolasha-setting-label')?.textContent || '';
-                        const help = setting.querySelector('.toolasha-setting-help')?.textContent || '';
-                        const searchText = (label + ' ' + help).toLowerCase();
-
-                        if (searchText.includes(lowerQuery)) {
-                            setting.style.display = 'flex';
-                            visibleCount++;
-                        } else {
-                            setting.style.display = 'none';
-                        }
-                    });
-
-                    // Hide group if no visible settings
-                    if (visibleCount === 0) {
-                        group.style.display = 'none';
-                    } else {
-                        group.style.display = 'block';
-                    }
-                });
-            };
-
-            // Input event listener
-            searchInput.addEventListener('input', (e) => {
-                filterSettings(e.target.value);
-            });
-
-            // Clear button event listener
-            clearButton.addEventListener('click', () => {
-                searchInput.value = '';
-                filterSettings('');
-                searchInput.focus();
-            });
-
-            searchContainer.appendChild(searchInput);
-            searchContainer.appendChild(clearButton);
-            container.appendChild(searchContainer);
-        }
-
-        /**
-         * Add utility buttons (Reset, Export, Import, Fetch Prices)
-         * @param {HTMLElement} container - Container element
-         */
-        addUtilityButtons(container) {
-            const buttonsDiv = document.createElement('div');
-            buttonsDiv.className = 'toolasha-utility-buttons';
-
-            // Sync button (at top - most important)
-            const syncBtn = document.createElement('button');
-            syncBtn.textContent = 'Copy Settings to All Characters';
-            syncBtn.className = 'toolasha-utility-button toolasha-sync-button';
-            syncBtn.addEventListener('click', () => this.handleSync());
-
-            // Fetch Latest Prices button
-            const fetchPricesBtn = document.createElement('button');
-            fetchPricesBtn.textContent = '🔄 Fetch Latest Prices';
-            fetchPricesBtn.className = 'toolasha-utility-button toolasha-fetch-prices-button';
-            fetchPricesBtn.addEventListener('click', () => this.handleFetchPrices(fetchPricesBtn));
-
-            // Reset button
-            const resetBtn = document.createElement('button');
-            resetBtn.textContent = 'Reset to Defaults';
-            resetBtn.className = 'toolasha-utility-button';
-            resetBtn.addEventListener('click', () => this.handleReset());
-
-            // Export button
-            const exportBtn = document.createElement('button');
-            exportBtn.textContent = 'Export Settings';
-            exportBtn.className = 'toolasha-utility-button';
-            exportBtn.addEventListener('click', () => this.handleExport());
-
-            // Import button
-            const importBtn = document.createElement('button');
-            importBtn.textContent = 'Import Settings';
-            importBtn.className = 'toolasha-utility-button';
-            importBtn.addEventListener('click', () => this.handleImport());
-
-            buttonsDiv.appendChild(syncBtn);
-            buttonsDiv.appendChild(fetchPricesBtn);
-            buttonsDiv.appendChild(resetBtn);
-            buttonsDiv.appendChild(exportBtn);
-            buttonsDiv.appendChild(importBtn);
-
-            container.appendChild(buttonsDiv);
-        }
-
-        /**
-         * Add refresh notice
-         * @param {HTMLElement} container - Container element
-         */
-        addRefreshNotice(container) {
-            const notice = document.createElement('div');
-            notice.className = 'toolasha-refresh-notice';
-            notice.textContent = 'Some settings require a page refresh to take effect';
-            container.appendChild(notice);
-        }
-
-        /**
-         * Setup tab switching functionality
-         * @param {HTMLElement} tabButton - Toolasha tab button
-         * @param {HTMLElement} tabPanel - Toolasha tab panel
-         * @param {HTMLElement[]} existingTabs - Existing tab buttons
-         * @param {HTMLElement} tabPanelsContainer - Tab panels container
-         */
-        setupTabSwitching(tabButton, tabPanel, existingTabs, tabPanelsContainer) {
-            const switchToTab = (targetButton, targetPanel) => {
-                // Hide all panels
-                const allPanels = tabPanelsContainer.querySelectorAll('[class*="TabPanel_tabPanel"]');
-                allPanels.forEach((panel) => {
-                    panel.style.display = 'none';
-                    panel.classList.add('TabPanel_hidden__26UM3');
-                });
-
-                // Deactivate all buttons
-                const allButtons = document.querySelectorAll('button[role="tab"]');
-                allButtons.forEach((btn) => {
-                    btn.setAttribute('aria-selected', 'false');
-                    btn.setAttribute('tabindex', '-1');
-                    btn.classList.remove('Mui-selected');
-                });
-
-                // Activate target
-                targetButton.setAttribute('aria-selected', 'true');
-                targetButton.setAttribute('tabindex', '0');
-                targetButton.classList.add('Mui-selected');
-                targetPanel.style.display = 'block';
-                targetPanel.classList.remove('TabPanel_hidden__26UM3');
-
-                // Update title
-                const titleEl = document.querySelector('[class*="SettingsPanel_title"]');
-                if (titleEl) {
-                    if (targetButton.id === 'toolasha-settings-tab') {
-                        titleEl.textContent = '⚙️ Toolasha Settings (refresh to apply)';
-                    } else {
-                        titleEl.textContent = 'Settings';
-                    }
-                }
-            };
-
-            // Click handler for Toolasha tab
-            tabButton.addEventListener('click', () => {
-                switchToTab(tabButton, tabPanel);
-            });
-
-            // Click handlers for existing tabs
-            existingTabs.forEach((existingTab, index) => {
-                existingTab.addEventListener('click', () => {
-                    const correspondingPanel = tabPanelsContainer.children[index];
-                    if (correspondingPanel) {
-                        switchToTab(existingTab, correspondingPanel);
-                    }
-                });
-            });
-        }
-
-        /**
-         * Handle setting change
-         * @param {Event} event - Change event
-         */
-        async handleSettingChange(event) {
-            const input = event.target;
-            if (!input.id) return;
-
-            const settingId = input.id;
-            const type = input.closest('.toolasha-setting')?.dataset.type || 'checkbox';
-
-            let value;
-
-            // Get value based on type
-            if (type === 'checkbox') {
-                value = input.checked;
-            } else if (type === 'number' || type === 'slider') {
-                value = parseFloat(input.value) || 0;
-                // Update the slider value display if it's a slider
-                if (type === 'slider') {
-                    const valueDisplay = document.getElementById(`${settingId}_value`);
-                    if (valueDisplay) {
-                        valueDisplay.textContent = value;
-                    }
-                }
-            } else if (type === 'color') {
-                value = input.value;
-                // Update the text display
-                const textInput = document.getElementById(`${settingId}_text`);
-                if (textInput) {
-                    textInput.value = value;
-                }
-            } else {
-                value = input.value;
-            }
-
-            // Save to storage
-            await settingsStorage.setSetting(settingId, value);
-
-            // Update local cache immediately
-            if (!this.currentSettings[settingId]) {
-                this.currentSettings[settingId] = {};
-            }
-            if (type === 'checkbox') {
-                this.currentSettings[settingId].isTrue = value;
-            } else {
-                this.currentSettings[settingId].value = value;
-            }
-
-            // Update config module (for backward compatibility)
-            if (type === 'checkbox') {
-                this.config.setSetting(settingId, value);
-            } else {
-                this.config.setSettingValue(settingId, value);
-            }
-
-            // Apply color settings immediately if this is a color setting
-            if (type === 'color') {
-                this.config.applyColorSettings();
-            }
-
-            // Update dependencies
-            this.updateDependencies();
-        }
-
-        /**
-         * Update dependency states (enable/disable dependent settings)
-         */
-        updateDependencies() {
-            const settings = document.querySelectorAll('.toolasha-setting[data-dependencies]');
-
-            settings.forEach((settingEl) => {
-                const dependencies = settingEl.dataset.dependencies.split(',');
-                const mode = settingEl.dataset.dependencyMode || 'all'; // 'all' = AND, 'any' = OR
-                let enabled = false;
-
-                if (mode === 'any') {
-                    // OR logic: at least one dependency must be met
-                    for (const depId of dependencies) {
-                        const depInput = document.getElementById(depId);
-                        if (depInput && depInput.type === 'checkbox' && depInput.checked) {
-                            enabled = true;
-                            break; // Found at least one enabled, that's enough
-                        }
-                    }
-                } else {
-                    // AND logic (default): all dependencies must be met
-                    enabled = true; // Assume enabled, then check all
-                    for (const depId of dependencies) {
-                        const depInput = document.getElementById(depId);
-                        if (depInput && depInput.type === 'checkbox' && !depInput.checked) {
-                            enabled = false;
-                            break; // Found one disabled, no need to check rest
-                        }
-                    }
-                }
-
-                // Enable or disable
-                if (enabled) {
-                    settingEl.classList.remove('disabled');
-                } else {
-                    settingEl.classList.add('disabled');
-                }
-            });
-        }
-
-        /**
-         * Handle sync settings to all characters
-         */
-        async handleSync() {
-            // Get character count to show in confirmation
-            const characterCount = await this.config.getKnownCharacterCount();
-
-            // If only 1 character (current), no need to sync
-            if (characterCount <= 1) {
-                alert('You only have one character. Settings are already saved for this character.');
-                return;
-            }
-
-            // Confirm action
-            const otherCharacters = characterCount - 1;
-            const message = `This will copy your current settings to ${otherCharacters} other character${otherCharacters > 1 ? 's' : ''}. Their existing settings will be overwritten.\n\nContinue?`;
-
-            if (!confirm(message)) {
-                return;
-            }
-
-            // Perform sync
-            const result = await this.config.syncSettingsToAllCharacters();
-
-            // Show result
-            if (result.success) {
-                alert(`Settings successfully copied to ${result.count} character${result.count > 1 ? 's' : ''}!`);
-            } else {
-                alert(`Failed to sync settings: ${result.error || 'Unknown error'}`);
-            }
-        }
-
-        /**
-         * Handle fetch latest prices
-         * @param {HTMLElement} button - Button element for state updates
-         */
-        async handleFetchPrices(button) {
-            // Disable button and show loading state
-            const originalText = button.textContent;
-            button.disabled = true;
-            button.textContent = '⏳ Fetching...';
-
-            try {
-                // Clear cache and fetch fresh data
-                const result = await marketAPI.clearCacheAndRefetch();
-
-                if (result) {
-                    // Success - clear listing price display cache to force re-render
-                    document.querySelectorAll('.mwi-listing-prices-set').forEach((table) => {
-                        table.classList.remove('mwi-listing-prices-set');
-                    });
-
-                    // Show success state
-                    button.textContent = '✅ Updated!';
-                    button.style.backgroundColor = '#00ff00';
-                    button.style.color = '#000';
-
-                    // Reset button after 2 seconds
-                    setTimeout(() => {
-                        button.textContent = originalText;
-                        button.style.backgroundColor = '';
-                        button.style.color = '';
-                        button.disabled = false;
-                    }, 2000);
-                } else {
-                    // Failed - show error state
-                    button.textContent = '❌ Failed';
-                    button.style.backgroundColor = '#ff0000';
-
-                    // Reset button after 3 seconds
-                    setTimeout(() => {
-                        button.textContent = originalText;
-                        button.style.backgroundColor = '';
-                        button.disabled = false;
-                    }, 3000);
-                }
-            } catch (error) {
-                console.error('[SettingsUI] Fetch prices failed:', error);
-
-                // Show error state
-                button.textContent = '❌ Error';
-                button.style.backgroundColor = '#ff0000';
-
-                // Reset button after 3 seconds
-                setTimeout(() => {
-                    button.textContent = originalText;
-                    button.style.backgroundColor = '';
-                    button.disabled = false;
-                }, 3000);
-            }
-        }
-
-        /**
-         * Handle reset to defaults
-         */
-        async handleReset() {
-            if (!confirm('Reset all settings to defaults? This cannot be undone.')) {
-                return;
-            }
-
-            await settingsStorage.resetToDefaults();
-            await this.config.resetToDefaults();
-
-            alert('Settings reset to defaults. Please refresh the page.');
-            window.location.reload();
-        }
-
-        /**
-         * Handle export settings
-         */
-        async handleExport() {
-            const json = await settingsStorage.exportSettings();
-
-            // Create download
-            const blob = new Blob([json], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `toolasha-settings-${new Date().toISOString().slice(0, 10)}.json`;
-            a.click();
-            URL.revokeObjectURL(url);
-        }
-
-        /**
-         * Handle import settings
-         */
-        async handleImport() {
-            const input = document.createElement('input');
-            input.type = 'file';
-            input.accept = '.json';
-
-            input.addEventListener('change', async (e) => {
-                const file = e.target.files[0];
-                if (!file) return;
-
-                try {
-                    const text = await file.text();
-                    const success = await settingsStorage.importSettings(text);
-
-                    if (success) {
-                        alert('Settings imported successfully. Please refresh the page.');
-                        window.location.reload();
-                    } else {
-                        alert('Failed to import settings. Please check the file format.');
-                    }
-                } catch (error) {
-                    console.error('[Toolasha Settings] Import error:', error);
-                    alert('Failed to import settings.');
-                }
-            });
-
-            input.click();
-        }
-
-        /**
-         * Cleanup for full shutdown (not character switching)
-         * Unregisters event listeners and removes all DOM elements
-         */
-        cleanup() {
-            // Clean up DOM elements first
-            this.cleanupDOM();
-
-            // Unregister character switch listener
-            if (this.characterSwitchHandler) {
-                dataManager.off('character_initialized', this.characterSwitchHandler);
-                this.characterSwitchHandler = null;
-            }
-        }
-    }
-
-    // Create and export singleton instance
-    const settingsUI = new SettingsUI();
-
     /**
      * MWI Tools - Main Entry Point
      * Refactored modular version
@@ -47044,7 +49601,7 @@
         const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
         targetWindow.Toolasha = {
-            version: '0.9.2',
+            version: '0.10.0',
 
             // Feature toggle API (for users to manage settings via console)
             features: {
