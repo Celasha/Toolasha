@@ -112,6 +112,13 @@ class Config {
                 description: 'Shows buy orders, sell orders, and unclaimed coins in header',
                 settingKey: 'market_showOrderTotals',
             },
+            market_showHistoryViewer: {
+                enabled: true,
+                name: 'Market History Viewer',
+                category: 'Market',
+                description: 'View and export all market listing history',
+                settingKey: 'market_showHistoryViewer',
+            },
 
             // Action Features
             actionTimeDisplay: {

@@ -788,8 +788,10 @@ class AlchemyProfit {
                 }
             } else if (!isRequirement) {
                 // Extract count and drop rate from drop by matching item HRID
-                // Search through all drop elements to find the one containing this item
-                const dropElements = document.querySelectorAll('[class*="SkillActionDetail_drop"]');
+                // Search through all drop elements (including essence and rare drops)
+                const dropElements = document.querySelectorAll(
+                    '[class*="SkillActionDetail_drop"], [class*="SkillActionDetail_essence"], [class*="SkillActionDetail_rare"]'
+                );
 
                 for (const dropElement of dropElements) {
                     // Check if this drop element contains our item
@@ -902,6 +904,11 @@ class AlchemyProfit {
                 // Get base drop rate
                 let effectiveDropRate = drop.dropRate || 1;
 
+                // Apply Essence Find bonus to essence drops
+                if (isEssence && data.essenceFindBreakdown) {
+                    effectiveDropRate = effectiveDropRate * (1 + data.essenceFindBreakdown.total);
+                }
+
                 // Apply Rare Find bonus to rare drops
                 if (isRare && data.rareFindBreakdown) {
                     effectiveDropRate = effectiveDropRate * (1 + data.rareFindBreakdown.total);
@@ -999,6 +1006,11 @@ class AlchemyProfit {
                 // Get base drop rate
                 const baseDropRate = drop.dropRate || 1;
                 let effectiveDropRate = baseDropRate;
+
+                // Apply Essence Find bonus to essence drops
+                if (isEssence && data.essenceFindBreakdown) {
+                    effectiveDropRate = baseDropRate * (1 + data.essenceFindBreakdown.total);
+                }
 
                 // Apply Rare Find bonus to rare drops
                 if (isRare && data.rareFindBreakdown) {

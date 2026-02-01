@@ -16,6 +16,7 @@ import itemCountDisplay from '../features/market/item-count-display.js';
 import listingPriceDisplay from '../features/market/listing-price-display.js';
 import estimatedListingAge from '../features/market/estimated-listing-age.js';
 import marketOrderTotals from '../features/market/market-order-totals.js';
+import marketHistoryViewer from '../features/market/market-history-viewer.js';
 import tradeHistory from '../features/market/trade-history.js';
 import tradeHistoryDisplay from '../features/market/trade-history-display.js';
 import { initActionPanelObserver } from '../features/actions/panel-observer.js';
@@ -129,6 +130,13 @@ const featureRegistry = [
         category: 'Market',
         initialize: () => marketOrderTotals.initialize(),
         async: true, // Uses dataManager and WebSocket hooks
+    },
+    {
+        key: 'market_showHistoryViewer',
+        name: 'Market History Viewer',
+        category: 'Market',
+        initialize: () => marketHistoryViewer.initialize(),
+        async: true,
     },
     {
         key: 'market_tradeHistory',
@@ -718,6 +726,7 @@ function getFeatureInstance(key) {
         market_showListingPrices: listingPriceDisplay,
         market_showEstimatedListingAge: estimatedListingAge,
         market_showOrderTotals: marketOrderTotals,
+        market_showHistoryViewer: marketHistoryViewer,
         market_tradeHistory: tradeHistory,
         actionTimeDisplay: actionTimeDisplay,
         quickInputButtons: quickInputButtons,

@@ -20,6 +20,7 @@ class SettingsUI {
         this.currentSettings = {};
         this.isInjecting = false; // Guard against concurrent injection
         this.characterSwitchHandler = null; // Store listener reference to prevent duplicates
+        this.settingsPanelCallbacks = []; // Callbacks to run when settings panel appears
     }
 
     /**
@@ -44,6 +45,16 @@ class SettingsUI {
 
         // Wait for game's settings panel to load
         this.observeSettingsPanel();
+    }
+
+    /**
+     * Register a callback to be called when settings panel appears
+     * @param {Function} callback - Function to call when settings panel is detected
+     */
+    onSettingsPanelAppear(callback) {
+        if (typeof callback === 'function') {
+            this.settingsPanelCallbacks.push(callback);
+        }
     }
 
     /**
@@ -122,6 +133,16 @@ class SettingsUI {
                     if (!tabsContainer.querySelector('#toolasha-settings-tab')) {
                         this.injectSettingsTab();
                     }
+
+                    // Call registered callbacks for other features
+                    this.settingsPanelCallbacks.forEach((callback) => {
+                        try {
+                            callback();
+                        } catch (error) {
+                            console.error('[Toolasha Settings] Callback error:', error);
+                        }
+                    });
+
                     // Keep observer running - panel might be removed/re-added if user navigates away and back
                 }
             });
@@ -149,6 +170,15 @@ class SettingsUI {
             const existingTabsContainer = document.querySelector('div[class*="SettingsPanel_tabsComponentContainer"]');
             if (existingTabsContainer && !existingTabsContainer.querySelector('#toolasha-settings-tab')) {
                 this.injectSettingsTab();
+
+                // Call registered callbacks for other features
+                this.settingsPanelCallbacks.forEach((callback) => {
+                    try {
+                        callback();
+                    } catch (error) {
+                        console.error('[Toolasha Settings] Callback error:', error);
+                    }
+                });
             }
         };
 

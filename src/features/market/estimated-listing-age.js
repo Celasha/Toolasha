@@ -16,13 +16,12 @@ import { formatRelativeTime } from '../../utils/formatters.js';
 
 class EstimatedListingAge {
     constructor() {
-        this.knownListings = []; // Array of {id, timestamp} sorted by id
+        this.knownListings = []; // Array of {id, timestamp, createdTimestamp, enhancementLevel, ...} sorted by id
         this.orderBooksCache = {}; // Cache of order book data from WebSocket
         this.currentItemHrid = null; // Track current item from WebSocket
         this.unregisterWebSocket = null;
         this.unregisterObserver = null;
         this.storageKey = 'marketListingTimestamps';
-        this.maxAge = 30 * 24 * 60 * 60 * 1000; // 30 days in ms
         this.isInitialized = false;
     }
 
@@ -108,16 +107,8 @@ class EstimatedListingAge {
         try {
             const stored = await storage.getJSON(this.storageKey, 'marketListings', []);
 
-            // Filter out old entries (> 30 days)
-            const now = Date.now();
-            const filtered = stored.filter((entry) => now - entry.timestamp < this.maxAge);
-
-            this.knownListings = filtered.sort((a, b) => a.id - b.id);
-
-            // Save cleaned data back if we filtered anything
-            if (filtered.length < stored.length) {
-                await this.saveHistoricalData();
-            }
+            // Load all historical data (no time-based filtering)
+            this.knownListings = stored.sort((a, b) => a.id - b.id);
         } catch (error) {
             console.error('[EstimatedListingAge] Failed to load historical data:', error);
             this.knownListings = [];
@@ -206,7 +197,9 @@ class EstimatedListingAge {
         const entry = {
             id: listing.id,
             timestamp: timestamp,
+            createdTimestamp: listing.createdTimestamp, // ISO string for display
             itemHrid: listing.itemHrid,
+            enhancementLevel: listing.enhancementLevel || 0, // For accurate row matching
             price: listing.price,
             orderQuantity: listing.orderQuantity,
             filledQuantity: listing.filledQuantity,
@@ -489,16 +482,10 @@ class EstimatedListingAge {
 
         // CRITICAL: Clamp to reasonable bounds
         const now = Date.now();
-        const maxAgeTimestamp = now - this.maxAge; // 30 days ago
 
         // Never allow future timestamps (listings cannot be created in the future)
         if (estimate > now) {
             estimate = now;
-        }
-
-        // Never allow timestamps older than maxAge (we filter these out anyway)
-        if (estimate < maxAgeTimestamp) {
-            estimate = maxAgeTimestamp;
         }
 
         return estimate;

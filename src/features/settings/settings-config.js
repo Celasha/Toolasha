@@ -741,6 +741,13 @@ export const settingsGroups = {
                 default: true,
                 help: 'Displays buy orders (BO), sell orders (SO), and unclaimed coins (💰) in the header area below gold',
             },
+            market_showHistoryViewer: {
+                id: 'market_showHistoryViewer',
+                label: 'Market: Show history viewer button in settings',
+                type: 'checkbox',
+                default: true,
+                help: 'Adds "View Market History" button to settings panel for viewing and exporting all market listing history',
+            },
             itemDictionary_transmuteRates: {
                 id: 'itemDictionary_transmuteRates',
                 label: 'Item Dictionary: Show transmutation success rates',
