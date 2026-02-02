@@ -13,8 +13,16 @@
  * - Event-driven updates when filters change
  */
 
-import { GAME } from '../../utils/selectors.js';
 import config from '../../core/config.js';
+import storage from '../../core/storage.js';
+import { GAME } from '../../utils/selectors.js';
+import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
+
+const STORAGE_KEYS = {
+    migration: 'taskIconsFiltersMigratedV1',
+    battle: 'taskIconsFilterBattle',
+    dungeonPrefix: 'taskIconsFilterDungeon:',
+};
 
 class TaskIconFilters {
     constructor() {
@@ -23,6 +31,12 @@ class TaskIconFilters {
         this.taskListObserver = null;
         this.filterBar = null; // Reference to filter bar DOM element
         this.settingChangeHandler = null; // Handler for setting changes
+        this.stateLoadPromise = null;
+        this.isStateLoaded = false;
+        this.state = {
+            battle: true,
+            dungeons: {},
+        };
 
         // Dungeon configuration matching game data
         this.dungeonConfig = {
@@ -55,6 +69,8 @@ class TaskIconFilters {
     initialize() {
         // Note: Filter bar is added by task-sorter.js when task panel appears
 
+        this.loadState();
+
         // Listen for taskIconsDungeons setting changes
         this.settingChangeHandler = (enabled) => {
             if (this.filterBar) {
@@ -62,6 +78,83 @@ class TaskIconFilters {
             }
         };
         config.onSettingChange('taskIconsDungeons', this.settingChangeHandler);
+    }
+
+    async loadState() {
+        if (this.stateLoadPromise) {
+            return this.stateLoadPromise;
+        }
+
+        this.stateLoadPromise = this.loadStateInternal();
+        return this.stateLoadPromise;
+    }
+
+    async loadStateInternal() {
+        try {
+            const migrated = await storage.get(STORAGE_KEYS.migration, 'settings', false);
+
+            if (migrated) {
+                await this.loadStateFromStorage();
+            } else {
+                this.loadStateFromLocalStorage();
+                const migrated = await this.persistStateToStorage();
+                if (migrated) {
+                    await storage.set(STORAGE_KEYS.migration, true, 'settings', true);
+                    this.clearLocalStorageState();
+                }
+            }
+        } catch (error) {
+            console.error('[TaskIconFilters] Failed to load filter state:', error);
+        } finally {
+            this.isStateLoaded = true;
+            this.updateAllIconStates();
+            this.dispatchFilterChange('init');
+        }
+    }
+
+    loadStateFromLocalStorage() {
+        const storedBattle = localStorage.getItem('mwi-taskIconsFilterBattle');
+        this.state.battle = storedBattle === null || storedBattle === 'true';
+
+        Object.values(this.dungeonConfig).forEach((dungeon) => {
+            const stored = localStorage.getItem(`mwi-taskIconsFilter-${dungeon.id}`);
+            this.state.dungeons[dungeon.id] = stored === 'true';
+        });
+    }
+
+    async loadStateFromStorage() {
+        const storedBattle = await storage.get(STORAGE_KEYS.battle, 'settings', true);
+        this.state.battle = storedBattle === true;
+
+        const dungeonEntries = Object.values(this.dungeonConfig).map(async (dungeon) => {
+            const key = `${STORAGE_KEYS.dungeonPrefix}${dungeon.id}`;
+            const enabled = await storage.get(key, 'settings', false);
+            return { id: dungeon.id, enabled: enabled === true };
+        });
+
+        const results = await Promise.all(dungeonEntries);
+        results.forEach(({ id, enabled }) => {
+            this.state.dungeons[id] = enabled;
+        });
+    }
+
+    async persistStateToStorage() {
+        const battleSaved = await storage.set(STORAGE_KEYS.battle, this.state.battle, 'settings', true);
+
+        const dungeonWrites = Object.values(this.dungeonConfig).map((dungeon) => {
+            const key = `${STORAGE_KEYS.dungeonPrefix}${dungeon.id}`;
+            return storage.set(key, this.state.dungeons[dungeon.id] === true, 'settings', true);
+        });
+
+        const dungeonResults = await Promise.all(dungeonWrites);
+        return battleSaved && dungeonResults.every(Boolean);
+    }
+
+    clearLocalStorageState() {
+        localStorage.removeItem('mwi-taskIconsFilterBattle');
+        Object.values(this.dungeonConfig).forEach((dungeon) => {
+            localStorage.removeItem(`mwi-taskIconsFilter-${dungeon.id}`);
+        });
     }
 
     /**
@@ -76,7 +169,7 @@ class TaskIconFilters {
 
         // Disconnect task list observer
         if (this.taskListObserver) {
-            this.taskListObserver.disconnect();
+            this.taskListObserver();
             this.taskListObserver = null;
         }
 
@@ -223,7 +316,8 @@ class TaskIconFilters {
         if (filterId === 'battle') {
             // Toggle battle filter
             const currentState = this.getBattleFilterEnabled();
-            localStorage.setItem('mwi-taskIconsFilterBattle', (!currentState).toString());
+            this.state.battle = !currentState;
+            storage.set(STORAGE_KEYS.battle, this.state.battle, 'settings');
         } else {
             // Toggle dungeon filter
             const dungeonHrid = Object.keys(this.dungeonConfig).find(
@@ -231,7 +325,9 @@ class TaskIconFilters {
             );
             if (dungeonHrid) {
                 const currentState = this.getDungeonFilterEnabled(dungeonHrid);
-                localStorage.setItem(`mwi-taskIconsFilter-${filterId}`, (!currentState).toString());
+                this.state.dungeons[filterId] = !currentState;
+                const key = `${STORAGE_KEYS.dungeonPrefix}${filterId}`;
+                storage.set(key, this.state.dungeons[filterId], 'settings');
             }
         }
 
@@ -239,6 +335,10 @@ class TaskIconFilters {
         this.updateAllIconStates();
 
         // Dispatch custom event to notify other components
+        this.dispatchFilterChange(filterId);
+    }
+
+    dispatchFilterChange(filterId) {
         document.dispatchEvent(
             new CustomEvent('mwi-task-icon-filter-changed', {
                 detail: {
@@ -384,19 +484,20 @@ class TaskIconFilters {
 
         // Disconnect existing observer if any
         if (this.taskListObserver) {
-            this.taskListObserver.disconnect();
+            this.taskListObserver();
         }
 
         // Create new observer
-        this.taskListObserver = new MutationObserver(() => {
-            this.updateCounts(panel);
-        });
-
-        // Start observing
-        this.taskListObserver.observe(taskList, {
-            childList: true,
-            subtree: true,
-        });
+        this.taskListObserver = createMutationWatcher(
+            taskList,
+            () => {
+                this.updateCounts(panel);
+            },
+            {
+                childList: true,
+                subtree: true,
+            }
+        );
     }
 
     /**
@@ -404,9 +505,7 @@ class TaskIconFilters {
      * @returns {boolean} True if battle icons should be shown
      */
     getBattleFilterEnabled() {
-        // Default to true if not set
-        const stored = localStorage.getItem('mwi-taskIconsFilterBattle');
-        return stored === null || stored === 'true';
+        return this.state.battle !== false;
     }
 
     /**
@@ -418,9 +517,7 @@ class TaskIconFilters {
         const dungeon = this.dungeonConfig[dungeonHrid];
         if (!dungeon) return false;
 
-        // Default to false if not set (dungeons start disabled)
-        const stored = localStorage.getItem(`mwi-taskIconsFilter-${dungeon.id}`);
-        return stored === 'true';
+        return this.state.dungeons[dungeon.id] === true;
     }
 
     /**

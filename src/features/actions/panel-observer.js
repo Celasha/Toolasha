@@ -10,9 +10,12 @@
  */
 
 import dataManager from '../../core/data-manager.js';
+import domObserver from '../../core/dom-observer.js';
 import { displayEnhancementStats } from './enhancement-display.js';
 import { displayGatheringProfit, displayProductionProfit } from './profit-display.js';
 import { getOriginalText } from '../../utils/dom.js';
+import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
+import { createTimerRegistry } from '../../utils/timer-registry.js';
 
 /**
  * Action types for gathering skills (3 skills)
@@ -40,6 +43,7 @@ const _ENHANCING_TYPE = '/action_types/enhancing';
  * Maps itemHrid to timeout ID
  */
 const updateTimeouts = new Map();
+const timerRegistry = createTimerRegistry();
 
 /**
  * Event handler debounce timers
@@ -49,9 +53,13 @@ let consumablesUpdatedDebounceTimer = null;
 const DEBOUNCE_DELAY = 300; // 300ms debounce for event handlers
 
 /**
- * Module-level observer reference for cleanup
+ * Module-level observer cleanup references
  */
-let panelObserver = null;
+let unregisterHandlers = [];
+const observedEnhancingPanels = new WeakSet();
+let enhancingPanelWatchers = [];
+let itemsUpdatedHandler = null;
+let consumablesUpdatedHandler = null;
 
 /**
  * Trigger debounced enhancement stats update
@@ -69,6 +77,8 @@ function triggerEnhancementUpdate(panel, itemHrid) {
         await displayEnhancementStats(panel, itemHrid);
         updateTimeouts.delete(itemHrid);
     }, 500); // Wait 500ms after last change
+
+    timerRegistry.registerTimeout(timeoutId);
 
     updateTimeouts.set(itemHrid, timeoutId);
 }
@@ -105,111 +115,27 @@ export function initActionPanelObserver() {
  * Set up MutationObserver to detect action panels
  */
 function setupMutationObserver() {
-    panelObserver = new MutationObserver(async (mutations) => {
-        for (const mutation of mutations) {
-            // Handle attribute changes
-            if (mutation.type === 'attributes') {
-                // Handle value attribute changes on INPUT elements (clicking up/down arrows)
-                if (mutation.attributeName === 'value' && mutation.target.tagName === 'INPUT') {
-                    const input = mutation.target;
-                    const panel = input.closest(SELECTORS.ENHANCING_PANEL);
-                    if (panel) {
-                        const itemHrid = panel.dataset.mwiItemHrid;
-                        if (itemHrid) {
-                            // Trigger the same debounced update
-                            triggerEnhancementUpdate(panel, itemHrid);
-                        }
-                    }
-                }
-
-                // Handle href attribute changes on USE elements (item sprite changes when selecting different item)
-                if (mutation.attributeName === 'href' && mutation.target.tagName === 'use') {
-                    const panel = mutation.target.closest(SELECTORS.ENHANCING_PANEL);
-                    if (panel) {
-                        // Item changed - re-detect and recalculate
-                        await handleEnhancingPanel(panel);
-                    }
-                }
-            }
-
-            for (const addedNode of mutation.addedNodes) {
-                if (addedNode.nodeType !== Node.ELEMENT_NODE) continue;
-
-                // Check for modal container with regular action panel (gathering/crafting)
-                if (
-                    addedNode.classList?.contains('Modal_modalContainer__3B80m') &&
-                    addedNode.querySelector(SELECTORS.REGULAR_PANEL)
-                ) {
-                    const panel = addedNode.querySelector(SELECTORS.REGULAR_PANEL);
-                    await handleActionPanel(panel);
-                }
-
-                // Check for enhancing panel (non-modal, on main page)
-                if (
-                    addedNode.classList?.contains('SkillActionDetail_enhancingComponent__17bOx') ||
-                    addedNode.querySelector(SELECTORS.ENHANCING_PANEL)
-                ) {
-                    const panel = addedNode.classList?.contains('SkillActionDetail_enhancingComponent__17bOx')
-                        ? addedNode
-                        : addedNode.querySelector(SELECTORS.ENHANCING_PANEL);
-                    await handleEnhancingPanel(panel);
-                }
-
-                // Check if this is an outputs section being added to an existing enhancing panel
-                if (
-                    addedNode.classList?.contains('SkillActionDetail_enhancingOutput__VPHbY') ||
-                    (addedNode.querySelector && addedNode.querySelector(SELECTORS.ENHANCING_OUTPUT))
-                ) {
-                    // Find the parent enhancing panel
-                    const panel = addedNode.closest(SELECTORS.ENHANCING_PANEL);
-                    if (panel) {
-                        await handleEnhancingPanel(panel);
-                    }
-                }
-
-                // Also check for item div being added (in case outputs container already exists)
-                if (
-                    addedNode.classList?.contains('SkillActionDetail_item__2vEAz') ||
-                    addedNode.classList?.contains('Item_name__2C42x')
-                ) {
-                    // Find the parent enhancing panel
-                    const panel = addedNode.closest(SELECTORS.ENHANCING_PANEL);
-                    if (panel) {
-                        await handleEnhancingPanel(panel);
-                    }
-                }
-
-                // Check for new input elements being added (e.g., Protect From Level after dropping protection item)
-                if (addedNode.tagName === 'INPUT' && (addedNode.type === 'number' || addedNode.type === 'text')) {
-                    const panel = addedNode.closest(SELECTORS.ENHANCING_PANEL);
-                    if (panel) {
-                        // Get the item HRID from the panel's data
-                        const itemHrid = panel.dataset.mwiItemHrid;
-                        if (itemHrid) {
-                            addInputListener(addedNode, panel, itemHrid);
-                        }
-                    }
-                }
+    const unregisterModalObserver = domObserver.onClass(
+        'ActionPanelObserver-Modal',
+        'Modal_modalContainer__3B80m',
+        (modal) => {
+            const panel = modal.querySelector(SELECTORS.REGULAR_PANEL);
+            if (panel) {
+                handleActionPanel(panel);
             }
         }
-    });
+    );
 
-    // Wait for document.body before observing
-    const startObserver = () => {
-        if (!document.body) {
-            setTimeout(startObserver, 10);
-            return;
+    const unregisterEnhancingObserver = domObserver.onClass(
+        'ActionPanelObserver-Enhancing',
+        'SkillActionDetail_enhancingComponent__17bOx',
+        (panel) => {
+            handleEnhancingPanel(panel);
+            registerEnhancingPanelWatcher(panel);
         }
+    );
 
-        panelObserver.observe(document.body, {
-            childList: true,
-            subtree: true, // Watch entire tree, not just direct children
-            attributes: true, // Watch for attribute changes (all attributes)
-            attributeOldValue: true, // Track old values
-        });
-    };
-
-    startObserver();
+    unregisterHandlers = [unregisterModalObserver, unregisterEnhancingObserver];
 }
 
 /**
@@ -218,20 +144,26 @@ function setupMutationObserver() {
  */
 function setupEnhancementRefreshListeners() {
     // Listen for equipment changes (equipping/unequipping items) with debouncing
-    dataManager.on('items_updated', () => {
-        clearTimeout(itemsUpdatedDebounceTimer);
-        itemsUpdatedDebounceTimer = setTimeout(() => {
-            refreshEnhancementCalculator();
-        }, DEBOUNCE_DELAY);
-    });
+    if (!itemsUpdatedHandler) {
+        itemsUpdatedHandler = () => {
+            clearTimeout(itemsUpdatedDebounceTimer);
+            itemsUpdatedDebounceTimer = setTimeout(() => {
+                refreshEnhancementCalculator();
+            }, DEBOUNCE_DELAY);
+        };
+        dataManager.on('items_updated', itemsUpdatedHandler);
+    }
 
     // Listen for consumable changes (drinking teas) with debouncing
-    dataManager.on('consumables_updated', () => {
-        clearTimeout(consumablesUpdatedDebounceTimer);
-        consumablesUpdatedDebounceTimer = setTimeout(() => {
-            refreshEnhancementCalculator();
-        }, DEBOUNCE_DELAY);
-    });
+    if (!consumablesUpdatedHandler) {
+        consumablesUpdatedHandler = () => {
+            clearTimeout(consumablesUpdatedDebounceTimer);
+            consumablesUpdatedDebounceTimer = setTimeout(() => {
+                refreshEnhancementCalculator();
+            }, DEBOUNCE_DELAY);
+        };
+        dataManager.on('consumables_updated', consumablesUpdatedHandler);
+    }
 }
 
 /**
@@ -254,12 +186,89 @@ function refreshEnhancementCalculator() {
  */
 function checkExistingEnhancingPanel() {
     // Wait a moment for page to settle
-    setTimeout(() => {
+    const checkTimeout = setTimeout(() => {
         const existingPanel = document.querySelector(SELECTORS.ENHANCING_PANEL);
         if (existingPanel) {
             handleEnhancingPanel(existingPanel);
+            registerEnhancingPanelWatcher(existingPanel);
         }
     }, 500);
+    timerRegistry.registerTimeout(checkTimeout);
+}
+
+/**
+ * Register a mutation watcher for enhancing panels
+ * @param {HTMLElement} panel - Enhancing panel element
+ */
+function registerEnhancingPanelWatcher(panel) {
+    if (!panel || observedEnhancingPanels.has(panel)) {
+        return;
+    }
+
+    const unwatch = createMutationWatcher(
+        panel,
+        (mutations) => {
+            handleEnhancingPanelMutations(panel, mutations);
+        },
+        {
+            childList: true,
+            subtree: true,
+            attributes: true,
+            attributeOldValue: true,
+        }
+    );
+
+    observedEnhancingPanels.add(panel);
+    enhancingPanelWatchers.push(unwatch);
+}
+
+/**
+ * Handle mutations within an enhancing panel
+ * @param {HTMLElement} panel - Enhancing panel element
+ * @param {MutationRecord[]} mutations - Mutation records
+ */
+function handleEnhancingPanelMutations(panel, mutations) {
+    for (const mutation of mutations) {
+        if (mutation.type === 'attributes') {
+            if (mutation.attributeName === 'value' && mutation.target.tagName === 'INPUT') {
+                const itemHrid = panel.dataset.mwiItemHrid;
+                if (itemHrid) {
+                    triggerEnhancementUpdate(panel, itemHrid);
+                }
+            }
+
+            if (mutation.attributeName === 'href' && mutation.target.tagName === 'use') {
+                handleEnhancingPanel(panel);
+            }
+        }
+
+        if (mutation.type === 'childList') {
+            mutation.addedNodes.forEach((addedNode) => {
+                if (addedNode.nodeType !== Node.ELEMENT_NODE) return;
+
+                if (
+                    addedNode.classList?.contains('SkillActionDetail_enhancingOutput__VPHbY') ||
+                    (addedNode.querySelector && addedNode.querySelector(SELECTORS.ENHANCING_OUTPUT))
+                ) {
+                    handleEnhancingPanel(panel);
+                }
+
+                if (
+                    addedNode.classList?.contains('SkillActionDetail_item__2vEAz') ||
+                    addedNode.classList?.contains('Item_name__2C42x')
+                ) {
+                    handleEnhancingPanel(panel);
+                }
+
+                if (addedNode.tagName === 'INPUT' && (addedNode.type === 'number' || addedNode.type === 'text')) {
+                    const itemHrid = panel.dataset.mwiItemHrid;
+                    if (itemHrid) {
+                        addInputListener(addedNode, panel, itemHrid);
+                    }
+                }
+            });
+        }
+    }
 }
 
 /**
@@ -484,7 +493,7 @@ function setupTabClickListeners(panel) {
     tabButtons.forEach((button) => {
         button.addEventListener('click', async () => {
             // Small delay to let the tab change take effect
-            setTimeout(async () => {
+            const tabTimeout = setTimeout(async () => {
                 const isEnhanceActive = isEnhanceTabActive(panel);
                 const existingDisplay = panel.querySelector('#mwi-enhancement-stats');
 
@@ -502,6 +511,7 @@ function setupTabClickListeners(panel) {
                     }
                 }
             }, 100);
+            timerRegistry.registerTimeout(tabTimeout);
         });
     });
 }
@@ -586,11 +596,13 @@ function getItemHridFromName(itemName, gameData) {
  * Disconnects MutationObserver and clears pending timeouts
  */
 export function disablePanelObserver() {
-    // Disconnect observer
-    if (panelObserver) {
-        panelObserver.disconnect();
-        panelObserver = null;
-    }
+    // Unregister dom observers
+    unregisterHandlers.forEach((unregister) => unregister());
+    unregisterHandlers = [];
+
+    // Clear enhancing panel watchers
+    enhancingPanelWatchers.forEach((unwatch) => unwatch());
+    enhancingPanelWatchers = [];
 
     // Clear all pending debounced updates
     for (const timeoutId of updateTimeouts.values()) {
@@ -598,7 +610,15 @@ export function disablePanelObserver() {
     }
     updateTimeouts.clear();
 
+    timerRegistry.clearAll();
+
     // Remove dataManager event listeners
-    dataManager.off('items_updated');
-    dataManager.off('consumables_updated');
+    if (itemsUpdatedHandler) {
+        dataManager.off('items_updated', itemsUpdatedHandler);
+        itemsUpdatedHandler = null;
+    }
+    if (consumablesUpdatedHandler) {
+        dataManager.off('consumables_updated', consumablesUpdatedHandler);
+        consumablesUpdatedHandler = null;
+    }
 }

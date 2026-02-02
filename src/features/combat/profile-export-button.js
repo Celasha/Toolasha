@@ -8,6 +8,7 @@
 import { constructExportObject } from './combat-sim-export.js';
 import config from '../../core/config.js';
 import storage from '../../core/storage.js';
+import domObserver from '../../core/dom-observer.js';
 
 /**
  * Initialize profile export button
@@ -21,36 +22,35 @@ function initialize() {
  * Wait for profile page to load
  */
 function waitForProfilePage() {
-    const _checkInterval = setInterval(() => {
-        const profileTab = document.querySelector('div.SharableProfile_overviewTab__W4dCV');
+    domObserver.register(
+        'ProfileExportButton-ProfileTab',
+        () => {
+            const profileTab = document.querySelector('div.SharableProfile_overviewTab__W4dCV');
 
-        // Only inject if we're on the profile page AND button doesn't exist yet
-        if (profileTab && !document.getElementById('toolasha-profile-export-button')) {
-            injectExportButton(profileTab);
-        }
-    }, 500);
-
-    // Keep checking - profile page can be opened/closed multiple times
-    // Don't stop the interval since user may navigate away and come back
+            // Only inject if we're on the profile page AND button doesn't exist yet
+            if (profileTab && !document.getElementById('toolasha-profile-export-button')) {
+                injectExportButton(profileTab);
+            }
+        },
+        { debounce: true, debounceDelay: 200 }
+    );
 }
 
 /**
  * Observe profile page closure and clear current profile ID
  */
 function observeProfileClosure() {
-    const observer = new MutationObserver(() => {
-        const profileTab = document.querySelector('div.SharableProfile_overviewTab__W4dCV');
-        if (!profileTab) {
-            // Profile closed - clear current profile ID
-            storage.set('currentProfileId', null, 'combatExport', true);
-        }
-    });
-
-    // Watch document body for changes
-    observer.observe(document.body, {
-        childList: true,
-        subtree: true,
-    });
+    domObserver.register(
+        'ProfileExportButton-ProfileClose',
+        () => {
+            const profileTab = document.querySelector('div.SharableProfile_overviewTab__W4dCV');
+            if (!profileTab) {
+                // Profile closed - clear current profile ID
+                storage.set('currentProfileId', null, 'combatExport', true);
+            }
+        },
+        { debounce: true, debounceDelay: 200 }
+    );
 }
 
 /**

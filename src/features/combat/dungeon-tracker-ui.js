@@ -13,12 +13,15 @@ import DungeonTrackerUIInteractions from './dungeon-tracker-ui-interactions.js';
 import dataManager from '../../core/data-manager.js';
 import storage from '../../core/storage.js';
 import config from '../../core/config.js';
+import { createTimerRegistry } from '../../utils/timer-registry.js';
+import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
 
 class DungeonTrackerUI {
     constructor() {
         this.container = null;
         this.updateInterval = null;
         this.isInitialized = false; // Guard against multiple initializations
+        this.timerRegistry = createTimerRegistry();
 
         // Module references (initialized in initialize())
         this.state = dungeonTrackerUIState;
@@ -70,7 +73,8 @@ class DungeonTrackerUI {
 
             if (completedRun) {
                 // Dungeon completed - trigger chat annotation update and hide UI
-                setTimeout(() => dungeonTrackerChatAnnotations.annotateAllMessages(), 200);
+                const annotateTimeout = setTimeout(() => dungeonTrackerChatAnnotations.annotateAllMessages(), 200);
+                this.timerRegistry.registerTimeout(annotateTimeout);
                 this.hide();
             } else if (currentRun) {
                 // Dungeon in progress
@@ -96,21 +100,25 @@ class DungeonTrackerUI {
         dataManager.on('character_switching', this.characterSwitchingHandler);
 
         // Watch for character selection screen appearing (when user clicks "Switch Character")
-        this.characterSelectObserver = new MutationObserver(() => {
-            // Check if character selection screen is visible
-            const headings = document.querySelectorAll('h1, h2, h3');
-            for (const heading of headings) {
-                if (heading.textContent?.includes('Select Character')) {
-                    this.hide();
-                    break;
+        if (document.body) {
+            this.characterSelectObserver = createMutationWatcher(
+                document.body,
+                () => {
+                    // Check if character selection screen is visible
+                    const headings = document.querySelectorAll('h1, h2, h3');
+                    for (const heading of headings) {
+                        if (heading.textContent?.includes('Select Character')) {
+                            this.hide();
+                            break;
+                        }
+                    }
+                },
+                {
+                    childList: true,
+                    subtree: true,
                 }
-            }
-        });
-
-        this.characterSelectObserver.observe(document.body, {
-            childList: true,
-            subtree: true,
-        });
+            );
+        }
     }
 
     /**
@@ -681,6 +689,8 @@ class DungeonTrackerUI {
                 this.update(currentRun);
             }
         }, 1000);
+
+        this.timerRegistry.registerInterval(this.updateInterval);
     }
 
     /**
@@ -702,7 +712,7 @@ class DungeonTrackerUI {
 
         // Disconnect character selection screen observer
         if (this.characterSelectObserver) {
-            this.characterSelectObserver.disconnect();
+            this.characterSelectObserver();
             this.characterSelectObserver = null;
         }
 
@@ -712,6 +722,8 @@ class DungeonTrackerUI {
             this.updateInterval = null;
         }
 
+        this.timerRegistry.clearAll();
+
         // Force remove ALL dungeon tracker containers (handles duplicates from memory leak)
         const allContainers = document.querySelectorAll('#mwi-dungeon-tracker');
         if (allContainers.length > 1) {
@@ -720,6 +732,10 @@ class DungeonTrackerUI {
             );
         }
         allContainers.forEach((container) => container.remove());
+
+        if (this.interactions && this.interactions.cleanup) {
+            this.interactions.cleanup();
+        }
 
         // Clear instance reference
         this.container = null;

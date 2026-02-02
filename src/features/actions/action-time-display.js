@@ -20,6 +20,8 @@ import profitCalculator from '../market/profit-calculator.js';
 import { calculateActionStats } from '../../utils/action-calculator.js';
 import { timeReadable, formatWithSeparator } from '../../utils/formatters.js';
 import { calculateEfficiencyMultiplier } from '../../utils/efficiency.js';
+import { createCleanupRegistry } from '../../utils/cleanup-registry.js';
+import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
 import {
     parseArtisanBonus,
     getDrinkConcentration,
@@ -45,6 +47,8 @@ class ActionTimeDisplay {
         this.queueMenuObserver = null; // Observer for queue menu mutations
         this.characterInitHandler = null; // Handler for character switch
         this.activeProfitCalculationId = null; // Track active profit calculation to prevent race conditions
+        this.waitForPanelTimeout = null;
+        this.cleanupRegistry = createCleanupRegistry();
     }
 
     /**
@@ -66,7 +70,48 @@ class ActionTimeDisplay {
                 this.handleCharacterSwitch();
             };
             dataManager.on('character_initialized', this.characterInitHandler);
+            this.cleanupRegistry.registerCleanup(() => {
+                if (this.characterInitHandler) {
+                    dataManager.off('character_initialized', this.characterInitHandler);
+                    this.characterInitHandler = null;
+                }
+            });
         }
+
+        this.cleanupRegistry.registerCleanup(() => {
+            const actionNameElement = document.querySelector('div[class*="Header_actionName"]');
+            if (actionNameElement) {
+                this.clearAppendedStats(actionNameElement);
+            }
+        });
+
+        this.cleanupRegistry.registerCleanup(() => {
+            if (this.waitForPanelTimeout) {
+                clearTimeout(this.waitForPanelTimeout);
+                this.waitForPanelTimeout = null;
+            }
+        });
+
+        this.cleanupRegistry.registerCleanup(() => {
+            if (this.updateTimer) {
+                clearInterval(this.updateTimer);
+                this.updateTimer = null;
+            }
+        });
+
+        this.cleanupRegistry.registerCleanup(() => {
+            if (this.actionNameObserver) {
+                this.actionNameObserver();
+                this.actionNameObserver = null;
+            }
+        });
+
+        this.cleanupRegistry.registerCleanup(() => {
+            if (this.queueMenuObserver) {
+                this.queueMenuObserver();
+                this.queueMenuObserver = null;
+            }
+        });
 
         // Wait for action name element to exist
         this.waitForActionPanel();
@@ -88,24 +133,48 @@ class ActionTimeDisplay {
             (queueMenu) => {
                 this.injectQueueTimes(queueMenu);
 
-                // Set up mutation observer to watch for queue reordering
+                this.setupQueueMenuObserver(queueMenu);
+            }
+        );
+
+        this.cleanupRegistry.registerCleanup(() => {
+            if (this.unregisterQueueObserver) {
+                this.unregisterQueueObserver();
+                this.unregisterQueueObserver = null;
+            }
+        });
+    }
+
+    /**
+     * Setup mutation observer for queue menu reordering
+     * @param {HTMLElement} queueMenu - Queue menu container element
+     */
+    setupQueueMenuObserver(queueMenu) {
+        if (!queueMenu) {
+            return;
+        }
+
+        if (this.queueMenuObserver) {
+            this.queueMenuObserver();
+            this.queueMenuObserver = null;
+        }
+
+        this.queueMenuObserver = createMutationWatcher(
+            queueMenu,
+            () => {
+                // Disconnect to prevent infinite loop (our injection triggers mutations)
                 if (this.queueMenuObserver) {
-                    this.queueMenuObserver.disconnect();
+                    this.queueMenuObserver();
+                    this.queueMenuObserver = null;
                 }
 
-                this.queueMenuObserver = new MutationObserver(() => {
-                    // Disconnect to prevent infinite loop (our injection triggers mutations)
-                    this.queueMenuObserver.disconnect();
-
-                    // Queue DOM changed (reordering) - re-inject times
-                    // NOTE: Reconnection happens inside injectQueueTimes after async completes
-                    this.injectQueueTimes(queueMenu);
-                });
-
-                this.queueMenuObserver.observe(queueMenu, {
-                    childList: true,
-                    subtree: true,
-                });
+                // Queue DOM changed (reordering) - re-inject times
+                // NOTE: Reconnection happens inside injectQueueTimes after async completes
+                this.injectQueueTimes(queueMenu);
+            },
+            {
+                childList: true,
+                subtree: true,
             }
         );
     }
@@ -126,7 +195,7 @@ class ActionTimeDisplay {
 
         // Disconnect old action name observer (watching removed element)
         if (this.actionNameObserver) {
-            this.actionNameObserver.disconnect();
+            this.actionNameObserver();
             this.actionNameObserver = null;
         }
 
@@ -150,7 +219,14 @@ class ActionTimeDisplay {
             this.updateDisplay();
         } else {
             // Not found, try again in 200ms
-            setTimeout(() => this.waitForActionPanel(), 200);
+            if (this.waitForPanelTimeout) {
+                clearTimeout(this.waitForPanelTimeout);
+            }
+            this.waitForPanelTimeout = setTimeout(() => {
+                this.waitForPanelTimeout = null;
+                this.waitForActionPanel();
+            }, 200);
+            this.cleanupRegistry.registerTimeout(this.waitForPanelTimeout);
         }
     }
 
@@ -160,15 +236,17 @@ class ActionTimeDisplay {
      */
     setupActionNameObserver(actionNameElement) {
         // Watch for text content changes in the action name element
-        this.actionNameObserver = new MutationObserver(() => {
-            this.updateDisplay();
-        });
-
-        this.actionNameObserver.observe(actionNameElement, {
-            childList: true,
-            characterData: true,
-            subtree: true,
-        });
+        this.actionNameObserver = createMutationWatcher(
+            actionNameElement,
+            () => {
+                this.updateDisplay();
+            },
+            {
+                childList: true,
+                characterData: true,
+                subtree: true,
+            }
+        );
     }
 
     /**
@@ -202,6 +280,13 @@ class ActionTimeDisplay {
 
         // Insert after action name
         actionNameContainer.parentNode.insertBefore(this.displayElement, actionNameContainer.nextSibling);
+
+        this.cleanupRegistry.registerCleanup(() => {
+            if (this.displayElement && this.displayElement.parentNode) {
+                this.displayElement.parentNode.removeChild(this.displayElement);
+            }
+            this.displayElement = null;
+        });
     }
 
     /**
@@ -219,7 +304,8 @@ class ActionTimeDisplay {
 
         // CRITICAL: Disconnect observer before making changes to prevent infinite loop
         if (this.actionNameObserver) {
-            this.actionNameObserver.disconnect();
+            this.actionNameObserver();
+            this.actionNameObserver = null;
         }
 
         if (!actionNameElement || !actionNameElement.textContent) {
@@ -620,15 +706,25 @@ class ActionTimeDisplay {
      * @param {HTMLElement} actionNameElement - Action name element
      */
     reconnectActionNameObserver(actionNameElement) {
-        if (!actionNameElement || !this.actionNameObserver) {
+        if (!actionNameElement) {
             return;
         }
 
-        this.actionNameObserver.observe(actionNameElement, {
-            childList: true,
-            characterData: true,
-            subtree: true,
-        });
+        if (this.actionNameObserver) {
+            this.actionNameObserver();
+        }
+
+        this.actionNameObserver = createMutationWatcher(
+            actionNameElement,
+            () => {
+                this.updateDisplay();
+            },
+            {
+                childList: true,
+                characterData: true,
+                subtree: true,
+            }
+        );
     }
 
     /**
@@ -1003,8 +1099,6 @@ class ActionTimeDisplay {
 
             // Detect current action from DOM so we can avoid double-counting
             let currentAction = null;
-            let isCurrentActionInQueue = false;
-
             const actionNameElement = document.querySelector('div[class*="Header_actionName"]');
             if (actionNameElement && actionNameElement.textContent) {
                 // Use getCleanActionName to strip any stats we previously appended
@@ -1043,17 +1137,6 @@ class ActionTimeDisplay {
 
                 if (currentAction) {
                     // Current action matched
-                }
-            }
-
-            if (currentAction) {
-                // Check if current action appears in the queue list
-                for (const actionDiv of actionDivs) {
-                    const actionObj = this.matchActionFromDiv(actionDiv, currentActions);
-                    if (actionObj && actionObj.id === currentAction.id) {
-                        isCurrentActionInQueue = true;
-                        break;
-                    }
                 }
             }
 
@@ -1367,11 +1450,8 @@ class ActionTimeDisplay {
             console.error('[MWI Tools] Error injecting queue times:', error);
         } finally {
             // Reconnect observer only if async didn't take over
-            if (shouldReconnectObserver && this.queueMenuObserver) {
-                this.queueMenuObserver.observe(queueMenu, {
-                    childList: true,
-                    subtree: true,
-                });
+            if (shouldReconnectObserver) {
+                this.setupQueueMenuObserver(queueMenu);
             }
         }
     }
@@ -1457,12 +1537,7 @@ class ActionTimeDisplay {
         } finally {
             // CRITICAL: Reconnect mutation observer after ALL DOM updates are complete
             // This prevents infinite loop by ensuring observer only reconnects once all profit divs are updated
-            if (this.queueMenuObserver && queueMenu) {
-                this.queueMenuObserver.observe(queueMenu, {
-                    childList: true,
-                    subtree: true,
-                });
-            }
+            this.setupQueueMenuObserver(queueMenu);
         }
     }
 
@@ -1534,46 +1609,15 @@ class ActionTimeDisplay {
      * Disable the action time display (cleanup)
      */
     disable() {
-        // Disconnect action name observer
-        if (this.actionNameObserver) {
-            this.actionNameObserver.disconnect();
-            this.actionNameObserver = null;
-        }
-
-        // Disconnect queue menu observer
-        if (this.queueMenuObserver) {
-            this.queueMenuObserver.disconnect();
-            this.queueMenuObserver = null;
-        }
-
-        if (this.unregisterQueueObserver) {
-            this.unregisterQueueObserver();
-            this.unregisterQueueObserver = null;
-        }
-
-        if (this.characterInitHandler) {
-            dataManager.off('character_initialized', this.characterInitHandler);
-            this.characterInitHandler = null;
-        }
-
-        // Clear update timer
-        if (this.updateTimer) {
-            clearInterval(this.updateTimer);
-            this.updateTimer = null;
-        }
-
-        // Clear appended stats from game's action name div
-        const actionNameElement = document.querySelector('div[class*="Header_actionName"]');
-        if (actionNameElement) {
-            this.clearAppendedStats(actionNameElement);
-        }
-
-        // Remove display element
-        if (this.displayElement && this.displayElement.parentNode) {
-            this.displayElement.parentNode.removeChild(this.displayElement);
-            this.displayElement = null;
-        }
-
+        this.cleanupRegistry.cleanupAll();
+        this.displayElement = null;
+        this.updateTimer = null;
+        this.unregisterQueueObserver = null;
+        this.actionNameObserver = null;
+        this.queueMenuObserver = null;
+        this.characterInitHandler = null;
+        this.waitForPanelTimeout = null;
+        this.activeProfitCalculationId = null;
         this.isInitialized = false;
     }
 }

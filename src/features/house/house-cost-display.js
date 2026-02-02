@@ -7,6 +7,8 @@ import houseCostCalculator from './house-cost-calculator.js';
 import config from '../../core/config.js';
 import { coinFormatter, formatWithSeparator } from '../../utils/formatters.js';
 import dataManager from '../../core/data-manager.js';
+import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
+import { createTimerRegistry } from '../../utils/timer-registry.js';
 
 class HouseCostDisplay {
     constructor() {
@@ -15,6 +17,7 @@ class HouseCostDisplay {
         this.isInitialized = false;
         this.currentMaterialsTabs = []; // Track marketplace tabs
         this.cleanupObserver = null; // Marketplace cleanup observer
+        this.timerRegistry = createTimerRegistry();
     }
 
     /**
@@ -543,7 +546,10 @@ class HouseCostDisplay {
         }
 
         // Wait for marketplace to settle
-        await new Promise((resolve) => setTimeout(resolve, 200));
+        await new Promise((resolve) => {
+            const delayTimeout = setTimeout(resolve, 200);
+            this.timerRegistry.registerTimeout(delayTimeout);
+        });
 
         // Create custom tabs
         this.createMissingMaterialTabs(missingMaterials);
@@ -623,7 +629,10 @@ class HouseCostDisplay {
                 }
             }
 
-            await new Promise((resolve) => setTimeout(resolve, delayMs));
+            await new Promise((resolve) => {
+                const delayTimeout = setTimeout(resolve, delayMs);
+                this.timerRegistry.registerTimeout(delayTimeout);
+            });
         }
 
         console.error('[HouseCostDisplay] Marketplace did not open within timeout');
@@ -737,25 +746,32 @@ class HouseCostDisplay {
      * Setup marketplace cleanup observer
      */
     setupMarketplaceCleanupObserver() {
-        this.cleanupObserver = new MutationObserver((mutations) => {
-            for (const mutation of mutations) {
-                for (const removedNode of mutation.removedNodes) {
-                    if (removedNode.nodeType === Node.ELEMENT_NODE) {
-                        const hadTabsContainer = removedNode.querySelector('.MuiTabs-flexContainer[role="tablist"]');
-                        if (hadTabsContainer) {
-                            this.removeMissingMaterialTabs();
+        if (!document.body) {
+            return;
+        }
+
+        this.cleanupObserver = createMutationWatcher(
+            document.body,
+            (mutations) => {
+                for (const mutation of mutations) {
+                    for (const removedNode of mutation.removedNodes) {
+                        if (removedNode.nodeType === Node.ELEMENT_NODE) {
+                            const hadTabsContainer = removedNode.querySelector(
+                                '.MuiTabs-flexContainer[role="tablist"]'
+                            );
+                            if (hadTabsContainer) {
+                                this.removeMissingMaterialTabs();
+                                console.log('[HouseCostDisplay] Marketplace closed, cleaned up tabs');
+                            }
                         }
                     }
                 }
-            }
-        });
-
-        if (document.body) {
-            this.cleanupObserver.observe(document.body, {
+            },
+            {
                 childList: true,
                 subtree: true,
-            });
-        }
+            }
+        );
     }
 
     /**
@@ -805,9 +821,11 @@ class HouseCostDisplay {
         // Clean up marketplace tabs and observer
         this.removeMissingMaterialTabs();
         if (this.cleanupObserver) {
-            this.cleanupObserver.disconnect();
+            this.cleanupObserver();
             this.cleanupObserver = null;
         }
+
+        this.timerRegistry.clearAll();
 
         this.currentModalContent = null;
         this.isActive = false;

@@ -36,6 +36,8 @@ import { setReactInputValue } from '../../utils/react-input.js';
 import { calculateExpPerHour } from '../../utils/experience-calculator.js';
 import { createCollapsibleSection } from '../../utils/ui-components.js';
 import { calculateActionsPerHour } from '../../utils/profit-helpers.js';
+import { createCleanupRegistry } from '../../utils/cleanup-registry.js';
+import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
 
 /**
  * QuickInputButtons class manages quick input button injection
@@ -46,6 +48,7 @@ class QuickInputButtons {
         this.unregisterObserver = null;
         this.presetHours = [0.5, 1, 2, 3, 4, 5, 6, 10, 12, 24];
         this.presetValues = [10, 100, 1000];
+        this.cleanupRegistry = createCleanupRegistry();
     }
 
     /**
@@ -73,6 +76,13 @@ class QuickInputButtons {
                 this.injectButtons(panel);
             }
         );
+
+        this.cleanupRegistry.registerCleanup(() => {
+            if (this.unregisterObserver) {
+                this.unregisterObserver();
+                this.unregisterObserver = null;
+            }
+        });
 
         // Check for existing action panels that may already be open
         const existingPanels = document.querySelectorAll('[class*="SkillActionDetail_skillActionDetail"]');
@@ -354,20 +364,37 @@ class QuickInputButtons {
                 updateTotalTime();
 
                 // Watch for input changes
-                const inputObserver = new MutationObserver(() => {
-                    updateTotalTime();
+                let inputObserverCleanup = createMutationWatcher(
+                    numberInput,
+                    () => {
+                        updateTotalTime();
+                    },
+                    {
+                        attributes: true,
+                        attributeFilter: ['value'],
+                    }
+                );
+                this.cleanupRegistry.registerCleanup(() => {
+                    if (inputObserverCleanup) {
+                        inputObserverCleanup();
+                        inputObserverCleanup = null;
+                    }
                 });
 
-                inputObserver.observe(numberInput, {
-                    attributes: true,
-                    attributeFilter: ['value'],
-                });
+                const updateOnInput = () => updateTotalTime();
+                const updateOnChange = () => updateTotalTime();
+                const updateOnClick = () => {
+                    const clickTimeout = setTimeout(updateTotalTime, 50);
+                    this.cleanupRegistry.registerTimeout(clickTimeout);
+                };
 
-                numberInput.addEventListener('input', updateTotalTime);
-                numberInput.addEventListener('change', updateTotalTime);
-                panel.addEventListener('click', () => {
-                    setTimeout(updateTotalTime, 50);
-                });
+                numberInput.addEventListener('input', updateOnInput);
+                numberInput.addEventListener('change', updateOnChange);
+                panel.addEventListener('click', updateOnClick);
+
+                this.cleanupRegistry.registerListener(numberInput, 'input', updateOnInput);
+                this.cleanupRegistry.registerListener(numberInput, 'change', updateOnChange);
+                this.cleanupRegistry.registerListener(panel, 'click', updateOnClick);
 
                 // Create initial summary for Action Speed & Time
                 const actionsPerHourWithEfficiency = Math.round(
@@ -410,31 +437,43 @@ class QuickInputButtons {
                 };
 
                 // Replace all updateTotalTime calls with enhanced version
-                inputObserver.disconnect();
-                inputObserver.observe(numberInput, {
-                    attributes: true,
-                    attributeFilter: ['value'],
+                if (inputObserverCleanup) {
+                    inputObserverCleanup();
+                    inputObserverCleanup = null;
+                }
+
+                const newInputObserverCleanup = createMutationWatcher(
+                    numberInput,
+                    () => {
+                        enhancedUpdateTotalTime();
+                    },
+                    {
+                        attributes: true,
+                        attributeFilter: ['value'],
+                    }
+                );
+                this.cleanupRegistry.registerCleanup(() => {
+                    newInputObserverCleanup();
                 });
 
-                const newInputObserver = new MutationObserver(() => {
-                    enhancedUpdateTotalTime();
-                });
-                newInputObserver.observe(numberInput, {
-                    attributes: true,
-                    attributeFilter: ['value'],
-                });
+                numberInput.removeEventListener('input', updateOnInput);
+                numberInput.removeEventListener('change', updateOnChange);
+                panel.removeEventListener('click', updateOnClick);
 
-                numberInput.removeEventListener('input', updateTotalTime);
-                numberInput.removeEventListener('change', updateTotalTime);
-                numberInput.addEventListener('input', enhancedUpdateTotalTime);
-                numberInput.addEventListener('change', enhancedUpdateTotalTime);
+                const updateOnInputEnhanced = () => enhancedUpdateTotalTime();
+                const updateOnChangeEnhanced = () => enhancedUpdateTotalTime();
+                const updateOnClickEnhanced = () => {
+                    const clickTimeout = setTimeout(enhancedUpdateTotalTime, 50);
+                    this.cleanupRegistry.registerTimeout(clickTimeout);
+                };
 
-                panel.removeEventListener('click', () => {
-                    setTimeout(updateTotalTime, 50);
-                });
-                panel.addEventListener('click', () => {
-                    setTimeout(enhancedUpdateTotalTime, 50);
-                });
+                numberInput.addEventListener('input', updateOnInputEnhanced);
+                numberInput.addEventListener('change', updateOnChangeEnhanced);
+                panel.addEventListener('click', updateOnClickEnhanced);
+
+                this.cleanupRegistry.registerListener(numberInput, 'input', updateOnInputEnhanced);
+                this.cleanupRegistry.registerListener(numberInput, 'change', updateOnChangeEnhanced);
+                this.cleanupRegistry.registerListener(panel, 'click', updateOnClickEnhanced);
 
                 // Initial update with enhanced version
                 enhancedUpdateTotalTime();
@@ -522,6 +561,16 @@ class QuickInputButtons {
         } catch (error) {
             console.error('[Toolasha] Error injecting quick input buttons:', error);
         }
+    }
+
+    /**
+     * Disable quick input buttons and cleanup observers/listeners
+     */
+    disable() {
+        this.cleanupRegistry.cleanupAll();
+        document.querySelectorAll('.mwi-collapsible-section').forEach((section) => section.remove());
+        document.querySelectorAll('.mwi-quick-input-btn').forEach((button) => button.remove());
+        this.isInitialized = false;
     }
 
     /**

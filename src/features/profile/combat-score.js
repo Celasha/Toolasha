@@ -11,6 +11,8 @@ import { numberFormatter } from '../../utils/formatters.js';
 import { constructExportObject } from '../combat/combat-sim-export.js';
 import { clearCurrentProfile } from '../combat/profile-cache.js';
 import { constructMilkonomyExport } from '../combat/milkonomy-export.js';
+import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
+import { createTimerRegistry } from '../../utils/timer-registry.js';
 
 /**
  * CombatScore class manages combat score display on profiles
@@ -21,6 +23,7 @@ class CombatScore {
         this.currentPanel = null;
         this.isInitialized = false;
         this.profileSharedHandler = null; // Store handler reference for cleanup
+        this.timerRegistry = createTimerRegistry();
     }
 
     /**
@@ -400,18 +403,23 @@ class CombatScore {
             return;
         }
 
-        const cleanupObserver = new MutationObserver(() => {
-            if (!document.body.contains(modal) || !document.querySelector('div.SharableProfile_overviewTab__W4dCV')) {
-                panel.remove();
-                this.currentPanel = null;
-                cleanupObserver.disconnect();
+        const cleanupObserver = createMutationWatcher(
+            document.body,
+            () => {
+                if (
+                    !document.body.contains(modal) ||
+                    !document.querySelector('div.SharableProfile_overviewTab__W4dCV')
+                ) {
+                    panel.remove();
+                    this.currentPanel = null;
+                    cleanupObserver();
+                }
+            },
+            {
+                childList: true,
+                subtree: true,
             }
-        });
-
-        cleanupObserver.observe(document.body, {
-            childList: true,
-            subtree: true,
-        });
+        );
     }
 
     /**
@@ -431,10 +439,11 @@ class CombatScore {
             if (!exportData) {
                 button.textContent = '✗ No Data';
                 button.style.background = '${config.COLOR_LOSS}';
-                setTimeout(() => {
+                const resetTimeout = setTimeout(() => {
                     button.textContent = originalText;
                     button.style.background = originalBg;
                 }, 3000);
+                this.timerRegistry.registerTimeout(resetTimeout);
                 return;
             }
 
@@ -443,18 +452,20 @@ class CombatScore {
 
             button.textContent = '✓ Copied';
             button.style.background = '${config.COLOR_PROFIT}';
-            setTimeout(() => {
+            const resetTimeout = setTimeout(() => {
                 button.textContent = originalText;
                 button.style.background = originalBg;
             }, 3000);
+            this.timerRegistry.registerTimeout(resetTimeout);
         } catch (error) {
             console.error('[Combat Score] Combat Sim export failed:', error);
             button.textContent = '✗ Failed';
             button.style.background = '${config.COLOR_LOSS}';
-            setTimeout(() => {
+            const resetTimeout = setTimeout(() => {
                 button.textContent = originalText;
                 button.style.background = originalBg;
             }, 3000);
+            this.timerRegistry.registerTimeout(resetTimeout);
         }
     }
 
@@ -480,10 +491,11 @@ class CombatScore {
             if (!exportData) {
                 button.textContent = '✗ No Data';
                 button.style.background = '${config.COLOR_LOSS}';
-                setTimeout(() => {
+                const resetTimeout = setTimeout(() => {
                     button.textContent = originalText;
                     button.style.background = originalBg;
                 }, 3000);
+                this.timerRegistry.registerTimeout(resetTimeout);
                 return;
             }
 
@@ -492,18 +504,20 @@ class CombatScore {
 
             button.textContent = '✓ Copied';
             button.style.background = '${config.COLOR_PROFIT}';
-            setTimeout(() => {
+            const resetTimeout = setTimeout(() => {
                 button.textContent = originalText;
                 button.style.background = originalBg;
             }, 3000);
+            this.timerRegistry.registerTimeout(resetTimeout);
         } catch (error) {
             console.error('[Combat Score] Milkonomy export failed:', error);
             button.textContent = '✗ Failed';
             button.style.background = '${config.COLOR_LOSS}';
-            setTimeout(() => {
+            const resetTimeout = setTimeout(() => {
                 button.textContent = originalText;
                 button.style.background = originalBg;
             }, 3000);
+            this.timerRegistry.registerTimeout(resetTimeout);
         }
     }
 
@@ -534,6 +548,8 @@ class CombatScore {
             webSocketHook.off('profile_shared', this.profileSharedHandler);
             this.profileSharedHandler = null;
         }
+
+        this.timerRegistry.clearAll();
 
         if (this.currentPanel) {
             this.currentPanel.remove();

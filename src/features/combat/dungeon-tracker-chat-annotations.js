@@ -8,6 +8,8 @@ import dungeonTrackerStorage from './dungeon-tracker-storage.js';
 import dungeonTracker from './dungeon-tracker.js';
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
+import { createTimerRegistry } from '../../utils/timer-registry.js';
+import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
 
 class DungeonTrackerChatAnnotations {
     constructor() {
@@ -17,6 +19,7 @@ class DungeonTrackerChatAnnotations {
         this.cumulativeStatsByDungeon = {}; // Persistent cumulative counters for rolling averages
         this.processedMessages = new Map(); // Track processed messages to prevent duplicate counting
         this.initComplete = false; // Flag to ensure storage loads before annotation
+        this.timerRegistry = createTimerRegistry();
     }
 
     /**
@@ -81,7 +84,8 @@ class DungeonTrackerChatAnnotations {
         this.startMonitoring();
 
         // Initial annotation of existing messages (batch mode)
-        setTimeout(() => this.annotateAllMessages(), 1500);
+        const initialAnnotateTimeout = setTimeout(() => this.annotateAllMessages(), 1500);
+        this.timerRegistry.registerTimeout(initialAnnotateTimeout);
 
         // Also trigger when switching to party chat
         this.observeTabSwitches();
@@ -98,7 +102,8 @@ class DungeonTrackerChatAnnotations {
             if (button.textContent.includes('Party')) {
                 button.addEventListener('click', () => {
                     // Delay to let DOM update
-                    setTimeout(() => this.annotateAllMessages(), 300);
+                    const annotateTimeout = setTimeout(() => this.annotateAllMessages(), 300);
+                    this.timerRegistry.registerTimeout(annotateTimeout);
                 });
             }
         }
@@ -110,32 +115,34 @@ class DungeonTrackerChatAnnotations {
     startMonitoring() {
         // Stop existing observer if any
         if (this.observer) {
-            this.observer.disconnect();
+            this.observer();
         }
 
         // Create mutation observer to watch for new messages
-        this.observer = new MutationObserver((mutations) => {
-            for (const mutation of mutations) {
-                for (const node of mutation.addedNodes) {
-                    if (!(node instanceof HTMLElement)) continue;
+        this.observer = createMutationWatcher(
+            document.body,
+            (mutations) => {
+                for (const mutation of mutations) {
+                    for (const node of mutation.addedNodes) {
+                        if (!(node instanceof HTMLElement)) continue;
 
-                    const msg = node.matches?.('[class^="ChatMessage_chatMessage"]')
-                        ? node
-                        : node.querySelector?.('[class^="ChatMessage_chatMessage"]');
+                        const msg = node.matches?.('[class^="ChatMessage_chatMessage"]')
+                            ? node
+                            : node.querySelector?.('[class^="ChatMessage_chatMessage"]');
 
-                    if (!msg) continue;
+                        if (!msg) continue;
 
-                    // Re-run batch annotation on any new message (matches working DRT script)
-                    setTimeout(() => this.annotateAllMessages(), 100);
+                        // Re-run batch annotation on any new message (matches working DRT script)
+                        const annotateTimeout = setTimeout(() => this.annotateAllMessages(), 100);
+                        this.timerRegistry.registerTimeout(annotateTimeout);
+                    }
                 }
+            },
+            {
+                childList: true,
+                subtree: true,
             }
-        });
-
-        // Observe entire document body (matches working DRT script)
-        this.observer.observe(document.body, {
-            childList: true,
-            subtree: true,
-        });
+        );
     }
 
     /**
@@ -157,11 +164,14 @@ class DungeonTrackerChatAnnotations {
                     }
                 }, 50);
 
+                this.timerRegistry.registerInterval(checkInterval);
+
                 // Timeout after 5 seconds
-                setTimeout(() => {
+                const initTimeout = setTimeout(() => {
                     clearInterval(checkInterval);
                     resolve();
                 }, 5000);
+                this.timerRegistry.registerTimeout(initTimeout);
             });
         }
 
@@ -654,9 +664,11 @@ class DungeonTrackerChatAnnotations {
     cleanup() {
         // Disconnect MutationObserver
         if (this.observer) {
-            this.observer.disconnect();
+            this.observer();
             this.observer = null;
         }
+
+        this.timerRegistry.clearAll();
 
         // Clear cached state
         this.lastSeenDungeonName = null;

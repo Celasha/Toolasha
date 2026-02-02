@@ -10,6 +10,8 @@ import webSocketHook from '../../core/websocket.js';
 import { findActionInput, attachInputListeners, performInitialUpdate } from '../../utils/action-panel-helper.js';
 import { calculateMaterialRequirements } from '../../utils/material-calculator.js';
 import { formatWithSeparator } from '../../utils/formatters.js';
+import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
+import { createTimerRegistry } from '../../utils/timer-registry.js';
 
 /**
  * Module-level state
@@ -23,6 +25,7 @@ let storedActionHrid = null;
 let storedNumActions = 0;
 let buyModalObserverUnregister = null;
 let activeMissingQuantity = null;
+const timerRegistry = createTimerRegistry();
 
 /**
  * Production action types (where button should appear)
@@ -90,7 +93,7 @@ export function cleanup() {
 
     // Disconnect marketplace cleanup observer
     if (cleanupObserver) {
-        cleanupObserver.disconnect();
+        cleanupObserver();
         cleanupObserver = null;
     }
 
@@ -104,6 +107,8 @@ export function cleanup() {
 
     // Clear processed panels
     processedPanels = new WeakSet();
+
+    timerRegistry.clearAll();
 }
 
 /**
@@ -308,7 +313,10 @@ async function handleMissingMaterialsClick(missingMaterials, actionHrid, numActi
     }
 
     // Wait a moment for marketplace to settle
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    await new Promise((resolve) => {
+        const delayTimeout = setTimeout(resolve, 200);
+        timerRegistry.registerTimeout(delayTimeout);
+    });
 
     // Create custom tabs
     createMissingMaterialTabs(missingMaterials);
@@ -362,7 +370,10 @@ async function waitForMarketplace() {
             }
         }
 
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        await new Promise((resolve) => {
+            const delayTimeout = setTimeout(resolve, delayMs);
+            timerRegistry.registerTimeout(delayTimeout);
+        });
     }
 
     console.error('[MissingMats] Marketplace did not open within timeout');
@@ -638,29 +649,29 @@ function removeMissingMaterialTabs() {
  * Watches for marketplace panel removal and cleans up custom tabs
  */
 function setupMarketplaceCleanupObserver() {
-    cleanupObserver = new MutationObserver((mutations) => {
-        for (const mutation of mutations) {
-            for (const removedNode of mutation.removedNodes) {
-                // Check if marketplace panel was removed
-                // Look for tabs container disappearing
-                if (removedNode.nodeType === Node.ELEMENT_NODE) {
-                    const hadTabsContainer = removedNode.querySelector('.MuiTabs-flexContainer[role="tablist"]');
-                    if (hadTabsContainer) {
-                        // Marketplace closed, remove custom tabs
-                        removeMissingMaterialTabs();
+    cleanupObserver = createMutationWatcher(
+        document.body,
+        (mutations) => {
+            for (const mutation of mutations) {
+                for (const removedNode of mutation.removedNodes) {
+                    // Check if marketplace panel was removed
+                    // Look for tabs container disappearing
+                    if (removedNode.nodeType === Node.ELEMENT_NODE) {
+                        const hadTabsContainer = removedNode.querySelector('.MuiTabs-flexContainer[role="tablist"]');
+                        if (hadTabsContainer) {
+                            // Marketplace closed, remove custom tabs
+                            removeMissingMaterialTabs();
+                            console.log('[MissingMats] Marketplace closed, cleaned up custom tabs');
+                        }
                     }
                 }
             }
-        }
-    });
-
-    // Observe document.body for removed nodes
-    if (document.body) {
-        cleanupObserver.observe(document.body, {
+        },
+        {
             childList: true,
             subtree: true,
-        });
-    }
+        }
+    );
 }
 
 /**

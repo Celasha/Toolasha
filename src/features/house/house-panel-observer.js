@@ -7,6 +7,7 @@ import domObserver from '../../core/dom-observer.js';
 import houseCostCalculator from './house-cost-calculator.js';
 import houseCostDisplay from './house-cost-display.js';
 import dataManager from '../../core/data-manager.js';
+import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
 
 class HousePanelObserver {
     constructor() {
@@ -121,25 +122,27 @@ class HousePanelObserver {
      * @param {Element} modalContent - The house panel modal content
      */
     observeModalChanges(modalContent) {
-        const observer = new MutationObserver((mutations) => {
-            // Check if header changed (indicates room switch)
-            for (const mutation of mutations) {
-                if (mutation.type === 'childList' || mutation.type === 'characterData') {
-                    const header = modalContent.querySelector('[class*="HousePanel_header"]');
-                    if (header && mutation.target.contains(header)) {
-                        // Room switched, reprocess
-                        this.processModalContent(modalContent);
-                        break;
+        const observer = createMutationWatcher(
+            modalContent,
+            (mutations) => {
+                // Check if header changed (indicates room switch)
+                for (const mutation of mutations) {
+                    if (mutation.type === 'childList' || mutation.type === 'characterData') {
+                        const header = modalContent.querySelector('[class*="HousePanel_header"]');
+                        if (header && mutation.target.contains(header)) {
+                            // Room switched, reprocess
+                            this.processModalContent(modalContent);
+                            break;
+                        }
                     }
                 }
+            },
+            {
+                childList: true,
+                subtree: true,
+                characterData: true,
             }
-        });
-
-        observer.observe(modalContent, {
-            childList: true,
-            subtree: true,
-            characterData: true,
-        });
+        );
 
         // Store observer for cleanup
         if (!this.modalObservers) {
@@ -156,7 +159,7 @@ class HousePanelObserver {
         this.unregisterHandlers = [];
 
         if (this.modalObservers) {
-            this.modalObservers.forEach((observer) => observer.disconnect());
+            this.modalObservers.forEach((observer) => observer());
             this.modalObservers = [];
         }
 

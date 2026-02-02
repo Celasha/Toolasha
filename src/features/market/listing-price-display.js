@@ -14,6 +14,7 @@ import marketAPI from '../../api/marketplace.js';
 import estimatedListingAge from './estimated-listing-age.js';
 import { coinFormatter, formatRelativeTime } from '../../utils/formatters.js';
 import { calculatePriceAfterTax } from '../../utils/profit-helpers.js';
+import { createCleanupRegistry } from '../../utils/cleanup-registry.js';
 
 class ListingPriceDisplay {
     constructor() {
@@ -21,6 +22,7 @@ class ListingPriceDisplay {
         this.unregisterWebSocket = null;
         this.unregisterObserver = null;
         this.isInitialized = false;
+        this.cleanupRegistry = createCleanupRegistry();
     }
 
     /**
@@ -81,7 +83,7 @@ class ListingPriceDisplay {
                 // (DOM observer won't fire because table element didn't appear/disappear)
                 const visibleTable = document.querySelector('[class*="MarketplacePanel_myListingsTable"]');
                 if (visibleTable) {
-                    this.setupTableMutationObserver(visibleTable);
+                    this.scheduleTableRefresh(visibleTable);
                 }
             }
         };
@@ -114,6 +116,13 @@ class ListingPriceDisplay {
                 dataManager.off('market_item_order_books_updated', orderBookHandler);
             }
         };
+
+        this.cleanupRegistry.registerCleanup(() => {
+            if (this.unregisterWebSocket) {
+                this.unregisterWebSocket();
+                this.unregisterWebSocket = null;
+            }
+        });
     }
 
     /**
@@ -124,43 +133,47 @@ class ListingPriceDisplay {
             'ListingPriceDisplay',
             'MarketplacePanel_myListingsTable',
             (tableNode) => {
-                this.updateTable(tableNode);
+                this.scheduleTableRefresh(tableNode);
             }
         );
+
+        this.cleanupRegistry.registerCleanup(() => {
+            if (this.unregisterObserver) {
+                this.unregisterObserver();
+                this.unregisterObserver = null;
+            }
+        });
 
         // Check for existing table
         const existingTable = document.querySelector('[class*="MarketplacePanel_myListingsTable"]');
         if (existingTable) {
-            this.updateTable(existingTable);
+            this.scheduleTableRefresh(existingTable);
         }
     }
 
     /**
-     * Setup MutationObserver to wait for React to update table rows
+     * Schedule a refresh to wait for React to populate table rows
      * @param {HTMLElement} tableNode - The listings table element
      */
-    setupTableMutationObserver(tableNode) {
+    scheduleTableRefresh(tableNode) {
         const tbody = tableNode.querySelector('tbody');
         if (!tbody) {
             return;
         }
 
         let timeoutId = null;
-        let observer = null;
+        const maxAttempts = 20;
+        let attempts = 0;
 
-        // Cleanup function
         const cleanup = () => {
-            if (observer) {
-                observer.disconnect();
-                observer = null;
-            }
             if (timeoutId) {
                 clearTimeout(timeoutId);
                 timeoutId = null;
             }
         };
 
-        // Check if table is ready and process if so
+        this.cleanupRegistry.registerCleanup(cleanup);
+
         const checkAndProcess = () => {
             const rowCount = tbody.querySelectorAll('tr').length;
             const listingCount = Object.keys(this.allListings).length;
@@ -168,24 +181,20 @@ class ListingPriceDisplay {
             if (rowCount === listingCount) {
                 cleanup();
                 this.updateTable(tableNode);
+                return;
             }
+
+            attempts += 1;
+            if (attempts >= maxAttempts) {
+                cleanup();
+                console.error('[ListingPriceDisplay] Timeout waiting for React to update table');
+                return;
+            }
+
+            timeoutId = setTimeout(checkAndProcess, 100);
+            this.cleanupRegistry.registerTimeout(timeoutId);
         };
 
-        // Create observer to watch for row additions
-        observer = new MutationObserver(() => {
-            checkAndProcess();
-        });
-
-        // Start observing tbody for child additions/removals
-        observer.observe(tbody, { childList: true });
-
-        // Safety timeout: give up after 2 seconds
-        timeoutId = setTimeout(() => {
-            cleanup();
-            console.error('[ListingPriceDisplay] Timeout waiting for React to update table');
-        }, 2000);
-
-        // Check immediately in case table is already updated
         checkAndProcess();
     }
 
@@ -825,16 +834,8 @@ class ListingPriceDisplay {
      * Disable the listing price display
      */
     disable() {
-        if (this.unregisterWebSocket) {
-            this.unregisterWebSocket();
-            this.unregisterWebSocket = null;
-        }
-
-        if (this.unregisterObserver) {
-            this.unregisterObserver();
-            this.unregisterObserver = null;
-        }
-
+        console.log('[ListingPriceDisplay] 🧹 Cleaning up handlers');
+        this.cleanupRegistry.cleanupAll();
         this.clearDisplays();
         this.allListings = {};
         this.isInitialized = false;

@@ -11,6 +11,7 @@ import { getEnhancingParams } from '../../utils/enhancement-config.js';
 import { calculateEnhancement, calculatePerActionTime } from '../../utils/enhancement-calculator.js';
 import { timeReadable } from '../../utils/formatters.js';
 import marketAPI from '../../api/marketplace.js';
+import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
 
 /**
  * Format a number with thousands separator and 2 decimal places
@@ -977,11 +978,14 @@ function showCostsTableModal(container) {
     document.addEventListener('keydown', escHandler);
 
     // Remove ESC listener when backdrop is removed
-    const observer = new MutationObserver(() => {
-        if (!document.body.contains(backdrop)) {
-            document.removeEventListener('keydown', escHandler);
-            observer.disconnect();
-        }
-    });
-    observer.observe(document.body, { childList: true });
+    const observer = createMutationWatcher(
+        document.body,
+        () => {
+            if (!document.body.contains(backdrop)) {
+                document.removeEventListener('keydown', escHandler);
+                observer();
+            }
+        },
+        { childList: true }
+    );
 }

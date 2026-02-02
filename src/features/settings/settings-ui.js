@@ -11,16 +11,20 @@ import settingsStorage from './settings-storage.js';
 import storage from '../../core/storage.js';
 import settingsCSS from './settings-styles.css?raw';
 import marketAPI from '../../api/marketplace.js';
+import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
+import { createTimerRegistry } from '../../utils/timer-registry.js';
 
 class SettingsUI {
     constructor() {
         this.config = config;
         this.settingsPanel = null;
         this.settingsObserver = null;
+        this.settingsObserverCleanup = null;
         this.currentSettings = {};
         this.isInjecting = false; // Guard against concurrent injection
         this.characterSwitchHandler = null; // Store listener reference to prevent duplicates
         this.settingsPanelCallbacks = []; // Callbacks to run when settings panel appears
+        this.timerRegistry = createTimerRegistry();
     }
 
     /**
@@ -66,19 +70,27 @@ class SettingsUI {
         this.cleanupDOM();
 
         // Wait for settings panel to stabilize before re-observing
-        setTimeout(() => {
+        const reobserveTimeout = setTimeout(() => {
             this.observeSettingsPanel();
         }, 500);
+        this.timerRegistry.registerTimeout(reobserveTimeout);
     }
 
     /**
      * Cleanup DOM elements and observers only (internal cleanup during character switch)
      */
     cleanupDOM() {
+        this.timerRegistry.clearAll();
+
         // Stop observer
         if (this.settingsObserver) {
             this.settingsObserver.disconnect();
             this.settingsObserver = null;
+        }
+
+        if (this.settingsObserverCleanup) {
+            this.settingsObserverCleanup();
+            this.settingsObserverCleanup = null;
         }
 
         // Remove settings tab
@@ -120,11 +132,12 @@ class SettingsUI {
         // Wait for DOM to be ready before observing
         const startObserver = () => {
             if (!document.body) {
-                setTimeout(startObserver, 10);
+                const observerDelay = setTimeout(startObserver, 10);
+                this.timerRegistry.registerTimeout(observerDelay);
                 return;
             }
 
-            const observer = new MutationObserver((_mutations) => {
+            const onMutation = (_mutations) => {
                 // Look for the settings tabs container
                 const tabsContainer = document.querySelector('div[class*="SettingsPanel_tabsComponentContainer"]');
 
@@ -145,26 +158,26 @@ class SettingsUI {
 
                     // Keep observer running - panel might be removed/re-added if user navigates away and back
                 }
-            });
+            };
 
             // Observe the main game panel for changes
             const gamePanel = document.querySelector('div[class*="GamePage_gamePanel"]');
             if (gamePanel) {
-                observer.observe(gamePanel, {
+                this.settingsObserverCleanup = createMutationWatcher(gamePanel, onMutation, {
                     childList: true,
                     subtree: true,
                 });
             } else {
                 // Fallback: observe entire body if game panel not found (Firefox timing issue)
                 console.warn('[Toolasha Settings] Could not find game panel, observing body instead');
-                observer.observe(document.body, {
+                this.settingsObserverCleanup = createMutationWatcher(document.body, onMutation, {
                     childList: true,
                     subtree: true,
                 });
             }
 
-            // Store observer reference
-            this.settingsObserver = observer;
+            // Store observer reference (for compatibility with existing cleanup path)
+            this.settingsObserver = null;
 
             // Also check immediately in case settings is already open
             const existingTabsContainer = document.querySelector('div[class*="SettingsPanel_tabsComponentContainer"]');
@@ -355,7 +368,7 @@ class SettingsUI {
         // After all settings are created, set up collapse functionality for parent settings
         this.setupParentCollapseIcons(container);
 
-        // Restore collapse states from localStorage
+        // Restore collapse states from IndexedDB storage
         this.restoreCollapseStates(container);
     }
 
@@ -401,7 +414,7 @@ class SettingsUI {
     toggleGroup(groupContainer) {
         groupContainer.classList.toggle('collapsed');
 
-        // Save collapse state to localStorage
+        // Save collapse state to IndexedDB storage
         const groupKey = groupContainer.dataset.group;
         const isCollapsed = groupContainer.classList.contains('collapsed');
         this.saveCollapseState('group', groupKey, isCollapsed);
@@ -428,7 +441,7 @@ class SettingsUI {
             dependents.forEach((dep) => (dep.style.display = 'none'));
         }
 
-        // Save collapse state to localStorage
+        // Save collapse state to IndexedDB storage
         const settingId = parentSetting.dataset.settingId;
         const newState = !isCollapsed; // Inverted because we just toggled
         this.saveCollapseState('setting', settingId, newState);
@@ -1113,23 +1126,25 @@ class SettingsUI {
                 button.style.color = '#000';
 
                 // Reset button after 2 seconds
-                setTimeout(() => {
+                const resetSuccessTimeout = setTimeout(() => {
                     button.textContent = originalText;
                     button.style.backgroundColor = '';
                     button.style.color = '';
                     button.disabled = false;
                 }, 2000);
+                this.timerRegistry.registerTimeout(resetSuccessTimeout);
             } else {
                 // Failed - show error state
                 button.textContent = '❌ Failed';
                 button.style.backgroundColor = '#ff0000';
 
                 // Reset button after 3 seconds
-                setTimeout(() => {
+                const resetFailureTimeout = setTimeout(() => {
                     button.textContent = originalText;
                     button.style.backgroundColor = '';
                     button.disabled = false;
                 }, 3000);
+                this.timerRegistry.registerTimeout(resetFailureTimeout);
             }
         } catch (error) {
             console.error('[SettingsUI] Fetch prices failed:', error);
@@ -1139,11 +1154,12 @@ class SettingsUI {
             button.style.backgroundColor = '#ff0000';
 
             // Reset button after 3 seconds
-            setTimeout(() => {
+            const resetErrorTimeout = setTimeout(() => {
                 button.textContent = originalText;
                 button.style.backgroundColor = '';
                 button.disabled = false;
             }, 3000);
+            this.timerRegistry.registerTimeout(resetErrorTimeout);
         }
     }
 
@@ -1663,6 +1679,8 @@ class SettingsUI {
             dataManager.off('character_initialized', this.characterSwitchHandler);
             this.characterSwitchHandler = null;
         }
+
+        this.timerRegistry.clearAll();
     }
 }
 
