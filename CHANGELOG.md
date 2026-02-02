@@ -2,10 +2,9 @@
 
 ## [0.12.2](https://github.com/Celasha/Toolasha/compare/v0.12.1...v0.12.2) (2026-02-02)
 
-
 ### Bug Fixes
 
-* **market:** remove price decrement for sell orders ([1f49b03](https://github.com/Celasha/Toolasha/commit/1f49b0306358fed02cd504cbfb9d4215a684cc3c))
+- **market:** remove price decrement for sell orders ([1f49b03](https://github.com/Celasha/Toolasha/commit/1f49b0306358fed02cd504cbfb9d4215a684cc3c))
 
 ## [0.12.1](https://github.com/Celasha/Toolasha/compare/v0.12.0...v0.12.1) (2026-02-02)
 
