@@ -1203,6 +1203,11 @@ class ActionTimeDisplay {
             // Track used action IDs to prevent duplicate matching (e.g., two identical infinite actions)
             const usedActionIds = new Set();
 
+            // Mark current action as used so queue actions don't match against it
+            if (currentAction && !isCurrentActionInQueue) {
+                usedActionIds.add(currentAction.id);
+            }
+
             for (let divIndex = 0; divIndex < actionDivs.length; divIndex++) {
                 const actionDiv = actionDivs[divIndex];
 
