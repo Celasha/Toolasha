@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.12.2
+// @version      0.13.0
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -12339,14 +12339,21 @@
         }
 
         /**
-         * Parse quantity from text
+         * Parse quantity from text (handles K/M suffixes)
          * @param {string} text - Quantity text
          * @returns {number} Quantity value
          */
         parseQuantity(text) {
-            // Remove emoji and parse number
-            const numStr = text.replace(/[^0-9]/g, '');
-            return numStr ? Number(numStr) : 0;
+            let multiplier = 1;
+            if (text.toUpperCase().includes('K')) {
+                multiplier = 1000;
+                text = text.replace(/K/gi, '');
+            } else if (text.toUpperCase().includes('M')) {
+                multiplier = 1000000;
+                text = text.replace(/M/gi, '');
+            }
+            const numStr = text.replace(/[^0-9.]/g, '');
+            return numStr ? Number(numStr) * multiplier : 0;
         }
 
         /**
@@ -22448,13 +22455,7 @@
                     });
 
                     if (currentAction) {
-                        console.log('[Action Time Display] Current action matched:', {
-                            id: currentAction.id,
-                            actionHrid: currentAction.actionHrid,
-                            hasMaxCount: currentAction.hasMaxCount,
-                            maxCount: currentAction.maxCount,
-                            currentCount: currentAction.currentCount,
-                        });
+                        // Current action matched
                     }
                 }
 
@@ -22464,20 +22465,14 @@
                         const actionObj = this.matchActionFromDiv(actionDiv, currentActions);
                         if (actionObj && actionObj.id === currentAction.id) {
                             isCurrentActionInQueue = true;
-                            console.log('[Action Time Display] Current action IS in queue - will not double-count', {
-                                id: actionObj.id,
-                            });
                             break;
                         }
                     }
-
-                    if (!isCurrentActionInQueue) {
-                        console.log('[Action Time Display] Current action NOT in queue - adding to total time calculation');
-                    }
                 }
 
-                // First, calculate time for current action to include in total (if not already in queue list)
-                if (currentAction && !isCurrentActionInQueue) {
+                // Calculate time for current action to include in total
+                // Always include current action time, even if it appears in queue
+                if (currentAction) {
                     const actionDetails = dataManager.getActionDetails(currentAction.actionHrid);
                     if (actionDetails) {
                         // Check if infinite BEFORE calculating count
@@ -22507,12 +22502,6 @@
                                 );
 
                                 const materialLimit = limitResult?.maxActions || null;
-
-                                console.log('[Action Time Display] Current action (infinite) limit check:', {
-                                    actionHrid: currentAction.actionHrid,
-                                    materialLimit,
-                                    limitType: limitResult?.limitType,
-                                });
 
                                 if (materialLimit !== null) {
                                     // Material-limited infinite action - calculate time
@@ -50207,7 +50196,7 @@
         const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
         targetWindow.Toolasha = {
-            version: '0.12.2',
+            version: '0.13.0',
 
             // Feature toggle API (for users to manage settings via console)
             features: {
