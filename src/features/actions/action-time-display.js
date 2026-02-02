@@ -1090,13 +1090,7 @@ class ActionTimeDisplay {
                 });
 
                 if (currentAction) {
-                    console.log('[Action Time Display] Current action matched:', {
-                        id: currentAction.id,
-                        actionHrid: currentAction.actionHrid,
-                        hasMaxCount: currentAction.hasMaxCount,
-                        maxCount: currentAction.maxCount,
-                        currentCount: currentAction.currentCount,
-                    });
+                    // Current action matched
                 }
             }
 
@@ -1106,20 +1100,14 @@ class ActionTimeDisplay {
                     const actionObj = this.matchActionFromDiv(actionDiv, currentActions);
                     if (actionObj && actionObj.id === currentAction.id) {
                         isCurrentActionInQueue = true;
-                        console.log('[Action Time Display] Current action IS in queue - will not double-count', {
-                            id: actionObj.id,
-                        });
                         break;
                     }
                 }
-
-                if (!isCurrentActionInQueue) {
-                    console.log('[Action Time Display] Current action NOT in queue - adding to total time calculation');
-                }
             }
 
-            // First, calculate time for current action to include in total (if not already in queue list)
-            if (currentAction && !isCurrentActionInQueue) {
+            // Calculate time for current action to include in total
+            // Always include current action time, even if it appears in queue
+            if (currentAction) {
                 const actionDetails = dataManager.getActionDetails(currentAction.actionHrid);
                 if (actionDetails) {
                     // Check if infinite BEFORE calculating count
@@ -1149,12 +1137,6 @@ class ActionTimeDisplay {
                             );
 
                             const materialLimit = limitResult?.maxActions || null;
-
-                            console.log('[Action Time Display] Current action (infinite) limit check:', {
-                                actionHrid: currentAction.actionHrid,
-                                materialLimit,
-                                limitType: limitResult?.limitType,
-                            });
 
                             if (materialLimit !== null) {
                                 // Material-limited infinite action - calculate time
