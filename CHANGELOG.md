@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.12.0](https://github.com/Celasha/Toolasha/compare/v0.11.0...v0.12.0) (2026-02-02)
+
+
+### Features
+
+* **tasks:** rank task efficiency colors by relative profit ([df36ae9](https://github.com/Celasha/Toolasha/commit/df36ae9582f4f549b33065177c827a0ed1bb5abb))
+
+
+### Bug Fixes
+
+* **actions:** prevent queue matching against current action ([43f7d29](https://github.com/Celasha/Toolasha/commit/43f7d29be17b3d604f5afedd6b506de24be14f50))
+* **formatters:** respect user locale in percentage formatting ([98c80f8](https://github.com/Celasha/Toolasha/commit/98c80f8b2bc40f2b598d16c61caf1b2fd9775764))
+
 ## [0.11.0](https://github.com/Celasha/Toolasha/compare/v0.10.0...v0.11.0) (2026-02-02)
 
 ### Features
