@@ -308,10 +308,25 @@ class EstimatedListingAge {
             const price = this.parsePrice(priceText);
             const quantity = this.parseQuantity(quantityText);
 
+            // Check if quantity is abbreviated (K/M)
+            const isAbbreviated = quantityText.match(/[KM]/i);
+
             // Find matching listing by price + quantity
             const listing = listings.find((l) => {
                 const priceMatch = Math.abs(l.price - price) < 0.01;
-                const qtyMatch = l.quantity === quantity;
+
+                let qtyMatch;
+                if (isAbbreviated) {
+                    // For abbreviated quantities, match within rounding range
+                    // "127K" could be 127,000 to 127,999
+                    // "1.2M" could be 1,200,000 to 1,299,999
+                    const tolerance = quantityText.includes('M') ? 100000 : 1000;
+                    qtyMatch = l.quantity >= quantity && l.quantity < quantity + tolerance;
+                } else {
+                    // For exact quantities, match exactly
+                    qtyMatch = l.quantity === quantity;
+                }
+
                 return priceMatch && qtyMatch;
             });
 
