@@ -532,6 +532,13 @@ export const settingsGroups = {
                 default: true,
                 help: 'Displays encounters/hour, revenue, experience rates when returning from combat',
             },
+            combatStats: {
+                id: 'combatStats',
+                label: 'Combat Statistics: Show Statistics tab in Combat panel',
+                type: 'checkbox',
+                default: true,
+                help: 'Adds a Statistics button to the Combat panel showing income, profit, consumable costs, EXP, and drop details',
+            },
         },
     },
 

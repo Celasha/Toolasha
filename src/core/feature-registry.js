@@ -51,6 +51,7 @@ import dungeonTracker from '../features/combat/dungeon-tracker.js';
 import dungeonTrackerUI from '../features/combat/dungeon-tracker-ui.js';
 import dungeonTrackerChatAnnotations from '../features/combat/dungeon-tracker-chat-annotations.js';
 import combatSummary from '../features/combat/combat-summary.js';
+import combatStats from '../features/combat-stats/combat-stats.js';
 import alchemyProfitDisplay from '../features/alchemy/alchemy-profit-display.js';
 import transmuteRates from '../features/dictionary/transmute-rates.js';
 import dungeonTokenTooltips from '../features/inventory/dungeon-token-tooltips.js';
@@ -351,6 +352,14 @@ const featureRegistry = [
         category: 'Combat',
         initialize: () => combatSummary.initialize(),
         async: false,
+    },
+    {
+        key: 'combatStats',
+        name: 'Combat Statistics',
+        category: 'Combat',
+        initialize: () => combatStats.initialize(),
+        cleanup: () => combatStats.cleanup(),
+        async: true,
     },
 
     // UI Features

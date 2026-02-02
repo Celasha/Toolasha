@@ -9,7 +9,7 @@ class Storage {
         this.db = null;
         this.available = false;
         this.dbName = 'ToolashaDB';
-        this.dbVersion = 7; // Bumped for marketListings store
+        this.dbVersion = 8; // Bumped for combatStats store
         this.saveDebounceTimers = new Map(); // Per-key debounce timers
         this.pendingWrites = new Map(); // Per-key pending write data: {value, storeName}
         this.SAVE_DEBOUNCE_DELAY = 3000; // 3 seconds
@@ -85,6 +85,11 @@ class Storage {
                 // Create marketListings store if it doesn't exist (for estimated listing ages)
                 if (!db.objectStoreNames.contains('marketListings')) {
                     db.createObjectStore('marketListings');
+                }
+
+                // Create combatStats store if it doesn't exist (for combat statistics feature)
+                if (!db.objectStoreNames.contains('combatStats')) {
+                    db.createObjectStore('combatStats');
                 }
             };
         });
