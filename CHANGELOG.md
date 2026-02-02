@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.11.0](https://github.com/Celasha/Toolasha/compare/v0.10.0...v0.11.0) (2026-02-02)
+
+### Features
+
+- add task efficiency rating display and tests ([c1cf2d0](https://github.com/Celasha/Toolasha/commit/c1cf2d00011683f8bf141a92ac4a27fe597ea76c))
+
+### Bug Fixes
+
+- **actions:** fix action time estimates and queue duration (closes [#77](https://github.com/Celasha/Toolasha/issues/77)) ([07dd8d8](https://github.com/Celasha/Toolasha/commit/07dd8d8fae1da1d3703b34a7e2381c92e9de8efe))
+- correct version sync regex for README footer ([24b98fc](https://github.com/Celasha/Toolasha/commit/24b98fcf2e970f18b272122a0dd0e74d98d5234d))
+- **market:** use WebSocket for trade history, fix queue action matching ([31e5df6](https://github.com/Celasha/Toolasha/commit/31e5df634faa78e10f682fa099165b92235063d6))
+- refresh market listings and link totals icon ([3c60136](https://github.com/Celasha/Toolasha/commit/3c60136086a74e9dde7ee9c2d35ed1aeed37b751))
+
 ## [0.10.0](https://github.com/Celasha/Toolasha/compare/v0.9.2...v0.10.0) (2026-02-01)
 
 ### Features
