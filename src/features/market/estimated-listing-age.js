@@ -442,14 +442,21 @@ class EstimatedListingAge {
     }
 
     /**
-     * Parse quantity from text
+     * Parse quantity from text (handles K/M suffixes)
      * @param {string} text - Quantity text
      * @returns {number} Quantity value
      */
     parseQuantity(text) {
-        // Remove emoji and parse number
-        const numStr = text.replace(/[^0-9]/g, '');
-        return numStr ? Number(numStr) : 0;
+        let multiplier = 1;
+        if (text.toUpperCase().includes('K')) {
+            multiplier = 1000;
+            text = text.replace(/K/gi, '');
+        } else if (text.toUpperCase().includes('M')) {
+            multiplier = 1000000;
+            text = text.replace(/M/gi, '');
+        }
+        const numStr = text.replace(/[^0-9.]/g, '');
+        return numStr ? Number(numStr) * multiplier : 0;
     }
 
     /**
