@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.12.1](https://github.com/Celasha/Toolasha/compare/v0.12.0...v0.12.1) (2026-02-02)
+
+
+### Bug Fixes
+
+* **action-time:** prevent queue from matching currently running action ([4beedbe](https://github.com/Celasha/Toolasha/commit/4beedbe87f06880e13d0cb967fbf9fd8ce389b3e))
+* **dungeon-tracker:** sync chat run numbers with UI, prevent duplicates ([db589e0](https://github.com/Celasha/Toolasha/commit/db589e01b6815a17f20b7db78e956b52a9d0d015))
+
 ## [0.12.0](https://github.com/Celasha/Toolasha/compare/v0.11.0...v0.12.0) (2026-02-02)
 
 ### Features
