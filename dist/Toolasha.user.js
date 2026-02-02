@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.10.0
+// @version      0.11.0
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -930,6 +930,25 @@
                     label: 'Show total profit for gathering/production tasks',
                     type: 'checkbox',
                     default: true,
+                },
+                taskEfficiencyRating: {
+                    id: 'taskEfficiencyRating',
+                    label: 'Show task efficiency rating (tokens/gold per hour)',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Displays a color-graded efficiency score based on expected completion time.',
+                },
+                taskEfficiencyRatingMode: {
+                    id: 'taskEfficiencyRatingMode',
+                    label: '  └─ Efficiency algorithm',
+                    type: 'select',
+                    default: 'tokens',
+                    options: [
+                        { value: 'tokens', label: 'Task tokens per hour' },
+                        { value: 'gold', label: 'Task reward gold value per hour' },
+                    ],
+                    dependencies: ['taskEfficiencyRating'],
+                    help: 'Choose whether to rate by task token payout or expected gold value.',
                 },
                 taskRerollTracker: {
                     id: 'taskRerollTracker',
@@ -1861,6 +1880,46 @@
     const webSocketHook = new WebSocketHook();
 
     /**
+     * Merge market listing updates into the current list.
+     * @param {Array} currentListings - Existing market listings.
+     * @param {Array} updatedListings - Updated listings from WebSocket.
+     * @returns {Array} New merged listings array.
+     */
+    const mergeMarketListings = (currentListings = [], updatedListings = []) => {
+        const safeCurrent = Array.isArray(currentListings) ? currentListings : [];
+        const safeUpdates = Array.isArray(updatedListings) ? updatedListings : [];
+
+        if (safeUpdates.length === 0) {
+            return [...safeCurrent];
+        }
+
+        const indexById = new Map();
+        safeCurrent.forEach((listing, index) => {
+            if (!listing || listing.id === undefined || listing.id === null) {
+                return;
+            }
+            indexById.set(listing.id, index);
+        });
+
+        const merged = [...safeCurrent];
+
+        for (const listing of safeUpdates) {
+            if (!listing || listing.id === undefined || listing.id === null) {
+                continue;
+            }
+
+            const existingIndex = indexById.get(listing.id);
+            if (existingIndex !== undefined) {
+                merged[existingIndex] = listing;
+            } else {
+                merged.push(listing);
+            }
+        }
+
+        return merged;
+    };
+
+    /**
      * Data Manager Module
      * Central hub for accessing game data
      *
@@ -2206,6 +2265,33 @@
                 }
 
                 this.emit('items_updated', data);
+            });
+
+            // Handle market_listings_updated (market order changes)
+            this.webSocketHook.on('market_listings_updated', (data) => {
+                if (!this.characterData || !Array.isArray(data?.endMarketListings)) {
+                    return;
+                }
+
+                const currentListings = Array.isArray(this.characterData.myMarketListings)
+                    ? this.characterData.myMarketListings
+                    : [];
+                const updatedListings = mergeMarketListings(currentListings, data.endMarketListings);
+
+                this.characterData = {
+                    ...this.characterData,
+                    myMarketListings: updatedListings,
+                };
+
+                this.emit('market_listings_updated', {
+                    ...data,
+                    myMarketListings: updatedListings,
+                });
+            });
+
+            // Handle market_item_order_books_updated (order book updates)
+            this.webSocketHook.on('market_item_order_books_updated', (data) => {
+                this.emit('market_item_order_books_updated', data);
             });
 
             // Handle action_type_consumable_slots_updated (when user changes tea assignments)
@@ -2931,6 +3017,13 @@
                     category: 'Tasks',
                     description: 'Shows expected profit from task rewards',
                     settingKey: 'taskProfitCalculator',
+                },
+                taskEfficiencyRating: {
+                    enabled: true,
+                    name: 'Task Efficiency Rating',
+                    category: 'Tasks',
+                    description: 'Shows tokens or gold value per hour on task cards',
+                    settingKey: 'taskEfficiencyRating',
                 },
                 taskRerollTracker: {
                     enabled: true,
@@ -11953,15 +12046,15 @@
                 }
             };
 
-            webSocketHook.on('init_character_data', initHandler);
-            webSocketHook.on('market_listings_updated', updateHandler);
-            webSocketHook.on('market_item_order_books_updated', orderBookHandler);
+            dataManager.on('character_initialized', initHandler);
+            dataManager.on('market_listings_updated', updateHandler);
+            dataManager.on('market_item_order_books_updated', orderBookHandler);
 
             // Store for cleanup
             this.unregisterWebSocket = () => {
-                webSocketHook.off('init_character_data', initHandler);
-                webSocketHook.off('market_listings_updated', updateHandler);
-                webSocketHook.off('market_item_order_books_updated', orderBookHandler);
+                dataManager.off('character_initialized', initHandler);
+                dataManager.off('market_listings_updated', updateHandler);
+                dataManager.off('market_item_order_books_updated', orderBookHandler);
             };
         }
 
@@ -12459,8 +12552,8 @@
                 }
             };
 
-            webSocketHook.on('init_character_data', initHandler);
-            webSocketHook.on('market_listings_updated', updateHandler);
+            dataManager.on('character_initialized', initHandler);
+            dataManager.on('market_listings_updated', updateHandler);
 
             // Handle order book updates to re-render with populated cache (if Top Order Age enabled)
             let orderBookHandler = null;
@@ -12476,15 +12569,15 @@
                         }, 10);
                     }
                 };
-                webSocketHook.on('market_item_order_books_updated', orderBookHandler);
+                dataManager.on('market_item_order_books_updated', orderBookHandler);
             }
 
             // Store for cleanup
             this.unregisterWebSocket = () => {
-                webSocketHook.off('init_character_data', initHandler);
-                webSocketHook.off('market_listings_updated', updateHandler);
+                dataManager.off('character_initialized', initHandler);
+                dataManager.off('market_listings_updated', updateHandler);
                 if (orderBookHandler) {
-                    webSocketHook.off('market_item_order_books_updated', orderBookHandler);
+                    dataManager.off('market_item_order_books_updated', orderBookHandler);
                 }
             };
         }
@@ -13236,6 +13329,10 @@
             this.unregisterObserver = null;
             this.isInitialized = false;
             this.displayElement = null;
+            this.marketplaceClickHandler = (event) => {
+                event.preventDefault();
+                this.openMarketplace();
+            };
         }
 
         /**
@@ -13252,8 +13349,8 @@
 
             this.isInitialized = true;
 
-            // Setup WebSocket listeners for listing updates
-            this.setupWebSocketListeners();
+            // Setup data listeners for listing updates
+            this.setupDataListeners();
 
             // Setup DOM observer for header
             this.setupObserver();
@@ -13262,17 +13359,17 @@
         /**
          * Setup WebSocket listeners to detect listing changes
          */
-        setupWebSocketListeners() {
+        setupDataListeners() {
             const updateHandler = () => {
                 this.updateDisplay();
             };
 
-            webSocketHook.on('market_listings_updated', updateHandler);
-            webSocketHook.on('init_character_data', updateHandler);
+            dataManager.on('market_listings_updated', updateHandler);
+            dataManager.on('character_initialized', updateHandler);
 
             this.unregisterWebSocket = () => {
-                webSocketHook.off('market_listings_updated', updateHandler);
-                webSocketHook.off('init_character_data', updateHandler);
+                dataManager.off('market_listings_updated', updateHandler);
+                dataManager.off('character_initialized', updateHandler);
             };
         }
 
@@ -13373,18 +13470,36 @@
             // Check if we have no data yet (all zeros)
             const hasNoData = totals.buyOrders === 0 && totals.sellOrders === 0 && totals.unclaimed === 0;
 
-            // Format values or show marketplace icon
-            const boDisplay = hasNoData
-                ? '<svg width="16" height="16"><use href="/static/media/misc_sprite.f614f988.svg#marketplace"></use></svg>'
-                : `<span style="color: #ffd700;">${formatKMB(totals.buyOrders)}</span>`;
+            this.displayElement.style.justifyContent = hasNoData ? 'flex-end' : 'flex-start';
+            this.displayElement.style.width = hasNoData ? '100%' : '';
 
-            const soDisplay = hasNoData
-                ? '<svg width="16" height="16"><use href="/static/media/misc_sprite.f614f988.svg#marketplace"></use></svg>'
-                : `<span style="color: #ffd700;">${formatKMB(totals.sellOrders)}</span>`;
+            if (hasNoData) {
+                this.displayElement.innerHTML = `
+                <button
+                    type="button"
+                    class="mwi-market-order-totals-link"
+                    title="Open Marketplace"
+                    aria-label="Open Marketplace"
+                    style="background: none; border: none; padding: 0; cursor: pointer; display: flex; align-items: center;"
+                >
+                    <svg width="16" height="16" aria-hidden="true">
+                        <use href="/static/media/misc_sprite.f614f988.svg#marketplace"></use>
+                    </svg>
+                </button>
+            `;
 
-            const unclaimedDisplay = hasNoData
-                ? '<svg width="16" height="16"><use href="/static/media/misc_sprite.f614f988.svg#marketplace"></use></svg>'
-                : `<span style="color: #ffd700;">${formatKMB(totals.unclaimed)}</span>`;
+                const linkButton = this.displayElement.querySelector('.mwi-market-order-totals-link');
+                if (linkButton) {
+                    linkButton.addEventListener('click', this.marketplaceClickHandler);
+                }
+
+                return;
+            }
+
+            // Format values for display
+            const boDisplay = `<span style="color: #ffd700;">${formatKMB(totals.buyOrders)}</span>`;
+            const soDisplay = `<span style="color: #ffd700;">${formatKMB(totals.sellOrders)}</span>`;
+            const unclaimedDisplay = `<span style="color: #ffd700;">${formatKMB(totals.unclaimed)}</span>`;
 
             // Update display
             this.displayElement.innerHTML = `
@@ -13401,6 +13516,28 @@
                 ${unclaimedDisplay}
             </div>
         `;
+        }
+
+        /**
+         * Open the marketplace view
+         */
+        openMarketplace() {
+            try {
+                const navButtons = document.querySelectorAll('.NavigationBar_nav__3uuUl');
+                const marketplaceButton = Array.from(navButtons).find((nav) => {
+                    const svg = nav.querySelector('svg[aria-label="navigationBar.marketplace"]');
+                    return svg !== null;
+                });
+
+                if (!marketplaceButton) {
+                    console.error('[MarketOrderTotals] Marketplace navbar button not found');
+                    return;
+                }
+
+                marketplaceButton.click();
+            } catch (error) {
+                console.error('[MarketOrderTotals] Failed to open marketplace:', error);
+            }
         }
 
         /**
@@ -17195,8 +17332,8 @@
                 this.handleMarketUpdate(data);
             };
 
-            // Hook into WebSocket for market listing updates
-            webSocketHook.on('market_listings_updated', this.marketUpdateHandler);
+            // Hook into data manager for market listing updates
+            dataManager.on('market_listings_updated', this.marketUpdateHandler);
 
             this.isInitialized = true;
         }
@@ -17300,7 +17437,7 @@
 
             // Unregister WebSocket handler
             if (this.marketUpdateHandler) {
-                webSocketHook.off('market_listings_updated', this.marketUpdateHandler);
+                dataManager.off('market_listings_updated', this.marketUpdateHandler);
                 this.marketUpdateHandler = null;
             }
 
@@ -17345,8 +17482,10 @@
         constructor() {
             this.isActive = false;
             this.unregisterObserver = null;
+            this.unregisterWebSocket = null;
             this.currentItemHrid = null;
             this.currentEnhancementLevel = 0;
+            this.currentOrderBookData = null;
             this.isInitialized = false;
         }
 
@@ -17365,6 +17504,7 @@
 
             this.isInitialized = true;
             this.setupObserver();
+            this.setupWebSocketListener();
             this.isActive = true;
         }
 
@@ -17386,6 +17526,31 @@
             if (existingPanel) {
                 this.handleItemPanelUpdate(existingPanel);
             }
+        }
+
+        /**
+         * Setup WebSocket listener for order book updates
+         */
+        setupWebSocketListener() {
+            const orderBookHandler = (data) => {
+                if (data.marketItemOrderBooks) {
+                    // Store order book data for current item
+                    this.currentOrderBookData = data.marketItemOrderBooks;
+
+                    // Trigger display update if we're viewing this item
+                    const existingPanel = document.querySelector('[class*="MarketplacePanel_currentItem"]');
+                    if (existingPanel) {
+                        this.handleItemPanelUpdate(existingPanel);
+                    }
+                }
+            };
+
+            dataManager.on('market_item_order_books_updated', orderBookHandler);
+
+            // Store unregister function for cleanup
+            this.unregisterWebSocket = () => {
+                dataManager.off('market_item_order_books_updated', orderBookHandler);
+            };
         }
 
         /**
@@ -17556,82 +17721,34 @@
         }
 
         /**
-         * Extract current top order prices from the marketplace panel
-         * @param {HTMLElement} panel - Current item panel
+         * Extract current top order prices from WebSocket order book data
+         * @param {HTMLElement} panel - Current item panel (unused, kept for signature compatibility)
          * @returns {Object|null} { ask, bid } or null
          */
         extractCurrentPrices(panel) {
-            try {
-                // Try method 1: Find the top order section (works in compact view)
-                const topOrderSection = panel.querySelector('[class*="MarketplacePanel_topOrderSection"]');
-                if (topOrderSection) {
-                    // The top order section contains two price displays: Sell (Ask) and Buy (Bid)
-                    const priceTexts = topOrderSection.querySelectorAll('[class*="MarketplacePanel_price"]');
-
-                    if (priceTexts.length >= 2) {
-                        // First price is Sell price (Ask), second is Buy price (Bid)
-                        const askText = priceTexts[0].textContent.trim();
-                        const bidText = priceTexts[1].textContent.trim();
-
-                        return {
-                            ask: this.parsePrice(askText),
-                            bid: this.parsePrice(bidText),
-                        };
-                    }
-                }
-
-                // Method 2: Extract from order book table (when viewing full order book)
-                // Find all price elements in the panel
-                const allPriceElements = panel.querySelectorAll('[class*="MarketplacePanel_price"]');
-
-                if (allPriceElements.length >= 2) {
-                    // In order book view, prices appear in table rows
-                    // Left table = Ask orders (sell listings), Right table = Bid orders (buy listings)
-                    // First price is typically the lowest ask, second is typically the highest bid
-                    const askText = allPriceElements[0].textContent.trim();
-                    const bidText = allPriceElements[1].textContent.trim();
-
-                    const ask = this.parsePrice(askText);
-                    const bid = this.parsePrice(bidText);
-
-                    // Sanity check: ask should be >= bid (or at least positive)
-                    if (ask > 0 && bid > 0) {
-                        return { ask, bid };
-                    }
-                }
-
-                return null;
-            } catch (error) {
-                console.error('[TradeHistoryDisplay] Failed to extract current prices:', error);
+            // Use WebSocket order book data instead of DOM scraping
+            if (!this.currentOrderBookData || !this.currentOrderBookData.orderBooks) {
                 return null;
             }
-        }
 
-        /**
-         * Parse price text to number (handles K, M, B suffixes)
-         * @param {string} text - Price text (e.g., "82.0K", "1.5M")
-         * @returns {number} Parsed price
-         */
-        parsePrice(text) {
-            if (!text) return 0;
-
-            // Remove non-numeric characters except K, M, B, and decimal point
-            let cleaned = text.replace(/[^0-9.KMB]/gi, '');
-
-            let multiplier = 1;
-            if (cleaned.toUpperCase().includes('K')) {
-                multiplier = 1000;
-                cleaned = cleaned.replace(/K/gi, '');
-            } else if (cleaned.toUpperCase().includes('M')) {
-                multiplier = 1000000;
-                cleaned = cleaned.replace(/M/gi, '');
-            } else if (cleaned.toUpperCase().includes('B')) {
-                multiplier = 1000000000;
-                cleaned = cleaned.replace(/B/gi, '');
+            const orderBook = this.currentOrderBookData.orderBooks[0];
+            if (!orderBook) {
+                return null;
             }
 
-            const num = parseFloat(cleaned);
-            return isNaN(num) ? 0 : Math.floor(num * multiplier);
+            // Extract top ask (lowest sell price) and top bid (highest buy price)
+            const topAsk = orderBook.asks?.[0]?.price;
+            const topBid = orderBook.bids?.[0]?.price;
+
+            // Validate prices exist and are positive
+            if (!topAsk || topAsk <= 0 || !topBid || topBid <= 0) {
+                return null;
+            }
+
+            return {
+                ask: topAsk,
+                bid: topBid,
+            };
         }
 
         /**
@@ -17683,12 +17800,18 @@
                 this.unregisterObserver = null;
             }
 
+            if (this.unregisterWebSocket) {
+                this.unregisterWebSocket();
+                this.unregisterWebSocket = null;
+            }
+
             // Remove all displays
             document.querySelectorAll('.mwi-trade-history').forEach((el) => el.remove());
 
             this.isActive = false;
             this.currentItemHrid = null;
             this.currentEnhancementLevel = 0;
+            this.currentOrderBookData = null;
             this.isInitialized = false;
         }
     }
@@ -21694,6 +21817,7 @@
 
             // Calculate material limit for infinite actions
             let materialLimit = null;
+            let limitType = null;
             if (!action.hasMaxCount) {
                 // Get inventory and calculate Artisan bonus
                 const inventory = dataManager.getInventory();
@@ -21702,8 +21826,12 @@
                 const activeDrinks = dataManager.getActionDrinkSlots(actionDetails.type);
                 const artisanBonus = parseArtisanBonus(activeDrinks, itemDetailMap, drinkConcentration);
 
-                // Calculate max actions based on materials
-                materialLimit = this.calculateMaterialLimit(actionDetails, inventoryLookup, artisanBonus, action);
+                // Calculate max actions based on materials and costs
+                const limitResult = this.calculateMaterialLimit(actionDetails, inventoryLookup, artisanBonus, action);
+                if (limitResult) {
+                    materialLimit = limitResult.maxActions;
+                    limitType = limitResult.limitType;
+                }
             }
 
             // Get queue size for display (total queued, doesn't change)
@@ -21787,8 +21915,20 @@
             if (queueSizeDisplay !== Infinity) {
                 statsToAppend.push(`(${queueSizeDisplay.toLocaleString()} queued)`);
             } else if (materialLimit !== null) {
-                // Show infinity with optional material limit
-                statsToAppend.push(`(∞ · max: ${this.formatLargeNumber(materialLimit)})`);
+                // Show infinity with material limit and what's limiting it
+                let limitLabel = '';
+                if (limitType === 'gold') {
+                    limitLabel = 'gold limit';
+                } else if (limitType && limitType.startsWith('material:')) {
+                    limitLabel = 'mat limit';
+                } else if (limitType && limitType.startsWith('upgrade:')) {
+                    limitLabel = 'upgrade limit';
+                } else if (limitType === 'alchemy_item') {
+                    limitLabel = 'item limit';
+                } else {
+                    limitLabel = 'max';
+                }
+                statsToAppend.push(`(∞ · ${limitLabel}: ${this.formatLargeNumber(materialLimit)})`);
             } else {
                 statsToAppend.push(`(∞)`);
             }
@@ -21986,7 +22126,7 @@
          * @param {Object|Array} inventoryLookup - Inventory lookup maps or raw inventory array
          * @param {number} artisanBonus - Artisan material reduction (0-1 decimal)
          * @param {Object} actionObj - Character action object (for primaryItemHash)
-         * @returns {number|null} Max actions possible, or null if unlimited/no materials required
+         * @returns {Object|null} {maxActions: number, limitType: string} or null if unlimited
          */
         calculateMaterialLimit(actionDetails, inventoryLookup, artisanBonus, actionObj = null) {
             if (!actionDetails || !inventoryLookup) {
@@ -22019,19 +22159,45 @@
                     // Calculate max queued actions based on available items
                     const maxActions = Math.floor(availableCount / bulkMultiplier);
 
-                    return maxActions;
+                    console.log('[Action Time Display] Alchemy limit:', {
+                        itemHrid,
+                        availableCount,
+                        bulkMultiplier,
+                        maxActions,
+                    });
+
+                    return { maxActions, limitType: 'alchemy_item' };
                 }
             }
 
-            // Check if action requires input materials
+            // Check if action requires input materials or has costs
             const hasInputItems = actionDetails.inputItems && actionDetails.inputItems.length > 0;
             const hasUpgradeItem = actionDetails.upgradeItemHrid;
+            const hasCoinCost = actionDetails.coinCost && actionDetails.coinCost > 0;
 
-            if (!hasInputItems && !hasUpgradeItem) {
-                return null; // No materials required - unlimited
+            if (!hasInputItems && !hasUpgradeItem && !hasCoinCost) {
+                return null; // No materials or costs required - unlimited
             }
 
             let minLimit = Infinity;
+            let limitType = 'unknown';
+
+            // Check gold/coin constraint (if action has a coin cost)
+            if (hasCoinCost) {
+                const availableGold = byHrid['/items/gold_coin'] || 0;
+                const maxActionsFromGold = Math.floor(availableGold / actionDetails.coinCost);
+
+                console.log('[Action Time Display] Gold constraint:', {
+                    availableGold,
+                    coinCost: actionDetails.coinCost,
+                    maxActions: maxActionsFromGold,
+                });
+
+                if (maxActionsFromGold < minLimit) {
+                    minLimit = maxActionsFromGold;
+                    limitType = 'gold';
+                }
+            }
 
             // Check input items (affected by Artisan Tea)
             if (hasInputItems) {
@@ -22044,7 +22210,17 @@
                     // Calculate max queued actions for this material
                     const maxActions = Math.floor(availableCount / requiredPerAction);
 
-                    minLimit = Math.min(minLimit, maxActions);
+                    console.log('[Action Time Display] Material constraint:', {
+                        itemHrid: inputItem.itemHrid,
+                        availableCount,
+                        requiredPerAction,
+                        maxActions,
+                    });
+
+                    if (maxActions < minLimit) {
+                        minLimit = maxActions;
+                        limitType = `material:${inputItem.itemHrid}`;
+                    }
                 }
             }
 
@@ -22052,11 +22228,28 @@
             if (hasUpgradeItem) {
                 const availableCount = byHrid[hasUpgradeItem] || 0;
 
-                // Upgrade items are consumed per queued action
-                minLimit = Math.min(minLimit, availableCount);
+                console.log('[Action Time Display] Upgrade item constraint:', {
+                    itemHrid: hasUpgradeItem,
+                    availableCount,
+                });
+
+                if (availableCount < minLimit) {
+                    minLimit = availableCount;
+                    limitType = `upgrade:${hasUpgradeItem}`;
+                }
             }
 
-            return minLimit === Infinity ? null : minLimit;
+            if (minLimit === Infinity) {
+                return null;
+            }
+
+            console.log('[Action Time Display] Final material limit:', {
+                maxActions: minLimit,
+                limitType,
+                actionHrid: actionDetails.hrid,
+            });
+
+            return { maxActions: minLimit, limitType };
         }
 
         /**
@@ -22065,7 +22258,7 @@
          * @param {Array} cachedActions - Array of actions from dataManager
          * @returns {Object|null} Matched action object or null
          */
-        matchActionFromDiv(actionDiv, cachedActions) {
+        matchActionFromDiv(actionDiv, cachedActions, usedActionIds = new Set()) {
             // Find the action text element within the div
             const actionTextContainer = actionDiv.querySelector('[class*="QueuedActions_actionText"]');
             if (!actionTextContainer) {
@@ -22095,8 +22288,12 @@
                 const itemName = actionNameText;
                 const itemHrid = '/items/' + itemName.toLowerCase().replace(/\s+/g, '_');
 
-                // Find enhancing action matching this item
+                // Find enhancing action matching this item (excluding already-used actions)
                 return cachedActions.find((a) => {
+                    if (usedActionIds.has(a.id)) {
+                        return false; // Skip already-matched actions
+                    }
+
                     const actionDetails = dataManager.getActionDetails(a.actionHrid);
                     if (!actionDetails || actionDetails.type !== '/action_types/enhancing') {
                         return false;
@@ -22118,8 +22315,12 @@
                 itemNameFromDiv = null;
             }
 
-            // Match action from cache (same logic as main display)
+            // Match action from cache (same logic as main display, excluding already-used actions)
             return cachedActions.find((a) => {
+                if (usedActionIds.has(a.id)) {
+                    return false; // Skip already-matched actions
+                }
+
                 const actionDetails = dataManager.getActionDetails(a.actionHrid);
                 if (!actionDetails || actionDetails.name !== actionNameFromDiv) {
                     return false;
@@ -22182,6 +22383,10 @@
                     // Use getCleanActionName to strip any stats we previously appended
                     const actionNameText = this.getCleanActionName(actionNameElement);
 
+                    console.log('[Action Time Display] Detecting current action:', {
+                        cleanText: actionNameText,
+                    });
+
                     // Parse action name (same logic as main display)
                     // Also handles formatted numbers like "Farmland (276K)" or "Zone (1.2M)"
                     const actionNameMatch = actionNameText.match(/^(.+?)(?:\s*\([^)]+\))?$/);
@@ -22197,6 +22402,11 @@
                         itemNameFromDom = null;
                     }
 
+                    console.log('[Action Time Display] Parsed action name:', {
+                        actionName: actionNameFromDom,
+                        itemName: itemNameFromDom,
+                    });
+
                     // Match current action from cache
                     currentAction = currentActions.find((a) => {
                         const actionDetails = dataManager.getActionDetails(a.actionHrid);
@@ -22206,20 +22416,46 @@
 
                         if (itemNameFromDom && a.primaryItemHash) {
                             const itemHrid = '/items/' + itemNameFromDom.toLowerCase().replace(/\s+/g, '_');
-                            return a.primaryItemHash.includes(itemHrid);
+                            const matches = a.primaryItemHash.includes(itemHrid);
+                            console.log('[Action Time Display] Matching by primaryItemHash:', {
+                                actionHrid: a.actionHrid,
+                                itemNameFromDom,
+                                itemHrid,
+                                primaryItemHash: a.primaryItemHash,
+                                matches,
+                            });
+                            return matches;
                         }
 
                         return true;
                     });
+
+                    if (currentAction) {
+                        console.log('[Action Time Display] Current action matched:', {
+                            id: currentAction.id,
+                            actionHrid: currentAction.actionHrid,
+                            hasMaxCount: currentAction.hasMaxCount,
+                            maxCount: currentAction.maxCount,
+                            currentCount: currentAction.currentCount,
+                        });
+                    }
                 }
 
                 if (currentAction) {
+                    // Check if current action appears in the queue list
                     for (const actionDiv of actionDivs) {
                         const actionObj = this.matchActionFromDiv(actionDiv, currentActions);
                         if (actionObj && actionObj.id === currentAction.id) {
                             isCurrentActionInQueue = true;
+                            console.log('[Action Time Display] Current action IS in queue - will not double-count', {
+                                id: actionObj.id,
+                            });
                             break;
                         }
+                    }
+
+                    if (!isCurrentActionInQueue) {
+                        console.log('[Action Time Display] Current action NOT in queue - adding to total time calculation');
                     }
                 }
 
@@ -22246,12 +22482,20 @@
                             const timeData = this.calculateActionTime(actionDetails, currentAction.actionHrid);
                             if (timeData) {
                                 const { actionTime, totalEfficiency } = timeData;
-                                const materialLimit = this.calculateMaterialLimit(
+                                const limitResult = this.calculateMaterialLimit(
                                     actionDetails,
                                     inventoryLookup,
                                     artisanBonus,
                                     currentAction
                                 );
+
+                                const materialLimit = limitResult?.maxActions || null;
+
+                                console.log('[Action Time Display] Current action (infinite) limit check:', {
+                                    actionHrid: currentAction.actionHrid,
+                                    materialLimit,
+                                    limitType: limitResult?.limitType,
+                                });
 
                                 if (materialLimit !== null) {
                                     // Material-limited infinite action - calculate time
@@ -22297,11 +22541,14 @@
 
                 // Now process queued actions by reading from each div
                 // Each div shows a queued action, and we match it to cache by name
+                // Track used action IDs to prevent duplicate matching (e.g., two identical infinite actions)
+                const usedActionIds = new Set();
+
                 for (let divIndex = 0; divIndex < actionDivs.length; divIndex++) {
                     const actionDiv = actionDivs[divIndex];
 
-                    // Match this div's action from the cache
-                    const actionObj = this.matchActionFromDiv(actionDiv, currentActions);
+                    // Match this div's action from the cache (excluding already-matched actions)
+                    const actionObj = this.matchActionFromDiv(actionDiv, currentActions, usedActionIds);
 
                     if (!actionObj) {
                         // Could not match action - show unknown
@@ -22324,6 +22571,9 @@
                         continue;
                     }
 
+                    // Mark this action as used for subsequent divs
+                    usedActionIds.add(actionObj.id);
+
                     const actionDetails = dataManager.getActionDetails(actionObj.actionHrid);
                     if (!actionDetails) {
                         console.warn('[Action Time Display] Unknown queued action:', actionObj.actionHrid);
@@ -22341,6 +22591,7 @@
 
                     // Calculate material limit for infinite actions
                     let materialLimit = null;
+                    let limitType = null;
                     if (isInfinite) {
                         const equipment = dataManager.getEquipment();
                         const itemDetailMap = dataManager.getInitClientData()?.itemDetailMap || {};
@@ -22348,12 +22599,23 @@
                         const activeDrinks = dataManager.getActionDrinkSlots(actionDetails.type);
                         const artisanBonus = parseArtisanBonus(activeDrinks, itemDetailMap, drinkConcentration);
 
-                        materialLimit = this.calculateMaterialLimit(
+                        const limitResult = this.calculateMaterialLimit(
                             actionDetails,
                             inventoryLookup,
                             artisanBonus,
                             actionObj
                         );
+
+                        if (limitResult) {
+                            materialLimit = limitResult.maxActions;
+                            limitType = limitResult.limitType;
+
+                            console.log('[Action Time Display] Queue action limit check:', {
+                                actionHrid: actionObj.actionHrid,
+                                materialLimit,
+                                limitType,
+                            });
+                        }
                     }
 
                     // Determine if truly infinite (no material limit)
@@ -22423,8 +22685,20 @@
                         timeDiv.textContent = '[∞]';
                     } else if (isInfinite && materialLimit !== null) {
                         // Material-limited infinite action
+                        let limitLabel = '';
+                        if (limitType === 'gold') {
+                            limitLabel = 'gold';
+                        } else if (limitType && limitType.startsWith('material:')) {
+                            limitLabel = 'mat';
+                        } else if (limitType && limitType.startsWith('upgrade:')) {
+                            limitLabel = 'upgrade';
+                        } else if (limitType === 'alchemy_item') {
+                            limitLabel = 'item';
+                        } else {
+                            limitLabel = 'max';
+                        }
                         const timeStr = timeReadable(totalTime);
-                        timeDiv.textContent = `[${timeStr} · max: ${this.formatLargeNumber(materialLimit)}]${completionText}`;
+                        timeDiv.textContent = `[${timeStr} · ${limitLabel}: ${this.formatLargeNumber(materialLimit)}]${completionText}`;
                     } else {
                         const timeStr = timeReadable(totalTime);
                         timeDiv.textContent = `[${timeStr}]${completionText}`;
@@ -31851,6 +32125,101 @@
 
     // Compiled regex pattern (created once, reused for performance)
     const REGEX_TASK_PROGRESS = /(\d+)\s*\/\s*(\d+)/;
+    const RATING_MODE_TOKENS = 'tokens';
+    const RATING_MODE_GOLD = 'gold';
+    const MAX_TOKENS_PER_HOUR = 10;
+    const GOLD_LOG_RANGE = 6;
+
+    /**
+     * Calculate task completion time in seconds based on task progress and action rates
+     * @param {Object} profitData - Profit calculation result
+     * @returns {number|null} Completion time in seconds or null if unavailable
+     */
+    function calculateTaskCompletionSeconds(profitData) {
+        const actionsPerHour = profitData?.action?.details?.actionsPerHour;
+        const totalQuantity = profitData?.taskInfo?.quantity;
+
+        if (!actionsPerHour || !totalQuantity) {
+            return null;
+        }
+
+        const currentProgress = profitData.taskInfo.currentProgress || 0;
+        const remainingActions = Math.max(totalQuantity - currentProgress, 0);
+        if (remainingActions <= 0) {
+            return 0;
+        }
+
+        const efficiencyMultiplier = profitData.action.details.efficiencyMultiplier || 1;
+        const baseActionsNeeded = efficiencyMultiplier > 0 ? remainingActions / efficiencyMultiplier : remainingActions;
+
+        return calculateSecondsForActions(baseActionsNeeded, actionsPerHour);
+    }
+
+    /**
+     * Calculate task efficiency rating data
+     * @param {Object} profitData - Profit calculation result
+     * @param {string} ratingMode - Rating mode (tokens or gold)
+     * @returns {Object|null} Rating data or null if unavailable
+     */
+    function calculateTaskEfficiencyRating(profitData, ratingMode) {
+        const completionSeconds = calculateTaskCompletionSeconds(profitData);
+        if (!completionSeconds || completionSeconds <= 0) {
+            return null;
+        }
+
+        const hours = completionSeconds / 3600;
+
+        if (ratingMode === RATING_MODE_GOLD) {
+            if (
+                profitData.rewards?.error ||
+                profitData.rewards?.total === null ||
+                profitData.rewards?.total === undefined
+            ) {
+                return {
+                    value: null,
+                    unitLabel: 'gold/hr',
+                    error: profitData.rewards?.error || 'Market data not loaded',
+                };
+            }
+
+            return {
+                value: profitData.rewards.total / hours,
+                unitLabel: 'gold/hr',
+                error: null,
+            };
+        }
+
+        const tokensReceived = profitData.rewards?.breakdown?.tokensReceived ?? 0;
+        return {
+            value: tokensReceived / hours,
+            unitLabel: 'tokens/hr',
+            error: null,
+        };
+    }
+
+    /**
+     * Convert a rating value into a gradient color
+     * @param {number} value - Rating value
+     * @param {string} ratingMode - Rating mode (tokens or gold)
+     * @param {string} fallbackColor - Color to use when value is invalid
+     * @returns {string} CSS color value
+     */
+    function getEfficiencyGradientColor(value, ratingMode, fallbackColor) {
+        if (!Number.isFinite(value) || value <= 0) {
+            return fallbackColor;
+        }
+
+        let normalized = 0;
+        if (ratingMode === RATING_MODE_GOLD) {
+            normalized = Math.log10(value + 1) / GOLD_LOG_RANGE;
+        } else {
+            normalized = value / MAX_TOKENS_PER_HOUR;
+        }
+
+        const clamped = Math.min(Math.max(normalized, 0), 1);
+        const hue = Math.round(120 * clamped);
+        return `hsl(${hue} 70% 50%)`;
+    }
 
     /**
      * TaskProfitDisplay class manages task profit UI
@@ -31875,6 +32244,18 @@
                     this.initialize();
                 } else {
                     this.disable();
+                }
+            });
+
+            config.onSettingChange('taskEfficiencyRating', () => {
+                if (this.isInitialized) {
+                    this.updateTaskProfits(true);
+                }
+            });
+
+            config.onSettingChange('taskEfficiencyRatingMode', () => {
+                if (this.isInitialized) {
+                    this.updateTaskProfits(true);
                 }
             });
 
@@ -31973,7 +32354,7 @@
         /**
          * Update all task profit displays
          */
-        updateTaskProfits() {
+        updateTaskProfits(forceRefresh = false) {
             if (!config.getSetting('taskProfitCalculator')) {
                 return;
             }
@@ -31994,7 +32375,7 @@
                 if (existingProfit) {
                     // Check if task has changed (rerolled)
                     const savedTaskKey = existingProfit.dataset.taskKey;
-                    if (savedTaskKey === currentTaskKey) {
+                    if (!forceRefresh && savedTaskKey === currentTaskKey) {
                         continue; // Same task, skip
                     }
 
@@ -32235,19 +32616,8 @@
             }
 
             // Calculate time estimate for task completion
-            let timeEstimate = '???';
-            if (profitData.action?.details?.actionsPerHour && profitData.taskInfo?.quantity) {
-                const actionsPerHour = profitData.action.details.actionsPerHour;
-                const totalQuantity = profitData.taskInfo.quantity;
-                const currentProgress = profitData.taskInfo.currentProgress || 0;
-                const remainingActions = totalQuantity - currentProgress;
-                const efficiencyMultiplier = profitData.action.details.efficiencyMultiplier || 1;
-
-                // Efficiency reduces the number of actions needed
-                const baseActionsNeeded = remainingActions / efficiencyMultiplier;
-                const totalSeconds = calculateSecondsForActions(baseActionsNeeded, actionsPerHour);
-                timeEstimate = timeReadable(totalSeconds);
-            }
+            const completionSeconds = calculateTaskCompletionSeconds(profitData);
+            const timeEstimate = completionSeconds !== null ? timeReadable(completionSeconds) : '???';
 
             // Create main profit display (Option B format: compact with time)
             const profitLine = document.createElement('div');
@@ -32317,6 +32687,32 @@
             this.eventListeners.set(profitContainer, listeners);
 
             profitContainer.appendChild(profitLine);
+
+            if (config.getSetting('taskEfficiencyRating')) {
+                const ratingMode = config.getSettingValue('taskEfficiencyRatingMode', RATING_MODE_TOKENS);
+                const ratingData = calculateTaskEfficiencyRating(profitData, ratingMode);
+                const ratingLine = document.createElement('div');
+                ratingLine.className = 'mwi-task-profit-rating';
+                ratingLine.style.cssText = 'margin-top: 2px; font-size: 0.7rem;';
+
+                if (!ratingData || ratingData.value === null) {
+                    const warningText = ratingData?.error ? ' ⚠' : '';
+                    ratingLine.style.color = config.COLOR_WARNING;
+                    ratingLine.textContent = `⚡ --${warningText} ${ratingData?.unitLabel || ''}`.trim();
+                } else {
+                    const ratingValue = numberFormatter(ratingData.value, 2);
+                    const ratingColor = getEfficiencyGradientColor(
+                        ratingData.value,
+                        ratingMode,
+                        config.COLOR_TEXT_SECONDARY
+                    );
+                    ratingLine.style.color = ratingColor;
+                    ratingLine.textContent = `⚡ ${ratingValue} ${ratingData.unitLabel}`;
+                }
+
+                profitContainer.appendChild(ratingLine);
+            }
+
             profitContainer.appendChild(breakdownSection);
             actionNode.appendChild(profitContainer);
         }
@@ -49601,7 +49997,7 @@
         const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
         targetWindow.Toolasha = {
-            version: '0.10.0',
+            version: '0.11.0',
 
             // Feature toggle API (for users to manage settings via console)
             features: {
