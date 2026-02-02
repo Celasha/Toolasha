@@ -10,6 +10,7 @@ import storage from '../../core/storage.js';
 import { formatKMB } from '../../utils/formatters.js';
 import dataManager from '../../core/data-manager.js';
 import inventoryBadgeManager from './inventory-badge-manager.js';
+import { createTimerRegistry } from '../../utils/timer-registry.js';
 
 /**
  * InventorySort class manages inventory sorting and price badges
@@ -26,6 +27,7 @@ class InventorySort {
         this.itemsUpdatedHandler = null;
         this.itemsUpdatedDebounceTimer = null; // Debounce timer for items_updated events
         this.DEBOUNCE_DELAY = 300; // 300ms debounce for event handlers
+        this.timerRegistry = createTimerRegistry();
     }
 
     /**
@@ -129,6 +131,8 @@ class InventorySort {
                     clearInterval(retryCheck);
                 }
             }, retryInterval);
+
+            this.timerRegistry.registerInterval(retryCheck);
         }
     }
 
@@ -462,6 +466,9 @@ class InventorySort {
             this.itemsUpdatedHandler = null;
         }
 
+        this.timerRegistry.clearAll();
+
+        // Unregister from badge manager
         inventoryBadgeManager.unregisterProvider('inventory-stack-price');
 
         // Remove controls

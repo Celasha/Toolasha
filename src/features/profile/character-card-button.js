@@ -7,6 +7,7 @@ import config from '../../core/config.js';
 import webSocketHook from '../../core/websocket.js';
 import dataManager from '../../core/data-manager.js';
 import { buildCharacterSheetLink } from './character-sheet.js';
+import { createTimerRegistry } from '../../utils/timer-registry.js';
 
 /**
  * CharacterCardButton class manages character card export button on profiles
@@ -17,6 +18,7 @@ class CharacterCardButton {
         this.isInitialized = false;
         this.currentProfileData = null; // Store profile data for food/drinks
         this.profileSharedHandler = null; // Store handler reference for cleanup
+        this.timerRegistry = createTimerRegistry();
     }
 
     /**
@@ -92,7 +94,10 @@ class CharacterCardButton {
             if (panel) {
                 return panel;
             }
-            await new Promise((resolve) => setTimeout(resolve, 100));
+            await new Promise((resolve) => {
+                const retryTimeout = setTimeout(resolve, 100);
+                this.timerRegistry.registerTimeout(retryTimeout);
+            });
         }
         return null;
     }
@@ -279,6 +284,7 @@ class CharacterCardButton {
         }
 
         this.currentProfileData = null;
+        this.timerRegistry.clearAll();
         this.isActive = false;
         this.isInitialized = false;
     }

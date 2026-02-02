@@ -9,6 +9,7 @@ import dataManager from '../../core/data-manager.js';
 import alchemyProfit from './alchemy-profit.js';
 import { formatWithSeparator, formatPercentage, formatLargeNumber } from '../../utils/formatters.js';
 import { createCollapsibleSection } from '../../utils/ui-components.js';
+import { createTimerRegistry } from '../../utils/timer-registry.js';
 
 class AlchemyProfitDisplay {
     constructor() {
@@ -19,6 +20,7 @@ class AlchemyProfitDisplay {
         this.lastFingerprint = null;
         this.pollInterval = null;
         this.isInitialized = false;
+        this.timerRegistry = createTimerRegistry();
     }
 
     /**
@@ -59,6 +61,7 @@ class AlchemyProfitDisplay {
         this.pollInterval = setInterval(() => {
             this.checkAndUpdateDisplay();
         }, 200); // Check 5× per second for responsive updates
+        this.timerRegistry.registerInterval(this.pollInterval);
     }
 
     /**
@@ -117,6 +120,7 @@ class AlchemyProfitDisplay {
         this.updateTimeout = setTimeout(() => {
             this.updateDisplay(infoContainer);
         }, 100);
+        this.timerRegistry.registerTimeout(this.updateTimeout);
     }
 
     /**
@@ -733,6 +737,8 @@ class AlchemyProfitDisplay {
             clearInterval(this.pollInterval);
             this.pollInterval = null;
         }
+
+        this.timerRegistry.clearAll();
 
         if (this.unregisterObserver) {
             this.unregisterObserver();

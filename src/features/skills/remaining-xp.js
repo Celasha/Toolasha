@@ -7,12 +7,14 @@ import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
 import config from '../../core/config.js';
 import { numberFormatter } from '../../utils/formatters.js';
+import { createTimerRegistry } from '../../utils/timer-registry.js';
 
 class RemainingXP {
     constructor() {
         this.initialized = false;
         this.updateInterval = null;
         this.unregisterObservers = [];
+        this.timerRegistry = createTimerRegistry();
     }
 
     /**
@@ -28,6 +30,7 @@ class RemainingXP {
         this.updateInterval = setInterval(() => {
             this.updateAllSkillBars();
         }, 1000);
+        this.timerRegistry.registerInterval(this.updateInterval);
 
         this.initialized = true;
     }
@@ -45,9 +48,10 @@ class RemainingXP {
         // Wait for character data to be loaded before first update
         const initHandler = () => {
             // Initial update once character data is ready
-            setTimeout(() => {
+            const initialUpdateTimeout = setTimeout(() => {
                 this.updateAllSkillBars();
             }, 500);
+            this.timerRegistry.registerTimeout(initialUpdateTimeout);
         };
 
         dataManager.on('character_initialized', initHandler);
@@ -198,10 +202,12 @@ class RemainingXP {
      */
     disable() {
         if (this.updateInterval) {
-            clearInterval(this.updateInterval);
             this.updateInterval = null;
         }
 
+        this.timerRegistry.clearAll();
+
+        // Unregister observers
         this.unregisterObservers.forEach((unregister) => unregister());
         this.unregisterObservers = [];
 

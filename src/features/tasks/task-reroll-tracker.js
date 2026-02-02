@@ -10,6 +10,7 @@ import webSocketHook from '../../core/websocket.js';
 import dataManager from '../../core/data-manager.js';
 import storage from '../../core/storage.js';
 import { GAME, TOOLASHA } from '../../utils/selectors.js';
+import { createTimerRegistry } from '../../utils/timer-registry.js';
 
 class TaskRerollTracker {
     constructor() {
@@ -17,6 +18,7 @@ class TaskRerollTracker {
         this.unregisterHandlers = [];
         this.isInitialized = false;
         this.storeName = 'rerollSpending';
+        this.timerRegistry = createTimerRegistry();
     }
 
     /**
@@ -76,7 +78,12 @@ class TaskRerollTracker {
     cleanup() {
         this.unregisterHandlers.forEach((unregister) => unregister());
         this.unregisterHandlers = [];
+        this.timerRegistry.clearAll();
         this.isInitialized = false;
+    }
+
+    disable() {
+        this.cleanup();
     }
 
     /**
@@ -150,9 +157,10 @@ class TaskRerollTracker {
             }
 
             // Wait for game to update DOM before updating displays
-            setTimeout(() => {
+            const updateTimeout = setTimeout(() => {
                 this.updateAllTaskDisplays();
             }, 250);
+            this.timerRegistry.registerTimeout(updateTimeout);
         };
 
         webSocketHook.on('quests_updated', questsHandler);
@@ -201,9 +209,10 @@ class TaskRerollTracker {
             this.cleanupOldTasks();
 
             // Wait for DOM to be ready before updating displays
-            setTimeout(() => {
+            const initTimeout = setTimeout(() => {
                 this.updateAllTaskDisplays();
             }, 500);
+            this.timerRegistry.registerTimeout(initTimeout);
         };
 
         dataManager.on('character_initialized', initHandler);
@@ -231,7 +240,8 @@ class TaskRerollTracker {
         // Watch for individual tasks appearing
         const unregisterTask = domObserver.onClass('TaskRerollTracker-Task', 'RandomTask_randomTask', () => {
             // Small delay to let task data settle
-            setTimeout(() => this.updateAllTaskDisplays(), 100);
+            const taskTimeout = setTimeout(() => this.updateAllTaskDisplays(), 100);
+            this.timerRegistry.registerTimeout(taskTimeout);
         });
         this.unregisterHandlers.push(unregisterTask);
     }

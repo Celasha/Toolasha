@@ -9,6 +9,7 @@
 import config from '../../core/config.js';
 import storage from '../../core/storage.js';
 import { dismissTooltips } from '../../utils/dom.js';
+import { createTimerRegistry } from '../../utils/timer-registry.js';
 
 class ActionPanelSort {
     constructor() {
@@ -16,6 +17,7 @@ class ActionPanelSort {
         this.pinnedActions = new Set(); // Set of pinned action HRIDs
         this.sortTimeout = null; // Debounce timer
         this.initialized = false;
+        this.timerRegistry = createTimerRegistry();
     }
 
     /**
@@ -107,6 +109,8 @@ class ActionPanelSort {
             this.sortTimeout = null;
         }
 
+        this.timerRegistry.clearAll();
+
         // Clear all panel references
         this.panels.clear();
     }
@@ -140,6 +144,7 @@ class ActionPanelSort {
             this.sortPanelsByProfit();
             this.sortTimeout = null;
         }, 300);
+        this.timerRegistry.registerTimeout(this.sortTimeout);
     }
 
     /**

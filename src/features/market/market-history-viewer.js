@@ -14,6 +14,7 @@ import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import { formatWithSeparator, formatKMB } from '../../utils/formatters.js';
 import settingsUI from '../settings/settings-ui.js';
+import { createTimerRegistry } from '../../utils/timer-registry.js';
 
 class MarketHistoryViewer {
     constructor() {
@@ -30,6 +31,7 @@ class MarketHistoryViewer {
         this.typeFilter = 'all'; // 'all', 'buy', 'sell'
         this.useKMBFormat = false; // K/M/B formatting toggle
         this.storageKey = 'marketListingTimestamps';
+        this.timerRegistry = createTimerRegistry();
 
         // Column filters
         this.filters = {
@@ -1351,8 +1353,8 @@ class MarketHistoryViewer {
             }
 
             // Parse header
-            const headerLine = lines[0];
-            const expectedHeaders = [
+            const _headerLine = lines[0];
+            const _expectedHeaders = [
                 'Date',
                 'Item',
                 'Enhancement',
@@ -1427,7 +1429,7 @@ class MarketHistoryViewer {
                     continue;
                 }
 
-                const [dateStr, itemName, enhStr, typeStr, priceStr, qtyStr, filledStr, totalStr, idStr] = fields;
+                const [dateStr, itemName, enhStr, typeStr, priceStr, qtyStr, filledStr, _totalStr, idStr] = fields;
 
                 // Parse ID
                 const id = parseInt(idStr);
@@ -1821,7 +1823,8 @@ class MarketHistoryViewer {
                 this.popupCloseHandler = null;
             }
         };
-        setTimeout(() => document.addEventListener('click', this.popupCloseHandler), 10);
+        const popupTimeout = setTimeout(() => document.addEventListener('click', this.popupCloseHandler), 10);
+        this.timerRegistry.registerTimeout(popupTimeout);
     }
 
     /**
@@ -2475,6 +2478,8 @@ class MarketHistoryViewer {
             document.removeEventListener('click', this.popupCloseHandler);
             this.popupCloseHandler = null;
         }
+
+        this.timerRegistry.clearAll();
 
         // Remove modal and all its event listeners
         if (this.modal) {

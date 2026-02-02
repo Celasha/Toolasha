@@ -6,6 +6,7 @@
 import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
 import dataManager from '../../core/data-manager.js';
+import { createTimerRegistry } from '../../utils/timer-registry.js';
 
 /**
  * TransmuteRates class manages success rate display in Item Dictionary
@@ -16,6 +17,7 @@ class TransmuteRates {
         this.isInitialized = false;
         this.injectTimeout = null;
         this.nameToHridCache = new Map();
+        this.timerRegistry = createTimerRegistry();
     }
 
     /**
@@ -69,6 +71,7 @@ class TransmuteRates {
                 this.injectTimeout = setTimeout(() => {
                     this.injectRates(section);
                 }, 50);
+                this.timerRegistry.registerTimeout(this.injectTimeout);
             }
         });
         this.unregisterHandlers.push(unregister);
@@ -202,6 +205,7 @@ class TransmuteRates {
     disable() {
         // Clear any pending injection timeouts
         clearTimeout(this.injectTimeout);
+        this.timerRegistry.clearAll();
 
         this.unregisterHandlers.forEach((unregister) => unregister());
         this.unregisterHandlers = [];

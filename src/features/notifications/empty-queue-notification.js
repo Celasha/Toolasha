@@ -6,6 +6,7 @@
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import webSocketHook from '../../core/websocket.js';
+import { createTimerRegistry } from '../../utils/timer-registry.js';
 
 class EmptyQueueNotification {
     constructor() {
@@ -13,6 +14,7 @@ class EmptyQueueNotification {
         this.unregisterHandlers = [];
         this.permissionGranted = false;
         this.characterSwitchingHandler = null;
+        this.timerRegistry = createTimerRegistry();
     }
 
     /**
@@ -133,7 +135,8 @@ class EmptyQueueNotification {
             };
 
             // Auto-close after 5 seconds
-            setTimeout(() => notification.close(), 5000);
+            const closeTimeout = setTimeout(() => notification.close(), 5000);
+            this.timerRegistry.registerTimeout(closeTimeout);
         } catch (error) {
             console.error('[Empty Queue Notification] Failed to send notification:', error);
         }
@@ -151,6 +154,7 @@ class EmptyQueueNotification {
         this.unregisterHandlers.forEach((unregister) => unregister());
         this.unregisterHandlers = [];
         this.wasEmpty = false;
+        this.timerRegistry.clearAll();
     }
 }
 

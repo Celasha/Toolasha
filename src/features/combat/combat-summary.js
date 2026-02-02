@@ -7,6 +7,7 @@ import config from '../../core/config.js';
 import marketAPI from '../../api/marketplace.js';
 import webSocketHook from '../../core/websocket.js';
 import { formatWithSeparator } from '../../utils/formatters.js';
+import { createTimerRegistry } from '../../utils/timer-registry.js';
 
 /**
  * CombatSummary class manages combat completion statistics display
@@ -16,6 +17,7 @@ class CombatSummary {
         this.isActive = false;
         this.isInitialized = false;
         this.battleUnitFetchedHandler = null; // Store handler reference for cleanup
+        this.timerRegistry = createTimerRegistry();
     }
 
     /**
@@ -231,9 +233,10 @@ class CombatSummary {
             }
         } else if (tryTimes <= 10) {
             // Retry if element not found
-            setTimeout(() => {
+            const retryTimeout = setTimeout(() => {
                 this.findAndInjectSummary(message, totalPriceAsk, totalPriceBid, totalSkillsExp, tryTimes);
             }, 200);
+            this.timerRegistry.registerTimeout(retryTimeout);
         } else {
             console.error('[Combat Summary] Battle panel not found after 10 tries');
         }
@@ -248,6 +251,7 @@ class CombatSummary {
             this.battleUnitFetchedHandler = null;
         }
 
+        this.timerRegistry.clearAll();
         this.isActive = false;
         this.isInitialized = false;
     }

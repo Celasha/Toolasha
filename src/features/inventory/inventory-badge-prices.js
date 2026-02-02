@@ -11,6 +11,7 @@ import { formatKMB } from '../../utils/formatters.js';
 import dataManager from '../../core/data-manager.js';
 import inventoryBadgeManager from './inventory-badge-manager.js';
 import inventorySort from './inventory-sort.js';
+import { createTimerRegistry } from '../../utils/timer-registry.js';
 
 /**
  * InventoryBadgePrices class manages price badge overlays on inventory items
@@ -25,6 +26,7 @@ class InventoryBadgePrices {
         this.itemsUpdatedHandler = null;
         this.itemsUpdatedDebounceTimer = null; // Debounce timer for items_updated events
         this.DEBOUNCE_DELAY = 300; // 300ms debounce for event handlers
+        this.timerRegistry = createTimerRegistry();
     }
 
     /**
@@ -127,6 +129,8 @@ class InventoryBadgePrices {
                     clearInterval(retryCheck);
                 }
             }, retryInterval);
+
+            this.timerRegistry.registerInterval(retryCheck);
         }
     }
 
@@ -241,6 +245,8 @@ class InventoryBadgePrices {
 
         this.unregisterHandlers.forEach((unregister) => unregister());
         this.unregisterHandlers = [];
+
+        this.timerRegistry.clearAll();
 
         this.currentInventoryElem = null;
         this.isInitialized = false;

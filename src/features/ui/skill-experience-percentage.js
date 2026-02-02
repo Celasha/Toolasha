@@ -6,6 +6,7 @@
 import domObserver from '../../core/dom-observer.js';
 import config from '../../core/config.js';
 import { formatPercentage } from '../../utils/formatters.js';
+import { createTimerRegistry } from '../../utils/timer-registry.js';
 
 class SkillExperiencePercentage {
     constructor() {
@@ -14,6 +15,7 @@ class SkillExperiencePercentage {
         this.processedBars = new Set();
         this.isInitialized = false;
         this.updateInterval = null;
+        this.timerRegistry = createTimerRegistry();
     }
 
     /**
@@ -59,6 +61,7 @@ class SkillExperiencePercentage {
         this.updateInterval = setInterval(() => {
             this.updateAllSkills();
         }, 5000); // 5 seconds (reduced from 1 second for better performance)
+        this.timerRegistry.registerInterval(this.updateInterval);
 
         this.isInitialized = true;
     }
@@ -151,11 +154,8 @@ class SkillExperiencePercentage {
      * Disable the feature
      */
     disable() {
-        // Clear update interval
-        if (this.updateInterval) {
-            clearInterval(this.updateInterval);
-            this.updateInterval = null;
-        }
+        this.timerRegistry.clearAll();
+        this.updateInterval = null;
 
         // Remove all percentage spans
         document.querySelectorAll('.mwi-exp-percentage').forEach((span) => span.remove());

@@ -12,6 +12,7 @@ import { calculateTaskProfit } from './task-profit-calculator.js';
 import { numberFormatter, timeReadable, formatPercentage } from '../../utils/formatters.js';
 import { GAME, TOOLASHA } from '../../utils/selectors.js';
 import { calculateSecondsForActions } from '../../utils/profit-helpers.js';
+import { createTimerRegistry } from '../../utils/timer-registry.js';
 
 // Compiled regex pattern (created once, reused for performance)
 const REGEX_TASK_PROGRESS = /(\d+)\s*\/\s*(\d+)/;
@@ -164,6 +165,7 @@ class TaskProfitDisplay {
         this.pendingTaskNodes = new Set(); // Track task nodes waiting for data
         this.eventListeners = new WeakMap(); // Store listeners for cleanup
         this.isInitialized = false;
+        this.timerRegistry = createTimerRegistry();
     }
 
     /**
@@ -257,9 +259,10 @@ class TaskProfitDisplay {
             if (!data.endCharacterQuests) return;
 
             // Wait for game to update DOM before recalculating profits
-            setTimeout(() => {
+            const updateTimeout = setTimeout(() => {
                 this.updateTaskProfits();
             }, 250);
+            this.timerRegistry.registerTimeout(updateTimeout);
         };
 
         webSocketHook.on('quests_updated', questsHandler);
@@ -282,7 +285,8 @@ class TaskProfitDisplay {
         // Watch for individual tasks appearing
         const unregisterTask = domObserver.onClass('TaskProfitDisplay-Task', 'RandomTask_randomTask', () => {
             // Small delay to let task data settle
-            setTimeout(() => this.updateTaskProfits(), 100);
+            const taskTimeout = setTimeout(() => this.updateTaskProfits(), 100);
+            this.timerRegistry.registerTimeout(taskTimeout);
         });
         this.unregisterHandlers.push(unregisterTask);
     }
@@ -349,6 +353,8 @@ class TaskProfitDisplay {
         // Process all pending tasks
         const pendingNodes = Array.from(this.pendingTaskNodes);
         this.pendingTaskNodes.clear();
+
+        this.timerRegistry.clearAll();
 
         for (const taskNode of pendingNodes) {
             // Check if node still exists in DOM

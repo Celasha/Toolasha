@@ -9,12 +9,14 @@ import dataManager from '../../core/data-manager.js';
 import taskIcons from './task-icons.js';
 import taskIconFilters from './task-icon-filters.js';
 import domObserver from '../../core/dom-observer.js';
+import { createTimerRegistry } from '../../utils/timer-registry.js';
 
 class TaskSorter {
     constructor() {
         this.initialized = false;
         this.sortButton = null;
         this.unregisterObserver = null;
+        this.timerRegistry = createTimerRegistry();
 
         // Task type ordering (combat tasks go to bottom)
         this.TASK_ORDER = {
@@ -223,9 +225,10 @@ class TaskSorter {
 
             // Trigger icon re-processing
             // Use setTimeout to ensure React has finished any re-rendering
-            setTimeout(() => {
+            const iconTimeout = setTimeout(() => {
                 taskIcons.processAllTaskCards();
             }, 100);
+            this.timerRegistry.registerTimeout(iconTimeout);
         }
     }
 
@@ -242,7 +245,12 @@ class TaskSorter {
             this.sortButton.remove();
         }
         this.sortButton = null;
+        this.timerRegistry.clearAll();
         this.initialized = false;
+    }
+
+    disable() {
+        this.cleanup();
     }
 }
 

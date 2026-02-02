@@ -6,12 +6,14 @@
 import config from '../../core/config.js';
 import { calculateNetworth } from './networth-calculator.js';
 import { networthHeaderDisplay, networthInventoryDisplay } from './networth-display.js';
+import { createTimerRegistry } from '../../utils/timer-registry.js';
 
 class NetworthFeature {
     constructor() {
         this.isActive = false;
         this.updateInterval = null;
         this.currentData = null;
+        this.timerRegistry = createTimerRegistry();
     }
 
     /**
@@ -32,6 +34,7 @@ class NetworthFeature {
 
         // Start update interval (every 30 seconds)
         this.updateInterval = setInterval(() => this.recalculate(), 30000);
+        this.timerRegistry.registerInterval(this.updateInterval);
 
         // Initial calculation
         await this.recalculate();
@@ -69,6 +72,8 @@ class NetworthFeature {
             clearInterval(this.updateInterval);
             this.updateInterval = null;
         }
+
+        this.timerRegistry.clearAll();
 
         networthHeaderDisplay.disable();
         networthInventoryDisplay.disable();

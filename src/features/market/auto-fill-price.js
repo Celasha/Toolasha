@@ -5,6 +5,7 @@
 
 import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
+import { createTimerRegistry } from '../../utils/timer-registry.js';
 
 class AutoFillPrice {
     constructor() {
@@ -12,6 +13,7 @@ class AutoFillPrice {
         this.unregisterHandlers = [];
         this.processedModals = new WeakSet(); // Track processed modals to prevent duplicates
         this.isInitialized = false;
+        this.timerRegistry = createTimerRegistry();
     }
 
     /**
@@ -93,9 +95,10 @@ class AutoFillPrice {
         // Only adjust price for buy orders (increment by 1 to outbid)
         // Sell orders use the best sell price as-is (no decrement)
         if (isBuyOrder) {
-            setTimeout(() => {
+            const adjustTimeout = setTimeout(() => {
                 this.adjustPrice(modal, isBuyOrder);
             }, 50);
+            this.timerRegistry.registerTimeout(adjustTimeout);
         }
     }
 
@@ -136,6 +139,7 @@ class AutoFillPrice {
     disable() {
         this.unregisterHandlers.forEach((unregister) => unregister());
         this.unregisterHandlers = [];
+        this.timerRegistry.clearAll();
         this.isActive = false;
         this.isInitialized = false;
     }

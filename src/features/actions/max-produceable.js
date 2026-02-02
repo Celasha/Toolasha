@@ -19,6 +19,7 @@ import { calculateProductionProfit } from './production-profit.js';
 import { formatKMB } from '../../utils/formatters.js';
 import { calculateExpPerHour } from '../../utils/experience-calculator.js';
 import { getDrinkConcentration, parseArtisanBonus } from '../../utils/tea-parser.js';
+import { createTimerRegistry } from '../../utils/timer-registry.js';
 
 /**
  * Action type constants for classification
@@ -61,6 +62,7 @@ class MaxProduceable {
         this.itemsUpdatedDebounceTimer = null; // Debounce timer for items_updated events
         this.actionCompletedDebounceTimer = null; // Debounce timer for action_completed events
         this.DEBOUNCE_DELAY = 300; // 300ms debounce for event handlers
+        this.timerRegistry = createTimerRegistry();
     }
 
     /**
@@ -119,6 +121,7 @@ class MaxProduceable {
             this.profitCalcTimeout = setTimeout(() => {
                 this.updateAllCounts();
             }, 50); // Wait 50ms after last panel appears for better responsiveness
+            this.timerRegistry.registerTimeout(this.profitCalcTimeout);
         });
 
         // Check for existing action panels that may already be open
@@ -133,6 +136,7 @@ class MaxProduceable {
             this.profitCalcTimeout = setTimeout(() => {
                 this.updateAllCounts();
             }, 50); // Fast initial load for better responsiveness
+            this.timerRegistry.registerTimeout(this.profitCalcTimeout);
         }
     }
 
@@ -535,6 +539,8 @@ class MaxProduceable {
             clearTimeout(this.profitCalcTimeout);
             this.profitCalcTimeout = null;
         }
+
+        this.timerRegistry.clearAll();
 
         // CRITICAL: Remove injected DOM elements BEFORE clearing Maps
         // This prevents detached SVG elements from accumulating

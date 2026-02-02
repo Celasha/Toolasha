@@ -7,6 +7,7 @@ import webSocketHook from '../../core/websocket.js';
 import dungeonTrackerStorage from './dungeon-tracker-storage.js';
 import dataManager from '../../core/data-manager.js';
 import storage from '../../core/storage.js';
+import { createTimerRegistry } from '../../utils/timer-registry.js';
 
 class DungeonTracker {
     constructor() {
@@ -33,6 +34,8 @@ class DungeonTracker {
 
         // Hibernation detection (for UI time label switching)
         this.hibernationDetected = false;
+        this.timerRegistry = createTimerRegistry();
+        this.visibilityHandler = null;
 
         // Store handler references for cleanup
         this.handlers = {
@@ -218,7 +221,8 @@ class DungeonTracker {
         this.setupHibernationDetection();
 
         // Check for active dungeon on page load and try to restore state
-        setTimeout(() => this.checkForActiveDungeon(), 1000);
+        const checkTimeout = setTimeout(() => this.checkForActiveDungeon(), 1000);
+        this.timerRegistry.registerTimeout(checkTimeout);
 
         dataManager.on('character_switching', () => {
             this.cleanup();
@@ -232,7 +236,7 @@ class DungeonTracker {
     setupHibernationDetection() {
         let wasHidden = false;
 
-        document.addEventListener('visibilitychange', () => {
+        this.visibilityHandler = () => {
             if (document.hidden) {
                 // Tab hidden or computer going to sleep
                 wasHidden = true;
@@ -247,7 +251,9 @@ class DungeonTracker {
                 this.saveInProgressRun(); // Persist flag to IndexedDB
                 wasHidden = false;
             }
-        });
+        };
+
+        document.addEventListener('visibilitychange', this.visibilityHandler);
     }
 
     /**
@@ -917,7 +923,8 @@ class DungeonTracker {
         this.saveInProgressRun();
 
         // Scan existing chat messages NOW that we're tracking (key counts message already in chat)
-        setTimeout(() => this.scanExistingChatMessages(), 100);
+        const scanTimeout = setTimeout(() => this.scanExistingChatMessages(), 100);
+        this.timerRegistry.registerTimeout(scanTimeout);
     }
 
     /**
@@ -1278,11 +1285,18 @@ class DungeonTracker {
         // Reset hibernation detection
         this.hibernationDetected = false;
 
+        if (this.visibilityHandler) {
+            document.removeEventListener('visibilitychange', this.visibilityHandler);
+            this.visibilityHandler = null;
+        }
+
         // Clear character ID
         this.characterId = null;
 
         // Clear all callbacks
         this.updateCallbacks = [];
+
+        this.timerRegistry.clearAll();
 
         // Clear saved in-progress run
         await this.clearInProgressRun();

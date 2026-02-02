@@ -5,6 +5,7 @@
 
 import dungeonTracker from './dungeon-tracker.js';
 import storage from '../../core/storage.js';
+import { createTimerRegistry } from '../../utils/timer-registry.js';
 
 class DungeonTrackerUIInteractions {
     constructor(state, chartRef, historyRef) {
@@ -13,6 +14,7 @@ class DungeonTrackerUIInteractions {
         this.history = historyRef;
         this.isDragging = false;
         this.dragOffset = { x: 0, y: 0 };
+        this.timerRegistry = createTimerRegistry();
     }
 
     /**
@@ -412,7 +414,8 @@ class DungeonTrackerUIInteractions {
             chartContainer.style.display = 'block';
             // Render chart after becoming visible (longer delay for initial page load)
             if (this.callbacks.onUpdateChart) {
-                setTimeout(() => this.callbacks.onUpdateChart(), 300);
+                const chartTimeout = setTimeout(() => this.callbacks.onUpdateChart(), 300);
+                this.timerRegistry.registerTimeout(chartTimeout);
             }
         }
         if (toggle) toggle.textContent = '▼';
@@ -512,11 +515,17 @@ class DungeonTrackerUIInteractions {
         document.body.appendChild(notification);
 
         // Fade out and remove after 2 seconds
-        setTimeout(() => {
+        const removeTimeout = setTimeout(() => {
             notification.style.transition = 'opacity 0.3s ease';
             notification.style.opacity = '0';
-            setTimeout(() => notification.remove(), 300);
+            const cleanupTimeout = setTimeout(() => notification.remove(), 300);
+            this.timerRegistry.registerTimeout(cleanupTimeout);
         }, 2000);
+        this.timerRegistry.registerTimeout(removeTimeout);
+    }
+
+    cleanup() {
+        this.timerRegistry.clearAll();
     }
 }
 

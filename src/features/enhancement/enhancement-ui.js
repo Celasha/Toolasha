@@ -10,6 +10,7 @@ import dataManager from '../../core/data-manager.js';
 import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
 import { formatPercentage } from '../../utils/formatters.js';
+import { createTimerRegistry } from '../../utils/timer-registry.js';
 
 // UI Style Constants (matching Ultimate Enhancement Tracker)
 const STYLE = {
@@ -72,6 +73,8 @@ class EnhancementUI {
         this.pollInterval = null;
         this.isOnEnhancingScreen = false;
         this.isCollapsed = false; // Track collapsed state
+        this.updateInterval = null;
+        this.timerRegistry = createTimerRegistry();
     }
 
     /**
@@ -85,12 +88,13 @@ class EnhancementUI {
         this.setupScreenObserver();
 
         // Update UI every second during active sessions
-        setInterval(() => {
+        this.updateInterval = setInterval(() => {
             const session = this.getCurrentSession();
             if (session && session.state === SessionState.TRACKING) {
                 this.updateUI();
             }
         }, 1000);
+        this.timerRegistry.registerInterval(this.updateInterval);
     }
 
     /**
@@ -142,6 +146,7 @@ class EnhancementUI {
                 }
             }
         }, 500);
+        this.timerRegistry.registerInterval(this.pollInterval);
     }
 
     /**
@@ -486,9 +491,10 @@ class EnhancementUI {
             this.floatingUI.style.width = '250px';
 
             // Show compact summary after content fades
-            setTimeout(() => {
+            const summaryTimeout = setTimeout(() => {
                 this.showCollapsedSummary();
             }, 200);
+            this.timerRegistry.registerTimeout(summaryTimeout);
         } else {
             // Expanded state
             this.hideCollapsedSummary();
@@ -604,6 +610,7 @@ class EnhancementUI {
             clearTimeout(this.updateDebounce);
         }
         this.updateDebounce = setTimeout(() => this.updateUI(), 100);
+        this.timerRegistry.registerTimeout(this.updateDebounce);
     }
 
     /**
@@ -1007,10 +1014,18 @@ class EnhancementUI {
             this.pollInterval = null;
         }
 
+        if (this.updateInterval) {
+            clearInterval(this.updateInterval);
+            this.updateInterval = null;
+        }
+
+        // Unregister DOM observer
         if (this.unregisterScreenObserver) {
             this.unregisterScreenObserver();
             this.unregisterScreenObserver = null;
         }
+
+        this.timerRegistry.clearAll();
 
         // Remove floating UI from DOM
         if (this.floatingUI && this.floatingUI.parentNode) {

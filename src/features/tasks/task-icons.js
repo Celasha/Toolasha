@@ -9,6 +9,7 @@ import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
 import webSocketHook from '../../core/websocket.js';
 import taskIconFilters from './task-icon-filters.js';
+import { createTimerRegistry } from '../../utils/timer-registry.js';
 
 class TaskIcons {
     constructor() {
@@ -27,6 +28,7 @@ class TaskIcons {
         this.itemsByHrid = null;
         this.actionsByHrid = null;
         this.monstersByHrid = null;
+        this.timerRegistry = createTimerRegistry();
     }
 
     /**
@@ -119,10 +121,11 @@ class TaskIcons {
             }
 
             // Wait for game to update DOM before updating icons
-            setTimeout(() => {
+            const iconsTimeout = setTimeout(() => {
                 this.clearAllProcessedMarkers();
                 this.processAllTaskCards();
             }, 250);
+            this.timerRegistry.registerTimeout(iconsTimeout);
         };
 
         webSocketHook.on('quests_updated', questsHandler);
@@ -562,6 +565,8 @@ class TaskIcons {
         this.itemsByHrid = null;
         this.actionsByHrid = null;
         this.monstersByHrid = null;
+
+        this.timerRegistry.clearAll();
 
         this.initialized = false;
     }
