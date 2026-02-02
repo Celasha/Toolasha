@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.11.0
+// @version      0.12.0
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -933,7 +933,7 @@
                 },
                 taskEfficiencyRating: {
                     id: 'taskEfficiencyRating',
-                    label: 'Show task efficiency rating (tokens/gold per hour)',
+                    label: 'Show task efficiency rating (tokens/profit per hour)',
                     type: 'checkbox',
                     default: true,
                     help: 'Displays a color-graded efficiency score based on expected completion time.',
@@ -942,13 +942,21 @@
                     id: 'taskEfficiencyRatingMode',
                     label: '  └─ Efficiency algorithm',
                     type: 'select',
-                    default: 'tokens',
+                    default: 'gold',
                     options: [
                         { value: 'tokens', label: 'Task tokens per hour' },
-                        { value: 'gold', label: 'Task reward gold value per hour' },
+                        { value: 'gold', label: 'Task profit per hour' },
                     ],
                     dependencies: ['taskEfficiencyRating'],
-                    help: 'Choose whether to rate by task token payout or expected gold value.',
+                    help: 'Choose whether to rate by task token payout or total profit.',
+                },
+                taskEfficiencyGradient: {
+                    id: 'taskEfficiencyGradient',
+                    label: '  └─ Use relative gradient colors',
+                    type: 'checkbox',
+                    default: false,
+                    dependencies: ['taskEfficiencyRating'],
+                    help: 'Colors efficiency ratings relative to visible tasks.',
                 },
                 taskRerollTracker: {
                     id: 'taskRerollTracker',
@@ -3022,7 +3030,7 @@
                     enabled: true,
                     name: 'Task Efficiency Rating',
                     category: 'Tasks',
-                    description: 'Shows tokens or gold value per hour on task cards',
+                    description: 'Shows tokens or profit per hour on task cards',
                     settingKey: 'taskEfficiencyRating',
                 },
                 taskRerollTracker: {
@@ -7881,7 +7889,13 @@
             return null;
         }
 
-        return (value * 100).toFixed(decimals) + '%';
+        const percentage = value * 100;
+        const formatted = new Intl.NumberFormat(undefined, {
+            minimumFractionDigits: decimals,
+            maximumFractionDigits: decimals,
+        }).format(percentage);
+
+        return formatted + '%';
     }
 
     /**
@@ -22544,6 +22558,11 @@
                 // Track used action IDs to prevent duplicate matching (e.g., two identical infinite actions)
                 const usedActionIds = new Set();
 
+                // Mark current action as used so queue actions don't match against it
+                if (currentAction && !isCurrentActionInQueue) {
+                    usedActionIds.add(currentAction.id);
+                }
+
                 for (let divIndex = 0; divIndex < actionDivs.length; divIndex++) {
                     const actionDiv = actionDivs[divIndex];
 
@@ -32127,8 +32146,6 @@
     const REGEX_TASK_PROGRESS = /(\d+)\s*\/\s*(\d+)/;
     const RATING_MODE_TOKENS = 'tokens';
     const RATING_MODE_GOLD = 'gold';
-    const MAX_TOKENS_PER_HOUR = 10;
-    const GOLD_LOG_RANGE = 6;
 
     /**
      * Calculate task completion time in seconds based on task progress and action rates
@@ -32170,20 +32187,16 @@
         const hours = completionSeconds / 3600;
 
         if (ratingMode === RATING_MODE_GOLD) {
-            if (
-                profitData.rewards?.error ||
-                profitData.rewards?.total === null ||
-                profitData.rewards?.total === undefined
-            ) {
+            if (profitData.rewards?.error || profitData.totalProfit === null || profitData.totalProfit === undefined) {
                 return {
                     value: null,
                     unitLabel: 'gold/hr',
-                    error: profitData.rewards?.error || 'Market data not loaded',
+                    error: profitData.rewards?.error || 'Missing price data',
                 };
             }
 
             return {
-                value: profitData.rewards.total / hours,
+                value: profitData.totalProfit / hours,
                 unitLabel: 'gold/hr',
                 error: null,
             };
@@ -32197,28 +32210,75 @@
         };
     }
 
+    const HEX_COLOR_PATTERN = /^#?[0-9a-f]{6}$/i;
+
     /**
-     * Convert a rating value into a gradient color
+     * Convert a hex color to RGB
+     * @param {string} hex - Hex color string
+     * @returns {Object|null} RGB values or null when invalid
+     */
+    function parseHexColor(hex) {
+        if (!hex || !HEX_COLOR_PATTERN.test(hex)) {
+            return null;
+        }
+
+        const normalized = hex.startsWith('#') ? hex.slice(1) : hex;
+        return {
+            r: Number.parseInt(normalized.slice(0, 2), 16),
+            g: Number.parseInt(normalized.slice(2, 4), 16),
+            b: Number.parseInt(normalized.slice(4, 6), 16),
+        };
+    }
+
+    /**
+     * Convert RGB values to a CSS color string
+     * @param {Object} rgb - RGB values
+     * @returns {string} CSS rgb color string
+     */
+    function formatRgbColor({ r, g, b }) {
+        return `rgb(${r}, ${g}, ${b})`;
+    }
+
+    /**
+     * Interpolate between two RGB colors
+     * @param {Object} startColor - RGB start color
+     * @param {Object} endColor - RGB end color
+     * @param {number} ratio - Interpolation ratio
+     * @returns {Object} RGB color
+     */
+    function interpolateRgbColor(startColor, endColor, ratio) {
+        return {
+            r: Math.round(startColor.r + (endColor.r - startColor.r) * ratio),
+            g: Math.round(startColor.g + (endColor.g - startColor.g) * ratio),
+            b: Math.round(startColor.b + (endColor.b - startColor.b) * ratio),
+        };
+    }
+
+    /**
+     * Convert a rating value into a relative gradient color
      * @param {number} value - Rating value
-     * @param {string} ratingMode - Rating mode (tokens or gold)
+     * @param {number} minValue - Minimum rating value
+     * @param {number} maxValue - Maximum rating value
+     * @param {string} minColor - CSS color for lowest value
+     * @param {string} maxColor - CSS color for highest value
      * @param {string} fallbackColor - Color to use when value is invalid
      * @returns {string} CSS color value
      */
-    function getEfficiencyGradientColor(value, ratingMode, fallbackColor) {
-        if (!Number.isFinite(value) || value <= 0) {
+    function getRelativeEfficiencyGradientColor(value, minValue, maxValue, minColor, maxColor, fallbackColor) {
+        if (!Number.isFinite(value) || !Number.isFinite(minValue) || !Number.isFinite(maxValue) || maxValue <= minValue) {
             return fallbackColor;
         }
 
-        let normalized = 0;
-        if (ratingMode === RATING_MODE_GOLD) {
-            normalized = Math.log10(value + 1) / GOLD_LOG_RANGE;
-        } else {
-            normalized = value / MAX_TOKENS_PER_HOUR;
+        const startColor = parseHexColor(minColor);
+        const endColor = parseHexColor(maxColor);
+        if (!startColor || !endColor) {
+            return fallbackColor;
         }
 
+        const normalized = (value - minValue) / (maxValue - minValue);
         const clamped = Math.min(Math.max(normalized, 0), 1);
-        const hue = Math.round(120 * clamped);
-        return `hsl(${hue} 70% 50%)`;
+        const blendedColor = interpolateRgbColor(startColor, endColor, clamped);
+        return formatRgbColor(blendedColor);
     }
 
     /**
@@ -32256,6 +32316,12 @@
             config.onSettingChange('taskEfficiencyRatingMode', () => {
                 if (this.isInitialized) {
                     this.updateTaskProfits(true);
+                }
+            });
+
+            config.onSettingChange('taskEfficiencyGradient', () => {
+                if (this.isInitialized) {
+                    this.updateEfficiencyGradientColors();
                 }
             });
 
@@ -32688,6 +32754,8 @@
 
             profitContainer.appendChild(profitLine);
 
+            profitContainer.appendChild(breakdownSection);
+
             if (config.getSetting('taskEfficiencyRating')) {
                 const ratingMode = config.getSettingValue('taskEfficiencyRatingMode', RATING_MODE_TOKENS);
                 const ratingData = calculateTaskEfficiencyRating(profitData, ratingMode);
@@ -32701,20 +32769,82 @@
                     ratingLine.textContent = `⚡ --${warningText} ${ratingData?.unitLabel || ''}`.trim();
                 } else {
                     const ratingValue = numberFormatter(ratingData.value, 2);
-                    const ratingColor = getEfficiencyGradientColor(
-                        ratingData.value,
-                        ratingMode,
-                        config.COLOR_TEXT_SECONDARY
-                    );
-                    ratingLine.style.color = ratingColor;
+                    ratingLine.dataset.ratingValue = `${ratingData.value}`;
+                    ratingLine.dataset.ratingMode = ratingMode;
+                    ratingLine.style.color = config.COLOR_ACCENT;
                     ratingLine.textContent = `⚡ ${ratingValue} ${ratingData.unitLabel}`;
                 }
 
                 profitContainer.appendChild(ratingLine);
             }
-
-            profitContainer.appendChild(breakdownSection);
             actionNode.appendChild(profitContainer);
+
+            this.updateEfficiencyGradientColors();
+        }
+
+        /**
+         * Update efficiency rating colors based on relative performance
+         */
+        updateEfficiencyGradientColors() {
+            const ratingMode = config.getSettingValue('taskEfficiencyRatingMode', RATING_MODE_TOKENS);
+            const ratingLines = Array.from(document.querySelectorAll('.mwi-task-profit-rating')).filter((line) => {
+                return line.dataset.ratingMode === ratingMode && line.dataset.ratingValue;
+            });
+
+            if (ratingLines.length === 0) {
+                return;
+            }
+
+            const ratingValues = ratingLines
+                .map((line) => Number.parseFloat(line.dataset.ratingValue))
+                .filter((value) => Number.isFinite(value));
+
+            if (ratingValues.length === 0) {
+                return;
+            }
+
+            if (!config.getSetting('taskEfficiencyGradient')) {
+                ratingLines.forEach((line) => {
+                    line.style.color = config.COLOR_ACCENT;
+                });
+                return;
+            }
+
+            if (ratingValues.length === 1) {
+                ratingLines.forEach((line) => {
+                    line.style.color = config.COLOR_ACCENT;
+                });
+                return;
+            }
+
+            const sortedValues = [...ratingValues].sort((a, b) => a - b);
+            const lastIndex = sortedValues.length - 1;
+            const percentileLookup = new Map();
+            const resolvedPercentile = (value) => {
+                if (percentileLookup.has(value)) {
+                    return percentileLookup.get(value);
+                }
+
+                const firstIndex = sortedValues.indexOf(value);
+                const lastValueIndex = sortedValues.lastIndexOf(value);
+                const averageRank = (firstIndex + lastValueIndex) / 2;
+                const percentile = lastIndex > 0 ? averageRank / lastIndex : 1;
+                percentileLookup.set(value, percentile);
+                return percentile;
+            };
+
+            ratingLines.forEach((line) => {
+                const value = Number.parseFloat(line.dataset.ratingValue);
+                const percentile = resolvedPercentile(value);
+                line.style.color = getRelativeEfficiencyGradientColor(
+                    percentile,
+                    0,
+                    1,
+                    config.COLOR_LOSS,
+                    config.COLOR_ACCENT,
+                    config.COLOR_ACCENT
+                );
+            });
         }
 
         /**
@@ -49997,7 +50127,7 @@
         const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
         targetWindow.Toolasha = {
-            version: '0.11.0',
+            version: '0.12.0',
 
             // Feature toggle API (for users to manage settings via console)
             features: {
