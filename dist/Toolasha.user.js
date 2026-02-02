@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.12.0
+// @version      0.12.1
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -22558,9 +22558,30 @@
                 // Track used action IDs to prevent duplicate matching (e.g., two identical infinite actions)
                 const usedActionIds = new Set();
 
-                // Mark current action as used so queue actions don't match against it
-                if (currentAction && !isCurrentActionInQueue) {
+                console.log(
+                    '[Action Time Display] All cached actions:',
+                    currentActions.map((a) => ({
+                        id: a.id,
+                        actionHrid: a.actionHrid,
+                        hasMaxCount: a.hasMaxCount,
+                        maxCount: a.maxCount,
+                        currentCount: a.currentCount,
+                        name: dataManager.getActionDetails(a.actionHrid)?.name,
+                    }))
+                );
+
+                // CRITICAL FIX: Always mark current action as used to prevent queue from matching it
+                // The isCurrentActionInQueue flag only controls whether we add current action time to total
+                if (currentAction) {
                     usedActionIds.add(currentAction.id);
+                    console.log('[Action Time Display] Marked current action as used:', {
+                        actionHrid: currentAction.actionHrid,
+                        actionId: currentAction.id,
+                        isCurrentActionInQueue: isCurrentActionInQueue,
+                        hasMaxCount: currentAction.hasMaxCount,
+                        maxCount: currentAction.maxCount,
+                        currentCount: currentAction.currentCount,
+                    });
                 }
 
                 for (let divIndex = 0; divIndex < actionDivs.length; divIndex++) {
@@ -22648,6 +22669,14 @@
                     let count = 0;
                     if (!isInfinite) {
                         count = actionObj.maxCount - actionObj.currentCount;
+                        console.log('[Action Time Display] Queue finite action matched:', {
+                            divIndex,
+                            actionHrid: actionObj.actionHrid,
+                            actionId: actionObj.id,
+                            maxCount: actionObj.maxCount,
+                            currentCount: actionObj.currentCount,
+                            calculatedCount: count,
+                        });
                     } else if (materialLimit !== null) {
                         count = materialLimit;
                     }
@@ -43535,12 +43564,17 @@
             this.observer = null;
             this.lastSeenDungeonName = null; // Cache last known dungeon name
             this.cumulativeStatsByDungeon = {}; // Persistent cumulative counters for rolling averages
+            this.processedMessages = new Map(); // Track processed messages to prevent duplicate counting
+            this.initComplete = false; // Flag to ensure storage loads before annotation
         }
 
         /**
          * Initialize chat annotation monitor
          */
-        initialize() {
+        async initialize() {
+            // Load run counts from storage to sync with UI
+            await this.loadRunCountsFromStorage();
+
             // Wait for chat to be available
             this.waitForChat();
 
@@ -43548,6 +43582,47 @@
             dataManager.on('character_switching', () => {
                 this.cleanup();
             });
+        }
+
+        /**
+         * Load run counts from storage to keep chat and UI in sync
+         */
+        async loadRunCountsFromStorage() {
+            try {
+                // Get all runs from unified storage
+                const allRuns = await dungeonTrackerStorage.getAllRuns();
+
+                // Extract unique dungeon names
+                const uniqueDungeonNames = [...new Set(allRuns.map((run) => run.dungeonName))];
+
+                // Load stats for each dungeon
+                for (const dungeonName of uniqueDungeonNames) {
+                    const stats = await dungeonTrackerStorage.getStatsByName(dungeonName);
+                    if (stats && stats.totalRuns > 0) {
+                        this.cumulativeStatsByDungeon[dungeonName] = {
+                            runCount: stats.totalRuns,
+                            totalTime: stats.avgTime * stats.totalRuns, // Reconstruct total time
+                        };
+                    }
+                }
+
+                this.initComplete = true;
+                console.log('[Dungeon Tracker] Loaded run counts from storage:', this.cumulativeStatsByDungeon);
+            } catch (error) {
+                console.error('[Dungeon Tracker] Failed to load run counts from storage:', error);
+                this.initComplete = true; // Continue anyway
+            }
+        }
+
+        /**
+         * Refresh run counts after backfill operation
+         */
+        async refreshRunCounts() {
+            console.log('[Dungeon Tracker] Refreshing run counts after backfill...');
+            this.cumulativeStatsByDungeon = {};
+            this.processedMessages.clear();
+            await this.loadRunCountsFromStorage();
+            await this.annotateAllMessages();
         }
 
         /**
@@ -43622,6 +43697,24 @@
         async annotateAllMessages() {
             if (!this.enabled || !config.isFeatureEnabled('dungeonTracker')) {
                 return;
+            }
+
+            // Wait for initialization to complete to ensure run counts are loaded
+            if (!this.initComplete) {
+                await new Promise((resolve) => {
+                    const checkInterval = setInterval(() => {
+                        if (this.initComplete) {
+                            clearInterval(checkInterval);
+                            resolve();
+                        }
+                    }, 50);
+
+                    // Timeout after 5 seconds
+                    setTimeout(() => {
+                        clearInterval(checkInterval);
+                        resolve();
+                    }, 5000);
+                });
             }
 
             const events = this.extractChatEvents();
@@ -43701,6 +43794,9 @@
                     const isSuccessfulRun = diff && dungeonName && dungeonName !== 'Unknown' && !nextRunWasCanceled;
 
                     if (isSuccessfulRun) {
+                        // Create unique message ID to prevent duplicate counting on scroll
+                        const messageId = `${e.timestamp.getTime()}_${dungeonName}`;
+
                         // Initialize dungeon tracking if needed
                         if (!this.cumulativeStatsByDungeon[dungeonName]) {
                             this.cumulativeStatsByDungeon[dungeonName] = {
@@ -43709,13 +43805,20 @@
                             };
                         }
 
-                        // Add this run to cumulative totals
                         const dungeonStats = this.cumulativeStatsByDungeon[dungeonName];
-                        dungeonStats.runCount++;
-                        dungeonStats.totalTime += diff;
 
-                        // Add run number to label for successful runs
-                        label = `Run #${dungeonStats.runCount}: ${label}`;
+                        // Check if this message was already counted
+                        if (this.processedMessages.has(messageId)) {
+                            // Already counted, use stored run number
+                            const storedRunNumber = this.processedMessages.get(messageId);
+                            label = `Run #${storedRunNumber}: ${label}`;
+                        } else {
+                            // New message, increment counter and store
+                            dungeonStats.runCount++;
+                            dungeonStats.totalTime += diff;
+                            this.processedMessages.set(messageId, dungeonStats.runCount);
+                            label = `Run #${dungeonStats.runCount}: ${label}`;
+                        }
                     }
 
                     // Mark as processed BEFORE inserting (matches working DRT script)
@@ -44143,6 +44246,8 @@
             // Clear cached state
             this.lastSeenDungeonName = null;
             this.cumulativeStatsByDungeon = {}; // Reset cumulative counters
+            this.processedMessages.clear(); // Clear message deduplication map
+            this.initComplete = false; // Reset init flag
             this.enabled = true; // Reset to default enabled state
 
             // Remove all annotations from DOM
@@ -50127,7 +50232,7 @@
         const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
         targetWindow.Toolasha = {
-            version: '0.12.0',
+            version: '0.12.1',
 
             // Feature toggle API (for users to manage settings via console)
             features: {
