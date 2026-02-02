@@ -1203,9 +1203,30 @@ class ActionTimeDisplay {
             // Track used action IDs to prevent duplicate matching (e.g., two identical infinite actions)
             const usedActionIds = new Set();
 
-            // Mark current action as used so queue actions don't match against it
-            if (currentAction && !isCurrentActionInQueue) {
+            console.log(
+                '[Action Time Display] All cached actions:',
+                currentActions.map((a) => ({
+                    id: a.id,
+                    actionHrid: a.actionHrid,
+                    hasMaxCount: a.hasMaxCount,
+                    maxCount: a.maxCount,
+                    currentCount: a.currentCount,
+                    name: dataManager.getActionDetails(a.actionHrid)?.name,
+                }))
+            );
+
+            // CRITICAL FIX: Always mark current action as used to prevent queue from matching it
+            // The isCurrentActionInQueue flag only controls whether we add current action time to total
+            if (currentAction) {
                 usedActionIds.add(currentAction.id);
+                console.log('[Action Time Display] Marked current action as used:', {
+                    actionHrid: currentAction.actionHrid,
+                    actionId: currentAction.id,
+                    isCurrentActionInQueue: isCurrentActionInQueue,
+                    hasMaxCount: currentAction.hasMaxCount,
+                    maxCount: currentAction.maxCount,
+                    currentCount: currentAction.currentCount,
+                });
             }
 
             for (let divIndex = 0; divIndex < actionDivs.length; divIndex++) {
@@ -1293,6 +1314,14 @@ class ActionTimeDisplay {
                 let count = 0;
                 if (!isInfinite) {
                     count = actionObj.maxCount - actionObj.currentCount;
+                    console.log('[Action Time Display] Queue finite action matched:', {
+                        divIndex,
+                        actionHrid: actionObj.actionHrid,
+                        actionId: actionObj.id,
+                        maxCount: actionObj.maxCount,
+                        currentCount: actionObj.currentCount,
+                        calculatedCount: count,
+                    });
                 } else if (materialLimit !== null) {
                     count = materialLimit;
                 }
