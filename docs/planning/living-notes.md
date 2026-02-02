@@ -40,6 +40,11 @@
 - Action panel debounces now use timer registry cleanup.
 - Networth polling now uses timer registry cleanup.
 - Remaining profile/market/task timers now use registry cleanup.
+- Verified dungeon tracker, combat score, and action panel observer cleanup lifecycle.
+- House panel observer now has a disable hook and cleanup registry coverage.
+- Enhancement tracker UI now cleans up drag listeners on teardown.
+- Combat sim integration now exposes disable cleanup and timers are cleared.
+- Core retry timers are now tracked and cleanable (data-manager/websocket), with storage pending-write cleanup added.
 
 ### What Could Be Better
 

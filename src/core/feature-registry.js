@@ -620,6 +620,7 @@ function setupCharacterSwitchHandler() {
     // Guard against overlapping switches
     let isSwitching = false;
     let reinitScheduled = false;
+    let reinitTimeoutId = null;
 
     // Handle character_switching event (cleanup phase)
     dataManager.on('character_switching', async (data) => {
@@ -694,6 +695,10 @@ function setupCharacterSwitchHandler() {
                 // Reset flags to allow next switch
                 isSwitching = false;
                 reinitScheduled = false;
+                if (reinitTimeoutId) {
+                    clearTimeout(reinitTimeoutId);
+                    reinitTimeoutId = null;
+                }
             }
         };
 
@@ -702,7 +707,10 @@ function setupCharacterSwitchHandler() {
             requestIdleCallback(() => reinit(), { timeout: 2000 });
         } else {
             // Fallback for browsers without requestIdleCallback
-            setTimeout(() => reinit(), 300); // Longer delay for game to stabilize
+            if (reinitTimeoutId) {
+                clearTimeout(reinitTimeoutId);
+            }
+            reinitTimeoutId = setTimeout(() => reinit(), 300); // Longer delay for game to stabilize
         }
     });
 }

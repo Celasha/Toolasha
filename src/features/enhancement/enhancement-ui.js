@@ -75,6 +75,10 @@ class EnhancementUI {
         this.isCollapsed = false; // Track collapsed state
         this.updateInterval = null;
         this.timerRegistry = createTimerRegistry();
+        this.dragHandle = null;
+        this.dragMouseDownHandler = null;
+        this.dragMoveHandler = null;
+        this.dragUpHandler = null;
     }
 
     /**
@@ -442,35 +446,49 @@ class EnhancementUI {
         let offsetX = 0;
         let offsetY = 0;
 
-        header.addEventListener('mousedown', (e) => {
+        const onMouseMove = (event) => {
+            if (this.isDragging) {
+                const newLeft = event.clientX - offsetX;
+                const newTop = event.clientY - offsetY;
+
+                // Use absolute positioning during drag
+                this.floatingUI.style.left = `${newLeft}px`;
+                this.floatingUI.style.right = 'auto';
+                this.floatingUI.style.top = `${newTop}px`;
+            }
+        };
+
+        const onMouseUp = () => {
+            this.isDragging = false;
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('mouseup', onMouseUp);
+            this.dragMoveHandler = null;
+            this.dragUpHandler = null;
+        };
+
+        const onMouseDown = (event) => {
             this.isDragging = true;
 
             // Calculate offset from panel's current screen position
             const rect = this.floatingUI.getBoundingClientRect();
-            offsetX = e.clientX - rect.left;
-            offsetY = e.clientY - rect.top;
+            offsetX = event.clientX - rect.left;
+            offsetY = event.clientY - rect.top;
 
-            const onMouseMove = (e) => {
-                if (this.isDragging) {
-                    const newLeft = e.clientX - offsetX;
-                    const newTop = e.clientY - offsetY;
-
-                    // Use absolute positioning during drag
-                    this.floatingUI.style.left = `${newLeft}px`;
-                    this.floatingUI.style.right = 'auto';
-                    this.floatingUI.style.top = `${newTop}px`;
-                }
-            };
-
-            const onMouseUp = () => {
-                this.isDragging = false;
-                document.removeEventListener('mousemove', onMouseMove);
-                document.removeEventListener('mouseup', onMouseUp);
-            };
+            this.dragMoveHandler = onMouseMove;
+            this.dragUpHandler = onMouseUp;
 
             document.addEventListener('mousemove', onMouseMove);
             document.addEventListener('mouseup', onMouseUp);
-        });
+        };
+
+        if (this.dragHandle && this.dragMouseDownHandler) {
+            this.dragHandle.removeEventListener('mousedown', this.dragMouseDownHandler);
+        }
+
+        this.dragHandle = header;
+        this.dragMouseDownHandler = onMouseDown;
+
+        header.addEventListener('mousedown', onMouseDown);
     }
 
     /**
@@ -1024,6 +1042,23 @@ class EnhancementUI {
             this.unregisterScreenObserver();
             this.unregisterScreenObserver = null;
         }
+
+        if (this.dragMoveHandler) {
+            document.removeEventListener('mousemove', this.dragMoveHandler);
+            this.dragMoveHandler = null;
+        }
+
+        if (this.dragUpHandler) {
+            document.removeEventListener('mouseup', this.dragUpHandler);
+            this.dragUpHandler = null;
+        }
+
+        if (this.dragHandle && this.dragMouseDownHandler) {
+            this.dragHandle.removeEventListener('mousedown', this.dragMouseDownHandler);
+        }
+
+        this.dragHandle = null;
+        this.dragMouseDownHandler = null;
 
         this.timerRegistry.clearAll();
 

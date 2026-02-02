@@ -354,6 +354,19 @@ class Storage {
         }
         this.pendingWrites.clear();
     }
+
+    /**
+     * Cleanup pending debounced writes without flushing
+     */
+    cleanupPendingWrites() {
+        for (const timer of this.saveDebounceTimers.values()) {
+            if (timer) {
+                clearTimeout(timer);
+            }
+        }
+        this.saveDebounceTimers.clear();
+        this.pendingWrites.clear();
+    }
 }
 
 const storage = new Storage();

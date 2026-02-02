@@ -13,6 +13,7 @@ class WebSocketHook {
         this.messageHandlers = new Map();
         // Detect if userscript manager is present (Tampermonkey, Greasemonkey, etc.)
         this.hasScriptManager = typeof GM_info !== 'undefined';
+        this.clientDataRetryTimeout = null;
     }
 
     /**
@@ -207,7 +208,7 @@ class WebSocketHook {
             // Use official game API instead of manual localStorage access
             if (typeof localStorageUtil === 'undefined' || typeof localStorageUtil.getInitClientData !== 'function') {
                 // API not ready yet, retry
-                setTimeout(() => this.captureClientDataFromLocalStorage(), 2000);
+                this.scheduleClientDataRetry();
                 return;
             }
 
@@ -215,7 +216,7 @@ class WebSocketHook {
             const clientDataObj = localStorageUtil.getInitClientData();
             if (!clientDataObj || Object.keys(clientDataObj).length === 0) {
                 // Data not available yet, retry
-                setTimeout(() => this.captureClientDataFromLocalStorage(), 2000);
+                this.scheduleClientDataRetry();
                 return;
             }
 
@@ -224,12 +225,39 @@ class WebSocketHook {
                 // Save as JSON string for Combat Sim export
                 const clientDataStr = JSON.stringify(clientDataObj);
                 await this.saveToStorage('toolasha_init_client_data', clientDataStr);
+                console.log('[Toolasha] Client data captured from localStorage via official API');
+                this.clearClientDataRetry();
             }
         } catch (error) {
             console.error('[WebSocket] Failed to capture client data from localStorage:', error);
             // Retry on error
-            setTimeout(() => this.captureClientDataFromLocalStorage(), 2000);
+            this.scheduleClientDataRetry();
         }
+    }
+
+    /**
+     * Schedule a retry for client data capture
+     */
+    scheduleClientDataRetry() {
+        this.clearClientDataRetry();
+        this.clientDataRetryTimeout = setTimeout(() => this.captureClientDataFromLocalStorage(), 2000);
+    }
+
+    /**
+     * Clear any pending client data retry
+     */
+    clearClientDataRetry() {
+        if (this.clientDataRetryTimeout) {
+            clearTimeout(this.clientDataRetryTimeout);
+            this.clientDataRetryTimeout = null;
+        }
+    }
+
+    /**
+     * Cleanup any pending retry timeouts
+     */
+    cleanup() {
+        this.clearClientDataRetry();
     }
 
     /**

@@ -79,6 +79,11 @@ Provide a long-term, trackable plan to remediate cross-cutting codebase patterns
 - Standardized action panel debounced timers (profit, sort, enhancements)
 - Standardized networth polling via timer registry
 - Standardized remaining profile/market/task timers via registry
+- Verified lifecycle cleanup for dungeon tracker, combat score, and action panel observer
+- Added lifecycle disable hook and cleanup registry usage to house panel observer
+- Added drag listener cleanup to enhancement tracker UI
+- Added disable cleanup for combat sim integration and verified house cost display storage usage
+- Hardened core retry timers (data-manager/websocket) and reinit fallback tracking; added storage pending-write cleanup
 
 ### Phase 3 — Storage Consistency
 

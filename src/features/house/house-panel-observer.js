@@ -8,11 +8,12 @@ import houseCostCalculator from './house-cost-calculator.js';
 import houseCostDisplay from './house-cost-display.js';
 import dataManager from '../../core/data-manager.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
+import { createCleanupRegistry } from '../../utils/cleanup-registry.js';
 
 class HousePanelObserver {
     constructor() {
         this.isActive = false;
-        this.unregisterHandlers = [];
+        this.cleanupRegistry = createCleanupRegistry();
         this.processedCards = new WeakSet();
     }
 
@@ -46,7 +47,7 @@ class HousePanelObserver {
                 this.handleHouseModal(modalContent);
             }
         );
-        this.unregisterHandlers.push(unregisterModal);
+        this.cleanupRegistry.registerCleanup(unregisterModal);
     }
 
     /**
@@ -55,7 +56,10 @@ class HousePanelObserver {
      */
     async handleHouseModal(modalContent) {
         // Wait a moment for content to fully load
-        await new Promise((resolve) => setTimeout(resolve, 100));
+        await new Promise((resolve) => {
+            const loadTimeout = setTimeout(resolve, 100);
+            this.cleanupRegistry.registerTimeout(loadTimeout);
+        });
 
         // Modal shows one room at a time, not a grid
         // Process the currently displayed room
@@ -143,26 +147,22 @@ class HousePanelObserver {
                 characterData: true,
             }
         );
+        this.cleanupRegistry.registerCleanup(observer);
+    }
 
-        // Store observer for cleanup
-        if (!this.modalObservers) {
-            this.modalObservers = [];
-        }
-        this.modalObservers.push(observer);
+    /**
+     * Disable the observer
+     */
+    disable() {
+        this.cleanup();
     }
 
     /**
      * Clean up observers
      */
     cleanup() {
-        this.unregisterHandlers.forEach((unregister) => unregister());
-        this.unregisterHandlers = [];
-
-        if (this.modalObservers) {
-            this.modalObservers.forEach((observer) => observer());
-            this.modalObservers = [];
-        }
-
+        this.cleanupRegistry.cleanupAll();
+        this.cleanupRegistry = createCleanupRegistry();
         this.processedCards = new WeakSet();
         this.isActive = false;
     }

@@ -46,6 +46,7 @@ class DataManager {
 
         // Retry interval for loading static game data
         this.loadRetryInterval = null;
+        this.fallbackInterval = null;
 
         // Setup WebSocket message handlers
         this.setupMessageHandlers();
@@ -56,6 +57,8 @@ class DataManager {
      * Call this after game loads (or immediately - will retry if needed)
      */
     initialize() {
+        this.cleanupIntervals();
+
         // Try to load static game data using official API
         const success = this.tryLoadStaticData();
 
@@ -63,9 +66,7 @@ class DataManager {
         if (!success && !this.loadRetryInterval) {
             this.loadRetryInterval = setInterval(() => {
                 if (this.tryLoadStaticData()) {
-                    // Success! Stop retrying
-                    clearInterval(this.loadRetryInterval);
-                    this.loadRetryInterval = null;
+                    this.cleanupIntervals();
                 }
             }, 500); // Retry every 500ms
         }
@@ -75,19 +76,26 @@ class DataManager {
         let fallbackAttempts = 0;
         const maxAttempts = 20; // Poll for up to 10 seconds (20 × 500ms)
 
-        const fallbackInterval = setInterval(() => {
+        const stopFallbackInterval = () => {
+            if (this.fallbackInterval) {
+                clearInterval(this.fallbackInterval);
+                this.fallbackInterval = null;
+            }
+        };
+
+        this.fallbackInterval = setInterval(() => {
             fallbackAttempts++;
 
             // Stop if character data received via WebSocket
             if (this.characterData) {
-                clearInterval(fallbackInterval);
+                stopFallbackInterval();
                 return;
             }
 
             // Give up after max attempts
             if (fallbackAttempts >= maxAttempts) {
                 console.warn('[DataManager] Fallback polling timeout after', maxAttempts, 'attempts (10 seconds)');
-                clearInterval(fallbackInterval);
+                stopFallbackInterval();
                 return;
             }
 
@@ -124,7 +132,7 @@ class DataManager {
                             this.emit('character_initialized', characterData);
 
                             // Stop polling
-                            clearInterval(fallbackInterval);
+                            stopFallbackInterval();
                         }
                     }
                 } catch (error) {
@@ -132,6 +140,21 @@ class DataManager {
                 }
             }
         }, 500); // Check every 500ms
+    }
+
+    /**
+     * Cleanup polling intervals
+     */
+    cleanupIntervals() {
+        if (this.loadRetryInterval) {
+            clearInterval(this.loadRetryInterval);
+            this.loadRetryInterval = null;
+        }
+
+        if (this.fallbackInterval) {
+            clearInterval(this.fallbackInterval);
+            this.fallbackInterval = null;
+        }
     }
 
     /**

@@ -19,6 +19,7 @@ function isSteamClient() {
 }
 
 const timerRegistry = createTimerRegistry();
+const IMPORT_CONTAINER_ID = 'toolasha-import-container';
 
 /**
  * Initialize combat sim integration (runs on sim page only)
@@ -29,10 +30,22 @@ export function initialize() {
         return;
     }
 
-    timerRegistry.clearAll();
+    disable();
 
     // Wait for simulator UI to load
     waitForSimulatorUI();
+}
+
+/**
+ * Disable combat sim integration and cleanup injected UI
+ */
+export function disable() {
+    timerRegistry.clearAll();
+
+    const container = document.getElementById(IMPORT_CONTAINER_ID);
+    if (container) {
+        container.remove();
+    }
 }
 
 /**
@@ -66,6 +79,7 @@ function injectImportButton(exportButton) {
 
     // Create container div
     const container = document.createElement('div');
+    container.id = IMPORT_CONTAINER_ID;
     container.style.marginTop = '10px';
 
     // Create import button

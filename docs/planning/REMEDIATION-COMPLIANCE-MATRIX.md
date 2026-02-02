@@ -46,7 +46,7 @@ This matrix tracks feature compliance against remediation focus areas:
 
 | Feature Key                    | Module                                | Lifecycle | Observer | Timer | Storage | Flags | Notes                                         |
 | ------------------------------ | ------------------------------------- | --------- | -------- | ----- | ------- | ----- | --------------------------------------------- |
-| actionPanelProfit              | `actions/panel-observer.js`           | ✅        | ✅       | ✅    | —       | OBS   | Uses timer registry for panel debounce.       |
+| actionPanelProfit              | `actions/panel-observer.js`           | ✅        | ✅       | ✅    | —       | OBS   | Verified cleanup via disablePanelObserver.    |
 | actionTimeDisplay              | `actions/action-time-display.js`      | ✅        | ✅       | ✅    | —       | OBS   | Uses timer registry for panel retry.          |
 | quickInputButtons              | `actions/quick-input-buttons.js`      | ✅        | ✅       | —     | —       | OBS   | Uses mutation watcher for input updates.      |
 | actionPanel_outputTotals       | `actions/output-totals.js`            | ✅        | —        | —     | —       | —     | cleanup helper present.                       |
@@ -58,14 +58,14 @@ This matrix tracks feature compliance against remediation focus areas:
 
 ## Combat Features
 
-| Feature Key           | Module                                              | Lifecycle | Observer | Timer | Storage | Flags                 | Notes                                   |
-| --------------------- | --------------------------------------------------- | --------- | -------- | ----- | ------- | --------------------- | --------------------------------------- |
-| abilityBookCalculator | `abilities/ability-book-calculator.js`              | ✅        | —        | —     | —       | —                     |                                         |
-| zoneIndices           | `combat/zone-indices.js`                            | ✅        | —        | —     | —       | —                     |                                         |
-| combatScore           | `profile/combat-score.js`                           | ✅        | ✅       | ✅    | —       | OBS                   | Uses timer registry for button resets.  |
-| characterCard         | `profile/character-card-button.js`                  | ✅        | —        | ✅    | —       | TIMER                 | Uses timer registry for profile wait.   |
-| dungeonTracker        | `combat/dungeon-tracker.js` + UI + chat annotations | ⚠️        | ✅       | ✅    | —       | LIFECYCLE, OBS, TIMER | Uses mutation watcher + timer registry. |
-| combatSummary         | `combat/combat-summary.js`                          | ✅        | —        | ✅    | —       | TIMER                 | Uses timer registry for retry.          |
+| Feature Key           | Module                                              | Lifecycle | Observer | Timer | Storage | Flags | Notes                                       |
+| --------------------- | --------------------------------------------------- | --------- | -------- | ----- | ------- | ----- | ------------------------------------------- |
+| abilityBookCalculator | `abilities/ability-book-calculator.js`              | ✅        | —        | —     | —       | —     |                                             |
+| zoneIndices           | `combat/zone-indices.js`                            | ✅        | —        | —     | —       | —     |                                             |
+| combatScore           | `profile/combat-score.js`                           | ✅        | ✅       | ✅    | —       | OBS   | Verified cleanup via disable.               |
+| characterCard         | `profile/character-card-button.js`                  | ✅        | —        | ✅    | —       | TIMER | Uses timer registry for profile wait.       |
+| dungeonTracker        | `combat/dungeon-tracker.js` + UI + chat annotations | ✅        | ✅       | ✅    | —       | OBS   | Cleanup verified (cleanup resets handlers). |
+| combatSummary         | `combat/combat-summary.js`                          | ✅        | —        | ✅    | —       | TIMER | Uses timer registry for retry.              |
 
 ## UI Features
 
@@ -93,9 +93,9 @@ This matrix tracks feature compliance against remediation focus areas:
 
 ## House Features
 
-| Feature Key      | Module                          | Lifecycle | Observer | Timer | Storage | Flags          | Notes                                          |
-| ---------------- | ------------------------------- | --------- | -------- | ----- | ------- | -------------- | ---------------------------------------------- |
-| houseCostDisplay | `house/house-panel-observer.js` | ⚠️        | ✅       | —     | —       | LIFECYCLE, OBS | Uses createMutationWatcher; disable not found. |
+| Feature Key      | Module                          | Lifecycle | Observer | Timer | Storage | Flags | Notes                                    |
+| ---------------- | ------------------------------- | --------- | -------- | ----- | ------- | ----- | ---------------------------------------- |
+| houseCostDisplay | `house/house-panel-observer.js` | ✅        | ✅       | —     | —       | OBS   | Uses cleanup registry with disable hook. |
 
 ## Economy Features
 
@@ -133,13 +133,14 @@ These modules are not directly registered as features but affect remediation sco
 | `settings/settings-ui.js`          | ✅       | —     | —       | IndexedDB storage; uses createMutationWatcher.                         |
 | `tasks/task-icon-filters.js`       | ✅       | —     | ✅      | Uses storage module; localStorage only for one-time migration cleanup. |
 | `combat/combat-sim-export.js`      | —        | —     | —       | Relies on dataManager fallback.                                        |
-| `core/data-manager.js`             | —        | —     | ✅      | Core exception: uses localStorageUtil fallback for init data.          |
-| `core/websocket.js`                | —        | —     | ✅      | Core exception: uses localStorageUtil fallback for init data.          |
+| `core/data-manager.js`             | —        | ✅    | ✅      | Core exception: uses localStorageUtil fallback; retry timers tracked.  |
+| `core/websocket.js`                | —        | ✅    | ✅      | Core exception: retry timeout tracked with cleanup.                    |
+| `core/storage.js`                  | —        | ✅    | —       | Debounced writes tracked; cleanupPendingWrites available.              |
 | `combat/profile-export-button.js`  | —        | —     | —       | Uses domObserver (no polling/MutationObserver).                        |
 | `actions/enhancement-display.js`   | ✅       | —     | —       | Uses mutation watcher for modal cleanup.                               |
-| `house/house-cost-display.js`      | ✅       | —     | ✅      | Uses timer registry for modal delays.                                  |
-| `enhancement/enhancement-ui.js`    | —        | ✅    | —       | Interval/polling.                                                      |
-| `combat/combat-sim-integration.js` | —        | ✅    | —       | Interval-based readiness check.                                        |
+| `house/house-cost-display.js`      | ✅       | —     | —       | Uses timer registry for modal delays (no localStorage).                |
+| `enhancement/enhancement-ui.js`    | —        | ✅    | —       | Interval/polling with drag listener cleanup.                           |
+| `combat/combat-sim-integration.js` | —        | ✅    | —       | Interval-based readiness check with disable cleanup.                   |
 
 ## Next Actions
 
