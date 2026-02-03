@@ -623,7 +623,7 @@ function setupCharacterSwitchHandler() {
     let reinitTimeoutId = null;
 
     // Handle character_switching event (cleanup phase)
-    dataManager.on('character_switching', async (data) => {
+    dataManager.on('character_switching', async (_data) => {
         // Prevent overlapping switches
         if (isSwitching) {
             console.warn('[FeatureRegistry] Character switch already in progress - ignoring rapid switch');
@@ -663,7 +663,7 @@ function setupCharacterSwitchHandler() {
     });
 
     // Handle character_switched event (re-initialization phase)
-    dataManager.on('character_switched', async (data) => {
+    dataManager.on('character_switched', async (_data) => {
         // Prevent multiple overlapping reinits
         if (reinitScheduled) {
             console.warn('[FeatureRegistry] Reinit already scheduled - ignoring duplicate');

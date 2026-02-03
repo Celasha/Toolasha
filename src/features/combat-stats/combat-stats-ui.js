@@ -591,18 +591,16 @@ class CombatStatsUI {
 
                                 breakdownDiv.appendChild(trackingNote);
                             }
-                        } else {
+                        } else if (breakdownDiv) {
                             breakdownDiv.textContent = 'No consumables used';
                             breakdownDiv.style.color = '#888';
                         }
 
                         rowDiv.after(breakdownDiv);
-                    } else {
+                    } else if (breakdownDiv) {
                         // Collapse - remove breakdown
-                        if (breakdownDiv) {
-                            breakdownDiv.remove();
-                            breakdownDiv = null;
-                        }
+                        breakdownDiv.remove();
+                        breakdownDiv = null;
                     }
                 };
             }

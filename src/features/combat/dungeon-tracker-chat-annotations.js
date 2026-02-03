@@ -305,7 +305,6 @@ class DungeonTrackerChatAnnotations {
      */
     async saveRunsFromEvents(events) {
         // Build runs from events (only key→key pairs)
-        let savedCount = 0;
         const dungeonCounts = {};
 
         for (let i = 0; i < events.length; i++) {
@@ -335,7 +334,6 @@ class DungeonTrackerChatAnnotations {
             // Save team run (includes dungeon name from Phase 2)
             await dungeonTrackerStorage.saveTeamRun(teamKey, run);
 
-            savedCount++;
             dungeonCounts[dungeonName] = (dungeonCounts[dungeonName] || 0) + 1;
         }
     }
@@ -472,8 +470,6 @@ class DungeonTrackerChatAnnotations {
             }
         }
 
-        const battleStartCount = events.filter((e) => e.type === 'battle_start').length;
-        const keyCount = events.filter((e) => e.type === 'key').length;
         return events;
     }
 

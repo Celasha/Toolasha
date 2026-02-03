@@ -832,6 +832,7 @@ class DungeonTracker {
                 // No restore - initialize tracking anyway
                 this.startDungeon(data);
             } else {
+                // Restored in-progress run; continue tracking
             }
         } else {
             // Subsequent wave (already tracking)
