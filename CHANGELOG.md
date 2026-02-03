@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.14.1](https://github.com/Celasha/Toolasha/compare/v0.14.0...v0.14.1) (2026-02-03)
+
+### Bug Fixes
+
+- use getSettingValue for combat stats chat template ([909f132](https://github.com/Celasha/Toolasha/commit/909f132fd23c0f8bca85bb675183edb8aae520ca))
+
 ## [0.14.0](https://github.com/Celasha/Toolasha/compare/v0.13.0...v0.14.0) (2026-02-03)
 
 ### Features
