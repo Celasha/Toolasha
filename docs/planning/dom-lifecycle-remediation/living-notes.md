@@ -45,6 +45,8 @@
 - Enhancement tracker UI now cleans up drag listeners on teardown.
 - Combat sim integration now exposes disable cleanup and timers are cleared.
 - Core retry timers are now tracked and cleanable (data-manager/websocket), with storage pending-write cleanup added.
+- Market history viewer decomposed into core/data/UI/table layers with tests for core filters/sorting.
+- Action time display now matches current actions by output/drop item name for header time stats.
 
 ### What Could Be Better
 

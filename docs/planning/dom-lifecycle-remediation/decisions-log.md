@@ -33,7 +33,7 @@ Centralized registries make teardown deterministic, reduce regression risk durin
 
 ### Related
 
-- docs/planning/REMEDIATION-ROADMAP.md
-- docs/planning/REMEDIATION-LIFECYCLE-STANDARD.md
+- docs/planning/dom-lifecycle-remediation/REMEDIATION-ROADMAP.md
+- docs/planning/dom-lifecycle-remediation/REMEDIATION-LIFECYCLE-STANDARD.md
 - src/utils/cleanup-registry.js
 - src/utils/timer-registry.js
