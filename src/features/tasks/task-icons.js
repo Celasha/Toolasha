@@ -41,12 +41,10 @@ class TaskIcons {
         // Watch for task cards being added/updated
         this.watchTaskCards();
 
-        // Store handler reference for cleanup
         this.characterSwitchingHandler = () => {
             this.cleanup();
         };
 
-        // Listen for character switching to clean up
         dataManager.on('character_switching', this.characterSwitchingHandler);
 
         // Listen for filter changes to refresh icons
@@ -129,7 +127,6 @@ class TaskIcons {
 
         webSocketHook.on('quests_updated', questsHandler);
 
-        // Store handler for cleanup
         this.observers.push(() => {
             webSocketHook.off('quests_updated', questsHandler);
         });
@@ -552,7 +549,6 @@ class TaskIcons {
      * Cleanup
      */
     cleanup() {
-        // Unregister all observers
         this.observers.forEach((unregister) => unregister());
         this.observers = [];
 
@@ -574,7 +570,6 @@ class TaskIcons {
      * Disable and cleanup (called by feature registry during character switch)
      */
     disable() {
-        // Remove event listeners
         if (this.characterSwitchingHandler) {
             dataManager.off('character_switching', this.characterSwitchingHandler);
             this.characterSwitchingHandler = null;
@@ -590,7 +585,6 @@ class TaskIcons {
     }
 }
 
-// Create singleton instance
 const taskIcons = new TaskIcons();
 
 export default taskIcons;

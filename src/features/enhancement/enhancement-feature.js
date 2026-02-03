@@ -17,7 +17,6 @@ class EnhancementFeature {
      * Initialize all enhancement components
      */
     async initialize() {
-        // Guard against duplicate initialization
         if (this.isInitialized) {
             return;
         }
@@ -38,8 +37,6 @@ class EnhancementFeature {
      * Cleanup all enhancement components
      */
     disable() {
-        console.log('[Enhancement] 🧹 Cleaning up all components');
-
         // Cleanup WebSocket handlers
         cleanupEnhancementHandlers();
 
@@ -55,7 +52,6 @@ class EnhancementFeature {
     }
 }
 
-// Create and export singleton instance
 const enhancementFeature = new EnhancementFeature();
 
 export default enhancementFeature;

@@ -309,9 +309,6 @@ class MarketHistoryViewer {
             this.filters.selectedItems = this.filters.selectedItems.filter((hrid) => validItems.has(hrid));
 
             if (this.filters.selectedItems.length !== originalLength) {
-                console.log(
-                    `[MarketHistoryViewer] Cleaned up ${originalLength - this.filters.selectedItems.length} invalid item selections`
-                );
                 changed = true;
             }
         }
@@ -323,9 +320,6 @@ class MarketHistoryViewer {
             this.filters.selectedEnhLevels = this.filters.selectedEnhLevels.filter((level) => validLevels.has(level));
 
             if (this.filters.selectedEnhLevels.length !== originalLength) {
-                console.log(
-                    `[MarketHistoryViewer] Cleaned up ${originalLength - this.filters.selectedEnhLevels.length} invalid enhancement level selections`
-                );
                 changed = true;
             }
         }
@@ -343,9 +337,6 @@ class MarketHistoryViewer {
             });
 
             if (this.filters.selectedTypes.length !== originalLength) {
-                console.log(
-                    `[MarketHistoryViewer] Cleaned up ${originalLength - this.filters.selectedTypes.length} invalid type selections`
-                );
                 changed = true;
             }
         }
@@ -2506,7 +2497,6 @@ class MarketHistoryViewer {
     }
 }
 
-// Create and export singleton instance
 const marketHistoryViewer = new MarketHistoryViewer();
 
 export default marketHistoryViewer;

@@ -55,7 +55,6 @@ class InventorySort {
             return;
         }
 
-        // Prevent multiple initializations
         if (this.unregisterHandlers.length > 0) {
             return;
         }
@@ -458,13 +457,11 @@ class InventorySort {
         clearTimeout(this.itemsUpdatedDebounceTimer);
         this.itemsUpdatedDebounceTimer = null;
 
-        // Remove event listeners
         if (this.itemsUpdatedHandler) {
             dataManager.off('items_updated', this.itemsUpdatedHandler);
             this.itemsUpdatedHandler = null;
         }
 
-        // Unregister from badge manager
         inventoryBadgeManager.unregisterProvider('inventory-stack-price');
 
         // Remove controls
@@ -477,7 +474,6 @@ class InventorySort {
         const badges = document.querySelectorAll('.mwi-stack-price');
         badges.forEach((badge) => badge.remove());
 
-        // Unregister observers
         this.unregisterHandlers.forEach((unregister) => unregister());
         this.unregisterHandlers = [];
 
@@ -486,7 +482,6 @@ class InventorySort {
     }
 }
 
-// Create and export singleton instance
 const inventorySort = new InventorySort();
 inventorySort.setupSettingListener();
 

@@ -75,7 +75,6 @@ function getProtectionItemFromUI(panel) {
  */
 export async function displayEnhancementStats(panel, itemHrid) {
     try {
-        // Check if feature is enabled
         if (!config.getSetting('enhanceSim')) {
             // Remove existing calculator if present
             const existing = panel.querySelector('#mwi-enhancement-stats');

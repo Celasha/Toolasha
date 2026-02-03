@@ -248,7 +248,6 @@ class SettingsStorage {
     }
 }
 
-// Create and export singleton instance
 const settingsStorage = new SettingsStorage();
 
 export default settingsStorage;

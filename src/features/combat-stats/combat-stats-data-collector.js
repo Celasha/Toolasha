@@ -231,7 +231,6 @@ class CombatStatsDataCollector {
     }
 }
 
-// Create and export singleton instance
 const combatStatsDataCollector = new CombatStatsDataCollector();
 
 export default combatStatsDataCollector;

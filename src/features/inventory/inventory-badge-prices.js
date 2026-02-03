@@ -40,7 +40,6 @@ class InventoryBadgePrices {
             }
         });
 
-        // Listen for color changes
         config.onSettingChange('color_invBadge_bid', () => {
             if (this.isInitialized) {
                 this.refresh();
@@ -62,7 +61,6 @@ class InventoryBadgePrices {
             return;
         }
 
-        // Prevent multiple initializations
         if (this.isInitialized) {
             return;
         }
@@ -231,13 +229,11 @@ class InventoryBadgePrices {
         clearTimeout(this.itemsUpdatedDebounceTimer);
         this.itemsUpdatedDebounceTimer = null;
 
-        // Remove event listeners
         if (this.itemsUpdatedHandler) {
             dataManager.off('items_updated', this.itemsUpdatedHandler);
             this.itemsUpdatedHandler = null;
         }
 
-        // Unregister from badge manager
         inventoryBadgeManager.unregisterProvider('inventory-badge-prices');
 
         const badges = document.querySelectorAll('.mwi-badge-price-bid, .mwi-badge-price-ask');
@@ -251,10 +247,8 @@ class InventoryBadgePrices {
     }
 }
 
-// Create and export singleton instance
 const inventoryBadgePrices = new InventoryBadgePrices();
 
-// Setup setting listener immediately (before initialize)
 inventoryBadgePrices.setupSettingListener();
 
 export default inventoryBadgePrices;

@@ -65,7 +65,6 @@ function goToMarketplace(itemHrid, enhancementLevel = 0) {
  * Initialize missing materials button feature
  */
 export function initialize() {
-    console.log('[MissingMats] Initializing missing materials button feature');
     setupMarketplaceCleanupObserver();
     setupBuyModalObserver();
 
@@ -84,9 +83,6 @@ export function initialize() {
  * Cleanup function
  */
 export function cleanup() {
-    console.log('[MissingMats] Cleaning up missing materials button feature');
-
-    // Unregister DOM observer
     if (domObserverUnregister) {
         domObserverUnregister();
         domObserverUnregister = null;
@@ -98,7 +94,6 @@ export function cleanup() {
         cleanupObserver = null;
     }
 
-    // Unregister buy modal observer
     if (buyModalObserverUnregister) {
         buyModalObserverUnregister();
         buyModalObserverUnregister = null;
@@ -118,7 +113,6 @@ function processActionPanels() {
     const panels = document.querySelectorAll('[class*="SkillActionDetail_skillActionDetail"]');
 
     panels.forEach((panel) => {
-        // Skip if already processed
         if (processedPanels.has(panel)) {
             return;
         }
@@ -163,12 +157,10 @@ function updateButtonForPanel(panel, value) {
         return;
     }
 
-    // Check if feature is enabled
     if (config.getSetting('actions_missingMaterialsButton') !== true) {
         return;
     }
 
-    // Get action details
     const actionHrid = getActionHridFromPanel(panel);
     if (!actionHrid) {
         return;
@@ -656,7 +648,6 @@ function setupMarketplaceCleanupObserver() {
                     if (hadTabsContainer) {
                         // Marketplace closed, remove custom tabs
                         removeMissingMaterialTabs();
-                        console.log('[MissingMats] Marketplace closed, cleaned up custom tabs');
                     }
                 }
             }
@@ -721,8 +712,6 @@ function handleBuyModal(modal) {
     // Trigger input event to notify React
     const inputEvent = new Event('input', { bubbles: true });
     quantityInput.dispatchEvent(inputEvent);
-
-    console.log('[MissingMats] Auto-filled quantity:', activeMissingQuantity);
 }
 
 /**

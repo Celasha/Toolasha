@@ -165,7 +165,6 @@ class HousePanelObserver {
     }
 }
 
-// Create and export singleton instance
 const housePanelObserver = new HousePanelObserver();
 
 export default housePanelObserver;

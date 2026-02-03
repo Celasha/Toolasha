@@ -47,14 +47,12 @@ class CharacterCardButton {
             return;
         }
 
-        // Check if feature is enabled
         if (!config.getSetting('characterCard')) {
             return;
         }
 
         this.isInitialized = true;
 
-        // Store handler reference for cleanup
         this.profileSharedHandler = (data) => {
             this.handleProfileShared(data);
         };
@@ -269,9 +267,6 @@ class CharacterCardButton {
      * Disable the feature
      */
     disable() {
-        console.log('[CharacterCardButton] 🧹 Cleaning up handlers');
-
-        // Unregister WebSocket handler
         if (this.profileSharedHandler) {
             webSocketHook.off('profile_shared', this.profileSharedHandler);
             this.profileSharedHandler = null;
@@ -289,7 +284,6 @@ class CharacterCardButton {
     }
 }
 
-// Create and export singleton instance
 const characterCardButton = new CharacterCardButton();
 characterCardButton.setupSettingListener();
 

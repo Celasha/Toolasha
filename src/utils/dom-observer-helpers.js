@@ -38,7 +38,6 @@ export function createSingletonObserver(name, classNames, handler, options = {})
         name,
         classNames,
         (element) => {
-            // Skip if already processed
             if (processedElements.has(element)) {
                 return;
             }
@@ -120,7 +119,6 @@ export function createTrackedObserver(name, classNames, handler, options = {}) {
         // Clear tracked elements
         trackedElements.clear();
 
-        // Unregister from DOM observer
         unregister();
     };
 }

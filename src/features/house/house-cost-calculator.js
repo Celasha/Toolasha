@@ -193,7 +193,6 @@ class HouseCostCalculator {
     }
 }
 
-// Create and export singleton instance
 const houseCostCalculator = new HouseCostCalculator();
 
 export default houseCostCalculator;

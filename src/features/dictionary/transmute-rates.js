@@ -37,7 +37,6 @@ class TransmuteRates {
             }
         });
 
-        // Listen for color changes
         config.onSettingChange('color_transmute', () => {
             if (this.isInitialized) {
                 this.refreshRates();
@@ -53,7 +52,6 @@ class TransmuteRates {
             return;
         }
 
-        // Prevent multiple initializations
         if (this.isInitialized) {
             return;
         }
@@ -205,7 +203,6 @@ class TransmuteRates {
         // Clear any pending injection timeouts
         clearTimeout(this.injectTimeout);
 
-        // Unregister all observers
         this.unregisterHandlers.forEach((unregister) => unregister());
         this.unregisterHandlers = [];
 
@@ -219,7 +216,6 @@ class TransmuteRates {
     }
 }
 
-// Create and export singleton instance
 const transmuteRates = new TransmuteRates();
 
 // Setup setting listener (always active, even when feature is disabled)

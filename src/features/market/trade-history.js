@@ -62,7 +62,6 @@ class TradeHistory {
         // Load existing history from storage
         await this.loadHistory();
 
-        // Store handler reference for cleanup
         this.marketUpdateHandler = (data) => {
             this.handleMarketUpdate(data);
         };
@@ -168,9 +167,6 @@ class TradeHistory {
      * Disable the feature
      */
     disable() {
-        console.log('[TradeHistory] 🧹 Cleaning up handlers');
-
-        // Unregister WebSocket handler
         if (this.marketUpdateHandler) {
             dataManager.off('market_listings_updated', this.marketUpdateHandler);
             this.marketUpdateHandler = null;
@@ -196,7 +192,6 @@ class TradeHistory {
     }
 }
 
-// Create and export singleton instance
 const tradeHistory = new TradeHistory();
 tradeHistory.setupSettingListener();
 

@@ -356,7 +356,6 @@ class Storage {
     }
 }
 
-// Create and export singleton instance
 const storage = new Storage();
 
 export default storage;

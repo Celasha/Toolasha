@@ -55,7 +55,6 @@ class ActionTimeDisplay {
             return;
         }
 
-        // Check if feature is enabled
         const enabled = config.getSettingValue('totalActionTime', true);
         if (!enabled) {
             return;
@@ -818,13 +817,6 @@ class ActionTimeDisplay {
                 // Calculate max queued actions based on available items
                 const maxActions = Math.floor(availableCount / bulkMultiplier);
 
-                console.log('[Action Time Display] Alchemy limit:', {
-                    itemHrid,
-                    availableCount,
-                    bulkMultiplier,
-                    maxActions,
-                });
-
                 return { maxActions, limitType: 'alchemy_item' };
             }
         }
@@ -846,12 +838,6 @@ class ActionTimeDisplay {
             const availableGold = byHrid['/items/gold_coin'] || 0;
             const maxActionsFromGold = Math.floor(availableGold / actionDetails.coinCost);
 
-            console.log('[Action Time Display] Gold constraint:', {
-                availableGold,
-                coinCost: actionDetails.coinCost,
-                maxActions: maxActionsFromGold,
-            });
-
             if (maxActionsFromGold < minLimit) {
                 minLimit = maxActionsFromGold;
                 limitType = 'gold';
@@ -869,13 +855,6 @@ class ActionTimeDisplay {
                 // Calculate max queued actions for this material
                 const maxActions = Math.floor(availableCount / requiredPerAction);
 
-                console.log('[Action Time Display] Material constraint:', {
-                    itemHrid: inputItem.itemHrid,
-                    availableCount,
-                    requiredPerAction,
-                    maxActions,
-                });
-
                 if (maxActions < minLimit) {
                     minLimit = maxActions;
                     limitType = `material:${inputItem.itemHrid}`;
@@ -887,11 +866,6 @@ class ActionTimeDisplay {
         if (hasUpgradeItem) {
             const availableCount = byHrid[hasUpgradeItem] || 0;
 
-            console.log('[Action Time Display] Upgrade item constraint:', {
-                itemHrid: hasUpgradeItem,
-                availableCount,
-            });
-
             if (availableCount < minLimit) {
                 minLimit = availableCount;
                 limitType = `upgrade:${hasUpgradeItem}`;
@@ -901,12 +875,6 @@ class ActionTimeDisplay {
         if (minLimit === Infinity) {
             return null;
         }
-
-        console.log('[Action Time Display] Final material limit:', {
-            maxActions: minLimit,
-            limitType,
-            actionHrid: actionDetails.hrid,
-        });
 
         return { maxActions: minLimit, limitType };
     }
@@ -1042,10 +1010,6 @@ class ActionTimeDisplay {
                 // Use getCleanActionName to strip any stats we previously appended
                 const actionNameText = this.getCleanActionName(actionNameElement);
 
-                console.log('[Action Time Display] Detecting current action:', {
-                    cleanText: actionNameText,
-                });
-
                 // Parse action name (same logic as main display)
                 // Also handles formatted numbers like "Farmland (276K)" or "Zone (1.2M)"
                 const actionNameMatch = actionNameText.match(/^(.+?)(?:\s*\([^)]+\))?$/);
@@ -1061,11 +1025,6 @@ class ActionTimeDisplay {
                     itemNameFromDom = null;
                 }
 
-                console.log('[Action Time Display] Parsed action name:', {
-                    actionName: actionNameFromDom,
-                    itemName: itemNameFromDom,
-                });
-
                 // Match current action from cache
                 currentAction = currentActions.find((a) => {
                     const actionDetails = dataManager.getActionDetails(a.actionHrid);
@@ -1076,13 +1035,6 @@ class ActionTimeDisplay {
                     if (itemNameFromDom && a.primaryItemHash) {
                         const itemHrid = '/items/' + itemNameFromDom.toLowerCase().replace(/\s+/g, '_');
                         const matches = a.primaryItemHash.includes(itemHrid);
-                        console.log('[Action Time Display] Matching by primaryItemHash:', {
-                            actionHrid: a.actionHrid,
-                            itemNameFromDom,
-                            itemHrid,
-                            primaryItemHash: a.primaryItemHash,
-                            matches,
-                        });
                         return matches;
                     }
 
@@ -1256,12 +1208,6 @@ class ActionTimeDisplay {
                     if (limitResult) {
                         materialLimit = limitResult.maxActions;
                         limitType = limitResult.limitType;
-
-                        console.log('[Action Time Display] Queue action limit check:', {
-                            actionHrid: actionObj.actionHrid,
-                            materialLimit,
-                            limitType,
-                        });
                     }
                 }
 
@@ -1460,7 +1406,6 @@ class ActionTimeDisplay {
 
             // Check if this calculation is still valid (character might have switched)
             if (this.activeProfitCalculationId !== calculationId) {
-                console.log('[Action Time Display] Profit calculation cancelled (character switched)');
                 return;
             }
 
@@ -1601,13 +1546,11 @@ class ActionTimeDisplay {
             this.queueMenuObserver = null;
         }
 
-        // Unregister queue observer
         if (this.unregisterQueueObserver) {
             this.unregisterQueueObserver();
             this.unregisterQueueObserver = null;
         }
 
-        // Unregister character switch handler
         if (this.characterInitHandler) {
             dataManager.off('character_initialized', this.characterInitHandler);
             this.characterInitHandler = null;
@@ -1635,7 +1578,6 @@ class ActionTimeDisplay {
     }
 }
 
-// Create and export singleton instance
 const actionTimeDisplay = new ActionTimeDisplay();
 
 export default actionTimeDisplay;

@@ -1659,7 +1659,6 @@ class SettingsUI {
         // Clean up DOM elements first
         this.cleanupDOM();
 
-        // Unregister character switch listener
         if (this.characterSwitchHandler) {
             dataManager.off('character_initialized', this.characterSwitchHandler);
             this.characterSwitchHandler = null;
@@ -1667,7 +1666,6 @@ class SettingsUI {
     }
 }
 
-// Create and export singleton instance
 const settingsUI = new SettingsUI();
 
 export default settingsUI;

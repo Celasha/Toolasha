@@ -124,7 +124,6 @@ class DungeonTracker {
 
         // Verify battleId matches (same run)
         if (saved.battleId !== currentBattleId) {
-            console.log('[Dungeon Tracker] BattleId mismatch - discarding old run state');
             await this.clearInProgressRun();
             return false;
         }
@@ -134,7 +133,6 @@ class DungeonTracker {
         const dungeonAction = currentActions.find((a) => this.isDungeonAction(a.actionHrid) && !a.isDone);
 
         if (!dungeonAction || dungeonAction.actionHrid !== saved.dungeonHrid) {
-            console.log('[Dungeon Tracker] Dungeon no longer active - discarding old run state');
             await this.clearInProgressRun();
             return false;
         }
@@ -142,7 +140,6 @@ class DungeonTracker {
         // Check staleness (older than 10 minutes = likely invalid)
         const age = Date.now() - saved.lastUpdateTime;
         if (age > 10 * 60 * 1000) {
-            console.log('[Dungeon Tracker] Saved state too old - discarding');
             await this.clearInProgressRun();
             return false;
         }
@@ -223,7 +220,6 @@ class DungeonTracker {
         // Check for active dungeon on page load and try to restore state
         setTimeout(() => this.checkForActiveDungeon(), 1000);
 
-        // Listen for character switching to clean up
         dataManager.on('character_switching', () => {
             this.cleanup();
         });
@@ -721,10 +717,6 @@ class DungeonTracker {
             // this is probably the COMPLETION message, not the start!
             // This happens when state was restored but first message wasn't captured.
             if (this.currentRun && this.currentRun.startTime) {
-                console.log(
-                    '[Dungeon Tracker] WARNING: Received Key counts with null timestamps but already tracking! Using startTime as fallback.'
-                );
-
                 // Use the currentRun.startTime as the first timestamp (best estimate)
                 this.firstKeyCountTimestamp = this.currentRun.startTime;
                 this.lastKeyCountTimestamp = timestamp; // Current message is completion
@@ -812,16 +804,8 @@ class DungeonTracker {
      * @param {Object} data - new_battle message data
      */
     async onNewBattle(data) {
-        console.log('[Dungeon Tracker] onNewBattle fired:', {
-            wave: data.wave,
-            battleId: data.battleId,
-            isTracking: this.isTracking,
-            currentBattleId: this.currentBattleId,
-        });
-
         // Only track if we have wave data
         if (data.wave === undefined) {
-            console.log('[Dungeon Tracker] No wave data, skipping');
             return;
         }
 
@@ -830,25 +814,20 @@ class DungeonTracker {
 
         // Wave 0 = first wave = dungeon start
         if (data.wave === 0) {
-            console.log('[Dungeon Tracker] Wave 0 detected - starting new dungeon');
             // Clear any stale saved state first (in case previous run didn't clear properly)
             await this.clearInProgressRun();
 
             // Start fresh dungeon
             this.startDungeon(data);
         } else if (!this.isTracking) {
-            console.log('[Dungeon Tracker] Mid-dungeon start - attempting restore');
             // Mid-dungeon start - try to restore first
             const restored = await this.restoreInProgressRun(battleId);
             if (!restored) {
-                console.log('[Dungeon Tracker] Restore failed - initializing tracking');
                 // No restore - initialize tracking anyway
                 this.startDungeon(data);
             } else {
-                console.log('[Dungeon Tracker] Restore successful');
             }
         } else {
-            console.log('[Dungeon Tracker] Subsequent wave - already tracking');
             // Subsequent wave (already tracking)
             // Update battleId in case user logged out and back in (new battle instance)
             this.currentBattleId = data.battleId;
@@ -1264,9 +1243,6 @@ class DungeonTracker {
      * Cleanup for character switching
      */
     async cleanup() {
-        console.log('[DungeonTracker] 🧹 Cleaning up handlers');
-
-        // Unregister all WebSocket handlers
         if (this.handlers.newBattle) {
             webSocketHook.off('new_battle', this.handlers.newBattle);
             this.handlers.newBattle = null;
@@ -1489,7 +1465,6 @@ class DungeonTracker {
     }
 }
 
-// Create and export singleton instance
 const dungeonTracker = new DungeonTracker();
 
 export default dungeonTracker;

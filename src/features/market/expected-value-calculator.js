@@ -327,7 +327,6 @@ class ExpectedValueCalculator {
     }
 }
 
-// Create and export singleton instance
 const expectedValueCalculator = new ExpectedValueCalculator();
 
 export default expectedValueCalculator;

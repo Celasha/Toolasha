@@ -93,7 +93,6 @@ class DungeonTrackerUI {
             this.cleanup();
         };
 
-        // Listen for character switching to clean up
         dataManager.on('character_switching', this.characterSwitchingHandler);
 
         // Watch for character selection screen appearing (when user clicks "Switch Character")
@@ -691,13 +690,11 @@ class DungeonTrackerUI {
         // Immediately hide UI to prevent visual artifacts during character switch
         this.hide();
 
-        // Unregister dungeon update callback
         if (this.dungeonUpdateHandler) {
             dungeonTracker.offUpdate(this.dungeonUpdateHandler);
             this.dungeonUpdateHandler = null;
         }
 
-        // Unregister character switching listener
         if (this.characterSwitchingHandler) {
             dataManager.off('character_switching', this.characterSwitchingHandler);
             this.characterSwitchingHandler = null;
@@ -755,7 +752,6 @@ class DungeonTrackerUI {
     }
 }
 
-// Create and export singleton instance
 const dungeonTrackerUI = new DungeonTrackerUI();
 
 export default dungeonTrackerUI;

@@ -78,7 +78,6 @@ class NetworthFeature {
     }
 }
 
-// Create and export singleton instance
 const networthFeature = new NetworthFeature();
 
 export default networthFeature;

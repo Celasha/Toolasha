@@ -385,7 +385,6 @@ class MarketFilter {
     }
 }
 
-// Create and export singleton instance
 const marketFilter = new MarketFilter();
 
 export default marketFilter;

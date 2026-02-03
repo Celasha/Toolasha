@@ -122,7 +122,6 @@ class NetworthCache {
     }
 }
 
-// Create and export singleton instance
 const networthCache = new NetworthCache();
 
 export default networthCache;

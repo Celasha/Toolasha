@@ -205,7 +205,6 @@ class DOMObserver {
     }
 }
 
-// Create singleton instance
 const domObserver = new DOMObserver();
 
 export default domObserver;

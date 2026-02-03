@@ -25,7 +25,6 @@ class AlchemyProfitDisplay {
      * Initialize the display system
      */
     initialize() {
-        // Guard against duplicate initialization
         if (this.isInitialized) {
             return;
         }
@@ -246,7 +245,6 @@ class AlchemyProfitDisplay {
         );
         const summary = `${formatLargeNumber(profit)}/hr, ${formatLargeNumber(profitPerDay)}/day`;
 
-        // ===== Build Detailed Breakdown Content =====
         const detailsContent = document.createElement('div');
 
         // Revenue Section
@@ -748,7 +746,6 @@ class AlchemyProfitDisplay {
     }
 }
 
-// Create and export singleton instance
 const alchemyProfitDisplay = new AlchemyProfitDisplay();
 
 export default alchemyProfitDisplay;

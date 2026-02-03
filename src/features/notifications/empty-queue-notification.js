@@ -29,12 +29,10 @@ class EmptyQueueNotification {
         // Listen for action updates
         this.registerWebSocketListeners();
 
-        // Store handler reference for cleanup
         this.characterSwitchingHandler = () => {
             this.disable();
         };
 
-        // Listen for character switching to clean up
         dataManager.on('character_switching', this.characterSwitchingHandler);
     }
 
@@ -145,7 +143,6 @@ class EmptyQueueNotification {
      * Cleanup
      */
     disable() {
-        // Remove event listeners
         if (this.characterSwitchingHandler) {
             dataManager.off('character_switching', this.characterSwitchingHandler);
             this.characterSwitchingHandler = null;
@@ -157,7 +154,6 @@ class EmptyQueueNotification {
     }
 }
 
-// Create and export singleton instance
 const emptyQueueNotification = new EmptyQueueNotification();
 
 export default emptyQueueNotification;

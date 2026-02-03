@@ -30,7 +30,6 @@ class GatheringStats {
      * Initialize the gathering stats display
      */
     async initialize() {
-        // Guard against duplicate initialization
         if (this.isInitialized) {
             return;
         }
@@ -310,7 +309,6 @@ class GatheringStats {
         this.itemsUpdatedDebounceTimer = null;
         this.actionCompletedDebounceTimer = null;
 
-        // Remove event listeners
         if (this.itemsUpdatedHandler) {
             dataManager.off('items_updated', this.itemsUpdatedHandler);
             this.itemsUpdatedHandler = null;
@@ -341,7 +339,6 @@ class GatheringStats {
     }
 }
 
-// Create and export singleton instance
 const gatheringStats = new GatheringStats();
 
 export default gatheringStats;

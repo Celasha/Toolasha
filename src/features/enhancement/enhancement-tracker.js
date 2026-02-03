@@ -336,7 +336,6 @@ class EnhancementTracker {
     }
 }
 
-// Create and export singleton instance
 const enhancementTracker = new EnhancementTracker();
 
 export default enhancementTracker;

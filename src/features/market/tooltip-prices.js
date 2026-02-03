@@ -48,12 +48,10 @@ class TooltipPrices {
      * Initialize the tooltip prices feature
      */
     async initialize() {
-        // Guard against duplicate initialization
         if (this.isInitialized) {
             return;
         }
 
-        // Check if feature is enabled
         if (!config.getSetting('itemTooltip_prices')) {
             return;
         }
@@ -274,14 +272,12 @@ class TooltipPrices {
      * @param {Object} enhancementData - Enhancement analysis data
      */
     injectEnhancementDisplay(tooltipElement, enhancementData) {
-        // Find the tooltip text container
         const tooltipText = tooltipElement.querySelector('.ItemTooltipText_itemTooltipText__zFq3A');
 
         if (!tooltipText) {
             return;
         }
 
-        // Check if we already injected (prevent duplicates)
         if (tooltipText.querySelector('.market-enhancement-injected')) {
             return;
         }
@@ -296,7 +292,6 @@ class TooltipPrices {
         // Build HTML using the tooltip-enhancement module
         enhancementDiv.innerHTML = buildEnhancementTooltipHTML(enhancementData);
 
-        // Insert at the end of the tooltip
         tooltipText.appendChild(enhancementDiv);
     }
 
@@ -376,7 +371,6 @@ class TooltipPrices {
      * @param {boolean} isCollectionTooltip - True if this is a collection tooltip
      */
     injectPriceDisplay(tooltipElement, price, amount, isCollectionTooltip = false) {
-        // Find the tooltip text container
         const tooltipText = isCollectionTooltip
             ? tooltipElement.querySelector('.Collection_tooltipContent__2IcSJ')
             : tooltipElement.querySelector('.ItemTooltipText_itemTooltipText__zFq3A');
@@ -386,7 +380,6 @@ class TooltipPrices {
             return;
         }
 
-        // Check if we already injected (prevent duplicates)
         if (tooltipText.querySelector('.market-price-injected')) {
             return;
         }
@@ -416,7 +409,6 @@ class TooltipPrices {
         // Format: "Price: 1,200 / 950" or "Price: 1,200 / -" or "Price: - / 950"
         priceDiv.innerHTML = `Price: ${askDisplay} / ${bidDisplay}${totalDisplay}`;
 
-        // Insert at the end of the tooltip
         tooltipText.appendChild(priceDiv);
     }
 
@@ -427,7 +419,6 @@ class TooltipPrices {
      * @param {boolean} isCollectionTooltip - True if this is a collection tooltip
      */
     injectProfitDisplay(tooltipElement, profitData, isCollectionTooltip = false) {
-        // Find the tooltip text container
         const tooltipText = isCollectionTooltip
             ? tooltipElement.querySelector('.Collection_tooltipContent__2IcSJ')
             : tooltipElement.querySelector('.ItemTooltipText_itemTooltipText__zFq3A');
@@ -436,7 +427,6 @@ class TooltipPrices {
             return;
         }
 
-        // Check if we already injected (prevent duplicates)
         if (tooltipText.querySelector('.market-profit-injected')) {
             return;
         }
@@ -565,7 +555,6 @@ class TooltipPrices {
      * @param {boolean} isCollectionTooltip - True if this is a collection tooltip
      */
     injectExpectedValueDisplay(tooltipElement, evData, isCollectionTooltip = false) {
-        // Find the tooltip text container
         const tooltipText = isCollectionTooltip
             ? tooltipElement.querySelector('.Collection_tooltipContent__2IcSJ')
             : tooltipElement.querySelector('.ItemTooltipText_itemTooltipText__zFq3A');
@@ -574,7 +563,6 @@ class TooltipPrices {
             return;
         }
 
-        // Check if we already injected (prevent duplicates)
         if (tooltipText.querySelector('.market-ev-injected')) {
             return;
         }
@@ -644,7 +632,6 @@ class TooltipPrices {
 
         evDiv.innerHTML = html;
 
-        // Insert at the end of the tooltip
         tooltipText.appendChild(evDiv);
     }
 
@@ -767,7 +754,6 @@ class TooltipPrices {
      * @param {boolean} isCollectionTooltip - True if collection tooltip
      */
     injectGatheringDisplay(tooltipElement, gatheringData, isCollectionTooltip = false) {
-        // Find the tooltip text container
         const tooltipText = isCollectionTooltip
             ? tooltipElement.querySelector('.Collection_tooltipContent__2IcSJ')
             : tooltipElement.querySelector('.ItemTooltipText_itemTooltipText__zFq3A');
@@ -776,7 +762,6 @@ class TooltipPrices {
             return;
         }
 
-        // Check if we already injected (prevent duplicates)
         if (tooltipText.querySelector('.market-gathering-injected')) {
             return;
         }
@@ -848,7 +833,6 @@ class TooltipPrices {
 
         gatheringDiv.innerHTML = html;
 
-        // Insert at the end of the tooltip
         tooltipText.appendChild(gatheringDiv);
     }
 
@@ -861,7 +845,6 @@ class TooltipPrices {
      * @param {boolean} isCollectionTooltip - True if this is a collection tooltip
      */
     async injectMultiActionProfitDisplay(tooltipElement, itemHrid, enhancementLevel, isCollectionTooltip = false) {
-        // Find the tooltip text container
         const tooltipText = isCollectionTooltip
             ? tooltipElement.querySelector('.Collection_tooltipContent__2IcSJ')
             : tooltipElement.querySelector('.ItemTooltipText_itemTooltipText__zFq3A');
@@ -870,7 +853,6 @@ class TooltipPrices {
             return;
         }
 
-        // Check if we already injected (prevent duplicates)
         if (tooltipText.querySelector('.market-multi-action-injected')) {
             return;
         }
@@ -953,7 +935,6 @@ class TooltipPrices {
     }
 }
 
-// Create and export singleton instance
 const tooltipPrices = new TooltipPrices();
 
 export default tooltipPrices;

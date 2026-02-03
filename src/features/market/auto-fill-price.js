@@ -141,7 +141,6 @@ class AutoFillPrice {
     }
 }
 
-// Create and export singleton instance
 const autoFillPrice = new AutoFillPrice();
 
 export default autoFillPrice;

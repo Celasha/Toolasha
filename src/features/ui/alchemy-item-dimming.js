@@ -28,7 +28,6 @@ class AlchemyItemDimming {
             return;
         }
 
-        // Check if feature is enabled
         if (!config.getSetting('alchemyItemDimming')) {
             return;
         }
@@ -71,7 +70,6 @@ class AlchemyItemDimming {
         );
 
         for (const div of iconDivs) {
-            // Skip if already processed
             if (this.processedDivs.has(div)) {
                 continue;
             }
@@ -146,7 +144,6 @@ class AlchemyItemDimming {
      * Disable the feature
      */
     disable() {
-        // Unregister from centralized observer
         if (this.unregisterObserver) {
             this.unregisterObserver();
             this.unregisterObserver = null;
@@ -167,7 +164,6 @@ class AlchemyItemDimming {
     }
 }
 
-// Create and export singleton instance
 const alchemyItemDimming = new AlchemyItemDimming();
 
 export default alchemyItemDimming;

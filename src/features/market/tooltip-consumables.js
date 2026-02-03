@@ -24,12 +24,10 @@ class TooltipConsumables {
      * Initialize the consumable tooltips feature
      */
     async initialize() {
-        // Guard against duplicate initialization
         if (this.isInitialized) {
             return;
         }
 
-        // Check if feature is enabled
         if (!config.getSetting('showConsumTips')) {
             return;
         }
@@ -246,14 +244,12 @@ class TooltipConsumables {
      * @param {Object} stats - Consumable stats
      */
     injectConsumableDisplay(tooltipElement, stats) {
-        // Find the tooltip text container
         const tooltipText = tooltipElement.querySelector('.ItemTooltipText_itemTooltipText__zFq3A');
 
         if (!tooltipText) {
             return;
         }
 
-        // Check if we already injected (prevent duplicates)
         if (tooltipText.querySelector('.consumable-stats-injected')) {
             return;
         }
@@ -306,7 +302,6 @@ class TooltipConsumables {
 
         consumableDiv.innerHTML = html;
 
-        // Insert at the end of the tooltip
         tooltipText.appendChild(consumableDiv);
     }
 
@@ -324,7 +319,6 @@ class TooltipConsumables {
     }
 }
 
-// Create and export singleton instance
 const tooltipConsumables = new TooltipConsumables();
 
 export default tooltipConsumables;

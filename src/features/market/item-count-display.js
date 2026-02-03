@@ -19,7 +19,6 @@ class ItemCountDisplay {
      * Initialize the item count display
      */
     initialize() {
-        // Guard against duplicate initialization
         if (this.isInitialized) {
             return;
         }
@@ -175,7 +174,6 @@ class ItemCountDisplay {
     }
 }
 
-// Create and export singleton instance
 const itemCountDisplay = new ItemCountDisplay();
 
 export default itemCountDisplay;

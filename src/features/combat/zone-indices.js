@@ -46,7 +46,6 @@ class ZoneIndices {
             }
         });
 
-        // Listen for color changes
         config.onSettingChange('color_accent', () => {
             if (this.isInitialized) {
                 this.refresh();
@@ -66,7 +65,6 @@ class ZoneIndices {
             return;
         }
 
-        // Prevent multiple initializations
         if (this.isInitialized) {
             return;
         }
@@ -301,7 +299,6 @@ class ZoneIndices {
      * Disable the feature
      */
     disable() {
-        // Unregister from centralized observer
         if (this.unregisterObserver) {
             this.unregisterObserver();
             this.unregisterObserver = null;
@@ -325,10 +322,8 @@ class ZoneIndices {
     }
 }
 
-// Create and export singleton instance
 const zoneIndices = new ZoneIndices();
 
-// Setup setting listener immediately (before initialize)
 zoneIndices.setupSettingListener();
 
 export default zoneIndices;

@@ -258,7 +258,6 @@ class MarketOrderTotals {
     }
 }
 
-// Create and export singleton instance
 const marketOrderTotals = new MarketOrderTotals();
 
 export default marketOrderTotals;

@@ -543,7 +543,6 @@ class InventoryBadgeManager {
     }
 }
 
-// Create and export singleton instance
 const inventoryBadgeManager = new InventoryBadgeManager();
 
 export default inventoryBadgeManager;

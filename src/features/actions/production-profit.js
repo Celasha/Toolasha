@@ -25,7 +25,6 @@ const PRODUCTION_TYPES = [
  * @returns {Object|null} Profit data or null if not applicable
  */
 export async function calculateProductionProfit(actionHrid) {
-    // Get action details
     const gameData = dataManager.getInitClientData();
     const actionDetail = gameData.actionDetailMap[actionHrid];
 

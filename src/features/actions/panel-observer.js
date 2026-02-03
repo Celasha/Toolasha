@@ -281,7 +281,6 @@ async function handleActionPanel(panel) {
     const actionHrid = getActionHridFromName(actionName);
     if (!actionHrid) return;
 
-    // Get action details
     const gameData = dataManager.getInitClientData();
     const actionDetail = gameData.actionDetailMap[actionHrid];
     if (!actionDetail) return;

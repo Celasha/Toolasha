@@ -14,8 +14,6 @@ import dataManager from './data-manager.js';
  */
 class Config {
     constructor() {
-        // === CONSTANTS ===
-
         // Number formatting separators (locale-aware)
         this.THOUSAND_SEPARATOR = new Intl.NumberFormat().format(1111).replaceAll('1', '').at(0) || '';
         this.DECIMAL_SEPARATOR = new Intl.NumberFormat().format(1.1).replaceAll('1', '').at(0);
@@ -50,16 +48,12 @@ class Config {
         // Market API URL
         this.MARKET_API_URL = 'https://www.milkywayidle.com/game_data/marketplace.json';
 
-        // === SETTINGS MAP ===
-
         // Settings loaded from settings-config.js via settings-storage.js
         this.settingsMap = {};
 
-        // === SETTING CHANGE CALLBACKS ===
         // Map of setting keys to callback functions
         this.settingChangeCallbacks = {};
 
-        // === FEATURE REGISTRY ===
         // Feature toggles with metadata for future UI
         this.features = {
             // Market Features
@@ -607,8 +601,6 @@ class Config {
         this.SCRIPT_COLOR_TOOLTIP = this.COLOR_ACCENT; // Keep tooltip same as main
     }
 
-    // === FEATURE TOGGLE METHODS ===
-
     /**
      * Check if a feature is enabled
      * Uses legacy settingKey if available, otherwise uses feature.enabled
@@ -716,7 +708,6 @@ class Config {
     }
 }
 
-// Create and export singleton instance
 const config = new Config();
 
 export default config;

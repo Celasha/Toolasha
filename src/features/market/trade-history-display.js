@@ -24,7 +24,6 @@ class TradeHistoryDisplay {
      * Initialize the display system
      */
     initialize() {
-        // Guard against duplicate initialization
         if (this.isInitialized) {
             return;
         }
@@ -178,8 +177,6 @@ class TradeHistoryDisplay {
 
         // Get current top order prices from the DOM
         const currentPrices = this.extractCurrentPrices(panel);
-        console.log('[TradeHistoryDisplay] Current top orders:', currentPrices);
-        console.log('[TradeHistoryDisplay] Your history:', history);
 
         // Ensure panel has position relative for absolute positioning to work
         if (!panel.style.position || panel.style.position === 'static') {
@@ -213,14 +210,6 @@ class TradeHistoryDisplay {
 
         if (history.buy) {
             const buyColor = this.getBuyColor(history.buy, currentPrices?.ask);
-            console.log(
-                '[TradeHistoryDisplay] Buy color:',
-                buyColor,
-                'lastBuy:',
-                history.buy,
-                'currentAsk:',
-                currentPrices?.ask
-            );
             parts.push(
                 `<span style="color: ${buyColor}; font-weight: 600;" title="Your last buy price">Buy ${formatKMB3Digits(history.buy)}</span>`
             );
@@ -232,14 +221,6 @@ class TradeHistoryDisplay {
 
         if (history.sell) {
             const sellColor = this.getSellColor(history.sell, currentPrices?.bid);
-            console.log(
-                '[TradeHistoryDisplay] Sell color:',
-                sellColor,
-                'lastSell:',
-                history.sell,
-                'currentBid:',
-                currentPrices?.bid
-            );
             parts.push(
                 `<span style="color: ${sellColor}; font-weight: 600;" title="Your last sell price">Sell ${formatKMB3Digits(history.sell)}</span>`
             );
@@ -347,7 +328,6 @@ class TradeHistoryDisplay {
     }
 }
 
-// Create and export singleton instance
 const tradeHistoryDisplay = new TradeHistoryDisplay();
 
 export default tradeHistoryDisplay;

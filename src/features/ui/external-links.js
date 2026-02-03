@@ -17,7 +17,6 @@ class ExternalLinks {
      * Initialize external links feature
      */
     initialize() {
-        // Guard against duplicate initialization
         if (this.isInitialized) {
             return;
         }
@@ -131,7 +130,6 @@ class ExternalLinks {
     }
 }
 
-// Create and export singleton instance
 const externalLinks = new ExternalLinks();
 
 export default externalLinks;

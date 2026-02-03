@@ -717,7 +717,6 @@ class CombatStatsUI {
     }
 }
 
-// Create and export singleton instance
 const combatStatsUI = new CombatStatsUI();
 
 export default combatStatsUI;

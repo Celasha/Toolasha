@@ -487,7 +487,6 @@ export async function constructExportObject(externalProfileId = null, singlePlay
     const hasParty = characterObj.partyInfo?.partySlotMap;
 
     if (!hasParty) {
-        // === SOLO MODE ===
         exportObj[1] = JSON.stringify(constructSelfPlayer(characterObj, clientObj));
         playerIDs[0] = characterObj.character?.name || 'Player 1';
         importedPlayerPositions[0] = true;
@@ -502,7 +501,6 @@ export async function constructExportObject(externalProfileId = null, singlePlay
             }
         }
     } else {
-        // === PARTY MODE ===
         isParty = true;
 
         let slotIndex = 1;

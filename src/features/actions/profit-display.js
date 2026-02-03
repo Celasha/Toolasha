@@ -101,7 +101,6 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
         `${formatLargeNumber(profit)}/hr, ${formatLargeNumber(profitPerDay)}/day | Total profit: 0`
     );
 
-    // ===== Build Detailed Breakdown Content =====
     const detailsContent = document.createElement('div');
 
     // Revenue Section
@@ -581,7 +580,6 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
         ? '-- ⚠'
         : `${formatLargeNumber(profit)}/hr, ${formatLargeNumber(profitPerDay)}/day | Total profit: 0`;
 
-    // ===== Build Detailed Breakdown Content =====
     const detailsContent = document.createElement('div');
 
     // Revenue Section

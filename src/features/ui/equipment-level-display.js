@@ -41,7 +41,6 @@ class EquipmentLevelDisplay {
             }
         });
 
-        // Listen for color changes
         config.onSettingChange('color_accent', () => {
             if (this.isInitialized) {
                 this.refresh();
@@ -53,12 +52,10 @@ class EquipmentLevelDisplay {
      * Initialize the equipment level display
      */
     initialize() {
-        // Check if feature is enabled
         if (!config.getSetting('itemIconLevel')) {
             return;
         }
 
-        // Prevent multiple initializations
         if (this.isInitialized) {
             return;
         }
@@ -101,7 +98,6 @@ class EquipmentLevelDisplay {
         );
 
         for (const div of iconDivs) {
-            // Skip if already processed
             if (this.processedDivs.has(div)) {
                 continue;
             }
@@ -252,10 +248,8 @@ class EquipmentLevelDisplay {
     }
 }
 
-// Create and export singleton instance
 const equipmentLevelDisplay = new EquipmentLevelDisplay();
 
-// Setup setting listener immediately (before initialize)
 equipmentLevelDisplay.setupSettingListener();
 
 export default equipmentLevelDisplay;

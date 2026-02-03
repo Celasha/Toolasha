@@ -264,7 +264,6 @@ class TaskProfitDisplay {
 
         webSocketHook.on('quests_updated', questsHandler);
 
-        // Store handler for cleanup
         this.unregisterHandlers.push(() => {
             webSocketHook.off('quests_updated', questsHandler);
         });
@@ -1094,11 +1093,9 @@ class TaskProfitDisplay {
      * Disable the feature
      */
     disable() {
-        // Unregister all handlers
         this.unregisterHandlers.forEach((unregister) => unregister());
         this.unregisterHandlers = [];
 
-        // Unregister retry handlers
         if (this.retryHandler) {
             dataManager.off('character_initialized', this.retryHandler);
             this.retryHandler = null;
@@ -1129,7 +1126,6 @@ class TaskProfitDisplay {
     }
 }
 
-// Create and export singleton instance
 const taskProfitDisplay = new TaskProfitDisplay();
 taskProfitDisplay.setupSettingListener();
 

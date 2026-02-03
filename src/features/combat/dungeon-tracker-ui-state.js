@@ -108,7 +108,6 @@ class DungeonTrackerUIState {
     }
 }
 
-// Create and export singleton instance
 const dungeonTrackerUIState = new DungeonTrackerUIState();
 
 export default dungeonTrackerUIState;

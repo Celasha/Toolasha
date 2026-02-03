@@ -27,7 +27,6 @@ class ListingPriceDisplay {
      * Initialize the listing price display
      */
     initialize() {
-        // Guard against duplicate initialization
         if (this.isInitialized) {
             return;
         }
@@ -226,7 +225,6 @@ class ListingPriceDisplay {
      * @param {HTMLElement} tableNode - The listings table element
      */
     updateTable(tableNode) {
-        // Skip if already processed
         if (tableNode.classList.contains('mwi-listing-prices-set')) {
             return;
         }
@@ -827,8 +825,6 @@ class ListingPriceDisplay {
      * Disable the listing price display
      */
     disable() {
-        console.log('[ListingPriceDisplay] 🧹 Cleaning up handlers');
-
         if (this.unregisterWebSocket) {
             this.unregisterWebSocket();
             this.unregisterWebSocket = null;
@@ -845,7 +841,6 @@ class ListingPriceDisplay {
     }
 }
 
-// Create and export singleton instance
 const listingPriceDisplay = new ListingPriceDisplay();
 
 export default listingPriceDisplay;

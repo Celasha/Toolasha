@@ -49,7 +49,6 @@ class AbilityBookCalculator {
             return;
         }
 
-        // Check if feature is enabled
         if (!config.getSetting('skillbook')) {
             return;
         }
@@ -304,7 +303,6 @@ class AbilityBookCalculator {
      * Disable the feature
      */
     disable() {
-        // Unregister from centralized observer
         if (this.unregisterObserver) {
             this.unregisterObserver();
             this.unregisterObserver = null;
@@ -314,7 +312,6 @@ class AbilityBookCalculator {
     }
 }
 
-// Create and export singleton instance
 const abilityBookCalculator = new AbilityBookCalculator();
 abilityBookCalculator.setupSettingListener();
 

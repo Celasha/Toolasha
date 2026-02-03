@@ -34,12 +34,10 @@ class DungeonTokenTooltips {
      * Initialize the dungeon token tooltips feature
      */
     async initialize() {
-        // Guard against duplicate initialization
         if (this.isInitialized) {
             return;
         }
 
-        // Check if feature is enabled
         if (!config.isFeatureEnabled('dungeonTokenTooltips')) {
             return;
         }
@@ -189,7 +187,6 @@ class DungeonTokenTooltips {
      * @param {boolean} isCollectionTooltip - True if this is a collection tooltip
      */
     injectShopItemsDisplay(tooltipElement, shopItems, isCollectionTooltip = false) {
-        // Find the tooltip text container
         const tooltipText = isCollectionTooltip
             ? tooltipElement.querySelector('.Collection_tooltipContent__2IcSJ')
             : tooltipElement.querySelector('.ItemTooltipText_itemTooltipText__zFq3A');
@@ -198,7 +195,6 @@ class DungeonTokenTooltips {
             return;
         }
 
-        // Check if we already injected (prevent duplicates)
         if (tooltipText.querySelector('.dungeon-token-shop-injected')) {
             return;
         }
@@ -234,7 +230,6 @@ class DungeonTokenTooltips {
 
         shopDiv.innerHTML = html;
 
-        // Insert at the end of the tooltip
         tooltipText.appendChild(shopDiv);
     }
 
@@ -252,7 +247,6 @@ class DungeonTokenTooltips {
     }
 }
 
-// Create singleton instance
 const dungeonTokenTooltips = new DungeonTokenTooltips();
 
 export default {

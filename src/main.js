@@ -24,15 +24,12 @@ function isCombatSimulatorPage() {
     return url.includes('shykai.github.io/MWICombatSimulatorTest/dist/');
 }
 
-// === COMBAT SIMULATOR PAGE ===
 if (isCombatSimulatorPage()) {
     // Initialize combat sim integration only
     combatSimIntegration.initialize();
 
     // Skip all other initialization
 } else {
-    // === GAME PAGE ===
-
     // CRITICAL: Install WebSocket hook FIRST, before game connects
     webSocketHook.install();
 

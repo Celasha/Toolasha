@@ -38,7 +38,6 @@ class RequiredMaterials {
         const panels = document.querySelectorAll('[class*="SkillActionDetail_skillActionDetail"]');
 
         panels.forEach((panel) => {
-            // Skip if already processed
             if (this.processedPanels.has(panel)) {
                 return;
             }

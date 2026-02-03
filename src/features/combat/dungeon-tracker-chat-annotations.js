@@ -29,7 +29,6 @@ class DungeonTrackerChatAnnotations {
         // Wait for chat to be available
         this.waitForChat();
 
-        // Listen for character switching to clean up
         dataManager.on('character_switching', () => {
             this.cleanup();
         });
@@ -58,7 +57,6 @@ class DungeonTrackerChatAnnotations {
             }
 
             this.initComplete = true;
-            console.log('[Dungeon Tracker] Loaded run counts from storage:', this.cumulativeStatsByDungeon);
         } catch (error) {
             console.error('[Dungeon Tracker] Failed to load run counts from storage:', error);
             this.initComplete = true; // Continue anyway
@@ -69,7 +67,6 @@ class DungeonTrackerChatAnnotations {
      * Refresh run counts after backfill operation
      */
     async refreshRunCounts() {
-        console.log('[Dungeon Tracker] Refreshing run counts after backfill...');
         this.cumulativeStatsByDungeon = {};
         this.processedMessages.clear();
         await this.loadRunCountsFromStorage();
@@ -331,8 +328,6 @@ class DungeonTrackerChatAnnotations {
             savedCount++;
             dungeonCounts[dungeonName] = (dungeonCounts[dungeonName] || 0) + 1;
         }
-
-        console.log('[Dungeon Tracker Debug] Backfill saved', savedCount, 'runs:', dungeonCounts);
     }
 
     /**
@@ -398,10 +393,7 @@ class DungeonTrackerChatAnnotations {
         const nodes = [...document.querySelectorAll('[class^="ChatMessage_chatMessage"]')];
         const events = [];
 
-        console.log('[Dungeon Tracker Debug] Extracting chat events from', nodes.length, 'messages');
-
         for (const node of nodes) {
-            // Skip if already processed
             if (node.dataset.processed === '1') continue;
 
             const text = node.textContent.trim();
@@ -420,7 +412,6 @@ class DungeonTrackerChatAnnotations {
                     // Cache the dungeon name (survives chat scrolling)
                     this.lastSeenDungeonName = dungeonName;
 
-                    console.log('[Dungeon Tracker Debug] Found battle_start:', dungeonName, 'at', timestamp);
                     events.push({
                         type: 'battle_start',
                         timestamp,
@@ -462,7 +453,6 @@ class DungeonTrackerChatAnnotations {
                 const timestamp = this.getTimestampFromMessage(node);
                 if (!timestamp) continue;
 
-                console.log('[Dungeon Tracker Debug] Found battle_end at', timestamp);
                 events.push({
                     type: 'cancel',
                     timestamp,
@@ -474,14 +464,6 @@ class DungeonTrackerChatAnnotations {
 
         const battleStartCount = events.filter((e) => e.type === 'battle_start').length;
         const keyCount = events.filter((e) => e.type === 'key').length;
-        console.log(
-            '[Dungeon Tracker Debug] Extracted events:',
-            battleStartCount,
-            'battle_start,',
-            keyCount,
-            'key counts'
-        );
-
         return events;
     }
 
@@ -499,35 +481,17 @@ class DungeonTrackerChatAnnotations {
             .reverse()
             .find((ev) => ev.type === 'battle_start');
         if (battleStart?.dungeonName) {
-            console.log(
-                '[Dungeon Tracker Debug] Priority 1: Found battle_start for index',
-                currentIndex,
-                '->',
-                battleStart.dungeonName
-            );
             return battleStart.dungeonName;
         }
 
         // 2nd priority: Currently active dungeon run
         const currentRun = dungeonTracker.getCurrentRun();
         if (currentRun?.dungeonName && currentRun.dungeonName !== 'Unknown') {
-            console.log(
-                '[Dungeon Tracker Debug] Priority 2: Using current run for index',
-                currentIndex,
-                '->',
-                currentRun.dungeonName
-            );
             return currentRun.dungeonName;
         }
 
         // 3rd priority: Cached last seen dungeon name
         if (this.lastSeenDungeonName) {
-            console.log(
-                '[Dungeon Tracker Debug] Priority 3: Using cached name for index',
-                currentIndex,
-                '->',
-                this.lastSeenDungeonName
-            );
             return this.lastSeenDungeonName;
         }
 
@@ -723,7 +687,6 @@ class DungeonTrackerChatAnnotations {
     }
 }
 
-// Create and export singleton instance
 const dungeonTrackerChatAnnotations = new DungeonTrackerChatAnnotations();
 
 export default dungeonTrackerChatAnnotations;

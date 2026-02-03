@@ -279,8 +279,6 @@ class MarketAPI {
      * @returns {Promise<Object|null>} Fresh market data or null if failed
      */
     async clearCacheAndRefetch() {
-        console.log('[MarketAPI] 🔄 Clearing cache and fetching fresh data...');
-
         // Clear storage cache
         await storage.delete(this.CACHE_KEY_DATA, 'settings');
         await storage.delete(this.CACHE_KEY_TIMESTAMP, 'settings');
@@ -294,7 +292,6 @@ class MarketAPI {
     }
 }
 
-// Create and export singleton instance
 const marketAPI = new MarketAPI();
 
 export default marketAPI;

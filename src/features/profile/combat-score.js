@@ -51,14 +51,12 @@ class CombatScore {
             return;
         }
 
-        // Check if feature is enabled
         if (!config.getSetting('combatScore')) {
             return;
         }
 
         this.isInitialized = true;
 
-        // Store handler reference for cleanup
         this.profileSharedHandler = (data) => {
             this.handleProfileShared(data);
         };
@@ -532,9 +530,6 @@ class CombatScore {
      * Disable the feature
      */
     disable() {
-        console.log('[CombatScore] 🧹 Cleaning up handlers');
-
-        // Unregister WebSocket handler
         if (this.profileSharedHandler) {
             webSocketHook.off('profile_shared', this.profileSharedHandler);
             this.profileSharedHandler = null;
@@ -550,7 +545,6 @@ class CombatScore {
     }
 }
 
-// Create and export singleton instance
 const combatScore = new CombatScore();
 combatScore.setupSettingListener();
 

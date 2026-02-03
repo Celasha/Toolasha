@@ -229,7 +229,6 @@ class ActionPanelSort {
     }
 }
 
-// Create and export singleton instance
 const actionPanelSort = new ActionPanelSort();
 
 export default actionPanelSort;

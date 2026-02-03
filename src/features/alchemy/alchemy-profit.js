@@ -1164,7 +1164,6 @@ class AlchemyProfit {
     }
 }
 
-// Create and export singleton instance
 const alchemyProfit = new AlchemyProfit();
 
 export default alchemyProfit;

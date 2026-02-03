@@ -12,8 +12,6 @@
 
 import { SECONDS_PER_HOUR, HOURS_PER_DAY, DRINKS_PER_HOUR_BASE, MARKET_TAX } from './profit-constants.js';
 
-// ============ Rate Conversions ============
-
 /**
  * Calculate actions per hour from action time
  * @param {number} actionTimeSeconds - Time per action in seconds
@@ -59,8 +57,6 @@ export function calculateHoursForActions(actionCount, actionsPerHour) {
 export function calculateSecondsForActions(actionCount, actionsPerHour) {
     return calculateHoursForActions(actionCount, actionsPerHour) * SECONDS_PER_HOUR;
 }
-
-// ============ Profit Calculations ============
 
 /**
  * Calculate profit per action from hourly profit data
@@ -115,8 +111,6 @@ export function calculateTotalProfitForActions(profitPerHour, actionsPerHour, ac
 export function calculateProfitPerDay(profitPerHour) {
     return profitPerHour * HOURS_PER_DAY;
 }
-
-// ============ Cost Calculations ============
 
 /**
  * Calculate drink consumption rate with Drink Concentration

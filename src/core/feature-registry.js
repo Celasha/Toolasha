@@ -520,7 +520,6 @@ async function initializeFeatures() {
 
     for (const feature of featureRegistry) {
         try {
-            // Check if feature is enabled
             const isEnabled = feature.customCheck ? feature.customCheck() : config.isFeatureEnabled(feature.key);
 
             if (!isEnabled) {
@@ -624,8 +623,6 @@ function setupCharacterSwitchHandler() {
 
     // Handle character_switching event (cleanup phase)
     dataManager.on('character_switching', async (data) => {
-        console.log(`[FeatureRegistry] Character switching: ${data.oldName} → ${data.newName}`);
-
         // Prevent overlapping switches
         if (isSwitching) {
             console.warn('[FeatureRegistry] Character switch already in progress - ignoring rapid switch');
@@ -656,8 +653,6 @@ function setupCharacterSwitchHandler() {
                     console.error(`[FeatureRegistry] Failed to disable ${feature.name}:`, error);
                 }
             }
-
-            console.log('[FeatureRegistry] All features disabled successfully');
         } catch (error) {
             console.error('[FeatureRegistry] Error during character switch cleanup:', error);
         } finally {
@@ -668,8 +663,6 @@ function setupCharacterSwitchHandler() {
 
     // Handle character_switched event (re-initialization phase)
     dataManager.on('character_switched', async (data) => {
-        console.log(`[FeatureRegistry] Character switched to: ${data.newName}`);
-
         // Prevent multiple overlapping reinits
         if (reinitScheduled) {
             console.warn('[FeatureRegistry] Reinit already scheduled - ignoring duplicate');
@@ -695,8 +688,6 @@ function setupCharacterSwitchHandler() {
 
                 // Now re-initialize all features with fresh settings
                 await initializeFeatures();
-
-                console.log('[FeatureRegistry] All features reinitialized successfully');
             } catch (error) {
                 console.error('[FeatureRegistry] Error during feature reinitialization:', error);
             } finally {

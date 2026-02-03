@@ -246,7 +246,6 @@ class TaskSorter {
     }
 }
 
-// Create singleton instance
 const taskSorter = new TaskSorter();
 
 export default taskSorter;

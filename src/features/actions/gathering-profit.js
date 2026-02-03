@@ -77,7 +77,6 @@ function buildProcessingConversionCache(gameData) {
  * @returns {Object|null} Profit data or null if not applicable
  */
 export async function calculateGatheringProfit(actionHrid) {
-    // Get action details
     const gameData = dataManager.getInitClientData();
     const actionDetail = gameData.actionDetailMap[actionHrid];
 

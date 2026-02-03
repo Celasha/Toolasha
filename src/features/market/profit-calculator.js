@@ -99,7 +99,6 @@ class ProfitCalculator {
             return null;
         }
 
-        // Get action details
         const actionDetails = dataManager.getActionDetails(action.actionHrid);
         if (!actionDetails) {
             return null;
@@ -554,7 +553,6 @@ class ProfitCalculator {
     }
 }
 
-// Create and export singleton instance
 const profitCalculator = new ProfitCalculator();
 
 export default profitCalculator;

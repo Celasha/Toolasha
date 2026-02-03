@@ -29,7 +29,6 @@ class SkillExperiencePercentage {
             }
         });
 
-        // Listen for color changes
         config.onSettingChange('color_accent', () => {
             if (this.isInitialized) {
                 this.refresh();
@@ -45,7 +44,6 @@ class SkillExperiencePercentage {
             return;
         }
 
-        // Prevent multiple initializations
         if (this.isInitialized) {
             return;
         }
@@ -162,7 +160,6 @@ class SkillExperiencePercentage {
         // Remove all percentage spans
         document.querySelectorAll('.mwi-exp-percentage').forEach((span) => span.remove());
 
-        // Unregister observers
         this.unregisterHandlers.forEach((unregister) => unregister());
         this.unregisterHandlers = [];
 
@@ -172,10 +169,8 @@ class SkillExperiencePercentage {
     }
 }
 
-// Create and export singleton instance
 const skillExperiencePercentage = new SkillExperiencePercentage();
 
-// Setup setting listener immediately (before initialize)
 skillExperiencePercentage.setupSettingListener();
 
 export default skillExperiencePercentage;

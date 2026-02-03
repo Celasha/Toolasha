@@ -20,8 +20,6 @@ import {
 import { MARKET_TAX } from './profit-constants.js';
 import { calculateEfficiencyMultiplier } from './efficiency.js';
 
-// ============ Rate Conversion Tests ============
-
 describe('calculateActionsPerHour', () => {
     test('calculates actions per hour from action time', () => {
         expect(calculateActionsPerHour(6)).toBe(600); // 3600 / 6
@@ -73,8 +71,6 @@ describe('calculateSecondsForActions', () => {
         expect(calculateSecondsForActions(100, 0)).toBe(0);
     });
 });
-
-// ============ Profit Calculation Tests ============
 
 describe('calculateProfitPerAction', () => {
     test('calculates profit per action from hourly values', () => {
@@ -137,8 +133,6 @@ describe('calculateProfitPerDay', () => {
         expect(calculateProfitPerDay(-5000)).toBe(-120000);
     });
 });
-
-// ============ Cost Calculation Tests ============
 
 describe('calculateDrinksPerHour', () => {
     test('returns base rate with no concentration', () => {
@@ -367,8 +361,6 @@ describe('calculateGatheringActionTotalsFromBase', () => {
         expect(result.totalProfit).toBe(0);
     });
 });
-
-// ============ Real-World Scenario Tests ============
 
 describe('Real-world profit scenarios', () => {
     test('Cheese production with 150% efficiency', () => {

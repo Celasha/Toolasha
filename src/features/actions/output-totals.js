@@ -27,7 +27,6 @@ class OutputTotals {
      * Initialize the output totals display
      */
     initialize() {
-        // Guard against duplicate initialization
         if (this.isInitialized) {
             return;
         }
@@ -304,7 +303,6 @@ class OutputTotals {
             return;
         }
 
-        // Get action details
         const actionDetails = dataManager.getActionDetails(actionHrid);
         if (!actionDetails || !actionDetails.experienceGain) {
             return;
@@ -350,7 +348,6 @@ class OutputTotals {
         }
         this.observedInputs.clear();
 
-        // Unregister DOM observer
         if (this.unregisterObserver) {
             this.unregisterObserver();
             this.unregisterObserver = null;
@@ -363,7 +360,6 @@ class OutputTotals {
     }
 }
 
-// Create and export singleton instance
 const outputTotals = new OutputTotals();
 
 export default outputTotals;

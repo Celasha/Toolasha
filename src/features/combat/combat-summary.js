@@ -27,14 +27,12 @@ class CombatSummary {
             return;
         }
 
-        // Check if feature is enabled
         if (!config.getSetting('combatSummary')) {
             return;
         }
 
         this.isInitialized = true;
 
-        // Store handler reference for cleanup
         this.battleUnitFetchedHandler = (data) => {
             this.handleBattleSummary(data);
         };
@@ -245,9 +243,6 @@ class CombatSummary {
      * Disable the combat summary feature
      */
     disable() {
-        console.log('[CombatSummary] 🧹 Cleaning up handlers');
-
-        // Unregister WebSocket handler
         if (this.battleUnitFetchedHandler) {
             webSocketHook.off('battle_unit_fetched', this.battleUnitFetchedHandler);
             this.battleUnitFetchedHandler = null;
@@ -258,7 +253,6 @@ class CombatSummary {
     }
 }
 
-// Create and export singleton instance
 const combatSummary = new CombatSummary();
 
 export default combatSummary;

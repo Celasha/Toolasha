@@ -430,7 +430,6 @@ class AlchemyProfitCalculator {
     }
 }
 
-// Create and export singleton instance
 const alchemyProfitCalculator = new AlchemyProfitCalculator();
 
 export default alchemyProfitCalculator;

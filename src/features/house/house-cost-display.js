@@ -744,7 +744,6 @@ class HouseCostDisplay {
                         const hadTabsContainer = removedNode.querySelector('.MuiTabs-flexContainer[role="tablist"]');
                         if (hadTabsContainer) {
                             this.removeMissingMaterialTabs();
-                            console.log('[HouseCostDisplay] Marketplace closed, cleaned up tabs');
                         }
                     }
                 }
@@ -816,7 +815,6 @@ class HouseCostDisplay {
     }
 }
 
-// Create and export singleton instance
 const houseCostDisplay = new HouseCostDisplay();
 houseCostDisplay.setupSettingListener();
 

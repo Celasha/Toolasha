@@ -157,7 +157,6 @@ class TaskRerollTracker {
 
         webSocketHook.on('quests_updated', questsHandler);
 
-        // Store handler for cleanup
         this.unregisterHandlers.push(() => {
             webSocketHook.off('quests_updated', questsHandler);
         });
@@ -214,7 +213,6 @@ class TaskRerollTracker {
             initHandler(dataManager.characterData);
         }
 
-        // Store handler for cleanup
         this.unregisterHandlers.push(() => {
             dataManager.off('character_initialized', initHandler);
         });
@@ -419,7 +417,6 @@ class TaskRerollTracker {
     }
 }
 
-// Create singleton instance
 const taskRerollTracker = new TaskRerollTracker();
 
 export default taskRerollTracker;

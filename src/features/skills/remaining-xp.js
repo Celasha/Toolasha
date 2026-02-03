@@ -57,7 +57,6 @@ class RemainingXP {
             initHandler();
         }
 
-        // Store handler for cleanup
         this.unregisterObservers.push(() => {
             dataManager.off('character_initialized', initHandler);
         });
@@ -203,7 +202,6 @@ class RemainingXP {
             this.updateInterval = null;
         }
 
-        // Unregister observers
         this.unregisterObservers.forEach((unregister) => unregister());
         this.unregisterObservers = [];
 
@@ -214,7 +212,6 @@ class RemainingXP {
     }
 }
 
-// Create and export singleton instance
 const remainingXP = new RemainingXP();
 
 export default remainingXP;

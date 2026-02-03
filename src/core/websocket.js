@@ -224,7 +224,6 @@ class WebSocketHook {
                 // Save as JSON string for Combat Sim export
                 const clientDataStr = JSON.stringify(clientDataObj);
                 await this.saveToStorage('toolasha_init_client_data', clientDataStr);
-                console.log('[Toolasha] Client data captured from localStorage via official API');
             }
         } catch (error) {
             console.error('[WebSocket] Failed to capture client data from localStorage:', error);
@@ -261,7 +260,6 @@ class WebSocketHook {
     }
 }
 
-// Create and export singleton instance
 const webSocketHook = new WebSocketHook();
 
 export default webSocketHook;

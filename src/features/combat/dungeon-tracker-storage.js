@@ -423,7 +423,6 @@ class DungeonTrackerStorage {
     }
 }
 
-// Create and export singleton instance
 const dungeonTrackerStorage = new DungeonTrackerStorage();
 
 export default dungeonTrackerStorage;

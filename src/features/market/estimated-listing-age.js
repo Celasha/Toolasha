@@ -62,7 +62,6 @@ class EstimatedListingAge {
      * Initialize the estimated listing age feature
      */
     async initialize() {
-        // Guard against duplicate initialization
         if (this.isInitialized) {
             return;
         }
@@ -239,7 +238,6 @@ class EstimatedListingAge {
      * @param {HTMLElement} container - Order book container
      */
     processOrderBook(container) {
-        // Skip if already processed
         if (container.classList.contains('mwi-estimated-age-set')) {
             return;
         }
@@ -609,7 +607,6 @@ class EstimatedListingAge {
     }
 }
 
-// Create and export singleton instance
 const estimatedListingAge = new EstimatedListingAge();
 
 export default estimatedListingAge;

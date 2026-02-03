@@ -154,7 +154,6 @@ class QuickInputButtons {
             const baseTime = actionDetails.baseTimeCost / 1e9;
             const speedBonus = parseEquipmentSpeedBonuses(equipment, actionDetails.type, itemDetailMap);
 
-            // ===== SECTION 1: Action Speed & Time (Skip for combat) =====
             let speedSection = null;
 
             if (hasNormalXP) {
@@ -441,7 +440,6 @@ class QuickInputButtons {
                 enhancedUpdateTotalTime();
             } // End hasNormalXP check - speedSection only created for non-combat
 
-            // ===== SECTION 2: Level Progress =====
             const levelProgressSection = this.createLevelProgressSection(
                 actionDetails,
                 actionTime,
@@ -449,7 +447,6 @@ class QuickInputButtons {
                 numberInput
             );
 
-            // ===== SECTION 3: Quick Queue Setup (Skip for combat) =====
             let queueContent = null;
 
             if (hasNormalXP) {
@@ -1241,7 +1238,6 @@ class QuickInputButtons {
     }
 }
 
-// Create and export singleton instance
 const quickInputButtons = new QuickInputButtons();
 
 export default quickInputButtons;

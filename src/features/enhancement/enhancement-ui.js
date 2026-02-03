@@ -1007,7 +1007,6 @@ class EnhancementUI {
             this.pollInterval = null;
         }
 
-        // Unregister DOM observer
         if (this.unregisterScreenObserver) {
             this.unregisterScreenObserver();
             this.unregisterScreenObserver = null;
@@ -1027,7 +1026,6 @@ class EnhancementUI {
     }
 }
 
-// Create and export singleton instance
 const enhancementUI = new EnhancementUI();
 
 export default enhancementUI;

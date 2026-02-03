@@ -124,7 +124,6 @@ class NetworkAlert {
     }
 }
 
-// Create and export singleton instance
 const networkAlert = new NetworkAlert();
 
 export default networkAlert;

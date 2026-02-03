@@ -67,7 +67,6 @@ class MaxProduceable {
      * Initialize the max produceable display
      */
     async initialize() {
-        // Guard against duplicate initialization
         if (this.isInitialized) {
             return;
         }
@@ -576,7 +575,6 @@ class MaxProduceable {
         this.itemsUpdatedDebounceTimer = null;
         this.actionCompletedDebounceTimer = null;
 
-        // Remove event listeners
         if (this.itemsUpdatedHandler) {
             dataManager.off('items_updated', this.itemsUpdatedHandler);
             this.itemsUpdatedHandler = null;
@@ -613,7 +611,6 @@ class MaxProduceable {
     }
 }
 
-// Create and export singleton instance
 const maxProduceable = new MaxProduceable();
 
 export default maxProduceable;
