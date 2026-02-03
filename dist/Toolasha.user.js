@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.14.1
+// @version      0.14.2
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -21221,6 +21221,13 @@
     const updateTimeouts = new Map();
 
     /**
+     * Event handler debounce timers
+     */
+    let itemsUpdatedDebounceTimer = null;
+    let consumablesUpdatedDebounceTimer = null;
+    const DEBOUNCE_DELAY = 300; // 300ms debounce for event handlers
+
+    /**
      * Module-level observer reference for cleanup
      */
     let panelObserver = null;
@@ -21388,14 +21395,20 @@
      * Refreshes enhancement calculator when gear or teas change
      */
     function setupEnhancementRefreshListeners() {
-        // Listen for equipment changes (equipping/unequipping items)
+        // Listen for equipment changes (equipping/unequipping items) with debouncing
         dataManager.on('items_updated', () => {
-            refreshEnhancementCalculator();
+            clearTimeout(itemsUpdatedDebounceTimer);
+            itemsUpdatedDebounceTimer = setTimeout(() => {
+                refreshEnhancementCalculator();
+            }, DEBOUNCE_DELAY);
         });
 
-        // Listen for consumable changes (drinking teas)
+        // Listen for consumable changes (drinking teas) with debouncing
         dataManager.on('consumables_updated', () => {
-            refreshEnhancementCalculator();
+            clearTimeout(consumablesUpdatedDebounceTimer);
+            consumablesUpdatedDebounceTimer = setTimeout(() => {
+                refreshEnhancementCalculator();
+            }, DEBOUNCE_DELAY);
         });
     }
 
@@ -25849,6 +25862,9 @@
             this.profitCalcTimeout = null; // Debounce timer for deferred profit calculations
             this.actionNameToHridCache = null; // Cached reverse lookup map (name → hrid)
             this.isInitialized = false;
+            this.itemsUpdatedDebounceTimer = null; // Debounce timer for items_updated events
+            this.actionCompletedDebounceTimer = null; // Debounce timer for action_completed events
+            this.DEBOUNCE_DELAY = 300; // 300ms debounce for event handlers
         }
 
         /**
@@ -25871,12 +25887,18 @@
 
             this.setupObserver();
 
-            // Store handler references for cleanup
+            // Store handler references for cleanup with debouncing
             this.itemsUpdatedHandler = () => {
-                this.updateAllCounts();
+                clearTimeout(this.itemsUpdatedDebounceTimer);
+                this.itemsUpdatedDebounceTimer = setTimeout(() => {
+                    this.updateAllCounts();
+                }, this.DEBOUNCE_DELAY);
             };
             this.actionCompletedHandler = () => {
-                this.updateAllCounts();
+                clearTimeout(this.actionCompletedDebounceTimer);
+                this.actionCompletedDebounceTimer = setTimeout(() => {
+                    this.updateAllCounts();
+                }, this.DEBOUNCE_DELAY);
             };
             this.characterSwitchingHandler = () => {
                 this.clearAllReferences();
@@ -26352,6 +26374,12 @@
          * Disable the max produceable display
          */
         disable() {
+            // Clear debounce timers
+            clearTimeout(this.itemsUpdatedDebounceTimer);
+            clearTimeout(this.actionCompletedDebounceTimer);
+            this.itemsUpdatedDebounceTimer = null;
+            this.actionCompletedDebounceTimer = null;
+
             // Remove event listeners
             if (this.itemsUpdatedHandler) {
                 dataManager.off('items_updated', this.itemsUpdatedHandler);
@@ -26408,6 +26436,9 @@
             this.actionCompletedHandler = null;
             this.characterSwitchingHandler = null; // Handler for character switch cleanup
             this.isInitialized = false;
+            this.itemsUpdatedDebounceTimer = null; // Debounce timer for items_updated events
+            this.actionCompletedDebounceTimer = null; // Debounce timer for action_completed events
+            this.DEBOUNCE_DELAY = 300; // 300ms debounce for event handlers
         }
 
         /**
@@ -26430,12 +26461,18 @@
 
             this.setupObserver();
 
-            // Store handler references for cleanup
+            // Store handler references for cleanup with debouncing
             this.itemsUpdatedHandler = () => {
-                this.updateAllStats();
+                clearTimeout(this.itemsUpdatedDebounceTimer);
+                this.itemsUpdatedDebounceTimer = setTimeout(() => {
+                    this.updateAllStats();
+                }, this.DEBOUNCE_DELAY);
             };
             this.actionCompletedHandler = () => {
-                this.updateAllStats();
+                clearTimeout(this.actionCompletedDebounceTimer);
+                this.actionCompletedDebounceTimer = setTimeout(() => {
+                    this.updateAllStats();
+                }, this.DEBOUNCE_DELAY);
             };
 
             this.characterSwitchingHandler = () => {
@@ -26682,6 +26719,12 @@
          * Disable the gathering stats display
          */
         disable() {
+            // Clear debounce timers
+            clearTimeout(this.itemsUpdatedDebounceTimer);
+            clearTimeout(this.actionCompletedDebounceTimer);
+            this.itemsUpdatedDebounceTimer = null;
+            this.actionCompletedDebounceTimer = null;
+
             // Remove event listeners
             if (this.itemsUpdatedHandler) {
                 dataManager.off('items_updated', this.itemsUpdatedHandler);
@@ -31519,10 +31562,14 @@
                 return;
             }
 
-            // Register with centralized DOM observer
-            this.unregisterHandler = domObserver.register('EquipmentLevelDisplay', () => {
-                this.addItemLevels();
-            });
+            // Register with centralized DOM observer with debouncing
+            this.unregisterHandler = domObserver.register(
+                'EquipmentLevelDisplay',
+                () => {
+                    this.addItemLevels();
+                },
+                { debounce: true, debounceDelay: 150 } // 150ms debounce to reduce update frequency
+            );
 
             // Process any existing items on page
             this.addItemLevels();
@@ -31934,10 +31981,11 @@
             // Initial update for existing skills
             this.updateAllSkills();
 
-            // Update every second to catch XP changes (matches remaining-xp behavior)
+            // Update every 5 seconds to catch XP changes
+            // Experience changes slowly enough that frequent polling is unnecessary
             this.updateInterval = setInterval(() => {
                 this.updateAllSkills();
-            }, 1000);
+            }, 5000); // 5 seconds (reduced from 1 second for better performance)
 
             this.isInitialized = true;
         }
@@ -38331,6 +38379,11 @@
             this.processedItems = new WeakSet(); // Track processed item containers
             this.warnedItems = new Set(); // Track items we've already warned about
             this.isCalculating = false; // Guard flag to prevent recursive calls
+            this.lastCalculationTime = 0; // Timestamp of last calculation
+            this.CALCULATION_COOLDOWN = 250; // 250ms minimum between calculations
+            this.inventoryLookupCache = null; // Cached inventory lookup map
+            this.inventoryLookupCacheTime = 0; // Timestamp when cache was built
+            this.INVENTORY_CACHE_TTL = 500; // 500ms cache lifetime
         }
 
         /**
@@ -38440,14 +38493,48 @@
 
             // Prevent recursive calls
             if (this.isCalculating) return;
+
+            // Cooldown check - prevent spamming during rapid events
+            const now = Date.now();
+            if (now - this.lastCalculationTime < this.CALCULATION_COOLDOWN) {
+                return;
+            }
+            this.lastCalculationTime = now;
+
             this.isCalculating = true;
 
             const inventoryElem = this.currentInventoryElem;
 
+            // Build inventory cache once if expired or missing (500ms TTL)
+            let inventory = null;
+            let inventoryLookup = null;
+
+            const cacheAge = now - this.inventoryLookupCacheTime;
+            if (this.inventoryLookupCache && cacheAge < this.INVENTORY_CACHE_TTL) {
+                // Use cached data
+                inventory = this.inventoryLookupCache.inventory;
+                inventoryLookup = this.inventoryLookupCache.lookup;
+            } else {
+                // Rebuild cache
+                inventory = dataManager.getInventory();
+                if (inventory) {
+                    inventoryLookup = new Map();
+                    for (const item of inventory) {
+                        if (item.itemLocationHrid === '/item_locations/inventory') {
+                            const key = `${item.itemHrid}|${item.count}`;
+                            inventoryLookup.set(key, item);
+                        }
+                    }
+                    // Store in cache
+                    this.inventoryLookupCache = { inventory, lookup: inventoryLookup };
+                    this.inventoryLookupCacheTime = now;
+                }
+            }
+
             // Process each category
             for (const categoryDiv of inventoryElem.children) {
                 const itemElems = categoryDiv.querySelectorAll('[class*="Item_itemContainer"]');
-                await this.calculateItemPrices(itemElems);
+                await this.calculateItemPrices(itemElems, inventory, inventoryLookup);
             }
 
             this.isCalculating = false;
@@ -38456,27 +38543,35 @@
         /**
          * Calculate and store prices for all items (populates dataset.askValue/bidValue)
          * @param {NodeList} itemElems - Item elements
+         * @param {Array} cachedInventory - Optional cached inventory data
+         * @param {Map} cachedInventoryLookup - Optional cached inventory lookup map
          */
-        async calculateItemPrices(itemElems) {
+        async calculateItemPrices(itemElems, cachedInventory = null, cachedInventoryLookup = null) {
             const gameData = dataManager.getInitClientData();
             if (!gameData) {
                 console.warn('[InventoryBadgeManager] Game data not available yet');
                 return;
             }
 
-            // Get inventory data for enhancement level matching
-            const inventory = dataManager.getInventory();
-            if (!inventory) {
-                console.warn('[InventoryBadgeManager] Inventory data not available yet');
-                return;
-            }
+            // Use cached inventory if provided, otherwise fetch fresh
+            let inventory = cachedInventory;
+            let inventoryLookup = cachedInventoryLookup;
 
-            // Build lookup map: itemHrid|count -> inventory item
-            const inventoryLookup = new Map();
-            for (const item of inventory) {
-                if (item.itemLocationHrid === '/item_locations/inventory') {
-                    const key = `${item.itemHrid}|${item.count}`;
-                    inventoryLookup.set(key, item);
+            if (!inventory || !inventoryLookup) {
+                // Get inventory data for enhancement level matching
+                inventory = dataManager.getInventory();
+                if (!inventory) {
+                    console.warn('[InventoryBadgeManager] Inventory data not available yet');
+                    return;
+                }
+
+                // Build lookup map: itemHrid|count -> inventory item
+                inventoryLookup = new Map();
+                for (const item of inventory) {
+                    if (item.itemLocationHrid === '/item_locations/inventory') {
+                        const key = `${item.itemHrid}|${item.count}`;
+                        inventoryLookup.set(key, item);
+                    }
                 }
             }
 
@@ -38823,6 +38918,8 @@
             this.isCalculating = false; // Guard flag to prevent recursive calls
             this.isInitialized = false;
             this.itemsUpdatedHandler = null;
+            this.itemsUpdatedDebounceTimer = null; // Debounce timer for items_updated events
+            this.DEBOUNCE_DELAY = 300; // 300ms debounce for event handlers
         }
 
         /**
@@ -38883,11 +38980,14 @@
                 50 // Priority: render before bid/ask badges (lower = earlier)
             );
 
-            // Store handler reference for cleanup
+            // Store handler reference for cleanup with debouncing
             this.itemsUpdatedHandler = () => {
-                if (this.currentInventoryElem) {
-                    this.applyCurrentSort();
-                }
+                clearTimeout(this.itemsUpdatedDebounceTimer);
+                this.itemsUpdatedDebounceTimer = setTimeout(() => {
+                    if (this.currentInventoryElem) {
+                        this.applyCurrentSort();
+                    }
+                }, this.DEBOUNCE_DELAY);
             };
 
             // Listen for inventory changes to recalculate prices
@@ -39248,6 +39348,10 @@
          * Disable and cleanup
          */
         disable() {
+            // Clear debounce timer
+            clearTimeout(this.itemsUpdatedDebounceTimer);
+            this.itemsUpdatedDebounceTimer = null;
+
             // Remove event listeners
             if (this.itemsUpdatedHandler) {
                 dataManager.off('items_updated', this.itemsUpdatedHandler);
@@ -39298,6 +39402,8 @@
             this.isCalculating = false;
             this.isInitialized = false;
             this.itemsUpdatedHandler = null;
+            this.itemsUpdatedDebounceTimer = null; // Debounce timer for items_updated events
+            this.DEBOUNCE_DELAY = 300; // 300ms debounce for event handlers
         }
 
         /**
@@ -39363,11 +39469,14 @@
                 100 // Priority: render after stack prices
             );
 
-            // Store handler reference for cleanup
+            // Store handler reference for cleanup with debouncing
             this.itemsUpdatedHandler = () => {
-                if (this.currentInventoryElem) {
-                    this.updateBadges();
-                }
+                clearTimeout(this.itemsUpdatedDebounceTimer);
+                this.itemsUpdatedDebounceTimer = setTimeout(() => {
+                    if (this.currentInventoryElem) {
+                        this.updateBadges();
+                    }
+                }, this.DEBOUNCE_DELAY);
             };
 
             // Listen for inventory changes to recalculate prices
@@ -39404,8 +39513,15 @@
 
         /**
          * Update all price badges (delegates to badge manager)
+         * Skips rendering if InventorySort is active (it already handles badge rendering)
          */
         async updateBadges() {
+            // Skip if InventorySort is active - it already calls renderAllBadges() in applyCurrentSort()
+            // This prevents duplicate calculations when both modules are enabled
+            if (inventorySort.isInitialized && config.getSetting('invSort')) {
+                return;
+            }
+
             await inventoryBadgeManager.renderAllBadges();
         }
 
@@ -39490,6 +39606,10 @@
          * Disable and cleanup
          */
         disable() {
+            // Clear debounce timer
+            clearTimeout(this.itemsUpdatedDebounceTimer);
+            this.itemsUpdatedDebounceTimer = null;
+
             // Remove event listeners
             if (this.itemsUpdatedHandler) {
                 dataManager.off('items_updated', this.itemsUpdatedHandler);
@@ -52011,7 +52131,7 @@
         const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
         targetWindow.Toolasha = {
-            version: '0.14.1',
+            version: '0.14.2',
 
             // Feature toggle API (for users to manage settings via console)
             features: {
