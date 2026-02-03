@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.14.2
+// @version      0.14.3
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -386,7 +386,6 @@
         }
     }
 
-    // Create and export singleton instance
     const storage = new Storage();
 
     /**
@@ -1639,7 +1638,6 @@
         }
     }
 
-    // Create and export singleton instance
     const settingsStorage = new SettingsStorage();
 
     /**
@@ -1898,7 +1896,6 @@
                     // Save as JSON string for Combat Sim export
                     const clientDataStr = JSON.stringify(clientDataObj);
                     await this.saveToStorage('toolasha_init_client_data', clientDataStr);
-                    console.log('[Toolasha] Client data captured from localStorage via official API');
                 }
             } catch (error) {
                 console.error('[WebSocket] Failed to capture client data from localStorage:', error);
@@ -1935,7 +1932,6 @@
         }
     }
 
-    // Create and export singleton instance
     const webSocketHook = new WebSocketHook();
 
     /**
@@ -2835,7 +2831,6 @@
         }
     }
 
-    // Create and export singleton instance
     const dataManager = new DataManager();
 
     /**
@@ -2851,8 +2846,6 @@
      */
     class Config {
         constructor() {
-            // === CONSTANTS ===
-
             // Number formatting separators (locale-aware)
             this.THOUSAND_SEPARATOR = new Intl.NumberFormat().format(1111).replaceAll('1', '').at(0) || '';
             this.DECIMAL_SEPARATOR = new Intl.NumberFormat().format(1.1).replaceAll('1', '').at(0);
@@ -2887,16 +2880,12 @@
             // Market API URL
             this.MARKET_API_URL = 'https://www.milkywayidle.com/game_data/marketplace.json';
 
-            // === SETTINGS MAP ===
-
             // Settings loaded from settings-config.js via settings-storage.js
             this.settingsMap = {};
 
-            // === SETTING CHANGE CALLBACKS ===
             // Map of setting keys to callback functions
             this.settingChangeCallbacks = {};
 
-            // === FEATURE REGISTRY ===
             // Feature toggles with metadata for future UI
             this.features = {
                 // Market Features
@@ -3444,8 +3433,6 @@
             this.SCRIPT_COLOR_TOOLTIP = this.COLOR_ACCENT; // Keep tooltip same as main
         }
 
-        // === FEATURE TOGGLE METHODS ===
-
         /**
          * Check if a feature is enabled
          * Uses legacy settingKey if available, otherwise uses feature.enabled
@@ -3553,7 +3540,6 @@
         }
     }
 
-    // Create and export singleton instance
     const config = new Config();
 
     /**
@@ -3763,7 +3749,6 @@
         }
     }
 
-    // Create singleton instance
     const domObserver = new DOMObserver();
 
     /**
@@ -3890,7 +3875,6 @@
         }
     }
 
-    // Create and export singleton instance
     const networkAlert = new NetworkAlert();
 
     /**
@@ -4172,8 +4156,6 @@
          * @returns {Promise<Object|null>} Fresh market data or null if failed
          */
         async clearCacheAndRefetch() {
-            console.log('[MarketAPI] 🔄 Clearing cache and fetching fresh data...');
-
             // Clear storage cache
             await storage.delete(this.CACHE_KEY_DATA, 'settings');
             await storage.delete(this.CACHE_KEY_TIMESTAMP, 'settings');
@@ -4187,7 +4169,6 @@
         }
     }
 
-    // Create and export singleton instance
     const marketAPI = new MarketAPI();
 
     /**
@@ -5579,8 +5560,6 @@
      */
 
 
-    // ============ Rate Conversions ============
-
     /**
      * Calculate actions per hour from action time
      * @param {number} actionTimeSeconds - Time per action in seconds
@@ -5627,8 +5606,6 @@
         return calculateHoursForActions(actionCount, actionsPerHour) * SECONDS_PER_HOUR;
     }
 
-    // ============ Profit Calculations ============
-
     /**
      * Calculate profit per action from hourly profit data
      *
@@ -5665,8 +5642,6 @@
     function calculateProfitPerDay(profitPerHour) {
         return profitPerHour * HOURS_PER_DAY;
     }
-
-    // ============ Cost Calculations ============
 
     /**
      * Calculate drink consumption rate with Drink Concentration
@@ -6221,7 +6196,6 @@
         }
     }
 
-    // Create and export singleton instance
     const expectedValueCalculator = new ExpectedValueCalculator();
 
     /**
@@ -6452,7 +6426,6 @@
                 return null;
             }
 
-            // Get action details
             const actionDetails = dataManager.getActionDetails(action.actionHrid);
             if (!actionDetails) {
                 return null;
@@ -6907,7 +6880,6 @@
         }
     }
 
-    // Create and export singleton instance
     const profitCalculator = new ProfitCalculator();
 
     /**
@@ -7367,7 +7339,6 @@
         }
     }
 
-    // Create and export singleton instance
     const alchemyProfitCalculator = new AlchemyProfitCalculator();
 
     /**
@@ -8669,7 +8640,6 @@
      * @returns {Object|null} Profit data or null if not applicable
      */
     async function calculateGatheringProfit(actionHrid) {
-        // Get action details
         const gameData = dataManager.getInitClientData();
         const actionDetail = gameData.actionDetailMap[actionHrid];
 
@@ -10012,12 +9982,10 @@
          * Initialize the tooltip prices feature
          */
         async initialize() {
-            // Guard against duplicate initialization
             if (this.isInitialized) {
                 return;
             }
 
-            // Check if feature is enabled
             if (!config.getSetting('itemTooltip_prices')) {
                 return;
             }
@@ -10238,14 +10206,12 @@
          * @param {Object} enhancementData - Enhancement analysis data
          */
         injectEnhancementDisplay(tooltipElement, enhancementData) {
-            // Find the tooltip text container
             const tooltipText = tooltipElement.querySelector('.ItemTooltipText_itemTooltipText__zFq3A');
 
             if (!tooltipText) {
                 return;
             }
 
-            // Check if we already injected (prevent duplicates)
             if (tooltipText.querySelector('.market-enhancement-injected')) {
                 return;
             }
@@ -10260,7 +10226,6 @@
             // Build HTML using the tooltip-enhancement module
             enhancementDiv.innerHTML = buildEnhancementTooltipHTML(enhancementData);
 
-            // Insert at the end of the tooltip
             tooltipText.appendChild(enhancementDiv);
         }
 
@@ -10340,7 +10305,6 @@
          * @param {boolean} isCollectionTooltip - True if this is a collection tooltip
          */
         injectPriceDisplay(tooltipElement, price, amount, isCollectionTooltip = false) {
-            // Find the tooltip text container
             const tooltipText = isCollectionTooltip
                 ? tooltipElement.querySelector('.Collection_tooltipContent__2IcSJ')
                 : tooltipElement.querySelector('.ItemTooltipText_itemTooltipText__zFq3A');
@@ -10350,7 +10314,6 @@
                 return;
             }
 
-            // Check if we already injected (prevent duplicates)
             if (tooltipText.querySelector('.market-price-injected')) {
                 return;
             }
@@ -10380,7 +10343,6 @@
             // Format: "Price: 1,200 / 950" or "Price: 1,200 / -" or "Price: - / 950"
             priceDiv.innerHTML = `Price: ${askDisplay} / ${bidDisplay}${totalDisplay}`;
 
-            // Insert at the end of the tooltip
             tooltipText.appendChild(priceDiv);
         }
 
@@ -10391,7 +10353,6 @@
          * @param {boolean} isCollectionTooltip - True if this is a collection tooltip
          */
         injectProfitDisplay(tooltipElement, profitData, isCollectionTooltip = false) {
-            // Find the tooltip text container
             const tooltipText = isCollectionTooltip
                 ? tooltipElement.querySelector('.Collection_tooltipContent__2IcSJ')
                 : tooltipElement.querySelector('.ItemTooltipText_itemTooltipText__zFq3A');
@@ -10400,7 +10361,6 @@
                 return;
             }
 
-            // Check if we already injected (prevent duplicates)
             if (tooltipText.querySelector('.market-profit-injected')) {
                 return;
             }
@@ -10529,7 +10489,6 @@
          * @param {boolean} isCollectionTooltip - True if this is a collection tooltip
          */
         injectExpectedValueDisplay(tooltipElement, evData, isCollectionTooltip = false) {
-            // Find the tooltip text container
             const tooltipText = isCollectionTooltip
                 ? tooltipElement.querySelector('.Collection_tooltipContent__2IcSJ')
                 : tooltipElement.querySelector('.ItemTooltipText_itemTooltipText__zFq3A');
@@ -10538,7 +10497,6 @@
                 return;
             }
 
-            // Check if we already injected (prevent duplicates)
             if (tooltipText.querySelector('.market-ev-injected')) {
                 return;
             }
@@ -10608,7 +10566,6 @@
 
             evDiv.innerHTML = html;
 
-            // Insert at the end of the tooltip
             tooltipText.appendChild(evDiv);
         }
 
@@ -10731,7 +10688,6 @@
          * @param {boolean} isCollectionTooltip - True if collection tooltip
          */
         injectGatheringDisplay(tooltipElement, gatheringData, isCollectionTooltip = false) {
-            // Find the tooltip text container
             const tooltipText = isCollectionTooltip
                 ? tooltipElement.querySelector('.Collection_tooltipContent__2IcSJ')
                 : tooltipElement.querySelector('.ItemTooltipText_itemTooltipText__zFq3A');
@@ -10740,7 +10696,6 @@
                 return;
             }
 
-            // Check if we already injected (prevent duplicates)
             if (tooltipText.querySelector('.market-gathering-injected')) {
                 return;
             }
@@ -10812,7 +10767,6 @@
 
             gatheringDiv.innerHTML = html;
 
-            // Insert at the end of the tooltip
             tooltipText.appendChild(gatheringDiv);
         }
 
@@ -10825,7 +10779,6 @@
          * @param {boolean} isCollectionTooltip - True if this is a collection tooltip
          */
         async injectMultiActionProfitDisplay(tooltipElement, itemHrid, enhancementLevel, isCollectionTooltip = false) {
-            // Find the tooltip text container
             const tooltipText = isCollectionTooltip
                 ? tooltipElement.querySelector('.Collection_tooltipContent__2IcSJ')
                 : tooltipElement.querySelector('.ItemTooltipText_itemTooltipText__zFq3A');
@@ -10834,7 +10787,6 @@
                 return;
             }
 
-            // Check if we already injected (prevent duplicates)
             if (tooltipText.querySelector('.market-multi-action-injected')) {
                 return;
             }
@@ -10917,7 +10869,6 @@
         }
     }
 
-    // Create and export singleton instance
     const tooltipPrices = new TooltipPrices();
 
     /**
@@ -10940,12 +10891,10 @@
          * Initialize the consumable tooltips feature
          */
         async initialize() {
-            // Guard against duplicate initialization
             if (this.isInitialized) {
                 return;
             }
 
-            // Check if feature is enabled
             if (!config.getSetting('showConsumTips')) {
                 return;
             }
@@ -11162,14 +11111,12 @@
          * @param {Object} stats - Consumable stats
          */
         injectConsumableDisplay(tooltipElement, stats) {
-            // Find the tooltip text container
             const tooltipText = tooltipElement.querySelector('.ItemTooltipText_itemTooltipText__zFq3A');
 
             if (!tooltipText) {
                 return;
             }
 
-            // Check if we already injected (prevent duplicates)
             if (tooltipText.querySelector('.consumable-stats-injected')) {
                 return;
             }
@@ -11222,7 +11169,6 @@
 
             consumableDiv.innerHTML = html;
 
-            // Insert at the end of the tooltip
             tooltipText.appendChild(consumableDiv);
         }
 
@@ -11240,7 +11186,6 @@
         }
     }
 
-    // Create and export singleton instance
     const tooltipConsumables = new TooltipConsumables();
 
     /**
@@ -11627,7 +11572,6 @@
         }
     }
 
-    // Create and export singleton instance
     const marketFilter = new MarketFilter();
 
     /**
@@ -11771,7 +11715,6 @@
         }
     }
 
-    // Create and export singleton instance
     const autoFillPrice = new AutoFillPrice();
 
     /**
@@ -11792,7 +11735,6 @@
          * Initialize the item count display
          */
         initialize() {
-            // Guard against duplicate initialization
             if (this.isInitialized) {
                 return;
             }
@@ -11948,7 +11890,6 @@
         }
     }
 
-    // Create and export singleton instance
     const itemCountDisplay = new ItemCountDisplay();
 
     /**
@@ -12010,7 +11951,6 @@
          * Initialize the estimated listing age feature
          */
         async initialize() {
-            // Guard against duplicate initialization
             if (this.isInitialized) {
                 return;
             }
@@ -12187,7 +12127,6 @@
          * @param {HTMLElement} container - Order book container
          */
         processOrderBook(container) {
-            // Skip if already processed
             if (container.classList.contains('mwi-estimated-age-set')) {
                 return;
             }
@@ -12557,7 +12496,6 @@
         }
     }
 
-    // Create and export singleton instance
     const estimatedListingAge = new EstimatedListingAge();
 
     /**
@@ -12582,7 +12520,6 @@
          * Initialize the listing price display
          */
         initialize() {
-            // Guard against duplicate initialization
             if (this.isInitialized) {
                 return;
             }
@@ -12781,7 +12718,6 @@
          * @param {HTMLElement} tableNode - The listings table element
          */
         updateTable(tableNode) {
-            // Skip if already processed
             if (tableNode.classList.contains('mwi-listing-prices-set')) {
                 return;
             }
@@ -13382,8 +13318,6 @@
          * Disable the listing price display
          */
         disable() {
-            console.log('[ListingPriceDisplay] 🧹 Cleaning up handlers');
-
             if (this.unregisterWebSocket) {
                 this.unregisterWebSocket();
                 this.unregisterWebSocket = null;
@@ -13400,7 +13334,6 @@
         }
     }
 
-    // Create and export singleton instance
     const listingPriceDisplay = new ListingPriceDisplay();
 
     /**
@@ -13659,7 +13592,6 @@
         }
     }
 
-    // Create and export singleton instance
     const marketOrderTotals = new MarketOrderTotals();
 
     var settingsCSS = "/* Toolasha Settings UI Styles\n * Modern, compact design\n */\n\n/* CSS Variables */\n:root {\n    --toolasha-accent: #5b8def;\n    --toolasha-accent-hover: #7aa3f3;\n    --toolasha-accent-dim: rgba(91, 141, 239, 0.15);\n    --toolasha-secondary: #8A2BE2;\n    --toolasha-text: rgba(255, 255, 255, 0.9);\n    --toolasha-text-dim: rgba(255, 255, 255, 0.5);\n    --toolasha-bg: rgba(20, 25, 35, 0.6);\n    --toolasha-border: rgba(91, 141, 239, 0.2);\n    --toolasha-toggle-off: rgba(100, 100, 120, 0.4);\n    --toolasha-toggle-on: var(--toolasha-accent);\n}\n\n/* Settings Card Container */\n.toolasha-settings-card {\n    display: flex;\n    flex-direction: column;\n    padding: 12px 16px;\n    font-size: 12px;\n    line-height: 1.3;\n    color: var(--toolasha-text);\n    position: relative;\n    overflow-y: auto;\n    gap: 6px;\n    max-height: calc(100vh - 250px);\n}\n\n/* Top gradient line */\n.toolasha-settings-card::before {\n    display: none;\n}\n\n/* Scrollbar styling */\n.toolasha-settings-card::-webkit-scrollbar {\n    width: 6px;\n}\n\n.toolasha-settings-card::-webkit-scrollbar-track {\n    background: transparent;\n}\n\n.toolasha-settings-card::-webkit-scrollbar-thumb {\n    background: var(--toolasha-accent);\n    border-radius: 3px;\n    opacity: 0.5;\n}\n\n.toolasha-settings-card::-webkit-scrollbar-thumb:hover {\n    opacity: 1;\n}\n\n/* Collapsible Settings Groups */\n.toolasha-settings-group {\n    margin-bottom: 8px;\n}\n\n.toolasha-settings-group-header {\n    cursor: pointer;\n    user-select: none;\n    margin: 10px 0 4px 0;\n    color: var(--toolasha-accent);\n    font-weight: 600;\n    font-size: 13px;\n    display: flex;\n    align-items: center;\n    gap: 6px;\n    border-bottom: 1px solid var(--toolasha-border);\n    padding-bottom: 3px;\n    text-transform: uppercase;\n    letter-spacing: 0.5px;\n    transition: color 0.2s ease;\n}\n\n.toolasha-settings-group-header:hover {\n    color: var(--toolasha-accent-hover);\n}\n\n.toolasha-settings-group-header .collapse-icon {\n    font-size: 10px;\n    transition: transform 0.2s ease;\n}\n\n.toolasha-settings-group.collapsed .collapse-icon {\n    transform: rotate(-90deg);\n}\n\n.toolasha-settings-group-content {\n    max-height: 5000px;\n    overflow: hidden;\n    transition: max-height 0.3s ease-out;\n}\n\n.toolasha-settings-group.collapsed .toolasha-settings-group-content {\n    max-height: 0;\n}\n\n/* Section Headers */\n.toolasha-settings-card h3 {\n    margin: 10px 0 4px 0;\n    color: var(--toolasha-accent);\n    font-weight: 600;\n    font-size: 13px;\n    display: flex;\n    align-items: center;\n    gap: 6px;\n    border-bottom: 1px solid var(--toolasha-border);\n    padding-bottom: 3px;\n    text-transform: uppercase;\n    letter-spacing: 0.5px;\n}\n\n.toolasha-settings-card h3:first-child {\n    margin-top: 0;\n}\n\n.toolasha-settings-card h3 .icon {\n    font-size: 14px;\n}\n\n/* Individual Setting Row */\n.toolasha-setting {\n    display: flex;\n    align-items: center;\n    justify-content: space-between;\n    gap: 10px;\n    margin: 0;\n    padding: 6px 8px;\n    background: var(--toolasha-bg);\n    border: 1px solid var(--toolasha-border);\n    border-radius: 4px;\n    min-height: unset;\n    transition: all 0.2s ease;\n}\n\n.toolasha-setting:hover {\n    background: rgba(30, 35, 45, 0.7);\n    border-color: var(--toolasha-accent);\n}\n\n.toolasha-setting.disabled {\n    opacity: 0.3;\n    pointer-events: none;\n}\n\n.toolasha-setting.not-implemented .toolasha-setting-label {\n    color: #ff6b6b;\n}\n\n.toolasha-setting.not-implemented .toolasha-setting-help {\n    color: rgba(255, 107, 107, 0.7);\n}\n\n.toolasha-setting-label {\n    text-align: left;\n    flex: 1;\n    margin-right: 10px;\n    line-height: 1.3;\n    font-size: 12px;\n}\n\n.toolasha-setting-help {\n    display: block;\n    font-size: 10px;\n    color: var(--toolasha-text-dim);\n    margin-top: 2px;\n    font-style: italic;\n}\n\n.toolasha-setting-input {\n    flex-shrink: 0;\n}\n\n/* Modern Toggle Switch */\n.toolasha-switch {\n    position: relative;\n    width: 38px;\n    height: 20px;\n    flex-shrink: 0;\n    display: inline-block;\n}\n\n.toolasha-switch input {\n    opacity: 0;\n    width: 0;\n    height: 0;\n    position: absolute;\n}\n\n.toolasha-slider {\n    position: absolute;\n    top: 0;\n    left: 0;\n    right: 0;\n    bottom: 0;\n    background: var(--toolasha-toggle-off);\n    border-radius: 20px;\n    cursor: pointer;\n    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);\n    border: 2px solid transparent;\n}\n\n.toolasha-slider:before {\n    content: \"\";\n    position: absolute;\n    height: 12px;\n    width: 12px;\n    left: 2px;\n    bottom: 2px;\n    background: white;\n    border-radius: 50%;\n    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);\n    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);\n}\n\n.toolasha-switch input:checked + .toolasha-slider {\n    background: var(--toolasha-toggle-on);\n    border-color: var(--toolasha-accent-hover);\n    box-shadow: 0 0 6px var(--toolasha-accent-dim);\n}\n\n.toolasha-switch input:checked + .toolasha-slider:before {\n    transform: translateX(18px);\n}\n\n.toolasha-switch:hover .toolasha-slider {\n    border-color: var(--toolasha-accent);\n}\n\n/* Text Input */\n.toolasha-text-input {\n    padding: 5px 8px;\n    border: 1px solid var(--toolasha-border);\n    border-radius: 3px;\n    background: rgba(0, 0, 0, 0.3);\n    color: var(--toolasha-text);\n    min-width: 100px;\n    font-size: 12px;\n    transition: all 0.2s ease;\n}\n\n.toolasha-text-input:focus {\n    outline: none;\n    border-color: var(--toolasha-accent);\n    box-shadow: 0 0 0 2px var(--toolasha-accent-dim);\n}\n\n/* Number Input */\n.toolasha-number-input {\n    padding: 5px 8px;\n    border: 1px solid var(--toolasha-border);\n    border-radius: 3px;\n    background: rgba(0, 0, 0, 0.3);\n    color: var(--toolasha-text);\n    min-width: 80px;\n    font-size: 12px;\n    transition: all 0.2s ease;\n}\n\n.toolasha-number-input:focus {\n    outline: none;\n    border-color: var(--toolasha-accent);\n    box-shadow: 0 0 0 2px var(--toolasha-accent-dim);\n}\n\n/* Select Dropdown */\n.toolasha-select-input {\n    padding: 5px 8px;\n    border: 1px solid var(--toolasha-border);\n    border-radius: 3px;\n    background: rgba(0, 0, 0, 0.3);\n    color: var(--toolasha-accent);\n    font-weight: 600;\n    min-width: 150px;\n    cursor: pointer;\n    font-size: 12px;\n    -webkit-appearance: none;\n    -moz-appearance: none;\n    appearance: none;\n    background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20width%3D%2220%22%20height%3D%2220%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cpath%20d%3D%22M5%207l5%205%205-5z%22%20fill%3D%22%235b8def%22%2F%3E%3C%2Fsvg%3E');\n    background-repeat: no-repeat;\n    background-position: right 6px center;\n    background-size: 14px;\n    padding-right: 28px;\n    transition: all 0.2s ease;\n}\n\n.toolasha-select-input:focus {\n    outline: none;\n    border-color: var(--toolasha-accent);\n    box-shadow: 0 0 0 2px var(--toolasha-accent-dim);\n}\n\n.toolasha-select-input option {\n    background: #1a1a2e;\n    color: var(--toolasha-text);\n    padding: 8px;\n}\n\n/* Utility Buttons Container */\n.toolasha-utility-buttons {\n    display: flex;\n    gap: 8px;\n    margin-top: 12px;\n    padding-top: 10px;\n    border-top: 1px solid var(--toolasha-border);\n    flex-wrap: wrap;\n}\n\n.toolasha-utility-button {\n    background: linear-gradient(135deg, var(--toolasha-secondary), #6A1B9A);\n    border: 1px solid rgba(138, 43, 226, 0.4);\n    color: #ffffff;\n    padding: 6px 12px;\n    border-radius: 4px;\n    font-size: 11px;\n    font-weight: 600;\n    cursor: pointer;\n    transition: all 0.2s ease;\n    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);\n}\n\n.toolasha-utility-button:hover {\n    background: linear-gradient(135deg, #9A4BCF, var(--toolasha-secondary));\n    box-shadow: 0 0 10px rgba(138, 43, 226, 0.3);\n    transform: translateY(-1px);\n}\n\n.toolasha-utility-button:active {\n    transform: translateY(0);\n}\n\n/* Sync button - special styling for prominence */\n.toolasha-sync-button {\n    background: linear-gradient(135deg, #047857, #059669) !important;\n    border: 1px solid rgba(4, 120, 87, 0.4) !important;\n    flex: 1 1 auto; /* Allow it to grow and take more space */\n    min-width: 200px; /* Ensure it's wide enough for the text */\n}\n\n.toolasha-sync-button:hover {\n    background: linear-gradient(135deg, #059669, #10b981) !important;\n    box-shadow: 0 0 10px rgba(16, 185, 129, 0.3) !important;\n}\n\n/* Refresh Notice */\n.toolasha-refresh-notice {\n    background: rgba(255, 152, 0, 0.1);\n    border: 1px solid rgba(255, 152, 0, 0.3);\n    border-radius: 4px;\n    padding: 8px 12px;\n    margin-top: 10px;\n    color: #ffa726;\n    font-size: 11px;\n    display: flex;\n    align-items: center;\n    gap: 8px;\n}\n\n.toolasha-refresh-notice::before {\n    content: \"⚠️\";\n    font-size: 14px;\n}\n\n/* Dependency Indicator */\n.toolasha-setting.has-dependency::before {\n    content: \"↳\";\n    position: absolute;\n    left: -4px;\n    color: var(--toolasha-accent);\n    font-size: 14px;\n    opacity: 0.5;\n}\n\n.toolasha-setting.has-dependency {\n    margin-left: 16px;\n    position: relative;\n}\n\n/* Nested setting collapse icons */\n.setting-collapse-icon {\n    flex-shrink: 0;\n    color: var(--toolasha-accent);\n    opacity: 0.7;\n}\n\n.toolasha-setting.dependents-collapsed .setting-collapse-icon {\n    opacity: 1;\n}\n\n.toolasha-setting-label-container:hover .setting-collapse-icon {\n    opacity: 1;\n}\n\n/* Tab Panel Override (for game's settings panel) */\n.TabPanel_tabPanel__tXMJF#toolasha-settings {\n    display: block !important;\n}\n\n.TabPanel_tabPanel__tXMJF#toolasha-settings.TabPanel_hidden__26UM3 {\n    display: none !important;\n}\n";
@@ -15318,7 +15250,6 @@
             // Clean up DOM elements first
             this.cleanupDOM();
 
-            // Unregister character switch listener
             if (this.characterSwitchHandler) {
                 dataManager.off('character_initialized', this.characterSwitchHandler);
                 this.characterSwitchHandler = null;
@@ -15326,7 +15257,6 @@
         }
     }
 
-    // Create and export singleton instance
     const settingsUI = new SettingsUI();
 
     /**
@@ -15635,9 +15565,6 @@
                 this.filters.selectedItems = this.filters.selectedItems.filter((hrid) => validItems.has(hrid));
 
                 if (this.filters.selectedItems.length !== originalLength) {
-                    console.log(
-                        `[MarketHistoryViewer] Cleaned up ${originalLength - this.filters.selectedItems.length} invalid item selections`
-                    );
                     changed = true;
                 }
             }
@@ -15649,9 +15576,6 @@
                 this.filters.selectedEnhLevels = this.filters.selectedEnhLevels.filter((level) => validLevels.has(level));
 
                 if (this.filters.selectedEnhLevels.length !== originalLength) {
-                    console.log(
-                        `[MarketHistoryViewer] Cleaned up ${originalLength - this.filters.selectedEnhLevels.length} invalid enhancement level selections`
-                    );
                     changed = true;
                 }
             }
@@ -15669,9 +15593,6 @@
                 });
 
                 if (this.filters.selectedTypes.length !== originalLength) {
-                    console.log(
-                        `[MarketHistoryViewer] Cleaned up ${originalLength - this.filters.selectedTypes.length} invalid type selections`
-                    );
                     changed = true;
                 }
             }
@@ -17832,7 +17753,6 @@
         }
     }
 
-    // Create and export singleton instance
     const marketHistoryViewer = new MarketHistoryViewer();
 
     /**
@@ -17896,7 +17816,6 @@
             // Load existing history from storage
             await this.loadHistory();
 
-            // Store handler reference for cleanup
             this.marketUpdateHandler = (data) => {
                 this.handleMarketUpdate(data);
             };
@@ -18002,9 +17921,6 @@
          * Disable the feature
          */
         disable() {
-            console.log('[TradeHistory] 🧹 Cleaning up handlers');
-
-            // Unregister WebSocket handler
             if (this.marketUpdateHandler) {
                 dataManager.off('market_listings_updated', this.marketUpdateHandler);
                 this.marketUpdateHandler = null;
@@ -18030,7 +17946,6 @@
         }
     }
 
-    // Create and export singleton instance
     const tradeHistory = new TradeHistory();
     tradeHistory.setupSettingListener();
 
@@ -18062,7 +17977,6 @@
          * Initialize the display system
          */
         initialize() {
-            // Guard against duplicate initialization
             if (this.isInitialized) {
                 return;
             }
@@ -18216,8 +18130,6 @@
 
             // Get current top order prices from the DOM
             const currentPrices = this.extractCurrentPrices(panel);
-            console.log('[TradeHistoryDisplay] Current top orders:', currentPrices);
-            console.log('[TradeHistoryDisplay] Your history:', history);
 
             // Ensure panel has position relative for absolute positioning to work
             if (!panel.style.position || panel.style.position === 'static') {
@@ -18251,14 +18163,6 @@
 
             if (history.buy) {
                 const buyColor = this.getBuyColor(history.buy, currentPrices?.ask);
-                console.log(
-                    '[TradeHistoryDisplay] Buy color:',
-                    buyColor,
-                    'lastBuy:',
-                    history.buy,
-                    'currentAsk:',
-                    currentPrices?.ask
-                );
                 parts.push(
                     `<span style="color: ${buyColor}; font-weight: 600;" title="Your last buy price">Buy ${formatKMB3Digits(history.buy)}</span>`
                 );
@@ -18270,14 +18174,6 @@
 
             if (history.sell) {
                 const sellColor = this.getSellColor(history.sell, currentPrices?.bid);
-                console.log(
-                    '[TradeHistoryDisplay] Sell color:',
-                    sellColor,
-                    'lastSell:',
-                    history.sell,
-                    'currentBid:',
-                    currentPrices?.bid
-                );
                 parts.push(
                     `<span style="color: ${sellColor}; font-weight: 600;" title="Your last sell price">Sell ${formatKMB3Digits(history.sell)}</span>`
                 );
@@ -18385,7 +18281,6 @@
         }
     }
 
-    // Create and export singleton instance
     const tradeHistoryDisplay = new TradeHistoryDisplay();
 
     /**
@@ -18459,7 +18354,6 @@
      */
     async function displayEnhancementStats(panel, itemHrid) {
         try {
-            // Check if feature is enabled
             if (!config.getSetting('enhanceSim')) {
                 // Remove existing calculator if present
                 const existing = panel.querySelector('#mwi-enhancement-stats');
@@ -19396,7 +19290,6 @@
      * @returns {Object|null} Profit data or null if not applicable
      */
     async function calculateProductionProfit(actionHrid) {
-        // Get action details
         const gameData = dataManager.getInitClientData();
         const actionDetail = gameData.actionDetailMap[actionHrid];
 
@@ -19710,7 +19603,6 @@
             `${formatLargeNumber(profit)}/hr, ${formatLargeNumber(profitPerDay)}/day | Total profit: 0`
         );
 
-        // ===== Build Detailed Breakdown Content =====
         const detailsContent = document.createElement('div');
 
         // Revenue Section
@@ -20190,7 +20082,6 @@
             ? '-- ⚠'
             : `${formatLargeNumber(profit)}/hr, ${formatLargeNumber(profitPerDay)}/day | Total profit: 0`;
 
-        // ===== Build Detailed Breakdown Content =====
         const detailsContent = document.createElement('div');
 
         // Revenue Section
@@ -21459,7 +21350,6 @@
         const actionHrid = getActionHridFromName$1(actionName);
         if (!actionHrid) return;
 
-        // Get action details
         const gameData = dataManager.getInitClientData();
         const actionDetail = gameData.actionDetailMap[actionHrid];
         if (!actionDetail) return;
@@ -21978,7 +21868,6 @@
                 return;
             }
 
-            // Check if feature is enabled
             const enabled = config.getSettingValue('totalActionTime', true);
             if (!enabled) {
                 return;
@@ -22741,13 +22630,6 @@
                     // Calculate max queued actions based on available items
                     const maxActions = Math.floor(availableCount / bulkMultiplier);
 
-                    console.log('[Action Time Display] Alchemy limit:', {
-                        itemHrid,
-                        availableCount,
-                        bulkMultiplier,
-                        maxActions,
-                    });
-
                     return { maxActions, limitType: 'alchemy_item' };
                 }
             }
@@ -22769,12 +22651,6 @@
                 const availableGold = byHrid['/items/gold_coin'] || 0;
                 const maxActionsFromGold = Math.floor(availableGold / actionDetails.coinCost);
 
-                console.log('[Action Time Display] Gold constraint:', {
-                    availableGold,
-                    coinCost: actionDetails.coinCost,
-                    maxActions: maxActionsFromGold,
-                });
-
                 if (maxActionsFromGold < minLimit) {
                     minLimit = maxActionsFromGold;
                     limitType = 'gold';
@@ -22792,13 +22668,6 @@
                     // Calculate max queued actions for this material
                     const maxActions = Math.floor(availableCount / requiredPerAction);
 
-                    console.log('[Action Time Display] Material constraint:', {
-                        itemHrid: inputItem.itemHrid,
-                        availableCount,
-                        requiredPerAction,
-                        maxActions,
-                    });
-
                     if (maxActions < minLimit) {
                         minLimit = maxActions;
                         limitType = `material:${inputItem.itemHrid}`;
@@ -22810,11 +22679,6 @@
             if (hasUpgradeItem) {
                 const availableCount = byHrid[hasUpgradeItem] || 0;
 
-                console.log('[Action Time Display] Upgrade item constraint:', {
-                    itemHrid: hasUpgradeItem,
-                    availableCount,
-                });
-
                 if (availableCount < minLimit) {
                     minLimit = availableCount;
                     limitType = `upgrade:${hasUpgradeItem}`;
@@ -22824,12 +22688,6 @@
             if (minLimit === Infinity) {
                 return null;
             }
-
-            console.log('[Action Time Display] Final material limit:', {
-                maxActions: minLimit,
-                limitType,
-                actionHrid: actionDetails.hrid,
-            });
 
             return { maxActions: minLimit, limitType };
         }
@@ -22965,10 +22823,6 @@
                     // Use getCleanActionName to strip any stats we previously appended
                     const actionNameText = this.getCleanActionName(actionNameElement);
 
-                    console.log('[Action Time Display] Detecting current action:', {
-                        cleanText: actionNameText,
-                    });
-
                     // Parse action name (same logic as main display)
                     // Also handles formatted numbers like "Farmland (276K)" or "Zone (1.2M)"
                     const actionNameMatch = actionNameText.match(/^(.+?)(?:\s*\([^)]+\))?$/);
@@ -22984,11 +22838,6 @@
                         itemNameFromDom = null;
                     }
 
-                    console.log('[Action Time Display] Parsed action name:', {
-                        actionName: actionNameFromDom,
-                        itemName: itemNameFromDom,
-                    });
-
                     // Match current action from cache
                     currentAction = currentActions.find((a) => {
                         const actionDetails = dataManager.getActionDetails(a.actionHrid);
@@ -22999,13 +22848,6 @@
                         if (itemNameFromDom && a.primaryItemHash) {
                             const itemHrid = '/items/' + itemNameFromDom.toLowerCase().replace(/\s+/g, '_');
                             const matches = a.primaryItemHash.includes(itemHrid);
-                            console.log('[Action Time Display] Matching by primaryItemHash:', {
-                                actionHrid: a.actionHrid,
-                                itemNameFromDom,
-                                itemHrid,
-                                primaryItemHash: a.primaryItemHash,
-                                matches,
-                            });
                             return matches;
                         }
 
@@ -23179,12 +23021,6 @@
                         if (limitResult) {
                             materialLimit = limitResult.maxActions;
                             limitType = limitResult.limitType;
-
-                            console.log('[Action Time Display] Queue action limit check:', {
-                                actionHrid: actionObj.actionHrid,
-                                materialLimit,
-                                limitType,
-                            });
                         }
                     }
 
@@ -23383,7 +23219,6 @@
 
                 // Check if this calculation is still valid (character might have switched)
                 if (this.activeProfitCalculationId !== calculationId) {
-                    console.log('[Action Time Display] Profit calculation cancelled (character switched)');
                     return;
                 }
 
@@ -23524,13 +23359,11 @@
                 this.queueMenuObserver = null;
             }
 
-            // Unregister queue observer
             if (this.unregisterQueueObserver) {
                 this.unregisterQueueObserver();
                 this.unregisterQueueObserver = null;
             }
 
-            // Unregister character switch handler
             if (this.characterInitHandler) {
                 dataManager.off('character_initialized', this.characterInitHandler);
                 this.characterInitHandler = null;
@@ -23558,7 +23391,6 @@
         }
     }
 
-    // Create and export singleton instance
     const actionTimeDisplay = new ActionTimeDisplay();
 
     /**
@@ -24128,7 +23960,6 @@
                 const baseTime = actionDetails.baseTimeCost / 1e9;
                 const speedBonus = parseEquipmentSpeedBonuses(equipment, actionDetails.type, itemDetailMap);
 
-                // ===== SECTION 1: Action Speed & Time (Skip for combat) =====
                 let speedSection = null;
 
                 if (hasNormalXP) {
@@ -24415,7 +24246,6 @@
                     enhancedUpdateTotalTime();
                 } // End hasNormalXP check - speedSection only created for non-combat
 
-                // ===== SECTION 2: Level Progress =====
                 const levelProgressSection = this.createLevelProgressSection(
                     actionDetails,
                     actionTime,
@@ -24423,7 +24253,6 @@
                     numberInput
                 );
 
-                // ===== SECTION 3: Quick Queue Setup (Skip for combat) =====
                 let queueContent = null;
 
                 if (hasNormalXP) {
@@ -25215,7 +25044,6 @@
         }
     }
 
-    // Create and export singleton instance
     const quickInputButtons = new QuickInputButtons();
 
     /**
@@ -25242,7 +25070,6 @@
          * Initialize the output totals display
          */
         initialize() {
-            // Guard against duplicate initialization
             if (this.isInitialized) {
                 return;
             }
@@ -25519,7 +25346,6 @@
                 return;
             }
 
-            // Get action details
             const actionDetails = dataManager.getActionDetails(actionHrid);
             if (!actionDetails || !actionDetails.experienceGain) {
                 return;
@@ -25565,7 +25391,6 @@
             }
             this.observedInputs.clear();
 
-            // Unregister DOM observer
             if (this.unregisterObserver) {
                 this.unregisterObserver();
                 this.unregisterObserver = null;
@@ -25578,7 +25403,6 @@
         }
     }
 
-    // Create and export singleton instance
     const outputTotals = new OutputTotals();
 
     /**
@@ -25809,7 +25633,6 @@
         }
     }
 
-    // Create and export singleton instance
     const actionPanelSort = new ActionPanelSort();
 
     /**
@@ -25871,7 +25694,6 @@
          * Initialize the max produceable display
          */
         async initialize() {
-            // Guard against duplicate initialization
             if (this.isInitialized) {
                 return;
             }
@@ -26380,7 +26202,6 @@
             this.itemsUpdatedDebounceTimer = null;
             this.actionCompletedDebounceTimer = null;
 
-            // Remove event listeners
             if (this.itemsUpdatedHandler) {
                 dataManager.off('items_updated', this.itemsUpdatedHandler);
                 this.itemsUpdatedHandler = null;
@@ -26417,7 +26238,6 @@
         }
     }
 
-    // Create and export singleton instance
     const maxProduceable = new MaxProduceable();
 
     /**
@@ -26445,7 +26265,6 @@
          * Initialize the gathering stats display
          */
         async initialize() {
-            // Guard against duplicate initialization
             if (this.isInitialized) {
                 return;
             }
@@ -26725,7 +26544,6 @@
             this.itemsUpdatedDebounceTimer = null;
             this.actionCompletedDebounceTimer = null;
 
-            // Remove event listeners
             if (this.itemsUpdatedHandler) {
                 dataManager.off('items_updated', this.itemsUpdatedHandler);
                 this.itemsUpdatedHandler = null;
@@ -26756,7 +26574,6 @@
         }
     }
 
-    // Create and export singleton instance
     const gatheringStats = new GatheringStats();
 
     /**
@@ -26793,7 +26610,6 @@
             const panels = document.querySelectorAll('[class*="SkillActionDetail_skillActionDetail"]');
 
             panels.forEach((panel) => {
-                // Skip if already processed
                 if (this.processedPanels.has(panel)) {
                     return;
                 }
@@ -27313,7 +27129,6 @@
      * Initialize missing materials button feature
      */
     function initialize$2() {
-        console.log('[MissingMats] Initializing missing materials button feature');
         setupMarketplaceCleanupObserver();
         setupBuyModalObserver();
 
@@ -27332,9 +27147,6 @@
      * Cleanup function
      */
     function cleanup$1() {
-        console.log('[MissingMats] Cleaning up missing materials button feature');
-
-        // Unregister DOM observer
         if (domObserverUnregister) {
             domObserverUnregister();
             domObserverUnregister = null;
@@ -27346,7 +27158,6 @@
             cleanupObserver = null;
         }
 
-        // Unregister buy modal observer
         if (buyModalObserverUnregister) {
             buyModalObserverUnregister();
             buyModalObserverUnregister = null;
@@ -27366,7 +27177,6 @@
         const panels = document.querySelectorAll('[class*="SkillActionDetail_skillActionDetail"]');
 
         panels.forEach((panel) => {
-            // Skip if already processed
             if (processedPanels.has(panel)) {
                 return;
             }
@@ -27411,12 +27221,10 @@
             return;
         }
 
-        // Check if feature is enabled
         if (config.getSetting('actions_missingMaterialsButton') !== true) {
             return;
         }
 
-        // Get action details
         const actionHrid = getActionHridFromPanel(panel);
         if (!actionHrid) {
             return;
@@ -27904,7 +27712,6 @@
                         if (hadTabsContainer) {
                             // Marketplace closed, remove custom tabs
                             removeMissingMaterialTabs();
-                            console.log('[MissingMats] Marketplace closed, cleaned up custom tabs');
                         }
                     }
                 }
@@ -27969,8 +27776,6 @@
         // Trigger input event to notify React
         const inputEvent = new Event('input', { bubbles: true });
         quantityInput.dispatchEvent(inputEvent);
-
-        console.log('[MissingMats] Auto-filled quantity:', activeMissingQuantity);
     }
 
     /**
@@ -28095,7 +27900,6 @@
                 return;
             }
 
-            // Check if feature is enabled
             if (!config.getSetting('skillbook')) {
                 return;
             }
@@ -28350,7 +28154,6 @@
          * Disable the feature
          */
         disable() {
-            // Unregister from centralized observer
             if (this.unregisterObserver) {
                 this.unregisterObserver();
                 this.unregisterObserver = null;
@@ -28360,7 +28163,6 @@
         }
     }
 
-    // Create and export singleton instance
     const abilityBookCalculator = new AbilityBookCalculator();
     abilityBookCalculator.setupSettingListener();
 
@@ -28409,7 +28211,6 @@
                 }
             });
 
-            // Listen for color changes
             config.onSettingChange('color_accent', () => {
                 if (this.isInitialized) {
                     this.refresh();
@@ -28429,7 +28230,6 @@
                 return;
             }
 
-            // Prevent multiple initializations
             if (this.isInitialized) {
                 return;
             }
@@ -28664,7 +28464,6 @@
          * Disable the feature
          */
         disable() {
-            // Unregister from centralized observer
             if (this.unregisterObserver) {
                 this.unregisterObserver();
                 this.unregisterObserver = null;
@@ -28688,10 +28487,8 @@
         }
     }
 
-    // Create and export singleton instance
     const zoneIndices = new ZoneIndices();
 
-    // Setup setting listener immediately (before initialize)
     zoneIndices.setupSettingListener();
 
     /**
@@ -29752,7 +29549,6 @@
         const hasParty = characterObj.partyInfo?.partySlotMap;
 
         if (!hasParty) {
-            // === SOLO MODE ===
             exportObj[1] = JSON.stringify(constructSelfPlayer(characterObj, clientObj));
             playerIDs[0] = characterObj.character?.name || 'Player 1';
             importedPlayerPositions[0] = true;
@@ -29767,7 +29563,6 @@
                 }
             }
         } else {
-            // === PARTY MODE ===
             isParty = true;
 
             let slotIndex = 1;
@@ -30300,14 +30095,12 @@
                 return;
             }
 
-            // Check if feature is enabled
             if (!config.getSetting('combatScore')) {
                 return;
             }
 
             this.isInitialized = true;
 
-            // Store handler reference for cleanup
             this.profileSharedHandler = (data) => {
                 this.handleProfileShared(data);
             };
@@ -30781,9 +30574,6 @@
          * Disable the feature
          */
         disable() {
-            console.log('[CombatScore] 🧹 Cleaning up handlers');
-
-            // Unregister WebSocket handler
             if (this.profileSharedHandler) {
                 webSocketHook.off('profile_shared', this.profileSharedHandler);
                 this.profileSharedHandler = null;
@@ -30799,7 +30589,6 @@
         }
     }
 
-    // Create and export singleton instance
     const combatScore = new CombatScore();
     combatScore.setupSettingListener();
 
@@ -31254,14 +31043,12 @@
                 return;
             }
 
-            // Check if feature is enabled
             if (!config.getSetting('characterCard')) {
                 return;
             }
 
             this.isInitialized = true;
 
-            // Store handler reference for cleanup
             this.profileSharedHandler = (data) => {
                 this.handleProfileShared(data);
             };
@@ -31476,9 +31263,6 @@
          * Disable the feature
          */
         disable() {
-            console.log('[CharacterCardButton] 🧹 Cleaning up handlers');
-
-            // Unregister WebSocket handler
             if (this.profileSharedHandler) {
                 webSocketHook.off('profile_shared', this.profileSharedHandler);
                 this.profileSharedHandler = null;
@@ -31496,7 +31280,6 @@
         }
     }
 
-    // Create and export singleton instance
     const characterCardButton = new CharacterCardButton();
     characterCardButton.setupSettingListener();
 
@@ -31540,7 +31323,6 @@
                 }
             });
 
-            // Listen for color changes
             config.onSettingChange('color_accent', () => {
                 if (this.isInitialized) {
                     this.refresh();
@@ -31552,12 +31334,10 @@
          * Initialize the equipment level display
          */
         initialize() {
-            // Check if feature is enabled
             if (!config.getSetting('itemIconLevel')) {
                 return;
             }
 
-            // Prevent multiple initializations
             if (this.isInitialized) {
                 return;
             }
@@ -31600,7 +31380,6 @@
             );
 
             for (const div of iconDivs) {
-                // Skip if already processed
                 if (this.processedDivs.has(div)) {
                     continue;
                 }
@@ -31751,10 +31530,8 @@
         }
     }
 
-    // Create and export singleton instance
     const equipmentLevelDisplay = new EquipmentLevelDisplay();
 
-    // Setup setting listener immediately (before initialize)
     equipmentLevelDisplay.setupSettingListener();
 
     /**
@@ -31784,7 +31561,6 @@
                 return;
             }
 
-            // Check if feature is enabled
             if (!config.getSetting('alchemyItemDimming')) {
                 return;
             }
@@ -31827,7 +31603,6 @@
             );
 
             for (const div of iconDivs) {
-                // Skip if already processed
                 if (this.processedDivs.has(div)) {
                     continue;
                 }
@@ -31902,7 +31677,6 @@
          * Disable the feature
          */
         disable() {
-            // Unregister from centralized observer
             if (this.unregisterObserver) {
                 this.unregisterObserver();
                 this.unregisterObserver = null;
@@ -31923,7 +31697,6 @@
         }
     }
 
-    // Create and export singleton instance
     const alchemyItemDimming = new AlchemyItemDimming();
 
     /**
@@ -31954,7 +31727,6 @@
                 }
             });
 
-            // Listen for color changes
             config.onSettingChange('color_accent', () => {
                 if (this.isInitialized) {
                     this.refresh();
@@ -31970,7 +31742,6 @@
                 return;
             }
 
-            // Prevent multiple initializations
             if (this.isInitialized) {
                 return;
             }
@@ -32087,7 +31858,6 @@
             // Remove all percentage spans
             document.querySelectorAll('.mwi-exp-percentage').forEach((span) => span.remove());
 
-            // Unregister observers
             this.unregisterHandlers.forEach((unregister) => unregister());
             this.unregisterHandlers = [];
 
@@ -32097,10 +31867,8 @@
         }
     }
 
-    // Create and export singleton instance
     const skillExperiencePercentage = new SkillExperiencePercentage();
 
-    // Setup setting listener immediately (before initialize)
     skillExperiencePercentage.setupSettingListener();
 
     /**
@@ -32120,7 +31888,6 @@
          * Initialize external links feature
          */
         initialize() {
-            // Guard against duplicate initialization
             if (this.isInitialized) {
                 return;
             }
@@ -32234,7 +32001,6 @@
         }
     }
 
-    // Create and export singleton instance
     const externalLinks = new ExternalLinks();
 
     /**
@@ -32979,7 +32745,6 @@
 
             webSocketHook.on('quests_updated', questsHandler);
 
-            // Store handler for cleanup
             this.unregisterHandlers.push(() => {
                 webSocketHook.off('quests_updated', questsHandler);
             });
@@ -33809,11 +33574,9 @@
          * Disable the feature
          */
         disable() {
-            // Unregister all handlers
             this.unregisterHandlers.forEach((unregister) => unregister());
             this.unregisterHandlers = [];
 
-            // Unregister retry handlers
             if (this.retryHandler) {
                 dataManager.off('character_initialized', this.retryHandler);
                 this.retryHandler = null;
@@ -33844,7 +33607,6 @@
         }
     }
 
-    // Create and export singleton instance
     const taskProfitDisplay = new TaskProfitDisplay();
     taskProfitDisplay.setupSettingListener();
 
@@ -34000,7 +33762,6 @@
 
             webSocketHook.on('quests_updated', questsHandler);
 
-            // Store handler for cleanup
             this.unregisterHandlers.push(() => {
                 webSocketHook.off('quests_updated', questsHandler);
             });
@@ -34057,7 +33818,6 @@
                 initHandler(dataManager.characterData);
             }
 
-            // Store handler for cleanup
             this.unregisterHandlers.push(() => {
                 dataManager.off('character_initialized', initHandler);
             });
@@ -34262,7 +34022,6 @@
         }
     }
 
-    // Create singleton instance
     const taskRerollTracker = new TaskRerollTracker();
 
     /**
@@ -34739,12 +34498,10 @@
             // Watch for task cards being added/updated
             this.watchTaskCards();
 
-            // Store handler reference for cleanup
             this.characterSwitchingHandler = () => {
                 this.cleanup();
             };
 
-            // Listen for character switching to clean up
             dataManager.on('character_switching', this.characterSwitchingHandler);
 
             // Listen for filter changes to refresh icons
@@ -34827,7 +34584,6 @@
 
             webSocketHook.on('quests_updated', questsHandler);
 
-            // Store handler for cleanup
             this.observers.push(() => {
                 webSocketHook.off('quests_updated', questsHandler);
             });
@@ -35250,7 +35006,6 @@
          * Cleanup
          */
         cleanup() {
-            // Unregister all observers
             this.observers.forEach((unregister) => unregister());
             this.observers = [];
 
@@ -35272,7 +35027,6 @@
          * Disable and cleanup (called by feature registry during character switch)
          */
         disable() {
-            // Remove event listeners
             if (this.characterSwitchingHandler) {
                 dataManager.off('character_switching', this.characterSwitchingHandler);
                 this.characterSwitchingHandler = null;
@@ -35288,7 +35042,6 @@
         }
     }
 
-    // Create singleton instance
     const taskIcons = new TaskIcons();
 
     /**
@@ -35533,7 +35286,6 @@
         }
     }
 
-    // Create singleton instance
     const taskSorter = new TaskSorter();
 
     /**
@@ -35591,7 +35343,6 @@
                 initHandler();
             }
 
-            // Store handler for cleanup
             this.unregisterObservers.push(() => {
                 dataManager.off('character_initialized', initHandler);
             });
@@ -35737,7 +35488,6 @@
                 this.updateInterval = null;
             }
 
-            // Unregister observers
             this.unregisterObservers.forEach((unregister) => unregister());
             this.unregisterObservers = [];
 
@@ -35748,7 +35498,6 @@
         }
     }
 
-    // Create and export singleton instance
     const remainingXP = new RemainingXP();
 
     /**
@@ -35943,7 +35692,6 @@
         }
     }
 
-    // Create and export singleton instance
     const houseCostCalculator = new HouseCostCalculator();
 
     /**
@@ -36688,7 +36436,6 @@
                             const hadTabsContainer = removedNode.querySelector('.MuiTabs-flexContainer[role="tablist"]');
                             if (hadTabsContainer) {
                                 this.removeMissingMaterialTabs();
-                                console.log('[HouseCostDisplay] Marketplace closed, cleaned up tabs');
                             }
                         }
                     }
@@ -36760,7 +36507,6 @@
         }
     }
 
-    // Create and export singleton instance
     const houseCostDisplay = new HouseCostDisplay();
     houseCostDisplay.setupSettingListener();
 
@@ -36927,7 +36673,6 @@
         }
     }
 
-    // Create and export singleton instance
     const housePanelObserver = new HousePanelObserver();
 
     /**
@@ -37054,7 +36799,6 @@
         }
     }
 
-    // Create and export singleton instance
     const networthCache = new NetworthCache();
 
     /**
@@ -38357,7 +38101,6 @@
         }
     }
 
-    // Create and export singleton instance
     const networthFeature = new NetworthFeature();
 
     /**
@@ -38896,7 +38639,6 @@
         }
     }
 
-    // Create and export singleton instance
     const inventoryBadgeManager = new InventoryBadgeManager();
 
     /**
@@ -38949,7 +38691,6 @@
                 return;
             }
 
-            // Prevent multiple initializations
             if (this.unregisterHandlers.length > 0) {
                 return;
             }
@@ -39352,13 +39093,11 @@
             clearTimeout(this.itemsUpdatedDebounceTimer);
             this.itemsUpdatedDebounceTimer = null;
 
-            // Remove event listeners
             if (this.itemsUpdatedHandler) {
                 dataManager.off('items_updated', this.itemsUpdatedHandler);
                 this.itemsUpdatedHandler = null;
             }
 
-            // Unregister from badge manager
             inventoryBadgeManager.unregisterProvider('inventory-stack-price');
 
             // Remove controls
@@ -39371,7 +39110,6 @@
             const badges = document.querySelectorAll('.mwi-stack-price');
             badges.forEach((badge) => badge.remove());
 
-            // Unregister observers
             this.unregisterHandlers.forEach((unregister) => unregister());
             this.unregisterHandlers = [];
 
@@ -39380,7 +39118,6 @@
         }
     }
 
-    // Create and export singleton instance
     const inventorySort = new InventorySort();
     inventorySort.setupSettingListener();
 
@@ -39419,7 +39156,6 @@
                 }
             });
 
-            // Listen for color changes
             config.onSettingChange('color_invBadge_bid', () => {
                 if (this.isInitialized) {
                     this.refresh();
@@ -39441,7 +39177,6 @@
                 return;
             }
 
-            // Prevent multiple initializations
             if (this.isInitialized) {
                 return;
             }
@@ -39610,13 +39345,11 @@
             clearTimeout(this.itemsUpdatedDebounceTimer);
             this.itemsUpdatedDebounceTimer = null;
 
-            // Remove event listeners
             if (this.itemsUpdatedHandler) {
                 dataManager.off('items_updated', this.itemsUpdatedHandler);
                 this.itemsUpdatedHandler = null;
             }
 
-            // Unregister from badge manager
             inventoryBadgeManager.unregisterProvider('inventory-badge-prices');
 
             const badges = document.querySelectorAll('.mwi-badge-price-bid, .mwi-badge-price-ask');
@@ -39630,10 +39363,8 @@
         }
     }
 
-    // Create and export singleton instance
     const inventoryBadgePrices = new InventoryBadgePrices();
 
-    // Setup setting listener immediately (before initialize)
     inventoryBadgePrices.setupSettingListener();
 
     /**
@@ -40646,7 +40377,6 @@
         }
     }
 
-    // Create and export singleton instance
     const enhancementTracker = new EnhancementTracker();
 
     /**
@@ -41646,7 +41376,6 @@
                 this.pollInterval = null;
             }
 
-            // Unregister DOM observer
             if (this.unregisterScreenObserver) {
                 this.unregisterScreenObserver();
                 this.unregisterScreenObserver = null;
@@ -41666,7 +41395,6 @@
         }
     }
 
-    // Create and export singleton instance
     const enhancementUI = new EnhancementUI();
 
     /**
@@ -42067,7 +41795,6 @@
          * Initialize all enhancement components
          */
         async initialize() {
-            // Guard against duplicate initialization
             if (this.isInitialized) {
                 return;
             }
@@ -42088,8 +41815,6 @@
          * Cleanup all enhancement components
          */
         disable() {
-            console.log('[Enhancement] 🧹 Cleaning up all components');
-
             // Cleanup WebSocket handlers
             cleanupEnhancementHandlers();
 
@@ -42105,7 +41830,6 @@
         }
     }
 
-    // Create and export singleton instance
     const enhancementFeature = new EnhancementFeature();
 
     /**
@@ -42136,12 +41860,10 @@
             // Listen for action updates
             this.registerWebSocketListeners();
 
-            // Store handler reference for cleanup
             this.characterSwitchingHandler = () => {
                 this.disable();
             };
 
-            // Listen for character switching to clean up
             dataManager.on('character_switching', this.characterSwitchingHandler);
         }
 
@@ -42252,7 +41974,6 @@
          * Cleanup
          */
         disable() {
-            // Remove event listeners
             if (this.characterSwitchingHandler) {
                 dataManager.off('character_switching', this.characterSwitchingHandler);
                 this.characterSwitchingHandler = null;
@@ -42264,7 +41985,6 @@
         }
     }
 
-    // Create and export singleton instance
     const emptyQueueNotification = new EmptyQueueNotification();
 
     /**
@@ -42690,7 +42410,6 @@
         }
     }
 
-    // Create and export singleton instance
     const dungeonTrackerStorage = new DungeonTrackerStorage();
 
     /**
@@ -42815,7 +42534,6 @@
 
             // Verify battleId matches (same run)
             if (saved.battleId !== currentBattleId) {
-                console.log('[Dungeon Tracker] BattleId mismatch - discarding old run state');
                 await this.clearInProgressRun();
                 return false;
             }
@@ -42825,7 +42543,6 @@
             const dungeonAction = currentActions.find((a) => this.isDungeonAction(a.actionHrid) && !a.isDone);
 
             if (!dungeonAction || dungeonAction.actionHrid !== saved.dungeonHrid) {
-                console.log('[Dungeon Tracker] Dungeon no longer active - discarding old run state');
                 await this.clearInProgressRun();
                 return false;
             }
@@ -42833,7 +42550,6 @@
             // Check staleness (older than 10 minutes = likely invalid)
             const age = Date.now() - saved.lastUpdateTime;
             if (age > 10 * 60 * 1000) {
-                console.log('[Dungeon Tracker] Saved state too old - discarding');
                 await this.clearInProgressRun();
                 return false;
             }
@@ -42914,7 +42630,6 @@
             // Check for active dungeon on page load and try to restore state
             setTimeout(() => this.checkForActiveDungeon(), 1000);
 
-            // Listen for character switching to clean up
             dataManager.on('character_switching', () => {
                 this.cleanup();
             });
@@ -43409,10 +43124,6 @@
                 // this is probably the COMPLETION message, not the start!
                 // This happens when state was restored but first message wasn't captured.
                 if (this.currentRun && this.currentRun.startTime) {
-                    console.log(
-                        '[Dungeon Tracker] WARNING: Received Key counts with null timestamps but already tracking! Using startTime as fallback.'
-                    );
-
                     // Use the currentRun.startTime as the first timestamp (best estimate)
                     this.firstKeyCountTimestamp = this.currentRun.startTime;
                     this.lastKeyCountTimestamp = timestamp; // Current message is completion
@@ -43497,16 +43208,8 @@
          * @param {Object} data - new_battle message data
          */
         async onNewBattle(data) {
-            console.log('[Dungeon Tracker] onNewBattle fired:', {
-                wave: data.wave,
-                battleId: data.battleId,
-                isTracking: this.isTracking,
-                currentBattleId: this.currentBattleId,
-            });
-
             // Only track if we have wave data
             if (data.wave === undefined) {
-                console.log('[Dungeon Tracker] No wave data, skipping');
                 return;
             }
 
@@ -43515,25 +43218,19 @@
 
             // Wave 0 = first wave = dungeon start
             if (data.wave === 0) {
-                console.log('[Dungeon Tracker] Wave 0 detected - starting new dungeon');
                 // Clear any stale saved state first (in case previous run didn't clear properly)
                 await this.clearInProgressRun();
 
                 // Start fresh dungeon
                 this.startDungeon(data);
             } else if (!this.isTracking) {
-                console.log('[Dungeon Tracker] Mid-dungeon start - attempting restore');
                 // Mid-dungeon start - try to restore first
                 const restored = await this.restoreInProgressRun(battleId);
                 if (!restored) {
-                    console.log('[Dungeon Tracker] Restore failed - initializing tracking');
                     // No restore - initialize tracking anyway
                     this.startDungeon(data);
-                } else {
-                    console.log('[Dungeon Tracker] Restore successful');
                 }
             } else {
-                console.log('[Dungeon Tracker] Subsequent wave - already tracking');
                 // Subsequent wave (already tracking)
                 // Update battleId in case user logged out and back in (new battle instance)
                 this.currentBattleId = data.battleId;
@@ -43949,9 +43646,6 @@
          * Cleanup for character switching
          */
         async cleanup() {
-            console.log('[DungeonTracker] 🧹 Cleaning up handlers');
-
-            // Unregister all WebSocket handlers
             if (this.handlers.newBattle) {
                 webSocketHook.off('new_battle', this.handlers.newBattle);
                 this.handlers.newBattle = null;
@@ -44174,7 +43868,6 @@
         }
     }
 
-    // Create and export singleton instance
     const dungeonTracker = new DungeonTracker();
 
     /**
@@ -44204,7 +43897,6 @@
             // Wait for chat to be available
             this.waitForChat();
 
-            // Listen for character switching to clean up
             dataManager.on('character_switching', () => {
                 this.cleanup();
             });
@@ -44233,7 +43925,6 @@
                 }
 
                 this.initComplete = true;
-                console.log('[Dungeon Tracker] Loaded run counts from storage:', this.cumulativeStatsByDungeon);
             } catch (error) {
                 console.error('[Dungeon Tracker] Failed to load run counts from storage:', error);
                 this.initComplete = true; // Continue anyway
@@ -44244,7 +43935,6 @@
          * Refresh run counts after backfill operation
          */
         async refreshRunCounts() {
-            console.log('[Dungeon Tracker] Refreshing run counts after backfill...');
             this.cumulativeStatsByDungeon = {};
             this.processedMessages.clear();
             await this.loadRunCountsFromStorage();
@@ -44472,9 +44162,6 @@
          * @param {Array} events - Chat events array
          */
         async saveRunsFromEvents(events) {
-            // Build runs from events (only key→key pairs)
-            let savedCount = 0;
-            const dungeonCounts = {};
 
             for (let i = 0; i < events.length; i++) {
                 const event = events[i];
@@ -44502,12 +44189,7 @@
 
                 // Save team run (includes dungeon name from Phase 2)
                 await dungeonTrackerStorage.saveTeamRun(teamKey, run);
-
-                savedCount++;
-                dungeonCounts[dungeonName] = (dungeonCounts[dungeonName] || 0) + 1;
             }
-
-            console.log('[Dungeon Tracker Debug] Backfill saved', savedCount, 'runs:', dungeonCounts);
         }
 
         /**
@@ -44573,10 +44255,7 @@
             const nodes = [...document.querySelectorAll('[class^="ChatMessage_chatMessage"]')];
             const events = [];
 
-            console.log('[Dungeon Tracker Debug] Extracting chat events from', nodes.length, 'messages');
-
             for (const node of nodes) {
-                // Skip if already processed
                 if (node.dataset.processed === '1') continue;
 
                 const text = node.textContent.trim();
@@ -44595,7 +44274,6 @@
                         // Cache the dungeon name (survives chat scrolling)
                         this.lastSeenDungeonName = dungeonName;
 
-                        console.log('[Dungeon Tracker Debug] Found battle_start:', dungeonName, 'at', timestamp);
                         events.push({
                             type: 'battle_start',
                             timestamp,
@@ -44637,7 +44315,6 @@
                     const timestamp = this.getTimestampFromMessage(node);
                     if (!timestamp) continue;
 
-                    console.log('[Dungeon Tracker Debug] Found battle_end at', timestamp);
                     events.push({
                         type: 'cancel',
                         timestamp,
@@ -44647,16 +44324,8 @@
                 }
             }
 
-            const battleStartCount = events.filter((e) => e.type === 'battle_start').length;
-            const keyCount = events.filter((e) => e.type === 'key').length;
-            console.log(
-                '[Dungeon Tracker Debug] Extracted events:',
-                battleStartCount,
-                'battle_start,',
-                keyCount,
-                'key counts'
-            );
-
+            events.filter((e) => e.type === 'battle_start').length;
+            events.filter((e) => e.type === 'key').length;
             return events;
         }
 
@@ -44674,35 +44343,17 @@
                 .reverse()
                 .find((ev) => ev.type === 'battle_start');
             if (battleStart?.dungeonName) {
-                console.log(
-                    '[Dungeon Tracker Debug] Priority 1: Found battle_start for index',
-                    currentIndex,
-                    '->',
-                    battleStart.dungeonName
-                );
                 return battleStart.dungeonName;
             }
 
             // 2nd priority: Currently active dungeon run
             const currentRun = dungeonTracker.getCurrentRun();
             if (currentRun?.dungeonName && currentRun.dungeonName !== 'Unknown') {
-                console.log(
-                    '[Dungeon Tracker Debug] Priority 2: Using current run for index',
-                    currentIndex,
-                    '->',
-                    currentRun.dungeonName
-                );
                 return currentRun.dungeonName;
             }
 
             // 3rd priority: Cached last seen dungeon name
             if (this.lastSeenDungeonName) {
-                console.log(
-                    '[Dungeon Tracker Debug] Priority 3: Using cached name for index',
-                    currentIndex,
-                    '->',
-                    this.lastSeenDungeonName
-                );
                 return this.lastSeenDungeonName;
             }
 
@@ -44898,7 +44549,6 @@
         }
     }
 
-    // Create and export singleton instance
     const dungeonTrackerChatAnnotations = new DungeonTrackerChatAnnotations();
 
     /**
@@ -45010,7 +44660,6 @@
         }
     }
 
-    // Create and export singleton instance
     const dungeonTrackerUIState = new DungeonTrackerUIState();
 
     /**
@@ -46388,7 +46037,6 @@
                 this.cleanup();
             };
 
-            // Listen for character switching to clean up
             dataManager.on('character_switching', this.characterSwitchingHandler);
 
             // Watch for character selection screen appearing (when user clicks "Switch Character")
@@ -46986,13 +46634,11 @@
             // Immediately hide UI to prevent visual artifacts during character switch
             this.hide();
 
-            // Unregister dungeon update callback
             if (this.dungeonUpdateHandler) {
                 dungeonTracker.offUpdate(this.dungeonUpdateHandler);
                 this.dungeonUpdateHandler = null;
             }
 
-            // Unregister character switching listener
             if (this.characterSwitchingHandler) {
                 dataManager.off('character_switching', this.characterSwitchingHandler);
                 this.characterSwitchingHandler = null;
@@ -47050,7 +46696,6 @@
         }
     }
 
-    // Create and export singleton instance
     const dungeonTrackerUI = new DungeonTrackerUI();
 
     /**
@@ -47078,14 +46723,12 @@
                 return;
             }
 
-            // Check if feature is enabled
             if (!config.getSetting('combatSummary')) {
                 return;
             }
 
             this.isInitialized = true;
 
-            // Store handler reference for cleanup
             this.battleUnitFetchedHandler = (data) => {
                 this.handleBattleSummary(data);
             };
@@ -47296,9 +46939,6 @@
          * Disable the combat summary feature
          */
         disable() {
-            console.log('[CombatSummary] 🧹 Cleaning up handlers');
-
-            // Unregister WebSocket handler
             if (this.battleUnitFetchedHandler) {
                 webSocketHook.off('battle_unit_fetched', this.battleUnitFetchedHandler);
                 this.battleUnitFetchedHandler = null;
@@ -47309,7 +46949,6 @@
         }
     }
 
-    // Create and export singleton instance
     const combatSummary = new CombatSummary();
 
     /**
@@ -47543,7 +47182,6 @@
         }
     }
 
-    // Create and export singleton instance
     const combatStatsDataCollector = new CombatStatsDataCollector();
 
     /**
@@ -48543,7 +48181,6 @@
         }
     }
 
-    // Create and export singleton instance
     const combatStatsUI = new CombatStatsUI();
 
     /**
@@ -49729,7 +49366,6 @@
         }
     }
 
-    // Create and export singleton instance
     const alchemyProfit = new AlchemyProfit();
 
     /**
@@ -49753,7 +49389,6 @@
          * Initialize the display system
          */
         initialize() {
-            // Guard against duplicate initialization
             if (this.isInitialized) {
                 return;
             }
@@ -49974,7 +49609,6 @@
             );
             const summary = `${formatLargeNumber(profit)}/hr, ${formatLargeNumber(profitPerDay)}/day`;
 
-            // ===== Build Detailed Breakdown Content =====
             const detailsContent = document.createElement('div');
 
             // Revenue Section
@@ -50476,7 +50110,6 @@
         }
     }
 
-    // Create and export singleton instance
     const alchemyProfitDisplay = new AlchemyProfitDisplay();
 
     /**
@@ -50515,7 +50148,6 @@
                 }
             });
 
-            // Listen for color changes
             config.onSettingChange('color_transmute', () => {
                 if (this.isInitialized) {
                     this.refreshRates();
@@ -50531,7 +50163,6 @@
                 return;
             }
 
-            // Prevent multiple initializations
             if (this.isInitialized) {
                 return;
             }
@@ -50683,7 +50314,6 @@
             // Clear any pending injection timeouts
             clearTimeout(this.injectTimeout);
 
-            // Unregister all observers
             this.unregisterHandlers.forEach((unregister) => unregister());
             this.unregisterHandlers = [];
 
@@ -50697,7 +50327,6 @@
         }
     }
 
-    // Create and export singleton instance
     const transmuteRates = new TransmuteRates();
 
     // Setup setting listener (always active, even when feature is disabled)
@@ -50733,12 +50362,10 @@
          * Initialize the dungeon token tooltips feature
          */
         async initialize() {
-            // Guard against duplicate initialization
             if (this.isInitialized) {
                 return;
             }
 
-            // Check if feature is enabled
             if (!config.isFeatureEnabled('dungeonTokenTooltips')) {
                 return;
             }
@@ -50888,7 +50515,6 @@
          * @param {boolean} isCollectionTooltip - True if this is a collection tooltip
          */
         injectShopItemsDisplay(tooltipElement, shopItems, isCollectionTooltip = false) {
-            // Find the tooltip text container
             const tooltipText = isCollectionTooltip
                 ? tooltipElement.querySelector('.Collection_tooltipContent__2IcSJ')
                 : tooltipElement.querySelector('.ItemTooltipText_itemTooltipText__zFq3A');
@@ -50897,7 +50523,6 @@
                 return;
             }
 
-            // Check if we already injected (prevent duplicates)
             if (tooltipText.querySelector('.dungeon-token-shop-injected')) {
                 return;
             }
@@ -50933,7 +50558,6 @@
 
             shopDiv.innerHTML = html;
 
-            // Insert at the end of the tooltip
             tooltipText.appendChild(shopDiv);
         }
 
@@ -50951,7 +50575,6 @@
         }
     }
 
-    // Create singleton instance
     const dungeonTokenTooltips = new DungeonTokenTooltips();
 
     var dungeonTokenTooltips$1 = {
@@ -51434,7 +51057,6 @@
 
         for (const feature of featureRegistry) {
             try {
-                // Check if feature is enabled
                 const isEnabled = feature.customCheck ? feature.customCheck() : config.isFeatureEnabled(feature.key);
 
                 if (!isEnabled) {
@@ -51538,8 +51160,6 @@
 
         // Handle character_switching event (cleanup phase)
         dataManager.on('character_switching', async (data) => {
-            console.log(`[FeatureRegistry] Character switching: ${data.oldName} → ${data.newName}`);
-
             // Prevent overlapping switches
             if (isSwitching) {
                 console.warn('[FeatureRegistry] Character switch already in progress - ignoring rapid switch');
@@ -51570,8 +51190,6 @@
                         console.error(`[FeatureRegistry] Failed to disable ${feature.name}:`, error);
                     }
                 }
-
-                console.log('[FeatureRegistry] All features disabled successfully');
             } catch (error) {
                 console.error('[FeatureRegistry] Error during character switch cleanup:', error);
             } finally {
@@ -51582,8 +51200,6 @@
 
         // Handle character_switched event (re-initialization phase)
         dataManager.on('character_switched', async (data) => {
-            console.log(`[FeatureRegistry] Character switched to: ${data.newName}`);
-
             // Prevent multiple overlapping reinits
             if (reinitScheduled) {
                 console.warn('[FeatureRegistry] Reinit already scheduled - ignoring duplicate');
@@ -51609,8 +51225,6 @@
 
                     // Now re-initialize all features with fresh settings
                     await initializeFeatures();
-
-                    console.log('[FeatureRegistry] All features reinitialized successfully');
                 } catch (error) {
                     console.error('[FeatureRegistry] Error during feature reinitialization:', error);
                 } finally {
@@ -52026,15 +51640,12 @@
         return url.includes('shykai.github.io/MWICombatSimulatorTest/dist/');
     }
 
-    // === COMBAT SIMULATOR PAGE ===
     if (isCombatSimulatorPage()) {
         // Initialize combat sim integration only
         initialize();
 
         // Skip all other initialization
     } else {
-        // === GAME PAGE ===
-
         // CRITICAL: Install WebSocket hook FIRST, before game connects
         webSocketHook.install();
 
@@ -52131,7 +51742,7 @@
         const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
         targetWindow.Toolasha = {
-            version: '0.14.2',
+            version: '0.14.3',
 
             // Feature toggle API (for users to manage settings via console)
             features: {
