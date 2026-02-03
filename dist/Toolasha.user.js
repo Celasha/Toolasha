@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.13.0
+// @version      0.14.0
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -39,7 +39,7 @@
             this.db = null;
             this.available = false;
             this.dbName = 'ToolashaDB';
-            this.dbVersion = 7; // Bumped for marketListings store
+            this.dbVersion = 8; // Bumped for combatStats store
             this.saveDebounceTimers = new Map(); // Per-key debounce timers
             this.pendingWrites = new Map(); // Per-key pending write data: {value, storeName}
             this.SAVE_DEBOUNCE_DELAY = 3000; // 3 seconds
@@ -115,6 +115,11 @@
                     // Create marketListings store if it doesn't exist (for estimated listing ages)
                     if (!db.objectStoreNames.contains('marketListings')) {
                         db.createObjectStore('marketListings');
+                    }
+
+                    // Create combatStats store if it doesn't exist (for combat statistics feature)
+                    if (!db.objectStoreNames.contains('combatStats')) {
+                        db.createObjectStore('combatStats');
                     }
                 };
             });
@@ -917,6 +922,52 @@
                     type: 'checkbox',
                     default: true,
                     help: 'Displays encounters/hour, revenue, experience rates when returning from combat',
+                },
+                combatStats: {
+                    id: 'combatStats',
+                    label: 'Combat Statistics: Show Statistics tab in Combat panel',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Adds a Statistics button to the Combat panel showing income, profit, consumable costs, EXP, and drop details',
+                },
+                combatStatsChatMessage: {
+                    id: 'combatStatsChatMessage',
+                    label: 'Combat Statistics: Chat message format',
+                    type: 'template',
+                    default: [
+                        { type: 'text', value: 'Combat Stats: ' },
+                        { type: 'variable', key: '{duration}', label: 'Duration' },
+                        { type: 'text', value: ' duration | ' },
+                        { type: 'variable', key: '{encountersPerHour}', label: 'Encounters/Hour' },
+                        { type: 'text', value: ' EPH | ' },
+                        { type: 'variable', key: '{income}', label: 'Total Income' },
+                        { type: 'text', value: ' income | ' },
+                        { type: 'variable', key: '{dailyIncome}', label: 'Daily Income' },
+                        { type: 'text', value: ' income/d | ' },
+                        { type: 'variable', key: '{dailyConsumableCosts}', label: 'Daily Consumable Costs' },
+                        { type: 'text', value: ' consumables/d | ' },
+                        { type: 'variable', key: '{dailyProfit}', label: 'Daily Profit' },
+                        { type: 'text', value: ' profit/d | ' },
+                        { type: 'variable', key: '{exp}', label: 'EXP/Hour' },
+                        { type: 'text', value: ' exp/h | ' },
+                        { type: 'variable', key: '{deathCount}', label: 'Deaths' },
+                        { type: 'text', value: ' deaths' },
+                    ],
+                    help: 'Message format when Ctrl+clicking player card in Statistics. Click "Edit Template" to customize.',
+                    templateVariables: [
+                        { key: '{duration}', label: 'Duration', description: 'Combat session duration' },
+                        { key: '{encountersPerHour}', label: 'Encounters/Hour', description: 'Encounters per hour (EPH)' },
+                        { key: '{income}', label: 'Total Income', description: 'Total income from combat' },
+                        { key: '{dailyIncome}', label: 'Daily Income', description: 'Income per day' },
+                        {
+                            key: '{dailyConsumableCosts}',
+                            label: 'Daily Consumable Costs',
+                            description: 'Consumable costs per day',
+                        },
+                        { key: '{dailyProfit}', label: 'Daily Profit', description: 'Profit per day' },
+                        { key: '{exp}', label: 'EXP/Hour', description: 'Experience per hour' },
+                        { key: '{deathCount}', label: 'Deaths', description: 'Number of deaths' },
+                    ],
                 },
             },
         },
@@ -12205,10 +12256,25 @@
                 const price = this.parsePrice(priceText);
                 const quantity = this.parseQuantity(quantityText);
 
+                // Check if quantity is abbreviated (K/M)
+                const isAbbreviated = quantityText.match(/[KM]/i);
+
                 // Find matching listing by price + quantity
                 const listing = listings.find((l) => {
                     const priceMatch = Math.abs(l.price - price) < 0.01;
-                    const qtyMatch = l.quantity === quantity;
+
+                    let qtyMatch;
+                    if (isAbbreviated) {
+                        // For abbreviated quantities, match within rounding range
+                        // "127K" could be 127,000 to 127,999
+                        // "1.2M" could be 1,200,000 to 1,299,999
+                        const tolerance = quantityText.includes('M') ? 100000 : 1000;
+                        qtyMatch = l.quantity >= quantity && l.quantity < quantity + tolerance;
+                    } else {
+                        // For exact quantities, match exactly
+                        qtyMatch = l.quantity === quantity;
+                    }
+
                     return priceMatch && qtyMatch;
                 });
 
@@ -13897,6 +13963,14 @@
             // Add change listener
             card.addEventListener('change', (e) => this.handleSettingChange(e));
 
+            // Add click listener for template edit buttons
+            card.addEventListener('click', (e) => {
+                if (e.target.classList.contains('toolasha-template-edit-btn')) {
+                    const settingId = e.target.dataset.settingId;
+                    this.openTemplateEditor(settingId);
+                }
+            });
+
             return panel;
         }
 
@@ -14207,6 +14281,35 @@
                         class="toolasha-text-input"
                         value="${value}"
                         placeholder="${settingDef.placeholder || ''}">
+                `;
+                }
+
+                case 'template': {
+                    const value = currentSetting?.value ?? settingDef.default ?? [];
+                    // Store as JSON string
+                    const jsonValue = JSON.stringify(value);
+                    const escapedValue = jsonValue.replace(/"/g, '&quot;');
+
+                    return `
+                    <input type="hidden"
+                        id="${settingId}"
+                        value="${escapedValue}">
+                    <button type="button"
+                        class="toolasha-template-edit-btn"
+                        data-setting-id="${settingId}"
+                        style="
+                            background: #4a7c59;
+                            border: 1px solid #5a8c69;
+                            border-radius: 4px;
+                            padding: 6px 12px;
+                            color: #e0e0e0;
+                            cursor: pointer;
+                            font-size: 13px;
+                            white-space: nowrap;
+                            transition: all 0.2s;
+                        ">
+                        Edit Template
+                    </button>
                 `;
                 }
 
@@ -14763,6 +14866,448 @@
             });
 
             input.click();
+        }
+
+        /**
+         * Open template editor modal
+         * @param {string} settingId - Setting ID
+         */
+        openTemplateEditor(settingId) {
+            const setting = this.findSettingDef(settingId);
+            if (!setting || !setting.templateVariables) {
+                return;
+            }
+
+            const input = document.getElementById(settingId);
+            let currentValue = setting.default;
+
+            // Try to parse stored value
+            if (input && input.value) {
+                try {
+                    const parsed = JSON.parse(input.value);
+                    if (Array.isArray(parsed)) {
+                        currentValue = parsed;
+                    }
+                } catch (e) {
+                    console.error('[Settings] Failed to parse template value:', e);
+                }
+            }
+
+            // Ensure currentValue is an array
+            if (!Array.isArray(currentValue)) {
+                currentValue = setting.default || [];
+            }
+
+            // Deep clone to avoid mutating original
+            const templateItems = JSON.parse(JSON.stringify(currentValue));
+
+            // Create overlay
+            const overlay = document.createElement('div');
+            overlay.className = 'toolasha-template-editor-overlay';
+            overlay.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 100000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        `;
+
+            // Create modal
+            const modal = document.createElement('div');
+            modal.className = 'toolasha-template-editor-modal';
+            modal.style.cssText = `
+            background: #1a1a1a;
+            border: 2px solid #3a3a3a;
+            border-radius: 8px;
+            padding: 20px;
+            max-width: 700px;
+            width: 90%;
+            max-height: 90%;
+            overflow-y: auto;
+            color: #e0e0e0;
+        `;
+
+            // Header
+            const header = document.createElement('div');
+            header.style.cssText = `
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #3a3a3a;
+            padding-bottom: 10px;
+        `;
+            header.innerHTML = `
+            <h3 style="margin: 0; color: #e0e0e0;">Edit Template</h3>
+            <button class="toolasha-template-close-btn" style="
+                background: none;
+                border: none;
+                color: #e0e0e0;
+                font-size: 32px;
+                cursor: pointer;
+                padding: 0;
+                line-height: 1;
+            ">×</button>
+        `;
+
+            // Template list section
+            const listSection = document.createElement('div');
+            listSection.style.cssText = 'margin-bottom: 20px;';
+            listSection.innerHTML =
+                '<h4 style="margin: 0 0 10px 0; color: #e0e0e0;">Template Items (drag to reorder):</h4>';
+
+            const listContainer = document.createElement('div');
+            listContainer.className = 'toolasha-template-list';
+            listContainer.style.cssText = `
+            background: #2a2a2a;
+            border: 1px solid #4a4a4a;
+            border-radius: 4px;
+            padding: 10px;
+            min-height: 200px;
+            max-height: 300px;
+            overflow-y: auto;
+        `;
+
+            const renderList = () => {
+                listContainer.innerHTML = '';
+                templateItems.forEach((item, index) => {
+                    const itemEl = this.createTemplateListItem(item, index, templateItems, renderList);
+                    listContainer.appendChild(itemEl);
+                });
+            };
+
+            renderList();
+            listSection.appendChild(listContainer);
+
+            // Available variables section
+            const variablesSection = document.createElement('div');
+            variablesSection.style.cssText = 'margin-bottom: 20px;';
+            variablesSection.innerHTML = '<h4 style="margin: 0 0 10px 0; color: #e0e0e0;">Add Variable:</h4>';
+
+            const variablesContainer = document.createElement('div');
+            variablesContainer.style.cssText = `
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        `;
+
+            for (const variable of setting.templateVariables) {
+                const chip = document.createElement('button');
+                chip.type = 'button';
+                chip.textContent = '+  ' + variable.label;
+                chip.title = variable.description;
+                chip.style.cssText = `
+                background: #2a2a2a;
+                border: 1px solid #4a4a4a;
+                border-radius: 4px;
+                padding: 6px 12px;
+                color: #e0e0e0;
+                cursor: pointer;
+                font-size: 13px;
+                transition: all 0.2s;
+            `;
+                chip.onmouseover = () => {
+                    chip.style.background = '#3a3a3a';
+                    chip.style.borderColor = '#5a5a5a';
+                };
+                chip.onmouseout = () => {
+                    chip.style.background = '#2a2a2a';
+                    chip.style.borderColor = '#4a4a4a';
+                };
+                chip.onclick = () => {
+                    templateItems.push({
+                        type: 'variable',
+                        key: variable.key,
+                        label: variable.label,
+                    });
+                    renderList();
+                };
+                variablesContainer.appendChild(chip);
+            }
+
+            // Add text button
+            const addTextBtn = document.createElement('button');
+            addTextBtn.type = 'button';
+            addTextBtn.textContent = '+ Add Text';
+            addTextBtn.style.cssText = `
+            background: #2a2a2a;
+            border: 1px solid #4a4a4a;
+            border-radius: 4px;
+            padding: 6px 12px;
+            color: #e0e0e0;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.2s;
+        `;
+            addTextBtn.onmouseover = () => {
+                addTextBtn.style.background = '#3a3a3a';
+                addTextBtn.style.borderColor = '#5a5a5a';
+            };
+            addTextBtn.onmouseout = () => {
+                addTextBtn.style.background = '#2a2a2a';
+                addTextBtn.style.borderColor = '#4a4a4a';
+            };
+            addTextBtn.onclick = () => {
+                const text = prompt('Enter text:');
+                if (text !== null && text !== '') {
+                    templateItems.push({
+                        type: 'text',
+                        value: text,
+                    });
+                    renderList();
+                }
+            };
+
+            variablesContainer.appendChild(addTextBtn);
+            variablesSection.appendChild(variablesContainer);
+
+            // Buttons
+            const buttonsSection = document.createElement('div');
+            buttonsSection.style.cssText = `
+            display: flex;
+            gap: 10px;
+            justify-content: space-between;
+            margin-top: 20px;
+        `;
+
+            // Restore to Default button (left side)
+            const restoreBtn = document.createElement('button');
+            restoreBtn.type = 'button';
+            restoreBtn.textContent = 'Restore to Default';
+            restoreBtn.style.cssText = `
+            background: #6b5b3a;
+            border: 1px solid #8b7b5a;
+            border-radius: 4px;
+            padding: 8px 16px;
+            color: #e0e0e0;
+            cursor: pointer;
+            font-size: 14px;
+        `;
+            restoreBtn.onclick = () => {
+                if (confirm('Reset template to default? This will discard your current template.')) {
+                    // Reset to default
+                    templateItems.length = 0;
+                    const defaultTemplate = setting.default || [];
+                    templateItems.push(...JSON.parse(JSON.stringify(defaultTemplate)));
+                    renderList();
+                }
+            };
+
+            // Right side buttons container
+            const rightButtons = document.createElement('div');
+            rightButtons.style.cssText = 'display: flex; gap: 10px;';
+
+            const cancelBtn = document.createElement('button');
+            cancelBtn.type = 'button';
+            cancelBtn.textContent = 'Cancel';
+            cancelBtn.style.cssText = `
+            background: #2a2a2a;
+            border: 1px solid #4a4a4a;
+            border-radius: 4px;
+            padding: 8px 16px;
+            color: #e0e0e0;
+            cursor: pointer;
+            font-size: 14px;
+        `;
+            cancelBtn.onclick = () => overlay.remove();
+
+            const saveBtn = document.createElement('button');
+            saveBtn.type = 'button';
+            saveBtn.textContent = 'Save';
+            saveBtn.style.cssText = `
+            background: #4a7c59;
+            border: 1px solid #5a8c69;
+            border-radius: 4px;
+            padding: 8px 16px;
+            color: #e0e0e0;
+            cursor: pointer;
+            font-size: 14px;
+        `;
+            saveBtn.onclick = () => {
+                const input = document.getElementById(settingId);
+                if (input) {
+                    input.value = JSON.stringify(templateItems);
+                    // Trigger change event
+                    input.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+                overlay.remove();
+            };
+
+            rightButtons.appendChild(cancelBtn);
+            rightButtons.appendChild(saveBtn);
+
+            buttonsSection.appendChild(restoreBtn);
+            buttonsSection.appendChild(rightButtons);
+
+            // Assemble modal
+            modal.appendChild(header);
+            modal.appendChild(listSection);
+            modal.appendChild(variablesSection);
+            modal.appendChild(buttonsSection);
+            overlay.appendChild(modal);
+
+            // Close button handler
+            header.querySelector('.toolasha-template-close-btn').onclick = () => overlay.remove();
+
+            // Close on overlay click
+            overlay.onclick = (e) => {
+                if (e.target === overlay) {
+                    overlay.remove();
+                }
+            };
+
+            // Add to page
+            document.body.appendChild(overlay);
+        }
+
+        /**
+         * Create a draggable template list item
+         * @param {Object} item - Template item
+         * @param {number} index - Item index
+         * @param {Array} items - All items
+         * @param {Function} renderList - Callback to re-render list
+         * @returns {HTMLElement} List item element
+         */
+        createTemplateListItem(item, index, items, renderList) {
+            const itemEl = document.createElement('div');
+            itemEl.draggable = true;
+            itemEl.dataset.index = index;
+            itemEl.style.cssText = `
+            background: #1a1a1a;
+            border: 1px solid #4a4a4a;
+            border-radius: 4px;
+            padding: 8px;
+            margin-bottom: 6px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: move;
+            transition: all 0.2s;
+        `;
+
+            // Drag handle
+            const dragHandle = document.createElement('span');
+            dragHandle.textContent = '⋮⋮';
+            dragHandle.style.cssText = `
+            color: #666;
+            font-size: 16px;
+            cursor: move;
+        `;
+
+            // Content
+            const content = document.createElement('div');
+            content.style.cssText = 'flex: 1; color: #e0e0e0; font-size: 13px;';
+
+            if (item.type === 'variable') {
+                content.innerHTML = `<strong style="color: #4a9eff;">${item.label}</strong> <span style="color: #666; font-family: monospace;">${item.key}</span>`;
+            } else {
+                // Editable text
+                const textInput = document.createElement('input');
+                textInput.type = 'text';
+                textInput.value = item.value;
+                textInput.style.cssText = `
+                background: #2a2a2a;
+                border: 1px solid #4a4a4a;
+                border-radius: 3px;
+                padding: 4px 8px;
+                color: #e0e0e0;
+                font-size: 13px;
+                width: 100%;
+            `;
+                textInput.onchange = () => {
+                    items[index].value = textInput.value;
+                };
+                content.appendChild(textInput);
+            }
+
+            // Delete button
+            const deleteBtn = document.createElement('button');
+            deleteBtn.type = 'button';
+            deleteBtn.textContent = '×';
+            deleteBtn.title = 'Remove';
+            deleteBtn.style.cssText = `
+            background: #8b0000;
+            border: 1px solid #a00000;
+            border-radius: 3px;
+            color: #e0e0e0;
+            cursor: pointer;
+            font-size: 18px;
+            line-height: 1;
+            padding: 4px 8px;
+            transition: all 0.2s;
+        `;
+            deleteBtn.onmouseover = () => {
+                deleteBtn.style.background = '#a00000';
+            };
+            deleteBtn.onmouseout = () => {
+                deleteBtn.style.background = '#8b0000';
+            };
+            deleteBtn.onclick = () => {
+                items.splice(index, 1);
+                renderList();
+            };
+
+            // Drag events
+            itemEl.ondragstart = (e) => {
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('text/plain', index);
+                itemEl.style.opacity = '0.5';
+            };
+
+            itemEl.ondragend = () => {
+                itemEl.style.opacity = '1';
+            };
+
+            itemEl.ondragover = (e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                itemEl.style.borderColor = '#4a9eff';
+            };
+
+            itemEl.ondragleave = () => {
+                itemEl.style.borderColor = '#4a4a4a';
+            };
+
+            itemEl.ondrop = (e) => {
+                e.preventDefault();
+                itemEl.style.borderColor = '#4a4a4a';
+
+                const dragIndex = parseInt(e.dataTransfer.getData('text/plain'));
+                const dropIndex = index;
+
+                if (dragIndex !== dropIndex) {
+                    // Remove from old position
+                    const [movedItem] = items.splice(dragIndex, 1);
+                    // Insert at new position
+                    items.splice(dropIndex, 0, movedItem);
+                    renderList();
+                }
+            };
+
+            itemEl.appendChild(dragHandle);
+            itemEl.appendChild(content);
+            itemEl.appendChild(deleteBtn);
+
+            return itemEl;
+        }
+
+        /**
+         * Find setting definition by ID
+         * @param {string} settingId - Setting ID
+         * @returns {Object|null} Setting definition
+         */
+        findSettingDef(settingId) {
+            for (const group of Object.values(settingsGroups)) {
+                if (group.settings[settingId]) {
+                    return group.settings[settingId];
+                }
+            }
+            return null;
         }
 
         /**
@@ -26724,7 +27269,7 @@
     /**
      * Initialize missing materials button feature
      */
-    function initialize$1() {
+    function initialize$2() {
         console.log('[MissingMats] Initializing missing materials button feature');
         setupMarketplaceCleanupObserver();
         setupBuyModalObserver();
@@ -26743,7 +27288,7 @@
     /**
      * Cleanup function
      */
-    function cleanup() {
+    function cleanup$1() {
         console.log('[MissingMats] Cleaning up missing materials button feature');
 
         // Unregister DOM observer
@@ -27458,8 +28003,8 @@
     }
 
     var missingMaterialsButton = {
-        initialize: initialize$1,
-        cleanup,
+        initialize: initialize$2,
+        cleanup: cleanup$1,
     };
 
     /**
@@ -33725,7 +34270,6 @@
          * Initialize the task icon filters feature
          */
         initialize() {
-            console.log('[TaskIconFilters] Initializing task icon filters');
             // Note: Filter bar is added by task-sorter.js when task panel appears
 
             // Listen for taskIconsDungeons setting changes
@@ -33741,8 +34285,6 @@
          * Cleanup when feature is disabled
          */
         cleanup() {
-            console.log('[TaskIconFilters] Cleaning up task icon filters');
-
             // Remove setting change listener
             if (this.settingChangeHandler) {
                 config.offSettingChange('taskIconsDungeons', this.settingChangeHandler);
@@ -46651,6 +47193,1271 @@
     const combatSummary = new CombatSummary();
 
     /**
+     * Combat Statistics Data Collector
+     * Listens for new_battle WebSocket messages and stores combat data
+     */
+
+
+    class CombatStatsDataCollector {
+        constructor() {
+            this.isInitialized = false;
+            this.newBattleHandler = null;
+            this.consumableEventHandler = null; // NEW: for battle_consumable_ability_updated
+            this.latestCombatData = null;
+            this.currentBattleId = null;
+            this.consumableActualConsumed = {}; // { characterId: { itemHrid: count } } - from consumption events
+            this.trackingStartTime = {}; // { characterId: timestamp } - when we started tracking
+        }
+
+        /**
+         * Initialize the data collector
+         */
+        initialize() {
+            if (this.isInitialized) {
+                return;
+            }
+
+            this.isInitialized = true;
+
+            // Store handler references for cleanup
+            this.newBattleHandler = (data) => this.onNewBattle(data);
+            this.consumableEventHandler = (data) => this.onConsumableUsed(data);
+
+            // Listen for new_battle messages (fires during combat, continuously updated)
+            webSocketHook.on('new_battle', this.newBattleHandler);
+
+            // Listen for battle_consumable_ability_updated (fires on each consumable use)
+            webSocketHook.on('battle_consumable_ability_updated', this.consumableEventHandler);
+        }
+
+        /**
+         * Handle battle_consumable_ability_updated event (fires on each consumption)
+         * NOTE: This event only fires for the CURRENT PLAYER (solo tracking)
+         * @param {Object} data - Consumable update data
+         */
+        onConsumableUsed(data) {
+            try {
+                if (!data || !data.consumable || !data.consumable.itemHrid) {
+                    return;
+                }
+
+                // Use 'current' key for solo player tracking (event only fires for current player)
+                const characterId = 'current';
+
+                // Initialize tracking for current player if needed
+                if (!this.consumableActualConsumed[characterId]) {
+                    this.consumableActualConsumed[characterId] = {};
+                    this.trackingStartTime[characterId] = Date.now();
+                }
+
+                const itemHrid = data.consumable.itemHrid;
+
+                // Initialize count for this item if first time seen
+                if (!this.consumableActualConsumed[characterId][itemHrid]) {
+                    this.consumableActualConsumed[characterId][itemHrid] = 0;
+                }
+
+                // Increment consumption count (this event fires once per use)
+                this.consumableActualConsumed[characterId][itemHrid]++;
+            } catch (error) {
+                console.error('[Combat Stats] Error processing consumable event:', error);
+            }
+        }
+
+        /**
+         * Handle new_battle message (fires during combat)
+         * @param {Object} data - new_battle message data
+         */
+        async onNewBattle(data) {
+            try {
+                // Only process if we have players data
+                if (!data.players || data.players.length === 0) {
+                    return;
+                }
+
+                // Detect new combat run (new battleId)
+                const battleId = data.battleId || 0;
+
+                // Only reset if we haven't initialized yet (first run after script load)
+                // Don't reset on every battleId change since that happens every wave!
+
+                // Calculate duration from combat start time
+                const combatStartTime = new Date(data.combatStartTime).getTime() / 1000;
+                const currentTime = Date.now() / 1000;
+                const durationSeconds = currentTime - combatStartTime;
+
+                // Extract combat data
+                const combatData = {
+                    timestamp: Date.now(),
+                    battleId: battleId,
+                    combatStartTime: data.combatStartTime,
+                    durationSeconds: durationSeconds,
+                    players: data.players.map((player, index) => {
+                        const characterId = player.character.id;
+
+                        // For the first player (current player), use event-based consumption tracking
+                        // For other players (party members), we'd need snapshot-based tracking (TODO)
+                        const trackingKey = index === 0 ? 'current' : characterId;
+
+                        // Initialize tracking for this character if needed
+                        if (!this.consumableActualConsumed[trackingKey]) {
+                            this.consumableActualConsumed[trackingKey] = {};
+                            this.trackingStartTime[trackingKey] = Date.now();
+                        }
+
+                        // Calculate time elapsed since we started tracking
+                        const trackingStartTime = this.trackingStartTime[trackingKey] || Date.now();
+                        const elapsedSeconds = (Date.now() - trackingStartTime) / 1000;
+
+                        // Process consumables using event-based consumption data
+                        const consumablesWithConsumed = [];
+                        if (player.combatConsumables) {
+                            for (const consumable of player.combatConsumables) {
+                                // Get actual consumed count from consumption events
+                                const totalActualConsumed =
+                                    this.consumableActualConsumed[trackingKey]?.[consumable.itemHrid] || 0;
+
+                                // MCS-style baseline: fixed item counts (not rates)
+                                // Baseline assumes 2 drinks or 10 foods consumed in DEFAULT_TIME (600s)
+                                const itemName = consumable.itemHrid.toLowerCase();
+                                const isDrink = itemName.includes('coffee') || itemName.includes('drink');
+                                const isFood =
+                                    itemName.includes('donut') ||
+                                    itemName.includes('cupcake') ||
+                                    itemName.includes('cake') ||
+                                    itemName.includes('gummy') ||
+                                    itemName.includes('yogurt');
+
+                                const defaultConsumed = isDrink ? 2 : isFood ? 10 : 0;
+
+                                // MCS-style weighted average with DEFAULT_TIME constant
+                                // Adds 10 minutes (600s) of baseline data to make estimates stable from start
+                                const DEFAULT_TIME = 10 * 60; // 600 seconds
+                                const actualRate = elapsedSeconds > 0 ? totalActualConsumed / elapsedSeconds : 0;
+                                const combinedTotal = defaultConsumed + totalActualConsumed;
+                                const combinedTime = DEFAULT_TIME + elapsedSeconds;
+                                const combinedRate = combinedTotal / combinedTime;
+                                // 90% actual rate + 10% combined (baseline+actual) rate
+                                const consumptionRate = actualRate * 0.9 + combinedRate * 0.1;
+
+                                // Estimate total consumed for the entire combat duration
+                                const estimatedConsumed = consumptionRate * durationSeconds;
+
+                                consumablesWithConsumed.push({
+                                    itemHrid: consumable.itemHrid,
+                                    currentCount: consumable.count,
+                                    actualConsumed: totalActualConsumed,
+                                    consumed: estimatedConsumed,
+                                    consumptionRate: consumptionRate,
+                                    elapsedSeconds: elapsedSeconds,
+                                });
+                            }
+                        }
+
+                        return {
+                            name: player.character.name,
+                            characterId: characterId,
+                            loot: player.totalLootMap || {},
+                            experience: player.totalSkillExperienceMap || {},
+                            deathCount: player.deathCount || 0,
+                            consumables: consumablesWithConsumed,
+                            combatStats: {
+                                combatDropQuantity: player.combatDetails?.combatStats?.combatDropQuantity || 0,
+                                combatDropRate: player.combatDetails?.combatStats?.combatDropRate || 0,
+                                combatRareFind: player.combatDetails?.combatStats?.combatRareFind || 0,
+                                drinkConcentration: player.combatDetails?.combatStats?.drinkConcentration || 0,
+                            },
+                        };
+                    }),
+                };
+
+                // Store in memory
+                this.latestCombatData = combatData;
+
+                // Store in IndexedDB (debounced - will update continuously during combat)
+                await storage.setJSON('latestCombatRun', combatData, 'combatStats');
+            } catch (error) {
+                console.error('[Combat Stats] Error collecting combat data:', error);
+            }
+        }
+
+        /**
+         * Get the latest combat data
+         * @returns {Object|null} Latest combat data
+         */
+        getLatestData() {
+            return this.latestCombatData;
+        }
+
+        /**
+         * Load latest combat data from storage
+         * @returns {Promise<Object|null>} Latest combat data
+         */
+        async loadLatestData() {
+            const data = await storage.getJSON('latestCombatRun', 'combatStats', null);
+            if (data) {
+                this.latestCombatData = data;
+            }
+            return data;
+        }
+
+        /**
+         * Cleanup
+         */
+        cleanup() {
+            if (this.newBattleHandler) {
+                webSocketHook.off('new_battle', this.newBattleHandler);
+                this.newBattleHandler = null;
+            }
+
+            if (this.consumableEventHandler) {
+                webSocketHook.off('battle_consumable_ability_updated', this.consumableEventHandler);
+                this.consumableEventHandler = null;
+            }
+
+            this.isInitialized = false;
+            this.latestCombatData = null;
+            this.currentBattleId = null;
+            this.consumableActualConsumed = {};
+            this.trackingStartTime = {};
+        }
+    }
+
+    // Create and export singleton instance
+    const combatStatsDataCollector = new CombatStatsDataCollector();
+
+    /**
+     * Combat Statistics Calculator
+     * Calculates income, profit, consumable costs, and other statistics
+     */
+
+
+    /**
+     * Calculate total income from loot
+     * @param {Object} lootMap - totalLootMap from player data
+     * @returns {Object} { ask: number, bid: number }
+     */
+    function calculateIncome(lootMap) {
+        let totalAsk = 0;
+        let totalBid = 0;
+
+        if (!lootMap) {
+            return { ask: 0, bid: 0 };
+        }
+
+        for (const loot of Object.values(lootMap)) {
+            const itemCount = loot.count;
+
+            // Coins are revenue at face value (1 coin = 1 gold)
+            if (loot.itemHrid === '/items/coin') {
+                totalAsk += itemCount;
+                totalBid += itemCount;
+            } else {
+                // Other items: get market price
+                const prices = marketAPI.getPrice(loot.itemHrid);
+                if (prices) {
+                    totalAsk += prices.ask * itemCount;
+                    totalBid += prices.bid * itemCount;
+                }
+            }
+        }
+
+        return { ask: totalAsk, bid: totalBid };
+    }
+
+    /**
+     * Calculate consumable costs based on actual consumption with baseline estimates
+     * Uses weighted average: 90% actual data + 10% baseline estimate (like MCS)
+     * @param {Array} consumables - combatConsumables array from player data (with consumed field)
+     * @param {number} durationSeconds - Combat duration in seconds
+     * @returns {Object} { total: number, breakdown: Array } Total cost and per-item breakdown
+     */
+    function calculateConsumableCosts(consumables, durationSeconds) {
+        if (!consumables || consumables.length === 0 || !durationSeconds || durationSeconds <= 0) {
+            return { total: 0, breakdown: [] };
+        }
+
+        let totalCost = 0;
+        const breakdown = [];
+
+        for (const consumable of consumables) {
+            const consumed = consumable.consumed || 0;
+            const actualConsumed = consumable.actualConsumed || 0;
+            consumable.elapsedSeconds || 0;
+
+            // Skip if no consumption (even estimated)
+            if (consumed <= 0) {
+                continue;
+            }
+
+            const prices = marketAPI.getPrice(consumable.itemHrid);
+            const itemPrice = prices ? prices.ask : 500;
+            const itemCost = itemPrice * consumed;
+
+            totalCost += itemCost;
+
+            // Get item name from data manager
+            const itemDetails = dataManager.getItemDetails(consumable.itemHrid);
+            const itemName = itemDetails?.name || consumable.itemHrid;
+
+            breakdown.push({
+                itemHrid: consumable.itemHrid,
+                itemName: itemName,
+                count: consumed, // Use estimated consumption
+                pricePerItem: itemPrice,
+                totalCost: itemCost,
+                startingCount: consumable.startingCount,
+                currentCount: consumable.currentCount,
+                actualConsumed: actualConsumed,
+                consumptionRate: consumable.consumptionRate,
+                elapsedSeconds: consumable.elapsedSeconds || 0,
+            });
+        }
+
+        return { total: totalCost, breakdown };
+    }
+
+    /**
+     * Calculate total experience
+     * @param {Object} experienceMap - totalSkillExperienceMap from player data
+     * @returns {number} Total experience
+     */
+    function calculateTotalExperience(experienceMap) {
+        if (!experienceMap) {
+            return 0;
+        }
+
+        let total = 0;
+        for (const exp of Object.values(experienceMap)) {
+            total += exp;
+        }
+
+        return total;
+    }
+
+    /**
+     * Calculate daily rate
+     * @param {number} total - Total value
+     * @param {number} durationSeconds - Duration in seconds
+     * @returns {number} Value per day
+     */
+    function calculateDailyRate(total, durationSeconds) {
+        if (durationSeconds <= 0) {
+            return 0;
+        }
+
+        const durationDays = durationSeconds / 86400; // 86400 seconds in a day
+        return total / durationDays;
+    }
+
+    /**
+     * Format loot items for display
+     * @param {Object} lootMap - totalLootMap from player data
+     * @returns {Array} Array of { count, itemHrid, itemName, rarity }
+     */
+    function formatLootList(lootMap) {
+        if (!lootMap) {
+            return [];
+        }
+
+        const items = [];
+
+        for (const loot of Object.values(lootMap)) {
+            const itemDetails = dataManager.getItemDetails(loot.itemHrid);
+            items.push({
+                count: loot.count,
+                itemHrid: loot.itemHrid,
+                itemName: itemDetails?.name || 'Unknown',
+                rarity: itemDetails?.rarity || 0,
+            });
+        }
+
+        // Sort by rarity (descending), then by name
+        items.sort((a, b) => {
+            if (a.rarity !== b.rarity) {
+                return b.rarity - a.rarity;
+            }
+            return a.itemName.localeCompare(b.itemName);
+        });
+
+        return items;
+    }
+
+    /**
+     * Calculate all statistics for a player
+     * @param {Object} playerData - Player data from combat data
+     * @param {number|null} durationSeconds - Combat duration in seconds (from DOM or null)
+     * @returns {Object} Calculated statistics
+     */
+    function calculatePlayerStats(playerData, durationSeconds = null) {
+        // Calculate income
+        const income = calculateIncome(playerData.loot);
+
+        // Use provided duration or default to 0 (will show 0 for rates if no duration)
+        const duration = durationSeconds || 0;
+
+        // Calculate daily income
+        const dailyIncomeAsk = duration > 0 ? calculateDailyRate(income.ask, duration) : 0;
+        const dailyIncomeBid = duration > 0 ? calculateDailyRate(income.bid, duration) : 0;
+
+        // Calculate consumable costs based on ACTUAL consumption
+        const consumableData = calculateConsumableCosts(playerData.consumables, duration);
+        const consumableCosts = consumableData.total;
+        const consumableBreakdown = consumableData.breakdown;
+
+        // Calculate daily consumable costs
+        const dailyConsumableCosts = duration > 0 ? calculateDailyRate(consumableCosts, duration) : 0;
+
+        // Calculate daily profit
+        const dailyProfitAsk = dailyIncomeAsk - dailyConsumableCosts;
+        const dailyProfitBid = dailyIncomeBid - dailyConsumableCosts;
+
+        // Calculate total experience
+        const totalExp = calculateTotalExperience(playerData.experience);
+
+        // Calculate experience per hour
+        const expPerHour = duration > 0 ? (totalExp / duration) * 3600 : 0;
+
+        // Format loot list
+        const lootList = formatLootList(playerData.loot);
+
+        return {
+            name: playerData.name,
+            income: {
+                ask: income.ask,
+                bid: income.bid,
+            },
+            dailyIncome: {
+                ask: dailyIncomeAsk,
+                bid: dailyIncomeBid,
+            },
+            consumableCosts,
+            consumableBreakdown,
+            dailyConsumableCosts,
+            dailyProfit: {
+                ask: dailyProfitAsk,
+                bid: dailyProfitBid,
+            },
+            totalExp,
+            expPerHour,
+            deathCount: playerData.deathCount,
+            lootList,
+            duration,
+        };
+    }
+
+    /**
+     * Calculate statistics for all players
+     * @param {Object} combatData - Combat data from data collector
+     * @param {number|null} durationSeconds - Combat duration in seconds (from DOM or null)
+     * @returns {Array} Array of player statistics
+     */
+    function calculateAllPlayerStats(combatData, durationSeconds = null) {
+        if (!combatData || !combatData.players) {
+            return [];
+        }
+
+        // Calculate encounters per hour (EPH)
+        const duration = durationSeconds || combatData.durationSeconds || 0;
+        const battleId = combatData.battleId || 1;
+        const encountersPerHour = duration > 0 ? (3600 * (battleId - 1)) / duration : 0;
+
+        return combatData.players.map((player) => {
+            const stats = calculatePlayerStats(player, durationSeconds);
+            // Add EPH and formatted duration to each player's stats
+            stats.encountersPerHour = encountersPerHour;
+            stats.durationFormatted = formatDuration(duration);
+            return stats;
+        });
+    }
+
+    /**
+     * Format duration in seconds to human-readable format
+     * @param {number} seconds - Duration in seconds
+     * @returns {string} Formatted duration (e.g., "1h 23m", "3d 12h", "2mo 15d")
+     */
+    function formatDuration(seconds) {
+        if (!seconds || seconds <= 0) {
+            return '0s';
+        }
+
+        if (seconds < 60) return `${Math.floor(seconds)}s`;
+        if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
+        if (seconds < 86400) {
+            const h = Math.floor(seconds / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            return m > 0 ? `${h}h ${m}m` : `${h}h`;
+        }
+
+        // Days
+        const d = Math.floor(seconds / 86400);
+        const h = Math.floor((seconds % 86400) / 3600);
+        if (d >= 365) {
+            const years = Math.floor(d / 365);
+            const days = d % 365;
+            if (days >= 30) {
+                const months = Math.floor(days / 30);
+                return `${years}y ${months}mo`;
+            }
+            return days > 0 ? `${years}y ${days}d` : `${years}y`;
+        }
+        if (d >= 30) {
+            const months = Math.floor(d / 30);
+            const days = d % 30;
+            return days > 0 ? `${months}mo ${days}d` : `${months}mo`;
+        }
+        return h > 0 ? `${d}d ${h}h` : `${d}d`;
+    }
+
+    /**
+     * Combat Statistics UI
+     * Injects button and displays statistics popup
+     */
+
+
+    class CombatStatsUI {
+        constructor() {
+            this.isInitialized = false;
+            this.observer = null;
+            this.popup = null;
+        }
+
+        /**
+         * Initialize the UI
+         */
+        initialize() {
+            if (this.isInitialized) {
+                return;
+            }
+
+            this.isInitialized = true;
+
+            // Start observing for Combat panel
+            this.startObserver();
+        }
+
+        /**
+         * Start MutationObserver to watch for Combat panel
+         */
+        startObserver() {
+            this.observer = new MutationObserver((mutations) => {
+                for (const mutation of mutations) {
+                    for (const addedNode of mutation.addedNodes) {
+                        if (addedNode.nodeType !== Node.ELEMENT_NODE) continue;
+
+                        // Check for Combat Panel appearing
+                        if (addedNode.classList?.contains('MainPanel_subPanelContainer__1i-H9')) {
+                            const combatPanel = addedNode.querySelector('[class*="CombatPanel_combatPanel"]');
+                            if (combatPanel) {
+                                this.injectButton();
+                            }
+                        }
+
+                        // Check for initial page load
+                        if (addedNode.classList?.contains('GamePage_contentPanel__Zx4FH')) {
+                            const combatPanel = addedNode.querySelector('[class*="CombatPanel_combatPanel"]');
+                            if (combatPanel) {
+                                this.injectButton();
+                            }
+                        }
+                    }
+                }
+            });
+
+            this.observer.observe(document.body, { childList: true, subtree: true });
+
+            // Try to inject button immediately if Combat panel is already visible
+            setTimeout(() => this.injectButton(), 1000);
+        }
+
+        /**
+         * Inject Statistics button into Combat panel tabs
+         */
+        injectButton() {
+            // Find the tabs container
+            const tabsContainer = document.querySelector(
+                'div.GamePage_mainPanel__2njyb > div > div:nth-child(1) > div > div > div > div[class*="TabsComponent_tabsContainer"] > div > div > div'
+            );
+
+            if (!tabsContainer) {
+                return;
+            }
+
+            // Check if button already exists
+            if (tabsContainer.querySelector('.toolasha-combat-stats-btn')) {
+                return;
+            }
+
+            // Create button
+            const button = document.createElement('div');
+            button.className =
+                'MuiButtonBase-root MuiTab-root MuiTab-textColorPrimary css-1q2h7u5 toolasha-combat-stats-btn';
+            button.textContent = 'Statistics';
+            button.style.cursor = 'pointer';
+
+            button.onclick = () => this.showPopup();
+
+            // Insert button at the end
+            const lastTab = tabsContainer.children[tabsContainer.children.length - 1];
+            tabsContainer.insertBefore(button, lastTab.nextSibling);
+        }
+
+        /**
+         * Share statistics to chat (triggered by Ctrl+Click on player card)
+         * @param {Object} stats - Player statistics
+         */
+        shareStatsToChat(stats) {
+            // Get chat message format from config
+            const messageTemplate = config.getSetting('combatStatsChatMessage');
+
+            // Convert array format to string if needed
+            let message = '';
+            if (Array.isArray(messageTemplate)) {
+                // Format numbers
+                const useKMB = config.getSetting('formatting_useKMBFormat');
+                const formatNum = (num) => (useKMB ? coinFormatter(Math.round(num)) : formatWithSeparator(Math.round(num)));
+
+                // Build message from array
+                message = messageTemplate
+                    .map((item) => {
+                        if (item.type === 'variable') {
+                            // Replace variable with actual value
+                            switch (item.key) {
+                                case '{income}':
+                                    return formatNum(stats.income.bid);
+                                case '{dailyIncome}':
+                                    return formatNum(stats.dailyIncome.bid);
+                                case '{dailyConsumableCosts}':
+                                    return formatNum(stats.dailyConsumableCosts);
+                                case '{dailyProfit}':
+                                    return formatNum(stats.dailyProfit.bid);
+                                case '{exp}':
+                                    return formatNum(stats.expPerHour);
+                                case '{deathCount}':
+                                    return stats.deathCount.toString();
+                                case '{encountersPerHour}':
+                                    return formatNum(stats.encountersPerHour);
+                                case '{duration}':
+                                    return stats.durationFormatted || '0s';
+                                default:
+                                    return item.key;
+                            }
+                        } else {
+                            // Plain text
+                            return item.value;
+                        }
+                    })
+                    .join('');
+            } else {
+                // Legacy string format (shouldn't happen, but handle it)
+                const useKMB = config.getSetting('formatting_useKMBFormat');
+                const formatNum = (num) => (useKMB ? coinFormatter(Math.round(num)) : formatWithSeparator(Math.round(num)));
+
+                message = (messageTemplate || 'Combat Stats: {income} income | {dailyProfit} profit/d | {exp} exp/h')
+                    .replace('{income}', formatNum(stats.income.bid))
+                    .replace('{dailyIncome}', formatNum(stats.dailyIncome.bid))
+                    .replace('{dailyProfit}', formatNum(stats.dailyProfit.bid))
+                    .replace('{dailyConsumableCosts}', formatNum(stats.dailyConsumableCosts))
+                    .replace('{exp}', formatNum(stats.expPerHour))
+                    .replace('{deathCount}', stats.deathCount.toString());
+            }
+
+            // Insert into chat
+            this.insertToChat(message);
+        }
+
+        /**
+         * Insert text into chat input
+         * @param {string} text - Text to insert
+         */
+        insertToChat(text) {
+            const chatSelector =
+                '#root > div > div > div.GamePage_gamePanel__3uNKN > div.GamePage_contentPanel__Zx4FH > div.GamePage_middlePanel__uDts7 > div.GamePage_chatPanel__mVaVt > div > div.Chat_chatInputContainer__2euR8 > form > input';
+            const chatInput = document.querySelector(chatSelector);
+
+            if (!chatInput) {
+                console.error('[Combat Stats] Chat input not found');
+                return;
+            }
+
+            // Use native value setter for React compatibility
+            const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+            const start = chatInput.selectionStart || 0;
+            const end = chatInput.selectionEnd || 0;
+
+            // Insert text at cursor position
+            const newValue = chatInput.value.substring(0, start) + text + chatInput.value.substring(end);
+            nativeInputValueSetter.call(chatInput, newValue);
+
+            // Dispatch input event for React
+            const event = new Event('input', {
+                bubbles: true,
+                cancelable: true,
+            });
+            chatInput.dispatchEvent(event);
+
+            // Set cursor position after inserted text
+            chatInput.selectionStart = chatInput.selectionEnd = start + text.length;
+            chatInput.focus();
+        }
+
+        /**
+         * Show statistics popup
+         */
+        async showPopup() {
+            // Ensure market data is loaded
+            if (!marketAPI.isLoaded()) {
+                const marketData = await marketAPI.fetch();
+                if (!marketData) {
+                    console.error('[Combat Stats] Market data not available');
+                    alert('Market data not available. Please try again.');
+                    return;
+                }
+            }
+
+            // Get latest combat data
+            let combatData = combatStatsDataCollector.getLatestData();
+
+            if (!combatData) {
+                // Try to load from storage
+                combatData = await combatStatsDataCollector.loadLatestData();
+            }
+
+            if (!combatData || !combatData.players || combatData.players.length === 0) {
+                alert('No combat data available. Start a combat run first.');
+                return;
+            }
+
+            // Recalculate duration from combat start time (updates in real-time during combat)
+            let durationSeconds = null;
+            if (combatData.combatStartTime) {
+                const combatStartTime = new Date(combatData.combatStartTime).getTime() / 1000;
+                const currentTime = Date.now() / 1000;
+                durationSeconds = currentTime - combatStartTime;
+            } else if (combatData.durationSeconds) {
+                // Fallback to stored duration if no start time
+                durationSeconds = combatData.durationSeconds;
+            }
+
+            if (!durationSeconds) {
+                console.warn('[Combat Stats] No duration data available');
+            }
+
+            // Calculate statistics
+            const playerStats = calculateAllPlayerStats(combatData, durationSeconds);
+
+            // Create and show popup
+            this.createPopup(playerStats);
+        }
+
+        /**
+         * Create and display the statistics popup
+         * @param {Array} playerStats - Array of player statistics
+         */
+        createPopup(playerStats) {
+            // Remove existing popup if any
+            if (this.popup) {
+                this.closePopup();
+            }
+
+            // Get text color from config
+            const textColor = config.getSetting('color_text_primary') || config.COLOR_TEXT_PRIMARY;
+
+            // Create overlay
+            const overlay = document.createElement('div');
+            overlay.className = 'toolasha-combat-stats-overlay';
+            overlay.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 10000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        `;
+
+            // Create popup container
+            const popup = document.createElement('div');
+            popup.className = 'toolasha-combat-stats-popup';
+            popup.style.cssText = `
+            background: #1a1a1a;
+            border: 2px solid #3a3a3a;
+            border-radius: 8px;
+            padding: 20px;
+            max-width: 90%;
+            max-height: 90%;
+            overflow-y: auto;
+            color: ${textColor};
+        `;
+
+            // Create header
+            const header = document.createElement('div');
+            header.style.cssText = `
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #3a3a3a;
+            padding-bottom: 10px;
+        `;
+
+            const title = document.createElement('h2');
+            title.textContent = 'Combat Statistics';
+            title.style.cssText = `
+            margin: 0;
+            color: ${textColor};
+            font-size: 24px;
+        `;
+
+            const closeButton = document.createElement('button');
+            closeButton.textContent = '×';
+            closeButton.style.cssText = `
+            background: none;
+            border: none;
+            color: ${textColor};
+            font-size: 32px;
+            cursor: pointer;
+            padding: 0;
+            line-height: 1;
+        `;
+            closeButton.onclick = () => this.closePopup();
+
+            header.appendChild(title);
+            header.appendChild(closeButton);
+
+            // Create player cards container
+            const cardsContainer = document.createElement('div');
+            cardsContainer.style.cssText = `
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            justify-content: center;
+        `;
+
+            // Create a card for each player
+            for (const stats of playerStats) {
+                const card = this.createPlayerCard(stats, textColor);
+                cardsContainer.appendChild(card);
+            }
+
+            // Assemble popup
+            popup.appendChild(header);
+            popup.appendChild(cardsContainer);
+            overlay.appendChild(popup);
+
+            // Add to page
+            document.body.appendChild(overlay);
+
+            // Close on overlay click
+            overlay.onclick = (e) => {
+                if (e.target === overlay) {
+                    this.closePopup();
+                }
+            };
+
+            this.popup = overlay;
+        }
+
+        /**
+         * Create a player statistics card
+         * @param {Object} stats - Player statistics
+         * @param {string} textColor - Text color
+         * @returns {HTMLElement} Card element
+         */
+        createPlayerCard(stats, textColor) {
+            const card = document.createElement('div');
+            card.style.cssText = `
+            background: #2a2a2a;
+            border: 2px solid #4a4a4a;
+            border-radius: 8px;
+            padding: 15px;
+            min-width: 300px;
+            max-width: 400px;
+            cursor: pointer;
+        `;
+
+            // Add Ctrl+Click handler to share to chat
+            card.onclick = (e) => {
+                if (e.ctrlKey || e.metaKey) {
+                    this.shareStatsToChat(stats);
+                    e.stopPropagation();
+                }
+            };
+
+            // Player name
+            const nameHeader = document.createElement('div');
+            nameHeader.textContent = stats.name;
+            nameHeader.style.cssText = `
+            font-size: 20px;
+            font-weight: bold;
+            margin-bottom: 15px;
+            text-align: center;
+            color: ${textColor};
+            border-bottom: 1px solid #4a4a4a;
+            padding-bottom: 8px;
+        `;
+
+            // Statistics rows
+            // Use K/M/B formatting if enabled, otherwise use separators
+            const useKMB = config.getSetting('formatting_useKMBFormat');
+            const formatNum = (num) => (useKMB ? coinFormatter(Math.round(num)) : formatWithSeparator(Math.round(num)));
+
+            const statsRows = [
+                { label: 'Duration', value: stats.durationFormatted || '0s' },
+                { label: 'Encounters/Hour', value: formatNum(stats.encountersPerHour) },
+                { label: 'Income', value: formatNum(stats.income.bid) },
+                { label: 'Daily Income', value: `${formatNum(stats.dailyIncome.bid)}/d` },
+                {
+                    label: 'Consumable Costs',
+                    value: formatNum(stats.consumableCosts),
+                    color: '#ff6b6b',
+                    expandable: true,
+                    breakdown: stats.consumableBreakdown,
+                },
+                {
+                    label: 'Daily Consumable Costs',
+                    value: `${formatNum(stats.dailyConsumableCosts)}/d`,
+                    color: '#ff6b6b',
+                    expandable: true,
+                    breakdown: stats.consumableBreakdown,
+                    isDaily: true,
+                },
+                {
+                    label: 'Daily Profit',
+                    value: `${formatNum(stats.dailyProfit.bid)}/d`,
+                    color: stats.dailyProfit.bid >= 0 ? '#51cf66' : '#ff6b6b',
+                },
+                { label: 'Total EXP', value: formatNum(stats.totalExp) },
+                { label: 'EXP/hour', value: `${formatNum(stats.expPerHour)}/h` },
+                { label: 'Death Count', value: `${stats.deathCount}` },
+            ];
+
+            const statsContainer = document.createElement('div');
+            statsContainer.style.cssText = 'margin-bottom: 15px;';
+
+            for (const row of statsRows) {
+                const rowDiv = document.createElement('div');
+                rowDiv.style.cssText = `
+                display: flex;
+                justify-content: space-between;
+                margin-bottom: 5px;
+                font-size: 14px;
+            `;
+
+                const label = document.createElement('span');
+                label.textContent = row.label + ':';
+                label.style.color = textColor;
+
+                const value = document.createElement('span');
+                value.textContent = row.value;
+                value.style.color = row.color || textColor;
+
+                // Add expandable indicator if applicable
+                if (row.expandable) {
+                    rowDiv.style.cursor = 'pointer';
+                    rowDiv.style.userSelect = 'none';
+                    label.textContent = '▶ ' + row.label + ':';
+
+                    let isExpanded = false;
+                    let breakdownDiv = null;
+
+                    rowDiv.onclick = () => {
+                        isExpanded = !isExpanded;
+                        label.textContent = (isExpanded ? '▼ ' : '▶ ') + row.label + ':';
+
+                        if (isExpanded) {
+                            // Create breakdown
+                            breakdownDiv = document.createElement('div');
+                            breakdownDiv.style.cssText = `
+                            margin-left: 20px;
+                            margin-top: 5px;
+                            margin-bottom: 10px;
+                            padding: 10px;
+                            background: #1a1a1a;
+                            border-left: 2px solid #4a4a4a;
+                            font-size: 13px;
+                        `;
+
+                            if (row.breakdown && row.breakdown.length > 0) {
+                                // Add header
+                                const header = document.createElement('div');
+                                header.style.cssText = `
+                                display: grid;
+                                grid-template-columns: 2fr 1fr 1fr 1fr;
+                                gap: 10px;
+                                font-weight: bold;
+                                margin-bottom: 5px;
+                                padding-bottom: 5px;
+                                border-bottom: 1px solid #4a4a4a;
+                                color: ${textColor};
+                            `;
+                                header.innerHTML = `
+                                <span>Item</span>
+                                <span style="text-align: right;">Consumed</span>
+                                <span style="text-align: right;">Price</span>
+                                <span style="text-align: right;">Cost</span>
+                            `;
+                                breakdownDiv.appendChild(header);
+
+                                // Add each item
+                                for (const item of row.breakdown) {
+                                    const itemRow = document.createElement('div');
+                                    itemRow.style.cssText = `
+                                    display: grid;
+                                    grid-template-columns: 2fr 1fr 1fr 1fr;
+                                    gap: 10px;
+                                    margin-bottom: 3px;
+                                    color: ${textColor};
+                                `;
+
+                                    // For daily: show per-day quantities at same price
+                                    // For total: show actual quantities and costs
+                                    const displayQty = row.isDaily ? (item.count / stats.duration) * 86400 : item.count;
+
+                                    const displayPrice = item.pricePerItem; // Price stays the same
+
+                                    const displayCost = row.isDaily
+                                        ? (item.totalCost / stats.duration) * 86400
+                                        : item.totalCost;
+
+                                    itemRow.innerHTML = `
+                                    <span>${item.itemName}</span>
+                                    <span style="text-align: right;">${formatNum(displayQty)}</span>
+                                    <span style="text-align: right;">${formatNum(displayPrice)}</span>
+                                    <span style="text-align: right; color: #ff6b6b;">${formatNum(displayCost)}</span>
+                                `;
+                                    breakdownDiv.appendChild(itemRow);
+                                }
+
+                                // Add total row
+                                const totalRow = document.createElement('div');
+                                totalRow.style.cssText = `
+                                display: grid;
+                                grid-template-columns: 2fr 1fr 1fr 1fr;
+                                gap: 10px;
+                                margin-top: 5px;
+                                padding-top: 5px;
+                                border-top: 1px solid #4a4a4a;
+                                font-weight: bold;
+                                color: ${textColor};
+                            `;
+                                totalRow.innerHTML = `
+                                <span>Total</span>
+                                <span></span>
+                                <span></span>
+                                <span style="text-align: right; color: #ff6b6b;">${row.value}</span>
+                            `;
+                                breakdownDiv.appendChild(totalRow);
+
+                                // Add tracking info note
+                                if (row.breakdown.length > 0) {
+                                    const trackingNote = document.createElement('div');
+                                    trackingNote.style.cssText = `
+                                    margin-top: 8px;
+                                    padding-top: 8px;
+                                    border-top: 1px solid #3a3a3a;
+                                    font-size: 11px;
+                                    color: #888;
+                                    font-style: italic;
+                                `;
+
+                                    // Format tracking duration
+                                    const formatTrackingDuration = (seconds) => {
+                                        if (seconds < 60) return `${seconds}s`;
+                                        if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
+                                        if (seconds < 86400) {
+                                            const h = Math.floor(seconds / 3600);
+                                            const m = Math.floor((seconds % 3600) / 60);
+                                            return m > 0 ? `${h}h ${m}m` : `${h}h`;
+                                        }
+                                        // Days
+                                        const d = Math.floor(seconds / 86400);
+                                        const h = Math.floor((seconds % 86400) / 3600);
+                                        if (d >= 30) {
+                                            const months = Math.floor(d / 30);
+                                            const days = d % 30;
+                                            return days > 0 ? `${months}mo ${days}d` : `${months}mo`;
+                                        }
+                                        return h > 0 ? `${d}d ${h}h` : `${d}d`;
+                                    };
+
+                                    // Display tracking info with MCS-style calculation note
+                                    const firstItem = row.breakdown[0];
+                                    const trackingDuration = Math.floor(firstItem.elapsedSeconds || 0);
+                                    const hasActualData = firstItem.actualConsumed > 0;
+
+                                    if (!hasActualData) {
+                                        trackingNote.textContent = `📊 Tracked ${formatTrackingDuration(trackingDuration)} - Using baseline rates (no consumption detected yet)`;
+                                    } else {
+                                        trackingNote.textContent = `📊 Tracked ${formatTrackingDuration(trackingDuration)} - Using 90% actual + 10% combined (baseline+actual)`;
+                                    }
+
+                                    breakdownDiv.appendChild(trackingNote);
+                                }
+                            } else {
+                                breakdownDiv.textContent = 'No consumables used';
+                                breakdownDiv.style.color = '#888';
+                            }
+
+                            rowDiv.after(breakdownDiv);
+                        } else {
+                            // Collapse - remove breakdown
+                            if (breakdownDiv) {
+                                breakdownDiv.remove();
+                                breakdownDiv = null;
+                            }
+                        }
+                    };
+                }
+
+                rowDiv.appendChild(label);
+                rowDiv.appendChild(value);
+                statsContainer.appendChild(rowDiv);
+            }
+
+            // Drop list
+            if (stats.lootList && stats.lootList.length > 0) {
+                const dropHeader = document.createElement('div');
+                dropHeader.textContent = 'Drops';
+                dropHeader.style.cssText = `
+                font-weight: bold;
+                margin-top: 10px;
+                margin-bottom: 5px;
+                color: ${textColor};
+                border-top: 1px solid #4a4a4a;
+                padding-top: 8px;
+            `;
+
+                const dropList = document.createElement('div');
+                dropList.style.cssText = 'font-size: 13px;';
+
+                // Show top 10 items
+                const topItems = stats.lootList.slice(0, 10);
+                for (const item of topItems) {
+                    const itemDiv = document.createElement('div');
+                    itemDiv.style.cssText = 'margin-bottom: 3px;';
+
+                    const rarityColor = this.getRarityColor(item.rarity);
+                    itemDiv.innerHTML = `<span style="color: ${textColor};">${item.count}</span> <span style="color: ${rarityColor};">× ${item.itemName}</span>`;
+
+                    dropList.appendChild(itemDiv);
+                }
+
+                if (stats.lootList.length > 10) {
+                    const moreDiv = document.createElement('div');
+                    moreDiv.textContent = `... and ${stats.lootList.length - 10} more`;
+                    moreDiv.style.cssText = `
+                    font-style: italic;
+                    color: #888;
+                    margin-top: 5px;
+                `;
+                    dropList.appendChild(moreDiv);
+                }
+
+                statsContainer.appendChild(dropHeader);
+                statsContainer.appendChild(dropList);
+            }
+
+            // Assemble card
+            card.appendChild(nameHeader);
+            card.appendChild(statsContainer);
+
+            return card;
+        }
+
+        /**
+         * Get color for item rarity
+         * @param {number} rarity - Item rarity
+         * @returns {string} Color hex code
+         */
+        getRarityColor(rarity) {
+            switch (rarity) {
+                case 6:
+                    return '#64dbff'; // Mythic
+                case 5:
+                    return '#ff8888'; // Legendary
+                case 4:
+                    return '#ffa844'; // Epic
+                case 3:
+                    return '#e586ff'; // Rare
+                case 2:
+                    return '#a9d5ff'; // Uncommon
+                case 1:
+                    return '#b9f1be'; // Common
+                default:
+                    return '#b4b4b4'; // Normal
+            }
+        }
+
+        /**
+         * Close the popup
+         */
+        closePopup() {
+            if (this.popup) {
+                this.popup.remove();
+                this.popup = null;
+            }
+        }
+
+        /**
+         * Cleanup
+         */
+        cleanup() {
+            if (this.observer) {
+                this.observer.disconnect();
+                this.observer = null;
+            }
+
+            this.closePopup();
+
+            // Remove injected buttons
+            const buttons = document.querySelectorAll('.toolasha-combat-stats-btn');
+            for (const button of buttons) {
+                button.remove();
+            }
+
+            this.isInitialized = false;
+        }
+    }
+
+    // Create and export singleton instance
+    const combatStatsUI = new CombatStatsUI();
+
+    /**
+     * Combat Statistics Feature
+     * Main entry point for combat statistics tracking and display
+     */
+
+
+    /**
+     * Initialize combat statistics feature
+     */
+    async function initialize$1() {
+        // Initialize data collector (WebSocket listener)
+        combatStatsDataCollector.initialize();
+
+        // Initialize UI (button injection and popup)
+        combatStatsUI.initialize();
+    }
+
+    /**
+     * Cleanup combat statistics feature
+     */
+    function cleanup() {
+        combatStatsDataCollector.cleanup();
+        combatStatsUI.cleanup();
+    }
+
+    var combatStats = {
+        name: 'Combat Statistics',
+        initialize: initialize$1,
+        cleanup,
+    };
+
+    /**
      * Alchemy Profit Calculator Module
      * Calculates real-time profit for alchemy actions accounting for:
      * - Success rate (failures consume materials but not catalyst)
@@ -49340,6 +51147,14 @@
             initialize: () => combatSummary.initialize(),
             async: false,
         },
+        {
+            key: 'combatStats',
+            name: 'Combat Statistics',
+            category: 'Combat',
+            initialize: () => combatStats.initialize(),
+            cleanup: () => combatStats.cleanup(),
+            async: true,
+        },
 
         // UI Features
         {
@@ -50196,7 +52011,7 @@
         const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
         targetWindow.Toolasha = {
-            version: '0.13.0',
+            version: '0.14.0',
 
             // Feature toggle API (for users to manage settings via console)
             features: {
