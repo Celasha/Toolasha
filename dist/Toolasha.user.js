@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.14.0
+// @version      0.14.1
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -47807,8 +47807,8 @@
          * @param {Object} stats - Player statistics
          */
         shareStatsToChat(stats) {
-            // Get chat message format from config
-            const messageTemplate = config.getSetting('combatStatsChatMessage');
+            // Get chat message format from config (use getSettingValue for template type)
+            const messageTemplate = config.getSettingValue('combatStatsChatMessage');
 
             // Convert array format to string if needed
             let message = '';
@@ -52011,7 +52011,7 @@
         const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
         targetWindow.Toolasha = {
-            version: '0.14.0',
+            version: '0.14.1',
 
             // Feature toggle API (for users to manage settings via console)
             features: {
