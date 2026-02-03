@@ -2,37 +2,35 @@
 
 Guide for AI coding agents working on this Tampermonkey userscript for Milky Way Idle.
 
-## Build & Test Commands
+## Build, Lint, and Test Commands
 
 ```bash
-npm install          # Install dependencies
-npm run build        # Build userscript → dist/Toolasha.user.js
-npm run dev          # Watch mode (auto-rebuild on changes)
+npm install            # Install dependencies
+npm run build          # Build userscript → dist/Toolasha.user.js
+npm run dev            # Watch mode (auto-rebuild)
 
-npm test             # Run all tests (143 tests)
-npm run test:watch   # Watch mode for tests
+npm run lint           # Lint code
+npm run lint:fix       # Auto-fix lint issues
+npm run format         # Prettier (JS/MD)
 
-# Run a single test file
+npm run lint:md        # Markdown lint
+npm run lint:md:fix    # Auto-fix markdown
+npm run lint:md:links  # Link check
+
+npm test               # Run all tests
+npm run test:watch     # Test watch mode
+
+# Single test file
 npm test -- src/utils/formatters.test.js
 
-# Run tests matching a pattern
+# Single test by pattern
 npm test -- -t "numberFormatter"
-
-npm run lint         # Check for code issues
-npm run lint:fix     # Auto-fix linting issues
-npm run format       # Format code and markdown with Prettier
-
-npm run lint:md        # Check markdown formatting
-npm run lint:md:fix    # Auto-fix markdown issues
-npm run lint:md:links  # Check for broken links
-
 ```
 
-**Pre-commit hooks:** ESLint, Prettier, tests, and build run automatically on commit.
+**Pre-commit hooks:** ESLint + Prettier + tests + build run on commit.
+**Manual testing:** Install `dist/Toolasha.user.js` in Tampermonkey and open <https://www.milkywayidle.com/game>.
 
-**Manual testing:** Install `dist/Toolasha.user.js` in Tampermonkey, visit <https://www.milkywayidle.com/game>
-
-## Project Structure
+## Project Structure (High-Level)
 
 ```
 src/
@@ -40,60 +38,48 @@ src/
 ├── core/             # Core systems (storage, config, websocket, data-manager)
 ├── features/         # Feature modules (market, actions, combat, tasks, etc.)
 ├── api/              # External API integrations (marketplace)
-└── utils/            # Utility functions (formatters, dom, efficiency)
+└── utils/            # Shared utilities (formatters, dom, efficiency, profit-helpers)
 ```
 
-Tests are co-located with source files: `formatters.js` → `formatters.test.js`
+Tests are co-located: `formatters.js` → `formatters.test.js`.
 
-## Code Style
+## Code Style & Conventions
 
 ### Imports
 
-- **Always use `.js` extension** in imports
-- **Import order:** core → api → features → utils
+- **Always use `.js` extension** in imports.
+- **Order:** core → api → features → utils.
 
-```javascript
-import storage from './core/storage.js';
-import { formatWithSeparator } from './utils/formatters.js';
+```js
+import config from '../core/config.js';
+import marketAPI from '../api/marketplace.js';
+import someFeature from '../features/foo/bar.js';
+import { formatWithSeparator } from '../utils/formatters.js';
 ```
 
-### Naming Conventions
+### Formatting
 
-| Type      | Convention         | Example               |
-| --------- | ------------------ | --------------------- |
-| Files     | `kebab-case.js`    | `data-manager.js`     |
-| Classes   | `PascalCase`       | `DataManager`         |
-| Functions | `camelCase`        | `calculateProfit`     |
-| Constants | `UPPER_SNAKE_CASE` | `SAVE_DEBOUNCE_DELAY` |
-
-### Formatting (Prettier)
-
-- 4 spaces indentation, 120 char line length
+- 4 spaces indentation
+- 120-char line length
 - Single quotes, semicolons required
-- Trailing commas (ES5 style), LF line endings
+- Trailing commas (ES5), LF line endings
+
+### Naming
+
+- Files: `kebab-case.js`
+- Classes: `PascalCase`
+- Functions/variables: `camelCase`
+- Constants: `UPPER_SNAKE_CASE`
 
 ### Async/Await
 
-**Always use async/await**, never `.then()` chains:
-
-```javascript
-// ✅ Good
-async function initialize() {
-    await storage.initialize();
-    await config.initialize();
-}
-
-// ❌ Bad - never use .then() chains
-function initialize() {
-    storage.initialize().then(() => config.initialize());
-}
-```
+- **Use async/await** only (no `.then()` chains).
 
 ### Error Handling
 
-Use try-catch with module-prefixed console logging:
+- Use try/catch with module-prefixed logs.
 
-```javascript
+```js
 try {
     const result = await someAsyncOperation();
     return result;
@@ -103,24 +89,15 @@ try {
 }
 ```
 
-### JSDoc Documentation
+### JSDoc
 
-Document all public functions:
-
-```javascript
-/**
- * Calculate profit for a crafted item
- * @param {string} itemHrid - Item HRID (e.g., "/items/cheese")
- * @returns {Promise<Object|null>} Profit data or null if not craftable
- */
-async calculateProfit(itemHrid) { }
-```
+- Document public functions and exported helpers with JSDoc.
 
 ## Architecture Patterns
 
-### Singleton Pattern (Core Modules)
+### Singleton Core Modules
 
-```javascript
+```js
 class DataManager {
     constructor() {
         this.data = null;
@@ -132,7 +109,7 @@ export default dataManager;
 
 ### Feature Interface
 
-```javascript
+```js
 export default {
     name: 'Feature Name',
     initialize: async () => {
@@ -146,114 +123,53 @@ export default {
 
 ### Data Access
 
-```javascript
-import dataManager from './core/data-manager.js';
+```js
+import dataManager from '../core/data-manager.js';
 const itemDetails = dataManager.getItemDetails(itemHrid);
 ```
 
 ### Storage
 
-```javascript
-import storage from './core/storage.js';
+```js
+import storage from '../core/storage.js';
 await storage.set('key', value, 'storeName');
 const value = await storage.get('key', 'storeName', defaultValue);
 ```
 
-### DOM Utilities
+## Lifecycle & Cleanup
 
-```javascript
-import { waitForElement, createStyledDiv } from './utils/dom.js';
-const element = await waitForElement('.selector');
-```
-
-### Shared Utilities
-
-**Efficiency Calculations** (`utils/efficiency.js`):
-
-```javascript
-import { calculateEfficiencyBreakdown, calculateEfficiencyMultiplier } from './utils/efficiency.js';
-
-const breakdown = calculateEfficiencyBreakdown({
-    requiredLevel: 50,
-    skillLevel: 75,
-    teaSkillLevelBonus: 5,
-    houseEfficiency: 10,
-    equipmentEfficiency: 20,
-    teaEfficiency: 15,
-});
-// Returns: { totalEfficiency, levelEfficiency, breakdown, ... }
-
-const multiplier = calculateEfficiencyMultiplier(150); // 2.5x
-```
-
-**Profit Calculations** (`utils/profit-helpers.js`):
-
-```javascript
-import { calculateActionsPerHour, calculateTeaCostsPerHour, calculateProfitPerAction } from './utils/profit-helpers.js';
-
-// Rate conversions
-const actionsPerHour = calculateActionsPerHour(6); // 600 actions/hr
-
-// Tea costs
-const teaCosts = calculateTeaCostsPerHour({
-    drinkSlots: player.drinkSlots,
-    drinkConcentration: 0.15,
-    itemDetailMap,
-    getItemPrice,
-});
-
-// Profit per action
-const profitPerAction = calculateProfitPerAction(75000, 600); // 125 per action
-```
-
-**Constants** (`utils/profit-constants.js`):
-
-```javascript
-import { MARKET_TAX, DRINKS_PER_HOUR_BASE, SECONDS_PER_HOUR } from './utils/profit-constants.js';
-```
+- Prefer `createCleanupRegistry()` for timers/observers.
+- Use `createTimerRegistry()` for intervals/timeouts.
+- Remove observers/listeners on `cleanup()` or `disable()`.
 
 ## Anti-Patterns to Avoid
 
-- ❌ `.then()` chains → use async/await
+- ❌ `.then()` chains
 - ❌ Direct `localStorage` access → use storage module
 - ❌ Direct game data access → use dataManager
-- ❌ `var` keyword → use `const` or `let`
+- ❌ `var`
 - ❌ Mutating function parameters
-- ❌ Abbreviations in names (`calc` → `calculate`)
-- ❌ Missing `.js` extension in imports
-- ❌ K/M/B abbreviations in user-facing numbers → use full numbers with separators
+- ❌ Missing `.js` in imports
 
 ## Key Files
 
-| File                           | Purpose                                        |
-| ------------------------------ | ---------------------------------------------- |
-| `src/main.js`                  | Entry point, initialization order              |
-| `src/core/data-manager.js`     | Game data access (items, actions, player data) |
-| `src/core/storage.js`          | IndexedDB persistence with debouncing          |
-| `src/core/config.js`           | Feature settings management                    |
-| `src/core/websocket.js`        | WebSocket message interception                 |
-| `src/core/feature-registry.js` | Feature initialization system                  |
-| `src/utils/formatters.js`      | Number/time formatting utilities               |
-| `src/utils/efficiency.js`      | Efficiency calculations                        |
-| `src/utils/profit-helpers.js`  | Shared profit/rate calculation helpers         |
+- `src/main.js` (entry/init)
+- `src/core/data-manager.js` (game data access)
+- `src/core/storage.js` (IndexedDB)
+- `src/core/websocket.js` (WS interception)
+- `src/core/feature-registry.js` (feature bootstrapping)
+- `src/utils/formatters.js` (number/time formatting)
+- `src/utils/efficiency.js` (efficiency math)
+- `src/utils/profit-helpers.js` (profit/rate helpers)
 
-## Globals Available
+## Tooling Rules
 
-**Tampermonkey:** `GM_addStyle`, `GM`, `unsafeWindow`
-**External libs:** `math`, `Chart`, `ChartDataLabels`, `LZString`
-**Game:** `localStorageUtil`
+- ESLint: no `var`, no `eval`, prefer `const`, no duplicate imports.
 
-## ESLint Rules
+## Cursor / Copilot Rules
 
-Key rules enforced (see `eslint.config.js` for full list):
+- No `.cursorrules` or `.github/copilot-instructions.md` found in this repo.
 
-- `no-var: error` - Use `const` or `let`
-- `no-undef: error` - No undefined variables
-- `eqeqeq: warn` - Use `===` instead of `==`
-- `no-eval: error` - No eval()
-- `prefer-const: warn` - Use const when not reassigned
-- `no-duplicate-imports: error` - No duplicate imports
+```
 
-## Commit message rules
-
-- For commits that will result in a new release the commit message should just be "release <version>"
+```
