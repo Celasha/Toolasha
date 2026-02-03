@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.14.0](https://github.com/Celasha/Toolasha/compare/v0.13.0...v0.14.0) (2026-02-03)
+
+### Features
+
+- add Combat Statistics feature with real-time consumption tracking ([df2a870](https://github.com/Celasha/Toolasha/commit/df2a8705cd2c952ca9698841b6393052054bc619))
+- improve combat stats tracking with event-based consumption and template editor ([2b46c6e](https://github.com/Celasha/Toolasha/commit/2b46c6e423482c67bdea2a1e5026a559599ee5d8))
+
+### Bug Fixes
+
+- handle abbreviated quantity matching in market listings ([80c4025](https://github.com/Celasha/Toolasha/commit/80c402565ca4d57434e1fbd4ef296031d865273b))
+
 ## [0.13.0](https://github.com/Celasha/Toolasha/compare/v0.12.2...v0.13.0) (2026-02-02)
 
 ### Features
