@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.2](https://github.com/Celasha/Toolasha/compare/v0.15.1...v0.15.2) (2026-02-04)
+
+### Bug Fixes
+
+- use jsdelivr for pinned library URLs ([9324a43](https://github.com/Celasha/Toolasha/commit/9324a4388be103adf6e9f907bad1c9fdb261c104))
+- use jsdelivr for pinned library URLs ([86b6102](https://github.com/Celasha/Toolasha/commit/86b6102a4883b8c8b368887ded4fe136f3452d16))
+
 ## [0.15.1](https://github.com/Celasha/Toolasha/compare/v0.15.0...v0.15.1) (2026-02-04)
 
 ### Bug Fixes
