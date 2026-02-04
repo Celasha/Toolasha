@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha UI Library
 // @namespace    http://tampermonkey.net/
-// @version      0.14.3
+// @version      0.15.3
 // @description  UI library for Toolasha - UI enhancements, tasks, skills, and misc features
 // @author       Celasha
 // @license      CC-BY-NC-SA-4.0

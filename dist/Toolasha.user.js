@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.14.3
+// @version      0.15.3
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -18,12 +18,12 @@
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        unsafeWindow
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@b11b6e6e5cb5888db3d074687fd9e53cf78b9b30/dist/libraries/toolasha-core.user.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@b11b6e6e5cb5888db3d074687fd9e53cf78b9b30/dist/libraries/toolasha-utils.user.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@b11b6e6e5cb5888db3d074687fd9e53cf78b9b30/dist/libraries/toolasha-market.user.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@b11b6e6e5cb5888db3d074687fd9e53cf78b9b30/dist/libraries/toolasha-actions.user.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@b11b6e6e5cb5888db3d074687fd9e53cf78b9b30/dist/libraries/toolasha-combat.user.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@b11b6e6e5cb5888db3d074687fd9e53cf78b9b30/dist/libraries/toolasha-ui.user.js
+// @require      https://UPDATE-THIS-URL/toolasha-core.user.js
+// @require      https://UPDATE-THIS-URL/toolasha-utils.user.js
+// @require      https://UPDATE-THIS-URL/toolasha-market.user.js
+// @require      https://UPDATE-THIS-URL/toolasha-actions.user.js
+// @require      https://UPDATE-THIS-URL/toolasha-combat.user.js
+// @require      https://UPDATE-THIS-URL/toolasha-ui.user.js
 // ==/UserScript==
 // Note: Combat Sim auto-import requires Tampermonkey for cross-domain storage. Not available on Steam (use manual clipboard copy/paste instead).
 

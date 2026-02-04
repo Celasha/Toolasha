@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha Combat Library
 // @namespace    http://tampermonkey.net/
-// @version      0.14.3
+// @version      0.15.3
 // @description  Combat library for Toolasha - Combat, abilities, and combat stats features
 // @author       Celasha
 // @license      CC-BY-NC-SA-4.0
