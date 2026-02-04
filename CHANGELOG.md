@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.16.0](https://github.com/Celasha/Toolasha/compare/v0.15.5...v0.16.0) (2026-02-04)
+
+### Features
+
+- add task auto-sort and fix listing age estimation ([abe7600](https://github.com/Celasha/Toolasha/commit/abe7600e7f287d99d7c3f9dec95ccf9c0f0ee70e))
+
+### Bug Fixes
+
+- use game data for alchemy essence drop rates ([0d1880f](https://github.com/Celasha/Toolasha/commit/0d1880fd1851120fbb483d4a8006f74642e8d82f))
+
 ## [0.15.5](https://github.com/Celasha/Toolasha/compare/v0.15.4...v0.15.5) (2026-02-04)
 
 ### Bug Fixes
