@@ -800,6 +800,15 @@ async function retryFailedFeatures(failedFeatures) {
     }
 }
 
+/**
+ * Replace the feature registry (for library split)
+ * @param {Array} newFeatures - New feature registry array
+ */
+function replaceFeatures(newFeatures) {
+    featureRegistry.length = 0; // Clear existing array
+    featureRegistry.push(...newFeatures); // Add new features
+}
+
 export default {
     initializeFeatures,
     setupCharacterSwitchHandler,
@@ -807,5 +816,6 @@ export default {
     retryFailedFeatures,
     getFeature,
     getAllFeatures,
+    replaceFeatures,
     getFeaturesByCategory,
 };

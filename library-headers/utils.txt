@@ -1,0 +1,12 @@
+// ==UserScript==
+// @name         Toolasha Utils Library
+// @namespace    http://tampermonkey.net/
+// @version      0.14.3
+// @description  Utils library for Toolasha - All utility modules
+// @author       Celasha
+// @license      CC-BY-NC-SA-4.0
+// @run-at       document-start
+// @match        https://www.milkywayidle.com/*
+// @match        https://test.milkywayidle.com/*
+// @grant        none
+// ==/UserScript==

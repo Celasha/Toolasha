@@ -1,0 +1,22 @@
+// ==UserScript==
+// @name         Toolasha
+// @namespace    http://tampermonkey.net/
+// @version      0.14.3
+// @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
+// @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
+// @description  Toolasha - Enhanced tools for Milky Way Idle.
+// @author       Celasha and Claude, thank you to bot7420, DrDucky, Frotty, Truth_Light, AlphB, qu, and sentientmilk, for providing the basis for a lot of this. Thank you to Miku, Orvel, Jigglymoose, Incinarator, Knerd, and others for their time and help. Thank you to Steez for testing and helping me figure out where I'm wrong! Thank you to Tib for his generous contribution of the Character Cards. Thank you to Sapnas for -deeply- testing and singlehandedly help me improve performance. Special thanks to Zaeter for the name.
+// @license      CC-BY-NC-SA-4.0
+// @run-at       document-start
+// @match        https://www.milkywayidle.com/*
+// @match        https://test.milkywayidle.com/*
+// @match        https://shykai.github.io/MWICombatSimulatorTest/dist/*
+// @grant        none
+// @require      https://UPDATE-THIS-URL/toolasha-core.user.js
+// @require      https://UPDATE-THIS-URL/toolasha-utils.user.js
+// @require      https://UPDATE-THIS-URL/toolasha-market.user.js
+// @require      https://UPDATE-THIS-URL/toolasha-actions.user.js
+// @require      https://UPDATE-THIS-URL/toolasha-combat.user.js
+// @require      https://UPDATE-THIS-URL/toolasha-ui.user.js
+// ==/UserScript==
+// Note: Combat Sim auto-import requires Tampermonkey for cross-domain storage. Not available on Steam (use manual clipboard copy/paste instead).

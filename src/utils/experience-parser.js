@@ -35,19 +35,11 @@ export function parseEquipmentWisdom(equipment, itemDetailMap) {
         const enhancementBonus = noncombatEnhancement.skillingExperience || 0;
         const enhancementLevel = item.enhancementLevel || 0;
 
-        // Determine multiplier based on slot (5× for accessories, 1× for armor)
-        const accessorySlots = [
-            '/equipment_types/neck',
-            '/equipment_types/ring',
-            '/equipment_types/earrings',
-            '/equipment_types/back',
-            '/equipment_types/trinket',
-            '/equipment_types/charm',
-        ];
-        const multiplier = accessorySlots.includes(itemDetails.equipmentDetail.type) ? 5 : 1;
-
         // Calculate total wisdom from this item
-        const itemWisdom = (baseWisdom + enhancementBonus * enhancementLevel * multiplier) * 100;
+        // Enhancement scales quadratically: level × (1 + 0.05 × (level - 1))
+        const enhancementTotal =
+            enhancementBonus * (enhancementLevel + (0.1 * enhancementLevel * (enhancementLevel - 1)) / 2);
+        const itemWisdom = (baseWisdom + enhancementTotal) * 100;
         totalWisdom += itemWisdom;
 
         // Add to breakdown
@@ -94,19 +86,11 @@ export function parseCharmExperience(equipment, skillHrid, itemDetailMap) {
         const enhancementBonus = noncombatEnhancement[statName] || 0;
         const enhancementLevel = item.enhancementLevel || 0;
 
-        // Determine multiplier based on slot (5× for accessories/charms, 1× for armor)
-        const accessorySlots = [
-            '/equipment_types/neck',
-            '/equipment_types/ring',
-            '/equipment_types/earrings',
-            '/equipment_types/back',
-            '/equipment_types/trinket',
-            '/equipment_types/charm',
-        ];
-        const multiplier = accessorySlots.includes(itemDetails.equipmentDetail.type) ? 5 : 1;
-
         // Calculate total charm XP from this item
-        const itemCharmXP = (baseCharmXP + enhancementBonus * enhancementLevel * multiplier) * 100;
+        // Enhancement scales quadratically: level × (1 + 0.05 × (level - 1))
+        const enhancementTotal =
+            enhancementBonus * (enhancementLevel + (0.1 * enhancementLevel * (enhancementLevel - 1)) / 2);
+        const itemCharmXP = (baseCharmXP + enhancementTotal) * 100;
         totalCharmXP += itemCharmXP;
 
         // Add to breakdown
@@ -275,13 +259,16 @@ function calculateDrinkConcentration(equipment, itemDetailMap) {
         return 0;
     }
 
-    // Get enhancement scaling (pouch is armor slot, 1× multiplier)
+    // Get enhancement scaling
     const noncombatEnhancement = itemDetails.equipmentDetail.noncombatEnhancementBonuses || {};
     const enhancementBonus = noncombatEnhancement.drinkConcentration || 0;
     const enhancementLevel = pouchItem.enhancementLevel || 0;
 
-    // Calculate total (1× multiplier for pouch)
-    return (baseDrinkConcentration + enhancementBonus * enhancementLevel) * 100;
+    // Calculate total drink concentration
+    // Enhancement scales quadratically: level × (1 + 0.05 × (level - 1))
+    const enhancementTotal =
+        enhancementBonus * (enhancementLevel + (0.1 * enhancementLevel * (enhancementLevel - 1)) / 2);
+    return (baseDrinkConcentration + enhancementTotal) * 100;
 }
 
 export default {
