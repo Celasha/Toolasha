@@ -9,7 +9,7 @@ import webSocketHook from '../../core/websocket.js';
 import { calculateCombatScore } from './score-calculator.js';
 import { numberFormatter } from '../../utils/formatters.js';
 import { constructExportObject } from '../combat/combat-sim-export.js';
-import { clearCurrentProfile } from '../combat/profile-cache.js';
+import { clearCurrentProfile } from '../../core/profile-manager.js';
 import { constructMilkonomyExport } from '../combat/milkonomy-export.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';

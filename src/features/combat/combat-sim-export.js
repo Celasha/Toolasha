@@ -7,7 +7,7 @@
 
 import webSocketHook from '../../core/websocket.js';
 import dataManager from '../../core/data-manager.js';
-import { getCurrentProfile } from './profile-cache.js';
+import { getCurrentProfile } from '../../core/profile-manager.js';
 
 // Detect if we're running on Tampermonkey or Steam
 const hasScriptManager = typeof GM_info !== 'undefined';

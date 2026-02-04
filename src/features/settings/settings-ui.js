@@ -6,8 +6,8 @@
 
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
-import { settingsGroups } from './settings-config.js';
-import settingsStorage from './settings-storage.js';
+import { settingsGroups } from '../../core/settings-schema.js';
+import settingsStorage from '../../core/settings-storage.js';
 import storage from '../../core/storage.js';
 import settingsCSS from './settings-styles.css?raw';
 import marketAPI from '../../api/marketplace.js';

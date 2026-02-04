@@ -5,7 +5,7 @@
  * Uses WebSocket constructor wrapper for better performance than MessageEvent.prototype.data hooking
  */
 
-import { setCurrentProfile } from '../features/combat/profile-cache.js';
+import { setCurrentProfile } from './profile-manager.js';
 
 class WebSocketHook {
     constructor() {
