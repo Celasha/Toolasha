@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.16.2](https://github.com/Celasha/Toolasha/compare/v0.16.1...v0.16.2) (2026-02-04)
+
+
+### Bug Fixes
+
+* correct feature registry key for skillRemainingXP toggle ([d37ac56](https://github.com/Celasha/Toolasha/commit/d37ac56638da51d6b22938412f2ad1ff5999317f))
+* correct feature registry key for skillRemainingXP toggle ([be09de0](https://github.com/Celasha/Toolasha/commit/be09de0cb8cc1a0412ac171b09203f882e737ffd))
+* equipment order books now show age estimates using enhancement level key ([62aab0a](https://github.com/Celasha/Toolasha/commit/62aab0a1d9d0d3386ff14e0538559fa2b4336538))
+* prevent duplicate timestamps for listings with same quantity ([6f948f6](https://github.com/Celasha/Toolasha/commit/6f948f629b58df21dcd6ed9ba25ff771973e7e94))
+* remove old age column elements before adding new ones ([567a68a](https://github.com/Celasha/Toolasha/commit/567a68a14f6c0b44aedbd877bff58cbba0cbebf7))
+
 ## [0.16.1](https://github.com/Celasha/Toolasha/compare/v0.16.0...v0.16.1) (2026-02-04)
 
 ### Bug Fixes
