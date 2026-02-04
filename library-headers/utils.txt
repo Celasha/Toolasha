@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha Utils Library
 // @namespace    http://tampermonkey.net/
-// @version      0.15.4
+// @version      0.15.5
 // @description  Utils library for Toolasha - All utility modules
 // @author       Celasha
 // @license      CC-BY-NC-SA-4.0
