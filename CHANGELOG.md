@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.4](https://github.com/Celasha/Toolasha/compare/v0.15.3...v0.15.4) (2026-02-04)
+
+
+### Bug Fixes
+
+* move external dependencies to entrypoint header ([ad6ac53](https://github.com/Celasha/Toolasha/commit/ad6ac53800d7b8c9eb66945f85c62c70aa737f4b))
+
 ## [0.15.3](https://github.com/Celasha/Toolasha/compare/v0.15.2...v0.15.3) (2026-02-04)
 
 ### Bug Fixes
