@@ -18,12 +18,12 @@
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        unsafeWindow
-// @require      https://UPDATE-THIS-URL/toolasha-core.user.js
-// @require      https://UPDATE-THIS-URL/toolasha-utils.user.js
-// @require      https://UPDATE-THIS-URL/toolasha-market.user.js
-// @require      https://UPDATE-THIS-URL/toolasha-actions.user.js
-// @require      https://UPDATE-THIS-URL/toolasha-combat.user.js
-// @require      https://UPDATE-THIS-URL/toolasha-ui.user.js
+// @require      https://raw.githubusercontent.com/Celasha/Toolasha/89ffa09da051ec9eda64bf10bae39b4b341f9f95/dist/libraries/toolasha-core.user.js
+// @require      https://raw.githubusercontent.com/Celasha/Toolasha/89ffa09da051ec9eda64bf10bae39b4b341f9f95/dist/libraries/toolasha-utils.user.js
+// @require      https://raw.githubusercontent.com/Celasha/Toolasha/89ffa09da051ec9eda64bf10bae39b4b341f9f95/dist/libraries/toolasha-market.user.js
+// @require      https://raw.githubusercontent.com/Celasha/Toolasha/89ffa09da051ec9eda64bf10bae39b4b341f9f95/dist/libraries/toolasha-actions.user.js
+// @require      https://raw.githubusercontent.com/Celasha/Toolasha/89ffa09da051ec9eda64bf10bae39b4b341f9f95/dist/libraries/toolasha-combat.user.js
+// @require      https://raw.githubusercontent.com/Celasha/Toolasha/89ffa09da051ec9eda64bf10bae39b4b341f9f95/dist/libraries/toolasha-ui.user.js
 // ==/UserScript==
 // Note: Combat Sim auto-import requires Tampermonkey for cross-domain storage. Not available on Steam (use manual clipboard copy/paste instead).
 
