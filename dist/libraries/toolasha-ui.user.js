@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha UI Library
 // @namespace    http://tampermonkey.net/
-// @version      0.15.4
+// @version      0.15.5
 // @description  UI library for Toolasha - UI enhancements, tasks, skills, and misc features
 // @author       Celasha
 // @license      CC-BY-NC-SA-4.0
@@ -9784,17 +9784,25 @@
          * Set up screen observer to detect Enhancing screen using centralized observer
          */
         setupScreenObserver() {
-            // Check if setting is enabled (default to false if undefined)
-            const showOnlyOnEnhancingScreen = config.getSetting('enhancementTracker_showOnlyOnEnhancingScreen');
+            // Check if main feature is enabled
+            const trackerEnabled = config.getSetting('enhancementTracker');
 
-            if (showOnlyOnEnhancingScreen !== true) {
-                // Setting is disabled or undefined, always show tracker
-                this.isOnEnhancingScreen = true;
-                this.show();
+            if (!trackerEnabled) {
+                // Main feature disabled, hide tracker
+                this.hide();
             } else {
-                // Setting enabled, check current screen
-                this.checkEnhancingScreen();
-                this.updateVisibility();
+                // Check if setting is enabled (default to false if undefined)
+                const showOnlyOnEnhancingScreen = config.getSetting('enhancementTracker_showOnlyOnEnhancingScreen');
+
+                if (showOnlyOnEnhancingScreen !== true) {
+                    // Setting is disabled or undefined, always show tracker
+                    this.isOnEnhancingScreen = true;
+                    this.show();
+                } else {
+                    // Setting enabled, check current screen
+                    this.checkEnhancingScreen();
+                    this.updateVisibility();
+                }
             }
 
             // Register with centralized DOM observer for enhancing panel detection
@@ -9810,7 +9818,16 @@
 
             // Poll for both setting changes and panel removal
             this.pollInterval = setInterval(() => {
+                const trackerEnabled = config.getSetting('enhancementTracker');
                 const currentSetting = config.getSetting('enhancementTracker_showOnlyOnEnhancingScreen');
+
+                // If main tracker is disabled, always hide
+                if (!trackerEnabled) {
+                    if (this.floatingUI && this.floatingUI.style.display !== 'none') {
+                        this.hide();
+                    }
+                    return;
+                }
 
                 if (currentSetting !== true) {
                     // Setting disabled - always show
@@ -9849,9 +9866,13 @@
          * Update visibility based on screen state and settings
          */
         updateVisibility() {
+            const trackerEnabled = config.getSetting('enhancementTracker');
             const showOnlyOnEnhancingScreen = config.getSetting('enhancementTracker_showOnlyOnEnhancingScreen');
 
-            if (showOnlyOnEnhancingScreen !== true) {
+            // If main tracker is disabled, always hide
+            if (!trackerEnabled) {
+                this.hide();
+            } else if (showOnlyOnEnhancingScreen !== true) {
                 this.show();
             } else if (this.isOnEnhancingScreen) {
                 this.show();

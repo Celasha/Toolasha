@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha Market Library
 // @namespace    http://tampermonkey.net/
-// @version      0.15.4
+// @version      0.15.5
 // @description  Market library for Toolasha - Market, inventory, and economy features
 // @author       Celasha
 // @license      CC-BY-NC-SA-4.0
@@ -2500,6 +2500,12 @@
          * @param {Element} tooltipElement - The tooltip popper element
          */
         async handleTooltip(tooltipElement) {
+            // Guard against duplicate processing
+            if (tooltipElement.dataset.pricesProcessed) {
+                return;
+            }
+            tooltipElement.dataset.pricesProcessed = 'true';
+
             // Check if it's a collection tooltip
             const collectionContent = tooltipElement.querySelector('div.Collection_tooltipContent__2IcSJ');
             const isCollectionTooltip = !!collectionContent;
@@ -3409,6 +3415,12 @@
          * @param {Element} tooltipElement - The tooltip popper element
          */
         async handleTooltip(tooltipElement) {
+            // Guard against duplicate processing
+            if (tooltipElement.dataset.consumablesProcessed) {
+                return;
+            }
+            tooltipElement.dataset.consumablesProcessed = 'true';
+
             // Check if it's an item tooltip
             const nameElement = tooltipElement.querySelector('div.ItemTooltipText_name__2JAHA');
 
@@ -4874,7 +4886,7 @@
          * @returns {number} Estimated timestamp
          */
         linearRegression(listingId) {
-            // Calculate linear regression coefficients
+            // Calculate linear regression slope
             let sumX = 0,
                 sumY = 0;
             for (const entry of this.knownListings) {
@@ -4894,10 +4906,20 @@
             }
 
             const slope = numerator / denominator;
-            const intercept = meanY - slope * meanX;
 
-            // Estimate timestamp using regression line
-            return slope * listingId + intercept;
+            // Get boundary points
+            const minId = this.knownListings[0].id;
+            const maxId = this.knownListings[this.knownListings.length - 1].id;
+            const minTimestamp = this.knownListings[0].timestamp;
+            const maxTimestamp = this.knownListings[this.knownListings.length - 1].timestamp;
+
+            // Extrapolate from closest boundary (RWI approach)
+            // This prevents drift from large intercept values
+            if (listingId > maxId) {
+                return slope * (listingId - maxId) + maxTimestamp;
+            } else {
+                return slope * (listingId - minId) + minTimestamp;
+            }
         }
 
         /**
@@ -13722,6 +13744,12 @@
          * @param {Element} tooltipElement - The tooltip popper element
          */
         async handleTooltip(tooltipElement) {
+            // Guard against duplicate processing
+            if (tooltipElement.dataset.dungeonProcessed) {
+                return;
+            }
+            tooltipElement.dataset.dungeonProcessed = 'true';
+
             // Check if it's a collection tooltip
             const collectionContent = tooltipElement.querySelector('div.Collection_tooltipContent__2IcSJ');
             const isCollectionTooltip = !!collectionContent;
