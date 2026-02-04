@@ -2,11 +2,10 @@
 
 ## [0.15.1](https://github.com/Celasha/Toolasha/compare/v0.15.0...v0.15.1) (2026-02-04)
 
-
 ### Bug Fixes
 
-* correct release pinning SHA ([e030008](https://github.com/Celasha/Toolasha/commit/e030008cc3c7f6b1f1568150512d2397c41aa596))
-* set library pinning sha in release ([a4c9ee1](https://github.com/Celasha/Toolasha/commit/a4c9ee1aeb05005afbf0cf444052f30aa52738af))
+- correct release pinning SHA ([e030008](https://github.com/Celasha/Toolasha/commit/e030008cc3c7f6b1f1568150512d2397c41aa596))
+- set library pinning sha in release ([a4c9ee1](https://github.com/Celasha/Toolasha/commit/a4c9ee1aeb05005afbf0cf444052f30aa52738af))
 
 ## [0.15.0](https://github.com/Celasha/Toolasha/compare/v0.14.3...v0.15.0) (2026-02-04)
 
