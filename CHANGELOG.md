@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.1](https://github.com/Celasha/Toolasha/compare/v0.16.0...v0.16.1) (2026-02-04)
+
+
+### Bug Fixes
+
+* initialize market data for task profits ([204c83b](https://github.com/Celasha/Toolasha/commit/204c83be08bc948d36aaa774eeffd5bbc694137e))
+
 ## [0.16.0](https://github.com/Celasha/Toolasha/compare/v0.15.5...v0.16.0) (2026-02-04)
 
 ### Features
