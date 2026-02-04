@@ -45,9 +45,11 @@ class ActionTimeDisplay {
         this.unregisterQueueObserver = null;
         this.actionNameObserver = null;
         this.queueMenuObserver = null; // Observer for queue menu mutations
+        this.unregisterActionNameObserver = null;
         this.characterInitHandler = null; // Handler for character switch
         this.activeProfitCalculationId = null; // Track active profit calculation to prevent race conditions
         this.waitForPanelTimeout = null;
+        this.retryUpdateTimeout = null;
         this.cleanupRegistry = createCleanupRegistry();
     }
 
@@ -93,6 +95,13 @@ class ActionTimeDisplay {
         });
 
         this.cleanupRegistry.registerCleanup(() => {
+            if (this.retryUpdateTimeout) {
+                clearTimeout(this.retryUpdateTimeout);
+                this.retryUpdateTimeout = null;
+            }
+        });
+
+        this.cleanupRegistry.registerCleanup(() => {
             if (this.updateTimer) {
                 clearInterval(this.updateTimer);
                 this.updateTimer = null;
@@ -113,8 +122,17 @@ class ActionTimeDisplay {
             }
         });
 
+        this.cleanupRegistry.registerCleanup(() => {
+            if (this.unregisterActionNameObserver) {
+                this.unregisterActionNameObserver();
+                this.unregisterActionNameObserver = null;
+            }
+        });
+
         // Wait for action name element to exist
         this.waitForActionPanel();
+
+        this.initializeActionNameWatcher();
 
         // Initialize queue tooltip observer
         this.initializeQueueObserver();
@@ -143,6 +161,29 @@ class ActionTimeDisplay {
                 this.unregisterQueueObserver = null;
             }
         });
+    }
+
+    /**
+     * Initialize observer for action name element replacement
+     */
+    initializeActionNameWatcher() {
+        if (this.unregisterActionNameObserver) {
+            return;
+        }
+
+        this.unregisterActionNameObserver = domObserver.onClass(
+            'ActionTimeDisplay-ActionName',
+            'Header_actionName',
+            (actionNameElement) => {
+                if (!actionNameElement) {
+                    return;
+                }
+
+                this.createDisplayPanel();
+                this.setupActionNameObserver(actionNameElement);
+                this.updateDisplay();
+            }
+        );
     }
 
     /**
@@ -332,53 +373,22 @@ class ActionTimeDisplay {
         }
 
         // Extract inventory count from parentheses (e.g., "Coinify: Item (4312)" -> 4312)
-        const inventoryCountMatch = actionNameText.match(/\((\d+)\)$/);
-        const inventoryCount = inventoryCountMatch ? parseInt(inventoryCountMatch[1]) : null;
+        const inventoryCountMatch = actionNameText.match(/\(([\d,]+)\)$/);
+        const inventoryCount = inventoryCountMatch ? parseInt(inventoryCountMatch[1].replace(/,/g, ''), 10) : null;
 
         // Find the matching action in cache
         const cachedActions = dataManager.getCurrentActions();
         let action;
 
-        // Parse the action name, handling special formats like "Coinify: Item Name (count)"
-        // Also handles combat zones like "Farmland (276K)" or "Zone (1.2M)"
-        const actionNameMatch = actionNameText.match(/^(.+?)(?:\s*\([^)]+\))?$/);
-        const fullNameFromDom = actionNameMatch ? actionNameMatch[1].trim() : actionNameText;
-
-        // Check if this is a format like "Coinify: Item Name"
-        let actionNameFromDom, itemNameFromDom;
-        if (fullNameFromDom.includes(':')) {
-            const parts = fullNameFromDom.split(':');
-            actionNameFromDom = parts[0].trim();
-            itemNameFromDom = parts.slice(1).join(':').trim(); // Handle multiple colons
-        } else {
-            actionNameFromDom = fullNameFromDom;
-            itemNameFromDom = null;
-        }
-
         // ONLY match against the first action (current action), not queued actions
         // This prevents showing stats from queued actions when party combat interrupts
         if (cachedActions.length > 0) {
-            const currentAction = cachedActions[0];
-            const actionDetails = dataManager.getActionDetails(currentAction.actionHrid);
-
-            if (actionDetails && actionDetails.name === actionNameFromDom) {
-                // If there's an item name (like "Foraging Essence" from "Coinify: Foraging Essence"),
-                // we need to match on primaryItemHash
-                if (itemNameFromDom && currentAction.primaryItemHash) {
-                    // Convert display name to item HRID format (lowercase with underscores)
-                    const itemHrid = '/items/' + itemNameFromDom.toLowerCase().replace(/\s+/g, '_');
-                    if (currentAction.primaryItemHash.includes(itemHrid)) {
-                        action = currentAction;
-                    }
-                } else if (!itemNameFromDom) {
-                    // No item name specified, match on action name alone
-                    action = currentAction;
-                }
-            }
+            action = this.matchCurrentActionFromText(cachedActions, actionNameText);
         }
 
         if (!action) {
             this.displayElement.innerHTML = '';
+            this.scheduleUpdateRetry();
             // Reconnect observer
             this.reconnectActionNameObserver(actionNameElement);
             return;
@@ -727,6 +737,68 @@ class ActionTimeDisplay {
         );
     }
 
+    parseActionNameFromDom(actionNameText) {
+        const actionNameMatch = actionNameText.match(/^(.+?)(?:\s*\([^)]+\))?$/);
+        const fullNameFromDom = actionNameMatch ? actionNameMatch[1].trim() : actionNameText;
+
+        if (fullNameFromDom.includes(':')) {
+            const parts = fullNameFromDom.split(':');
+            return {
+                actionNameFromDom: parts[0].trim(),
+                itemNameFromDom: parts.slice(1).join(':').trim(),
+            };
+        }
+
+        return {
+            actionNameFromDom: fullNameFromDom,
+            itemNameFromDom: null,
+        };
+    }
+
+    buildItemHridFromName(itemName) {
+        return `/items/${itemName.toLowerCase().replace(/\s+/g, '_')}`;
+    }
+
+    matchCurrentActionFromText(currentActions, actionNameText) {
+        const { actionNameFromDom, itemNameFromDom } = this.parseActionNameFromDom(actionNameText);
+        const itemHridFromDom = this.buildItemHridFromName(itemNameFromDom || actionNameFromDom);
+
+        return currentActions.find((currentAction) => {
+            const actionDetails = dataManager.getActionDetails(currentAction.actionHrid);
+            if (!actionDetails) {
+                return false;
+            }
+
+            const outputItems = actionDetails.outputItems || [];
+            const dropTable = actionDetails.dropTable || [];
+            const matchesOutput = outputItems.some((item) => item.itemHrid === itemHridFromDom);
+            const matchesDrop = dropTable.some((drop) => drop.itemHrid === itemHridFromDom);
+            const matchesName = actionDetails.name === actionNameFromDom;
+
+            if (!matchesName && !matchesOutput && !matchesDrop) {
+                return false;
+            }
+
+            if (itemNameFromDom && currentAction.primaryItemHash) {
+                return currentAction.primaryItemHash.includes(itemHridFromDom);
+            }
+
+            return true;
+        });
+    }
+
+    scheduleUpdateRetry() {
+        if (this.retryUpdateTimeout) {
+            return;
+        }
+
+        this.retryUpdateTimeout = setTimeout(() => {
+            this.retryUpdateTimeout = null;
+            this.updateDisplay();
+        }, 150);
+        this.cleanupRegistry.registerTimeout(this.retryUpdateTimeout);
+    }
+
     /**
      * Get clean action name from element, stripping any stats we appended
      * @param {HTMLElement} actionNameElement - Action name element
@@ -1045,8 +1117,22 @@ class ActionTimeDisplay {
             }
 
             const actionDetails = dataManager.getActionDetails(a.actionHrid);
-            if (!actionDetails || actionDetails.name !== actionNameFromDiv) {
+            if (!actionDetails) {
                 return false;
+            }
+
+            if (actionDetails.name !== actionNameFromDiv) {
+                const itemHridFromDiv = itemNameFromDiv
+                    ? `/items/${itemNameFromDiv.toLowerCase().replace(/\s+/g, '_')}`
+                    : `/items/${actionNameFromDiv.toLowerCase().replace(/\s+/g, '_')}`;
+                const outputItems = actionDetails.outputItems || [];
+                const dropTable = actionDetails.dropTable || [];
+                const matchesOutput = outputItems.some((item) => item.itemHrid === itemHridFromDiv);
+                const matchesDrop = dropTable.some((drop) => drop.itemHrid === itemHridFromDiv);
+
+                if (!matchesOutput && !matchesDrop) {
+                    return false;
+                }
             }
 
             // If there's an item name, match on primaryItemHash
