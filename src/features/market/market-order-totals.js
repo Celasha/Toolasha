@@ -90,8 +90,22 @@ class MarketOrderTotals {
         let unclaimed = 0;
 
         for (const listing of listings) {
+            if (!listing) {
+                continue;
+            }
+
             // Unclaimed coins
             unclaimed += listing.unclaimedCoinCount || 0;
+
+            // Skip cancelled or fully claimed listings
+            if (
+                listing.status === '/market_listing_status/cancelled' ||
+                (listing.status === '/market_listing_status/filled' &&
+                    (listing.unclaimedItemCount || 0) === 0 &&
+                    (listing.unclaimedCoinCount || 0) === 0)
+            ) {
+                continue;
+            }
 
             if (listing.isSell) {
                 // Sell orders: Calculate expected proceeds after tax
@@ -151,7 +165,14 @@ class MarketOrderTotals {
      */
     updateDisplay() {
         if (!this.displayElement || !document.body.contains(this.displayElement)) {
-            return;
+            const headerElement = document.querySelector('[class*="Header_totalLevel"]');
+            if (headerElement) {
+                this.injectDisplay(headerElement);
+            }
+
+            if (!this.displayElement || !document.body.contains(this.displayElement)) {
+                return;
+            }
         }
 
         const totals = this.calculateTotals();
@@ -163,6 +184,7 @@ class MarketOrderTotals {
         this.displayElement.style.width = hasNoData ? '100%' : '';
 
         if (hasNoData) {
+            const marketplaceIcon = this.getMarketplaceIcon();
             this.displayElement.innerHTML = `
                 <button
                     type="button"
@@ -171,9 +193,7 @@ class MarketOrderTotals {
                     aria-label="Open Marketplace"
                     style="background: none; border: none; padding: 0; cursor: pointer; display: flex; align-items: center;"
                 >
-                    <svg width="16" height="16" aria-hidden="true">
-                        <use href="/static/media/misc_sprite.f614f988.svg#marketplace"></use>
-                    </svg>
+                    ${marketplaceIcon}
                 </button>
             `;
 
@@ -227,6 +247,23 @@ class MarketOrderTotals {
         } catch (error) {
             console.error('[MarketOrderTotals] Failed to open marketplace:', error);
         }
+    }
+
+    /**
+     * Build marketplace icon markup using navbar icon (fallback to emoji).
+     * @returns {string} HTML string for icon
+     */
+    getMarketplaceIcon() {
+        const navIcon = document.querySelector('svg[aria-label="navigationBar.marketplace"]');
+        if (navIcon) {
+            const clonedIcon = navIcon.cloneNode(true);
+            clonedIcon.setAttribute('width', '16');
+            clonedIcon.setAttribute('height', '16');
+            clonedIcon.setAttribute('aria-hidden', 'true');
+            return clonedIcon.outerHTML;
+        }
+
+        return '<span aria-hidden="true">🏪</span>';
     }
 
     /**
