@@ -2,18 +2,16 @@
 
 ## [0.15.0](https://github.com/Celasha/Toolasha/compare/v0.14.3...v0.15.0) (2026-02-04)
 
-
 ### Features
 
-* implement library split for Greasyfork 2MB limit ([f17c33a](https://github.com/Celasha/Toolasha/commit/f17c33afc09b61bec94ff781a7f45e8eed54af9d))
-* library split for Greasyfork 2MB limit compliance ([aff7156](https://github.com/Celasha/Toolasha/commit/aff7156895653ff66d7a08037de9015965d8e246))
-
+- implement library split for Greasyfork 2MB limit ([f17c33a](https://github.com/Celasha/Toolasha/commit/f17c33afc09b61bec94ff781a7f45e8eed54af9d))
+- library split for Greasyfork 2MB limit compliance ([aff7156](https://github.com/Celasha/Toolasha/commit/aff7156895653ff66d7a08037de9015965d8e246))
 
 ### Bug Fixes
 
-* dev bundle and market totals refresh ([9026ad2](https://github.com/Celasha/Toolasha/commit/9026ad21c50bfc188ff63c74b125d4fefb1631bf))
-* restore action time display matching for item-named actions ([33a9654](https://github.com/Celasha/Toolasha/commit/33a9654a7fd60e9228a6fca61599b3c027af8b20))
-* update market order totals display ([8dceb6e](https://github.com/Celasha/Toolasha/commit/8dceb6e9930f038efd046c3616ce94ddd6c820a6))
+- dev bundle and market totals refresh ([9026ad2](https://github.com/Celasha/Toolasha/commit/9026ad21c50bfc188ff63c74b125d4fefb1631bf))
+- restore action time display matching for item-named actions ([33a9654](https://github.com/Celasha/Toolasha/commit/33a9654a7fd60e9228a6fca61599b3c027af8b20))
+- update market order totals display ([8dceb6e](https://github.com/Celasha/Toolasha/commit/8dceb6e9930f038efd046c3616ce94ddd6c820a6))
 
 ## [0.14.3](https://github.com/Celasha/Toolasha/compare/v0.14.2...v0.14.3) (2026-02-03)
 
