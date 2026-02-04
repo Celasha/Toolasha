@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.15.5](https://github.com/Celasha/Toolasha/compare/v0.15.4...v0.15.5) (2026-02-04)
+
+
+### Bug Fixes
+
+* correct listing age extrapolation using boundary-offset approach ([3be64f3](https://github.com/Celasha/Toolasha/commit/3be64f3018e91bf1949e8d5eac2574ae60c3be7e))
+* enhancement tracker now respects main enable setting ([c4df1ed](https://github.com/Celasha/Toolasha/commit/c4df1ed3bdca6142511c4cdab24d49f9adde3a8b))
+* prevent duplicate tooltip processing causing lag/crashes ([4a28177](https://github.com/Celasha/Toolasha/commit/4a281777f11af22db873b4c5f98f4d6a79fcf747))
+
 ## [0.15.4](https://github.com/Celasha/Toolasha/compare/v0.15.3...v0.15.4) (2026-02-04)
 
 ### Bug Fixes
