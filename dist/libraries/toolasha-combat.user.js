@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha Combat Library
 // @namespace    http://tampermonkey.net/
-// @version      0.15.3
+// @version      0.15.4
 // @description  Combat library for Toolasha - Combat, abilities, and combat stats features
 // @author       Celasha
 // @license      CC-BY-NC-SA-4.0
@@ -9,15 +9,7 @@
 // @match        https://www.milkywayidle.com/*
 // @match        https://test.milkywayidle.com/*
 // @match        https://shykai.github.io/MWICombatSimulatorTest/dist/*
-// @grant        GM_addStyle
-// @grant        GM.xmlHttpRequest
-// @grant        GM_xmlhttpRequest
-// @grant        GM_notification
-// @grant        GM_getValue
-// @grant        GM_setValue
-// @grant        unsafeWindow
-// @require      https://cdn.jsdelivr.net/npm/chart.js@3.7.0/dist/chart.min.js
-// @require      https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0/dist/chartjs-plugin-datalabels.min.js
+// @grant        none
 // ==/UserScript==
 
 (function (config, dataManager, domObserver, webSocketHook, storage, timerRegistry_js, domObserverHelpers_js, marketAPI, formatters_js, profileManager_js, reactInput_js, dom, abilityCostCalculator_js, houseCostCalculator_js, enhancementCalculator_js, marketData_js, enhancementConfig_js) {

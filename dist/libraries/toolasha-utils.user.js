@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha Utils Library
 // @namespace    http://tampermonkey.net/
-// @version      0.15.3
+// @version      0.15.4
 // @description  Utils library for Toolasha - All utility modules
 // @author       Celasha
 // @license      CC-BY-NC-SA-4.0
@@ -9,13 +9,7 @@
 // @match        https://www.milkywayidle.com/*
 // @match        https://test.milkywayidle.com/*
 // @match        https://shykai.github.io/MWICombatSimulatorTest/dist/*
-// @grant        GM_addStyle
-// @grant        GM.xmlHttpRequest
-// @grant        GM_xmlhttpRequest
-// @grant        GM_notification
-// @grant        GM_getValue
-// @grant        GM_setValue
-// @grant        unsafeWindow
+// @grant        none
 // ==/UserScript==
 
 (function (config, domObserver, marketAPI, dataManager) {
