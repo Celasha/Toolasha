@@ -1,2 +1,3 @@
 node scripts/check-version-bump.js
+node scripts/check-root-files.js
 npx lint-staged
