@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha Market Library
 // @namespace    http://tampermonkey.net/
-// @version      0.16.1
+// @version      0.16.2
 // @description  Market library for Toolasha - Market, inventory, and economy features
 // @author       Celasha
 // @license      CC-BY-NC-SA-4.0
@@ -4622,6 +4622,10 @@
                 return;
             }
 
+            // Remove existing age column elements if they exist (RWI pattern)
+            thead.querySelectorAll('.mwi-estimated-age-header').forEach((el) => el.remove());
+            tbody.querySelectorAll('.mwi-estimated-age-cell').forEach((el) => el.remove());
+
             // Get current item and order book data
             const currentItemHrid = this.getCurrentItemHrid();
 
@@ -4631,14 +4635,25 @@
 
             const orderBookData = this.orderBooksCache[currentItemHrid];
 
+            // Get current enhancement level being viewed
+            const enhancementLevel = this.getCurrentEnhancementLevel();
+
             // Determine if this is buy or sell table (asks = sell, bids = buy)
             const isSellTable =
                 table.closest('[class*="orderBookTableContainer"]') ===
                 table.closest('[class*="orderBooksContainer"]')?.children[0];
 
-            const listings = isSellTable
-                ? orderBookData.orderBooks[0]?.asks || []
-                : orderBookData.orderBooks[0]?.bids || [];
+            // Access orderBooks by enhancement level (orderBooks is an object, not array)
+            // For non-equipment items, only level 0 exists
+            // For equipment, there can be orderBooks[0], orderBooks[1], etc.
+            const orderBookAtLevel = orderBookData.orderBooks?.[enhancementLevel];
+
+            if (!orderBookAtLevel) {
+                // No order book data for this enhancement level
+                return;
+            }
+
+            const listings = isSellTable ? orderBookAtLevel.asks || [] : orderBookAtLevel.bids || [];
 
             // Add header
             const header = document.createElement('th');
@@ -4647,46 +4662,20 @@
             header.title = 'Estimated listing age (based on listing ID)';
             thead.appendChild(header);
 
-            // Track which listings have been matched to prevent duplicates
+            // Track which of user's listings have been matched to prevent duplicates
             const usedListingIds = new Set();
 
             // Add age cells to each row
             const rows = tbody.querySelectorAll('tr');
+            let index = 0;
 
             rows.forEach((row) => {
                 const cell = document.createElement('td');
                 cell.classList.add('mwi-estimated-age-cell');
 
-                // Extract price and quantity from DOM row
-                const priceText = row.querySelector('[class*="price"]')?.textContent || '';
-                const quantityText = row.children[0]?.textContent || '';
-
-                const price = this.parsePrice(priceText);
-                const quantity = this.parseQuantity(quantityText);
-
-                // Check if quantity is abbreviated (K/M)
-                const isAbbreviated = quantityText.match(/[KM]/i);
-
-                // Find matching listing by price + quantity
-                const listing = listings.find((l) => {
-                    const priceMatch = Math.abs(l.price - price) < 0.01;
-
-                    let qtyMatch;
-                    if (isAbbreviated) {
-                        // For abbreviated quantities, match within rounding range
-                        // "127K" could be 127,000 to 127,999
-                        // "1.2M" could be 1,200,000 to 1,299,999
-                        const tolerance = quantityText.includes('M') ? 100000 : 1000;
-                        qtyMatch = l.quantity >= quantity && l.quantity < quantity + tolerance;
-                    } else {
-                        // For exact quantities, match exactly
-                        qtyMatch = l.quantity === quantity;
-                    }
-
-                    return priceMatch && qtyMatch;
-                });
-
-                if (listing) {
+                if (index < listings.length) {
+                    // Top 20 listings from order book (use positional indexing like RWI)
+                    const listing = listings[index];
                     const listingId = listing.listingId;
 
                     // Check if this is YOUR listing (and not already matched)
@@ -4711,16 +4700,26 @@
                         cell.style.color = '#999999'; // Gray to indicate estimate
                         cell.style.fontSize = '0.9em';
                     }
+                } else if (index === listings.length) {
+                    // Ellipsis row
+                    cell.textContent = '· · ·';
+                    cell.style.color = '#666666';
+                    cell.style.fontSize = '0.9em';
                 } else {
-                    // No matching listing in order book data
+                    // Beyond top 20 - YOUR listings only
                     const hasCancel = row.textContent.includes('Cancel');
                     if (hasCancel) {
-                        // This is YOUR listing beyond top 20 - match from knownListings
+                        // Extract price and quantity for matching
+                        const priceText = row.querySelector('[class*="price"]')?.textContent || '';
+                        const quantityText = row.children[0]?.textContent || '';
+                        const price = this.parsePrice(priceText);
+                        const quantity = this.parseQuantity(quantityText);
+
+                        // Match from knownListings (filtering out already-used and top-20 listings)
+                        const allOrderBookIds = new Set(listings.map((l) => l.listingId));
                         const matchedListing = this.knownListings.find((listing) => {
-                            // Skip already-matched listings
-                            if (usedListingIds.has(listing.id)) {
-                                return false;
-                            }
+                            if (usedListingIds.has(listing.id)) return false;
+                            if (allOrderBookIds.has(listing.id)) return false; // Skip top 20
 
                             const itemMatch = listing.itemHrid === currentItemHrid;
                             const priceMatch = Math.abs(listing.price - price) < 0.01;
@@ -4729,9 +4728,7 @@
                         });
 
                         if (matchedListing) {
-                            // Mark this listing as used
                             usedListingIds.add(matchedListing.id);
-
                             const formatted = this.formatTimestamp(matchedListing.timestamp);
                             cell.textContent = formatted;
                             cell.style.color = '#00FF00'; // Green for YOUR listing
@@ -4742,7 +4739,6 @@
                             cell.style.fontSize = '0.9em';
                         }
                     } else {
-                        // Ellipsis row or unknown
                         cell.textContent = '· · ·';
                         cell.style.color = '#666666';
                         cell.style.fontSize = '0.9em';
@@ -4750,6 +4746,7 @@
                 }
 
                 row.appendChild(cell);
+                index++;
             });
         }
 
@@ -4791,20 +4788,42 @@
                         const price = this.parsePrice(priceText);
                         const quantity = this.parseQuantity(quantityText);
 
-                        // Match against stored listings
-                        for (const listing of this.knownListings) {
+                        // Find matching listing from YOUR listings
+                        const matchedListing = this.knownListings.find((listing) => {
                             const priceMatch = Math.abs(listing.price - price) < 0.01;
                             const qtyMatch = listing.orderQuantity - listing.filledQuantity === quantity;
+                            return priceMatch && qtyMatch;
+                        });
 
-                            if (priceMatch && qtyMatch) {
-                                return listing.itemHrid;
-                            }
+                        if (matchedListing) {
+                            return matchedListing.itemHrid;
                         }
                     }
                 }
             }
 
             return null;
+        }
+
+        /**
+         * Get current enhancement level being viewed in order book
+         * @returns {number} Enhancement level (0 for non-equipment)
+         */
+        getCurrentEnhancementLevel() {
+            // Check for enhancement level indicator in the current item display
+            const currentItemElement = document.querySelector('.MarketplacePanel_currentItem__3ercC');
+            if (currentItemElement) {
+                const enhancementElement = currentItemElement.querySelector('[class*="Item_enhancementLevel"]');
+                if (enhancementElement) {
+                    const match = enhancementElement.textContent.match(/\+(\d+)/);
+                    if (match) {
+                        return parseInt(match[1], 10);
+                    }
+                }
+            }
+
+            // Default to enhancement level 0 (non-equipment or base equipment)
+            return 0;
         }
 
         /**
