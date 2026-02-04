@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha Core Library
 // @namespace    http://tampermonkey.net/
-// @version      0.15.5
+// @version      0.16.0
 // @description  Core library for Toolasha - Core infrastructure and API clients
 // @author       Celasha
 // @license      CC-BY-NC-SA-4.0
@@ -1035,6 +1035,13 @@
                     default: false,
                     dependencies: ['taskIcons'],
                     help: 'Shows which dungeons contain the monster (requires Task Icons enabled)',
+                },
+                taskSorter_autoSort: {
+                    id: 'taskSorter_autoSort',
+                    label: 'Automatically sort tasks when opening task panel',
+                    type: 'checkbox',
+                    default: false,
+                    help: 'Automatically sorts tasks by skill type when you open the task panel',
                 },
             },
         },

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha UI Library
 // @namespace    http://tampermonkey.net/
-// @version      0.15.5
+// @version      0.16.0
 // @description  UI library for Toolasha - UI enhancements, tasks, skills, and misc features
 // @author       Celasha
 // @license      CC-BY-NC-SA-4.0
@@ -5191,6 +5191,15 @@
             // Add task icon filters if enabled
             if (config.isFeatureEnabled('taskIcons')) {
                 taskIconFilters.addFilterBar(headerElement);
+            }
+
+            // Auto-sort if setting is enabled
+            if (config.getSetting('taskSorter_autoSort')) {
+                // Delay slightly to ensure all task cards are rendered
+                const autoSortTimeout = setTimeout(() => {
+                    this.sortTasks();
+                }, 100);
+                this.timerRegistry.registerTimeout(autoSortTimeout);
             }
         }
 

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha Actions Library
 // @namespace    http://tampermonkey.net/
-// @version      0.15.5
+// @version      0.16.0
 // @description  Actions library for Toolasha - Production, gathering, and alchemy features
 // @author       Celasha
 // @license      CC-BY-NC-SA-4.0
@@ -10189,6 +10189,9 @@
                 const alchemyComponent = document.querySelector('[class*="SkillActionDetail_alchemyComponent"]');
                 if (!alchemyComponent) return null;
 
+                // Get action HRID from current actions
+                const actionHrid = this.getCurrentActionHrid();
+
                 // Get success rate with breakdown
                 const successRateBreakdown = this.extractSuccessRate();
                 if (successRateBreakdown === null) return null;
@@ -10209,8 +10212,8 @@
                 // Get requirements (inputs)
                 const requirements = await this.extractRequirements();
 
-                // Get drops (outputs)
-                const drops = await this.extractDrops();
+                // Get drops (outputs) - now passing actionHrid for game data lookup
+                const drops = await this.extractDrops(actionHrid);
 
                 // Get catalyst
                 const catalyst = await this.extractCatalyst();
@@ -10236,6 +10239,30 @@
                 };
             } catch (error) {
                 console.error('[AlchemyProfit] Failed to extract action data:', error);
+                return null;
+            }
+        }
+
+        /**
+         * Get current alchemy action HRID
+         * @returns {string|null} Action HRID or null
+         */
+        getCurrentActionHrid() {
+            try {
+                // Get current actions from dataManager
+                const currentActions = dataManager.getCurrentActions();
+                if (!currentActions || currentActions.length === 0) return null;
+
+                // Find alchemy action (type = /action_types/alchemy)
+                for (const action of currentActions) {
+                    if (action.actionHrid && action.actionHrid.startsWith('/actions/alchemy/')) {
+                        return action.actionHrid;
+                    }
+                }
+
+                return null;
+            } catch (error) {
+                console.error('[AlchemyProfit] Failed to get current action HRID:', error);
                 return null;
             }
         }
@@ -10685,16 +10712,20 @@
          * Extract drops (outputs) from the DOM
          * @returns {Promise<Array>} Array of drop objects
          */
-        async extractDrops() {
+        async extractDrops(actionHrid) {
             try {
                 const elements = document.querySelectorAll(
                     '[class*="SkillActionDetail_dropTable"] [class*="Item_itemContainer"]'
                 );
                 const drops = [];
 
+                // Get action details from game data for drop rates
+                const gameData = dataManager.getInitClientData();
+                const actionDetail = actionHrid && gameData ? gameData.actionDetailMap?.[actionHrid] : null;
+
                 for (let i = 0; i < elements.length; i++) {
                     const el = elements[i];
-                    const itemData = await this.extractItemData(el, false, i);
+                    const itemData = await this.extractItemData(el, false, i, actionDetail);
                     if (itemData) {
                         drops.push(itemData);
                     }
@@ -10856,7 +10887,7 @@
          * @param {number} index - Index in the list (for extracting count/rate text)
          * @returns {Promise<Object|null>} Item data object or null
          */
-        async extractItemData(element, isRequirement, index) {
+        async extractItemData(element, isRequirement, index, actionDetail = null) {
             try {
                 // Get item HRID from SVG use element
                 const use = element.querySelector('svg use');
@@ -10939,8 +10970,18 @@
                         result.count = 1;
                     }
                 } else if (!isRequirement) {
-                    // Extract count and drop rate from drop by matching item HRID
-                    // Search through all drop elements (including essence and rare drops)
+                    // Extract count and drop rate from action detail (game data) or DOM fallback
+                    let dropRateFromGameData = null;
+
+                    // Try to get drop rate from game data first
+                    if (actionDetail && actionDetail.dropTable) {
+                        const dropEntry = actionDetail.dropTable.find((drop) => drop.itemHrid === itemHrid);
+                        if (dropEntry) {
+                            dropRateFromGameData = dropEntry.dropRate;
+                        }
+                    }
+
+                    // Extract count from DOM
                     const dropElements = document.querySelectorAll(
                         '[class*="SkillActionDetail_drop"], [class*="SkillActionDetail_essence"], [class*="SkillActionDetail_rare"]'
                     );
@@ -10966,13 +11007,18 @@
                                     result.count = 1;
                                 }
 
-                                // Extract drop rate percentage (handles both "7.29%" and "~7.29%")
-                                const rateMatch = text.match(/~?([\d,.]+)%/);
-                                if (rateMatch) {
-                                    const cleaned = rateMatch[1].replace(/,/g, '');
-                                    result.dropRate = parseFloat(cleaned) / 100 || 1;
+                                // Use drop rate from game data if available, otherwise try DOM
+                                if (dropRateFromGameData !== null) {
+                                    result.dropRate = dropRateFromGameData;
                                 } else {
-                                    result.dropRate = 1;
+                                    // Extract drop rate percentage from DOM (handles both "7.29%" and "~7.29%")
+                                    const rateMatch = text.match(/~?([\d,.]+)%/);
+                                    if (rateMatch) {
+                                        const cleaned = rateMatch[1].replace(/,/g, '');
+                                        result.dropRate = parseFloat(cleaned) / 100 || 1;
+                                    } else {
+                                        result.dropRate = 1;
+                                    }
                                 }
 
                                 break; // Found it, stop searching
@@ -10985,7 +11031,8 @@
                         result.count = 1;
                     }
                     if (result.dropRate === undefined) {
-                        result.dropRate = 1;
+                        // Use game data drop rate if available, otherwise default to 1
+                        result.dropRate = dropRateFromGameData !== null ? dropRateFromGameData : 1;
                     }
                 }
 
