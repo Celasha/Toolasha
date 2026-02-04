@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha UI Library
 // @namespace    http://tampermonkey.net/
-// @version      0.16.0
+// @version      0.16.1
 // @description  UI library for Toolasha - UI enhancements, tasks, skills, and misc features
 // @author       Celasha
 // @license      CC-BY-NC-SA-4.0
@@ -2603,6 +2603,7 @@
             this.eventListeners = new WeakMap(); // Store listeners for cleanup
             this.isInitialized = false;
             this.timerRegistry = timerRegistry_js.createTimerRegistry();
+            this.marketDataInitPromise = null; // Guard against duplicate market data inits
         }
 
         /**
@@ -2802,6 +2803,31 @@
         }
 
         /**
+         * Ensure expected value calculator is initialized when task profits need market data
+         * @returns {Promise<boolean>} True if initialization completed
+         */
+        async ensureMarketDataInitialized() {
+            if (expectedValueCalculator.isInitialized) {
+                return true;
+            }
+
+            if (!this.marketDataInitPromise) {
+                this.marketDataInitPromise = (async () => {
+                    try {
+                        return await expectedValueCalculator.initialize();
+                    } catch (error) {
+                        console.error('[Task Profit Display] Market data initialization failed:', error);
+                        return false;
+                    } finally {
+                        this.marketDataInitPromise = null;
+                    }
+                })();
+            }
+
+            return this.marketDataInitPromise;
+        }
+
+        /**
          * Add profit display to a task card
          * @param {Element} taskNode - Task card DOM element
          */
@@ -2824,6 +2850,15 @@
                 const taskData = this.parseTaskData(taskNode);
                 if (!taskData) {
                     return;
+                }
+
+                if (!expectedValueCalculator.isInitialized) {
+                    const initialized = await this.ensureMarketDataInitialized();
+                    if (!initialized || !expectedValueCalculator.isInitialized) {
+                        this.pendingTaskNodes.add(taskNode);
+                        this.displayLoadingState(taskNode, taskData);
+                        return;
+                    }
                 }
 
                 // Calculate profit
