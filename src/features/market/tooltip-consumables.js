@@ -111,6 +111,12 @@ class TooltipConsumables {
      * @param {Element} tooltipElement - The tooltip popper element
      */
     async handleTooltip(tooltipElement) {
+        // Guard against duplicate processing
+        if (tooltipElement.dataset.consumablesProcessed) {
+            return;
+        }
+        tooltipElement.dataset.consumablesProcessed = 'true';
+
         // Check if it's an item tooltip
         const nameElement = tooltipElement.querySelector('div.ItemTooltipText_name__2JAHA');
 

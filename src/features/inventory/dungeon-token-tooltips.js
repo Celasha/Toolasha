@@ -65,6 +65,12 @@ class DungeonTokenTooltips {
      * @param {Element} tooltipElement - The tooltip popper element
      */
     async handleTooltip(tooltipElement) {
+        // Guard against duplicate processing
+        if (tooltipElement.dataset.dungeonProcessed) {
+            return;
+        }
+        tooltipElement.dataset.dungeonProcessed = 'true';
+
         // Check if it's a collection tooltip
         const collectionContent = tooltipElement.querySelector('div.Collection_tooltipContent__2IcSJ');
         const isCollectionTooltip = !!collectionContent;
