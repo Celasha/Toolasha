@@ -5,6 +5,7 @@
  *
  * Syncs version from package.json to all files that need version updates:
  * - userscript-header.txt (userscript @version tag)
+ * - library-headers/*.txt (all library @version tags)
  * - README.md (badge and footer version)
  * - src/main.js (Toolasha.version property)
  *
@@ -15,7 +16,7 @@
  *   npm run version:sync
  */
 
-import { readFileSync, writeFileSync } from 'fs';
+import { readFileSync, writeFileSync, readdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
@@ -53,7 +54,27 @@ function syncVersion() {
             filesUpdated.push('userscript-header.txt');
         }
 
-        // 2. Update README.md (badge and footer)
+        // 2. Update all library-headers/*.txt files
+        const libraryHeadersDir = join(rootDir, 'library-headers');
+        const libraryHeaderFiles = readdirSync(libraryHeadersDir).filter((file) => file.endsWith('.txt'));
+
+        for (const file of libraryHeaderFiles) {
+            const filePath = join(libraryHeadersDir, file);
+            let fileContent = readFileSync(filePath, 'utf8');
+
+            if (!headerRegex.test(fileContent)) {
+                console.warn(`⚠️  Warning: Could not find @version line in library-headers/${file}`);
+                continue;
+            }
+
+            const updatedContent = fileContent.replace(headerRegex, `$1${version}`);
+            if (updatedContent !== fileContent) {
+                writeFileSync(filePath, updatedContent, 'utf8');
+                filesUpdated.push(`library-headers/${file}`);
+            }
+        }
+
+        // 3. Update README.md (badge and footer)
         const readmePath = join(rootDir, 'README.md');
         let readmeContent = readFileSync(readmePath, 'utf8');
 
@@ -71,7 +92,7 @@ function syncVersion() {
             filesUpdated.push('README.md');
         }
 
-        // 3. Update src/main.js (Toolasha.version property)
+        // 4. Update src/main.js (Toolasha.version property)
         const mainJsPath = join(rootDir, 'src', 'main.js');
         let mainJsContent = readFileSync(mainJsPath, 'utf8');
 
