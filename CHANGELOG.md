@@ -2,18 +2,16 @@
 
 ## [0.17.0](https://github.com/Celasha/Toolasha/compare/v0.16.2...v0.17.0) (2026-02-05)
 
-
 ### Features
 
-* add abilities & triggers display to profile panel ([0821759](https://github.com/Celasha/Toolasha/commit/0821759ad59eed2ee008283ad32825d3234d3f93))
-* add disconnect-aware runtime behavior ([862eb59](https://github.com/Celasha/Toolasha/commit/862eb59e4c0f946134880d6c10a046ecb145d506))
-* add disconnect-aware runtime behavior ([8d3b2a9](https://github.com/Celasha/Toolasha/commit/8d3b2a9665113149a900b35ea02b689d529d97cb))
-* add trade history comparison mode and improve UI positioning ([4e5dbdf](https://github.com/Celasha/Toolasha/commit/4e5dbdfcad965c89d6cc4c2e2641acfa4b86cd8a))
-
+- add abilities & triggers display to profile panel ([0821759](https://github.com/Celasha/Toolasha/commit/0821759ad59eed2ee008283ad32825d3234d3f93))
+- add disconnect-aware runtime behavior ([862eb59](https://github.com/Celasha/Toolasha/commit/862eb59e4c0f946134880d6c10a046ecb145d506))
+- add disconnect-aware runtime behavior ([8d3b2a9](https://github.com/Celasha/Toolasha/commit/8d3b2a9665113149a900b35ea02b689d529d97cb))
+- add trade history comparison mode and improve UI positioning ([4e5dbdf](https://github.com/Celasha/Toolasha/commit/4e5dbdfcad965c89d6cc4c2e2641acfa4b86cd8a))
 
 ### Bug Fixes
 
-* re-process order book containers after WebSocket data arrives ([e24a7ee](https://github.com/Celasha/Toolasha/commit/e24a7eee9e44a63e26218926c22f004af3871abc))
+- re-process order book containers after WebSocket data arrives ([e24a7ee](https://github.com/Celasha/Toolasha/commit/e24a7eee9e44a63e26218926c22f004af3871abc))
 
 ## [0.16.2](https://github.com/Celasha/Toolasha/compare/v0.16.1...v0.16.2) (2026-02-04)
 
