@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha Core Library
 // @namespace    http://tampermonkey.net/
-// @version      0.17.0
+// @version      0.17.1
 // @description  Core library for Toolasha - Core infrastructure and API clients
 // @author       Celasha
 // @license      CC-BY-NC-SA-4.0
@@ -2492,10 +2492,10 @@
                 }, 500); // Retry every 500ms
             }
 
-            // FALLBACK: Continuous polling for missed init_character_data (Firefox/timing race condition fix)
-            // If WebSocket message was missed (hook installed too late), poll localStorage for character data
+            // FALLBACK: Continuous polling for missed init_character_data (should not be needed with @run-at document-start)
+            // Extended timeout for slower connections/computers (Steam, etc.)
             let fallbackAttempts = 0;
-            const maxAttempts = 20; // Poll for up to 10 seconds (20 × 500ms)
+            const maxAttempts = 60; // Poll for up to 30 seconds (60 × 500ms)
 
             const stopFallbackInterval = () => {
                 if (this.fallbackInterval) {
@@ -2515,51 +2515,10 @@
 
                 // Give up after max attempts
                 if (fallbackAttempts >= maxAttempts) {
-                    console.warn('[DataManager] Fallback polling timeout after', maxAttempts, 'attempts (10 seconds)');
+                    console.error(
+                        '[DataManager] Character data not received after 30 seconds. WebSocket hook may have failed.'
+                    );
                     stopFallbackInterval();
-                    return;
-                }
-
-                // Try to load from localStorage
-                if (typeof localStorageUtil !== 'undefined') {
-                    try {
-                        // Note: Using manual decompression for localStorage 'character' data as there is no
-                        // official localStorageUtil API for character data (only for initClientData via getInitClientData()).
-                        // This is a fallback when WebSocket init_character_data message is missed.
-                        // WebSocket message: init_character_data (JSON string, not compressed)
-                        // localStorage item: 'character' (LZ-compressed)
-                        const rawData = localStorage.getItem('character');
-                        if (rawData) {
-                            const characterData = JSON.parse(LZString.decompressFromUTF16(rawData));
-                            if (characterData && characterData.characterSkills) {
-                                // Populate data manager with existing character data
-                                this.characterData = characterData;
-                                this.characterSkills = characterData.characterSkills;
-                                this.characterItems = characterData.characterItems;
-                                this.characterActions = characterData.characterActions
-                                    ? [...characterData.characterActions]
-                                    : [];
-
-                                // Build equipment map
-                                this.updateEquipmentMap(characterData.characterItems);
-
-                                // Build house room map
-                                this.updateHouseRoomMap(characterData.characterHouseRoomMap);
-
-                                // Build drink slots map
-                                this.updateDrinkSlotsMap(characterData.actionTypeDrinkSlotsMap);
-
-                                // Fire character_initialized event
-                                this.emit('character_initialized', characterData);
-                                connectionState.handleCharacterInitialized(characterData);
-
-                                // Stop polling
-                                stopFallbackInterval();
-                            }
-                        }
-                    } catch (error) {
-                        console.warn('[DataManager] Fallback initialization attempt', fallbackAttempts, 'failed:', error);
-                    }
                 }
             }, 500); // Check every 500ms
         }

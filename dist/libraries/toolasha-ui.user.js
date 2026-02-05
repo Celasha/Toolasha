@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha UI Library
 // @namespace    http://tampermonkey.net/
-// @version      0.17.0
+// @version      0.17.1
 // @description  UI library for Toolasha - UI enhancements, tasks, skills, and misc features
 // @author       Celasha
 // @license      CC-BY-NC-SA-4.0
@@ -4245,22 +4245,14 @@
             this.filterBar.style.display = isEnabled ? 'flex' : 'none';
 
             // Create battle icon
-            const battleIcon = this.createFilterIcon(
-                'battle',
-                'Battle',
-                '/static/media/misc_sprite.426c5d78.svg#combat',
-                () => this.getBattleFilterEnabled()
-            );
+            const battleIcon = this.createFilterIcon('battle', 'Battle', 'combat', () => this.getBattleFilterEnabled());
             this.filterBar.appendChild(battleIcon);
             this.filterIcons.set('battle', battleIcon);
 
             // Create dungeon icons
             Object.entries(this.dungeonConfig).forEach(([hrid, dungeon]) => {
-                const dungeonIcon = this.createFilterIcon(
-                    dungeon.id,
-                    dungeon.name,
-                    `/static/media/actions_sprite.e6388cbc.svg#${dungeon.spriteId}`,
-                    () => this.getDungeonFilterEnabled(hrid)
+                const dungeonIcon = this.createFilterIcon(dungeon.id, dungeon.name, dungeon.spriteId, () =>
+                    this.getDungeonFilterEnabled(hrid)
                 );
                 this.filterBar.appendChild(dungeonIcon);
                 this.filterIcons.set(dungeon.id, dungeonIcon);
@@ -4282,14 +4274,39 @@
         }
 
         /**
+         * Clone SVG symbol from DOM into defs
+         * @param {string} symbolId - Symbol ID to clone
+         * @param {SVGDefsElement} defsElement - Defs element to append to
+         * @returns {boolean} True if symbol was found and cloned
+         */
+        cloneSymbolToDefs(symbolId, defsElement) {
+            // Check if already cloned
+            if (defsElement.querySelector(`symbol[id="${symbolId}"]`)) {
+                return true;
+            }
+
+            // Find the symbol in the game's loaded sprites
+            const symbol = document.querySelector(`symbol[id="${symbolId}"]`);
+            if (!symbol) {
+                console.warn('[TaskIconFilters] Symbol not found:', symbolId);
+                return false;
+            }
+
+            // Clone and add to our defs
+            const clonedSymbol = symbol.cloneNode(true);
+            defsElement.appendChild(clonedSymbol);
+            return true;
+        }
+
+        /**
          * Create a clickable filter icon with count badge
          * @param {string} id - Unique identifier for this filter
          * @param {string} title - Tooltip text
-         * @param {string} spriteHref - SVG sprite reference
+         * @param {string} symbolId - Symbol ID in sprite
          * @param {Function} getEnabled - Function to check if filter is enabled
          * @returns {HTMLElement} Filter icon container
          */
-        createFilterIcon(id, title, spriteHref, getEnabled) {
+        createFilterIcon(id, title, symbolId, getEnabled) {
             const container = document.createElement('div');
             container.setAttribute('data-filter-id', id);
             container.style.position = 'relative';
@@ -4297,7 +4314,7 @@
             container.style.userSelect = 'none';
             container.title = title;
 
-            // Create SVG icon
+            // Create SVG icon with defs
             const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
             svg.setAttribute('width', '24');
             svg.setAttribute('height', '24');
@@ -4305,8 +4322,16 @@
             svg.style.display = 'block';
             svg.style.transition = 'opacity 0.2s';
 
+            // Create defs section
+            const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+            svg.appendChild(defs);
+
+            // Clone the symbol into defs
+            this.cloneSymbolToDefs(symbolId, defs);
+
+            // Create use element with local reference
             const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
-            use.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', spriteHref);
+            use.setAttribute('href', `#${symbolId}`);
             svg.appendChild(use);
             container.appendChild(svg);
 
@@ -4573,13 +4598,6 @@
             this.initialized = false;
             this.observers = [];
             this.characterSwitchingHandler = null;
-
-            // SVG sprite paths (from game assets)
-            this.SPRITES = {
-                ITEMS: '/static/media/items_sprite.328d6606.svg',
-                ACTIONS: '/static/media/actions_sprite.e6388cbc.svg',
-                MONSTERS: '/static/media/combat_monsters_sprite.75d964d1.svg',
-            };
 
             // Cache for parsed game data
             this.itemsByHrid = null;
@@ -4851,8 +4869,8 @@
                 return;
             }
 
-            // Determine sprite and icon name
-            let spritePath, iconName;
+            // Determine icon name
+            let iconName;
 
             // Check if action produces a specific item (use item sprite)
             if (action.outputItems && action.outputItems.length > 0) {
@@ -4860,7 +4878,6 @@
                 const itemHrid = outputItem.itemHrid || outputItem.hrid;
                 const item = this.itemsByHrid.get(itemHrid);
                 if (item) {
-                    spritePath = this.SPRITES.ITEMS;
                     iconName = itemHrid.split('/').pop();
                 }
             }
@@ -4873,16 +4890,14 @@
                 const potentialItem = this.itemsByHrid.get(potentialItemHrid);
 
                 if (potentialItem) {
-                    spritePath = this.SPRITES.ITEMS;
                     iconName = actionName;
                 } else {
                     // Fall back to action sprite
-                    spritePath = this.SPRITES.ACTIONS;
                     iconName = actionName;
                 }
             }
 
-            this.addIconOverlay(taskCard, spritePath, iconName, 'action');
+            this.addIconOverlay(taskCard, iconName, 'action');
         }
 
         /**
@@ -4914,14 +4929,7 @@
             // Position monster on the right (ends at 100%)
             const monsterPosition = 100 - iconWidth;
             const iconName = monsterHrid.split('/').pop();
-            this.addIconOverlay(
-                taskCard,
-                this.SPRITES.MONSTERS,
-                iconName,
-                'monster',
-                `${monsterPosition}%`,
-                `${iconWidth}%`
-            );
+            this.addIconOverlay(taskCard, iconName, 'monster', `${monsterPosition}%`, `${iconWidth}%`);
 
             // Add dungeon icons if enabled
             if (config.isFeatureEnabled('taskIconsDungeons') && dungeonCount > 0) {
@@ -5045,21 +5053,45 @@
                 }
 
                 const iconName = dungeonHrid.split('/').pop();
-                this.addIconOverlay(taskCard, this.SPRITES.ACTIONS, iconName, 'dungeon', `${position}%`, `${iconWidth}%`);
+                this.addIconOverlay(taskCard, iconName, 'dungeon', `${position}%`, `${iconWidth}%`);
                 position -= iconWidth; // Move left for next dungeon
             });
         }
 
         /**
+         * Clone SVG symbol from DOM into defs
+         * @param {string} symbolId - Symbol ID to clone
+         * @param {SVGDefsElement} defsElement - Defs element to append to
+         * @returns {boolean} True if symbol was found and cloned
+         */
+        cloneSymbolToDefs(symbolId, defsElement) {
+            // Check if already cloned
+            if (defsElement.querySelector(`symbol[id="${symbolId}"]`)) {
+                return true;
+            }
+
+            // Find the symbol in the game's loaded sprites
+            const symbol = document.querySelector(`symbol[id="${symbolId}"]`);
+            if (!symbol) {
+                console.warn('[TaskIcons] Symbol not found:', symbolId);
+                return false;
+            }
+
+            // Clone and add to our defs
+            const clonedSymbol = symbol.cloneNode(true);
+            defsElement.appendChild(clonedSymbol);
+            return true;
+        }
+
+        /**
          * Add icon overlay to task card
          * @param {HTMLElement} taskCard - Task card element
-         * @param {string} spritePath - Path to sprite SVG
-         * @param {string} iconName - Icon name in sprite
+         * @param {string} iconName - Icon name in sprite (symbol ID)
          * @param {string} type - Icon type (action/monster/dungeon)
          * @param {string} leftPosition - Left position percentage
          * @param {string} widthPercent - Width percentage (default: '30%')
          */
-        addIconOverlay(taskCard, spritePath, iconName, type, leftPosition = '50%', widthPercent = '30%') {
+        addIconOverlay(taskCard, iconName, type, leftPosition = '50%', widthPercent = '30%') {
             // Create container for icon
             const iconDiv = document.createElement('div');
             iconDiv.className = `mwi-task-icon mwi-task-icon-${type}`;
@@ -5071,15 +5103,21 @@
             iconDiv.style.pointerEvents = 'none';
             iconDiv.style.zIndex = '0';
 
-            // Create SVG element
+            // Create SVG element with defs
             const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
             svg.setAttribute('width', '100%');
             svg.setAttribute('height', '100%');
 
-            // Create use element to reference sprite
+            // Create defs section
+            const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+            svg.appendChild(defs);
+
+            // Clone the symbol into defs
+            this.cloneSymbolToDefs(iconName, defs);
+
+            // Create use element with local reference
             const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
-            const spriteRef = `${spritePath}#${iconName}`;
-            use.setAttribute('href', spriteRef);
+            use.setAttribute('href', `#${iconName}`);
             svg.appendChild(use);
 
             iconDiv.appendChild(svg);
