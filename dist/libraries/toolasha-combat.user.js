@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha Combat Library
 // @namespace    http://tampermonkey.net/
-// @version      0.17.1
+// @version      0.17.2
 // @description  Combat library for Toolasha - Combat, abilities, and combat stats features
 // @author       Celasha
 // @license      CC-BY-NC-SA-4.0
@@ -7517,6 +7517,31 @@
         }
 
         /**
+         * Clone a symbol from the document into a defs element
+         * @param {string} symbolId - Symbol ID to clone
+         * @param {SVGDefsElement} defsElement - Defs element to append to
+         * @returns {boolean} True if successful
+         */
+        cloneSymbolToDefs(symbolId, defsElement) {
+            // Check if already cloned
+            if (defsElement.querySelector(`symbol[id="${symbolId}"]`)) {
+                return true;
+            }
+
+            // Find symbol in document
+            const symbol = document.querySelector(`symbol[id="${symbolId}"]`);
+            if (!symbol) {
+                console.warn('[Combat Stats] Symbol not found:', symbolId);
+                return false;
+            }
+
+            // Clone and append
+            const clonedSymbol = symbol.cloneNode(true);
+            defsElement.appendChild(clonedSymbol);
+            return true;
+        }
+
+        /**
          * Create a player statistics card
          * @param {Object} stats - Player statistics
          * @param {string} textColor - Text color
@@ -7785,29 +7810,58 @@
             `;
 
                 const dropList = document.createElement('div');
-                dropList.style.cssText = 'font-size: 13px;';
+                dropList.style.cssText = `
+                font-size: 13px;
+                max-height: 200px;
+                overflow-y: auto;
+                padding-right: 5px;
+            `;
 
-                // Show top 10 items
-                const topItems = stats.lootList.slice(0, 10);
-                for (const item of topItems) {
+                // Create shared defs for all item icons
+                const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                svg.setAttribute('width', '0');
+                svg.setAttribute('height', '0');
+                svg.style.position = 'absolute';
+
+                const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+                svg.appendChild(defs);
+                dropList.appendChild(svg);
+
+                // Show ALL items with icons
+                for (const item of stats.lootList) {
                     const itemDiv = document.createElement('div');
-                    itemDiv.style.cssText = 'margin-bottom: 3px;';
+                    itemDiv.style.cssText = `
+                    margin-bottom: 3px;
+                    display: flex;
+                    align-items: center;
+                    gap: 5px;
+                `;
 
+                    // Create item icon
+                    if (item.icon) {
+                        const iconSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                        iconSvg.setAttribute('width', '16');
+                        iconSvg.setAttribute('height', '16');
+                        iconSvg.style.flexShrink = '0';
+
+                        // Extract symbol ID from icon path
+                        const iconName = item.icon.split('/').pop();
+                        this.cloneSymbolToDefs(iconName, defs);
+
+                        const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+                        use.setAttribute('href', `#${iconName}`);
+                        iconSvg.appendChild(use);
+
+                        itemDiv.appendChild(iconSvg);
+                    }
+
+                    // Create text content with KMB formatting
+                    const textSpan = document.createElement('span');
                     const rarityColor = this.getRarityColor(item.rarity);
-                    itemDiv.innerHTML = `<span style="color: ${textColor};">${item.count}</span> <span style="color: ${rarityColor};">× ${item.itemName}</span>`;
+                    textSpan.innerHTML = `<span style="color: ${textColor};">${formatNum(item.count)}</span> <span style="color: ${rarityColor};">× ${item.itemName}</span>`;
+                    itemDiv.appendChild(textSpan);
 
                     dropList.appendChild(itemDiv);
-                }
-
-                if (stats.lootList.length > 10) {
-                    const moreDiv = document.createElement('div');
-                    moreDiv.textContent = `... and ${stats.lootList.length - 10} more`;
-                    moreDiv.style.cssText = `
-                    font-style: italic;
-                    color: #888;
-                    margin-top: 5px;
-                `;
-                    dropList.appendChild(moreDiv);
                 }
 
                 statsContainer.appendChild(dropHeader);

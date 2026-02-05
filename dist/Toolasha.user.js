@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.17.1
+// @version      0.17.2
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -21,12 +21,12 @@
 // @require      https://cdnjs.cloudflare.com/ajax/libs/mathjs/12.4.2/math.js
 // @require      https://cdn.jsdelivr.net/npm/chart.js@3.7.0/dist/chart.min.js
 // @require      https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0/dist/chartjs-plugin-datalabels.min.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@1326aa23bef21fde55f4cd4ed94cd34024427426/dist/libraries/toolasha-core.user.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@1326aa23bef21fde55f4cd4ed94cd34024427426/dist/libraries/toolasha-utils.user.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@1326aa23bef21fde55f4cd4ed94cd34024427426/dist/libraries/toolasha-market.user.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@1326aa23bef21fde55f4cd4ed94cd34024427426/dist/libraries/toolasha-actions.user.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@1326aa23bef21fde55f4cd4ed94cd34024427426/dist/libraries/toolasha-combat.user.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@1326aa23bef21fde55f4cd4ed94cd34024427426/dist/libraries/toolasha-ui.user.js
+// @require      https://UPDATE-THIS-URL/toolasha-core.user.js
+// @require      https://UPDATE-THIS-URL/toolasha-utils.user.js
+// @require      https://UPDATE-THIS-URL/toolasha-market.user.js
+// @require      https://UPDATE-THIS-URL/toolasha-actions.user.js
+// @require      https://UPDATE-THIS-URL/toolasha-combat.user.js
+// @require      https://UPDATE-THIS-URL/toolasha-ui.user.js
 // ==/UserScript==
 // Note: Combat Sim auto-import requires Tampermonkey for cross-domain storage. Not available on Steam (use manual clipboard copy/paste instead).
 
@@ -417,6 +417,12 @@
         featureRegistry.setupCharacterSwitchHandler();
 
         dataManager.on('character_initialized', (_data) => {
+            // Skip full initialization during character switches
+            // The character_switched handler in feature-registry already handles reinitialization
+            if (_data._isCharacterSwitch) {
+                return;
+            }
+
             // Initialize all features using the feature registry
             setTimeout(async () => {
                 try {

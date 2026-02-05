@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha Core Library
 // @namespace    http://tampermonkey.net/
-// @version      0.17.1
+// @version      0.17.2
 // @description  Core library for Toolasha - Core infrastructure and API clients
 // @author       Celasha
 // @license      CC-BY-NC-SA-4.0
@@ -2584,8 +2584,12 @@
                     return; // Don't process invalid character data
                 }
 
+                // Track whether this is a character switch or first load
+                let isCharacterSwitch = false;
+
                 // Check if this is a character switch (not first load)
                 if (this.currentCharacterId && this.currentCharacterId !== newCharacterId) {
+                    isCharacterSwitch = true;
                     // Prevent rapid-fire character switches (loop protection)
                     const now = Date.now();
                     if (this.lastCharacterSwitchTime && now - this.lastCharacterSwitchTime < 1000) {
@@ -2663,7 +2667,8 @@
                 this.isCharacterSwitching = false;
 
                 // Emit character_initialized event (trigger feature initialization)
-                this.emit('character_initialized', data);
+                // Include flag to indicate if this is a character switch vs first load
+                this.emit('character_initialized', { ...data, _isCharacterSwitch: isCharacterSwitch });
                 connectionState.handleCharacterInitialized(data);
             });
 
