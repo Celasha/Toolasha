@@ -2,10 +2,9 @@
 
 ## [0.17.2](https://github.com/Celasha/Toolasha/compare/v0.17.1...v0.17.2) (2026-02-05)
 
-
 ### Bug Fixes
 
-* prevent double-initialization on character switch and enhance statistics tab ([b516ce0](https://github.com/Celasha/Toolasha/commit/b516ce018adee3aa3fe3970e60aeac127cad5eeb))
+- prevent double-initialization on character switch and enhance statistics tab ([b516ce0](https://github.com/Celasha/Toolasha/commit/b516ce018adee3aa3fe3970e60aeac127cad5eeb))
 
 ## [0.17.1](https://github.com/Celasha/Toolasha/compare/v0.17.0...v0.17.1) (2026-02-05)
 
