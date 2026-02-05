@@ -649,28 +649,58 @@ function removeMissingMaterialTabs() {
  * Watches for marketplace panel removal and cleans up custom tabs
  */
 function setupMarketplaceCleanupObserver() {
+    let debounceTimer = null;
+
     cleanupObserver = createMutationWatcher(
         document.body,
-        (mutations) => {
-            for (const mutation of mutations) {
-                for (const removedNode of mutation.removedNodes) {
-                    // Check if marketplace panel was specifically removed
-                    // Look for marketplace-specific elements (not generic MUI tabs)
-                    if (removedNode.nodeType === Node.ELEMENT_NODE) {
-                        const wasMarketplace =
-                            removedNode.querySelector('[class*="MarketplacePanel"]') ||
-                            removedNode.classList?.contains('MarketplacePanel') ||
-                            (removedNode.className &&
-                                typeof removedNode.className === 'string' &&
-                                removedNode.className.includes('MarketplacePanel'));
-                        if (wasMarketplace) {
-                            // Marketplace closed, remove custom tabs
-                            removeMissingMaterialTabs();
-                            console.log('[MissingMats] Marketplace closed, cleaned up custom tabs');
-                        }
-                    }
-                }
+        (_mutations) => {
+            // Only check if we have custom tabs
+            if (currentMaterialsTabs.length === 0) {
+                return;
             }
+
+            // Clear existing debounce timer
+            if (debounceTimer) {
+                clearTimeout(debounceTimer);
+                debounceTimer = null;
+            }
+
+            // Debounce to avoid false positives from rapid DOM changes
+            debounceTimer = setTimeout(() => {
+                // Check if we still have custom tabs
+                if (currentMaterialsTabs.length === 0) {
+                    return;
+                }
+
+                // Check if our custom tabs still exist in the DOM
+                const hasCustomTabsInDOM = currentMaterialsTabs.some((tab) => document.body.contains(tab));
+
+                // If our tabs were removed from DOM, clean up references
+                if (!hasCustomTabsInDOM) {
+                    removeMissingMaterialTabs();
+                    return;
+                }
+
+                // Check if marketplace navbar is active
+                const marketplaceNavActive = Array.from(document.querySelectorAll('.NavigationBar_nav__3uuUl')).some(
+                    (nav) => {
+                        const svg = nav.querySelector('svg[aria-label="navigationBar.marketplace"]');
+                        return svg && nav.classList.contains('NavigationBar_active__2Oj_e');
+                    }
+                );
+
+                // Check if tabs container still exists (marketplace panel is open)
+                const tabsContainer = document.querySelector('.MuiTabs-flexContainer[role="tablist"]');
+                const hasMarketListingsTab =
+                    tabsContainer &&
+                    Array.from(tabsContainer.children).some((btn) => btn.textContent.includes('Market Listings'));
+
+                // Only cleanup if BOTH navbar is inactive AND marketplace tabs are gone
+                // This prevents cleanup during transitions when navbar might briefly be inactive
+                if (!marketplaceNavActive && !hasMarketListingsTab) {
+                    removeMissingMaterialTabs();
+                }
+            }, 100);
         },
         {
             childList: true,
