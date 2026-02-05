@@ -21,6 +21,7 @@ class CombatScore {
     constructor() {
         this.isActive = false;
         this.currentPanel = null;
+        this.currentAbilitiesPanel = null;
         this.isInitialized = false;
         this.profileSharedHandler = null; // Store handler reference for cleanup
         this.timerRegistry = createTimerRegistry();
@@ -35,6 +36,13 @@ class CombatScore {
                 this.initialize();
             } else {
                 this.disable();
+            }
+        });
+
+        config.onSettingChange('abilitiesTriggers', (value) => {
+            if (!value && this.currentAbilitiesPanel) {
+                this.currentAbilitiesPanel.remove();
+                this.currentAbilitiesPanel = null;
             }
         });
 
@@ -131,6 +139,11 @@ class CombatScore {
 
             // Display score panel
             this.showScorePanel(profileData, scoreData, modalContainer);
+
+            // Display abilities & triggers panel below profile (if enabled)
+            if (config.getSetting('abilitiesTriggers')) {
+                this.showAbilitiesTriggersPanel(profileData, modalContainer);
+            }
         } catch (error) {
             console.error('[CombatScore] Error handling profile:', error);
         }
@@ -392,6 +405,180 @@ class CombatScore {
     }
 
     /**
+     * Show abilities & triggers panel below profile
+     * @param {Object} profileData - Profile data
+     * @param {Element} modalContainer - Modal container element
+     */
+    showAbilitiesTriggersPanel(profileData, modalContainer) {
+        // Remove existing abilities panel if any
+        if (this.currentAbilitiesPanel) {
+            this.currentAbilitiesPanel.remove();
+            this.currentAbilitiesPanel = null;
+        }
+
+        // Build abilities and triggers HTML
+        const abilitiesTriggersHTML = this.buildAbilitiesTriggersHTML(profileData);
+
+        // Don't show panel if no data
+        if (!abilitiesTriggersHTML) {
+            return;
+        }
+
+        const playerName = profileData.profile?.sharableCharacter?.name || 'Player';
+
+        // Create panel element
+        const panel = document.createElement('div');
+        panel.id = 'mwi-abilities-triggers-panel';
+        panel.style.cssText = `
+            position: fixed;
+            background: rgba(30, 30, 30, 0.98);
+            border: 1px solid #444;
+            border-radius: 8px;
+            padding: 12px;
+            min-width: 300px;
+            max-width: 400px;
+            max-height: 200px;
+            font-size: 0.875rem;
+            z-index: 10001;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+            display: flex;
+            flex-direction: column;
+        `;
+
+        // Create panel HTML
+        panel.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; flex-shrink: 0;">
+                <div style="font-weight: bold; color: ${config.COLOR_ACCENT}; font-size: 0.9rem;">${playerName} - Abilities & Triggers</div>
+                <span id="mwi-abilities-close-btn" style="
+                    cursor: pointer;
+                    font-size: 18px;
+                    color: #aaa;
+                    padding: 0 5px;
+                    line-height: 1;
+                " title="Close">×</span>
+            </div>
+            <div style="cursor: pointer; font-weight: bold; margin-bottom: 8px; color: ${config.COLOR_ACCENT}; flex-shrink: 0;" id="mwi-abilities-toggle">
+                + Show Details
+            </div>
+            <div id="mwi-abilities-details" style="display: none; overflow-y: auto; flex: 1; min-height: 0;">
+                ${abilitiesTriggersHTML}
+            </div>
+        `;
+
+        document.body.appendChild(panel);
+        this.currentAbilitiesPanel = panel;
+
+        // Position panel below modal
+        this.positionAbilitiesPanel(panel, modalContainer);
+
+        // Set up event listeners
+        this.setupAbilitiesPanelEvents(panel);
+
+        // Set up cleanup observer
+        this.setupAbilitiesCleanupObserver(panel, modalContainer);
+    }
+
+    /**
+     * Position abilities panel below the modal
+     * @param {Element} panel - Abilities panel element
+     * @param {Element} modal - Modal container element
+     */
+    positionAbilitiesPanel(panel, modal) {
+        const modalRect = modal.getBoundingClientRect();
+        const gap = 8;
+
+        // Center panel horizontally under modal
+        const panelWidth = panel.offsetWidth || 300;
+        const modalCenter = modalRect.left + modalRect.width / 2;
+        const panelLeft = modalCenter - panelWidth / 2;
+
+        panel.style.left = Math.max(10, panelLeft) + 'px';
+
+        // Position below modal, but ensure it doesn't go off screen
+        const topPosition = modalRect.bottom + gap;
+        const viewportHeight = window.innerHeight;
+        const panelHeight = panel.offsetHeight || 300;
+
+        // If panel would go off bottom of screen, adjust position or reduce height
+        if (topPosition + panelHeight > viewportHeight - 10) {
+            const availableHeight = viewportHeight - topPosition - 10;
+            if (availableHeight < 200) {
+                // Not enough space below - position above modal instead
+                panel.style.top = Math.max(10, modalRect.top - panelHeight - gap) + 'px';
+            } else {
+                // Limit height to fit available space
+                panel.style.top = topPosition + 'px';
+                panel.style.maxHeight = availableHeight + 'px';
+            }
+        } else {
+            panel.style.top = topPosition + 'px';
+        }
+    }
+
+    /**
+     * Set up abilities panel event listeners
+     * @param {Element} panel - Abilities panel element
+     */
+    setupAbilitiesPanelEvents(panel) {
+        // Close button
+        const closeBtn = panel.querySelector('#mwi-abilities-close-btn');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', () => {
+                panel.remove();
+                this.currentAbilitiesPanel = null;
+            });
+            closeBtn.addEventListener('mouseover', () => {
+                closeBtn.style.color = '#fff';
+            });
+            closeBtn.addEventListener('mouseout', () => {
+                closeBtn.style.color = '#aaa';
+            });
+        }
+
+        // Toggle details
+        const toggleBtn = panel.querySelector('#mwi-abilities-toggle');
+        const details = panel.querySelector('#mwi-abilities-details');
+        if (toggleBtn && details) {
+            toggleBtn.addEventListener('click', () => {
+                const isCollapsed = details.style.display === 'none';
+                details.style.display = isCollapsed ? 'block' : 'none';
+                toggleBtn.textContent = (isCollapsed ? '- ' : '+ ') + (isCollapsed ? 'Hide Details' : 'Show Details');
+            });
+        }
+    }
+
+    /**
+     * Set up cleanup observer for abilities panel
+     * @param {Element} panel - Abilities panel element
+     * @param {Element} modal - Modal container element
+     */
+    setupAbilitiesCleanupObserver(panel, modal) {
+        // Defensive check for document.body
+        if (!document.body) {
+            console.warn('[Combat Score] document.body not available for abilities cleanup observer');
+            return;
+        }
+
+        const cleanupObserver = createMutationWatcher(
+            document.body,
+            () => {
+                if (
+                    !document.body.contains(modal) ||
+                    !document.querySelector('div.SharableProfile_overviewTab__W4dCV')
+                ) {
+                    panel.remove();
+                    this.currentAbilitiesPanel = null;
+                    cleanupObserver();
+                }
+            },
+            {
+                childList: true,
+                subtree: true,
+            }
+        );
+    }
+
+    /**
      * Set up cleanup observer to remove panel when modal closes
      * @param {Element} panel - Score panel element
      * @param {Element} modal - Modal container element
@@ -541,6 +728,155 @@ class CombatScore {
     }
 
     /**
+     * Format trigger dependency to readable text
+     * @param {string} dependencyHrid - Dependency HRID
+     * @returns {string} Readable dependency
+     */
+    formatDependency(dependencyHrid) {
+        const map = {
+            '/combat_trigger_dependencies/self': 'Self',
+            '/combat_trigger_dependencies/targeted_enemy': 'Target',
+            '/combat_trigger_dependencies/all_enemies': 'All Enemies',
+            '/combat_trigger_dependencies/all_allies': 'All Allies',
+        };
+        return map[dependencyHrid] || dependencyHrid.split('/').pop().replace(/_/g, ' ');
+    }
+
+    /**
+     * Format trigger condition to readable text
+     * @param {string} conditionHrid - Condition HRID
+     * @returns {string} Readable condition
+     */
+    formatCondition(conditionHrid) {
+        const map = {
+            '/combat_trigger_conditions/current_hp': 'HP',
+            '/combat_trigger_conditions/missing_hp': 'Missing HP',
+            '/combat_trigger_conditions/current_mp': 'MP',
+            '/combat_trigger_conditions/missing_mp': 'Missing MP',
+            '/combat_trigger_conditions/number_of_active_units': 'Active Units',
+        };
+        if (map[conditionHrid]) return map[conditionHrid];
+
+        // Fallback: extract name from HRID and title case
+        const name = conditionHrid.split('/').pop().replace(/_/g, ' ');
+        return name
+            .split(' ')
+            .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+            .join(' ');
+    }
+
+    /**
+     * Format trigger comparator to symbol
+     * @param {string} comparatorHrid - Comparator HRID
+     * @returns {string} Symbol or text
+     */
+    formatComparator(comparatorHrid) {
+        const map = {
+            '/combat_trigger_comparators/greater_than_equal': '≥',
+            '/combat_trigger_comparators/less_than_equal': '≤',
+            '/combat_trigger_comparators/greater_than': '>',
+            '/combat_trigger_comparators/less_than': '<',
+            '/combat_trigger_comparators/equal': '=',
+            '/combat_trigger_comparators/is_active': 'is active',
+            '/combat_trigger_comparators/is_inactive': 'is inactive',
+        };
+        return map[comparatorHrid] || comparatorHrid.split('/').pop().replace(/_/g, ' ');
+    }
+
+    /**
+     * Format a single trigger condition
+     * @param {Object} condition - Trigger condition object
+     * @returns {string} Formatted condition string
+     */
+    formatTriggerCondition(condition) {
+        const dependency = this.formatDependency(condition.dependencyHrid);
+        const conditionName = this.formatCondition(condition.conditionHrid);
+        const comparator = this.formatComparator(condition.comparatorHrid);
+
+        // Handle is_active/is_inactive specially
+        if (comparator === 'is active' || comparator === 'is inactive') {
+            return `${dependency}: ${conditionName} ${comparator}`;
+        }
+
+        return `${dependency}: ${conditionName} ${comparator} ${condition.value}`;
+    }
+
+    /**
+     * Format array of trigger conditions (AND logic)
+     * @param {Array} conditions - Array of trigger conditions
+     * @returns {string} Formatted trigger string
+     */
+    formatTriggers(conditions) {
+        if (!conditions || conditions.length === 0) return 'No trigger';
+
+        return conditions.map((c) => this.formatTriggerCondition(c)).join(' AND ');
+    }
+
+    /**
+     * Build abilities and triggers HTML
+     * @param {Object} profileData - Profile data from WebSocket
+     * @returns {string} HTML string for abilities/triggers section
+     */
+    buildAbilitiesTriggersHTML(profileData) {
+        const abilities = profileData.profile?.equippedAbilities || [];
+        const abilityTriggers = profileData.profile?.abilityCombatTriggersMap || {};
+        const consumableTriggers = profileData.profile?.consumableCombatTriggersMap || {};
+
+        if (
+            abilities.length === 0 &&
+            Object.keys(abilityTriggers).length === 0 &&
+            Object.keys(consumableTriggers).length === 0
+        ) {
+            return ''; // Don't show section if no data
+        }
+
+        let html = '';
+
+        // Build abilities section
+        if (abilities.length > 0) {
+            for (const ability of abilities) {
+                const abilityIconId = ability.abilityHrid.split('/').pop();
+                const triggers = abilityTriggers[ability.abilityHrid];
+                const triggerText = triggers ? this.formatTriggers(triggers) : 'No trigger';
+
+                html += `
+                    <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 6px;">
+                        <svg role="img" aria-label="Ability" style="width: 24px; height: 24px; flex-shrink: 0;">
+                            <use href="/static/media/abilities_sprite.fdd1b4de.svg#${abilityIconId}"></use>
+                        </svg>
+                        <span style="font-size: 0.75rem; color: #999; line-height: 1.3;">${triggerText}</span>
+                    </div>
+                `;
+            }
+        }
+
+        // Build consumables section
+        const consumableKeys = Object.keys(consumableTriggers);
+        if (consumableKeys.length > 0) {
+            if (abilities.length > 0) {
+                html += `<div style="margin-top: 6px; margin-bottom: 6px; font-weight: 600; color: ${config.COLOR_TEXT_SECONDARY}; font-size: 0.85rem;">Food & Drinks</div>`;
+            }
+
+            for (const itemHrid of consumableKeys) {
+                const itemIconId = itemHrid.split('/').pop();
+                const triggers = consumableTriggers[itemHrid];
+                const triggerText = triggers ? this.formatTriggers(triggers) : 'No trigger';
+
+                html += `
+                    <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 6px;">
+                        <svg role="img" aria-label="Item" style="width: 24px; height: 24px; flex-shrink: 0;">
+                            <use href="/static/media/items_sprite.53ef17dc.svg#${itemIconId}"></use>
+                        </svg>
+                        <span style="font-size: 0.75rem; color: #999; line-height: 1.3;">${triggerText}</span>
+                    </div>
+                `;
+            }
+        }
+
+        return html;
+    }
+
+    /**
      * Disable the feature
      */
     disable() {
@@ -554,6 +890,11 @@ class CombatScore {
         if (this.currentPanel) {
             this.currentPanel.remove();
             this.currentPanel = null;
+        }
+
+        if (this.currentAbilitiesPanel) {
+            this.currentAbilitiesPanel.remove();
+            this.currentAbilitiesPanel = null;
         }
 
         this.isActive = false;

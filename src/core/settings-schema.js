@@ -497,6 +497,13 @@ export const settingsGroups = {
                 type: 'checkbox',
                 default: true,
             },
+            abilitiesTriggers: {
+                id: 'abilitiesTriggers',
+                label: 'Profile panel: Show abilities & triggers',
+                type: 'checkbox',
+                default: true,
+                help: 'Displays equipped abilities, consumables, and their combat triggers below the profile',
+            },
             characterCard: {
                 id: 'characterCard',
                 label: 'Profile panel: Show View Card button',
