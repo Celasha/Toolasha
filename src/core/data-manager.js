@@ -7,6 +7,7 @@
  */
 
 import webSocketHook from './websocket.js';
+import connectionState from './connection-state.js';
 import storage from './storage.js';
 import { mergeMarketListings } from '../utils/market-listings.js';
 
@@ -130,6 +131,7 @@ class DataManager {
 
                             // Fire character_initialized event
                             this.emit('character_initialized', characterData);
+                            connectionState.handleCharacterInitialized(characterData);
 
                             // Stop polling
                             stopFallbackInterval();
@@ -283,6 +285,7 @@ class DataManager {
 
             // Emit character_initialized event (trigger feature initialization)
             this.emit('character_initialized', data);
+            connectionState.handleCharacterInitialized(data);
         });
 
         // Handle actions_updated (action queue changes)

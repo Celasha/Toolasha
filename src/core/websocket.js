@@ -11,6 +11,20 @@ class WebSocketHook {
     constructor() {
         this.isHooked = false;
         this.messageHandlers = new Map();
+        this.socketEventHandlers = new Map();
+        this.attachedSockets = new WeakSet();
+        /**
+         * Track processed message events to avoid duplicate handling when multiple hooks fire.
+         *
+         * We intercept messages through three paths:
+         * 1) MessageEvent.prototype.data getter
+         * 2) WebSocket.prototype addEventListener/onmessage wrappers
+         * 3) Direct socket listeners in attachSocketListeners
+         */
+        this.processedMessageEvents = new WeakSet();
+        this.isSocketWrapped = false;
+        this.originalWebSocket = null;
+        this.currentWebSocket = null;
         // Detect if userscript manager is present (Tampermonkey, Greasemonkey, etc.)
         this.hasScriptManager = typeof GM_info !== 'undefined';
         this.clientDataRetryTimeout = null;
@@ -57,6 +71,9 @@ class WebSocketHook {
             return;
         }
 
+        this.wrapWebSocketConstructor();
+        this.wrapWebSocketPrototype();
+
         // Capture hook instance for closure
         const hookInstance = this;
 
@@ -73,12 +90,11 @@ class WebSocketHook {
             }
 
             // Only hook MWI game server
-            if (
-                socket.url.indexOf('api.milkywayidle.com/ws') === -1 &&
-                socket.url.indexOf('api-test.milkywayidle.com/ws') === -1
-            ) {
+            if (!hookInstance.isGameSocket(socket)) {
                 return originalGet.call(this);
             }
+
+            hookInstance.attachSocketListeners(socket);
 
             const message = originalGet.call(this);
 
@@ -86,6 +102,7 @@ class WebSocketHook {
             Object.defineProperty(this, 'data', { value: message });
 
             // Process message in our hook
+            hookInstance.markMessageEventProcessed(this);
             hookInstance.processMessage(message);
 
             return message;
@@ -94,6 +111,182 @@ class WebSocketHook {
         Object.defineProperty(MessageEvent.prototype, 'data', dataProperty);
 
         this.isHooked = true;
+    }
+
+    /**
+     * Wrap WebSocket prototype handlers to intercept message events
+     */
+    wrapWebSocketPrototype() {
+        const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+        if (typeof targetWindow === 'undefined' || !targetWindow.WebSocket || !targetWindow.WebSocket.prototype) {
+            return;
+        }
+
+        const hookInstance = this;
+        const proto = targetWindow.WebSocket.prototype;
+
+        if (!proto.__toolashaPatched) {
+            const originalAddEventListener = proto.addEventListener;
+            proto.addEventListener = function toolashaAddEventListener(type, listener, options) {
+                if (type === 'message' && typeof listener === 'function') {
+                    const wrappedListener = function toolashaMessageListener(event) {
+                        if (!hookInstance.isMessageEventProcessed(event) && typeof event?.data === 'string') {
+                            hookInstance.markMessageEventProcessed(event);
+                            hookInstance.processMessage(event.data);
+                        }
+                        return listener.call(this, event);
+                    };
+
+                    wrappedListener.__toolashaOriginal = listener;
+                    return originalAddEventListener.call(this, type, wrappedListener, options);
+                }
+
+                return originalAddEventListener.call(this, type, listener, options);
+            };
+
+            const originalOnMessage = Object.getOwnPropertyDescriptor(proto, 'onmessage');
+            if (originalOnMessage && originalOnMessage.set) {
+                Object.defineProperty(proto, 'onmessage', {
+                    configurable: true,
+                    get: originalOnMessage.get,
+                    set(handler) {
+                        if (typeof handler !== 'function') {
+                            return originalOnMessage.set.call(this, handler);
+                        }
+
+                        const wrappedHandler = function toolashaOnMessage(event) {
+                            if (!hookInstance.isMessageEventProcessed(event) && typeof event?.data === 'string') {
+                                hookInstance.markMessageEventProcessed(event);
+                                hookInstance.processMessage(event.data);
+                            }
+                            return handler.call(this, event);
+                        };
+
+                        wrappedHandler.__toolashaOriginal = handler;
+                        return originalOnMessage.set.call(this, wrappedHandler);
+                    },
+                });
+            }
+
+            proto.__toolashaPatched = true;
+        }
+    }
+
+    /**
+     * Check if a WebSocket instance belongs to the game server
+     * @param {WebSocket} socket - WebSocket instance
+     * @returns {boolean} True if game socket
+     */
+    isGameSocket(socket) {
+        if (!socket || !socket.url) {
+            return false;
+        }
+
+        return (
+            socket.url.indexOf('api.milkywayidle.com/ws') !== -1 ||
+            socket.url.indexOf('api-test.milkywayidle.com/ws') !== -1
+        );
+    }
+
+    /**
+     * Wrap the WebSocket constructor to attach lifecycle listeners
+     */
+    wrapWebSocketConstructor() {
+        if (this.isSocketWrapped) {
+            return;
+        }
+
+        const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+        if (typeof targetWindow === 'undefined' || !targetWindow.WebSocket) {
+            return;
+        }
+
+        const hookInstance = this;
+
+        const wrapConstructor = (OriginalWebSocket) => {
+            if (!OriginalWebSocket || OriginalWebSocket.__toolashaWrapped) {
+                hookInstance.currentWebSocket = OriginalWebSocket;
+                return;
+            }
+
+            class ToolashaWebSocket extends OriginalWebSocket {
+                constructor(...args) {
+                    super(...args);
+                    hookInstance.attachSocketListeners(this);
+                }
+            }
+
+            ToolashaWebSocket.__toolashaWrapped = true;
+            ToolashaWebSocket.__toolashaOriginal = OriginalWebSocket;
+
+            hookInstance.originalWebSocket = OriginalWebSocket;
+            hookInstance.currentWebSocket = ToolashaWebSocket;
+        };
+
+        wrapConstructor(targetWindow.WebSocket);
+
+        Object.defineProperty(targetWindow, 'WebSocket', {
+            configurable: true,
+            get() {
+                return hookInstance.currentWebSocket;
+            },
+            set(nextWebSocket) {
+                wrapConstructor(nextWebSocket);
+            },
+        });
+        this.isSocketWrapped = true;
+    }
+
+    /**
+     * Attach lifecycle listeners to a socket
+     * @param {WebSocket} socket - WebSocket instance
+     */
+    attachSocketListeners(socket) {
+        if (!this.isGameSocket(socket)) {
+            return;
+        }
+
+        if (this.attachedSockets.has(socket)) {
+            return;
+        }
+
+        this.attachedSockets.add(socket);
+
+        const events = ['open', 'close', 'error'];
+        for (const eventName of events) {
+            socket.addEventListener(eventName, (event) => {
+                this.emitSocketEvent(eventName, event, socket);
+            });
+        }
+
+        socket.addEventListener('message', (event) => {
+            if (this.isMessageEventProcessed(event)) {
+                return;
+            }
+
+            if (!event || typeof event.data !== 'string') {
+                return;
+            }
+
+            this.markMessageEventProcessed(event);
+            this.processMessage(event.data);
+        });
+    }
+
+    isMessageEventProcessed(event) {
+        if (!event || typeof event !== 'object') {
+            return false;
+        }
+
+        return this.processedMessageEvents.has(event);
+    }
+
+    markMessageEventProcessed(event) {
+        if (!event || typeof event !== 'object') {
+            return;
+        }
+
+        this.processedMessageEvents.add(event);
     }
 
     /**
@@ -273,6 +466,18 @@ class WebSocketHook {
     }
 
     /**
+     * Register a handler for WebSocket lifecycle events
+     * @param {string} eventType - Event type (open, close, error)
+     * @param {Function} handler - Handler function
+     */
+    onSocketEvent(eventType, handler) {
+        if (!this.socketEventHandlers.has(eventType)) {
+            this.socketEventHandlers.set(eventType, []);
+        }
+        this.socketEventHandlers.get(eventType).push(handler);
+    }
+
+    /**
      * Unregister a handler
      * @param {string} messageType - Message type
      * @param {Function} handler - Handler function to remove
@@ -283,6 +488,32 @@ class WebSocketHook {
             const index = handlers.indexOf(handler);
             if (index > -1) {
                 handlers.splice(index, 1);
+            }
+        }
+    }
+
+    /**
+     * Unregister a WebSocket lifecycle handler
+     * @param {string} eventType - Event type
+     * @param {Function} handler - Handler function
+     */
+    offSocketEvent(eventType, handler) {
+        const handlers = this.socketEventHandlers.get(eventType);
+        if (handlers) {
+            const index = handlers.indexOf(handler);
+            if (index > -1) {
+                handlers.splice(index, 1);
+            }
+        }
+    }
+
+    emitSocketEvent(eventType, event, socket) {
+        const handlers = this.socketEventHandlers.get(eventType) || [];
+        for (const handler of handlers) {
+            try {
+                handler(event, socket);
+            } catch (error) {
+                console.error(`[WebSocket] ${eventType} handler error:`, error);
             }
         }
     }

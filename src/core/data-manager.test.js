@@ -19,6 +19,8 @@ vi.mock('./websocket.js', () => {
                     webSocketHandlers.delete(event);
                 }
             }),
+            onSocketEvent: vi.fn(),
+            offSocketEvent: vi.fn(),
         },
     };
 });

@@ -4,9 +4,11 @@
  */
 
 import config from '../../core/config.js';
+import connectionState from '../../core/connection-state.js';
 import { calculateNetworth } from './networth-calculator.js';
 import { networthHeaderDisplay, networthInventoryDisplay } from './networth-display.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
+import { createPauseRegistry } from '../../utils/pause-registry.js';
 
 class NetworthFeature {
     constructor() {
@@ -14,6 +16,7 @@ class NetworthFeature {
         this.updateInterval = null;
         this.currentData = null;
         this.timerRegistry = createTimerRegistry();
+        this.pauseRegistry = null;
     }
 
     /**
@@ -32,12 +35,24 @@ class NetworthFeature {
             networthInventoryDisplay.initialize();
         }
 
+        if (!this.pauseRegistry) {
+            this.pauseRegistry = createPauseRegistry();
+            this.pauseRegistry.register(
+                'networth-update-interval',
+                () => this.stopAutoRefresh(),
+                () => this.resumeAutoRefresh()
+            );
+        }
+
         // Start update interval (every 30 seconds)
-        this.updateInterval = setInterval(() => this.recalculate(), 30000);
-        this.timerRegistry.registerInterval(this.updateInterval);
+        if (connectionState.isConnected()) {
+            this.startAutoRefresh();
+        }
 
         // Initial calculation
-        await this.recalculate();
+        if (connectionState.isConnected()) {
+            await this.recalculate();
+        }
 
         this.isActive = true;
     }
@@ -46,6 +61,10 @@ class NetworthFeature {
      * Recalculate networth and update displays
      */
     async recalculate() {
+        if (!connectionState.isConnected()) {
+            return;
+        }
+
         try {
             // Calculate networth
             const networthData = await calculateNetworth();
@@ -68,6 +87,12 @@ class NetworthFeature {
      * Disable the feature
      */
     disable() {
+        if (this.pauseRegistry) {
+            this.pauseRegistry.unregister('networth-update-interval');
+            this.pauseRegistry.cleanup();
+            this.pauseRegistry = null;
+        }
+
         if (this.updateInterval) {
             clearInterval(this.updateInterval);
             this.updateInterval = null;
@@ -80,6 +105,29 @@ class NetworthFeature {
 
         this.currentData = null;
         this.isActive = false;
+    }
+
+    startAutoRefresh() {
+        if (this.updateInterval) {
+            return;
+        }
+
+        this.updateInterval = setInterval(() => this.recalculate(), 30000);
+        this.timerRegistry.registerInterval(this.updateInterval);
+    }
+
+    stopAutoRefresh() {
+        if (!this.updateInterval) {
+            return;
+        }
+
+        clearInterval(this.updateInterval);
+        this.updateInterval = null;
+    }
+
+    resumeAutoRefresh() {
+        this.startAutoRefresh();
+        this.recalculate();
     }
 }
 

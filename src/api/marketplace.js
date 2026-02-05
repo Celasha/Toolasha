@@ -3,6 +3,7 @@
  * Fetches and caches market price data from the MWI marketplace API
  */
 
+import connectionState from '../core/connection-state.js';
 import storage from '../core/storage.js';
 import networkAlert from '../features/market/network-alert.js';
 
@@ -41,6 +42,19 @@ class MarketAPI {
                 networkAlert.hide();
                 return this.marketData;
             }
+        }
+
+        if (!connectionState.isConnected()) {
+            const cachedFallback = await storage.getJSON(this.CACHE_KEY_DATA, 'settings', null);
+            if (cachedFallback?.marketData) {
+                this.marketData = cachedFallback.marketData;
+                this.lastFetchTimestamp = cachedFallback.timestamp;
+                console.warn('[MarketAPI] Skipping fetch; disconnected. Using cached data.');
+                return this.marketData;
+            }
+
+            console.warn('[MarketAPI] Skipping fetch; disconnected and no cache available');
+            return null;
         }
 
         // Try to fetch fresh data
