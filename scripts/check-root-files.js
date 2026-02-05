@@ -24,24 +24,38 @@ const ALLOWED_FILES = new Set([
     'userscript-header.txt',
 ]);
 
-// Get all staged files
-const stagedFiles = execSync('git diff --cached --name-only', { encoding: 'utf-8' }).split('\n').filter(Boolean);
+// Get all staged files with their status (A=added, M=modified, D=deleted, R=renamed)
+const stagedFilesOutput = execSync('git diff --cached --name-status', { encoding: 'utf-8' });
+const stagedFiles = stagedFilesOutput
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => {
+        const [status, ...fileParts] = line.split('\t');
+        return { status, file: fileParts[fileParts.length - 1] }; // For renames, take the destination
+    });
 
-// Check for root-level .txt and .md files in staged changes
-const unauthorizedFiles = stagedFiles.filter((file) => {
-    // Only check files at root (no directory separator)
-    if (file.includes('/')) {
-        return false;
-    }
+// Check for root-level .txt and .md files being added or modified (not deleted)
+const unauthorizedFiles = stagedFiles
+    .filter(({ status, file }) => {
+        // Ignore deletions - we only care about additions and modifications
+        if (status.startsWith('D')) {
+            return false;
+        }
 
-    // Check if it's a .txt or .md file
-    if (!file.endsWith('.txt') && !file.endsWith('.md')) {
-        return false;
-    }
+        // Only check files at root (no directory separator)
+        if (file.includes('/')) {
+            return false;
+        }
 
-    // Check if it's in the allowed list
-    return !ALLOWED_FILES.has(file);
-});
+        // Check if it's a .txt or .md file
+        if (!file.endsWith('.txt') && !file.endsWith('.md')) {
+            return false;
+        }
+
+        // Check if it's in the allowed list
+        return !ALLOWED_FILES.has(file);
+    })
+    .map(({ file }) => file);
 
 if (unauthorizedFiles.length > 0) {
     console.error('\x1b[31m%s\x1b[0m', '❌ Error: Unauthorized files at project root detected');
