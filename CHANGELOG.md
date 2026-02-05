@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.17.1](https://github.com/Celasha/Toolasha/compare/v0.17.0...v0.17.1) (2026-02-05)
+
+### Bug Fixes
+
+- improve missing materials tabs cleanup detection ([6c30b58](https://github.com/Celasha/Toolasha/commit/6c30b5811573db61d7b0861c2d01b35d674cf9a1))
+- improve missing materials tabs cleanup detection ([1c3c7f4](https://github.com/Celasha/Toolasha/commit/1c3c7f4f40e505e2aafbfc4245542a3b79b5f2ae))
+- use dynamic SVG symbol cloning and extend timeout for Steam ([91c494a](https://github.com/Celasha/Toolasha/commit/91c494a088c5d7a270a1d672accc1b66f4948679))
+
 ## [0.17.0](https://github.com/Celasha/Toolasha/compare/v0.16.2...v0.17.0) (2026-02-05)
 
 ### Features
