@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha Core Library
 // @namespace    http://tampermonkey.net/
-// @version      0.16.2
+// @version      0.17.0
 // @description  Core library for Toolasha - Core infrastructure and API clients
 // @author       Celasha
 // @license      CC-BY-NC-SA-4.0
@@ -887,6 +887,13 @@
                     type: 'checkbox',
                     default: true,
                 },
+                abilitiesTriggers: {
+                    id: 'abilitiesTriggers',
+                    label: 'Profile panel: Show abilities & triggers',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Displays equipped abilities, consumables, and their combat triggers below the profile',
+                },
                 characterCard: {
                     id: 'characterCard',
                     label: 'Profile panel: Show View Card button',
@@ -1146,6 +1153,18 @@
                     type: 'checkbox',
                     default: true,
                     help: 'Displays your last buy/sell prices for items in marketplace',
+                },
+                market_tradeHistoryComparisonMode: {
+                    id: 'market_tradeHistoryComparisonMode',
+                    label: 'Market: Trade history comparison mode',
+                    type: 'select',
+                    default: 'instant',
+                    options: [
+                        { value: 'instant', label: 'Instant' },
+                        { value: 'listing', label: 'Orders' },
+                    ],
+                    dependencies: ['market_tradeHistory'],
+                    help: 'Instant: Compare to instant buy/sell prices. Orders: Compare to buy/sell orders.',
                 },
                 market_listingPricePrecision: {
                     id: 'market_listingPricePrecision',
@@ -1690,6 +1709,20 @@
         constructor() {
             this.isHooked = false;
             this.messageHandlers = new Map();
+            this.socketEventHandlers = new Map();
+            this.attachedSockets = new WeakSet();
+            /**
+             * Track processed message events to avoid duplicate handling when multiple hooks fire.
+             *
+             * We intercept messages through three paths:
+             * 1) MessageEvent.prototype.data getter
+             * 2) WebSocket.prototype addEventListener/onmessage wrappers
+             * 3) Direct socket listeners in attachSocketListeners
+             */
+            this.processedMessageEvents = new WeakSet();
+            this.isSocketWrapped = false;
+            this.originalWebSocket = null;
+            this.currentWebSocket = null;
             // Detect if userscript manager is present (Tampermonkey, Greasemonkey, etc.)
             this.hasScriptManager = typeof GM_info !== 'undefined';
             this.clientDataRetryTimeout = null;
@@ -1736,6 +1769,9 @@
                 return;
             }
 
+            this.wrapWebSocketConstructor();
+            this.wrapWebSocketPrototype();
+
             // Capture hook instance for closure
             const hookInstance = this;
 
@@ -1752,12 +1788,11 @@
                 }
 
                 // Only hook MWI game server
-                if (
-                    socket.url.indexOf('api.milkywayidle.com/ws') === -1 &&
-                    socket.url.indexOf('api-test.milkywayidle.com/ws') === -1
-                ) {
+                if (!hookInstance.isGameSocket(socket)) {
                     return originalGet.call(this);
                 }
+
+                hookInstance.attachSocketListeners(socket);
 
                 const message = originalGet.call(this);
 
@@ -1765,6 +1800,7 @@
                 Object.defineProperty(this, 'data', { value: message });
 
                 // Process message in our hook
+                hookInstance.markMessageEventProcessed(this);
                 hookInstance.processMessage(message);
 
                 return message;
@@ -1773,6 +1809,182 @@
             Object.defineProperty(MessageEvent.prototype, 'data', dataProperty);
 
             this.isHooked = true;
+        }
+
+        /**
+         * Wrap WebSocket prototype handlers to intercept message events
+         */
+        wrapWebSocketPrototype() {
+            const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+            if (typeof targetWindow === 'undefined' || !targetWindow.WebSocket || !targetWindow.WebSocket.prototype) {
+                return;
+            }
+
+            const hookInstance = this;
+            const proto = targetWindow.WebSocket.prototype;
+
+            if (!proto.__toolashaPatched) {
+                const originalAddEventListener = proto.addEventListener;
+                proto.addEventListener = function toolashaAddEventListener(type, listener, options) {
+                    if (type === 'message' && typeof listener === 'function') {
+                        const wrappedListener = function toolashaMessageListener(event) {
+                            if (!hookInstance.isMessageEventProcessed(event) && typeof event?.data === 'string') {
+                                hookInstance.markMessageEventProcessed(event);
+                                hookInstance.processMessage(event.data);
+                            }
+                            return listener.call(this, event);
+                        };
+
+                        wrappedListener.__toolashaOriginal = listener;
+                        return originalAddEventListener.call(this, type, wrappedListener, options);
+                    }
+
+                    return originalAddEventListener.call(this, type, listener, options);
+                };
+
+                const originalOnMessage = Object.getOwnPropertyDescriptor(proto, 'onmessage');
+                if (originalOnMessage && originalOnMessage.set) {
+                    Object.defineProperty(proto, 'onmessage', {
+                        configurable: true,
+                        get: originalOnMessage.get,
+                        set(handler) {
+                            if (typeof handler !== 'function') {
+                                return originalOnMessage.set.call(this, handler);
+                            }
+
+                            const wrappedHandler = function toolashaOnMessage(event) {
+                                if (!hookInstance.isMessageEventProcessed(event) && typeof event?.data === 'string') {
+                                    hookInstance.markMessageEventProcessed(event);
+                                    hookInstance.processMessage(event.data);
+                                }
+                                return handler.call(this, event);
+                            };
+
+                            wrappedHandler.__toolashaOriginal = handler;
+                            return originalOnMessage.set.call(this, wrappedHandler);
+                        },
+                    });
+                }
+
+                proto.__toolashaPatched = true;
+            }
+        }
+
+        /**
+         * Check if a WebSocket instance belongs to the game server
+         * @param {WebSocket} socket - WebSocket instance
+         * @returns {boolean} True if game socket
+         */
+        isGameSocket(socket) {
+            if (!socket || !socket.url) {
+                return false;
+            }
+
+            return (
+                socket.url.indexOf('api.milkywayidle.com/ws') !== -1 ||
+                socket.url.indexOf('api-test.milkywayidle.com/ws') !== -1
+            );
+        }
+
+        /**
+         * Wrap the WebSocket constructor to attach lifecycle listeners
+         */
+        wrapWebSocketConstructor() {
+            if (this.isSocketWrapped) {
+                return;
+            }
+
+            const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+            if (typeof targetWindow === 'undefined' || !targetWindow.WebSocket) {
+                return;
+            }
+
+            const hookInstance = this;
+
+            const wrapConstructor = (OriginalWebSocket) => {
+                if (!OriginalWebSocket || OriginalWebSocket.__toolashaWrapped) {
+                    hookInstance.currentWebSocket = OriginalWebSocket;
+                    return;
+                }
+
+                class ToolashaWebSocket extends OriginalWebSocket {
+                    constructor(...args) {
+                        super(...args);
+                        hookInstance.attachSocketListeners(this);
+                    }
+                }
+
+                ToolashaWebSocket.__toolashaWrapped = true;
+                ToolashaWebSocket.__toolashaOriginal = OriginalWebSocket;
+
+                hookInstance.originalWebSocket = OriginalWebSocket;
+                hookInstance.currentWebSocket = ToolashaWebSocket;
+            };
+
+            wrapConstructor(targetWindow.WebSocket);
+
+            Object.defineProperty(targetWindow, 'WebSocket', {
+                configurable: true,
+                get() {
+                    return hookInstance.currentWebSocket;
+                },
+                set(nextWebSocket) {
+                    wrapConstructor(nextWebSocket);
+                },
+            });
+            this.isSocketWrapped = true;
+        }
+
+        /**
+         * Attach lifecycle listeners to a socket
+         * @param {WebSocket} socket - WebSocket instance
+         */
+        attachSocketListeners(socket) {
+            if (!this.isGameSocket(socket)) {
+                return;
+            }
+
+            if (this.attachedSockets.has(socket)) {
+                return;
+            }
+
+            this.attachedSockets.add(socket);
+
+            const events = ['open', 'close', 'error'];
+            for (const eventName of events) {
+                socket.addEventListener(eventName, (event) => {
+                    this.emitSocketEvent(eventName, event, socket);
+                });
+            }
+
+            socket.addEventListener('message', (event) => {
+                if (this.isMessageEventProcessed(event)) {
+                    return;
+                }
+
+                if (!event || typeof event.data !== 'string') {
+                    return;
+                }
+
+                this.markMessageEventProcessed(event);
+                this.processMessage(event.data);
+            });
+        }
+
+        isMessageEventProcessed(event) {
+            if (!event || typeof event !== 'object') {
+                return false;
+            }
+
+            return this.processedMessageEvents.has(event);
+        }
+
+        markMessageEventProcessed(event) {
+            if (!event || typeof event !== 'object') {
+                return;
+            }
+
+            this.processedMessageEvents.add(event);
         }
 
         /**
@@ -1952,6 +2164,18 @@
         }
 
         /**
+         * Register a handler for WebSocket lifecycle events
+         * @param {string} eventType - Event type (open, close, error)
+         * @param {Function} handler - Handler function
+         */
+        onSocketEvent(eventType, handler) {
+            if (!this.socketEventHandlers.has(eventType)) {
+                this.socketEventHandlers.set(eventType, []);
+            }
+            this.socketEventHandlers.get(eventType).push(handler);
+        }
+
+        /**
          * Unregister a handler
          * @param {string} messageType - Message type
          * @param {Function} handler - Handler function to remove
@@ -1965,9 +2189,198 @@
                 }
             }
         }
+
+        /**
+         * Unregister a WebSocket lifecycle handler
+         * @param {string} eventType - Event type
+         * @param {Function} handler - Handler function
+         */
+        offSocketEvent(eventType, handler) {
+            const handlers = this.socketEventHandlers.get(eventType);
+            if (handlers) {
+                const index = handlers.indexOf(handler);
+                if (index > -1) {
+                    handlers.splice(index, 1);
+                }
+            }
+        }
+
+        emitSocketEvent(eventType, event, socket) {
+            const handlers = this.socketEventHandlers.get(eventType) || [];
+            for (const handler of handlers) {
+                try {
+                    handler(event, socket);
+                } catch (error) {
+                    console.error(`[WebSocket] ${eventType} handler error:`, error);
+                }
+            }
+        }
     }
 
     const webSocketHook = new WebSocketHook();
+
+    const CONNECTION_STATES = {
+        CONNECTED: 'connected',
+        DISCONNECTED: 'disconnected',
+        RECONNECTING: 'reconnecting',
+    };
+
+    class ConnectionState {
+        constructor() {
+            this.state = CONNECTION_STATES.RECONNECTING;
+            this.eventListeners = new Map();
+            this.lastDisconnectedAt = null;
+            this.lastConnectedAt = null;
+
+            this.setupListeners();
+        }
+
+        /**
+         * Get current connection state
+         * @returns {string} Connection state (connected, disconnected, reconnecting)
+         */
+        getState() {
+            return this.state;
+        }
+
+        /**
+         * Check if currently connected
+         * @returns {boolean} True if connected
+         */
+        isConnected() {
+            return this.state === CONNECTION_STATES.CONNECTED;
+        }
+
+        /**
+         * Register a listener for connection events
+         * @param {string} event - Event name (disconnected, reconnected)
+         * @param {Function} callback - Handler function
+         */
+        on(event, callback) {
+            if (!this.eventListeners.has(event)) {
+                this.eventListeners.set(event, []);
+            }
+            this.eventListeners.get(event).push(callback);
+        }
+
+        /**
+         * Unregister a connection event listener
+         * @param {string} event - Event name
+         * @param {Function} callback - Handler function to remove
+         */
+        off(event, callback) {
+            const listeners = this.eventListeners.get(event);
+            if (listeners) {
+                const index = listeners.indexOf(callback);
+                if (index > -1) {
+                    listeners.splice(index, 1);
+                }
+            }
+        }
+
+        /**
+         * Notify connection state from character initialization
+         * @param {Object} data - Character initialization payload
+         */
+        handleCharacterInitialized(data) {
+            if (!data) {
+                return;
+            }
+
+            this.setConnected('character_initialized');
+        }
+
+        setupListeners() {
+            webSocketHook.onSocketEvent('open', () => {
+                this.setReconnecting('socket_open', { allowConnected: true });
+            });
+
+            webSocketHook.onSocketEvent('close', (event) => {
+                this.setDisconnected('socket_close', event);
+            });
+
+            webSocketHook.onSocketEvent('error', (event) => {
+                this.setDisconnected('socket_error', event);
+            });
+
+            webSocketHook.on('init_character_data', () => {
+                this.setConnected('init_character_data');
+            });
+        }
+
+        setReconnecting(reason, options = {}) {
+            if (this.state === CONNECTION_STATES.CONNECTED && !options.allowConnected) {
+                return;
+            }
+
+            this.updateState(CONNECTION_STATES.RECONNECTING, {
+                reason,
+            });
+        }
+
+        setDisconnected(reason, event) {
+            if (this.state === CONNECTION_STATES.DISCONNECTED) {
+                return;
+            }
+
+            this.lastDisconnectedAt = Date.now();
+            this.updateState(CONNECTION_STATES.DISCONNECTED, {
+                reason,
+                event,
+                disconnectedAt: this.lastDisconnectedAt,
+            });
+        }
+
+        setConnected(reason) {
+            if (this.state === CONNECTION_STATES.CONNECTED) {
+                return;
+            }
+
+            this.lastConnectedAt = Date.now();
+            this.updateState(CONNECTION_STATES.CONNECTED, {
+                reason,
+                disconnectedAt: this.lastDisconnectedAt,
+                connectedAt: this.lastConnectedAt,
+            });
+        }
+
+        updateState(nextState, details) {
+            if (this.state === nextState) {
+                return;
+            }
+
+            const previousState = this.state;
+            this.state = nextState;
+
+            if (nextState === CONNECTION_STATES.DISCONNECTED) {
+                this.emit('disconnected', {
+                    previousState,
+                    ...details,
+                });
+                return;
+            }
+
+            if (nextState === CONNECTION_STATES.CONNECTED) {
+                this.emit('reconnected', {
+                    previousState,
+                    ...details,
+                });
+            }
+        }
+
+        emit(event, data) {
+            const listeners = this.eventListeners.get(event) || [];
+            for (const listener of listeners) {
+                try {
+                    listener(data);
+                } catch (error) {
+                    console.error('[ConnectionState] Listener error:', error);
+                }
+            }
+        }
+    }
+
+    const connectionState = new ConnectionState();
 
     /**
      * Merge market listing updates into the current list.
@@ -2138,6 +2551,7 @@
 
                                 // Fire character_initialized event
                                 this.emit('character_initialized', characterData);
+                                connectionState.handleCharacterInitialized(characterData);
 
                                 // Stop polling
                                 stopFallbackInterval();
@@ -2291,6 +2705,7 @@
 
                 // Emit character_initialized event (trigger feature initialization)
                 this.emit('character_initialized', data);
+                connectionState.handleCharacterInitialized(data);
             });
 
             // Handle actions_updated (action queue changes)
@@ -4263,6 +4678,19 @@
                     networkAlert.hide();
                     return this.marketData;
                 }
+            }
+
+            if (!connectionState.isConnected()) {
+                const cachedFallback = await storage.getJSON(this.CACHE_KEY_DATA, 'settings', null);
+                if (cachedFallback?.marketData) {
+                    this.marketData = cachedFallback.marketData;
+                    this.lastFetchTimestamp = cachedFallback.timestamp;
+                    console.warn('[MarketAPI] Skipping fetch; disconnected. Using cached data.');
+                    return this.marketData;
+                }
+
+                console.warn('[MarketAPI] Skipping fetch; disconnected and no cache available');
+                return null;
             }
 
             // Try to fetch fresh data

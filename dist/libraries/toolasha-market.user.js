@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha Market Library
 // @namespace    http://tampermonkey.net/
-// @version      0.16.2
+// @version      0.17.0
 // @description  Market library for Toolasha - Market, inventory, and economy features
 // @author       Celasha
 // @license      CC-BY-NC-SA-4.0
@@ -12,7 +12,7 @@
 // @grant        none
 // ==/UserScript==
 
-(function (config, dataManager, domObserver, marketAPI, equipmentParser_js, houseEfficiency_js, efficiency_js, teaParser_js, bonusRevenueCalculator_js, marketData_js, profitConstants_js, profitHelpers_js, buffParser_js, tokenValuation_js, enhancementCalculator_js, formatters_js, enhancementConfig_js, dom, timerRegistry_js, storage, cleanupRegistry_js, settingsSchema_js, settingsStorage, domObserverHelpers_js, abilityCostCalculator_js, houseCostCalculator_js) {
+(function (config, dataManager, domObserver, marketAPI, equipmentParser_js, houseEfficiency_js, efficiency_js, teaParser_js, bonusRevenueCalculator_js, marketData_js, profitConstants_js, profitHelpers_js, buffParser_js, tokenValuation_js, enhancementCalculator_js, formatters_js, enhancementConfig_js, dom, timerRegistry_js, storage, cleanupRegistry_js, settingsSchema_js, settingsStorage, domObserverHelpers_js, webSocketHook, abilityCostCalculator_js, houseCostCalculator_js) {
     'use strict';
 
     /**
@@ -4516,6 +4516,13 @@
                     // Also clear listing price display flags so Top Order Age updates
                     document.querySelectorAll('.mwi-listing-prices-set').forEach((table) => {
                         table.classList.remove('mwi-listing-prices-set');
+                    });
+
+                    // Manually re-process any existing containers (handles race condition where
+                    // container appeared before WebSocket data arrived)
+                    const existingContainers = document.querySelectorAll('[class*="MarketplacePanel_orderBooksContainer"]');
+                    existingContainers.forEach((container) => {
+                        this.processOrderBook(container);
                     });
                 }
             };
@@ -10556,7 +10563,22 @@
             this.isInitialized = true;
             this.setupObserver();
             this.setupWebSocketListener();
+            this.setupSettingListener();
             this.isActive = true;
+        }
+
+        /**
+         * Setup setting change listener to refresh display when comparison mode changes
+         */
+        setupSettingListener() {
+            config.onSettingChange('market_tradeHistoryComparisonMode', () => {
+                // Refresh display if currently viewing an item
+                const existingPanel = document.querySelector('[class*="MarketplacePanel_currentItem"]');
+                if (existingPanel && this.currentItemHrid) {
+                    const history = tradeHistory.getHistory(this.currentItemHrid, this.currentEnhancementLevel);
+                    this.updateDisplay(existingPanel, history);
+                }
+            });
         }
 
         /**
@@ -10699,6 +10721,9 @@
             // Get current top order prices from the DOM
             const currentPrices = this.extractCurrentPrices(panel);
 
+            // Get comparison mode setting
+            const comparisonMode = config.getSettingValue('market_tradeHistoryComparisonMode', 'instant');
+
             // Ensure panel has position relative for absolute positioning to work
             if (!panel.style.position || panel.style.position === 'static') {
                 panel.style.position = 'relative';
@@ -10730,7 +10755,7 @@
             parts.push(`<span style="color: #aaa; font-weight: 500;">Last:</span>`);
 
             if (history.buy) {
-                const buyColor = this.getBuyColor(history.buy, currentPrices?.ask);
+                const buyColor = this.getBuyColor(history.buy, currentPrices, comparisonMode);
                 parts.push(
                     `<span style="color: ${buyColor}; font-weight: 600;" title="Your last buy price">Buy ${formatters_js.formatKMB3Digits(history.buy)}</span>`
                 );
@@ -10741,7 +10766,7 @@
             }
 
             if (history.sell) {
-                const sellColor = this.getSellColor(history.sell, currentPrices?.bid);
+                const sellColor = this.getSellColor(history.sell, currentPrices, comparisonMode);
                 parts.push(
                     `<span style="color: ${sellColor}; font-weight: 600;" title="Your last sell price">Sell ${formatters_js.formatKMB3Digits(history.sell)}</span>`
                 );
@@ -10785,19 +10810,29 @@
         }
 
         /**
-         * Get color for buy price based on comparison to current ask
+         * Get color for buy price based on comparison mode
          * @param {number} lastBuy - Your last buy price
-         * @param {number} currentAsk - Current market ask price
+         * @param {Object|null} currentPrices - Current market prices { ask, bid }
+         * @param {string} comparisonMode - 'instant' or 'listing'
          * @returns {string} Color code
          */
-        getBuyColor(lastBuy, currentAsk) {
-            if (!currentAsk || currentAsk === -1) {
+        getBuyColor(lastBuy, currentPrices, comparisonMode) {
+            if (!currentPrices) {
                 return '#888'; // Grey if no market data
             }
 
-            if (currentAsk > lastBuy) {
+            // Choose comparison price based on mode
+            const comparePrice = comparisonMode === 'instant' ? currentPrices.ask : currentPrices.bid;
+
+            if (!comparePrice || comparePrice === -1) {
+                return '#888'; // Grey if no market data
+            }
+
+            // Instant mode: Compare to ask (what you'd pay to instant-buy now)
+            // Listing mode: Compare to bid (what buyers are offering)
+            if (comparePrice > lastBuy) {
                 return config.COLOR_LOSS; // Red - current price is higher (worse deal now)
-            } else if (currentAsk < lastBuy) {
+            } else if (comparePrice < lastBuy) {
                 return config.COLOR_PROFIT; // Green - current price is lower (better deal now)
             } else {
                 return '#888'; // Grey - same price
@@ -10805,19 +10840,29 @@
         }
 
         /**
-         * Get color for sell price based on comparison to current bid
+         * Get color for sell price based on comparison mode
          * @param {number} lastSell - Your last sell price
-         * @param {number} currentBid - Current market bid price
+         * @param {Object|null} currentPrices - Current market prices { ask, bid }
+         * @param {string} comparisonMode - 'instant' or 'listing'
          * @returns {string} Color code
          */
-        getSellColor(lastSell, currentBid) {
-            if (!currentBid || currentBid === -1) {
+        getSellColor(lastSell, currentPrices, comparisonMode) {
+            if (!currentPrices) {
                 return '#888'; // Grey if no market data
             }
 
-            if (currentBid > lastSell) {
+            // Choose comparison price based on mode
+            const comparePrice = comparisonMode === 'instant' ? currentPrices.bid : currentPrices.ask;
+
+            if (!comparePrice || comparePrice === -1) {
+                return '#888'; // Grey if no market data
+            }
+
+            // Instant mode: Compare to bid (what you'd get to instant-sell now)
+            // Listing mode: Compare to ask (what sellers are asking)
+            if (comparePrice > lastSell) {
                 return config.COLOR_PROFIT; // Green - current price is higher (better deal now to sell)
-            } else if (currentBid < lastSell) {
+            } else if (comparePrice < lastSell) {
                 return config.COLOR_LOSS; // Red - current price is lower (worse deal now to sell)
             } else {
                 return '#888'; // Grey - same price
@@ -10976,6 +11021,169 @@
     }
 
     const networkAlert = new NetworkAlert();
+
+    const CONNECTION_STATES = {
+        CONNECTED: 'connected',
+        DISCONNECTED: 'disconnected',
+        RECONNECTING: 'reconnecting',
+    };
+
+    class ConnectionState {
+        constructor() {
+            this.state = CONNECTION_STATES.RECONNECTING;
+            this.eventListeners = new Map();
+            this.lastDisconnectedAt = null;
+            this.lastConnectedAt = null;
+
+            this.setupListeners();
+        }
+
+        /**
+         * Get current connection state
+         * @returns {string} Connection state (connected, disconnected, reconnecting)
+         */
+        getState() {
+            return this.state;
+        }
+
+        /**
+         * Check if currently connected
+         * @returns {boolean} True if connected
+         */
+        isConnected() {
+            return this.state === CONNECTION_STATES.CONNECTED;
+        }
+
+        /**
+         * Register a listener for connection events
+         * @param {string} event - Event name (disconnected, reconnected)
+         * @param {Function} callback - Handler function
+         */
+        on(event, callback) {
+            if (!this.eventListeners.has(event)) {
+                this.eventListeners.set(event, []);
+            }
+            this.eventListeners.get(event).push(callback);
+        }
+
+        /**
+         * Unregister a connection event listener
+         * @param {string} event - Event name
+         * @param {Function} callback - Handler function to remove
+         */
+        off(event, callback) {
+            const listeners = this.eventListeners.get(event);
+            if (listeners) {
+                const index = listeners.indexOf(callback);
+                if (index > -1) {
+                    listeners.splice(index, 1);
+                }
+            }
+        }
+
+        /**
+         * Notify connection state from character initialization
+         * @param {Object} data - Character initialization payload
+         */
+        handleCharacterInitialized(data) {
+            if (!data) {
+                return;
+            }
+
+            this.setConnected('character_initialized');
+        }
+
+        setupListeners() {
+            webSocketHook.onSocketEvent('open', () => {
+                this.setReconnecting('socket_open', { allowConnected: true });
+            });
+
+            webSocketHook.onSocketEvent('close', (event) => {
+                this.setDisconnected('socket_close', event);
+            });
+
+            webSocketHook.onSocketEvent('error', (event) => {
+                this.setDisconnected('socket_error', event);
+            });
+
+            webSocketHook.on('init_character_data', () => {
+                this.setConnected('init_character_data');
+            });
+        }
+
+        setReconnecting(reason, options = {}) {
+            if (this.state === CONNECTION_STATES.CONNECTED && !options.allowConnected) {
+                return;
+            }
+
+            this.updateState(CONNECTION_STATES.RECONNECTING, {
+                reason,
+            });
+        }
+
+        setDisconnected(reason, event) {
+            if (this.state === CONNECTION_STATES.DISCONNECTED) {
+                return;
+            }
+
+            this.lastDisconnectedAt = Date.now();
+            this.updateState(CONNECTION_STATES.DISCONNECTED, {
+                reason,
+                event,
+                disconnectedAt: this.lastDisconnectedAt,
+            });
+        }
+
+        setConnected(reason) {
+            if (this.state === CONNECTION_STATES.CONNECTED) {
+                return;
+            }
+
+            this.lastConnectedAt = Date.now();
+            this.updateState(CONNECTION_STATES.CONNECTED, {
+                reason,
+                disconnectedAt: this.lastDisconnectedAt,
+                connectedAt: this.lastConnectedAt,
+            });
+        }
+
+        updateState(nextState, details) {
+            if (this.state === nextState) {
+                return;
+            }
+
+            const previousState = this.state;
+            this.state = nextState;
+
+            if (nextState === CONNECTION_STATES.DISCONNECTED) {
+                this.emit('disconnected', {
+                    previousState,
+                    ...details,
+                });
+                return;
+            }
+
+            if (nextState === CONNECTION_STATES.CONNECTED) {
+                this.emit('reconnected', {
+                    previousState,
+                    ...details,
+                });
+            }
+        }
+
+        emit(event, data) {
+            const listeners = this.eventListeners.get(event) || [];
+            for (const listener of listeners) {
+                try {
+                    listener(data);
+                } catch (error) {
+                    console.error('[ConnectionState] Listener error:', error);
+                }
+            }
+        }
+    }
+
+    const connectionState = new ConnectionState();
 
     /**
      * Task Profit Calculator
@@ -12381,6 +12589,142 @@
     const networthInventoryDisplay = new NetworthInventoryDisplay();
 
     /**
+     * Create a pause registry for deterministic pause/resume handling.
+     * @param {{ connectionState?: { on: Function, off: Function } }} [options] - Optional dependency overrides.
+     * @returns {{
+     *   register: (id: string, pauseFn: Function, resumeFn: Function) => void,
+     *   unregister: (id: string) => void,
+     *   pauseAll: () => void,
+     *   resumeAll: () => void,
+     *   cleanup: () => void
+     * }} Pause registry API
+     */
+    function createPauseRegistry(options = {}) {
+        const registry = new Map();
+        const connectionStateRef = options.connectionState || connectionState;
+        let isPaused = false;
+
+        const normalizeId = (id) => (typeof id === 'string' ? id.trim() : id);
+        const isValidId = (id) => typeof id === 'string' && id.trim().length > 0;
+
+        /**
+         * Register pausable work by unique id.
+         * @param {string} id - Unique identifier for the pausable work.
+         * @param {Function} pauseFn - Callback invoked on pause.
+         * @param {Function} resumeFn - Callback invoked on resume.
+         */
+        const register = (id, pauseFn, resumeFn) => {
+            if (!isValidId(id) || typeof pauseFn !== 'function' || typeof resumeFn !== 'function') {
+                console.warn('[PauseRegistry] register called with invalid arguments');
+                return;
+            }
+
+            const normalizedId = normalizeId(id);
+            if (registry.has(normalizedId)) {
+                console.warn(`[PauseRegistry] register called with duplicate id: ${normalizedId}`);
+            }
+
+            registry.set(normalizedId, { pauseFn, resumeFn });
+
+            if (isPaused) {
+                try {
+                    pauseFn();
+                } catch (error) {
+                    console.error(`[PauseRegistry] Failed to pause '${normalizedId}' during register:`, error);
+                }
+            }
+        };
+
+        /**
+         * Unregister pausable work by id.
+         * Note: Unregister does not auto-resume if currently paused.
+         * @param {string} id - Identifier to remove.
+         */
+        const unregister = (id) => {
+            if (!isValidId(id)) {
+                console.warn('[PauseRegistry] unregister called with invalid id');
+                return;
+            }
+
+            registry.delete(normalizeId(id));
+        };
+
+        const callAll = (actionLabel, handlerKey) => {
+            for (const [entryId, entry] of registry.entries()) {
+                const handler = entry[handlerKey];
+                if (typeof handler !== 'function') {
+                    continue;
+                }
+
+                try {
+                    handler();
+                } catch (error) {
+                    console.error(`[PauseRegistry] Failed to ${actionLabel} '${entryId}':`, error);
+                }
+            }
+        };
+
+        /**
+         * Pause all registered work.
+         */
+        const pauseAll = () => {
+            if (isPaused) {
+                return;
+            }
+
+            isPaused = true;
+            callAll('pause', 'pauseFn');
+        };
+
+        /**
+         * Resume all registered work.
+         */
+        const resumeAll = () => {
+            if (!isPaused) {
+                return;
+            }
+
+            isPaused = false;
+            callAll('resume', 'resumeFn');
+        };
+
+        const handleDisconnected = () => {
+            pauseAll();
+        };
+
+        const handleReconnected = () => {
+            resumeAll();
+        };
+
+        if (connectionStateRef && typeof connectionStateRef.on === 'function') {
+            connectionStateRef.on('disconnected', handleDisconnected);
+            connectionStateRef.on('reconnected', handleReconnected);
+        } else {
+            console.warn('[PauseRegistry] connectionState unavailable; pause/resume events not wired');
+        }
+
+        /**
+         * Cleanup registry subscriptions.
+         */
+        const cleanup = () => {
+            if (!connectionStateRef || typeof connectionStateRef.off !== 'function') {
+                return;
+            }
+
+            connectionStateRef.off('disconnected', handleDisconnected);
+            connectionStateRef.off('reconnected', handleReconnected);
+        };
+
+        return {
+            register,
+            unregister,
+            pauseAll,
+            resumeAll,
+            cleanup,
+        };
+    }
+
+    /**
      * Networth Feature - Main Coordinator
      * Manages networth calculation and display updates
      */
@@ -12392,6 +12736,7 @@
             this.updateInterval = null;
             this.currentData = null;
             this.timerRegistry = timerRegistry_js.createTimerRegistry();
+            this.pauseRegistry = null;
         }
 
         /**
@@ -12410,12 +12755,24 @@
                 networthInventoryDisplay.initialize();
             }
 
+            if (!this.pauseRegistry) {
+                this.pauseRegistry = createPauseRegistry();
+                this.pauseRegistry.register(
+                    'networth-update-interval',
+                    () => this.stopAutoRefresh(),
+                    () => this.resumeAutoRefresh()
+                );
+            }
+
             // Start update interval (every 30 seconds)
-            this.updateInterval = setInterval(() => this.recalculate(), 30000);
-            this.timerRegistry.registerInterval(this.updateInterval);
+            if (connectionState.isConnected()) {
+                this.startAutoRefresh();
+            }
 
             // Initial calculation
-            await this.recalculate();
+            if (connectionState.isConnected()) {
+                await this.recalculate();
+            }
 
             this.isActive = true;
         }
@@ -12424,6 +12781,10 @@
          * Recalculate networth and update displays
          */
         async recalculate() {
+            if (!connectionState.isConnected()) {
+                return;
+            }
+
             try {
                 // Calculate networth
                 const networthData = await calculateNetworth();
@@ -12446,6 +12807,12 @@
          * Disable the feature
          */
         disable() {
+            if (this.pauseRegistry) {
+                this.pauseRegistry.unregister('networth-update-interval');
+                this.pauseRegistry.cleanup();
+                this.pauseRegistry = null;
+            }
+
             if (this.updateInterval) {
                 clearInterval(this.updateInterval);
                 this.updateInterval = null;
@@ -12458,6 +12825,29 @@
 
             this.currentData = null;
             this.isActive = false;
+        }
+
+        startAutoRefresh() {
+            if (this.updateInterval) {
+                return;
+            }
+
+            this.updateInterval = setInterval(() => this.recalculate(), 30000);
+            this.timerRegistry.registerInterval(this.updateInterval);
+        }
+
+        stopAutoRefresh() {
+            if (!this.updateInterval) {
+                return;
+            }
+
+            clearInterval(this.updateInterval);
+            this.updateInterval = null;
+        }
+
+        resumeAutoRefresh() {
+            this.startAutoRefresh();
+            this.recalculate();
         }
     }
 
@@ -14047,4 +14437,4 @@
 
     console.log('[Toolasha] Market library loaded');
 
-})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.marketAPI, Toolasha.Utils.equipmentParser, Toolasha.Utils.houseEfficiency, Toolasha.Utils.efficiency, Toolasha.Utils.teaParser, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.marketData, Toolasha.Utils.profitConstants, Toolasha.Utils.profitHelpers, Toolasha.Utils.buffParser, Toolasha.Utils.tokenValuation, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.formatters, Toolasha.Utils.enhancementConfig, Toolasha.Utils.dom, Toolasha.Utils.timerRegistry, Toolasha.Core.storage, Toolasha.Utils.cleanupRegistry, Toolasha.Core, Toolasha.Core.settingsStorage, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.abilityCalc, Toolasha.Utils.houseCostCalculator);
+})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.marketAPI, Toolasha.Utils.equipmentParser, Toolasha.Utils.houseEfficiency, Toolasha.Utils.efficiency, Toolasha.Utils.teaParser, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.marketData, Toolasha.Utils.profitConstants, Toolasha.Utils.profitHelpers, Toolasha.Utils.buffParser, Toolasha.Utils.tokenValuation, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.formatters, Toolasha.Utils.enhancementConfig, Toolasha.Utils.dom, Toolasha.Utils.timerRegistry, Toolasha.Core.storage, Toolasha.Utils.cleanupRegistry, Toolasha.Core, Toolasha.Core.settingsStorage, Toolasha.Utils.domObserverHelpers, Toolasha.Core.webSocketHook, Toolasha.Utils.abilityCalc, Toolasha.Utils.houseCostCalculator);
