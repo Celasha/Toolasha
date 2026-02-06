@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.17.5](https://github.com/Celasha/Toolasha/compare/v0.17.4...v0.17.5) (2026-02-06)
+
+
+### Bug Fixes
+
+* use external sprite references in combat score abilities panel ([d99464b](https://github.com/Celasha/Toolasha/commit/d99464b3fa2b3bf721b4b54932f74a76fea036d0))
+* use external sprite references in market history viewer ([e9a0f9b](https://github.com/Celasha/Toolasha/commit/e9a0f9bcc6361a79ee90df36bc00862f031f1609))
+
 ## [0.17.4](https://github.com/Celasha/Toolasha/compare/v0.17.3...v0.17.4) (2026-02-06)
 
 ### Bug Fixes
