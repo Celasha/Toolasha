@@ -813,27 +813,29 @@ class CombatScore {
     }
 
     /**
-     * Clone SVG symbol from DOM into defs
-     * @param {string} symbolId - Symbol ID to clone
-     * @returns {boolean} True if symbol was found and cloned
+     * Get the current abilities sprite URL from the DOM
+     * @returns {string|null} Abilities sprite URL or null if not found
      */
-    cloneSymbolToDefs(symbolId, defsElement) {
-        // Check if already cloned
-        if (defsElement.querySelector(`symbol[id="${symbolId}"]`)) {
-            return true;
+    getAbilitiesSpriteUrl() {
+        const abilityIcon = document.querySelector('use[href*="abilities_sprite"]');
+        if (!abilityIcon) {
+            return null;
         }
+        const href = abilityIcon.getAttribute('href');
+        return href ? href.split('#')[0] : null;
+    }
 
-        // Find the symbol in the game's loaded sprites
-        const symbol = document.querySelector(`symbol[id="${symbolId}"]`);
-        if (!symbol) {
-            console.warn('[CombatScore] Symbol not found:', symbolId);
-            return false;
+    /**
+     * Get the current items sprite URL from the DOM
+     * @returns {string|null} Items sprite URL or null if not found
+     */
+    getItemsSpriteUrl() {
+        const itemIcon = document.querySelector('use[href*="items_sprite"]');
+        if (!itemIcon) {
+            return null;
         }
-
-        // Clone and add to our defs
-        const clonedSymbol = symbol.cloneNode(true);
-        defsElement.appendChild(clonedSymbol);
-        return true;
+        const href = itemIcon.getAttribute('href');
+        return href ? href.split('#')[0] : null;
     }
 
     /**
@@ -854,36 +856,14 @@ class CombatScore {
             return ''; // Don't show section if no data
         }
 
-        // Create SVG with defs for all needed symbols
-        const symbolIds = [];
+        // Get sprite URLs
+        const abilitiesSpriteUrl = this.getAbilitiesSpriteUrl();
+        const itemsSpriteUrl = this.getItemsSpriteUrl();
 
-        // Collect all symbol IDs we need
-        abilities.forEach((ability) => {
-            symbolIds.push(ability.abilityHrid.split('/').pop());
-        });
-
-        Object.keys(consumableTriggers).forEach((itemHrid) => {
-            symbolIds.push(itemHrid.split('/').pop());
-        });
-
-        // Create a temporary container to build the defs
-        const tempSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        tempSvg.style.display = 'none';
-        const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
-        tempSvg.appendChild(defs);
-
-        // Clone all needed symbols
-        symbolIds.forEach((symbolId) => {
-            this.cloneSymbolToDefs(symbolId, defs);
-        });
-
-        // Get the defs HTML
-        const defsHtml = tempSvg.outerHTML;
-
-        let html = defsHtml;
+        let html = '';
 
         // Build abilities section
-        if (abilities.length > 0) {
+        if (abilities.length > 0 && abilitiesSpriteUrl) {
             for (const ability of abilities) {
                 const abilityIconId = ability.abilityHrid.split('/').pop();
                 const triggers = abilityTriggers[ability.abilityHrid];
@@ -892,7 +872,7 @@ class CombatScore {
                 html += `
                     <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 6px;">
                         <svg role="img" aria-label="Ability" style="width: 24px; height: 24px; flex-shrink: 0;">
-                            <use href="#${abilityIconId}"></use>
+                            <use href="${abilitiesSpriteUrl}#${abilityIconId}"></use>
                         </svg>
                         <span style="font-size: 0.75rem; color: #999; line-height: 1.3;">${triggerText}</span>
                     </div>
@@ -902,7 +882,7 @@ class CombatScore {
 
         // Build consumables section
         const consumableKeys = Object.keys(consumableTriggers);
-        if (consumableKeys.length > 0) {
+        if (consumableKeys.length > 0 && itemsSpriteUrl) {
             if (abilities.length > 0) {
                 html += `<div style="margin-top: 6px; margin-bottom: 6px; font-weight: 600; color: ${config.COLOR_TEXT_SECONDARY}; font-size: 0.85rem;">Food & Drinks</div>`;
             }
@@ -915,7 +895,7 @@ class CombatScore {
                 html += `
                     <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 6px;">
                         <svg role="img" aria-label="Item" style="width: 24px; height: 24px; flex-shrink: 0;">
-                            <use href="#${itemIconId}"></use>
+                            <use href="${itemsSpriteUrl}#${itemIconId}"></use>
                         </svg>
                         <span style="font-size: 0.75rem; color: #999; line-height: 1.3;">${triggerText}</span>
                     </div>
