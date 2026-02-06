@@ -178,14 +178,17 @@ class DataManager {
                 }
                 this.lastCharacterSwitchTime = now;
 
-                // FIX 3: Flush all pending storage writes before cleanup
-                try {
-                    if (storage && typeof storage.flushAll === 'function') {
-                        await storage.flushAll();
+                // Flush all pending storage writes before cleanup (non-blocking)
+                // Use setTimeout to prevent main thread blocking during character switch
+                setTimeout(async () => {
+                    try {
+                        if (storage && typeof storage.flushAll === 'function') {
+                            await storage.flushAll();
+                        }
+                    } catch (error) {
+                        console.error('[Toolasha] Failed to flush storage before character switch:', error);
                     }
-                } catch (error) {
-                    console.error('[Toolasha] Failed to flush storage before character switch:', error);
-                }
+                }, 0);
 
                 // Set switching flag to block feature initialization
                 this.isCharacterSwitching = true;
@@ -248,7 +251,9 @@ class DataManager {
 
             // Emit character_initialized event (trigger feature initialization)
             // Include flag to indicate if this is a character switch vs first load
-            this.emit('character_initialized', { ...data, _isCharacterSwitch: isCharacterSwitch });
+            // IMPORTANT: Mutate data object instead of spreading to avoid copying MB of data
+            data._isCharacterSwitch = isCharacterSwitch;
+            this.emit('character_initialized', data);
             connectionState.handleCharacterInitialized(data);
         });
 
@@ -833,17 +838,38 @@ class DataManager {
 
     /**
      * Emit event to all listeners
+     * Only character_switching is critical (must run immediately for proper cleanup)
+     * All other events including character_switched and character_initialized are deferred
      * @param {string} event - Event name
      * @param {*} data - Event data
      */
     emit(event, data) {
         const listeners = this.eventListeners.get(event) || [];
-        for (const listener of listeners) {
-            try {
-                listener(data);
-            } catch (error) {
-                console.error(`[Data Manager] Error in ${event} listener:`, error);
+
+        // Only character_switching must run immediately (cleanup phase)
+        // character_switched can be deferred - it just schedules re-init anyway
+        const isCritical = event === 'character_switching';
+
+        if (isCritical) {
+            // Run immediately on main thread
+            for (const listener of listeners) {
+                try {
+                    listener(data);
+                } catch (error) {
+                    console.error(`[Data Manager] Error in ${event} listener:`, error);
+                }
             }
+        } else {
+            // Defer all other events to prevent main thread blocking
+            setTimeout(() => {
+                for (const listener of listeners) {
+                    try {
+                        listener(data);
+                    } catch (error) {
+                        console.error(`[Data Manager] Error in ${event} listener:`, error);
+                    }
+                }
+            }, 0);
         }
     }
 }

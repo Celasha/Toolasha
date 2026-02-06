@@ -138,34 +138,47 @@ function setupCharacterSwitchHandler() {
 
         isSwitching = true;
 
-        try {
-            // Clear config cache to prevent stale settings
-            if (config && typeof config.clearSettingsCache === 'function') {
-                config.clearSettingsCache();
-            }
-
-            // Disable all active features (cleanup DOM elements, event listeners, etc.)
-            // IMPORTANT: Await all disable() calls to ensure cleanup completes
-            for (const feature of featureRegistry) {
-                try {
-                    const featureInstance = getFeatureInstance(feature.key);
-                    if (featureInstance && typeof featureInstance.disable === 'function') {
-                        const result = featureInstance.disable();
-                        // Await if disable() returns a promise
-                        if (result && typeof result.then === 'function') {
-                            await result;
-                        }
-                    }
-                } catch (error) {
-                    console.error(`[FeatureRegistry] Failed to disable ${feature.name}:`, error);
+        // Defer cleanup to next tick to prevent main thread blocking
+        setTimeout(async () => {
+            try {
+                // Clear config cache to prevent stale settings
+                if (config && typeof config.clearSettingsCache === 'function') {
+                    config.clearSettingsCache();
                 }
+
+                // Disable all active features (cleanup DOM elements, event listeners, etc.)
+                // Process all features without awaiting to avoid blocking
+                const cleanupPromises = [];
+                for (const feature of featureRegistry) {
+                    try {
+                        const featureInstance = getFeatureInstance(feature.key);
+                        if (featureInstance && typeof featureInstance.disable === 'function') {
+                            const result = featureInstance.disable();
+                            // Collect promises but don't await them synchronously
+                            if (result && typeof result.then === 'function') {
+                                cleanupPromises.push(
+                                    result.catch((error) => {
+                                        console.error(`[FeatureRegistry] Failed to disable ${feature.name}:`, error);
+                                    })
+                                );
+                            }
+                        }
+                    } catch (error) {
+                        console.error(`[FeatureRegistry] Failed to disable ${feature.name}:`, error);
+                    }
+                }
+
+                // Wait for all cleanup in parallel (non-blocking)
+                if (cleanupPromises.length > 0) {
+                    await Promise.all(cleanupPromises);
+                }
+            } catch (error) {
+                console.error('[FeatureRegistry] Error during character switch cleanup:', error);
+            } finally {
+                // Always reset flag to allow next character switch
+                isSwitching = false;
             }
-        } catch (error) {
-            console.error('[FeatureRegistry] Error during character switch cleanup:', error);
-        } finally {
-            // Always reset flag to allow next character switch
-            isSwitching = false;
-        }
+        }, 0);
     });
 
     // Handle character_switched event (re-initialization phase)

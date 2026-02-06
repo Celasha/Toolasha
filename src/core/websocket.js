@@ -22,6 +22,13 @@ class WebSocketHook {
          * 3) Direct socket listeners in attachSocketListeners
          */
         this.processedMessageEvents = new WeakSet();
+
+        /**
+         * Track processed messages by content hash to prevent duplicate JSON.parse
+         * Uses message content (first 100 chars) as key since same message can have different event objects
+         */
+        this.processedMessages = new Map(); // message hash -> timestamp
+        this.messageCleanupInterval = null;
         this.isSocketWrapped = false;
         this.originalWebSocket = null;
         this.currentWebSocket = null;
@@ -39,7 +46,14 @@ class WebSocketHook {
     async saveToStorage(key, value) {
         if (this.hasScriptManager) {
             // Tampermonkey: use GM storage for cross-domain sharing with Combat Sim
-            GM_setValue(key, value);
+            // Wrap in setTimeout to make async and prevent main thread blocking
+            setTimeout(() => {
+                try {
+                    GM_setValue(key, value);
+                } catch (error) {
+                    console.error('[WebSocket] Failed to save to GM storage:', error);
+                }
+            }, 0);
         }
         // Steam/standalone: Skip saving - Combat Sim import not possible without cross-domain storage
     }
@@ -294,6 +308,21 @@ class WebSocketHook {
      * @param {string} message - JSON string from WebSocket
      */
     processMessage(message) {
+        // Deduplicate by message content to prevent 4x JSON.parse on same message
+        // Use first 100 chars as hash (contains type + timestamp, unique enough)
+        const messageHash = message.substring(0, 100);
+
+        if (this.processedMessages.has(messageHash)) {
+            return; // Already processed this message, skip
+        }
+
+        this.processedMessages.set(messageHash, Date.now());
+
+        // Cleanup old entries every 100 messages to prevent memory leak
+        if (this.processedMessages.size > 100) {
+            this.cleanupProcessedMessages();
+        }
+
         try {
             const data = JSON.parse(message);
             const messageType = data.type;
@@ -447,10 +476,25 @@ class WebSocketHook {
     }
 
     /**
+     * Cleanup old processed message entries (keep last 50, remove rest)
+     */
+    cleanupProcessedMessages() {
+        const entries = Array.from(this.processedMessages.entries());
+        // Sort by timestamp, keep newest 50
+        entries.sort((a, b) => b[1] - a[1]);
+
+        this.processedMessages.clear();
+        for (let i = 0; i < Math.min(50, entries.length); i++) {
+            this.processedMessages.set(entries[i][0], entries[i][1]);
+        }
+    }
+
+    /**
      * Cleanup any pending retry timeouts
      */
     cleanup() {
         this.clearClientDataRetry();
+        this.processedMessages.clear();
     }
 
     /**

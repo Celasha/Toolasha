@@ -46,6 +46,9 @@ describe('DataManager', () => {
 
         handler(payload);
 
+        // Wait for deferred emit (setTimeout in emit())
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
         expect(listener).toHaveBeenCalledWith(payload);
     });
 
@@ -72,6 +75,9 @@ describe('DataManager', () => {
         expect(typeof handler).toBe('function');
 
         handler(payload);
+
+        // Wait for deferred emit (setTimeout in emit())
+        await new Promise((resolve) => setTimeout(resolve, 0));
 
         expect(dataManager.getMarketListings()).toEqual([
             { id: 1, price: 100, isSell: true },
