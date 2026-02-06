@@ -23,6 +23,8 @@ class ListingPriceDisplay {
         this.unregisterObserver = null;
         this.isInitialized = false;
         this.cleanupRegistry = createCleanupRegistry();
+        this.activeRefreshes = new WeakSet(); // Track tables being refreshed (debouncing)
+        this.tbodyObservers = new WeakMap(); // Track MutationObservers per tbody
     }
 
     /**
@@ -153,49 +155,76 @@ class ListingPriceDisplay {
 
     /**
      * Schedule a refresh to wait for React to populate table rows
+     * Uses MutationObserver to detect when rows are added instead of polling
      * @param {HTMLElement} tableNode - The listings table element
      */
     scheduleTableRefresh(tableNode) {
+        // Debouncing: prevent multiple concurrent refreshes on same table
+        if (this.activeRefreshes.has(tableNode)) {
+            return;
+        }
+
         const tbody = tableNode.querySelector('tbody');
         if (!tbody) {
             return;
         }
 
-        let timeoutId = null;
-        const maxAttempts = 20;
-        let attempts = 0;
+        this.activeRefreshes.add(tableNode);
 
-        const cleanup = () => {
-            if (timeoutId) {
-                clearTimeout(timeoutId);
-                timeoutId = null;
-            }
-        };
+        // Check if we should process immediately (rows already match)
+        const rowCount = tbody.querySelectorAll('tr').length;
+        const listingCount = Object.keys(this.allListings).length;
 
-        this.cleanupRegistry.registerCleanup(cleanup);
+        if (rowCount === listingCount && rowCount > 0) {
+            this.updateTable(tableNode);
+            this.activeRefreshes.delete(tableNode);
+            return;
+        }
 
-        const checkAndProcess = () => {
-            const rowCount = tbody.querySelectorAll('tr').length;
-            const listingCount = Object.keys(this.allListings).length;
+        // Otherwise, watch for row additions using MutationObserver
+        let observer = this.tbodyObservers.get(tbody);
 
-            if (rowCount === listingCount) {
-                cleanup();
+        if (!observer) {
+            observer = new MutationObserver(() => {
+                const currentRowCount = tbody.querySelectorAll('tr').length;
+                const currentListingCount = Object.keys(this.allListings).length;
+
+                if (currentRowCount === currentListingCount && currentRowCount > 0) {
+                    // Rows match - process the table
+                    this.updateTable(tableNode);
+                    this.activeRefreshes.delete(tableNode);
+
+                    // Disconnect observer until next refresh
+                    observer.disconnect();
+                }
+            });
+
+            this.tbodyObservers.set(tbody, observer);
+
+            this.cleanupRegistry.registerCleanup(() => {
+                observer.disconnect();
+                this.tbodyObservers.delete(tbody);
+            });
+        }
+
+        // Start observing for row additions
+        observer.observe(tbody, {
+            childList: true,
+            subtree: false,
+        });
+
+        // Safety timeout: if rows never match after 3 seconds, give up and process anyway
+        const safetyTimeoutId = setTimeout(() => {
+            observer.disconnect();
+            this.activeRefreshes.delete(tableNode);
+
+            // Process with whatever rows are available
+            if (tbody.querySelectorAll('tr').length > 0) {
                 this.updateTable(tableNode);
-                return;
             }
+        }, 3000);
 
-            attempts += 1;
-            if (attempts >= maxAttempts) {
-                cleanup();
-                console.error('[ListingPriceDisplay] Timeout waiting for React to update table');
-                return;
-            }
-
-            timeoutId = setTimeout(checkAndProcess, 100);
-            this.cleanupRegistry.registerTimeout(timeoutId);
-        };
-
-        checkAndProcess();
+        this.cleanupRegistry.registerTimeout(safetyTimeoutId);
     }
 
     /**
@@ -835,9 +864,17 @@ class ListingPriceDisplay {
      */
     disable() {
         console.log('[ListingPriceDisplay] 🧹 Cleaning up handlers');
+
+        // Cleanup all MutationObservers
+        for (const observer of this.tbodyObservers.values()) {
+            observer.disconnect();
+        }
+        this.tbodyObservers.clear();
+
         this.cleanupRegistry.cleanupAll();
         this.clearDisplays();
         this.allListings = {};
+        this.activeRefreshes = new WeakSet();
         this.isInitialized = false;
     }
 }
