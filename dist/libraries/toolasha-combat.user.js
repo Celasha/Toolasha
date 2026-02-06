@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha Combat Library
 // @namespace    http://tampermonkey.net/
-// @version      0.17.2
+// @version      0.17.3
 // @description  Combat library for Toolasha - Combat, abilities, and combat stats features
 // @author       Celasha
 // @license      CC-BY-NC-SA-4.0
@@ -7517,6 +7517,24 @@
         }
 
         /**
+         * Get the current items sprite URL from the DOM
+         * Extracts the sprite URL with webpack hash from an existing item icon
+         * @returns {string|null} Items sprite URL or null if not found
+         */
+        getItemsSpriteUrl() {
+            // Find any existing item icon in the DOM
+            const itemIcon = document.querySelector('use[href*="items_sprite"]');
+            if (!itemIcon) {
+                return null;
+            }
+
+            const href = itemIcon.getAttribute('href');
+            // Extract just the sprite URL without the #symbol part
+            // e.g., "/static/media/items_sprite.53ef17dc.svg#coin" → "/static/media/items_sprite.53ef17dc.svg"
+            return href ? href.split('#')[0] : null;
+        }
+
+        /**
          * Clone a symbol from the document into a defs element
          * @param {string} symbolId - Symbol ID to clone
          * @param {SVGDefsElement} defsElement - Defs element to append to
@@ -7817,15 +7835,8 @@
                 padding-right: 5px;
             `;
 
-                // Create shared defs for all item icons
-                const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-                svg.setAttribute('width', '0');
-                svg.setAttribute('height', '0');
-                svg.style.position = 'absolute';
-
-                const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
-                svg.appendChild(defs);
-                dropList.appendChild(svg);
+                // Get current items sprite URL from DOM (to handle webpack hash changes)
+                const itemsSpriteUrl = this.getItemsSpriteUrl();
 
                 // Show ALL items with icons
                 for (const item of stats.lootList) {
@@ -7838,18 +7849,30 @@
                 `;
 
                     // Create item icon
-                    if (item.icon) {
+                    if (item.itemHrid && itemsSpriteUrl) {
                         const iconSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
                         iconSvg.setAttribute('width', '16');
                         iconSvg.setAttribute('height', '16');
                         iconSvg.style.flexShrink = '0';
 
-                        // Extract symbol ID from icon path
-                        const iconName = item.icon.split('/').pop();
-                        this.cloneSymbolToDefs(iconName, defs);
+                        // Determine icon name based on HRID type
+                        let iconName;
+                        if (item.itemHrid.startsWith('/items/')) {
+                            // Regular items: /items/cheese → cheese
+                            iconName = item.itemHrid.split('/').pop();
+                        } else if (item.itemHrid.startsWith('/ability_books/')) {
+                            // Ability books: /ability_books/fireball → ability_book
+                            iconName = 'ability_book';
+                        } else if (item.itemHrid === '/consumables/coin') {
+                            // Coins: /consumables/coin → coin
+                            iconName = 'coin';
+                        } else {
+                            // Other types: extract last part of HRID
+                            iconName = item.itemHrid.split('/').pop();
+                        }
 
                         const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
-                        use.setAttribute('href', `#${iconName}`);
+                        use.setAttribute('href', `${itemsSpriteUrl}#${iconName}`);
                         iconSvg.appendChild(use);
 
                         itemDiv.appendChild(iconSvg);
