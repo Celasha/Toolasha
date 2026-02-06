@@ -21,6 +21,7 @@ class EstimatedListingAge {
         this.unregisterWebSocket = null;
         this.unregisterObserver = null;
         this.storageKey = 'marketListingTimestamps';
+        this.orderBooksCacheKey = 'marketOrderBooksCache';
         this.isInitialized = false;
     }
 
@@ -74,6 +75,9 @@ class EstimatedListingAge {
 
         // Load historical data from storage
         await this.loadHistoricalData();
+
+        // Load cached order books from storage
+        await this.loadOrderBooksCache();
 
         // Load initial listings from dataManager
         this.loadInitialListings();
@@ -134,6 +138,19 @@ class EstimatedListingAge {
     }
 
     /**
+     * Load cached order books from IndexedDB
+     */
+    async loadOrderBooksCache() {
+        try {
+            const stored = await storage.getJSON(this.orderBooksCacheKey, 'marketListings', {});
+            this.orderBooksCache = stored || {};
+        } catch (error) {
+            console.error('[EstimatedListingAge] Failed to load order books cache:', error);
+            this.orderBooksCache = {};
+        }
+    }
+
+    /**
      * Save listing data to IndexedDB
      */
     async saveHistoricalData() {
@@ -141,6 +158,17 @@ class EstimatedListingAge {
             await storage.setJSON(this.storageKey, this.knownListings, 'marketListings', true);
         } catch (error) {
             console.error('[EstimatedListingAge] Failed to save historical data:', error);
+        }
+    }
+
+    /**
+     * Save order books cache to IndexedDB
+     */
+    async saveOrderBooksCache() {
+        try {
+            await storage.setJSON(this.orderBooksCacheKey, this.orderBooksCache, 'marketListings', true);
+        } catch (error) {
+            console.error('[EstimatedListingAge] Failed to save order books cache:', error);
         }
     }
 
@@ -170,8 +198,17 @@ class EstimatedListingAge {
         const orderBookHandler = (data) => {
             if (data.marketItemOrderBooks) {
                 const itemHrid = data.marketItemOrderBooks.itemHrid;
-                this.orderBooksCache[itemHrid] = data.marketItemOrderBooks;
+
+                // Store with timestamp for staleness tracking
+                this.orderBooksCache[itemHrid] = {
+                    data: data.marketItemOrderBooks,
+                    lastUpdated: Date.now(),
+                };
+
                 this.currentItemHrid = itemHrid; // Track current item
+
+                // Save to storage (debounced)
+                this.saveOrderBooksCache();
 
                 // Clear processed flags to re-render with new data
                 document.querySelectorAll('.mwi-estimated-age-set').forEach((container) => {
@@ -305,7 +342,11 @@ class EstimatedListingAge {
             return;
         }
 
-        const orderBookData = this.orderBooksCache[currentItemHrid];
+        const cachedEntry = this.orderBooksCache[currentItemHrid];
+        const orderBookData = cachedEntry.data || cachedEntry; // Support both new and old format
+
+        // Check if data is stale (>1 hour old)
+        const isStale = cachedEntry.lastUpdated && Date.now() - cachedEntry.lastUpdated > 60 * 60 * 1000;
 
         // Get current enhancement level being viewed
         const enhancementLevel = this.getCurrentEnhancementLevel();
@@ -331,7 +372,15 @@ class EstimatedListingAge {
         const header = document.createElement('th');
         header.classList.add('mwi-estimated-age-header');
         header.textContent = '~Age';
-        header.title = 'Estimated listing age (based on listing ID)';
+
+        // Add staleness indicator to tooltip if data is old
+        if (isStale) {
+            const ageHours = Math.floor((Date.now() - cachedEntry.lastUpdated) / (60 * 60 * 1000));
+            header.title = `Estimated listing age (Data is ${ageHours}h old - visit item page to refresh)`;
+        } else {
+            header.title = 'Estimated listing age (based on listing ID)';
+        }
+
         thead.appendChild(header);
 
         // Track which of user's listings have been matched to prevent duplicates
@@ -369,7 +418,8 @@ class EstimatedListingAge {
                     const estimatedTimestamp = this.estimateTimestamp(listingId);
                     const formatted = this.formatTimestamp(estimatedTimestamp);
                     cell.textContent = `~${formatted}`;
-                    cell.style.color = '#999999'; // Gray to indicate estimate
+                    // Use muted gray for stale data, normal gray for fresh data
+                    cell.style.color = isStale ? '#666666' : '#999999';
                     cell.style.fontSize = '0.9em';
                 }
             } else if (index === listings.length) {

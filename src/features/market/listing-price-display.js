@@ -682,7 +682,19 @@ class ListingPriceDisplay {
         span.classList.add('mwi-listing-price-value');
 
         // Get order book data from estimatedListingAge module (shared cache)
-        const orderBookData = estimatedListingAge.orderBooksCache[itemHrid];
+        const cachedEntry = estimatedListingAge.orderBooksCache[itemHrid];
+
+        if (!cachedEntry) {
+            // No order book data available
+            span.textContent = 'N/A';
+            span.style.color = '#666666';
+            span.style.fontSize = '0.9em';
+            cell.appendChild(span);
+            return cell;
+        }
+
+        // Support both new format (with timestamp) and old format (direct data)
+        const orderBookData = cachedEntry.data || cachedEntry;
 
         if (!orderBookData || !orderBookData.orderBooks || orderBookData.orderBooks.length === 0) {
             // No order book data available
