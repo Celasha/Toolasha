@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha Market Library
 // @namespace    http://tampermonkey.net/
-// @version      0.17.5
+// @version      0.17.6
 // @description  Market library for Toolasha - Market, inventory, and economy features
 // @author       Celasha
 // @license      CC-BY-NC-SA-4.0
@@ -6327,7 +6327,8 @@
         async loadListings() {
             try {
                 const stored = await storage.getJSON(this.storageKey, 'marketListings', []);
-                this.listings = stored;
+                // Filter out listings without itemHrid (e.g., seed listings from estimated-listing-age)
+                this.listings = stored.filter((listing) => listing && listing.itemHrid);
                 this.cachedDateRange = null; // Clear cache when loading new data
                 this.applyFilters();
             } catch (error) {
