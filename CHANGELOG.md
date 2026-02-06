@@ -2,11 +2,10 @@
 
 ## [0.17.4](https://github.com/Celasha/Toolasha/compare/v0.17.3...v0.17.4) (2026-02-06)
 
-
 ### Bug Fixes
 
-* resolve dungeon icon display and filter persistence issues ([d5c455d](https://github.com/Celasha/Toolasha/commit/d5c455d20c31f9971ee41487c5c44bcca2133387))
-* resolve market history viewer button not appearing in settings ([04be752](https://github.com/Celasha/Toolasha/commit/04be752a6d3bfc4425d4e39c5dc1c2afce9706f5))
+- resolve dungeon icon display and filter persistence issues ([d5c455d](https://github.com/Celasha/Toolasha/commit/d5c455d20c31f9971ee41487c5c44bcca2133387))
+- resolve market history viewer button not appearing in settings ([04be752](https://github.com/Celasha/Toolasha/commit/04be752a6d3bfc4425d4e39c5dc1c2afce9706f5))
 
 ## [0.17.3](https://github.com/Celasha/Toolasha/compare/v0.17.2...v0.17.3) (2026-02-06)
 
