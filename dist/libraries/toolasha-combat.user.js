@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha Combat Library
 // @namespace    http://tampermonkey.net/
-// @version      0.17.6
+// @version      0.18.0
 // @description  Combat library for Toolasha - Combat, abilities, and combat stats features
 // @author       Celasha
 // @license      CC-BY-NC-SA-4.0
@@ -6767,8 +6767,16 @@
 
                         // Process consumables using event-based consumption data
                         const consumablesWithConsumed = [];
+                        const seenItems = new Set(); // Deduplicate by itemHrid (game allows 1 of each type)
+
                         if (player.combatConsumables) {
                             for (const consumable of player.combatConsumables) {
+                                // Skip duplicate entries (game UI enforces 1 per type, but WS data may have dupes)
+                                if (seenItems.has(consumable.itemHrid)) {
+                                    continue;
+                                }
+                                seenItems.add(consumable.itemHrid);
+
                                 // Get actual consumed count from consumption events
                                 const totalActualConsumed =
                                     this.consumableActualConsumed[trackingKey]?.[consumable.itemHrid] || 0;
@@ -7235,6 +7243,12 @@
             );
 
             if (!tabsContainer) {
+                return;
+            }
+
+            // Verify we're in a Combat panel, not Marketplace or other panels
+            const combatPanel = tabsContainer.closest('[class*="CombatPanel_combatPanel"]');
+            if (!combatPanel) {
                 return;
             }
 

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha Core Library
 // @namespace    http://tampermonkey.net/
-// @version      0.17.6
+// @version      0.18.0
 // @description  Core library for Toolasha - Core infrastructure and API clients
 // @author       Celasha
 // @license      CC-BY-NC-SA-4.0
@@ -1720,6 +1720,13 @@
              * 3) Direct socket listeners in attachSocketListeners
              */
             this.processedMessageEvents = new WeakSet();
+
+            /**
+             * Track processed messages by content hash to prevent duplicate JSON.parse
+             * Uses message content (first 100 chars) as key since same message can have different event objects
+             */
+            this.processedMessages = new Map(); // message hash -> timestamp
+            this.messageCleanupInterval = null;
             this.isSocketWrapped = false;
             this.originalWebSocket = null;
             this.currentWebSocket = null;
@@ -1737,7 +1744,14 @@
         async saveToStorage(key, value) {
             if (this.hasScriptManager) {
                 // Tampermonkey: use GM storage for cross-domain sharing with Combat Sim
-                GM_setValue(key, value);
+                // Wrap in setTimeout to make async and prevent main thread blocking
+                setTimeout(() => {
+                    try {
+                        GM_setValue(key, value);
+                    } catch (error) {
+                        console.error('[WebSocket] Failed to save to GM storage:', error);
+                    }
+                }, 0);
             }
             // Steam/standalone: Skip saving - Combat Sim import not possible without cross-domain storage
         }
@@ -1992,20 +2006,52 @@
          * @param {string} message - JSON string from WebSocket
          */
         processMessage(message) {
+            // Parse message type first to determine deduplication strategy
+            let messageType;
+            try {
+                // Quick parse to get type (avoid full parse for duplicates)
+                const typeMatch = message.match(/"type":"([^"]+)"/);
+                messageType = typeMatch ? typeMatch[1] : null;
+            } catch {
+                // If regex fails, skip deduplication and process normally
+                messageType = null;
+            }
+
+            // Skip deduplication for quest updates (quest content changes are beyond 100 chars)
+            // The quest slot ID stays the same, causing false duplicate detection
+            const skipDedup = messageType === 'quests_updated';
+
+            if (!skipDedup) {
+                // Deduplicate by message content to prevent 4x JSON.parse on same message
+                // Use first 100 chars as hash (contains type + timestamp, unique enough)
+                const messageHash = message.substring(0, 100);
+
+                if (this.processedMessages.has(messageHash)) {
+                    return; // Already processed this message, skip
+                }
+
+                this.processedMessages.set(messageHash, Date.now());
+
+                // Cleanup old entries every 100 messages to prevent memory leak
+                if (this.processedMessages.size > 100) {
+                    this.cleanupProcessedMessages();
+                }
+            }
+
             try {
                 const data = JSON.parse(message);
-                const messageType = data.type;
+                const parsedMessageType = data.type;
 
                 // Save critical data to GM storage for Combat Sim export
-                this.saveCombatSimData(messageType, message);
+                this.saveCombatSimData(parsedMessageType, message);
 
                 // Call registered handlers for this message type
-                const handlers = this.messageHandlers.get(messageType) || [];
+                const handlers = this.messageHandlers.get(parsedMessageType) || [];
                 for (const handler of handlers) {
                     try {
                         handler(data);
                     } catch (error) {
-                        console.error(`[WebSocket] Handler error for ${messageType}:`, error);
+                        console.error(`[WebSocket] Handler error for ${parsedMessageType}:`, error);
                     }
                 }
 
@@ -2145,10 +2191,25 @@
         }
 
         /**
+         * Cleanup old processed message entries (keep last 50, remove rest)
+         */
+        cleanupProcessedMessages() {
+            const entries = Array.from(this.processedMessages.entries());
+            // Sort by timestamp, keep newest 50
+            entries.sort((a, b) => b[1] - a[1]);
+
+            this.processedMessages.clear();
+            for (let i = 0; i < Math.min(50, entries.length); i++) {
+                this.processedMessages.set(entries[i][0], entries[i][1]);
+            }
+        }
+
+        /**
          * Cleanup any pending retry timeouts
          */
         cleanup() {
             this.clearClientDataRetry();
+            this.processedMessages.clear();
         }
 
         /**
@@ -2598,14 +2659,17 @@
                     }
                     this.lastCharacterSwitchTime = now;
 
-                    // FIX 3: Flush all pending storage writes before cleanup
-                    try {
-                        if (storage && typeof storage.flushAll === 'function') {
-                            await storage.flushAll();
+                    // Flush all pending storage writes before cleanup (non-blocking)
+                    // Use setTimeout to prevent main thread blocking during character switch
+                    setTimeout(async () => {
+                        try {
+                            if (storage && typeof storage.flushAll === 'function') {
+                                await storage.flushAll();
+                            }
+                        } catch (error) {
+                            console.error('[Toolasha] Failed to flush storage before character switch:', error);
                         }
-                    } catch (error) {
-                        console.error('[Toolasha] Failed to flush storage before character switch:', error);
-                    }
+                    }, 0);
 
                     // Set switching flag to block feature initialization
                     this.isCharacterSwitching = true;
@@ -2668,7 +2732,9 @@
 
                 // Emit character_initialized event (trigger feature initialization)
                 // Include flag to indicate if this is a character switch vs first load
-                this.emit('character_initialized', { ...data, _isCharacterSwitch: isCharacterSwitch });
+                // IMPORTANT: Mutate data object instead of spreading to avoid copying MB of data
+                data._isCharacterSwitch = isCharacterSwitch;
+                this.emit('character_initialized', data);
                 connectionState.handleCharacterInitialized(data);
             });
 
@@ -3253,17 +3319,38 @@
 
         /**
          * Emit event to all listeners
+         * Only character_switching is critical (must run immediately for proper cleanup)
+         * All other events including character_switched and character_initialized are deferred
          * @param {string} event - Event name
          * @param {*} data - Event data
          */
         emit(event, data) {
             const listeners = this.eventListeners.get(event) || [];
-            for (const listener of listeners) {
-                try {
-                    listener(data);
-                } catch (error) {
-                    console.error(`[Data Manager] Error in ${event} listener:`, error);
+
+            // Only character_switching must run immediately (cleanup phase)
+            // character_switched can be deferred - it just schedules re-init anyway
+            const isCritical = event === 'character_switching';
+
+            if (isCritical) {
+                // Run immediately on main thread
+                for (const listener of listeners) {
+                    try {
+                        listener(data);
+                    } catch (error) {
+                        console.error(`[Data Manager] Error in ${event} listener:`, error);
+                    }
                 }
+            } else {
+                // Defer all other events to prevent main thread blocking
+                setTimeout(() => {
+                    for (const listener of listeners) {
+                        try {
+                            listener(data);
+                        } catch (error) {
+                            console.error(`[Data Manager] Error in ${event} listener:`, error);
+                        }
+                    }
+                }, 0);
             }
         }
     }
@@ -4326,34 +4413,47 @@
 
             isSwitching = true;
 
-            try {
-                // Clear config cache to prevent stale settings
-                if (config && typeof config.clearSettingsCache === 'function') {
-                    config.clearSettingsCache();
-                }
-
-                // Disable all active features (cleanup DOM elements, event listeners, etc.)
-                // IMPORTANT: Await all disable() calls to ensure cleanup completes
-                for (const feature of featureRegistry) {
-                    try {
-                        const featureInstance = getFeatureInstance(feature.key);
-                        if (featureInstance && typeof featureInstance.disable === 'function') {
-                            const result = featureInstance.disable();
-                            // Await if disable() returns a promise
-                            if (result && typeof result.then === 'function') {
-                                await result;
-                            }
-                        }
-                    } catch (error) {
-                        console.error(`[FeatureRegistry] Failed to disable ${feature.name}:`, error);
+            // Defer cleanup to next tick to prevent main thread blocking
+            setTimeout(async () => {
+                try {
+                    // Clear config cache to prevent stale settings
+                    if (config && typeof config.clearSettingsCache === 'function') {
+                        config.clearSettingsCache();
                     }
+
+                    // Disable all active features (cleanup DOM elements, event listeners, etc.)
+                    // Process all features without awaiting to avoid blocking
+                    const cleanupPromises = [];
+                    for (const feature of featureRegistry) {
+                        try {
+                            const featureInstance = getFeatureInstance(feature.key);
+                            if (featureInstance && typeof featureInstance.disable === 'function') {
+                                const result = featureInstance.disable();
+                                // Collect promises but don't await them synchronously
+                                if (result && typeof result.then === 'function') {
+                                    cleanupPromises.push(
+                                        result.catch((error) => {
+                                            console.error(`[FeatureRegistry] Failed to disable ${feature.name}:`, error);
+                                        })
+                                    );
+                                }
+                            }
+                        } catch (error) {
+                            console.error(`[FeatureRegistry] Failed to disable ${feature.name}:`, error);
+                        }
+                    }
+
+                    // Wait for all cleanup in parallel (non-blocking)
+                    if (cleanupPromises.length > 0) {
+                        await Promise.all(cleanupPromises);
+                    }
+                } catch (error) {
+                    console.error('[FeatureRegistry] Error during character switch cleanup:', error);
+                } finally {
+                    // Always reset flag to allow next character switch
+                    isSwitching = false;
                 }
-            } catch (error) {
-                console.error('[FeatureRegistry] Error during character switch cleanup:', error);
-            } finally {
-                // Always reset flag to allow next character switch
-                isSwitching = false;
-            }
+            }, 0);
         });
 
         // Handle character_switched event (re-initialization phase)

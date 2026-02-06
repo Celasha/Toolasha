@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha Market Library
 // @namespace    http://tampermonkey.net/
-// @version      0.17.6
+// @version      0.18.0
 // @description  Market library for Toolasha - Market, inventory, and economy features
 // @author       Celasha
 // @license      CC-BY-NC-SA-4.0
@@ -4356,6 +4356,7 @@
             this.unregisterWebSocket = null;
             this.unregisterObserver = null;
             this.storageKey = 'marketListingTimestamps';
+            this.orderBooksCacheKey = 'marketOrderBooksCache';
             this.isInitialized = false;
         }
 
@@ -4409,6 +4410,9 @@
 
             // Load historical data from storage
             await this.loadHistoricalData();
+
+            // Load cached order books from storage
+            await this.loadOrderBooksCache();
 
             // Load initial listings from dataManager
             this.loadInitialListings();
@@ -4469,6 +4473,19 @@
         }
 
         /**
+         * Load cached order books from IndexedDB
+         */
+        async loadOrderBooksCache() {
+            try {
+                const stored = await storage.getJSON(this.orderBooksCacheKey, 'marketListings', {});
+                this.orderBooksCache = stored || {};
+            } catch (error) {
+                console.error('[EstimatedListingAge] Failed to load order books cache:', error);
+                this.orderBooksCache = {};
+            }
+        }
+
+        /**
          * Save listing data to IndexedDB
          */
         async saveHistoricalData() {
@@ -4476,6 +4493,17 @@
                 await storage.setJSON(this.storageKey, this.knownListings, 'marketListings', true);
             } catch (error) {
                 console.error('[EstimatedListingAge] Failed to save historical data:', error);
+            }
+        }
+
+        /**
+         * Save order books cache to IndexedDB
+         */
+        async saveOrderBooksCache() {
+            try {
+                await storage.setJSON(this.orderBooksCacheKey, this.orderBooksCache, 'marketListings', true);
+            } catch (error) {
+                console.error('[EstimatedListingAge] Failed to save order books cache:', error);
             }
         }
 
@@ -4505,8 +4533,17 @@
             const orderBookHandler = (data) => {
                 if (data.marketItemOrderBooks) {
                     const itemHrid = data.marketItemOrderBooks.itemHrid;
-                    this.orderBooksCache[itemHrid] = data.marketItemOrderBooks;
+
+                    // Store with timestamp for staleness tracking
+                    this.orderBooksCache[itemHrid] = {
+                        data: data.marketItemOrderBooks,
+                        lastUpdated: Date.now(),
+                    };
+
                     this.currentItemHrid = itemHrid; // Track current item
+
+                    // Save to storage (debounced)
+                    this.saveOrderBooksCache();
 
                     // Clear processed flags to re-render with new data
                     document.querySelectorAll('.mwi-estimated-age-set').forEach((container) => {
@@ -4640,7 +4677,9 @@
                 return;
             }
 
-            const orderBookData = this.orderBooksCache[currentItemHrid];
+            const cacheEntry = this.orderBooksCache[currentItemHrid];
+            // Support both old format (direct data) and new format ({data, lastUpdated})
+            const orderBookData = cacheEntry.data || cacheEntry;
 
             // Get current enhancement level being viewed
             const enhancementLevel = this.getCurrentEnhancementLevel();
@@ -4870,6 +4909,42 @@
         }
 
         /**
+         * Get color based on data staleness
+         * @param {number} lastUpdated - Timestamp when data was last updated
+         * @returns {string} Color code for display
+         */
+        getStalenessColor(lastUpdated) {
+            if (!lastUpdated) {
+                return '#999999'; // Gray for unknown age
+            }
+
+            const age = Date.now() - lastUpdated;
+            const minutes = age / (60 * 1000);
+            const hours = age / (60 * 60 * 1000);
+
+            if (minutes < 15) return '#00AA00'; // < 15 min: dark green (fresh)
+            if (hours < 1) return '#00FF00'; // < 1 hour: light green (recent)
+            if (hours < 4) return '#FFAA00'; // < 4 hours: yellow (moderate)
+            if (hours < 12) return '#FF6600'; // < 12 hours: orange (stale)
+            return '#FF0000'; // 12+ hours: red (very stale)
+        }
+
+        /**
+         * Get tooltip text for staleness
+         * @param {number} lastUpdated - Timestamp when data was last updated
+         * @returns {string} Tooltip text
+         */
+        getStalenessTooltip(lastUpdated) {
+            if (!lastUpdated) {
+                return 'Order book data - Visit market page to refresh';
+            }
+
+            const age = Date.now() - lastUpdated;
+            const relativeTime = formatters_js.formatRelativeTime(age);
+            return `Order book data from ${relativeTime} ago - Visit market page to refresh`;
+        }
+
+        /**
          * Estimate timestamp for a listing ID
          * @param {number} listingId - Listing ID to estimate
          * @returns {number} Estimated timestamp in milliseconds
@@ -5033,6 +5108,8 @@
             this.unregisterObserver = null;
             this.isInitialized = false;
             this.cleanupRegistry = cleanupRegistry_js.createCleanupRegistry();
+            this.activeRefreshes = new WeakSet(); // Track tables being refreshed (debouncing)
+            this.tbodyObservers = new WeakMap(); // Track MutationObservers per tbody
         }
 
         /**
@@ -5163,49 +5240,76 @@
 
         /**
          * Schedule a refresh to wait for React to populate table rows
+         * Uses MutationObserver to detect when rows are added instead of polling
          * @param {HTMLElement} tableNode - The listings table element
          */
         scheduleTableRefresh(tableNode) {
+            // Debouncing: prevent multiple concurrent refreshes on same table
+            if (this.activeRefreshes.has(tableNode)) {
+                return;
+            }
+
             const tbody = tableNode.querySelector('tbody');
             if (!tbody) {
                 return;
             }
 
-            let timeoutId = null;
-            const maxAttempts = 20;
-            let attempts = 0;
+            this.activeRefreshes.add(tableNode);
 
-            const cleanup = () => {
-                if (timeoutId) {
-                    clearTimeout(timeoutId);
-                    timeoutId = null;
-                }
-            };
+            // Check if we should process immediately (rows already match)
+            const rowCount = tbody.querySelectorAll('tr').length;
+            const listingCount = Object.keys(this.allListings).length;
 
-            this.cleanupRegistry.registerCleanup(cleanup);
+            if (rowCount === listingCount && rowCount > 0) {
+                this.updateTable(tableNode);
+                this.activeRefreshes.delete(tableNode);
+                return;
+            }
 
-            const checkAndProcess = () => {
-                const rowCount = tbody.querySelectorAll('tr').length;
-                const listingCount = Object.keys(this.allListings).length;
+            // Otherwise, watch for row additions using MutationObserver
+            let observer = this.tbodyObservers.get(tbody);
 
-                if (rowCount === listingCount) {
-                    cleanup();
+            if (!observer) {
+                observer = new MutationObserver(() => {
+                    const currentRowCount = tbody.querySelectorAll('tr').length;
+                    const currentListingCount = Object.keys(this.allListings).length;
+
+                    if (currentRowCount === currentListingCount && currentRowCount > 0) {
+                        // Rows match - process the table
+                        this.updateTable(tableNode);
+                        this.activeRefreshes.delete(tableNode);
+
+                        // Disconnect observer until next refresh
+                        observer.disconnect();
+                    }
+                });
+
+                this.tbodyObservers.set(tbody, observer);
+
+                this.cleanupRegistry.registerCleanup(() => {
+                    observer.disconnect();
+                    this.tbodyObservers.delete(tbody);
+                });
+            }
+
+            // Start observing for row additions
+            observer.observe(tbody, {
+                childList: true,
+                subtree: false,
+            });
+
+            // Safety timeout: if rows never match after 3 seconds, give up and process anyway
+            const safetyTimeoutId = setTimeout(() => {
+                observer.disconnect();
+                this.activeRefreshes.delete(tableNode);
+
+                // Process with whatever rows are available
+                if (tbody.querySelectorAll('tr').length > 0) {
                     this.updateTable(tableNode);
-                    return;
                 }
+            }, 3000);
 
-                attempts += 1;
-                if (attempts >= maxAttempts) {
-                    cleanup();
-                    console.error('[ListingPriceDisplay] Timeout waiting for React to update table');
-                    return;
-                }
-
-                timeoutId = setTimeout(checkAndProcess, 100);
-                this.cleanupRegistry.registerTimeout(timeoutId);
-            };
-
-            checkAndProcess();
+            this.cleanupRegistry.registerTimeout(safetyTimeoutId);
         }
 
         /**
@@ -5663,7 +5767,20 @@
             span.classList.add('mwi-listing-price-value');
 
             // Get order book data from estimatedListingAge module (shared cache)
-            const orderBookData = estimatedListingAge.orderBooksCache[itemHrid];
+            const cacheEntry = estimatedListingAge.orderBooksCache[itemHrid];
+
+            if (!cacheEntry) {
+                // No order book data available
+                span.textContent = 'N/A';
+                span.style.color = '#666666';
+                span.style.fontSize = '0.9em';
+                cell.appendChild(span);
+                return cell;
+            }
+
+            // Support both old format (direct data) and new format ({data, lastUpdated})
+            const orderBookData = cacheEntry.data || cacheEntry;
+            const lastUpdated = cacheEntry.lastUpdated;
 
             if (!orderBookData || !orderBookData.orderBooks || orderBookData.orderBooks.length === 0) {
                 // No order book data available
@@ -5714,8 +5831,15 @@
             const formatted = formatters_js.formatRelativeTime(ageMs);
 
             span.textContent = `~${formatted}`;
-            span.style.color = '#999999'; // Gray to indicate estimate
+
+            // Apply staleness color based on when order book data was fetched
+            span.style.color = estimatedListingAge.getStalenessColor(lastUpdated);
             span.style.fontSize = '0.9em';
+
+            // Add tooltip with staleness info
+            if (lastUpdated) {
+                span.title = estimatedListingAge.getStalenessTooltip(lastUpdated);
+            }
 
             cell.appendChild(span);
             return cell;
@@ -5845,9 +5969,17 @@
          */
         disable() {
             console.log('[ListingPriceDisplay] 🧹 Cleaning up handlers');
+
+            // Cleanup all MutationObservers
+            for (const observer of this.tbodyObservers.values()) {
+                observer.disconnect();
+            }
+            this.tbodyObservers.clear();
+
             this.cleanupRegistry.cleanupAll();
             this.clearDisplays();
             this.allListings = {};
+            this.activeRefreshes = new WeakSet();
             this.isInitialized = false;
         }
     }
