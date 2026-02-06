@@ -77,6 +77,12 @@ class CombatStatsUI {
             return;
         }
 
+        // Verify we're in a Combat panel, not Marketplace or other panels
+        const combatPanel = tabsContainer.closest('[class*="CombatPanel_combatPanel"]');
+        if (!combatPanel) {
+            return;
+        }
+
         // Check if button already exists
         if (tabsContainer.querySelector('.toolasha-combat-stats-btn')) {
             return;
