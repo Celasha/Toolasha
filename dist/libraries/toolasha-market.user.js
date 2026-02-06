@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha Market Library
 // @namespace    http://tampermonkey.net/
-// @version      0.17.4
+// @version      0.17.5
 // @description  Market library for Toolasha - Market, inventory, and economy features
 // @author       Celasha
 // @license      CC-BY-NC-SA-4.0
@@ -6191,28 +6191,16 @@
         }
 
         /**
-         * Clone SVG symbol from DOM into defs
-         * @param {string} symbolId - Symbol ID to clone
-         * @param {SVGDefsElement} defsElement - Defs element to append to
-         * @returns {boolean} True if symbol was found and cloned
+         * Get the current items sprite URL from the DOM
+         * @returns {string|null} Items sprite URL or null if not found
          */
-        cloneSymbolToDefs(symbolId, defsElement) {
-            // Check if already cloned
-            if (defsElement.querySelector(`symbol[id="${symbolId}"]`)) {
-                return true;
+        getItemsSpriteUrl() {
+            const itemIcon = document.querySelector('use[href*="items_sprite"]');
+            if (!itemIcon) {
+                return null;
             }
-
-            // Find the symbol in the game's loaded sprites
-            const symbol = document.querySelector(`symbol[id="${symbolId}"]`);
-            if (!symbol) {
-                console.warn('[MarketHistoryViewer] Symbol not found:', symbolId);
-                return false;
-            }
-
-            // Clone and add to our defs
-            const clonedSymbol = symbol.cloneNode(true);
-            defsElement.appendChild(clonedSymbol);
-            return true;
+            const href = itemIcon.getAttribute('href');
+            return href ? href.split('#')[0] : null;
         }
 
         /**
@@ -7040,24 +7028,20 @@
 
                 // Add icon if provided
                 if (badge.icon) {
-                    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-                    svg.setAttribute('width', '16');
-                    svg.setAttribute('height', '16');
-                    svg.style.flexShrink = '0';
+                    const itemsSpriteUrl = this.getItemsSpriteUrl();
+                    if (itemsSpriteUrl) {
+                        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                        svg.setAttribute('width', '16');
+                        svg.setAttribute('height', '16');
+                        svg.style.flexShrink = '0';
 
-                    // Create defs section
-                    const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
-                    svg.appendChild(defs);
-
-                    // Clone the symbol into defs
-                    const iconName = badge.icon.split('/').pop();
-                    this.cloneSymbolToDefs(iconName, defs);
-
-                    // Create use element with local reference
-                    const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
-                    use.setAttribute('href', `#${iconName}`);
-                    svg.appendChild(use);
-                    badgeEl.appendChild(svg);
+                        // Extract icon name and create use element with external sprite reference
+                        const iconName = badge.icon.split('/').pop();
+                        const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+                        use.setAttribute('href', `${itemsSpriteUrl}#${iconName}`);
+                        svg.appendChild(use);
+                        badgeEl.appendChild(svg);
+                    }
                 }
 
                 const label = document.createElement('span');
@@ -7296,25 +7280,23 @@
                 `;
 
                     // Create SVG icon
-                    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-                    svg.setAttribute('width', '20');
-                    svg.setAttribute('height', '20');
+                    const itemsSpriteUrl = this.getItemsSpriteUrl();
+                    if (itemsSpriteUrl) {
+                        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                        svg.setAttribute('width', '20');
+                        svg.setAttribute('height', '20');
 
-                    // Create defs section
-                    const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
-                    svg.appendChild(defs);
+                        // Extract icon name and create use element with external sprite reference
+                        const iconName = listing.itemHrid.split('/').pop();
+                        const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+                        use.setAttribute('href', `${itemsSpriteUrl}#${iconName}`);
+                        svg.appendChild(use);
 
-                    // Clone the symbol into defs
-                    const iconName = listing.itemHrid.split('/').pop();
-                    this.cloneSymbolToDefs(iconName, defs);
+                        // Add icon
+                        itemCell.appendChild(svg);
+                    }
 
-                    // Create use element with local reference
-                    const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
-                    use.setAttribute('href', `#${iconName}`);
-                    svg.appendChild(use);
-
-                    // Add icon and text
-                    itemCell.appendChild(svg);
+                    // Add text
                     const textSpan = document.createElement('span');
                     textSpan.textContent = this.getItemName(listing.itemHrid);
                     itemCell.appendChild(textSpan);
