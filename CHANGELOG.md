@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.17.3](https://github.com/Celasha/Toolasha/compare/v0.17.2...v0.17.3) (2026-02-06)
+
+### Bug Fixes
+
+- use external sprite URLs for task icons and filters ([41255e9](https://github.com/Celasha/Toolasha/commit/41255e9682446a6d29c365812c9da95060d19f7a))
+
 ## [0.17.2](https://github.com/Celasha/Toolasha/compare/v0.17.1...v0.17.2) (2026-02-05)
 
 ### Bug Fixes
