@@ -2,23 +2,20 @@
 
 ## [0.18.0](https://github.com/Celasha/Toolasha/compare/v0.17.6...v0.18.0) (2026-02-06)
 
-
 ### Features
 
-* persist order book cache with color-coded staleness indicators ([6d21937](https://github.com/Celasha/Toolasha/commit/6d21937aba2ea9ee5c731e5680d10b852cc25c1b))
-
+- persist order book cache with color-coded staleness indicators ([6d21937](https://github.com/Celasha/Toolasha/commit/6d21937aba2ea9ee5c731e5680d10b852cc25c1b))
 
 ### Bug Fixes
 
-* persist order book cache across page refreshes ([cde5fe8](https://github.com/Celasha/Toolasha/commit/cde5fe8354bc6b3d687a0582587ec810854b6ad8))
-* prevent browser freeze during character switching ([751b923](https://github.com/Celasha/Toolasha/commit/751b923dcb0e829868f133b2b79a94bd2d656b74))
-* prevent Statistics tab from appearing on Marketplace panel ([0bc78a6](https://github.com/Celasha/Toolasha/commit/0bc78a610c0cc94c9ad0d571f2a1e8d959fa56ee))
-* resolve quest reroll and consumable tracking bugs ([b3bb137](https://github.com/Celasha/Toolasha/commit/b3bb1370da1bb69ecb83e1095ab8aad77f56a8bc))
-
+- persist order book cache across page refreshes ([cde5fe8](https://github.com/Celasha/Toolasha/commit/cde5fe8354bc6b3d687a0582587ec810854b6ad8))
+- prevent browser freeze during character switching ([751b923](https://github.com/Celasha/Toolasha/commit/751b923dcb0e829868f133b2b79a94bd2d656b74))
+- prevent Statistics tab from appearing on Marketplace panel ([0bc78a6](https://github.com/Celasha/Toolasha/commit/0bc78a610c0cc94c9ad0d571f2a1e8d959fa56ee))
+- resolve quest reroll and consumable tracking bugs ([b3bb137](https://github.com/Celasha/Toolasha/commit/b3bb1370da1bb69ecb83e1095ab8aad77f56a8bc))
 
 ### Performance Improvements
 
-* replace polling loop with MutationObserver in listing price display ([2760075](https://github.com/Celasha/Toolasha/commit/2760075301705ee910de0ac6f459b867537cef74))
+- replace polling loop with MutationObserver in listing price display ([2760075](https://github.com/Celasha/Toolasha/commit/2760075301705ee910de0ac6f459b867537cef74))
 
 ## [0.17.6](https://github.com/Celasha/Toolasha/compare/v0.17.5...v0.17.6) (2026-02-06)
 

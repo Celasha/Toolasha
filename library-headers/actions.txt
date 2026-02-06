@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha Actions Library
 // @namespace    http://tampermonkey.net/
-// @version      0.17.6
+// @version      0.18.0
 // @description  Actions library for Toolasha - Production, gathering, and alchemy features
 // @author       Celasha
 // @license      CC-BY-NC-SA-4.0
