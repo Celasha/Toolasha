@@ -326,6 +326,8 @@ class WebSocketHook {
             messageType === 'quests_updated' ||
             messageType === 'action_completed' ||
             messageType === 'items_updated' ||
+            messageType === 'market_item_order_books_updated' ||
+            messageType === 'market_listings_updated' ||
             messageType === 'profile_shared';
 
         if (!skipDedup) {
@@ -354,6 +356,7 @@ class WebSocketHook {
 
             // Call registered handlers for this message type
             const handlers = this.messageHandlers.get(parsedMessageType) || [];
+
             for (const handler of handlers) {
                 try {
                     handler(data);
