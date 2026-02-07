@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.20.0
+// @version      0.20.1
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -27850,6 +27850,8 @@ return plugin;
             this.unregisterObserver = null;
             this.isActive = false;
             this.isInitialized = false;
+            this.itemNameToHridCache = null; // Lazy-loaded reverse lookup cache
+            this.itemNameToHridCacheSource = null; // Track source for invalidation
         }
 
         /**
@@ -28142,20 +28144,30 @@ return plugin;
             // This is critical - enhanced items need to lookup the base item
             itemName = itemName.replace(REGEX_ENHANCEMENT_STRIP, '');
 
-            // Look up item by name in game data
             const initData = dataManager$1.getInitClientData();
-            if (!initData) {
+            if (!initData || !initData.itemDetailMap) {
                 return null;
             }
 
-            // Search through all items to find matching name
-            for (const [hrid, item] of Object.entries(initData.itemDetailMap)) {
-                if (item.name === itemName) {
-                    return hrid;
-                }
+            // Return cached map if source data hasn't changed (handles character switch)
+            if (this.itemNameToHridCache && this.itemNameToHridCacheSource === initData.itemDetailMap) {
+                return this.itemNameToHridCache.get(itemName) || null;
             }
 
-            return null;
+            // Build itemName -> HRID map
+            const map = new Map();
+            for (const [hrid, item] of Object.entries(initData.itemDetailMap)) {
+                map.set(item.name, hrid);
+            }
+
+            // Only cache if we got actual entries (avoid poisoning with empty map)
+            if (map.size > 0) {
+                this.itemNameToHridCache = map;
+                this.itemNameToHridCacheSource = initData.itemDetailMap;
+            }
+
+            // Return result from newly built map
+            return map.get(itemName) || null;
         }
 
         /**
@@ -28765,6 +28777,8 @@ return plugin;
             this.unregisterObserver = null;
             this.isActive = false;
             this.isInitialized = false;
+            this.itemNameToHridCache = null; // Lazy-loaded reverse lookup cache
+            this.itemNameToHridCacheSource = null; // Track source for invalidation
         }
 
         /**
@@ -28912,20 +28926,30 @@ return plugin;
 
             const itemName = nameElement.textContent.trim();
 
-            // Look up item by name in game data
             const initData = dataManager$1.getInitClientData();
-            if (!initData) {
+            if (!initData || !initData.itemDetailMap) {
                 return null;
             }
 
-            // Search through all items to find matching name
-            for (const [hrid, item] of Object.entries(initData.itemDetailMap)) {
-                if (item.name === itemName) {
-                    return hrid;
-                }
+            // Return cached map if source data hasn't changed (handles character switch)
+            if (this.itemNameToHridCache && this.itemNameToHridCacheSource === initData.itemDetailMap) {
+                return this.itemNameToHridCache.get(itemName) || null;
             }
 
-            return null;
+            // Build itemName -> HRID map
+            const map = new Map();
+            for (const [hrid, item] of Object.entries(initData.itemDetailMap)) {
+                map.set(item.name, hrid);
+            }
+
+            // Only cache if we got actual entries (avoid poisoning with empty map)
+            if (map.size > 0) {
+                this.itemNameToHridCache = map;
+                this.itemNameToHridCacheSource = initData.itemDetailMap;
+            }
+
+            // Return result from newly built map
+            return map.get(itemName) || null;
         }
 
         /**
@@ -38195,6 +38219,8 @@ return plugin;
             this.unregisterObserver = null;
             this.isActive = false;
             this.isInitialized = false;
+            this.itemNameToHridCache = null; // Lazy-loaded reverse lookup cache
+            this.itemNameToHridCacheSource = null; // Track source for invalidation
         }
 
         /**
@@ -38299,14 +38325,25 @@ return plugin;
                 return null;
             }
 
-            // Search for item by name
-            for (const [hrid, item] of Object.entries(gameData.itemDetailMap)) {
-                if (item.name === itemName) {
-                    return hrid;
-                }
+            // Return cached map if source data hasn't changed (handles character switch)
+            if (this.itemNameToHridCache && this.itemNameToHridCacheSource === gameData.itemDetailMap) {
+                return this.itemNameToHridCache.get(itemName) || null;
             }
 
-            return null;
+            // Build itemName -> HRID map
+            const map = new Map();
+            for (const [hrid, item] of Object.entries(gameData.itemDetailMap)) {
+                map.set(item.name, hrid);
+            }
+
+            // Only cache if we got actual entries (avoid poisoning with empty map)
+            if (map.size > 0) {
+                this.itemNameToHridCache = map;
+                this.itemNameToHridCacheSource = gameData.itemDetailMap;
+            }
+
+            // Return result from newly built map
+            return map.get(itemName) || null;
         }
 
         /**
@@ -42319,7 +42356,9 @@ return plugin;
         }
 
         parseActionNameFromDom(actionNameText) {
-            const actionNameMatch = actionNameText.match(/^(.+?)(?:\s*\([^)]+\))?$/);
+            // Strip ALL trailing parentheses groups (e.g., "(T3) (Party)" or "(50)")
+            // This handles combat tiers and party indicators: "Infernal Abyss (T3) (Party)" → "Infernal Abyss"
+            const actionNameMatch = actionNameText.match(/^(.+?)(?:\s*\([^)]+\))*$/);
             const fullNameFromDom = actionNameMatch ? actionNameMatch[1].trim() : actionNameText;
 
             if (fullNameFromDom.includes(':')) {
@@ -51526,6 +51565,7 @@ return plugin;
             this.processedMessages = new Map(); // Track processed messages to prevent duplicate counting
             this.initComplete = false; // Flag to ensure storage loads before annotation
             this.timerRegistry = createTimerRegistry();
+            this.tabClickHandlers = new Map(); // Store tab click handlers for cleanup
         }
 
         /**
@@ -51606,11 +51646,22 @@ return plugin;
 
             for (const button of tabButtons) {
                 if (button.textContent.includes('Party')) {
-                    button.addEventListener('click', () => {
+                    // Remove old listener if exists
+                    const oldHandler = this.tabClickHandlers.get(button);
+                    if (oldHandler) {
+                        button.removeEventListener('click', oldHandler);
+                    }
+
+                    // Create new handler
+                    const handler = () => {
                         // Delay to let DOM update
                         const annotateTimeout = setTimeout(() => this.annotateAllMessages(), 300);
                         this.timerRegistry.registerTimeout(annotateTimeout);
-                    });
+                    };
+
+                    // Store and add new listener
+                    this.tabClickHandlers.set(button, handler);
+                    button.addEventListener('click', handler);
                 }
             }
         }
@@ -52166,6 +52217,12 @@ return plugin;
                 this.observer = null;
             }
 
+            // Remove tab click listeners
+            for (const [button, handler] of this.tabClickHandlers) {
+                button.removeEventListener('click', handler);
+            }
+            this.tabClickHandlers.clear();
+
             this.timerRegistry.clearAll();
 
             // Clear cached state
@@ -52321,6 +52378,7 @@ return plugin;
             this.state = state;
             this.formatTime = formatTimeFunc;
             this.chartInstance = null;
+            this.modalChartInstance = null; // Store modal chart for cleanup
         }
 
         /**
@@ -52552,7 +52610,14 @@ return plugin;
             border-radius: 4px;
             font-weight: bold;
         `;
-            closeBtn.addEventListener('click', () => modal.remove());
+            closeBtn.addEventListener('click', () => {
+                // Destroy chart before removing modal
+                if (this.modalChartInstance) {
+                    this.modalChartInstance.destroy();
+                    this.modalChartInstance = null;
+                }
+                modal.remove();
+            });
 
             header.appendChild(title);
             header.appendChild(closeBtn);
@@ -52579,6 +52644,11 @@ return plugin;
             // Close on ESC key
             const escHandler = (e) => {
                 if (e.key === 'Escape') {
+                    // Destroy chart before removing modal
+                    if (this.modalChartInstance) {
+                        this.modalChartInstance.destroy();
+                        this.modalChartInstance = null;
+                    }
                     modal.remove();
                     document.removeEventListener('keydown', escHandler);
                 }
@@ -52662,7 +52732,7 @@ return plugin;
 
             // Create chart
             const ctx = canvas.getContext('2d');
-            new Chart(ctx, {
+            this.modalChartInstance = new Chart(ctx, {
                 type: 'line',
                 data: {
                     labels: labels,
@@ -52904,10 +52974,9 @@ return plugin;
             const dungeonFilter = container.querySelector('#mwi-dt-filter-dungeon');
             if (dungeonFilter) {
                 const currentValue = dungeonFilter.value;
-                dungeonFilter.innerHTML = '<option value="all">All Dungeons</option>';
-                for (const dungeon of dungeons) {
-                    dungeonFilter.innerHTML += `<option value="${dungeon}">${dungeon}</option>`;
-                }
+                dungeonFilter.innerHTML =
+                    '<option value="all">All Dungeons</option>' +
+                    dungeons.map((dungeon) => `<option value="${dungeon}">${dungeon}</option>`).join('');
                 // Restore selection if still valid
                 if (dungeons.includes(currentValue)) {
                     dungeonFilter.value = currentValue;
@@ -52920,10 +52989,9 @@ return plugin;
             const teamFilter = container.querySelector('#mwi-dt-filter-team');
             if (teamFilter) {
                 const currentValue = teamFilter.value;
-                teamFilter.innerHTML = '<option value="all">All Teams</option>';
-                for (const team of teams) {
-                    teamFilter.innerHTML += `<option value="${team}">${team}</option>`;
-                }
+                teamFilter.innerHTML =
+                    '<option value="all">All Teams</option>' +
+                    teams.map((team) => `<option value="${team}">${team}</option>`).join('');
                 // Restore selection if still valid
                 if (teams.includes(currentValue)) {
                     teamFilter.value = currentValue;
@@ -53093,6 +53161,9 @@ return plugin;
             this.isDragging = false;
             this.dragOffset = { x: 0, y: 0 };
             this.timerRegistry = createTimerRegistry();
+            // Store drag handlers for cleanup
+            this.dragMoveHandler = null;
+            this.dragUpHandler = null;
         }
 
         /**
@@ -53136,7 +53207,16 @@ return plugin;
                 header.style.cursor = 'grabbing';
             });
 
-            document.addEventListener('mousemove', (e) => {
+            // Remove old handlers if they exist
+            if (this.dragMoveHandler) {
+                document.removeEventListener('mousemove', this.dragMoveHandler);
+            }
+            if (this.dragUpHandler) {
+                document.removeEventListener('mouseup', this.dragUpHandler);
+            }
+
+            // Create and store new handlers
+            this.dragMoveHandler = (e) => {
                 if (!this.isDragging) return;
 
                 let x = e.clientX - this.dragOffset.x;
@@ -53161,16 +53241,19 @@ return plugin;
                 this.container.style.left = `${x}px`;
                 this.container.style.top = `${y}px`;
                 this.container.style.transform = 'none'; // Disable centering transform
-            });
+            };
 
-            document.addEventListener('mouseup', () => {
+            this.dragUpHandler = () => {
                 if (this.isDragging) {
                     this.isDragging = false;
                     const header = this.container.querySelector('#mwi-dt-header');
                     if (header) header.style.cursor = 'move';
                     this.state.save();
                 }
-            });
+            };
+
+            document.addEventListener('mousemove', this.dragMoveHandler);
+            document.addEventListener('mouseup', this.dragUpHandler);
         }
 
         /**
@@ -53603,6 +53686,16 @@ return plugin;
         }
 
         cleanup() {
+            // Remove document-level drag listeners
+            if (this.dragMoveHandler) {
+                document.removeEventListener('mousemove', this.dragMoveHandler);
+                this.dragMoveHandler = null;
+            }
+            if (this.dragUpHandler) {
+                document.removeEventListener('mouseup', this.dragUpHandler);
+                this.dragUpHandler = null;
+            }
+
             this.timerRegistry.clearAll();
         }
     }

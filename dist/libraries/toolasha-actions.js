@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 0.20.0
+ * Version: 0.20.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -4862,7 +4862,9 @@
         }
 
         parseActionNameFromDom(actionNameText) {
-            const actionNameMatch = actionNameText.match(/^(.+?)(?:\s*\([^)]+\))?$/);
+            // Strip ALL trailing parentheses groups (e.g., "(T3) (Party)" or "(50)")
+            // This handles combat tiers and party indicators: "Infernal Abyss (T3) (Party)" → "Infernal Abyss"
+            const actionNameMatch = actionNameText.match(/^(.+?)(?:\s*\([^)]+\))*$/);
             const fullNameFromDom = actionNameMatch ? actionNameMatch[1].trim() : actionNameText;
 
             if (fullNameFromDom.includes(':')) {

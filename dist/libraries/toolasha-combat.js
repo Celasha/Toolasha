@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 0.20.0
+ * Version: 0.20.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2245,6 +2245,7 @@
             this.processedMessages = new Map(); // Track processed messages to prevent duplicate counting
             this.initComplete = false; // Flag to ensure storage loads before annotation
             this.timerRegistry = timerRegistry_js.createTimerRegistry();
+            this.tabClickHandlers = new Map(); // Store tab click handlers for cleanup
         }
 
         /**
@@ -2325,11 +2326,22 @@
 
             for (const button of tabButtons) {
                 if (button.textContent.includes('Party')) {
-                    button.addEventListener('click', () => {
+                    // Remove old listener if exists
+                    const oldHandler = this.tabClickHandlers.get(button);
+                    if (oldHandler) {
+                        button.removeEventListener('click', oldHandler);
+                    }
+
+                    // Create new handler
+                    const handler = () => {
                         // Delay to let DOM update
                         const annotateTimeout = setTimeout(() => this.annotateAllMessages(), 300);
                         this.timerRegistry.registerTimeout(annotateTimeout);
-                    });
+                    };
+
+                    // Store and add new listener
+                    this.tabClickHandlers.set(button, handler);
+                    button.addEventListener('click', handler);
                 }
             }
         }
@@ -2885,6 +2897,12 @@
                 this.observer = null;
             }
 
+            // Remove tab click listeners
+            for (const [button, handler] of this.tabClickHandlers) {
+                button.removeEventListener('click', handler);
+            }
+            this.tabClickHandlers.clear();
+
             this.timerRegistry.clearAll();
 
             // Clear cached state
@@ -3040,6 +3058,7 @@
             this.state = state;
             this.formatTime = formatTimeFunc;
             this.chartInstance = null;
+            this.modalChartInstance = null; // Store modal chart for cleanup
         }
 
         /**
@@ -3271,7 +3290,14 @@
             border-radius: 4px;
             font-weight: bold;
         `;
-            closeBtn.addEventListener('click', () => modal.remove());
+            closeBtn.addEventListener('click', () => {
+                // Destroy chart before removing modal
+                if (this.modalChartInstance) {
+                    this.modalChartInstance.destroy();
+                    this.modalChartInstance = null;
+                }
+                modal.remove();
+            });
 
             header.appendChild(title);
             header.appendChild(closeBtn);
@@ -3298,6 +3324,11 @@
             // Close on ESC key
             const escHandler = (e) => {
                 if (e.key === 'Escape') {
+                    // Destroy chart before removing modal
+                    if (this.modalChartInstance) {
+                        this.modalChartInstance.destroy();
+                        this.modalChartInstance = null;
+                    }
                     modal.remove();
                     document.removeEventListener('keydown', escHandler);
                 }
@@ -3381,7 +3412,7 @@
 
             // Create chart
             const ctx = canvas.getContext('2d');
-            new Chart(ctx, {
+            this.modalChartInstance = new Chart(ctx, {
                 type: 'line',
                 data: {
                     labels: labels,
@@ -3623,10 +3654,9 @@
             const dungeonFilter = container.querySelector('#mwi-dt-filter-dungeon');
             if (dungeonFilter) {
                 const currentValue = dungeonFilter.value;
-                dungeonFilter.innerHTML = '<option value="all">All Dungeons</option>';
-                for (const dungeon of dungeons) {
-                    dungeonFilter.innerHTML += `<option value="${dungeon}">${dungeon}</option>`;
-                }
+                dungeonFilter.innerHTML =
+                    '<option value="all">All Dungeons</option>' +
+                    dungeons.map((dungeon) => `<option value="${dungeon}">${dungeon}</option>`).join('');
                 // Restore selection if still valid
                 if (dungeons.includes(currentValue)) {
                     dungeonFilter.value = currentValue;
@@ -3639,10 +3669,9 @@
             const teamFilter = container.querySelector('#mwi-dt-filter-team');
             if (teamFilter) {
                 const currentValue = teamFilter.value;
-                teamFilter.innerHTML = '<option value="all">All Teams</option>';
-                for (const team of teams) {
-                    teamFilter.innerHTML += `<option value="${team}">${team}</option>`;
-                }
+                teamFilter.innerHTML =
+                    '<option value="all">All Teams</option>' +
+                    teams.map((team) => `<option value="${team}">${team}</option>`).join('');
                 // Restore selection if still valid
                 if (teams.includes(currentValue)) {
                     teamFilter.value = currentValue;
@@ -3812,6 +3841,9 @@
             this.isDragging = false;
             this.dragOffset = { x: 0, y: 0 };
             this.timerRegistry = timerRegistry_js.createTimerRegistry();
+            // Store drag handlers for cleanup
+            this.dragMoveHandler = null;
+            this.dragUpHandler = null;
         }
 
         /**
@@ -3855,7 +3887,16 @@
                 header.style.cursor = 'grabbing';
             });
 
-            document.addEventListener('mousemove', (e) => {
+            // Remove old handlers if they exist
+            if (this.dragMoveHandler) {
+                document.removeEventListener('mousemove', this.dragMoveHandler);
+            }
+            if (this.dragUpHandler) {
+                document.removeEventListener('mouseup', this.dragUpHandler);
+            }
+
+            // Create and store new handlers
+            this.dragMoveHandler = (e) => {
                 if (!this.isDragging) return;
 
                 let x = e.clientX - this.dragOffset.x;
@@ -3880,16 +3921,19 @@
                 this.container.style.left = `${x}px`;
                 this.container.style.top = `${y}px`;
                 this.container.style.transform = 'none'; // Disable centering transform
-            });
+            };
 
-            document.addEventListener('mouseup', () => {
+            this.dragUpHandler = () => {
                 if (this.isDragging) {
                     this.isDragging = false;
                     const header = this.container.querySelector('#mwi-dt-header');
                     if (header) header.style.cursor = 'move';
                     this.state.save();
                 }
-            });
+            };
+
+            document.addEventListener('mousemove', this.dragMoveHandler);
+            document.addEventListener('mouseup', this.dragUpHandler);
         }
 
         /**
@@ -4322,6 +4366,16 @@
         }
 
         cleanup() {
+            // Remove document-level drag listeners
+            if (this.dragMoveHandler) {
+                document.removeEventListener('mousemove', this.dragMoveHandler);
+                this.dragMoveHandler = null;
+            }
+            if (this.dragUpHandler) {
+                document.removeEventListener('mouseup', this.dragUpHandler);
+                this.dragUpHandler = null;
+            }
+
             this.timerRegistry.clearAll();
         }
     }

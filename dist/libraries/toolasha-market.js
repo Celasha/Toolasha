@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 0.20.0
+ * Version: 0.20.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2400,6 +2400,8 @@
             this.unregisterObserver = null;
             this.isActive = false;
             this.isInitialized = false;
+            this.itemNameToHridCache = null; // Lazy-loaded reverse lookup cache
+            this.itemNameToHridCacheSource = null; // Track source for invalidation
         }
 
         /**
@@ -2692,20 +2694,30 @@
             // This is critical - enhanced items need to lookup the base item
             itemName = itemName.replace(REGEX_ENHANCEMENT_STRIP, '');
 
-            // Look up item by name in game data
             const initData = dataManager.getInitClientData();
-            if (!initData) {
+            if (!initData || !initData.itemDetailMap) {
                 return null;
             }
 
-            // Search through all items to find matching name
-            for (const [hrid, item] of Object.entries(initData.itemDetailMap)) {
-                if (item.name === itemName) {
-                    return hrid;
-                }
+            // Return cached map if source data hasn't changed (handles character switch)
+            if (this.itemNameToHridCache && this.itemNameToHridCacheSource === initData.itemDetailMap) {
+                return this.itemNameToHridCache.get(itemName) || null;
             }
 
-            return null;
+            // Build itemName -> HRID map
+            const map = new Map();
+            for (const [hrid, item] of Object.entries(initData.itemDetailMap)) {
+                map.set(item.name, hrid);
+            }
+
+            // Only cache if we got actual entries (avoid poisoning with empty map)
+            if (map.size > 0) {
+                this.itemNameToHridCache = map;
+                this.itemNameToHridCacheSource = initData.itemDetailMap;
+            }
+
+            // Return result from newly built map
+            return map.get(itemName) || null;
         }
 
         /**
@@ -3315,6 +3327,8 @@
             this.unregisterObserver = null;
             this.isActive = false;
             this.isInitialized = false;
+            this.itemNameToHridCache = null; // Lazy-loaded reverse lookup cache
+            this.itemNameToHridCacheSource = null; // Track source for invalidation
         }
 
         /**
@@ -3462,20 +3476,30 @@
 
             const itemName = nameElement.textContent.trim();
 
-            // Look up item by name in game data
             const initData = dataManager.getInitClientData();
-            if (!initData) {
+            if (!initData || !initData.itemDetailMap) {
                 return null;
             }
 
-            // Search through all items to find matching name
-            for (const [hrid, item] of Object.entries(initData.itemDetailMap)) {
-                if (item.name === itemName) {
-                    return hrid;
-                }
+            // Return cached map if source data hasn't changed (handles character switch)
+            if (this.itemNameToHridCache && this.itemNameToHridCacheSource === initData.itemDetailMap) {
+                return this.itemNameToHridCache.get(itemName) || null;
             }
 
-            return null;
+            // Build itemName -> HRID map
+            const map = new Map();
+            for (const [hrid, item] of Object.entries(initData.itemDetailMap)) {
+                map.set(item.name, hrid);
+            }
+
+            // Only cache if we got actual entries (avoid poisoning with empty map)
+            if (map.size > 0) {
+                this.itemNameToHridCache = map;
+                this.itemNameToHridCacheSource = initData.itemDetailMap;
+            }
+
+            // Return result from newly built map
+            return map.get(itemName) || null;
         }
 
         /**
@@ -12677,6 +12701,8 @@
             this.unregisterObserver = null;
             this.isActive = false;
             this.isInitialized = false;
+            this.itemNameToHridCache = null; // Lazy-loaded reverse lookup cache
+            this.itemNameToHridCacheSource = null; // Track source for invalidation
         }
 
         /**
@@ -12781,14 +12807,25 @@
                 return null;
             }
 
-            // Search for item by name
-            for (const [hrid, item] of Object.entries(gameData.itemDetailMap)) {
-                if (item.name === itemName) {
-                    return hrid;
-                }
+            // Return cached map if source data hasn't changed (handles character switch)
+            if (this.itemNameToHridCache && this.itemNameToHridCacheSource === gameData.itemDetailMap) {
+                return this.itemNameToHridCache.get(itemName) || null;
             }
 
-            return null;
+            // Build itemName -> HRID map
+            const map = new Map();
+            for (const [hrid, item] of Object.entries(gameData.itemDetailMap)) {
+                map.set(item.name, hrid);
+            }
+
+            // Only cache if we got actual entries (avoid poisoning with empty map)
+            if (map.size > 0) {
+                this.itemNameToHridCache = map;
+                this.itemNameToHridCacheSource = gameData.itemDetailMap;
+            }
+
+            // Return result from newly built map
+            return map.get(itemName) || null;
         }
 
         /**
