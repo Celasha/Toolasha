@@ -25,6 +25,9 @@ class NetworthFeature {
     async initialize() {
         if (this.isActive) return;
 
+        // Set reference in display components so they can trigger recalculation
+        networthHeaderDisplay.setNetworthFeature(this);
+
         // Initialize header display (always enabled with networth feature)
         if (config.isFeatureEnabled('networth')) {
             networthHeaderDisplay.initialize();

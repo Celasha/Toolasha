@@ -18,6 +18,15 @@ class NetworthHeaderDisplay {
         this.container = null;
         this.unregisterHandlers = [];
         this.isInitialized = false;
+        this.networthFeature = null; // Reference to parent feature for recalculation
+    }
+
+    /**
+     * Set reference to parent networth feature
+     * @param {Object} feature - NetworthFeature instance
+     */
+    setNetworthFeature(feature) {
+        this.networthFeature = feature;
     }
 
     /**
@@ -107,6 +116,13 @@ class NetworthHeaderDisplay {
 
         // Initial render with loading state
         this.renderGoldDisplay('Loading...');
+
+        // Trigger recalculation immediately to update from "Loading..." to actual value
+        if (this.networthFeature && typeof this.networthFeature.recalculate === 'function') {
+            this.networthFeature.recalculate().catch((error) => {
+                console.error('[NetworthHeaderDisplay] Immediate recalculation failed:', error);
+            });
+        }
     }
 
     /**
