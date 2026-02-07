@@ -2,12 +2,11 @@
 
 ## [0.20.2](https://github.com/Celasha/Toolasha/compare/v0.20.1...v0.20.2) (2026-02-07)
 
-
 ### Bug Fixes
 
-* profile panels not showing on subsequent opens ([3d6a463](https://github.com/Celasha/Toolasha/commit/3d6a463caf1c625e5f1606e182f687048f8b6d04))
-* update character sheet URL to GitLab ([1381ac7](https://github.com/Celasha/Toolasha/commit/1381ac7331dfd24d3e27a249acbe3649b62e2b89))
-* view card button injected into wrong container ([954dbc1](https://github.com/Celasha/Toolasha/commit/954dbc1a0b9d4a91f532090d59f5a43e3d51f4de))
+- profile panels not showing on subsequent opens ([3d6a463](https://github.com/Celasha/Toolasha/commit/3d6a463caf1c625e5f1606e182f687048f8b6d04))
+- update character sheet URL to GitLab ([1381ac7](https://github.com/Celasha/Toolasha/commit/1381ac7331dfd24d3e27a249acbe3649b62e2b89))
+- view card button injected into wrong container ([954dbc1](https://github.com/Celasha/Toolasha/commit/954dbc1a0b9d4a91f532090d59f5a43e3d51f4de))
 
 ## [0.20.1](https://github.com/Celasha/Toolasha/compare/v0.20.0...v0.20.1) (2026-02-07)
 
