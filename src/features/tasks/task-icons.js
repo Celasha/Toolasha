@@ -151,6 +151,36 @@ class TaskIcons {
         });
         this.observers.push(unregisterTask);
 
+        // Watch for monster sprite being loaded into DOM
+        // The sprite might be an SVG element or a defs section
+        const checkForMonsterSprite = () => {
+            const useElements = document.querySelectorAll('use');
+            for (const use of useElements) {
+                const href = use.getAttribute('href') || use.getAttributeNS('http://www.w3.org/1999/xlink', 'href');
+                if (href && href.includes('combat_monsters_sprite')) {
+                    const url = href.split('#')[0];
+
+                    // Cache the URL so we don't lose it
+                    this.cachedSpriteUrls.monsters = url;
+
+                    // Sprite just loaded, refresh all icons
+                    this.clearAllProcessedMarkers();
+                    this.processAllTaskCards();
+                    break;
+                }
+            }
+        };
+
+        // Check periodically for sprite loading (more reliable than trying to watch for it)
+        const spriteCheckInterval = setInterval(() => {
+            // Only check if we haven't found it yet
+            if (!this.cachedSpriteUrls.monsters) {
+                checkForMonsterSprite();
+            }
+        }, 1000);
+        this.timerRegistry.registerInterval(spriteCheckInterval);
+        this.observers.push(() => clearInterval(spriteCheckInterval));
+
         // Watch for task rerolls via WebSocket
         const questsHandler = (data) => {
             if (!data.endCharacterQuests) {
@@ -331,8 +361,9 @@ class TaskIcons {
             return;
         }
 
-        // Determine icon name
+        // Determine icon name and sprite type
         let iconName;
+        let spriteType = 'item'; // Default to items_sprite
 
         // Check if action produces a specific item (use item sprite)
         if (action.outputItems && action.outputItems.length > 0) {
@@ -341,6 +372,7 @@ class TaskIcons {
             const item = this.itemsByHrid.get(itemHrid);
             if (item) {
                 iconName = itemHrid.split('/').pop();
+                spriteType = 'item';
             }
         }
 
@@ -353,13 +385,15 @@ class TaskIcons {
 
             if (potentialItem) {
                 iconName = actionName;
+                spriteType = 'item';
             } else {
-                // Fall back to action sprite
+                // Fall back to action sprite (e.g., for trees in woodcutting)
                 iconName = actionName;
+                spriteType = 'action';
             }
         }
 
-        this.addIconOverlay(taskCard, iconName, 'action'); // Fire and forget async
+        this.addIconOverlay(taskCard, iconName, spriteType);
     }
 
     /**
@@ -525,12 +559,17 @@ class TaskIcons {
      * @returns {string|null} Items sprite URL or null if not found
      */
     getItemsSpriteUrl() {
-        const itemIcon = document.querySelector('use[href*="items_sprite"]');
-        if (!itemIcon) {
-            return null;
+        // Search manually to support both href and xlink:href
+        const allUseElements = document.querySelectorAll('use');
+
+        for (const use of allUseElements) {
+            const href = use.getAttribute('href') || use.getAttributeNS('http://www.w3.org/1999/xlink', 'href');
+            if (href && href.includes('items_sprite')) {
+                return href.split('#')[0];
+            }
         }
-        const href = itemIcon.getAttribute('href');
-        return href ? href.split('#')[0] : null;
+
+        return null;
     }
 
     /**
@@ -538,32 +577,36 @@ class TaskIcons {
      * @returns {string|null} Monsters sprite URL or null if not found
      */
     async getMonstersSpriteUrl() {
+        // Check cache first
+        if (this.cachedSpriteUrls.monsters) {
+            return this.cachedSpriteUrls.monsters;
+        }
+
         // Try to find it in the DOM first
-        const monsterIcon = document.querySelector('use[href*="combat_monsters_sprite"]');
+        // Can't use CSS selector for xlink:href, so search manually
+        const allUseElements = document.querySelectorAll('use');
+        let monsterIcon = null;
+
+        for (const use of allUseElements) {
+            const href = use.getAttribute('href') || use.getAttributeNS('http://www.w3.org/1999/xlink', 'href');
+            if (href && href.includes('combat_monsters_sprite')) {
+                monsterIcon = use;
+                break;
+            }
+        }
 
         if (monsterIcon) {
             const href =
                 monsterIcon.getAttribute('href') || monsterIcon.getAttributeNS('http://www.w3.org/1999/xlink', 'href');
             const url = href ? href.split('#')[0] : null;
+            // Cache it
+            this.cachedSpriteUrls.monsters = url;
             return url;
         }
 
-        // If not in DOM and we haven't fetched it yet, try to fetch it
-        if (!this.fetchedSprites.monsters && !this.spriteFetchInProgress.monsters) {
-            // Build fallback URLs using hashes from currently loaded sprites
-            const loadedSpriteUrls = Array.from(document.querySelectorAll('use'))
-                .map((use) => use.getAttribute('href') || use.getAttributeNS('http://www.w3.org/1999/xlink', 'href'))
-                .filter((href) => href && href.includes('sprite'))
-                .map((href) => href.split('#')[0]);
-
-            const uniqueUrls = [...new Set(loadedSpriteUrls)];
-            const hashes = uniqueUrls.map((url) => url.match(/\.([a-f0-9]{8})\.svg$/)?.[1]).filter((hash) => hash);
-
-            await this.fetchAndInjectMonsterSprite(hashes);
-        }
-
-        // Return the fetched sprite URL if available
-        return this.fetchedSprites.monsters;
+        // If not in DOM, we can't display monster icons
+        // The sprite is only loaded when viewing combat panel
+        return null;
     }
 
     /**
@@ -718,11 +761,11 @@ class TaskIcons {
         if (type === 'monster') {
             // Await monster sprite (might fetch it)
             spriteUrl = await this.getMonstersSpriteUrl();
-        } else if (type === 'dungeon') {
-            // Dungeon icons are in actions_sprite
+        } else if (type === 'dungeon' || type === 'action') {
+            // Dungeon icons and action icons (trees, etc.) are in actions_sprite
             spriteUrl = this.getActionsSpriteUrl();
         } else {
-            // Action icons are in items_sprite
+            // Item icons are in items_sprite (default)
             spriteUrl = this.getItemsSpriteUrl();
         }
 
@@ -738,7 +781,10 @@ class TaskIcons {
 
         // Create use element with external sprite reference
         const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
-        use.setAttribute('href', `${spriteUrl}#${iconName}`);
+        // Set both href and xlink:href for browser compatibility
+        const spriteReference = `${spriteUrl}#${iconName}`;
+        use.setAttribute('href', spriteReference);
+        use.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', spriteReference);
         svg.appendChild(use);
 
         iconDiv.appendChild(svg);
