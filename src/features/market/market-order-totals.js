@@ -109,9 +109,16 @@ class MarketOrderTotals {
 
             if (listing.isSell) {
                 // Sell orders: Calculate expected proceeds after tax
+                if (listing.status === '/market_listing_status/filled') {
+                    continue;
+                }
+
                 const tax = listing.itemHrid === '/items/bag_of_10_cowbells' ? 0.82 : 0.98;
-                const remainingQuantity = listing.orderQuantity - listing.filledQuantity;
-                sellOrders += remainingQuantity * Math.floor(listing.price * tax);
+                const remainingQuantity = Math.max(0, listing.orderQuantity - listing.filledQuantity);
+
+                if (remainingQuantity > 0) {
+                    sellOrders += remainingQuantity * Math.floor(listing.price * tax);
+                }
             } else {
                 // Buy orders: Prepaid coins locked in the order
                 buyOrders += listing.coinsAvailable || 0;
