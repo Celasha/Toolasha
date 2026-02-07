@@ -93,7 +93,7 @@ ${code}
 const steamConfig = {
     input: 'src/dev-entrypoint.js',
     output: {
-        file: 'dist/Toolasha.steam.user.js',
+        file: 'dist/Toolasha.steam.js',
         format: 'iife',
         name: 'Toolasha',
         // No banner - we inject it via plugin for proper ordering

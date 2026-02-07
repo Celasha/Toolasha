@@ -316,7 +316,6 @@ class TaskIconFilters {
         // Find the symbol in the game's loaded sprites
         const symbol = document.querySelector(`symbol[id="${symbolId}"]`);
         if (!symbol) {
-            console.warn('[TaskIconFilters] Symbol not found:', symbolId);
             return false;
         }
 
