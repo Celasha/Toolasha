@@ -156,10 +156,9 @@ class DungeonTrackerUIHistory {
         const dungeonFilter = container.querySelector('#mwi-dt-filter-dungeon');
         if (dungeonFilter) {
             const currentValue = dungeonFilter.value;
-            dungeonFilter.innerHTML = '<option value="all">All Dungeons</option>';
-            for (const dungeon of dungeons) {
-                dungeonFilter.innerHTML += `<option value="${dungeon}">${dungeon}</option>`;
-            }
+            dungeonFilter.innerHTML =
+                '<option value="all">All Dungeons</option>' +
+                dungeons.map((dungeon) => `<option value="${dungeon}">${dungeon}</option>`).join('');
             // Restore selection if still valid
             if (dungeons.includes(currentValue)) {
                 dungeonFilter.value = currentValue;
@@ -172,10 +171,9 @@ class DungeonTrackerUIHistory {
         const teamFilter = container.querySelector('#mwi-dt-filter-team');
         if (teamFilter) {
             const currentValue = teamFilter.value;
-            teamFilter.innerHTML = '<option value="all">All Teams</option>';
-            for (const team of teams) {
-                teamFilter.innerHTML += `<option value="${team}">${team}</option>`;
-            }
+            teamFilter.innerHTML =
+                '<option value="all">All Teams</option>' +
+                teams.map((team) => `<option value="${team}">${team}</option>`).join('');
             // Restore selection if still valid
             if (teams.includes(currentValue)) {
                 teamFilter.value = currentValue;

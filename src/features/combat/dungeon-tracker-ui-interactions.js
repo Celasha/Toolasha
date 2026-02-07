@@ -15,6 +15,9 @@ class DungeonTrackerUIInteractions {
         this.isDragging = false;
         this.dragOffset = { x: 0, y: 0 };
         this.timerRegistry = createTimerRegistry();
+        // Store drag handlers for cleanup
+        this.dragMoveHandler = null;
+        this.dragUpHandler = null;
     }
 
     /**
@@ -58,7 +61,16 @@ class DungeonTrackerUIInteractions {
             header.style.cursor = 'grabbing';
         });
 
-        document.addEventListener('mousemove', (e) => {
+        // Remove old handlers if they exist
+        if (this.dragMoveHandler) {
+            document.removeEventListener('mousemove', this.dragMoveHandler);
+        }
+        if (this.dragUpHandler) {
+            document.removeEventListener('mouseup', this.dragUpHandler);
+        }
+
+        // Create and store new handlers
+        this.dragMoveHandler = (e) => {
             if (!this.isDragging) return;
 
             let x = e.clientX - this.dragOffset.x;
@@ -83,16 +95,19 @@ class DungeonTrackerUIInteractions {
             this.container.style.left = `${x}px`;
             this.container.style.top = `${y}px`;
             this.container.style.transform = 'none'; // Disable centering transform
-        });
+        };
 
-        document.addEventListener('mouseup', () => {
+        this.dragUpHandler = () => {
             if (this.isDragging) {
                 this.isDragging = false;
                 const header = this.container.querySelector('#mwi-dt-header');
                 if (header) header.style.cursor = 'move';
                 this.state.save();
             }
-        });
+        };
+
+        document.addEventListener('mousemove', this.dragMoveHandler);
+        document.addEventListener('mouseup', this.dragUpHandler);
     }
 
     /**
@@ -525,6 +540,16 @@ class DungeonTrackerUIInteractions {
     }
 
     cleanup() {
+        // Remove document-level drag listeners
+        if (this.dragMoveHandler) {
+            document.removeEventListener('mousemove', this.dragMoveHandler);
+            this.dragMoveHandler = null;
+        }
+        if (this.dragUpHandler) {
+            document.removeEventListener('mouseup', this.dragUpHandler);
+            this.dragUpHandler = null;
+        }
+
         this.timerRegistry.clearAll();
     }
 }

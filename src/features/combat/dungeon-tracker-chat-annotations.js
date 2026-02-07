@@ -20,6 +20,7 @@ class DungeonTrackerChatAnnotations {
         this.processedMessages = new Map(); // Track processed messages to prevent duplicate counting
         this.initComplete = false; // Flag to ensure storage loads before annotation
         this.timerRegistry = createTimerRegistry();
+        this.tabClickHandlers = new Map(); // Store tab click handlers for cleanup
     }
 
     /**
@@ -100,11 +101,22 @@ class DungeonTrackerChatAnnotations {
 
         for (const button of tabButtons) {
             if (button.textContent.includes('Party')) {
-                button.addEventListener('click', () => {
+                // Remove old listener if exists
+                const oldHandler = this.tabClickHandlers.get(button);
+                if (oldHandler) {
+                    button.removeEventListener('click', oldHandler);
+                }
+
+                // Create new handler
+                const handler = () => {
                     // Delay to let DOM update
                     const annotateTimeout = setTimeout(() => this.annotateAllMessages(), 300);
                     this.timerRegistry.registerTimeout(annotateTimeout);
-                });
+                };
+
+                // Store and add new listener
+                this.tabClickHandlers.set(button, handler);
+                button.addEventListener('click', handler);
             }
         }
     }
@@ -663,6 +675,12 @@ class DungeonTrackerChatAnnotations {
             this.observer();
             this.observer = null;
         }
+
+        // Remove tab click listeners
+        for (const [button, handler] of this.tabClickHandlers) {
+            button.removeEventListener('click', handler);
+        }
+        this.tabClickHandlers.clear();
 
         this.timerRegistry.clearAll();
 

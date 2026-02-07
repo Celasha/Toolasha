@@ -42,6 +42,8 @@ class TooltipPrices {
         this.unregisterObserver = null;
         this.isActive = false;
         this.isInitialized = false;
+        this.itemNameToHridCache = null; // Lazy-loaded reverse lookup cache
+        this.itemNameToHridCacheSource = null; // Track source for invalidation
     }
 
     /**
@@ -334,20 +336,30 @@ class TooltipPrices {
         // This is critical - enhanced items need to lookup the base item
         itemName = itemName.replace(REGEX_ENHANCEMENT_STRIP, '');
 
-        // Look up item by name in game data
         const initData = dataManager.getInitClientData();
-        if (!initData) {
+        if (!initData || !initData.itemDetailMap) {
             return null;
         }
 
-        // Search through all items to find matching name
-        for (const [hrid, item] of Object.entries(initData.itemDetailMap)) {
-            if (item.name === itemName) {
-                return hrid;
-            }
+        // Return cached map if source data hasn't changed (handles character switch)
+        if (this.itemNameToHridCache && this.itemNameToHridCacheSource === initData.itemDetailMap) {
+            return this.itemNameToHridCache.get(itemName) || null;
         }
 
-        return null;
+        // Build itemName -> HRID map
+        const map = new Map();
+        for (const [hrid, item] of Object.entries(initData.itemDetailMap)) {
+            map.set(item.name, hrid);
+        }
+
+        // Only cache if we got actual entries (avoid poisoning with empty map)
+        if (map.size > 0) {
+            this.itemNameToHridCache = map;
+            this.itemNameToHridCacheSource = initData.itemDetailMap;
+        }
+
+        // Return result from newly built map
+        return map.get(itemName) || null;
     }
 
     /**

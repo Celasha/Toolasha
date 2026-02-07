@@ -10,6 +10,7 @@ class DungeonTrackerUIChart {
         this.state = state;
         this.formatTime = formatTimeFunc;
         this.chartInstance = null;
+        this.modalChartInstance = null; // Store modal chart for cleanup
     }
 
     /**
@@ -241,7 +242,14 @@ class DungeonTrackerUIChart {
             border-radius: 4px;
             font-weight: bold;
         `;
-        closeBtn.addEventListener('click', () => modal.remove());
+        closeBtn.addEventListener('click', () => {
+            // Destroy chart before removing modal
+            if (this.modalChartInstance) {
+                this.modalChartInstance.destroy();
+                this.modalChartInstance = null;
+            }
+            modal.remove();
+        });
 
         header.appendChild(title);
         header.appendChild(closeBtn);
@@ -268,6 +276,11 @@ class DungeonTrackerUIChart {
         // Close on ESC key
         const escHandler = (e) => {
             if (e.key === 'Escape') {
+                // Destroy chart before removing modal
+                if (this.modalChartInstance) {
+                    this.modalChartInstance.destroy();
+                    this.modalChartInstance = null;
+                }
                 modal.remove();
                 document.removeEventListener('keydown', escHandler);
             }
@@ -351,7 +364,7 @@ class DungeonTrackerUIChart {
 
         // Create chart
         const ctx = canvas.getContext('2d');
-        new Chart(ctx, {
+        this.modalChartInstance = new Chart(ctx, {
             type: 'line',
             data: {
                 labels: labels,
