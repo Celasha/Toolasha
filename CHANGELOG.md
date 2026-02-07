@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.20.1](https://github.com/Celasha/Toolasha/compare/v0.20.0...v0.20.1) (2026-02-07)
+
+
+### Bug Fixes
+
+* handle multiple parentheses in combat action names ([4e6a5ec](https://github.com/Celasha/Toolasha/commit/4e6a5ec3e7f7ad6fb5247744462a8de776fe1851))
+* resolve memory leaks and cache poisoning in tooltip handlers ([5c17439](https://github.com/Celasha/Toolasha/commit/5c1743946b833fdc708c74e7a860c78d5ea5b28f))
+
 ## [0.20.0](https://github.com/Celasha/Toolasha/compare/v0.19.0...v0.20.0) (2026-02-07)
 
 ### Features
