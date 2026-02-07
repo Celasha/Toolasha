@@ -126,7 +126,7 @@ const prodLibraries = [
         key: 'core',
         input: 'src/libraries/core.js',
         output: {
-            file: 'dist/libraries/toolasha-core.user.js',
+            file: 'dist/libraries/toolasha-core.js',
             format: 'iife',
             name: 'ToolashaCore',
             banner: libraryHeaderCore,
@@ -136,7 +136,7 @@ const prodLibraries = [
         key: 'utils',
         input: 'src/libraries/utils.js',
         output: {
-            file: 'dist/libraries/toolasha-utils.user.js',
+            file: 'dist/libraries/toolasha-utils.js',
             format: 'iife',
             name: 'ToolashaUtils',
             banner: libraryHeaderUtils,
@@ -146,7 +146,7 @@ const prodLibraries = [
         key: 'market',
         input: 'src/libraries/market.js',
         output: {
-            file: 'dist/libraries/toolasha-market.user.js',
+            file: 'dist/libraries/toolasha-market.js',
             format: 'iife',
             name: 'ToolashaMarket',
             banner: libraryHeaderMarket,
@@ -156,7 +156,7 @@ const prodLibraries = [
         key: 'actions',
         input: 'src/libraries/actions.js',
         output: {
-            file: 'dist/libraries/toolasha-actions.user.js',
+            file: 'dist/libraries/toolasha-actions.js',
             format: 'iife',
             name: 'ToolashaActions',
             banner: libraryHeaderActions,
@@ -166,7 +166,7 @@ const prodLibraries = [
         key: 'combat',
         input: 'src/libraries/combat.js',
         output: {
-            file: 'dist/libraries/toolasha-combat.user.js',
+            file: 'dist/libraries/toolasha-combat.js',
             format: 'iife',
             name: 'ToolashaCombat',
             banner: libraryHeaderCombat,
@@ -176,7 +176,7 @@ const prodLibraries = [
         key: 'ui',
         input: 'src/libraries/ui.js',
         output: {
-            file: 'dist/libraries/toolasha-ui.user.js',
+            file: 'dist/libraries/toolasha-ui.js',
             format: 'iife',
             name: 'ToolashaUI',
             banner: libraryHeaderUI,

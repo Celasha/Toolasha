@@ -1,13 +1,6 @@
-// ==UserScript==
-// @name         Toolasha Core Library
-// @namespace    http://tampermonkey.net/
-// @version      0.18.0
-// @description  Core library for Toolasha - Core infrastructure and API clients
-// @author       Celasha
-// @license      CC-BY-NC-SA-4.0
-// @run-at       document-start
-// @match        https://www.milkywayidle.com/*
-// @match        https://test.milkywayidle.com/*
-// @match        https://shykai.github.io/MWICombatSimulatorTest/dist/*
-// @grant        none
-// ==/UserScript==
+/**
+ * Toolasha Core Library
+ * Core infrastructure and API clients
+ * Version: 0.18.0
+ * License: CC-BY-NC-SA-4.0
+ */

@@ -1,13 +1,6 @@
-// ==UserScript==
-// @name         Toolasha UI Library
-// @namespace    http://tampermonkey.net/
-// @version      0.18.0
-// @description  UI library for Toolasha - UI enhancements, tasks, skills, and misc features
-// @author       Celasha
-// @license      CC-BY-NC-SA-4.0
-// @run-at       document-start
-// @match        https://www.milkywayidle.com/*
-// @match        https://test.milkywayidle.com/*
-// @match        https://shykai.github.io/MWICombatSimulatorTest/dist/*
-// @grant        none
-// ==/UserScript==
+/**
+ * Toolasha UI Library
+ * UI enhancements, tasks, skills, and misc features
+ * Version: 0.18.0
+ * License: CC-BY-NC-SA-4.0
+ */

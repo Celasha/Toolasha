@@ -87,6 +87,26 @@ All features are modular and can be individually enabled/disabled through an in-
 
 > The entrypoint loads required libraries automatically from GitHub raw URLs.
 
+### Install on Steam
+
+Steam's embedded browser has network restrictions that prevent external @require directives from working. Use the Steam-specific build instead:
+
+1. **Download the Steam build**
+    - Visit the [Releases page](../../releases)
+    - Download `Toolasha.steam.user.js` from the latest release
+    - This is a single-file bundle (~3MB) with all dependencies included
+
+2. **Install in Tampermonkey**
+    - Open Tampermonkey on Steam's browser
+    - Dashboard → Utilities → Import from file
+    - Select the downloaded `Toolasha.steam.user.js`
+
+3. **Visit the game**
+    - Go to [Milky Way Idle](https://www.milkywayidle.com/game) in Steam
+    - Toolasha should load automatically
+
+> **Note**: The Steam build bundles mathjs, chart.js, and chartjs-plugin-datalabels inline, resulting in a larger file size than the browser version. Functionally identical to the browser version.
+
 ### Install from Source
 
 ```bash
@@ -140,9 +160,11 @@ Toolasha is built with modern JavaScript (ES6+) using a modular, feature-based a
 ### Quick Start
 
 ```bash
-npm install          # Install dependencies
+npm install           # Install dependencies
 npm run build:dev     # Build dev standalone userscript
 npm run build         # Build production libraries + entrypoint
+npm run build:steam   # Build Steam single-file bundle
+npm run build:all     # Build both production and Steam versions
 npm run dev           # Watch mode (auto-rebuild)
 npm test              # Run test suite (143 tests)
 ```
