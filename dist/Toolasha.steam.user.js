@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.19.0
+// @version      0.20.0
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -57631,6 +57631,49 @@ return plugin;
     };
 
     /**
+     * Skill classification for equipment categorization
+     */
+    const COMBAT_SKILLS = ['attack', 'melee', 'defense', 'ranged', 'magic', 'prayer'];
+    const SKILLING_SKILLS = [
+        'milking',
+        'foraging',
+        'woodcutting',
+        'cheesesmithing',
+        'crafting',
+        'tailoring',
+        'brewing',
+        'cooking',
+        'alchemy',
+        'enhancing',
+    ];
+
+    /**
+     * Categorize equipment item by skill requirements
+     * @param {string} slot - Item slot HRID (e.g., "/item_locations/neck")
+     * @param {Object} equipmentDetail - Equipment detail from item data
+     * @returns {Object} {combat: boolean, skiller: boolean}
+     */
+    function categorizeEquipmentItem(slot, equipmentDetail) {
+        // Tools always go to skiller only (regardless of requirements)
+        if (slot.endsWith('_tool')) {
+            return { combat: false, skiller: true };
+        }
+
+        const requirements = equipmentDetail?.levelRequirements || [];
+
+        // No requirements → both scores
+        if (requirements.length === 0) {
+            return { combat: true, skiller: true };
+        }
+
+        // Check for combat vs skilling requirements
+        const hasCombat = requirements.some((req) => COMBAT_SKILLS.some((skill) => req.skillHrid.includes(skill)));
+        const hasSkilling = requirements.some((req) => SKILLING_SKILLS.some((skill) => req.skillHrid.includes(skill)));
+
+        return { combat: hasCombat, skiller: hasSkilling };
+    }
+
+    /**
      * Calculate combat score from profile data
      * @param {Object} profileData - Profile data from game
      * @returns {Promise<Object>} {total, house, ability, equipment, breakdown}
@@ -57643,22 +57686,33 @@ return plugin;
             // 2. Calculate Ability Score
             const abilityResult = calculateAbilityScore(profileData);
 
-            // 3. Calculate Equipment Score
-            const equipmentResult = calculateEquipmentScore(profileData);
+            // 3. Calculate Combat Equipment Score
+            const combatEquipmentResult = calculateEquipmentScore(profileData, 'combat');
 
-            const totalScore = houseResult.score + abilityResult.score + equipmentResult.score;
+            // 4. Calculate Skiller Equipment Score
+            const skillerEquipmentResult = calculateEquipmentScore(profileData, 'skiller');
+
+            const combatTotalScore = houseResult.score + abilityResult.score + combatEquipmentResult.score;
+            const skillerTotalScore = skillerEquipmentResult.score;
 
             return {
-                total: totalScore,
+                // Combat score (house + ability + combat equipment)
+                total: combatTotalScore,
                 house: houseResult.score,
                 ability: abilityResult.score,
-                equipment: equipmentResult.score,
+                equipment: combatEquipmentResult.score,
                 equipmentHidden: profileData.profile?.hideWearableItems || false,
-                hasEquipmentData: equipmentResult.hasEquipmentData,
+                hasEquipmentData: combatEquipmentResult.hasEquipmentData,
                 breakdown: {
                     houses: houseResult.breakdown,
                     abilities: abilityResult.breakdown,
-                    equipment: equipmentResult.breakdown,
+                    equipment: combatEquipmentResult.breakdown,
+                },
+                // Skiller score (skilling equipment only)
+                skillerTotal: skillerTotalScore,
+                skillerEquipment: skillerEquipmentResult.score,
+                skillerBreakdown: {
+                    equipment: skillerEquipmentResult.breakdown,
                 },
             };
         } catch (error) {
@@ -57671,6 +57725,9 @@ return plugin;
                 equipmentHidden: false,
                 hasEquipmentData: false,
                 breakdown: { houses: [], abilities: [], equipment: [] },
+                skillerTotal: 0,
+                skillerEquipment: 0,
+                skillerBreakdown: { equipment: [] },
             };
         }
     }
@@ -57860,9 +57917,10 @@ return plugin;
     /**
      * Calculate equipment score from equipped items
      * @param {Object} profileData - Profile data
+     * @param {string} scoreType - 'combat' or 'skiller'
      * @returns {Object} {score, breakdown, hasEquipmentData}
      */
-    function calculateEquipmentScore(profileData) {
+    function calculateEquipmentScore(profileData, scoreType = 'combat') {
         const equippedItems = profileData.profile?.wearableItemMap || {};
         const hideEquipment = profileData.profile?.hideWearableItems || false;
 
@@ -57882,12 +57940,23 @@ return plugin;
         let totalValue = 0;
         const breakdown = [];
 
-        for (const [_slot, itemData] of Object.entries(equippedItems)) {
+        for (const [slot, itemData] of Object.entries(equippedItems)) {
             if (!itemData?.itemHrid) continue;
 
             const itemHrid = itemData.itemHrid;
             const itemDetails = gameData.itemDetailMap[itemHrid];
             if (!itemDetails) continue;
+
+            // Categorize item by skill requirements
+            const category = categorizeEquipmentItem(slot, itemDetails.equipmentDetail);
+
+            // Filter by score type
+            if (scoreType === 'combat' && !category.combat) {
+                continue; // Skip non-combat items for combat score
+            }
+            if (scoreType === 'skiller' && !category.skiller) {
+                continue; // Skip non-skilling items for skiller score
+            }
 
             // Get enhancement level from itemData (separate field, not in HRID)
             const enhancementLevel = itemData.enhancementLevel || 0;
@@ -57953,10 +58022,15 @@ return plugin;
             const itemName = itemDetails.name || itemHrid.replace('/items/', '');
             const displayName = enhancementLevel > 0 ? `${itemName} +${enhancementLevel}` : itemName;
 
-            breakdown.push({
-                name: displayName,
-                value: (itemCost / 1_000_000).toFixed(1),
-            });
+            // Only add to breakdown if formatted value is not "0.0"
+            // (items worth less than 50k coins round to 0.0 and clutter the display)
+            const formattedValue = (itemCost / 1_000_000).toFixed(1);
+            if (formattedValue !== '0.0') {
+                breakdown.push({
+                    name: displayName,
+                    value: formattedValue,
+                });
+            }
         }
 
         // Convert to score (value / 1 million)
@@ -58146,7 +58220,7 @@ return plugin;
             const houseBreakdownHTML = scoreData.breakdown.houses
                 .map(
                     (item) =>
-                        `<div style="margin-left: 10px; font-size: 0.8rem; color: ${config$1.COLOR_TEXT_SECONDARY};">${item.name}: ${numberFormatter(item.value)}</div>`
+                        `<div style="margin-left: 10px; font-size: 0.8rem; color: ${config$1.COLOR_TEXT_SECONDARY};">${item.name}: ${item.value}</div>`
                 )
                 .join('');
 
@@ -58154,7 +58228,7 @@ return plugin;
             const abilityBreakdownHTML = scoreData.breakdown.abilities
                 .map(
                     (item) =>
-                        `<div style="margin-left: 10px; font-size: 0.8rem; color: ${config$1.COLOR_TEXT_SECONDARY};">${item.name}: ${numberFormatter(item.value)}</div>`
+                        `<div style="margin-left: 10px; font-size: 0.8rem; color: ${config$1.COLOR_TEXT_SECONDARY};">${item.name}: ${item.value}</div>`
                 )
                 .join('');
 
@@ -58162,7 +58236,15 @@ return plugin;
             const equipmentBreakdownHTML = scoreData.breakdown.equipment
                 .map(
                     (item) =>
-                        `<div style="margin-left: 10px; font-size: 0.8rem; color: ${config$1.COLOR_TEXT_SECONDARY};">${item.name}: ${numberFormatter(item.value)}</div>`
+                        `<div style="margin-left: 10px; font-size: 0.8rem; color: ${config$1.COLOR_TEXT_SECONDARY};">${item.name}: ${item.value}</div>`
+                )
+                .join('');
+
+            // Build skiller equipment breakdown HTML
+            const skillerEquipmentBreakdownHTML = scoreData.skillerBreakdown.equipment
+                .map(
+                    (item) =>
+                        `<div style="margin-left: 10px; font-size: 0.8rem; color: ${config$1.COLOR_TEXT_SECONDARY};">${item.name}: ${item.value}</div>`
                 )
                 .join('');
 
@@ -58203,6 +58285,19 @@ return plugin;
                     ${equipmentBreakdownHTML}
                 </div>
             </div>
+
+            <div style="cursor: pointer; font-weight: bold; margin-top: 12px; margin-bottom: 8px; color: ${config$1.COLOR_PROFIT};" id="mwi-skiller-score-toggle">
+                + Skiller Score: ${numberFormatter(scoreData.skillerTotal.toFixed(1))}
+            </div>
+            <div id="mwi-skiller-score-details" style="display: none; margin-left: 10px; color: ${config$1.COLOR_TEXT_PRIMARY};">
+                <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-skiller-equipment-toggle">
+                    + Equipment: ${numberFormatter(scoreData.skillerEquipment.toFixed(1))}
+                </div>
+                <div id="mwi-skiller-equipment-breakdown" style="display: none;">
+                    ${skillerEquipmentBreakdownHTML}
+                </div>
+            </div>
+
             <div style="margin-top: 12px; display: flex; flex-direction: column; gap: 6px;">
                 <button id="mwi-combat-sim-export-btn" style="
                     padding: 8px 12px;
@@ -58332,6 +58427,32 @@ return plugin;
                     equipmentBreakdown.style.display = isCollapsed ? 'block' : 'none';
                     equipmentToggle.textContent =
                         (isCollapsed ? '- ' : '+ ') + `Equipment: ${numberFormatter(scoreData.equipment.toFixed(1))}`;
+                });
+            }
+
+            // Toggle skiller score details
+            const skillerScoreToggle = panel.querySelector('#mwi-skiller-score-toggle');
+            const skillerScoreDetails = panel.querySelector('#mwi-skiller-score-details');
+            if (skillerScoreToggle && skillerScoreDetails) {
+                skillerScoreToggle.addEventListener('click', () => {
+                    const isCollapsed = skillerScoreDetails.style.display === 'none';
+                    skillerScoreDetails.style.display = isCollapsed ? 'block' : 'none';
+                    skillerScoreToggle.textContent =
+                        (isCollapsed ? '- ' : '+ ') +
+                        `Skiller Score: ${numberFormatter(scoreData.skillerTotal.toFixed(1))}`;
+                });
+            }
+
+            // Toggle skiller equipment breakdown
+            const skillerEquipmentToggle = panel.querySelector('#mwi-skiller-equipment-toggle');
+            const skillerEquipmentBreakdown = panel.querySelector('#mwi-skiller-equipment-breakdown');
+            if (skillerEquipmentToggle && skillerEquipmentBreakdown) {
+                skillerEquipmentToggle.addEventListener('click', () => {
+                    const isCollapsed = skillerEquipmentBreakdown.style.display === 'none';
+                    skillerEquipmentBreakdown.style.display = isCollapsed ? 'block' : 'none';
+                    skillerEquipmentToggle.textContent =
+                        (isCollapsed ? '- ' : '+ ') +
+                        `Equipment: ${numberFormatter(scoreData.skillerEquipment.toFixed(1))}`;
                 });
             }
 
