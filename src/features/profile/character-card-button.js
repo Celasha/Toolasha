@@ -204,7 +204,7 @@ class CharacterCardButton {
             // Build character sheet link using cached data (preferred) or DOM fallback
             const url = buildCharacterSheetLink(
                 _modal,
-                'https://tib-san.github.io/mwi-character-sheet/',
+                'https://tib-san.gitlab.io/mwi-character-sheet/',
                 characterData,
                 clientData,
                 consumablesData

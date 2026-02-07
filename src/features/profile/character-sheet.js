@@ -1,6 +1,6 @@
 /**
  * Utilities to parse the MWI character share modal into a urpt string
- * for https://tib-san.github.io/mwi-character-sheet/. Food is not present in the modal, so it is
+ * for https://tib-san.gitlab.io/mwi-character-sheet/. Food is not present in the modal, so it is
  * emitted as empty entries.
  *
  * Usage:
@@ -548,7 +548,7 @@ export function formatFoodData(foodSlots, drinkSlots) {
  */
 export function buildCharacterSheetLink(
     _modal = document.querySelector('.SharableProfile_modal__2OmCQ'),
-    baseUrl = 'https://tib-san.github.io/mwi-character-sheet/',
+    baseUrl = 'https://tib-san.gitlab.io/mwi-character-sheet/',
     characterData = null,
     clientData = null,
     consumablesData = null
