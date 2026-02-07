@@ -709,7 +709,7 @@ class TaskIcons {
         iconDiv.style.left = leftPosition;
         iconDiv.style.width = widthPercent;
         iconDiv.style.height = '100%';
-        iconDiv.style.opacity = '0.3';
+        iconDiv.style.opacity = '0.4';
         iconDiv.style.pointerEvents = 'none';
         iconDiv.style.zIndex = '0';
 
@@ -735,10 +735,14 @@ class TaskIcons {
         const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
         svg.setAttribute('width', '100%');
         svg.setAttribute('height', '100%');
+        svg.setAttribute('viewBox', '0 0 100 100');
+        svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
 
         // Create use element with external sprite reference
         const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+        // Set both href and xlink:href for maximum browser compatibility
         use.setAttribute('href', `${spriteUrl}#${iconName}`);
+        use.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', `${spriteUrl}#${iconName}`);
         svg.appendChild(use);
 
         iconDiv.appendChild(svg);
