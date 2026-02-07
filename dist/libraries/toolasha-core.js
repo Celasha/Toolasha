@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 0.21.2
+ * Version: 0.22.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1106,6 +1106,13 @@
                     label: 'Auto-fill marketplace orders with optimal price',
                     type: 'checkbox',
                     default: true,
+                },
+                market_autoClickMax: {
+                    id: 'market_autoClickMax',
+                    label: 'Auto-click Max button on sell listing dialogs',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Automatically clicks the Max button in the quantity field when opening Sell listing dialogs',
                 },
                 market_visibleItemCount: {
                     id: 'market_visibleItemCount',

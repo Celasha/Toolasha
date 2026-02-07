@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 0.21.2
+ * Version: 0.22.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -9758,7 +9758,7 @@
         }
 
         const headerText = header.textContent.trim();
-        if (!headerText.includes('Buy Now') && !headerText.includes('立即购买')) {
+        if (!headerText.includes('Buy Now')) {
             return;
         }
 

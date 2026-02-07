@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.21.2
+// @version      0.22.0
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -15742,6 +15742,13 @@ return plugin;
                     type: 'checkbox',
                     default: true,
                 },
+                market_autoClickMax: {
+                    id: 'market_autoClickMax',
+                    label: 'Auto-click Max button on sell listing dialogs',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Automatically clicks the Max button in the quantity field when opening Sell listing dialogs',
+                },
                 market_visibleItemCount: {
                     id: 'market_visibleItemCount',
                     label: 'Market: Show inventory count on items',
@@ -29540,7 +29547,7 @@ return plugin;
                 const headerText = header.textContent.trim();
 
                 // Skip instant buy/sell modals (contain "Now" in title)
-                if (headerText.includes(' Now') || headerText.includes('立即')) {
+                if (headerText.includes(' Now')) {
                     return;
                 }
 
@@ -29572,8 +29579,8 @@ return plugin;
             const labelParent = bestPriceLabel.parentElement;
             const labelText = labelParent.textContent.toLowerCase();
 
-            const isBuyOrder = labelText.includes('best buy') || labelText.includes('购买');
-            const isSellOrder = labelText.includes('best sell') || labelText.includes('出售');
+            const isBuyOrder = labelText.includes('best buy');
+            const isSellOrder = labelText.includes('best sell');
 
             if (!isBuyOrder && !isSellOrder) {
                 return;
@@ -29636,6 +29643,143 @@ return plugin;
     }
 
     const autoFillPrice = new AutoFillPrice();
+
+    /**
+     * Auto-Click Max Button
+     * Automatically clicks the "Max" button in market listing dialogs
+     */
+
+
+    class AutoClickMax {
+        constructor() {
+            this.isActive = false;
+            this.unregisterHandlers = [];
+            this.processedModals = new WeakSet();
+            this.isInitialized = false;
+        }
+
+        /**
+         * Initialize the auto-click max feature
+         */
+        initialize() {
+            if (this.isInitialized) {
+                return;
+            }
+
+            if (!config$1.isFeatureEnabled('market_autoClickMax')) {
+                return;
+            }
+
+            this.isActive = true;
+            this.registerDOMObservers();
+            this.isInitialized = true;
+        }
+
+        /**
+         * Register DOM observers to watch for market listing modals
+         */
+        registerDOMObservers() {
+            const unregister = domObserver$1.onClass('auto-click-max', 'Modal_modalContainer', (modal) => {
+                this.handleOrderModal(modal);
+            });
+            this.unregisterHandlers.push(unregister);
+        }
+
+        /**
+         * Handle market order modal appearance
+         * @param {HTMLElement} modal - Modal container element
+         */
+        handleOrderModal(modal) {
+            if (!this.isActive || !modal || this.processedModals.has(modal)) {
+                return;
+            }
+
+            // Check if this is a Buy/Sell listing modal (not Instant Buy/Sell)
+            const header = modal.querySelector('div[class*="MarketplacePanel_header"]');
+            if (!header) {
+                return;
+            }
+
+            const headerText = header.textContent;
+
+            // Skip Instant Buy/Sell modals (they don't have Max button for quantity)
+            if (headerText.includes('Now')) {
+                return;
+            }
+
+            // Only process Buy Listing or Sell Listing modals
+            if (!headerText.includes('Listing')) {
+                return;
+            }
+
+            // Determine if this is a sell order by checking the price label
+            // Only auto-click Max for sell orders (not buy orders)
+            const priceLabel = modal.querySelector('div[class*="MarketplacePanel_priceLabel"]');
+            if (!priceLabel) {
+                return;
+            }
+
+            const labelText = priceLabel.textContent.toLowerCase();
+            const isSellOrder = labelText.includes('best sell');
+
+            if (!isSellOrder) {
+                return; // Skip buy orders
+            }
+
+            // Mark as processed
+            this.processedModals.add(modal);
+
+            // Click the Max button
+            this.findAndClickMaxButton(modal);
+        }
+
+        /**
+         * Find and click the Max button in the modal
+         * @param {HTMLElement} modal - Modal container element
+         */
+        findAndClickMaxButton(modal) {
+            if (!modal) {
+                return;
+            }
+
+            // Strategy 1: Find Max button by text content
+            const allButtons = modal.querySelectorAll('button');
+            const maxButton = Array.from(allButtons).find((btn) => {
+                const text = btn.textContent.trim();
+                return text === 'Max';
+            });
+
+            if (!maxButton) {
+                // Button might not be rendered yet or modal structure changed
+                return;
+            }
+
+            // Don't click if button is disabled
+            if (maxButton.disabled) {
+                return;
+            }
+
+            // Click the Max button
+            try {
+                maxButton.click();
+            } catch (error) {
+                console.error('[AutoClickMax] Failed to click Max button:', error);
+            }
+        }
+
+        /**
+         * Disable and cleanup
+         */
+        disable() {
+            this.unregisterHandlers.forEach((unregister) => unregister());
+            this.unregisterHandlers = [];
+            this.processedModals = new WeakSet();
+            this.isActive = false;
+            this.isInitialized = false;
+        }
+    }
+
+    const autoClickMax = new AutoClickMax();
 
     /**
      * Market Item Count Display Module
@@ -38528,6 +38672,7 @@ return plugin;
         tooltipConsumables,
         marketFilter,
         autoFillPrice,
+        autoClickMax,
         itemCountDisplay,
         listingPriceDisplay,
         estimatedListingAge,
@@ -47282,7 +47427,7 @@ return plugin;
         }
 
         const headerText = header.textContent.trim();
-        if (!headerText.includes('Buy Now') && !headerText.includes('立即购买')) {
+        if (!headerText.includes('Buy Now')) {
             return;
         }
 
@@ -70061,6 +70206,13 @@ return plugin;
                 name: 'Auto Fill Price',
                 category: 'Market',
                 module: Market.autoFillPrice,
+                async: false,
+            },
+            {
+                key: 'autoClickMax',
+                name: 'Auto Click Max',
+                category: 'Market',
+                module: Market.autoClickMax,
                 async: false,
             },
             {
