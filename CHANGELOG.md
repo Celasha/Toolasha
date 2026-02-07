@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.3](https://github.com/Celasha/Toolasha/compare/v0.20.2...v0.20.3) (2026-02-07)
+
+
+### Bug Fixes
+
+* navbar links and networth display on character switch ([754beb9](https://github.com/Celasha/Toolasha/commit/754beb9f303f88eb8bee1398570c4061bfb6bd3f))
+
 ## [0.20.2](https://github.com/Celasha/Toolasha/compare/v0.20.1...v0.20.2) (2026-02-07)
 
 ### Bug Fixes
