@@ -1,16 +1,9 @@
-// ==UserScript==
-// @name         Toolasha Combat Library
-// @namespace    http://tampermonkey.net/
-// @version      0.18.0
-// @description  Combat library for Toolasha - Combat, abilities, and combat stats features
-// @author       Celasha
-// @license      CC-BY-NC-SA-4.0
-// @run-at       document-start
-// @match        https://www.milkywayidle.com/*
-// @match        https://test.milkywayidle.com/*
-// @match        https://shykai.github.io/MWICombatSimulatorTest/dist/*
-// @grant        none
-// ==/UserScript==
+/**
+ * Toolasha Combat Library
+ * Combat, abilities, and combat stats features
+ * Version: 0.19.0
+ * License: CC-BY-NC-SA-4.0
+ */
 
 (function (config, dataManager, domObserver, webSocketHook, storage, timerRegistry_js, domObserverHelpers_js, marketAPI, formatters_js, profileManager_js, reactInput_js, dom, abilityCostCalculator_js, houseCostCalculator_js, enhancementCalculator_js, marketData_js, enhancementConfig_js) {
     'use strict';

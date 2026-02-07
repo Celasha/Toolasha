@@ -1,16 +1,9 @@
-// ==UserScript==
-// @name         Toolasha Actions Library
-// @namespace    http://tampermonkey.net/
-// @version      0.18.0
-// @description  Actions library for Toolasha - Production, gathering, and alchemy features
-// @author       Celasha
-// @license      CC-BY-NC-SA-4.0
-// @run-at       document-start
-// @match        https://www.milkywayidle.com/*
-// @match        https://test.milkywayidle.com/*
-// @match        https://shykai.github.io/MWICombatSimulatorTest/dist/*
-// @grant        none
-// ==/UserScript==
+/**
+ * Toolasha Actions Library
+ * Production, gathering, and alchemy features
+ * Version: 0.19.0
+ * License: CC-BY-NC-SA-4.0
+ */
 
 (function (dataManager, domObserver, config, enhancementConfig_js, enhancementCalculator_js, formatters_js, marketAPI, domObserverHelpers_js, equipmentParser_js, teaParser_js, bonusRevenueCalculator_js, marketData_js, profitConstants_js, efficiency_js, profitHelpers_js, houseEfficiency_js, uiComponents_js, actionPanelHelper_js, dom_js, timerRegistry_js, actionCalculator_js, cleanupRegistry_js, experienceParser_js, reactInput_js, experienceCalculator_js, storage, webSocketHook, materialCalculator_js, tokenValuation_js) {
     'use strict';

@@ -1,16 +1,9 @@
-// ==UserScript==
-// @name         Toolasha Core Library
-// @namespace    http://tampermonkey.net/
-// @version      0.18.0
-// @description  Core library for Toolasha - Core infrastructure and API clients
-// @author       Celasha
-// @license      CC-BY-NC-SA-4.0
-// @run-at       document-start
-// @match        https://www.milkywayidle.com/*
-// @match        https://test.milkywayidle.com/*
-// @match        https://shykai.github.io/MWICombatSimulatorTest/dist/*
-// @grant        none
-// ==/UserScript==
+/**
+ * Toolasha Core Library
+ * Core infrastructure and API clients
+ * Version: 0.19.0
+ * License: CC-BY-NC-SA-4.0
+ */
 
 (function () {
     'use strict';
@@ -2017,9 +2010,10 @@
                 messageType = null;
             }
 
-            // Skip deduplication for quest updates (quest content changes are beyond 100 chars)
-            // The quest slot ID stays the same, causing false duplicate detection
-            const skipDedup = messageType === 'quests_updated';
+            // Skip deduplication for events where consecutive messages have similar first 100 chars
+            // but contain different data (counts, timestamps, etc. beyond the 100-char hash window)
+            const skipDedup =
+                messageType === 'quests_updated' || messageType === 'action_completed' || messageType === 'items_updated';
 
             if (!skipDedup) {
                 // Deduplicate by message content to prevent 4x JSON.parse on same message
@@ -2772,11 +2766,13 @@
                         }
 
                         // Find and update the item in inventory
-                        for (const invItem of this.characterItems) {
-                            if (invItem.id === endItem.id) {
-                                invItem.count = endItem.count;
-                                break;
-                            }
+                        const index = this.characterItems.findIndex((invItem) => invItem.id === endItem.id);
+                        if (index !== -1) {
+                            // Update existing item
+                            this.characterItems[index].count = endItem.count;
+                        } else {
+                            // Add new item to inventory
+                            this.characterItems.push(endItem);
                         }
                     }
                 }

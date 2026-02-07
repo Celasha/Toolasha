@@ -1,16 +1,9 @@
-// ==UserScript==
-// @name         Toolasha Utils Library
-// @namespace    http://tampermonkey.net/
-// @version      0.18.0
-// @description  Utils library for Toolasha - All utility modules
-// @author       Celasha
-// @license      CC-BY-NC-SA-4.0
-// @run-at       document-start
-// @match        https://www.milkywayidle.com/*
-// @match        https://test.milkywayidle.com/*
-// @match        https://shykai.github.io/MWICombatSimulatorTest/dist/*
-// @grant        none
-// ==/UserScript==
+/**
+ * Toolasha Utils Library
+ * All utility modules
+ * Version: 0.19.0
+ * License: CC-BY-NC-SA-4.0
+ */
 
 (function (config, domObserver, marketAPI, dataManager) {
     'use strict';

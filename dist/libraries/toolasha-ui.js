@@ -1,18 +1,11 @@
-// ==UserScript==
-// @name         Toolasha UI Library
-// @namespace    http://tampermonkey.net/
-// @version      0.18.0
-// @description  UI library for Toolasha - UI enhancements, tasks, skills, and misc features
-// @author       Celasha
-// @license      CC-BY-NC-SA-4.0
-// @run-at       document-start
-// @match        https://www.milkywayidle.com/*
-// @match        https://test.milkywayidle.com/*
-// @match        https://shykai.github.io/MWICombatSimulatorTest/dist/*
-// @grant        none
-// ==/UserScript==
+/**
+ * Toolasha UI Library
+ * UI enhancements, tasks, skills, and misc features
+ * Version: 0.19.0
+ * License: CC-BY-NC-SA-4.0
+ */
 
-(function (config, dataManager, domObserver, formatters_js, timerRegistry_js, webSocketHook, marketAPI, tokenValuation_js, marketData_js, profitHelpers_js, equipmentParser_js, teaParser_js, bonusRevenueCalculator_js, profitConstants_js, efficiency_js, houseEfficiency_js, selectors_js, storage, domObserverHelpers_js, cleanupRegistry_js, settingsSchema_js, settingsStorage, enhancementCalculator_js) {
+(function (config, dataManager, domObserver, formatters_js, timerRegistry_js, domObserverHelpers_js, webSocketHook, marketAPI, tokenValuation_js, marketData_js, profitHelpers_js, equipmentParser_js, teaParser_js, bonusRevenueCalculator_js, profitConstants_js, efficiency_js, houseEfficiency_js, selectors_js, storage, cleanupRegistry_js, settingsSchema_js, settingsStorage, enhancementCalculator_js) {
     'use strict';
 
     /**
@@ -445,6 +438,7 @@
             this.isInitialized = false;
             this.updateInterval = null;
             this.timerRegistry = timerRegistry_js.createTimerRegistry();
+            this.progressBarObservers = new Map(); // Track MutationObservers for each progress bar
         }
 
         /**
@@ -482,15 +476,11 @@
             this.isActive = true;
             this.registerObservers();
 
-            // Initial update for existing skills
-            this.updateAllSkills();
-
-            // Update every 5 seconds to catch XP changes
-            // Experience changes slowly enough that frequent polling is unnecessary
-            this.updateInterval = setInterval(() => {
-                this.updateAllSkills();
-            }, 5000); // 5 seconds (reduced from 1 second for better performance)
-            this.timerRegistry.registerInterval(this.updateInterval);
+            // Setup observers for any existing progress bars
+            const existingProgressBars = document.querySelectorAll('[class*="NavigationBar_currentExperience"]');
+            existingProgressBars.forEach((progressBar) => {
+                this.setupProgressBarObserver(progressBar);
+            });
 
             this.isInitialized = true;
         }
@@ -499,23 +489,44 @@
          * Register DOM observers
          */
         registerObservers() {
-            // Watch for progress bars appearing/changing
+            // Watch for progress bars appearing
             const unregister = domObserver.onClass(
                 'SkillExpPercentage',
                 'NavigationBar_currentExperience',
                 (progressBar) => {
-                    this.updateSkillPercentage(progressBar);
+                    this.setupProgressBarObserver(progressBar);
                 }
             );
             this.unregisterHandlers.push(unregister);
         }
 
         /**
-         * Update all existing skills on page
+         * Setup MutationObserver for a progress bar to watch for style changes
+         * @param {HTMLElement} progressBar - The progress bar element
          */
-        updateAllSkills() {
-            const progressBars = document.querySelectorAll('[class*="NavigationBar_currentExperience"]');
-            progressBars.forEach((bar) => this.updateSkillPercentage(bar));
+        setupProgressBarObserver(progressBar) {
+            // Skip if we're already observing this progress bar
+            if (this.progressBarObservers.has(progressBar)) {
+                return;
+            }
+
+            // Initial update
+            this.updateSkillPercentage(progressBar);
+
+            // Watch for style attribute changes (width percentage updates)
+            const unwatch = domObserverHelpers_js.createMutationWatcher(
+                progressBar,
+                () => {
+                    this.updateSkillPercentage(progressBar);
+                },
+                {
+                    attributes: true,
+                    attributeFilter: ['style'],
+                }
+            );
+
+            // Store the observer so we can clean it up later
+            this.progressBarObservers.set(progressBar, unwatch);
         }
 
         /**
@@ -585,6 +596,12 @@
         disable() {
             this.timerRegistry.clearAll();
             this.updateInterval = null;
+
+            // Disconnect all progress bar observers
+            this.progressBarObservers.forEach((unwatch) => {
+                unwatch();
+            });
+            this.progressBarObservers.clear();
 
             // Remove all percentage spans
             document.querySelectorAll('.mwi-exp-percentage').forEach((span) => span.remove());
@@ -5596,6 +5613,7 @@
             this.updateInterval = null;
             this.unregisterObservers = [];
             this.timerRegistry = timerRegistry_js.createTimerRegistry();
+            this.progressBarObservers = new Map(); // Track MutationObservers for each progress bar
         }
 
         /**
@@ -5607,11 +5625,11 @@
             // Watch for skill buttons appearing
             this.watchSkillButtons();
 
-            // Update every second (like MWIT-E does)
-            this.updateInterval = setInterval(() => {
-                this.updateAllSkillBars();
-            }, 1000);
-            this.timerRegistry.registerInterval(this.updateInterval);
+            // Setup observers for any existing progress bars
+            const existingProgressBars = document.querySelectorAll('[class*="currentExperience"]');
+            existingProgressBars.forEach((progressBar) => {
+                this.setupProgressBarObserver(progressBar);
+            });
 
             this.initialized = true;
         }
@@ -5621,16 +5639,23 @@
          */
         watchSkillButtons() {
             // Watch for left navigation bar skills (non-combat skills)
-            const unregisterNav = domObserver.onClass('RemainingXP-NavSkillBar', 'NavigationBar_currentExperience', () => {
-                this.updateAllSkillBars();
-            });
+            const unregisterNav = domObserver.onClass(
+                'RemainingXP-NavSkillBar',
+                'NavigationBar_currentExperience',
+                (progressBar) => {
+                    this.setupProgressBarObserver(progressBar);
+                }
+            );
             this.unregisterObservers.push(unregisterNav);
 
-            // Wait for character data to be loaded before first update
+            // Wait for character data to be loaded before setting up observers
             const initHandler = () => {
-                // Initial update once character data is ready
+                // Setup observers for all progress bars once character data is ready
                 const initialUpdateTimeout = setTimeout(() => {
-                    this.updateAllSkillBars();
+                    const progressBars = document.querySelectorAll('[class*="currentExperience"]');
+                    progressBars.forEach((progressBar) => {
+                        this.setupProgressBarObserver(progressBar);
+                    });
                 }, 500);
                 this.timerRegistry.registerTimeout(initialUpdateTimeout);
             };
@@ -5648,19 +5673,50 @@
         }
 
         /**
-         * Update all skill bars with remaining XP
+         * Setup MutationObserver for a progress bar to watch for style changes
+         * @param {HTMLElement} progressBar - The progress bar element
          */
-        updateAllSkillBars() {
-            // Remove any existing XP displays
-            document.querySelectorAll('.mwi-remaining-xp').forEach((el) => el.remove());
+        setupProgressBarObserver(progressBar) {
+            // Skip if we're already observing this progress bar
+            if (this.progressBarObservers.has(progressBar)) {
+                return;
+            }
 
-            // Find all skill progress bars (broader selector to catch combat skills too)
-            // Use attribute selector to match any class containing "currentExperience"
-            const progressBars = document.querySelectorAll('[class*="currentExperience"]');
+            // Initial update
+            this.addRemainingXP(progressBar);
 
-            progressBars.forEach((progressBar) => {
-                this.addRemainingXP(progressBar);
-            });
+            // Watch for style attribute changes (width percentage updates)
+            const unwatch = domObserverHelpers_js.createMutationWatcher(
+                progressBar,
+                () => {
+                    this.updateSingleSkillBar(progressBar);
+                },
+                {
+                    attributes: true,
+                    attributeFilter: ['style'],
+                }
+            );
+
+            // Store the observer so we can clean it up later
+            this.progressBarObservers.set(progressBar, unwatch);
+        }
+
+        /**
+         * Update a single skill bar with remaining XP
+         * @param {HTMLElement} progressBar - The progress bar element
+         */
+        updateSingleSkillBar(progressBar) {
+            // Remove existing XP display for this progress bar
+            const progressContainer = progressBar.parentNode;
+            if (progressContainer) {
+                const existingDisplay = progressContainer.querySelector('.mwi-remaining-xp');
+                if (existingDisplay) {
+                    existingDisplay.remove();
+                }
+            }
+
+            // Add updated XP display
+            this.addRemainingXP(progressBar);
         }
 
         /**
@@ -5698,8 +5754,8 @@
 
                 if (!skillName) return;
 
-                // Calculate remaining XP for this skill
-                const remainingXP = this.calculateRemainingXP(skillName);
+                // Calculate remaining XP for this skill using progress bar width (like XP percentage does)
+                const remainingXP = this.calculateRemainingXPFromProgressBar(progressBar, skillName);
                 if (remainingXP === null) return;
 
                 // Find the progress bar container (parent of the progress bar)
@@ -5740,21 +5796,22 @@
         }
 
         /**
-         * Calculate remaining XP to next level for a skill
+         * Calculate remaining XP from progress bar width (real-time, like XP percentage)
+         * @param {HTMLElement} progressBar - The progress bar element
          * @param {string} skillName - The skill name (e.g., "Milking", "Combat")
          * @returns {number|null} Remaining XP or null if unavailable
          */
-        calculateRemainingXP(skillName) {
+        calculateRemainingXPFromProgressBar(progressBar, skillName) {
             // Convert skill name to HRID
             const skillHrid = `/skills/${skillName.toLowerCase()}`;
 
-            // Get character skills data
+            // Get character skills data for level info
             const characterData = dataManager.characterData;
             if (!characterData || !characterData.characterSkills) {
                 return null;
             }
 
-            // Find the skill
+            // Find the skill to get current level
             const skill = characterData.characterSkills.find((s) => s.skillHrid === skillHrid);
             if (!skill) {
                 return null;
@@ -5764,16 +5821,29 @@
             const gameData = dataManager.getInitClientData();
             if (!gameData || !gameData.levelExperienceTable) return null;
 
-            const currentExp = skill.experience;
             const currentLevel = skill.level;
             const nextLevel = currentLevel + 1;
 
-            // Get XP required for next level
+            // Get XP required for current and next level
+            const expForCurrentLevel = gameData.levelExperienceTable[currentLevel] || 0;
             const expForNextLevel = gameData.levelExperienceTable[nextLevel];
             if (expForNextLevel === undefined) return null; // Max level
 
+            // Extract percentage from progress bar width (updated by game in real-time)
+            const widthStyle = progressBar.style.width;
+            if (!widthStyle) return null;
+
+            const percentage = parseFloat(widthStyle.replace('%', ''));
+            if (isNaN(percentage)) return null;
+
+            // Calculate XP needed for this level
+            const xpNeededForLevel = expForNextLevel - expForCurrentLevel;
+
+            // Calculate current XP within this level based on progress bar
+            const currentXPInLevel = (percentage / 100) * xpNeededForLevel;
+
             // Calculate remaining XP
-            const remainingXP = expForNextLevel - currentExp;
+            const remainingXP = xpNeededForLevel - currentXPInLevel;
 
             return Math.max(0, Math.ceil(remainingXP));
         }
@@ -5783,10 +5853,17 @@
          */
         disable() {
             if (this.updateInterval) {
+                clearInterval(this.updateInterval);
                 this.updateInterval = null;
             }
 
             this.timerRegistry.clearAll();
+
+            // Disconnect all progress bar observers
+            this.progressBarObservers.forEach((unwatch) => {
+                unwatch();
+            });
+            this.progressBarObservers.clear();
 
             // Unregister observers
             this.unregisterObservers.forEach((unregister) => unregister());
@@ -11625,4 +11702,4 @@
 
     console.log('[Toolasha] UI library loaded');
 
-})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Utils.formatters, Toolasha.Utils.timerRegistry, Toolasha.Core.webSocketHook, Toolasha.Core.marketAPI, Toolasha.Utils.tokenValuation, Toolasha.Utils.marketData, Toolasha.Utils.profitHelpers, Toolasha.Utils.equipmentParser, Toolasha.Utils.teaParser, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.profitConstants, Toolasha.Utils.efficiency, Toolasha.Utils.houseEfficiency, Toolasha.Utils.selectors, Toolasha.Core.storage, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.cleanupRegistry, Toolasha.Core, Toolasha.Core.settingsStorage, Toolasha.Utils.enhancementCalculator);
+})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Utils.formatters, Toolasha.Utils.timerRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Core.webSocketHook, Toolasha.Core.marketAPI, Toolasha.Utils.tokenValuation, Toolasha.Utils.marketData, Toolasha.Utils.profitHelpers, Toolasha.Utils.equipmentParser, Toolasha.Utils.teaParser, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.profitConstants, Toolasha.Utils.efficiency, Toolasha.Utils.houseEfficiency, Toolasha.Utils.selectors, Toolasha.Core.storage, Toolasha.Utils.cleanupRegistry, Toolasha.Core, Toolasha.Core.settingsStorage, Toolasha.Utils.enhancementCalculator);

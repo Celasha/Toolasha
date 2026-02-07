@@ -1,16 +1,9 @@
-// ==UserScript==
-// @name         Toolasha Market Library
-// @namespace    http://tampermonkey.net/
-// @version      0.18.0
-// @description  Market library for Toolasha - Market, inventory, and economy features
-// @author       Celasha
-// @license      CC-BY-NC-SA-4.0
-// @run-at       document-start
-// @match        https://www.milkywayidle.com/*
-// @match        https://test.milkywayidle.com/*
-// @match        https://shykai.github.io/MWICombatSimulatorTest/dist/*
-// @grant        none
-// ==/UserScript==
+/**
+ * Toolasha Market Library
+ * Market, inventory, and economy features
+ * Version: 0.19.0
+ * License: CC-BY-NC-SA-4.0
+ */
 
 (function (config, dataManager, domObserver, marketAPI, equipmentParser_js, houseEfficiency_js, efficiency_js, teaParser_js, bonusRevenueCalculator_js, marketData_js, profitConstants_js, profitHelpers_js, buffParser_js, tokenValuation_js, enhancementCalculator_js, formatters_js, enhancementConfig_js, dom, timerRegistry_js, storage, cleanupRegistry_js, webSocketHook, abilityCostCalculator_js, houseCostCalculator_js) {
     'use strict';
@@ -6093,9 +6086,16 @@
 
                 if (listing.isSell) {
                     // Sell orders: Calculate expected proceeds after tax
+                    if (listing.status === '/market_listing_status/filled') {
+                        continue;
+                    }
+
                     const tax = listing.itemHrid === '/items/bag_of_10_cowbells' ? 0.82 : 0.98;
-                    const remainingQuantity = listing.orderQuantity - listing.filledQuantity;
-                    sellOrders += remainingQuantity * Math.floor(listing.price * tax);
+                    const remainingQuantity = Math.max(0, listing.orderQuantity - listing.filledQuantity);
+
+                    if (remainingQuantity > 0) {
+                        sellOrders += remainingQuantity * Math.floor(listing.price * tax);
+                    }
                 } else {
                     // Buy orders: Prepaid coins locked in the order
                     buyOrders += listing.coinsAvailable || 0;
