@@ -2,15 +2,13 @@
 
 ## [0.20.0](https://github.com/Celasha/Toolasha/compare/v0.19.0...v0.20.0) (2026-02-07)
 
-
 ### Features
 
-* add dual score system for combat and skiller equipment ([a483578](https://github.com/Celasha/Toolasha/commit/a483578244e8dd362d4c0d09cdd854871fae706b))
-
+- add dual score system for combat and skiller equipment ([a483578](https://github.com/Celasha/Toolasha/commit/a483578244e8dd362d4c0d09cdd854871fae706b))
 
 ### Bug Fixes
 
-* exclude zero-value items from combat score equipment list ([e4cdc5e](https://github.com/Celasha/Toolasha/commit/e4cdc5e1c4df460edd589ff4717973406cd801d6))
+- exclude zero-value items from combat score equipment list ([e4cdc5e](https://github.com/Celasha/Toolasha/commit/e4cdc5e1c4df460edd589ff4717973406cd801d6))
 
 ## [0.19.0](https://github.com/Celasha/Toolasha/compare/v0.18.0...v0.19.0) (2026-02-07)
 
