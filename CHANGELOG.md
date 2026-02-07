@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.0](https://github.com/Celasha/Toolasha/compare/v0.21.2...v0.22.0) (2026-02-07)
+
+
+### Features
+
+* add auto-click max for sell listings and remove Chinese localization ([1b1bcde](https://github.com/Celasha/Toolasha/commit/1b1bcdebd0fe1b89c02892cfdb0ad4af4ec8b44f))
+
 ## [0.21.2](https://github.com/Celasha/Toolasha/compare/v0.21.1...v0.21.2) (2026-02-07)
 
 ### Bug Fixes
