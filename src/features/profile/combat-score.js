@@ -186,7 +186,7 @@ class CombatScore {
         const houseBreakdownHTML = scoreData.breakdown.houses
             .map(
                 (item) =>
-                    `<div style="margin-left: 10px; font-size: 0.8rem; color: ${config.COLOR_TEXT_SECONDARY};">${item.name}: ${numberFormatter(item.value)}</div>`
+                    `<div style="margin-left: 10px; font-size: 0.8rem; color: ${config.COLOR_TEXT_SECONDARY};">${item.name}: ${item.value}</div>`
             )
             .join('');
 
@@ -194,7 +194,7 @@ class CombatScore {
         const abilityBreakdownHTML = scoreData.breakdown.abilities
             .map(
                 (item) =>
-                    `<div style="margin-left: 10px; font-size: 0.8rem; color: ${config.COLOR_TEXT_SECONDARY};">${item.name}: ${numberFormatter(item.value)}</div>`
+                    `<div style="margin-left: 10px; font-size: 0.8rem; color: ${config.COLOR_TEXT_SECONDARY};">${item.name}: ${item.value}</div>`
             )
             .join('');
 
@@ -202,7 +202,15 @@ class CombatScore {
         const equipmentBreakdownHTML = scoreData.breakdown.equipment
             .map(
                 (item) =>
-                    `<div style="margin-left: 10px; font-size: 0.8rem; color: ${config.COLOR_TEXT_SECONDARY};">${item.name}: ${numberFormatter(item.value)}</div>`
+                    `<div style="margin-left: 10px; font-size: 0.8rem; color: ${config.COLOR_TEXT_SECONDARY};">${item.name}: ${item.value}</div>`
+            )
+            .join('');
+
+        // Build skiller equipment breakdown HTML
+        const skillerEquipmentBreakdownHTML = scoreData.skillerBreakdown.equipment
+            .map(
+                (item) =>
+                    `<div style="margin-left: 10px; font-size: 0.8rem; color: ${config.COLOR_TEXT_SECONDARY};">${item.name}: ${item.value}</div>`
             )
             .join('');
 
@@ -243,6 +251,19 @@ class CombatScore {
                     ${equipmentBreakdownHTML}
                 </div>
             </div>
+
+            <div style="cursor: pointer; font-weight: bold; margin-top: 12px; margin-bottom: 8px; color: ${config.COLOR_PROFIT};" id="mwi-skiller-score-toggle">
+                + Skiller Score: ${numberFormatter(scoreData.skillerTotal.toFixed(1))}
+            </div>
+            <div id="mwi-skiller-score-details" style="display: none; margin-left: 10px; color: ${config.COLOR_TEXT_PRIMARY};">
+                <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-skiller-equipment-toggle">
+                    + Equipment: ${numberFormatter(scoreData.skillerEquipment.toFixed(1))}
+                </div>
+                <div id="mwi-skiller-equipment-breakdown" style="display: none;">
+                    ${skillerEquipmentBreakdownHTML}
+                </div>
+            </div>
+
             <div style="margin-top: 12px; display: flex; flex-direction: column; gap: 6px;">
                 <button id="mwi-combat-sim-export-btn" style="
                     padding: 8px 12px;
@@ -372,6 +393,32 @@ class CombatScore {
                 equipmentBreakdown.style.display = isCollapsed ? 'block' : 'none';
                 equipmentToggle.textContent =
                     (isCollapsed ? '- ' : '+ ') + `Equipment: ${numberFormatter(scoreData.equipment.toFixed(1))}`;
+            });
+        }
+
+        // Toggle skiller score details
+        const skillerScoreToggle = panel.querySelector('#mwi-skiller-score-toggle');
+        const skillerScoreDetails = panel.querySelector('#mwi-skiller-score-details');
+        if (skillerScoreToggle && skillerScoreDetails) {
+            skillerScoreToggle.addEventListener('click', () => {
+                const isCollapsed = skillerScoreDetails.style.display === 'none';
+                skillerScoreDetails.style.display = isCollapsed ? 'block' : 'none';
+                skillerScoreToggle.textContent =
+                    (isCollapsed ? '- ' : '+ ') +
+                    `Skiller Score: ${numberFormatter(scoreData.skillerTotal.toFixed(1))}`;
+            });
+        }
+
+        // Toggle skiller equipment breakdown
+        const skillerEquipmentToggle = panel.querySelector('#mwi-skiller-equipment-toggle');
+        const skillerEquipmentBreakdown = panel.querySelector('#mwi-skiller-equipment-breakdown');
+        if (skillerEquipmentToggle && skillerEquipmentBreakdown) {
+            skillerEquipmentToggle.addEventListener('click', () => {
+                const isCollapsed = skillerEquipmentBreakdown.style.display === 'none';
+                skillerEquipmentBreakdown.style.display = isCollapsed ? 'block' : 'none';
+                skillerEquipmentToggle.textContent =
+                    (isCollapsed ? '- ' : '+ ') +
+                    `Equipment: ${numberFormatter(scoreData.skillerEquipment.toFixed(1))}`;
             });
         }
 

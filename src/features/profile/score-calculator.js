@@ -51,6 +51,49 @@ const CAPE_ITEM_TOKEN_DATA = {
 };
 
 /**
+ * Skill classification for equipment categorization
+ */
+const COMBAT_SKILLS = ['attack', 'melee', 'defense', 'ranged', 'magic', 'prayer'];
+const SKILLING_SKILLS = [
+    'milking',
+    'foraging',
+    'woodcutting',
+    'cheesesmithing',
+    'crafting',
+    'tailoring',
+    'brewing',
+    'cooking',
+    'alchemy',
+    'enhancing',
+];
+
+/**
+ * Categorize equipment item by skill requirements
+ * @param {string} slot - Item slot HRID (e.g., "/item_locations/neck")
+ * @param {Object} equipmentDetail - Equipment detail from item data
+ * @returns {Object} {combat: boolean, skiller: boolean}
+ */
+function categorizeEquipmentItem(slot, equipmentDetail) {
+    // Tools always go to skiller only (regardless of requirements)
+    if (slot.endsWith('_tool')) {
+        return { combat: false, skiller: true };
+    }
+
+    const requirements = equipmentDetail?.levelRequirements || [];
+
+    // No requirements → both scores
+    if (requirements.length === 0) {
+        return { combat: true, skiller: true };
+    }
+
+    // Check for combat vs skilling requirements
+    const hasCombat = requirements.some((req) => COMBAT_SKILLS.some((skill) => req.skillHrid.includes(skill)));
+    const hasSkilling = requirements.some((req) => SKILLING_SKILLS.some((skill) => req.skillHrid.includes(skill)));
+
+    return { combat: hasCombat, skiller: hasSkilling };
+}
+
+/**
  * Calculate combat score from profile data
  * @param {Object} profileData - Profile data from game
  * @returns {Promise<Object>} {total, house, ability, equipment, breakdown}
@@ -63,22 +106,33 @@ export async function calculateCombatScore(profileData) {
         // 2. Calculate Ability Score
         const abilityResult = calculateAbilityScore(profileData);
 
-        // 3. Calculate Equipment Score
-        const equipmentResult = calculateEquipmentScore(profileData);
+        // 3. Calculate Combat Equipment Score
+        const combatEquipmentResult = calculateEquipmentScore(profileData, 'combat');
 
-        const totalScore = houseResult.score + abilityResult.score + equipmentResult.score;
+        // 4. Calculate Skiller Equipment Score
+        const skillerEquipmentResult = calculateEquipmentScore(profileData, 'skiller');
+
+        const combatTotalScore = houseResult.score + abilityResult.score + combatEquipmentResult.score;
+        const skillerTotalScore = skillerEquipmentResult.score;
 
         return {
-            total: totalScore,
+            // Combat score (house + ability + combat equipment)
+            total: combatTotalScore,
             house: houseResult.score,
             ability: abilityResult.score,
-            equipment: equipmentResult.score,
+            equipment: combatEquipmentResult.score,
             equipmentHidden: profileData.profile?.hideWearableItems || false,
-            hasEquipmentData: equipmentResult.hasEquipmentData,
+            hasEquipmentData: combatEquipmentResult.hasEquipmentData,
             breakdown: {
                 houses: houseResult.breakdown,
                 abilities: abilityResult.breakdown,
-                equipment: equipmentResult.breakdown,
+                equipment: combatEquipmentResult.breakdown,
+            },
+            // Skiller score (skilling equipment only)
+            skillerTotal: skillerTotalScore,
+            skillerEquipment: skillerEquipmentResult.score,
+            skillerBreakdown: {
+                equipment: skillerEquipmentResult.breakdown,
             },
         };
     } catch (error) {
@@ -91,6 +145,9 @@ export async function calculateCombatScore(profileData) {
             equipmentHidden: false,
             hasEquipmentData: false,
             breakdown: { houses: [], abilities: [], equipment: [] },
+            skillerTotal: 0,
+            skillerEquipment: 0,
+            skillerBreakdown: { equipment: [] },
         };
     }
 }
@@ -280,9 +337,10 @@ function calculateTokenBasedItemValue(itemHrid) {
 /**
  * Calculate equipment score from equipped items
  * @param {Object} profileData - Profile data
+ * @param {string} scoreType - 'combat' or 'skiller'
  * @returns {Object} {score, breakdown, hasEquipmentData}
  */
-function calculateEquipmentScore(profileData) {
+function calculateEquipmentScore(profileData, scoreType = 'combat') {
     const equippedItems = profileData.profile?.wearableItemMap || {};
     const hideEquipment = profileData.profile?.hideWearableItems || false;
 
@@ -302,12 +360,23 @@ function calculateEquipmentScore(profileData) {
     let totalValue = 0;
     const breakdown = [];
 
-    for (const [_slot, itemData] of Object.entries(equippedItems)) {
+    for (const [slot, itemData] of Object.entries(equippedItems)) {
         if (!itemData?.itemHrid) continue;
 
         const itemHrid = itemData.itemHrid;
         const itemDetails = gameData.itemDetailMap[itemHrid];
         if (!itemDetails) continue;
+
+        // Categorize item by skill requirements
+        const category = categorizeEquipmentItem(slot, itemDetails.equipmentDetail);
+
+        // Filter by score type
+        if (scoreType === 'combat' && !category.combat) {
+            continue; // Skip non-combat items for combat score
+        }
+        if (scoreType === 'skiller' && !category.skiller) {
+            continue; // Skip non-skilling items for skiller score
+        }
 
         // Get enhancement level from itemData (separate field, not in HRID)
         const enhancementLevel = itemData.enhancementLevel || 0;
@@ -373,10 +442,15 @@ function calculateEquipmentScore(profileData) {
         const itemName = itemDetails.name || itemHrid.replace('/items/', '');
         const displayName = enhancementLevel > 0 ? `${itemName} +${enhancementLevel}` : itemName;
 
-        breakdown.push({
-            name: displayName,
-            value: (itemCost / 1_000_000).toFixed(1),
-        });
+        // Only add to breakdown if formatted value is not "0.0"
+        // (items worth less than 50k coins round to 0.0 and clutter the display)
+        const formattedValue = (itemCost / 1_000_000).toFixed(1);
+        if (formattedValue !== '0.0') {
+            breakdown.push({
+                name: displayName,
+                value: formattedValue,
+            });
+        }
     }
 
     // Convert to score (value / 1 million)
