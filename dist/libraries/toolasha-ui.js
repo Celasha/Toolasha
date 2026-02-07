@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 0.20.2
+ * Version: 0.20.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -628,7 +628,7 @@
     class ExternalLinks {
         constructor() {
             this.unregisterObserver = null;
-            this.linksAdded = false;
+            this.addedContainers = new WeakSet(); // Track which specific containers have links
             this.isInitialized = false;
         }
 
@@ -657,18 +657,18 @@
                 'ExternalLinks',
                 'NavigationBar_minorNavigationLinks',
                 (container) => {
-                    if (!this.linksAdded) {
+                    if (!this.addedContainers.has(container)) {
                         this.addLinks(container);
-                        this.linksAdded = true;
+                        this.addedContainers.add(container);
                     }
                 }
             );
 
             // Check for existing container immediately
             const existingContainer = document.querySelector('[class*="NavigationBar_minorNavigationLinks"]');
-            if (existingContainer && !this.linksAdded) {
+            if (existingContainer && !this.addedContainers.has(existingContainer)) {
                 this.addLinks(existingContainer);
-                this.linksAdded = true;
+                this.addedContainers.add(existingContainer);
             }
         }
 
@@ -736,7 +736,8 @@
             // Remove added links
             const container = document.querySelector('[class*="NavigationBar_minorNavigationLinks"]');
             if (container) {
-                container.querySelectorAll('[style*="cursor: pointer"]').forEach((link) => {
+                const linksToRemove = container.querySelectorAll('[style*="cursor: pointer"]');
+                linksToRemove.forEach((link) => {
                     // Only remove links we added (check if they have our color)
                     if (link.style.color === config.COLOR_ACCENT) {
                         link.remove();
@@ -744,7 +745,8 @@
                 });
             }
 
-            this.linksAdded = false;
+            // Clear the WeakSet (create new instance)
+            this.addedContainers = new WeakSet();
             this.isInitialized = false;
         }
     }

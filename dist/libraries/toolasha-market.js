@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 0.20.2
+ * Version: 0.20.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -10505,6 +10505,15 @@
             this.container = null;
             this.unregisterHandlers = [];
             this.isInitialized = false;
+            this.networthFeature = null; // Reference to parent feature for recalculation
+        }
+
+        /**
+         * Set reference to parent networth feature
+         * @param {Object} feature - NetworthFeature instance
+         */
+        setNetworthFeature(feature) {
+            this.networthFeature = feature;
         }
 
         /**
@@ -10594,6 +10603,13 @@
 
             // Initial render with loading state
             this.renderGoldDisplay('Loading...');
+
+            // Trigger recalculation immediately to update from "Loading..." to actual value
+            if (this.networthFeature && typeof this.networthFeature.recalculate === 'function') {
+                this.networthFeature.recalculate().catch((error) => {
+                    console.error('[NetworthHeaderDisplay] Immediate recalculation failed:', error);
+                });
+            }
         }
 
         /**
@@ -11293,6 +11309,9 @@
          */
         async initialize() {
             if (this.isActive) return;
+
+            // Set reference in display components so they can trigger recalculation
+            networthHeaderDisplay.setNetworthFeature(this);
 
             // Initialize header display (always enabled with networth feature)
             if (config.isFeatureEnabled('networth')) {

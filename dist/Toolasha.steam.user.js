@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.20.2
+// @version      0.20.3
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -36027,6 +36027,15 @@ return plugin;
             this.container = null;
             this.unregisterHandlers = [];
             this.isInitialized = false;
+            this.networthFeature = null; // Reference to parent feature for recalculation
+        }
+
+        /**
+         * Set reference to parent networth feature
+         * @param {Object} feature - NetworthFeature instance
+         */
+        setNetworthFeature(feature) {
+            this.networthFeature = feature;
         }
 
         /**
@@ -36116,6 +36125,13 @@ return plugin;
 
             // Initial render with loading state
             this.renderGoldDisplay('Loading...');
+
+            // Trigger recalculation immediately to update from "Loading..." to actual value
+            if (this.networthFeature && typeof this.networthFeature.recalculate === 'function') {
+                this.networthFeature.recalculate().catch((error) => {
+                    console.error('[NetworthHeaderDisplay] Immediate recalculation failed:', error);
+                });
+            }
         }
 
         /**
@@ -36815,6 +36831,9 @@ return plugin;
          */
         async initialize() {
             if (this.isActive) return;
+
+            // Set reference in display components so they can trigger recalculation
+            networthHeaderDisplay.setNetworthFeature(this);
 
             // Initialize header display (always enabled with networth feature)
             if (config$1.isFeatureEnabled('networth')) {
@@ -60464,7 +60483,7 @@ return plugin;
     class ExternalLinks {
         constructor() {
             this.unregisterObserver = null;
-            this.linksAdded = false;
+            this.addedContainers = new WeakSet(); // Track which specific containers have links
             this.isInitialized = false;
         }
 
@@ -60493,18 +60512,18 @@ return plugin;
                 'ExternalLinks',
                 'NavigationBar_minorNavigationLinks',
                 (container) => {
-                    if (!this.linksAdded) {
+                    if (!this.addedContainers.has(container)) {
                         this.addLinks(container);
-                        this.linksAdded = true;
+                        this.addedContainers.add(container);
                     }
                 }
             );
 
             // Check for existing container immediately
             const existingContainer = document.querySelector('[class*="NavigationBar_minorNavigationLinks"]');
-            if (existingContainer && !this.linksAdded) {
+            if (existingContainer && !this.addedContainers.has(existingContainer)) {
                 this.addLinks(existingContainer);
-                this.linksAdded = true;
+                this.addedContainers.add(existingContainer);
             }
         }
 
@@ -60572,7 +60591,8 @@ return plugin;
             // Remove added links
             const container = document.querySelector('[class*="NavigationBar_minorNavigationLinks"]');
             if (container) {
-                container.querySelectorAll('[style*="cursor: pointer"]').forEach((link) => {
+                const linksToRemove = container.querySelectorAll('[style*="cursor: pointer"]');
+                linksToRemove.forEach((link) => {
                     // Only remove links we added (check if they have our color)
                     if (link.style.color === config$1.COLOR_ACCENT) {
                         link.remove();
@@ -60580,7 +60600,8 @@ return plugin;
                 });
             }
 
-            this.linksAdded = false;
+            // Clear the WeakSet (create new instance)
+            this.addedContainers = new WeakSet();
             this.isInitialized = false;
         }
     }
