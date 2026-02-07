@@ -66,9 +66,9 @@ jobs:
 
                   # Verify Steam bundle size (should be ~3MB, max 5MB)
                   steam_limit=5242880
-                  steam_size=$(wc -c < "dist/Toolasha.steam.user.js")
+                  steam_size=$(wc -c < "dist/Toolasha.steam.js")
                   if [ "$steam_size" -gt "$steam_limit" ]; then
-                    echo "❌ dist/Toolasha.steam.user.js is over 5MB limit ($steam_size bytes)"
+                    echo "❌ dist/Toolasha.steam.js is over 5MB limit ($steam_size bytes)"
                     exit 1
                   fi
-                  echo "✅ dist/Toolasha.steam.user.js is under 5MB ($steam_size bytes)"
+                  echo "✅ dist/Toolasha.steam.js is under 5MB ($steam_size bytes)"
