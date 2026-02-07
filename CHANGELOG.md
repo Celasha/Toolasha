@@ -2,22 +2,20 @@
 
 ## [0.19.0](https://github.com/Celasha/Toolasha/compare/v0.18.0...v0.19.0) (2026-02-07)
 
-
 ### Features
 
-* add Steam build system and rename library files to .js ([846c1b8](https://github.com/Celasha/Toolasha/commit/846c1b882acbc69c9fcc84f7f93567ea1764de5e))
-
+- add Steam build system and rename library files to .js ([846c1b8](https://github.com/Celasha/Toolasha/commit/846c1b882acbc69c9fcc84f7f93567ea1764de5e))
 
 ### Bug Fixes
 
-* exclude filled sell listings from SO totals ([fc34844](https://github.com/Celasha/Toolasha/commit/fc34844a0ef37ccd4a6708717b797610704be004))
-* exclude filled sell listings from SO totals ([069127f](https://github.com/Celasha/Toolasha/commit/069127fc447e2357ba8e5a66c50c773c7ec6c458))
-* resolve CI failures and add Steam build to pipeline ([a20f688](https://github.com/Celasha/Toolasha/commit/a20f6889ee85eb89b5c7b08c3b27c758278efdbf))
-* resolve CI failures and add Steam build to pipeline ([0eef87f](https://github.com/Celasha/Toolasha/commit/0eef87f1e0b6f2007d943c7ffc83b9d9afc10a35))
-* resolve XP left display not updating in real-time ([ef6fa07](https://github.com/Celasha/Toolasha/commit/ef6fa07f8e47b645a425746c7ed00fc634433587))
-* resolve XP left display not updating in real-time ([facfb74](https://github.com/Celasha/Toolasha/commit/facfb74343a850dc88b2142c317a15cb154ab59c))
-* skip websocket dedup for action_completed and items_updated events ([ba7bc6e](https://github.com/Celasha/Toolasha/commit/ba7bc6e99fa6b1efd097d98aaf9de45e9f2d9506))
-* skip websocket dedup for action_completed and items_updated events ([1007215](https://github.com/Celasha/Toolasha/commit/10072154b8402a5b7f0e3927e99d578bb80c8dda))
+- exclude filled sell listings from SO totals ([fc34844](https://github.com/Celasha/Toolasha/commit/fc34844a0ef37ccd4a6708717b797610704be004))
+- exclude filled sell listings from SO totals ([069127f](https://github.com/Celasha/Toolasha/commit/069127fc447e2357ba8e5a66c50c773c7ec6c458))
+- resolve CI failures and add Steam build to pipeline ([a20f688](https://github.com/Celasha/Toolasha/commit/a20f6889ee85eb89b5c7b08c3b27c758278efdbf))
+- resolve CI failures and add Steam build to pipeline ([0eef87f](https://github.com/Celasha/Toolasha/commit/0eef87f1e0b6f2007d943c7ffc83b9d9afc10a35))
+- resolve XP left display not updating in real-time ([ef6fa07](https://github.com/Celasha/Toolasha/commit/ef6fa07f8e47b645a425746c7ed00fc634433587))
+- resolve XP left display not updating in real-time ([facfb74](https://github.com/Celasha/Toolasha/commit/facfb74343a850dc88b2142c317a15cb154ab59c))
+- skip websocket dedup for action_completed and items_updated events ([ba7bc6e](https://github.com/Celasha/Toolasha/commit/ba7bc6e99fa6b1efd097d98aaf9de45e9f2d9506))
+- skip websocket dedup for action_completed and items_updated events ([1007215](https://github.com/Celasha/Toolasha/commit/10072154b8402a5b7f0e3927e99d578bb80c8dda))
 
 ## [0.18.0](https://github.com/Celasha/Toolasha/compare/v0.17.6...v0.18.0) (2026-02-06)
 
