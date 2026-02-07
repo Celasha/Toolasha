@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.20.3
+// @version      0.21.2
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -16652,6 +16652,8 @@ return plugin;
                 messageType === 'quests_updated' ||
                 messageType === 'action_completed' ||
                 messageType === 'items_updated' ||
+                messageType === 'market_item_order_books_updated' ||
+                messageType === 'market_listings_updated' ||
                 messageType === 'profile_shared';
 
             if (!skipDedup) {
@@ -16680,6 +16682,7 @@ return plugin;
 
                 // Call registered handlers for this message type
                 const handlers = this.messageHandlers.get(parsedMessageType) || [];
+
                 for (const handler of handlers) {
                     try {
                         handler(data);
@@ -30017,7 +30020,8 @@ return plugin;
                     this.saveOrderBooksCache();
 
                     // Clear processed flags to re-render with new data
-                    document.querySelectorAll('.mwi-estimated-age-set').forEach((container) => {
+                    const containers = document.querySelectorAll('.mwi-estimated-age-set');
+                    containers.forEach((container) => {
                         container.classList.remove('mwi-estimated-age-set');
                     });
 
@@ -30114,6 +30118,7 @@ return plugin;
 
             // Find the buy and sell tables
             const tables = container.querySelectorAll('table');
+
             if (tables.length < 2) {
                 return; // Need both buy and sell tables
             }
@@ -30122,7 +30127,9 @@ return plugin;
             container.classList.add('mwi-estimated-age-set');
 
             // Process both tables
-            tables.forEach((table) => this.addAgeColumn(table));
+            tables.forEach((table) => {
+                this.addAgeColumn(table);
+            });
         }
 
         /**
@@ -62508,7 +62515,6 @@ return plugin;
             // Find the symbol in the game's loaded sprites
             const symbol = document.querySelector(`symbol[id="${symbolId}"]`);
             if (!symbol) {
-                console.warn('[TaskIconFilters] Symbol not found:', symbolId);
                 return false;
             }
 
@@ -62827,9 +62833,21 @@ return plugin;
      */
 
 
-    // Hardcoded sprite URL for actions_sprite (like MWI Task Manager)
-    // This may need updating when the game rebuilds with new webpack hashes
-    const ACTIONS_SPRITE_URL = '/static/media/actions_sprite.e6388cbc.svg';
+    // Sprite URL detection and fallback system
+    // Instead of hardcoded URLs, we detect sprite URLs from the game's DOM
+    // If detection fails, we try multiple fallback strategies for Steam compatibility
+    const FALLBACK_ACTIONS_SPRITE_URLS = [
+        '/static/media/actions_sprite.e6388cbc.svg', // Original hardcoded URL
+        '/static/media/actions_sprite.svg', // Without webpack hash (if build system changed)
+        'actions_sprite.svg', // Relative path
+    ];
+
+    // Known webpack hashes for combat_monsters_sprite (update as game updates)
+    const FALLBACK_MONSTERS_SPRITE_URLS = [
+        '/static/media/combat_monsters_sprite.e6388cbc.svg', // Try same hash as actions_sprite
+        '/static/media/combat_monsters_sprite.svg', // Without webpack hash
+        'combat_monsters_sprite.svg', // Relative path
+    ];
 
     class TaskIcons {
         constructor() {
@@ -62842,13 +62860,41 @@ return plugin;
             this.actionsByHrid = null;
             this.monstersByHrid = null;
             this.timerRegistry = createTimerRegistry();
+
+            // Cache for detected sprite URLs (avoid repeated DOM queries)
+            this.cachedSpriteUrls = {
+                actions: null,
+                items: null,
+                monsters: null,
+                misc: null,
+            };
+
+            // Track if we've already attempted to load sprites
+            this.spriteLoadAttempted = {
+                actions: false,
+                items: false,
+                monsters: false,
+                misc: false,
+            };
+
+            // Track if we're currently fetching a sprite to avoid duplicate requests
+            this.spriteFetchInProgress = {
+                monsters: false,
+            };
+
+            // Store fetched sprite SVG content
+            this.fetchedSprites = {
+                monsters: null,
+            };
         }
 
         /**
          * Initialize the task icons feature
          */
         initialize() {
-            if (this.initialized) return;
+            if (this.initialized) {
+                return;
+            }
 
             // Load game data from DataManager
             this.loadGameData();
@@ -63135,13 +63181,13 @@ return plugin;
                 }
             }
 
-            this.addIconOverlay(taskCard, iconName, 'action');
+            this.addIconOverlay(taskCard, iconName, 'action'); // Fire and forget async
         }
 
         /**
          * Add monster icon to task card
          */
-        addMonsterIcon(taskCard, taskInfo) {
+        async addMonsterIcon(taskCard, taskInfo) {
             const monsterHrid = this.findMonsterHrid(taskInfo.taskName);
             if (!monsterHrid) {
                 return;
@@ -63167,11 +63213,11 @@ return plugin;
             // Position monster on the right (ends at 100%)
             const monsterPosition = 100 - iconWidth;
             const iconName = monsterHrid.split('/').pop();
-            this.addIconOverlay(taskCard, iconName, 'monster', `${monsterPosition}%`, `${iconWidth}%`);
+            await this.addIconOverlay(taskCard, iconName, 'monster', `${monsterPosition}%`, `${iconWidth}%`);
 
             // Add dungeon icons if enabled
             if (config$1.isFeatureEnabled('taskIconsDungeons') && dungeonCount > 0) {
-                this.addDungeonIcons(taskCard, monsterHrid, iconWidth);
+                await this.addDungeonIcons(taskCard, monsterHrid, iconWidth);
             }
         }
 
@@ -63231,7 +63277,7 @@ return plugin;
          * @param {string} monsterHrid - Monster HRID
          * @param {number} iconWidth - Width percentage for each icon
          */
-        addDungeonIcons(taskCard, monsterHrid, iconWidth) {
+        async addDungeonIcons(taskCard, monsterHrid, iconWidth) {
             const monster = this.monstersByHrid.get(monsterHrid);
             if (!monster) return;
 
@@ -63284,16 +63330,16 @@ return plugin;
             const monsterPosition = 100 - iconWidth;
             let position = monsterPosition - iconWidth; // Start one icon to the left of monster
 
-            dungeonHrids.forEach((dungeonHrid) => {
+            for (const dungeonHrid of dungeonHrids) {
                 // Check if this dungeon should be shown based on filter settings
                 if (!taskIconFilters.shouldShowDungeonBadge(dungeonHrid)) {
-                    return; // Skip this dungeon
+                    continue; // Skip this dungeon
                 }
 
                 const iconName = dungeonHrid.split('/').pop();
-                this.addIconOverlay(taskCard, iconName, 'dungeon', `${position}%`, `${iconWidth}%`);
+                await this.addIconOverlay(taskCard, iconName, 'dungeon', `${position}%`, `${iconWidth}%`);
                 position -= iconWidth; // Move left for next dungeon
-            });
+            }
         }
 
         /**
@@ -63313,13 +63359,108 @@ return plugin;
          * Get the current combat monsters sprite URL from the DOM
          * @returns {string|null} Monsters sprite URL or null if not found
          */
-        getMonstersSpriteUrl() {
+        async getMonstersSpriteUrl() {
+            // Try to find it in the DOM first
             const monsterIcon = document.querySelector('use[href*="combat_monsters_sprite"]');
-            if (!monsterIcon) {
-                return null;
+
+            if (monsterIcon) {
+                const href =
+                    monsterIcon.getAttribute('href') || monsterIcon.getAttributeNS('http://www.w3.org/1999/xlink', 'href');
+                const url = href ? href.split('#')[0] : null;
+                return url;
             }
-            const href = monsterIcon.getAttribute('href');
-            return href ? href.split('#')[0] : null;
+
+            // If not in DOM and we haven't fetched it yet, try to fetch it
+            if (!this.fetchedSprites.monsters && !this.spriteFetchInProgress.monsters) {
+                // Build fallback URLs using hashes from currently loaded sprites
+                const loadedSpriteUrls = Array.from(document.querySelectorAll('use'))
+                    .map((use) => use.getAttribute('href') || use.getAttributeNS('http://www.w3.org/1999/xlink', 'href'))
+                    .filter((href) => href && href.includes('sprite'))
+                    .map((href) => href.split('#')[0]);
+
+                const uniqueUrls = [...new Set(loadedSpriteUrls)];
+                const hashes = uniqueUrls.map((url) => url.match(/\.([a-f0-9]{8})\.svg$/)?.[1]).filter((hash) => hash);
+
+                await this.fetchAndInjectMonsterSprite(hashes);
+            }
+
+            // Return the fetched sprite URL if available
+            return this.fetchedSprites.monsters;
+        }
+
+        /**
+         * Fetch combat_monsters_sprite and inject it into the page
+         * @param {Array<string>} detectedHashes - Array of webpack hashes to try
+         * @returns {Promise<string|null>} Sprite URL if successful
+         */
+        async fetchAndInjectMonsterSprite(detectedHashes = []) {
+            if (this.spriteFetchInProgress.monsters) {
+                return null; // Already fetching, avoid duplicate requests
+            }
+
+            this.spriteFetchInProgress.monsters = true;
+
+            // Build fallback URLs using detected hashes + original hardcoded ones
+            const fallbackUrls = [
+                // Try detected hashes first (from currently loaded sprites)
+                ...detectedHashes.map((hash) => `/static/media/combat_monsters_sprite.${hash}.svg`),
+                // Then try original hardcoded fallbacks
+                ...FALLBACK_MONSTERS_SPRITE_URLS,
+            ];
+
+            try {
+                // Try each fallback URL until one works
+                for (const url of fallbackUrls) {
+                    try {
+                        const response = await fetch(url);
+
+                        if (!response.ok) {
+                            continue;
+                        }
+
+                        const svgText = await response.text();
+
+                        // Parse the SVG and inject it into the page
+                        const parser = new DOMParser();
+                        const svgDoc = parser.parseFromString(svgText, 'image/svg+xml');
+
+                        // Check for parsing errors
+                        const parserError = svgDoc.querySelector('parsererror');
+                        if (parserError) {
+                            continue;
+                        }
+
+                        const svgElement = svgDoc.querySelector('svg');
+
+                        // Try documentElement as fallback
+                        const rootElement = svgDoc.documentElement;
+
+                        // Use either querySelector result or documentElement (if it's an SVG)
+                        const finalElement =
+                            svgElement || (rootElement?.tagName?.toLowerCase() === 'svg' ? rootElement : null);
+
+                        if (finalElement) {
+                            // Hide the SVG (we only need it for symbol definitions)
+                            finalElement.style.display = 'none';
+                            finalElement.setAttribute('id', 'mwi-injected-monsters-sprite');
+
+                            // Inject into page body
+                            document.body.appendChild(finalElement);
+
+                            // Store the URL for future use
+                            this.fetchedSprites.monsters = url;
+                            return url;
+                        }
+                    } catch {
+                        // Try next URL
+                        continue;
+                    }
+                }
+
+                return null;
+            } finally {
+                this.spriteFetchInProgress.monsters = false;
+            }
         }
 
         /**
@@ -63328,12 +63469,13 @@ return plugin;
          */
         getActionsSpriteUrl() {
             const actionsIcon = document.querySelector('use[href*="actions_sprite"]');
-            if (!actionsIcon) {
-                // Fallback to hardcoded URL (actions_sprite not loaded until Combat panel visited)
-                return ACTIONS_SPRITE_URL;
+            if (actionsIcon) {
+                const href = actionsIcon.getAttribute('href');
+                return href ? href.split('#')[0] : null;
             }
-            const href = actionsIcon.getAttribute('href');
-            return href ? href.split('#')[0] : null;
+
+            // Fallback to hardcoded URL
+            return FALLBACK_ACTIONS_SPRITE_URLS[0];
         }
 
         /**
@@ -63364,7 +63506,6 @@ return plugin;
             // Find the symbol in the game's loaded sprites
             const symbol = document.querySelector(`symbol[id="${symbolId}"]`);
             if (!symbol) {
-                console.warn('[TaskIcons] Symbol not found:', symbolId);
                 return false;
             }
 
@@ -63382,7 +63523,7 @@ return plugin;
          * @param {string} leftPosition - Left position percentage
          * @param {string} widthPercent - Width percentage (default: '30%')
          */
-        addIconOverlay(taskCard, iconName, type, leftPosition = '50%', widthPercent = '30%') {
+        async addIconOverlay(taskCard, iconName, type, leftPosition = '50%', widthPercent = '30%') {
             // Create container for icon
             const iconDiv = document.createElement('div');
             iconDiv.className = `mwi-task-icon mwi-task-icon-${type}`;
@@ -63397,7 +63538,8 @@ return plugin;
             // Get appropriate sprite URL based on icon type
             let spriteUrl;
             if (type === 'monster') {
-                spriteUrl = this.getMonstersSpriteUrl();
+                // Await monster sprite (might fetch it)
+                spriteUrl = await this.getMonstersSpriteUrl();
             } else if (type === 'dungeon') {
                 // Dungeon icons are in actions_sprite
                 spriteUrl = this.getActionsSpriteUrl();

@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 0.20.3
+ * Version: 0.21.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2017,6 +2017,8 @@
                 messageType === 'quests_updated' ||
                 messageType === 'action_completed' ||
                 messageType === 'items_updated' ||
+                messageType === 'market_item_order_books_updated' ||
+                messageType === 'market_listings_updated' ||
                 messageType === 'profile_shared';
 
             if (!skipDedup) {
@@ -2045,6 +2047,7 @@
 
                 // Call registered handlers for this message type
                 const handlers = this.messageHandlers.get(parsedMessageType) || [];
+
                 for (const handler of handlers) {
                     try {
                         handler(data);

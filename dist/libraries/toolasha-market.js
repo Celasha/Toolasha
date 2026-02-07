@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 0.20.3
+ * Version: 0.21.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -4563,7 +4563,8 @@
                     this.saveOrderBooksCache();
 
                     // Clear processed flags to re-render with new data
-                    document.querySelectorAll('.mwi-estimated-age-set').forEach((container) => {
+                    const containers = document.querySelectorAll('.mwi-estimated-age-set');
+                    containers.forEach((container) => {
                         container.classList.remove('mwi-estimated-age-set');
                     });
 
@@ -4660,6 +4661,7 @@
 
             // Find the buy and sell tables
             const tables = container.querySelectorAll('table');
+
             if (tables.length < 2) {
                 return; // Need both buy and sell tables
             }
@@ -4668,7 +4670,9 @@
             container.classList.add('mwi-estimated-age-set');
 
             // Process both tables
-            tables.forEach((table) => this.addAgeColumn(table));
+            tables.forEach((table) => {
+                this.addAgeColumn(table);
+            });
         }
 
         /**
