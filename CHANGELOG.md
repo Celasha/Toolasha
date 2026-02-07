@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.22.1](https://github.com/Celasha/Toolasha/compare/v0.22.0...v0.22.1) (2026-02-07)
+
+
+### Bug Fixes
+
+* improve task icon compatibility and sprite detection ([f915a2e](https://github.com/Celasha/Toolasha/commit/f915a2e5664b82b1e45e2ae52e0eed3e89a4edbb))
+* improve task icon SVG compatibility for Chrome ([d68a452](https://github.com/Celasha/Toolasha/commit/d68a4522a0f492da974b0afae727efdbc56d8644))
+
 ## [0.22.0](https://github.com/Celasha/Toolasha/compare/v0.21.2...v0.22.0) (2026-02-07)
 
 ### Features
