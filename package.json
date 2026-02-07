@@ -1,6 +1,6 @@
 {
     "name": "toolasha",
-    "version": "0.20.3",
+    "version": "0.21.0",
     "description": "Toolasha - Enhanced tools for Milky Way Idle",
     "type": "module",
     "scripts": {
