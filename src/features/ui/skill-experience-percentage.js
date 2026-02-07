@@ -7,6 +7,7 @@ import domObserver from '../../core/dom-observer.js';
 import config from '../../core/config.js';
 import { formatPercentage } from '../../utils/formatters.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
+import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
 
 class SkillExperiencePercentage {
     constructor() {
@@ -16,6 +17,7 @@ class SkillExperiencePercentage {
         this.isInitialized = false;
         this.updateInterval = null;
         this.timerRegistry = createTimerRegistry();
+        this.progressBarObservers = new Map(); // Track MutationObservers for each progress bar
     }
 
     /**
@@ -53,15 +55,11 @@ class SkillExperiencePercentage {
         this.isActive = true;
         this.registerObservers();
 
-        // Initial update for existing skills
-        this.updateAllSkills();
-
-        // Update every 5 seconds to catch XP changes
-        // Experience changes slowly enough that frequent polling is unnecessary
-        this.updateInterval = setInterval(() => {
-            this.updateAllSkills();
-        }, 5000); // 5 seconds (reduced from 1 second for better performance)
-        this.timerRegistry.registerInterval(this.updateInterval);
+        // Setup observers for any existing progress bars
+        const existingProgressBars = document.querySelectorAll('[class*="NavigationBar_currentExperience"]');
+        existingProgressBars.forEach((progressBar) => {
+            this.setupProgressBarObserver(progressBar);
+        });
 
         this.isInitialized = true;
     }
@@ -70,23 +68,44 @@ class SkillExperiencePercentage {
      * Register DOM observers
      */
     registerObservers() {
-        // Watch for progress bars appearing/changing
+        // Watch for progress bars appearing
         const unregister = domObserver.onClass(
             'SkillExpPercentage',
             'NavigationBar_currentExperience',
             (progressBar) => {
-                this.updateSkillPercentage(progressBar);
+                this.setupProgressBarObserver(progressBar);
             }
         );
         this.unregisterHandlers.push(unregister);
     }
 
     /**
-     * Update all existing skills on page
+     * Setup MutationObserver for a progress bar to watch for style changes
+     * @param {HTMLElement} progressBar - The progress bar element
      */
-    updateAllSkills() {
-        const progressBars = document.querySelectorAll('[class*="NavigationBar_currentExperience"]');
-        progressBars.forEach((bar) => this.updateSkillPercentage(bar));
+    setupProgressBarObserver(progressBar) {
+        // Skip if we're already observing this progress bar
+        if (this.progressBarObservers.has(progressBar)) {
+            return;
+        }
+
+        // Initial update
+        this.updateSkillPercentage(progressBar);
+
+        // Watch for style attribute changes (width percentage updates)
+        const unwatch = createMutationWatcher(
+            progressBar,
+            () => {
+                this.updateSkillPercentage(progressBar);
+            },
+            {
+                attributes: true,
+                attributeFilter: ['style'],
+            }
+        );
+
+        // Store the observer so we can clean it up later
+        this.progressBarObservers.set(progressBar, unwatch);
     }
 
     /**
@@ -156,6 +175,12 @@ class SkillExperiencePercentage {
     disable() {
         this.timerRegistry.clearAll();
         this.updateInterval = null;
+
+        // Disconnect all progress bar observers
+        this.progressBarObservers.forEach((unwatch) => {
+            unwatch();
+        });
+        this.progressBarObservers.clear();
 
         // Remove all percentage spans
         document.querySelectorAll('.mwi-exp-percentage').forEach((span) => span.remove());

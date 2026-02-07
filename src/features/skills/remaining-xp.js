@@ -8,6 +8,7 @@ import domObserver from '../../core/dom-observer.js';
 import config from '../../core/config.js';
 import { numberFormatter } from '../../utils/formatters.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
+import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
 
 class RemainingXP {
     constructor() {
@@ -15,6 +16,7 @@ class RemainingXP {
         this.updateInterval = null;
         this.unregisterObservers = [];
         this.timerRegistry = createTimerRegistry();
+        this.progressBarObservers = new Map(); // Track MutationObservers for each progress bar
     }
 
     /**
@@ -26,11 +28,11 @@ class RemainingXP {
         // Watch for skill buttons appearing
         this.watchSkillButtons();
 
-        // Update every second (like MWIT-E does)
-        this.updateInterval = setInterval(() => {
-            this.updateAllSkillBars();
-        }, 1000);
-        this.timerRegistry.registerInterval(this.updateInterval);
+        // Setup observers for any existing progress bars
+        const existingProgressBars = document.querySelectorAll('[class*="currentExperience"]');
+        existingProgressBars.forEach((progressBar) => {
+            this.setupProgressBarObserver(progressBar);
+        });
 
         this.initialized = true;
     }
@@ -40,16 +42,23 @@ class RemainingXP {
      */
     watchSkillButtons() {
         // Watch for left navigation bar skills (non-combat skills)
-        const unregisterNav = domObserver.onClass('RemainingXP-NavSkillBar', 'NavigationBar_currentExperience', () => {
-            this.updateAllSkillBars();
-        });
+        const unregisterNav = domObserver.onClass(
+            'RemainingXP-NavSkillBar',
+            'NavigationBar_currentExperience',
+            (progressBar) => {
+                this.setupProgressBarObserver(progressBar);
+            }
+        );
         this.unregisterObservers.push(unregisterNav);
 
-        // Wait for character data to be loaded before first update
+        // Wait for character data to be loaded before setting up observers
         const initHandler = () => {
-            // Initial update once character data is ready
+            // Setup observers for all progress bars once character data is ready
             const initialUpdateTimeout = setTimeout(() => {
-                this.updateAllSkillBars();
+                const progressBars = document.querySelectorAll('[class*="currentExperience"]');
+                progressBars.forEach((progressBar) => {
+                    this.setupProgressBarObserver(progressBar);
+                });
             }, 500);
             this.timerRegistry.registerTimeout(initialUpdateTimeout);
         };
@@ -67,19 +76,50 @@ class RemainingXP {
     }
 
     /**
-     * Update all skill bars with remaining XP
+     * Setup MutationObserver for a progress bar to watch for style changes
+     * @param {HTMLElement} progressBar - The progress bar element
      */
-    updateAllSkillBars() {
-        // Remove any existing XP displays
-        document.querySelectorAll('.mwi-remaining-xp').forEach((el) => el.remove());
+    setupProgressBarObserver(progressBar) {
+        // Skip if we're already observing this progress bar
+        if (this.progressBarObservers.has(progressBar)) {
+            return;
+        }
 
-        // Find all skill progress bars (broader selector to catch combat skills too)
-        // Use attribute selector to match any class containing "currentExperience"
-        const progressBars = document.querySelectorAll('[class*="currentExperience"]');
+        // Initial update
+        this.addRemainingXP(progressBar);
 
-        progressBars.forEach((progressBar) => {
-            this.addRemainingXP(progressBar);
-        });
+        // Watch for style attribute changes (width percentage updates)
+        const unwatch = createMutationWatcher(
+            progressBar,
+            () => {
+                this.updateSingleSkillBar(progressBar);
+            },
+            {
+                attributes: true,
+                attributeFilter: ['style'],
+            }
+        );
+
+        // Store the observer so we can clean it up later
+        this.progressBarObservers.set(progressBar, unwatch);
+    }
+
+    /**
+     * Update a single skill bar with remaining XP
+     * @param {HTMLElement} progressBar - The progress bar element
+     */
+    updateSingleSkillBar(progressBar) {
+        // Remove existing XP display for this progress bar
+        const progressContainer = progressBar.parentNode;
+        if (progressContainer) {
+            const existingDisplay = progressContainer.querySelector('.mwi-remaining-xp');
+            if (existingDisplay) {
+                existingDisplay.remove();
+            }
+        }
+
+        // Add updated XP display
+        this.addRemainingXP(progressBar);
     }
 
     /**
@@ -117,8 +157,8 @@ class RemainingXP {
 
             if (!skillName) return;
 
-            // Calculate remaining XP for this skill
-            const remainingXP = this.calculateRemainingXP(skillName);
+            // Calculate remaining XP for this skill using progress bar width (like XP percentage does)
+            const remainingXP = this.calculateRemainingXPFromProgressBar(progressBar, skillName);
             if (remainingXP === null) return;
 
             // Find the progress bar container (parent of the progress bar)
@@ -159,21 +199,22 @@ class RemainingXP {
     }
 
     /**
-     * Calculate remaining XP to next level for a skill
+     * Calculate remaining XP from progress bar width (real-time, like XP percentage)
+     * @param {HTMLElement} progressBar - The progress bar element
      * @param {string} skillName - The skill name (e.g., "Milking", "Combat")
      * @returns {number|null} Remaining XP or null if unavailable
      */
-    calculateRemainingXP(skillName) {
+    calculateRemainingXPFromProgressBar(progressBar, skillName) {
         // Convert skill name to HRID
         const skillHrid = `/skills/${skillName.toLowerCase()}`;
 
-        // Get character skills data
+        // Get character skills data for level info
         const characterData = dataManager.characterData;
         if (!characterData || !characterData.characterSkills) {
             return null;
         }
 
-        // Find the skill
+        // Find the skill to get current level
         const skill = characterData.characterSkills.find((s) => s.skillHrid === skillHrid);
         if (!skill) {
             return null;
@@ -183,16 +224,29 @@ class RemainingXP {
         const gameData = dataManager.getInitClientData();
         if (!gameData || !gameData.levelExperienceTable) return null;
 
-        const currentExp = skill.experience;
         const currentLevel = skill.level;
         const nextLevel = currentLevel + 1;
 
-        // Get XP required for next level
+        // Get XP required for current and next level
+        const expForCurrentLevel = gameData.levelExperienceTable[currentLevel] || 0;
         const expForNextLevel = gameData.levelExperienceTable[nextLevel];
         if (expForNextLevel === undefined) return null; // Max level
 
+        // Extract percentage from progress bar width (updated by game in real-time)
+        const widthStyle = progressBar.style.width;
+        if (!widthStyle) return null;
+
+        const percentage = parseFloat(widthStyle.replace('%', ''));
+        if (isNaN(percentage)) return null;
+
+        // Calculate XP needed for this level
+        const xpNeededForLevel = expForNextLevel - expForCurrentLevel;
+
+        // Calculate current XP within this level based on progress bar
+        const currentXPInLevel = (percentage / 100) * xpNeededForLevel;
+
         // Calculate remaining XP
-        const remainingXP = expForNextLevel - currentExp;
+        const remainingXP = xpNeededForLevel - currentXPInLevel;
 
         return Math.max(0, Math.ceil(remainingXP));
     }
@@ -202,10 +256,17 @@ class RemainingXP {
      */
     disable() {
         if (this.updateInterval) {
+            clearInterval(this.updateInterval);
             this.updateInterval = null;
         }
 
         this.timerRegistry.clearAll();
+
+        // Disconnect all progress bar observers
+        this.progressBarObservers.forEach((unwatch) => {
+            unwatch();
+        });
+        this.progressBarObservers.clear();
 
         // Unregister observers
         this.unregisterObservers.forEach((unregister) => unregister());
