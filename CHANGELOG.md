@@ -2,15 +2,13 @@
 
 ## [0.21.0](https://github.com/Celasha/Toolasha/compare/v0.20.3...v0.21.0) (2026-02-07)
 
-
 ### Features
 
-* add sprite fetching for Steam monster task icons ([a14f0a7](https://github.com/Celasha/Toolasha/commit/a14f0a740c14793c7a58b050c97093abaec90c31))
-
+- add sprite fetching for Steam monster task icons ([a14f0a7](https://github.com/Celasha/Toolasha/commit/a14f0a740c14793c7a58b050c97093abaec90c31))
 
 ### Bug Fixes
 
-* allow market order book updates to bypass deduplication ([72d016f](https://github.com/Celasha/Toolasha/commit/72d016f27056aa4fea09e22fd1c02528fe313fdd))
+- allow market order book updates to bypass deduplication ([72d016f](https://github.com/Celasha/Toolasha/commit/72d016f27056aa4fea09e22fd1c02528fe313fdd))
 
 ## [0.20.3](https://github.com/Celasha/Toolasha/compare/v0.20.2...v0.20.3) (2026-02-07)
 
