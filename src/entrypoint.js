@@ -71,6 +71,13 @@ function registerFeatures() {
             async: false,
         },
         {
+            key: 'autoClickMax',
+            name: 'Auto Click Max',
+            category: 'Market',
+            module: Market.autoClickMax,
+            async: false,
+        },
+        {
             key: 'itemCountDisplay',
             name: 'Item Count Display',
             category: 'Market',

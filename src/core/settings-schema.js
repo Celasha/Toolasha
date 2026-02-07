@@ -724,6 +724,13 @@ export const settingsGroups = {
                 type: 'checkbox',
                 default: true,
             },
+            market_autoClickMax: {
+                id: 'market_autoClickMax',
+                label: 'Auto-click Max button on sell listing dialogs',
+                type: 'checkbox',
+                default: true,
+                help: 'Automatically clicks the Max button in the quantity field when opening Sell listing dialogs',
+            },
             market_visibleItemCount: {
                 id: 'market_visibleItemCount',
                 label: 'Market: Show inventory count on items',

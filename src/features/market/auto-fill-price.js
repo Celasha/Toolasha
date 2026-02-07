@@ -50,7 +50,7 @@ class AutoFillPrice {
             const headerText = header.textContent.trim();
 
             // Skip instant buy/sell modals (contain "Now" in title)
-            if (headerText.includes(' Now') || headerText.includes('立即')) {
+            if (headerText.includes(' Now')) {
                 return;
             }
 
@@ -82,8 +82,8 @@ class AutoFillPrice {
         const labelParent = bestPriceLabel.parentElement;
         const labelText = labelParent.textContent.toLowerCase();
 
-        const isBuyOrder = labelText.includes('best buy') || labelText.includes('购买');
-        const isSellOrder = labelText.includes('best sell') || labelText.includes('出售');
+        const isBuyOrder = labelText.includes('best buy');
+        const isSellOrder = labelText.includes('best sell');
 
         if (!isBuyOrder && !isSellOrder) {
             return;

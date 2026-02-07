@@ -742,7 +742,7 @@ function handleBuyModal(modal) {
     }
 
     const headerText = header.textContent.trim();
-    if (!headerText.includes('Buy Now') && !headerText.includes('立即购买')) {
+    if (!headerText.includes('Buy Now')) {
         return;
     }
 
