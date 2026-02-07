@@ -291,11 +291,13 @@ class DataManager {
                     }
 
                     // Find and update the item in inventory
-                    for (const invItem of this.characterItems) {
-                        if (invItem.id === endItem.id) {
-                            invItem.count = endItem.count;
-                            break;
-                        }
+                    const index = this.characterItems.findIndex((invItem) => invItem.id === endItem.id);
+                    if (index !== -1) {
+                        // Update existing item
+                        this.characterItems[index].count = endItem.count;
+                    } else {
+                        // Add new item to inventory
+                        this.characterItems.push(endItem);
                     }
                 }
             }

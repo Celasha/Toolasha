@@ -319,9 +319,10 @@ class WebSocketHook {
             messageType = null;
         }
 
-        // Skip deduplication for quest updates (quest content changes are beyond 100 chars)
-        // The quest slot ID stays the same, causing false duplicate detection
-        const skipDedup = messageType === 'quests_updated';
+        // Skip deduplication for events where consecutive messages have similar first 100 chars
+        // but contain different data (counts, timestamps, etc. beyond the 100-char hash window)
+        const skipDedup =
+            messageType === 'quests_updated' || messageType === 'action_completed' || messageType === 'items_updated';
 
         if (!skipDedup) {
             // Deduplicate by message content to prevent 4x JSON.parse on same message
