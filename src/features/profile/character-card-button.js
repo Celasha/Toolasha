@@ -120,8 +120,8 @@ class CharacterCardButton {
             return;
         }
 
-        // Find the button container (should be the div with both export buttons)
-        const buttonContainer = combatScorePanel.querySelector('div[style*="margin-top: 12px"]');
+        // Find the button container by ID (more reliable than style selector)
+        const buttonContainer = combatScorePanel.querySelector('#mwi-button-container');
         if (!buttonContainer) {
             console.warn('[CharacterCardButton] Button container not found in combat score panel');
             return;

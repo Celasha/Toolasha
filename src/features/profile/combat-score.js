@@ -264,7 +264,7 @@ class CombatScore {
                 </div>
             </div>
 
-            <div style="margin-top: 12px; display: flex; flex-direction: column; gap: 6px;">
+            <div id="mwi-button-container" style="margin-top: 12px; display: flex; flex-direction: column; gap: 6px;">
                 <button id="mwi-combat-sim-export-btn" style="
                     padding: 8px 12px;
                     background: ${config.COLOR_ACCENT};
