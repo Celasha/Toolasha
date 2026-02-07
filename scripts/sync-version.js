@@ -62,15 +62,26 @@ function syncVersion() {
             const filePath = join(libraryHeadersDir, file);
             let fileContent = readFileSync(filePath, 'utf8');
 
-            if (!headerRegex.test(fileContent)) {
-                console.warn(`⚠️  Warning: Could not find @version line in library-headers/${file}`);
-                continue;
+            // Try userscript @version format first (for entrypoint.txt)
+            if (headerRegex.test(fileContent)) {
+                const updatedContent = fileContent.replace(headerRegex, `$1${version}`);
+                if (updatedContent !== fileContent) {
+                    writeFileSync(filePath, updatedContent, 'utf8');
+                    filesUpdated.push(`library-headers/${file}`);
+                }
             }
-
-            const updatedContent = fileContent.replace(headerRegex, `$1${version}`);
-            if (updatedContent !== fileContent) {
-                writeFileSync(filePath, updatedContent, 'utf8');
-                filesUpdated.push(`library-headers/${file}`);
+            // Try JSDoc Version: format (for library headers)
+            else {
+                const jsdocVersionRegex = /^( \* Version: )[\d.]+$/m;
+                if (jsdocVersionRegex.test(fileContent)) {
+                    const updatedContent = fileContent.replace(jsdocVersionRegex, `$1${version}`);
+                    if (updatedContent !== fileContent) {
+                        writeFileSync(filePath, updatedContent, 'utf8');
+                        filesUpdated.push(`library-headers/${file}`);
+                    }
+                } else {
+                    console.warn(`⚠️  Warning: Could not find version line in library-headers/${file}`);
+                }
             }
         }
 
@@ -117,7 +128,7 @@ function syncVersion() {
             console.log(`✅ Version synced to ${version}`);
             console.log(`   Updated files:`);
             filesUpdated.forEach((file) => console.log(`   - ${file}`));
-            console.log(`   (dist/Toolasha.user.js will be updated on next build)`);
+            console.log(`   (dist files will be updated on next build)`);
         }
     } catch (error) {
         console.error('❌ Error syncing version:', error.message);

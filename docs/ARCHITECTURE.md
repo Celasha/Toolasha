@@ -455,23 +455,27 @@ Rollup Bundler
       ▼
 dist/Toolasha.user.js (production entrypoint)
 dist/Toolasha-dev.user.js (dev standalone)
-dist/libraries/*.user.js (production libraries)
+dist/Toolasha.steam.user.js (Steam bundle)
+dist/libraries/*.js (production libraries)
 ```
 
 ### Build Configuration
 
 - **Dev standalone**: `src/dev-entrypoint.js` → `dist/Toolasha-dev.user.js` (bundles libraries + entrypoint)
-- **Production**: `src/entrypoint.js` → `dist/Toolasha.user.js` + `dist/libraries/*.user.js`
+- **Production**: `src/entrypoint.js` → `dist/Toolasha.user.js` + `dist/libraries/*.js` (libraries loaded via @require)
+- **Steam**: `src/dev-entrypoint.js` → `dist/Toolasha.steam.user.js` (single bundle with vendor libs inline)
 - **Format**: IIFE (Immediately Invoked Function Expression)
 - **Sourcemap**: Inline for debugging
 
 ### Build Commands
 
 ```bash
-npm run build:dev # One-time dev standalone build
-npm run build     # Production bundles (entrypoint + libraries)
-npm run watch     # Watch mode (auto-rebuild)
-npm run dev       # Alias for watch
+npm run build:dev   # One-time dev standalone build
+npm run build       # Production bundles (entrypoint + libraries)
+npm run build:steam # Steam bundle (single file with vendor libs)
+npm run build:all   # Build both production and Steam versions
+npm run watch       # Watch mode (auto-rebuild)
+npm run dev         # Alias for watch
 ```
 
 ## Deployment

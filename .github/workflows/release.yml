@@ -55,19 +55,21 @@ jobs:
 
                   # Save the built files
                   cp dist/Toolasha.user.js /tmp/Toolasha.user.js
+                  cp dist/Toolasha.steam.user.js /tmp/Toolasha.steam.user.js
                   cp -R dist/libraries /tmp/libraries
 
                   # Fetch and checkout releases branch (create if doesn't exist)
                   git fetch origin releases:releases 2>/dev/null || git checkout --orphan releases
                   git checkout releases 2>/dev/null || git checkout --orphan releases
 
-                  # Clean the branch and add only the built file
+                  # Clean the branch and add only the built files
                   git rm -rf . 2>/dev/null || true
                   mkdir -p dist
                   mkdir -p dist/libraries
                   cp /tmp/Toolasha.user.js dist/Toolasha.user.js
+                  cp /tmp/Toolasha.steam.user.js dist/Toolasha.steam.user.js
                   cp -R /tmp/libraries/* dist/libraries/
-                  git add dist/Toolasha.user.js dist/libraries/*.js
+                  git add dist/Toolasha.user.js dist/Toolasha.steam.user.js dist/libraries/*.js
 
                   # Commit libraries
                   git commit -m "chore(main): release ${{ steps.release.outputs.version }}"

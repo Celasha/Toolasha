@@ -56,7 +56,16 @@
             "prettier --write",
             "bash -c 'npm test'",
             "bash -c 'npm run build:dev'",
+            "bash -c 'npm run build'",
+            "bash -c 'npm run build:steam'"
+        ],
+        "rollup.config.js": [
+            "prettier --write",
             "bash -c 'npm run build'"
+        ],
+        "rollup.config.steam.js": [
+            "prettier --write",
+            "bash -c 'npm run build:steam'"
         ],
         "*.config.js": [
             "prettier --write"
