@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.21.2](https://github.com/Celasha/Toolasha/compare/v0.21.1...v0.21.2) (2026-02-07)
+
+
+### Bug Fixes
+
+* update release workflow for renamed Steam bundle filename ([f5eb7cf](https://github.com/Celasha/Toolasha/commit/f5eb7cffaf541367b51930d10d7c8f9b7d40222a))
+* update release-please bootstrap-sha to v0.21.1 ([f6d3d47](https://github.com/Celasha/Toolasha/commit/f6d3d4797cce15a7c3dac0eb00478b1d1f66bb62))
+
 ## [0.21.1](https://github.com/Celasha/Toolasha/compare/v0.21.0...v0.21.1) (2026-02-07)
 
 ### Bug Fixes
