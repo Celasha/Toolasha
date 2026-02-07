@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.20.1
+// @version      0.20.2
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -16647,8 +16647,12 @@ return plugin;
 
             // Skip deduplication for events where consecutive messages have similar first 100 chars
             // but contain different data (counts, timestamps, etc. beyond the 100-char hash window)
+            // OR events that should always trigger UI updates (profile_shared)
             const skipDedup =
-                messageType === 'quests_updated' || messageType === 'action_completed' || messageType === 'items_updated';
+                messageType === 'quests_updated' ||
+                messageType === 'action_completed' ||
+                messageType === 'items_updated' ||
+                messageType === 'profile_shared';
 
             if (!skipDedup) {
                 // Deduplicate by message content to prevent 4x JSON.parse on same message
@@ -58391,7 +58395,7 @@ return plugin;
                 </div>
             </div>
 
-            <div style="margin-top: 12px; display: flex; flex-direction: column; gap: 6px;">
+            <div id="mwi-button-container" style="margin-top: 12px; display: flex; flex-direction: column; gap: 6px;">
                 <button id="mwi-combat-sim-export-btn" style="
                     padding: 8px 12px;
                     background: ${config$1.COLOR_ACCENT};
@@ -59111,7 +59115,7 @@ return plugin;
 
     /**
      * Utilities to parse the MWI character share modal into a urpt string
-     * for https://tib-san.github.io/mwi-character-sheet/. Food is not present in the modal, so it is
+     * for https://tib-san.gitlab.io/mwi-character-sheet/. Food is not present in the modal, so it is
      * emitted as empty entries.
      *
      * Usage:
@@ -59495,7 +59499,7 @@ return plugin;
      */
     function buildCharacterSheetLink(
         _modal = document.querySelector('.SharableProfile_modal__2OmCQ'),
-        baseUrl = 'https://tib-san.github.io/mwi-character-sheet/',
+        baseUrl = 'https://tib-san.gitlab.io/mwi-character-sheet/',
         characterData = null,
         clientData = null,
         consumablesData = null
@@ -59632,8 +59636,8 @@ return plugin;
                 return;
             }
 
-            // Find the button container (should be the div with both export buttons)
-            const buttonContainer = combatScorePanel.querySelector('div[style*="margin-top: 12px"]');
+            // Find the button container by ID (more reliable than style selector)
+            const buttonContainer = combatScorePanel.querySelector('#mwi-button-container');
             if (!buttonContainer) {
                 console.warn('[CharacterCardButton] Button container not found in combat score panel');
                 return;
@@ -59716,7 +59720,7 @@ return plugin;
                 // Build character sheet link using cached data (preferred) or DOM fallback
                 const url = buildCharacterSheetLink(
                     _modal,
-                    'https://tib-san.github.io/mwi-character-sheet/',
+                    'https://tib-san.gitlab.io/mwi-character-sheet/',
                     characterData,
                     clientData,
                     consumablesData

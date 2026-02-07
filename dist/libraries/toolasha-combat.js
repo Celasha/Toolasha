@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 0.20.1
+ * Version: 0.20.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -9576,7 +9576,7 @@
                 </div>
             </div>
 
-            <div style="margin-top: 12px; display: flex; flex-direction: column; gap: 6px;">
+            <div id="mwi-button-container" style="margin-top: 12px; display: flex; flex-direction: column; gap: 6px;">
                 <button id="mwi-combat-sim-export-btn" style="
                     padding: 8px 12px;
                     background: ${config.COLOR_ACCENT};
@@ -10296,7 +10296,7 @@
 
     /**
      * Utilities to parse the MWI character share modal into a urpt string
-     * for https://tib-san.github.io/mwi-character-sheet/. Food is not present in the modal, so it is
+     * for https://tib-san.gitlab.io/mwi-character-sheet/. Food is not present in the modal, so it is
      * emitted as empty entries.
      *
      * Usage:
@@ -10680,7 +10680,7 @@
      */
     function buildCharacterSheetLink(
         _modal = document.querySelector('.SharableProfile_modal__2OmCQ'),
-        baseUrl = 'https://tib-san.github.io/mwi-character-sheet/',
+        baseUrl = 'https://tib-san.gitlab.io/mwi-character-sheet/',
         characterData = null,
         clientData = null,
         consumablesData = null
@@ -10817,8 +10817,8 @@
                 return;
             }
 
-            // Find the button container (should be the div with both export buttons)
-            const buttonContainer = combatScorePanel.querySelector('div[style*="margin-top: 12px"]');
+            // Find the button container by ID (more reliable than style selector)
+            const buttonContainer = combatScorePanel.querySelector('#mwi-button-container');
             if (!buttonContainer) {
                 console.warn('[CharacterCardButton] Button container not found in combat score panel');
                 return;
@@ -10901,7 +10901,7 @@
                 // Build character sheet link using cached data (preferred) or DOM fallback
                 const url = buildCharacterSheetLink(
                     _modal,
-                    'https://tib-san.github.io/mwi-character-sheet/',
+                    'https://tib-san.gitlab.io/mwi-character-sheet/',
                     characterData,
                     clientData,
                     consumablesData
