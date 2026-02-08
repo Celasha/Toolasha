@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.24.0](https://github.com/Celasha/Toolasha/compare/v0.23.0...v0.24.0) (2026-02-08)
+
+### Features
+
+- unify alchemy profit calculators for tooltip and action panel ([4592452](https://github.com/Celasha/Toolasha/commit/459245250f20fe1594497ce237ecfde3b4e8b9c8))
+
 ## [0.23.0](https://github.com/Celasha/Toolasha/compare/v0.22.3...v0.23.0) (2026-02-08)
 
 ### Features
