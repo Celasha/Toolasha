@@ -2,10 +2,9 @@
 
 ## [0.22.2](https://github.com/Celasha/Toolasha/compare/v0.22.1...v0.22.2) (2026-02-08)
 
-
 ### Bug Fixes
 
-* resolve trade history display overlap and color logic ([bf4f7c9](https://github.com/Celasha/Toolasha/commit/bf4f7c99baccfa6ed507bdba7112cde39123d968))
+- resolve trade history display overlap and color logic ([bf4f7c9](https://github.com/Celasha/Toolasha/commit/bf4f7c99baccfa6ed507bdba7112cde39123d968))
 
 ## [0.22.1](https://github.com/Celasha/Toolasha/compare/v0.22.0...v0.22.1) (2026-02-07)
 
