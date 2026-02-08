@@ -724,6 +724,18 @@ export const settingsGroups = {
                 type: 'checkbox',
                 default: true,
             },
+            market_autoFillSellStrategy: {
+                id: 'market_autoFillSellStrategy',
+                label: '  └─ Auto-fill sell price strategy',
+                type: 'select',
+                default: 'match',
+                options: [
+                    { value: 'match', label: 'Match best sell price' },
+                    { value: 'undercut', label: 'Undercut by 1 (best sell - 1)' },
+                ],
+                dependencies: ['fillMarketOrderPrice'],
+                help: 'When creating sell listings, choose whether to match or undercut the current best sell price',
+            },
             market_autoClickMax: {
                 id: 'market_autoClickMax',
                 label: 'Auto-click Max button on sell listing dialogs',
