@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.23.0](https://github.com/Celasha/Toolasha/compare/v0.22.3...v0.23.0) (2026-02-08)
+
+### Features
+
+- add auto-fill sell price strategy setting ([4e073f6](https://github.com/Celasha/Toolasha/commit/4e073f677a0e71ca07bc108850b920511cced719))
+
 ## [0.22.3](https://github.com/Celasha/Toolasha/compare/v0.22.2...v0.22.3) (2026-02-08)
 
 ### Bug Fixes
