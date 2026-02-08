@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.23.0
+// @version      0.24.0
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -26380,9 +26380,6 @@ return plugin;
         // TRANSMUTE: varies by item (from alchemyDetail.transmuteSuccessRate)
     };
 
-    // Base action time for all alchemy actions (20 seconds)
-    const BASE_ALCHEMY_TIME_SECONDS = 20;
-
     class AlchemyProfitCalculator {
         constructor() {
             // Cache for item detail map
@@ -26402,109 +26399,46 @@ return plugin;
         }
 
         /**
-         * Calculate alchemy success rate with tea modifiers
-         * Uses active character buffs for accurate success rate calculation
+         * Calculate success rate with detailed breakdown
          * @param {number} baseRate - Base success rate (0-1)
-         * @returns {number} Final success rate after modifiers
+         * @returns {Object} Success rate breakdown { total, base, tea }
          */
-        getAlchemySuccessRate(baseRate) {
+        calculateSuccessRateBreakdown(baseRate) {
             try {
-                // Get alchemy success bonus from active buffs (already includes drink concentration scaling)
+                // Get alchemy success bonus from active buffs
                 const teaBonus = getAlchemySuccessBonus();
 
                 // Calculate final success rate
-                // Formula: total = base × (1 + tea_ratio_boost)
-                const finalRate = baseRate * (1 + teaBonus);
+                const total = Math.min(1.0, baseRate * (1 + teaBonus));
 
-                return Math.min(1.0, finalRate); // Cap at 100%
+                return {
+                    total,
+                    base: baseRate,
+                    tea: teaBonus,
+                };
             } catch (error) {
-                console.error('[AlchemyProfitCalculator] Failed to calculate success rate:', error);
-                return baseRate;
+                console.error('[AlchemyProfitCalculator] Failed to calculate success rate breakdown:', error);
+                return {
+                    total: baseRate,
+                    base: baseRate,
+                    tea: 0,
+                };
             }
         }
 
         /**
-         * Calculate alchemy action time with speed bonuses
-         * @returns {number} Action time in seconds
-         */
-        calculateAlchemyActionTime() {
-            try {
-                const gameData = dataManager$1.getInitClientData();
-                const equipment = dataManager$1.getEquipment();
-                const itemDetailMap = this.getItemDetailMap();
-
-                if (!gameData || !equipment) {
-                    return BASE_ALCHEMY_TIME_SECONDS;
-                }
-
-                const actionTypeHrid = '/action_types/alchemy';
-
-                // Get equipment speed bonus
-                const equipmentSpeedBonus = parseEquipmentSpeedBonuses(equipment, actionTypeHrid, itemDetailMap);
-
-                // Calculate action time with speed bonuses
-                // Formula: baseTime / (1 + speedBonus)
-                const actionTime = BASE_ALCHEMY_TIME_SECONDS / (1 + equipmentSpeedBonus);
-
-                return actionTime;
-            } catch (error) {
-                console.error('[AlchemyProfitCalculator] Failed to calculate action time:', error);
-                return BASE_ALCHEMY_TIME_SECONDS;
-            }
-        }
-
-        /**
-         * Calculate tea costs per hour for alchemy actions
-         * @returns {number} Tea cost per hour
-         */
-        calculateAlchemyTeaCosts() {
-            try {
-                const gameData = dataManager$1.getInitClientData();
-                const equipment = dataManager$1.getEquipment();
-
-                if (!gameData || !equipment) {
-                    return 0;
-                }
-
-                const actionTypeHrid = '/action_types/alchemy';
-                const drinkSlots = dataManager$1.getActionDrinkSlots(actionTypeHrid);
-
-                if (!drinkSlots || drinkSlots.length === 0) {
-                    return 0;
-                }
-
-                const drinkConcentration = getDrinkConcentration(equipment, gameData.itemDetailMap);
-                const drinksPerHour = calculateDrinksPerHour(drinkConcentration);
-
-                let totalTeaCost = 0;
-
-                for (const drink of drinkSlots) {
-                    if (!drink || !drink.itemHrid) continue;
-
-                    // Get tea price based on pricing mode
-                    const teaPrice = getItemPrice(drink.itemHrid, { context: 'profit', side: 'buy' });
-                    const resolvedPrice = teaPrice === null ? 0 : teaPrice;
-
-                    totalTeaCost += resolvedPrice;
-                }
-
-                return totalTeaCost * drinksPerHour;
-            } catch (error) {
-                console.error('[AlchemyProfitCalculator] Failed to calculate tea costs:', error);
-                return 0;
-            }
-        }
-
-        /**
-         * Calculate Coinify profit for an item
+         * Calculate coinify profit for an item with full detailed breakdown
+         * This is the SINGLE source of truth used by both tooltip and action panel
          * @param {string} itemHrid - Item HRID
          * @param {number} enhancementLevel - Enhancement level (default 0)
-         * @returns {Object|null} Profit data or null if not coinifiable
+         * @returns {Object|null} Detailed profit data or null if not coinifiable
          */
         calculateCoinifyProfit(itemHrid, enhancementLevel = 0) {
             try {
+                const gameData = dataManager$1.getInitClientData();
                 const itemDetails = dataManager$1.getItemDetails(itemHrid);
-                if (!itemDetails) {
+
+                if (!gameData || !itemDetails) {
                     return null;
                 }
 
@@ -26513,51 +26447,187 @@ return plugin;
                     return null;
                 }
 
-                // Get input cost (market price of the item)
-                const inputPrice = getItemPrice(itemHrid, { context: 'profit', side: 'buy', enhancementLevel });
-                if (inputPrice === null) {
-                    return null; // No market data
+                // Get alchemy action details
+                const actionDetails = gameData.actionDetailMap['/actions/alchemy/coinify'];
+                if (!actionDetails) {
+                    return null;
                 }
 
-                // Get output value (sell price from item data)
-                const outputValue = itemDetails.sellPrice || 0;
+                // Get pricing mode
+                const pricingMode = config$1.getSetting('profitCalc_pricingMode') || 'hybrid';
+                let buyType, sellType;
+                if (pricingMode === 'conservative') {
+                    buyType = 'ask';
+                    sellType = 'bid';
+                } else if (pricingMode === 'hybrid') {
+                    buyType = 'ask';
+                    sellType = 'ask';
+                } else {
+                    buyType = 'bid';
+                    sellType = 'ask';
+                }
 
-                // Get success rate
+                // Calculate action stats (time + efficiency) using shared helper
+                const actionStats = calculateActionStats(actionDetails, {
+                    skills: dataManager$1.getSkills(),
+                    equipment: dataManager$1.getEquipment(),
+                    itemDetailMap: gameData.itemDetailMap,
+                    includeCommunityBuff: true,
+                    includeBreakdown: true,
+                });
+
+                const { actionTime, totalEfficiency, efficiencyBreakdown } = actionStats;
+
+                // Get equipment for drink concentration calculation
+                const equipment = dataManager$1.getEquipment();
+
+                // Get drink concentration separately (not in breakdown from calculateActionStats)
+                const drinkConcentration = getDrinkConcentration(equipment, gameData.itemDetailMap);
+
+                // Calculate success rate with breakdown
                 const baseSuccessRate = BASE_SUCCESS_RATES.COINIFY;
-                const successRate = this.getAlchemySuccessRate(baseSuccessRate);
+                const successRateBreakdown = this.calculateSuccessRateBreakdown(baseSuccessRate);
+                const successRate = successRateBreakdown.total;
 
-                // Calculate action time and actions per hour
-                const actionTime = this.calculateAlchemyActionTime();
-                const actionsPerHour = calculateActionsPerHour(actionTime);
+                // Calculate input cost (material cost)
+                const bulkMultiplier = itemDetails.alchemyDetail?.bulkMultiplier || 1;
+                const pricePerItem = getItemPrice(itemHrid, { context: 'profit', side: buyType, enhancementLevel });
+                if (pricePerItem === null) {
+                    return null; // No market data
+                }
+                const materialCost = pricePerItem * bulkMultiplier;
+
+                // Coinify has no catalyst (catalyst is 0 for coinify)
+                const catalystPrice = 0;
+
+                // Calculate cost per attempt (materials consumed on all attempts)
+                const costPerAttempt = materialCost;
+
+                // Calculate output value (coins produced)
+                // Formula: sellPrice × bulkMultiplier × 5
+                const coinsProduced = (itemDetails.sellPrice || 0) * bulkMultiplier * 5;
+
+                // Revenue per attempt (coins are always 1:1, only get coins on success)
+                // Note: efficiency is applied to NET PROFIT, not revenue
+                const revenuePerAttempt = coinsProduced * successRate;
+
+                // Net profit per attempt (before efficiency)
+                const netProfitPerAttempt = revenuePerAttempt - costPerAttempt;
 
                 // Calculate tea costs
-                const teaCostPerHour = this.calculateAlchemyTeaCosts();
+                const teaCostData = calculateTeaCostsPerHour({
+                    drinkSlots: dataManager$1.getActionDrinkSlots('/action_types/alchemy'),
+                    drinkConcentration,
+                    itemDetailMap: gameData.itemDetailMap,
+                    getItemPrice: (hrid) => getItemPrice(hrid, { context: 'profit', side: buyType }),
+                });
 
-                // Revenue per attempt (only on success)
-                const revenuePerAttempt = outputValue * successRate;
+                // Calculate per-hour values
+                // Actions per hour (for display breakdown) - includes efficiency for display purposes
+                // Convert efficiency from percentage to decimal (81.516% -> 0.81516)
+                const efficiencyDecimal = totalEfficiency / 100;
+                const actionsPerHourWithEfficiency = calculateActionsPerHour(actionTime) * (1 + efficiencyDecimal);
 
-                // Cost per attempt (input consumed on every attempt)
-                const costPerAttempt = inputPrice;
+                // Material and revenue calculations (for breakdown display)
+                const materialCostPerHour = materialCost * actionsPerHourWithEfficiency;
+                const catalystCostPerHour = 0; // No catalyst for coinify
+                const revenuePerHour = revenuePerAttempt * actionsPerHourWithEfficiency;
 
-                // Net profit per attempt
-                const profitPerAttempt = revenuePerAttempt - costPerAttempt;
-
-                // Hourly calculations
-                const profitPerHour = profitPerAttempt * actionsPerHour - teaCostPerHour;
+                // Profit calculation (matches OLD system formula)
+                // Formula: (netProfit × (1 + efficiency)) / actionTime × 3600 - teaCost
+                const profitPerSecond = (netProfitPerAttempt * (1 + efficiencyDecimal)) / actionTime;
+                const profitPerHour = profitPerSecond * SECONDS_PER_HOUR - teaCostData.totalCostPerHour;
                 const profitPerDay = calculateProfitPerDay(profitPerHour);
 
+                // Build detailed breakdowns
+                const requirementCosts = [
+                    {
+                        itemHrid,
+                        count: bulkMultiplier,
+                        price: pricePerItem,
+                        costPerAction: materialCost,
+                        costPerHour: materialCostPerHour,
+                        enhancementLevel: enhancementLevel || 0,
+                    },
+                ];
+
+                const dropRevenues = [
+                    {
+                        itemHrid: '/items/coin',
+                        count: coinsProduced,
+                        dropRate: 1.0, // Coins always drop
+                        effectiveDropRate: 1.0,
+                        price: 1, // Coins are 1:1
+                        isEssence: false,
+                        isRare: false,
+                        revenuePerAttempt,
+                        revenuePerHour,
+                        dropsPerHour: coinsProduced * successRate * actionsPerHourWithEfficiency,
+                    },
+                ];
+
+                const catalystCost = {
+                    itemHrid: null,
+                    price: 0,
+                    costPerSuccess: 0,
+                    costPerAttempt: 0,
+                    costPerHour: 0,
+                };
+
+                const consumableCosts = teaCostData.costs.map((cost) => ({
+                    itemHrid: cost.itemHrid,
+                    price: cost.pricePerDrink,
+                    drinksPerHour: cost.drinksPerHour,
+                    costPerHour: cost.totalCost,
+                }));
+
+                // Return comprehensive data matching what action panel needs
                 return {
+                    // Basic info
                     actionType: 'coinify',
                     itemHrid,
                     enhancementLevel,
+
+                    // Summary totals
                     profitPerHour,
                     profitPerDay,
-                    successRate,
+                    revenuePerHour,
+
+                    // Actions and rates
+                    actionsPerHour: actionsPerHourWithEfficiency,
                     actionTime,
-                    actionsPerHour,
-                    inputCost: inputPrice,
-                    outputValue,
-                    teaCostPerHour,
+
+                    // Per-attempt economics
+                    materialCost,
+                    catalystPrice,
+                    costPerAttempt,
+                    incomePerAttempt: revenuePerAttempt,
+                    netProfitPerAttempt,
+
+                    // Per-hour costs
+                    materialCostPerHour,
+                    catalystCostPerHour,
+                    totalTeaCostPerHour: teaCostData.totalCostPerHour,
+
+                    // Detailed breakdowns
+                    requirementCosts,
+                    dropRevenues,
+                    catalystCost,
+                    consumableCosts,
+
+                    // Core stats
+                    successRate,
+                    efficiency: efficiencyDecimal, // Decimal form (0.81516 for 81.516%)
+
+                    // Modifier breakdowns
+                    successRateBreakdown,
+                    efficiencyBreakdown,
+                    actionSpeedBreakdown: efficiencyBreakdown.speedBreakdown,
+
+                    // Pricing info
+                    pricingMode,
+                    buyType,
+                    sellType,
                 };
             } catch (error) {
                 console.error('[AlchemyProfitCalculator] Failed to calculate coinify profit:', error);
@@ -26566,15 +26636,17 @@ return plugin;
         }
 
         /**
-         * Calculate Decompose profit for an item
+         * Calculate Decompose profit for an item with full detailed breakdown
          * @param {string} itemHrid - Item HRID
          * @param {number} enhancementLevel - Enhancement level (default 0)
          * @returns {Object|null} Profit data or null if not decomposable
          */
         calculateDecomposeProfit(itemHrid, enhancementLevel = 0) {
             try {
+                const gameData = dataManager$1.getInitClientData();
                 const itemDetails = dataManager$1.getItemDetails(itemHrid);
-                if (!itemDetails) {
+
+                if (!gameData || !itemDetails) {
                     return null;
                 }
 
@@ -26583,77 +26655,217 @@ return plugin;
                     return null;
                 }
 
+                // Get alchemy action details
+                const actionDetails = gameData.actionDetailMap['/actions/alchemy/decompose'];
+                if (!actionDetails) {
+                    return null;
+                }
+
+                // Get pricing mode
+                const pricingMode = config$1.getSetting('profitCalc_pricingMode') || 'hybrid';
+                let buyType, sellType;
+                if (pricingMode === 'conservative') {
+                    buyType = 'ask';
+                    sellType = 'bid';
+                } else if (pricingMode === 'hybrid') {
+                    buyType = 'ask';
+                    sellType = 'ask';
+                } else {
+                    buyType = 'bid';
+                    sellType = 'ask';
+                }
+
+                // Calculate action stats (time + efficiency) using shared helper
+                const actionStats = calculateActionStats(actionDetails, {
+                    skills: dataManager$1.getSkills(),
+                    equipment: dataManager$1.getEquipment(),
+                    itemDetailMap: gameData.itemDetailMap,
+                    includeCommunityBuff: true,
+                    includeBreakdown: true,
+                });
+
+                const { actionTime, totalEfficiency, efficiencyBreakdown } = actionStats;
+
+                // Get equipment for drink concentration calculation
+                const equipment = dataManager$1.getEquipment();
+                const drinkConcentration = getDrinkConcentration(equipment, gameData.itemDetailMap);
+
+                // Calculate success rate with breakdown
+                const baseSuccessRate = BASE_SUCCESS_RATES.DECOMPOSE;
+                const successRateBreakdown = this.calculateSuccessRateBreakdown(baseSuccessRate);
+                const successRate = successRateBreakdown.total;
+
                 // Get input cost (market price of the item being decomposed)
-                const inputPrice = getItemPrice(itemHrid, { context: 'profit', side: 'buy', enhancementLevel });
+                const inputPrice = getItemPrice(itemHrid, { context: 'profit', side: buyType, enhancementLevel });
                 if (inputPrice === null) {
                     return null; // No market data
                 }
 
-                // Get success rate
-                const baseSuccessRate = BASE_SUCCESS_RATES.DECOMPOSE;
-                const successRate = this.getAlchemySuccessRate(baseSuccessRate);
-
                 // Calculate output value
                 let outputValue = 0;
+                const dropDetails = [];
 
                 // 1. Base decompose items (always received on success)
                 for (const output of itemDetails.alchemyDetail.decomposeItems) {
-                    const outputPrice = getItemPrice(output.itemHrid, { context: 'profit', side: 'sell' });
+                    const outputPrice = getItemPrice(output.itemHrid, { context: 'profit', side: sellType });
                     if (outputPrice !== null) {
                         const afterTax = calculatePriceAfterTax(outputPrice);
-                        outputValue += afterTax * output.count;
+                        const dropValue = afterTax * output.count;
+                        outputValue += dropValue;
+
+                        dropDetails.push({
+                            itemHrid: output.itemHrid,
+                            count: output.count,
+                            price: outputPrice,
+                            afterTax,
+                            isEssence: false,
+                            expectedValue: dropValue,
+                        });
                     }
                 }
 
                 // 2. Enhancing Essence (if item is enhanced)
+                let essenceAmount = 0;
                 if (enhancementLevel > 0) {
                     const itemLevel = itemDetails.itemLevel || 1;
-                    const essenceAmount = Math.round(
-                        2 * (0.5 + 0.1 * Math.pow(1.05, itemLevel)) * Math.pow(2, enhancementLevel)
-                    );
+                    essenceAmount = Math.round(2 * (0.5 + 0.1 * Math.pow(1.05, itemLevel)) * Math.pow(2, enhancementLevel));
 
-                    const essencePrice = getItemPrice('/items/enhancing_essence', { context: 'profit', side: 'sell' });
+                    const essencePrice = getItemPrice('/items/enhancing_essence', { context: 'profit', side: sellType });
                     if (essencePrice !== null) {
                         const afterTax = calculatePriceAfterTax(essencePrice);
-                        outputValue += afterTax * essenceAmount;
+                        const dropValue = afterTax * essenceAmount;
+                        outputValue += dropValue;
+
+                        dropDetails.push({
+                            itemHrid: '/items/enhancing_essence',
+                            count: essenceAmount,
+                            price: essencePrice,
+                            afterTax,
+                            isEssence: true,
+                            expectedValue: dropValue,
+                        });
                     }
                 }
-
-                // Calculate action time and actions per hour
-                const actionTime = this.calculateAlchemyActionTime();
-                const actionsPerHour = calculateActionsPerHour(actionTime);
-
-                // Calculate tea costs
-                const teaCostPerHour = this.calculateAlchemyTeaCosts();
 
                 // Revenue per attempt (only on success)
                 const revenuePerAttempt = outputValue * successRate;
 
-                // Calculate market tax (2% of gross revenue)
-                const marketTaxPerAttempt = revenuePerAttempt * MARKET_TAX;
-
                 // Cost per attempt (input consumed on every attempt)
                 const costPerAttempt = inputPrice;
 
-                // Net profit per attempt (revenue - costs - tax)
-                const profitPerAttempt = revenuePerAttempt - costPerAttempt - marketTaxPerAttempt;
+                // Net profit per attempt (before efficiency)
+                const netProfitPerAttempt = revenuePerAttempt - costPerAttempt;
 
-                // Hourly calculations
-                const profitPerHour = profitPerAttempt * actionsPerHour - teaCostPerHour;
+                // Calculate tea costs
+                const teaCostData = calculateTeaCostsPerHour({
+                    drinkSlots: dataManager$1.getActionDrinkSlots('/action_types/alchemy'),
+                    drinkConcentration,
+                    itemDetailMap: gameData.itemDetailMap,
+                    getItemPrice: (hrid) => getItemPrice(hrid, { context: 'profit', side: buyType }),
+                });
+
+                // Calculate per-hour values
+                // Convert efficiency from percentage to decimal
+                const efficiencyDecimal = totalEfficiency / 100;
+                const actionsPerHourWithEfficiency = calculateActionsPerHour(actionTime) * (1 + efficiencyDecimal);
+
+                // Material and revenue calculations (for breakdown display)
+                const materialCostPerHour = inputPrice * actionsPerHourWithEfficiency;
+                const catalystCostPerHour = 0; // No catalyst for decompose
+                const revenuePerHour = revenuePerAttempt * actionsPerHourWithEfficiency;
+
+                // Profit calculation (matches OLD system formula)
+                const profitPerSecond = (netProfitPerAttempt * (1 + efficiencyDecimal)) / actionTime;
+                const profitPerHour = profitPerSecond * SECONDS_PER_HOUR - teaCostData.totalCostPerHour;
                 const profitPerDay = calculateProfitPerDay(profitPerHour);
 
+                // Build detailed breakdowns
+                const requirementCosts = [
+                    {
+                        itemHrid,
+                        count: 1,
+                        price: inputPrice,
+                        costPerAction: inputPrice,
+                        costPerHour: materialCostPerHour,
+                        enhancementLevel: enhancementLevel || 0,
+                    },
+                ];
+
+                const dropRevenues = dropDetails.map((drop) => ({
+                    itemHrid: drop.itemHrid,
+                    count: drop.count,
+                    dropRate: 1.0, // Decompose drops are guaranteed on success
+                    effectiveDropRate: 1.0,
+                    price: drop.price,
+                    isEssence: drop.isEssence,
+                    isRare: false,
+                    revenuePerAttempt: drop.expectedValue * successRate,
+                    revenuePerHour: drop.expectedValue * successRate * actionsPerHourWithEfficiency,
+                    dropsPerHour: drop.count * successRate * actionsPerHourWithEfficiency,
+                }));
+
+                const catalystCost = {
+                    itemHrid: null,
+                    price: 0,
+                    costPerSuccess: 0,
+                    costPerAttempt: 0,
+                    costPerHour: 0,
+                };
+
+                const consumableCosts = teaCostData.costs.map((cost) => ({
+                    itemHrid: cost.itemHrid,
+                    price: cost.pricePerDrink,
+                    drinksPerHour: cost.drinksPerHour,
+                    costPerHour: cost.totalCost,
+                }));
+
+                // Return comprehensive data matching what action panel needs
                 return {
+                    // Basic info
                     actionType: 'decompose',
                     itemHrid,
                     enhancementLevel,
+
+                    // Summary totals
                     profitPerHour,
                     profitPerDay,
-                    successRate,
+                    revenuePerHour,
+
+                    // Actions and rates
+                    actionsPerHour: actionsPerHourWithEfficiency,
                     actionTime,
-                    actionsPerHour,
-                    inputCost: inputPrice,
-                    outputValue,
-                    teaCostPerHour,
+
+                    // Per-attempt economics
+                    materialCost: inputPrice,
+                    catalystPrice: 0,
+                    costPerAttempt,
+                    incomePerAttempt: revenuePerAttempt,
+                    netProfitPerAttempt,
+
+                    // Per-hour costs
+                    materialCostPerHour,
+                    catalystCostPerHour,
+                    totalTeaCostPerHour: teaCostData.totalCostPerHour,
+
+                    // Detailed breakdowns
+                    requirementCosts,
+                    dropRevenues,
+                    catalystCost,
+                    consumableCosts,
+
+                    // Core stats
+                    successRate,
+                    efficiency: efficiencyDecimal,
+
+                    // Modifier breakdowns
+                    successRateBreakdown,
+                    efficiencyBreakdown,
+                    actionSpeedBreakdown: efficiencyBreakdown.speedBreakdown,
+
+                    // Pricing info
+                    pricingMode,
+                    buyType,
+                    sellType,
                 };
             } catch (error) {
                 console.error('[AlchemyProfitCalculator] Failed to calculate decompose profit:', error);
@@ -26662,14 +26874,16 @@ return plugin;
         }
 
         /**
-         * Calculate Transmute profit for an item
+         * Calculate Transmute profit for an item with full detailed breakdown
          * @param {string} itemHrid - Item HRID
          * @returns {Object|null} Profit data or null if not transmutable
          */
         calculateTransmuteProfit(itemHrid) {
             try {
+                const gameData = dataManager$1.getInitClientData();
                 const itemDetails = dataManager$1.getItemDetails(itemHrid);
-                if (!itemDetails) {
+
+                if (!gameData || !itemDetails) {
                     return null;
                 }
 
@@ -26684,34 +26898,75 @@ return plugin;
                     return null; // Cannot transmute
                 }
 
+                // Get alchemy action details
+                const actionDetails = gameData.actionDetailMap['/actions/alchemy/transmute'];
+                if (!actionDetails) {
+                    return null;
+                }
+
+                // Get pricing mode
+                const pricingMode = config$1.getSetting('profitCalc_pricingMode') || 'hybrid';
+                let buyType, sellType;
+                if (pricingMode === 'conservative') {
+                    buyType = 'ask';
+                    sellType = 'bid';
+                } else if (pricingMode === 'hybrid') {
+                    buyType = 'ask';
+                    sellType = 'ask';
+                } else {
+                    buyType = 'bid';
+                    sellType = 'ask';
+                }
+
+                // Calculate action stats (time + efficiency) using shared helper
+                const actionStats = calculateActionStats(actionDetails, {
+                    skills: dataManager$1.getSkills(),
+                    equipment: dataManager$1.getEquipment(),
+                    itemDetailMap: gameData.itemDetailMap,
+                    includeCommunityBuff: true,
+                    includeBreakdown: true,
+                });
+
+                const { actionTime, totalEfficiency, efficiencyBreakdown } = actionStats;
+
+                // Get equipment for drink concentration calculation
+                const equipment = dataManager$1.getEquipment();
+                const drinkConcentration = getDrinkConcentration(equipment, gameData.itemDetailMap);
+
+                // Calculate success rate with breakdown
+                const successRateBreakdown = this.calculateSuccessRateBreakdown(baseSuccessRate);
+                const successRate = successRateBreakdown.total;
+
                 // Get input cost (market price of the item being transmuted)
-                const inputPrice = getItemPrice(itemHrid, { context: 'profit', side: 'buy' });
+                const inputPrice = getItemPrice(itemHrid, { context: 'profit', side: buyType });
                 if (inputPrice === null) {
                     return null; // No market data
                 }
 
-                // Get success rate with modifiers
-                const successRate = this.getAlchemySuccessRate(baseSuccessRate);
-
                 // Calculate expected value of outputs
                 let expectedOutputValue = 0;
+                const dropDetails = [];
 
                 for (const drop of itemDetails.alchemyDetail.transmuteDropTable) {
-                    const outputPrice = getItemPrice(drop.itemHrid, { context: 'profit', side: 'sell' });
+                    const outputPrice = getItemPrice(drop.itemHrid, { context: 'profit', side: sellType });
                     if (outputPrice !== null) {
                         const afterTax = calculatePriceAfterTax(outputPrice);
                         // Expected value: price × dropRate × averageCount
                         const averageCount = (drop.minCount + drop.maxCount) / 2;
-                        expectedOutputValue += afterTax * drop.dropRate * averageCount;
+                        const dropValue = afterTax * drop.dropRate * averageCount;
+                        expectedOutputValue += dropValue;
+
+                        dropDetails.push({
+                            itemHrid: drop.itemHrid,
+                            dropRate: drop.dropRate,
+                            minCount: drop.minCount,
+                            maxCount: drop.maxCount,
+                            averageCount,
+                            price: outputPrice,
+                            expectedValue: dropValue,
+                        });
                     }
                 }
-
-                // Calculate action time and actions per hour
-                const actionTime = this.calculateAlchemyActionTime();
-                const actionsPerHour = calculateActionsPerHour(actionTime);
-
-                // Calculate tea costs
-                const teaCostPerHour = this.calculateAlchemyTeaCosts();
 
                 // Revenue per attempt (expected value on success)
                 const revenuePerAttempt = expectedOutputValue * successRate;
@@ -26719,25 +26974,119 @@ return plugin;
                 // Cost per attempt (input consumed on every attempt)
                 const costPerAttempt = inputPrice;
 
-                // Net profit per attempt
-                const profitPerAttempt = revenuePerAttempt - costPerAttempt;
+                // Net profit per attempt (before efficiency)
+                const netProfitPerAttempt = revenuePerAttempt - costPerAttempt;
 
-                // Hourly calculations
-                const profitPerHour = profitPerAttempt * actionsPerHour - teaCostPerHour;
+                // Calculate tea costs
+                const teaCostData = calculateTeaCostsPerHour({
+                    drinkSlots: dataManager$1.getActionDrinkSlots('/action_types/alchemy'),
+                    drinkConcentration,
+                    itemDetailMap: gameData.itemDetailMap,
+                    getItemPrice: (hrid) => getItemPrice(hrid, { context: 'profit', side: buyType }),
+                });
+
+                // Calculate per-hour values
+                // Convert efficiency from percentage to decimal
+                const efficiencyDecimal = totalEfficiency / 100;
+                const actionsPerHourWithEfficiency = calculateActionsPerHour(actionTime) * (1 + efficiencyDecimal);
+
+                // Material and revenue calculations (for breakdown display)
+                const materialCostPerHour = inputPrice * actionsPerHourWithEfficiency;
+                const catalystCostPerHour = 0; // No catalyst for transmute
+                const revenuePerHour = revenuePerAttempt * actionsPerHourWithEfficiency;
+
+                // Profit calculation (matches OLD system formula)
+                const profitPerSecond = (netProfitPerAttempt * (1 + efficiencyDecimal)) / actionTime;
+                const profitPerHour = profitPerSecond * SECONDS_PER_HOUR - teaCostData.totalCostPerHour;
                 const profitPerDay = calculateProfitPerDay(profitPerHour);
 
+                // Build detailed breakdowns
+                const requirementCosts = [
+                    {
+                        itemHrid,
+                        count: 1,
+                        price: inputPrice,
+                        costPerAction: inputPrice,
+                        costPerHour: materialCostPerHour,
+                        enhancementLevel: 0,
+                    },
+                ];
+
+                const dropRevenues = dropDetails.map((drop) => ({
+                    itemHrid: drop.itemHrid,
+                    count: drop.averageCount,
+                    dropRate: drop.dropRate,
+                    effectiveDropRate: drop.dropRate,
+                    price: drop.price,
+                    isEssence: false,
+                    isRare: false,
+                    revenuePerAttempt: drop.expectedValue * successRate,
+                    revenuePerHour: drop.expectedValue * successRate * actionsPerHourWithEfficiency,
+                    dropsPerHour: drop.averageCount * drop.dropRate * successRate * actionsPerHourWithEfficiency,
+                }));
+
+                const catalystCost = {
+                    itemHrid: null,
+                    price: 0,
+                    costPerSuccess: 0,
+                    costPerAttempt: 0,
+                    costPerHour: 0,
+                };
+
+                const consumableCosts = teaCostData.costs.map((cost) => ({
+                    itemHrid: cost.itemHrid,
+                    price: cost.pricePerDrink,
+                    drinksPerHour: cost.drinksPerHour,
+                    costPerHour: cost.totalCost,
+                }));
+
+                // Return comprehensive data matching what action panel needs
                 return {
+                    // Basic info
                     actionType: 'transmute',
                     itemHrid,
                     enhancementLevel: 0, // Transmute doesn't care about enhancement
+
+                    // Summary totals
                     profitPerHour,
                     profitPerDay,
-                    successRate,
+                    revenuePerHour,
+
+                    // Actions and rates
+                    actionsPerHour: actionsPerHourWithEfficiency,
                     actionTime,
-                    actionsPerHour,
-                    inputCost: inputPrice,
-                    outputValue: expectedOutputValue,
-                    teaCostPerHour,
+
+                    // Per-attempt economics
+                    materialCost: inputPrice,
+                    catalystPrice: 0,
+                    costPerAttempt,
+                    incomePerAttempt: revenuePerAttempt,
+                    netProfitPerAttempt,
+
+                    // Per-hour costs
+                    materialCostPerHour,
+                    catalystCostPerHour,
+                    totalTeaCostPerHour: teaCostData.totalCostPerHour,
+
+                    // Detailed breakdowns
+                    requirementCosts,
+                    dropRevenues,
+                    catalystCost,
+                    consumableCosts,
+
+                    // Core stats
+                    successRate,
+                    efficiency: efficiencyDecimal,
+
+                    // Modifier breakdowns
+                    successRateBreakdown,
+                    efficiencyBreakdown,
+                    actionSpeedBreakdown: efficiencyBreakdown.speedBreakdown,
+
+                    // Pricing info
+                    pricingMode,
+                    buyType,
+                    sellType,
                 };
             } catch (error) {
                 console.error('[AlchemyProfitCalculator] Failed to calculate transmute profit:', error);
@@ -48386,284 +48735,6 @@ return plugin;
         }
 
         /**
-         * Calculate profit based on extracted data and pricing mode
-         * @param {Object} data - Action data from extractActionData()
-         * @returns {Object|null} { profitPerHour, profitPerDay } or null
-         */
-        calculateProfit(data) {
-            try {
-                if (!data) return null;
-
-                // Get pricing mode
-                const pricingMode = config$1.getSetting('profitCalc_pricingMode') || 'hybrid';
-
-                // Determine buy/sell price types
-                let buyType, sellType;
-                if (pricingMode === 'conservative') {
-                    buyType = 'ask'; // Instant buy (Ask)
-                    sellType = 'bid'; // Instant sell (Bid)
-                } else if (pricingMode === 'hybrid') {
-                    buyType = 'ask'; // Instant buy (Ask)
-                    sellType = 'ask'; // Patient sell (Ask)
-                } else {
-                    // optimistic
-                    buyType = 'bid'; // Patient buy (Bid)
-                    sellType = 'ask'; // Patient sell (Ask)
-                }
-
-                // Calculate material cost (accounting for failures and decomposition value)
-                const materialCost = data.requirements.reduce((sum, req) => {
-                    const price = buyType === 'ask' ? req.ask : req.bid;
-                    const itemCost = price * (req.count || 1);
-
-                    // Subtract decomposition value for enhanced items
-                    const decompValue = this.calculateDecompositionValue(req.itemHrid, req.enhancementLevel || 0, buyType);
-                    const netCost = itemCost - decompValue;
-
-                    return sum + netCost;
-                }, 0);
-
-                // Calculate cost per attempt (materials consumed on failure, materials + catalyst on success)
-                const catalystPrice = buyType === 'ask' ? data.catalyst.ask : data.catalyst.bid;
-                const costPerAttempt =
-                    materialCost * (1 - data.successRate) + (materialCost + catalystPrice) * data.successRate;
-
-                // Calculate income per attempt
-                const incomePerAttempt = data.drops.reduce((sum, drop, index) => {
-                    // Special handling for coins (no marketplace price)
-                    let price;
-                    if (drop.itemHrid === '/items/coin') {
-                        price = 1; // Coins are worth 1 coin each
-                    } else {
-                        price = sellType === 'ask' ? drop.ask : drop.bid;
-                    }
-
-                    // Identify drop type
-                    const isEssence = index === data.drops.length - 2; // Second-to-last
-                    const isRare = index === data.drops.length - 1; // Last
-
-                    // Get base drop rate
-                    let effectiveDropRate = drop.dropRate || 1;
-
-                    // Apply Essence Find bonus to essence drops
-                    if (isEssence && data.essenceFindBreakdown) {
-                        effectiveDropRate = effectiveDropRate * (1 + data.essenceFindBreakdown.total);
-                    }
-
-                    // Apply Rare Find bonus to rare drops
-                    if (isRare && data.rareFindBreakdown) {
-                        effectiveDropRate = effectiveDropRate * (1 + data.rareFindBreakdown.total);
-                    }
-
-                    let income;
-                    if (isEssence) {
-                        // Essence doesn't multiply by success rate
-                        income = price * effectiveDropRate * (drop.count || 1);
-                    } else {
-                        // Normal and rare drops multiply by success rate
-                        income = price * effectiveDropRate * (drop.count || 1) * data.successRate;
-                    }
-
-                    // Apply market tax (2% fee)
-                    if (drop.itemHrid !== '/items/coin') {
-                        income = calculatePriceAfterTax(income);
-                    }
-
-                    return sum + income;
-                }, 0);
-
-                // Calculate net profit per attempt
-                const netProfitPerAttempt = incomePerAttempt - costPerAttempt;
-
-                // Calculate profit per second (accounting for efficiency)
-                const profitPerSecond = (netProfitPerAttempt * (1 + data.efficiency)) / data.actionTime;
-
-                const gameData = dataManager$1.getInitClientData();
-                const equipment = dataManager$1.getEquipment();
-                const drinkConcentration =
-                    gameData && equipment ? getDrinkConcentration(equipment, gameData.itemDetailMap) : 0;
-                const itemDetailMap = gameData?.itemDetailMap || {};
-                const consumableMap = new Map(data.consumables.map((consumable) => [consumable.itemHrid, consumable]));
-                const teaCostData = calculateTeaCostsPerHour({
-                    drinkSlots: data.consumables.map((consumable) => ({ itemHrid: consumable.itemHrid })),
-                    drinkConcentration,
-                    itemDetailMap,
-                    getItemPrice: (itemHrid) => {
-                        const consumable = consumableMap.get(itemHrid);
-                        if (!consumable) {
-                            return null;
-                        }
-                        return buyType === 'ask' ? consumable.ask : consumable.bid;
-                    },
-                });
-                const teaCostPerSecond = teaCostData.totalCostPerHour / SECONDS_PER_HOUR;
-
-                // Final profit accounting for tea costs
-                const finalProfitPerSecond = profitPerSecond - teaCostPerSecond;
-                const profitPerHour = finalProfitPerSecond * 3600;
-                const profitPerDay = calculateProfitPerDay(profitPerHour);
-
-                // Calculate actions per hour
-                const actionsPerHour = calculateActionsPerHour(data.actionTime) * (1 + data.efficiency);
-
-                // Build detailed requirement costs breakdown
-                const requirementCosts = data.requirements.map((req) => {
-                    const price = buyType === 'ask' ? req.ask : req.bid;
-                    const costPerAction = price * (req.count || 1);
-                    const costPerHour = costPerAction * actionsPerHour;
-
-                    // Calculate decomposition value
-                    const decompositionValue = this.calculateDecompositionValue(
-                        req.itemHrid,
-                        req.enhancementLevel || 0,
-                        buyType
-                    );
-                    const decompositionValuePerHour = decompositionValue * actionsPerHour;
-
-                    return {
-                        itemHrid: req.itemHrid,
-                        count: req.count || 1,
-                        price: price,
-                        costPerAction: costPerAction,
-                        costPerHour: costPerHour,
-                        enhancementLevel: req.enhancementLevel || 0,
-                        decompositionValue: decompositionValue,
-                        decompositionValuePerHour: decompositionValuePerHour,
-                    };
-                });
-
-                // Build detailed drop revenues breakdown
-                const dropRevenues = data.drops.map((drop, index) => {
-                    // Special handling for coins (no marketplace price)
-                    let price;
-                    if (drop.itemHrid === '/items/coin') {
-                        price = 1; // Coins are worth 1 coin each
-                    } else {
-                        price = sellType === 'ask' ? drop.ask : drop.bid;
-                    }
-                    const isEssence = index === data.drops.length - 2;
-                    const isRare = index === data.drops.length - 1;
-
-                    // Get base drop rate
-                    const baseDropRate = drop.dropRate || 1;
-                    let effectiveDropRate = baseDropRate;
-
-                    // Apply Essence Find bonus to essence drops
-                    if (isEssence && data.essenceFindBreakdown) {
-                        effectiveDropRate = baseDropRate * (1 + data.essenceFindBreakdown.total);
-                    }
-
-                    // Apply Rare Find bonus to rare drops
-                    if (isRare && data.rareFindBreakdown) {
-                        effectiveDropRate = baseDropRate * (1 + data.rareFindBreakdown.total);
-                    }
-
-                    let revenuePerAttempt;
-                    if (isEssence) {
-                        // Essence doesn't multiply by success rate
-                        revenuePerAttempt = price * effectiveDropRate * (drop.count || 1);
-                    } else {
-                        // Normal and rare drops multiply by success rate
-                        revenuePerAttempt = price * effectiveDropRate * (drop.count || 1) * data.successRate;
-                    }
-
-                    // Apply market tax for non-coin items
-                    const revenueAfterTax =
-                        drop.itemHrid !== '/items/coin' ? calculatePriceAfterTax(revenuePerAttempt) : revenuePerAttempt;
-                    const revenuePerHour = revenueAfterTax * actionsPerHour;
-
-                    return {
-                        itemHrid: drop.itemHrid,
-                        count: drop.count || 1,
-                        dropRate: baseDropRate, // Base drop rate (before Rare Find)
-                        effectiveDropRate: effectiveDropRate, // Effective drop rate (after Rare Find)
-                        price: price,
-                        isEssence: isEssence,
-                        isRare: isRare,
-                        revenuePerAttempt: revenueAfterTax,
-                        revenuePerHour: revenuePerHour,
-                        dropsPerHour:
-                            effectiveDropRate * (drop.count || 1) * actionsPerHour * (isEssence ? 1 : data.successRate),
-                    };
-                });
-
-                // Build catalyst cost detail
-                const catalystCost = {
-                    itemHrid: data.catalyst.itemHrid,
-                    price: catalystPrice,
-                    costPerSuccess: catalystPrice,
-                    costPerAttempt: catalystPrice * data.successRate,
-                    costPerHour: catalystPrice * data.successRate * actionsPerHour,
-                };
-
-                // Build consumable costs breakdown
-                const consumableCosts = teaCostData.costs.map((cost) => ({
-                    itemHrid: cost.itemHrid,
-                    price: cost.pricePerDrink,
-                    drinksPerHour: cost.drinksPerHour,
-                    costPerHour: cost.totalCost,
-                }));
-
-                // Calculate total costs per hour for summary
-                const materialCostPerHour = materialCost * actionsPerHour;
-                const catalystCostPerHour = catalystCost.costPerHour;
-                const totalTeaCostPerHour = teaCostData.totalCostPerHour;
-
-                // Calculate total revenue per hour
-                const revenuePerHour = incomePerAttempt * actionsPerHour;
-
-                return {
-                    // Summary totals
-                    profitPerHour,
-                    profitPerDay,
-                    revenuePerHour,
-
-                    // Actions and rates
-                    actionsPerHour,
-
-                    // Per-attempt economics
-                    materialCost,
-                    catalystPrice,
-                    costPerAttempt,
-                    incomePerAttempt,
-                    netProfitPerAttempt,
-
-                    // Per-hour costs
-                    materialCostPerHour,
-                    catalystCostPerHour,
-                    totalTeaCostPerHour,
-
-                    // Detailed breakdowns
-                    requirementCosts, // Array of material cost details
-                    dropRevenues, // Array of drop revenue details
-                    catalystCost, // Single catalyst cost detail
-                    consumableCosts, // Array of tea/drink details
-
-                    // Core stats
-                    successRate: data.successRate,
-                    actionTime: data.actionTime,
-                    efficiency: data.efficiency,
-                    teaDuration: data.teaDuration,
-
-                    // Modifier breakdowns
-                    successRateBreakdown: data.successRateBreakdown,
-                    efficiencyBreakdown: data.efficiencyBreakdown,
-                    actionSpeedBreakdown: data.actionSpeedBreakdown,
-                    rareFindBreakdown: data.rareFindBreakdown,
-                    essenceFindBreakdown: data.essenceFindBreakdown,
-
-                    // Pricing info
-                    pricingMode,
-                    buyType,
-                    sellType,
-                };
-            } catch (error) {
-                console.error('[AlchemyProfit] Failed to calculate profit:', error);
-                return null;
-            }
-        }
-
-        /**
          * Generate state fingerprint for change detection
          * @returns {string} Fingerprint string
          */
@@ -48831,15 +48902,54 @@ return plugin;
          */
         async updateDisplay(infoContainer) {
             try {
-                // Extract action data
-                const actionData = await alchemyProfit.extractActionData();
-                if (!actionData) {
-                    this.removeDisplay();
-                    return;
+                // Get current action HRID to determine action type
+                const actionHrid = alchemyProfit.getCurrentActionHrid();
+
+                let profitData = null;
+
+                // Check alchemy action type by examining the drops and requirements
+                const drops = await alchemyProfit.extractDrops(actionHrid);
+                const requirements = await alchemyProfit.extractRequirements();
+
+                // Determine action type:
+                // - Coinify: First drop is coins
+                // - Transmute: First drop is NOT coins AND requirement has transmuteDropTable
+                // - Decompose: Everything else
+                const isCoinify = drops.length > 0 && drops[0].itemHrid === '/items/coin';
+                let isTransmute = false;
+
+                if (!isCoinify && requirements && requirements.length > 0) {
+                    const itemHrid = requirements[0].itemHrid;
+                    const itemDetails = dataManager$1.getItemDetails(itemHrid);
+                    isTransmute = !!itemDetails?.alchemyDetail?.transmuteDropTable;
                 }
 
-                // Calculate profit
-                const profitData = alchemyProfit.calculateProfit(actionData);
+                if (isCoinify) {
+                    // Use unified calculator for coinify
+                    if (requirements && requirements.length > 0) {
+                        const itemHrid = requirements[0].itemHrid;
+                        const enhancementLevel = requirements[0].enhancementLevel || 0;
+
+                        // Call unified calculator
+                        profitData = alchemyProfitCalculator.calculateCoinifyProfit(itemHrid, enhancementLevel);
+                    }
+                } else if (isTransmute) {
+                    // Use unified calculator for transmute
+                    if (requirements && requirements.length > 0) {
+                        const itemHrid = requirements[0].itemHrid;
+
+                        // Call unified calculator
+                        profitData = alchemyProfitCalculator.calculateTransmuteProfit(itemHrid);
+                    }
+                } else if (requirements && requirements.length > 0) {
+                    // Use unified calculator for decompose
+                    const itemHrid = requirements[0].itemHrid;
+                    const enhancementLevel = requirements[0].enhancementLevel || 0;
+
+                    // Call unified calculator
+                    profitData = alchemyProfitCalculator.calculateDecomposeProfit(itemHrid, enhancementLevel);
+                }
+
                 if (!profitData) {
                     this.removeDisplay();
                     return;
