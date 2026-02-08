@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.3](https://github.com/Celasha/Toolasha/compare/v0.22.2...v0.22.3) (2026-02-08)
+
+### Bug Fixes
+
+- use header text for sell order detection in auto-click max ([15b9110](https://github.com/Celasha/Toolasha/commit/15b911076b24e107161ea5037be64c070e210f47))
+- use WebSocket data for trade history on equipment items ([ad9f54b](https://github.com/Celasha/Toolasha/commit/ad9f54b48dae0357769d5cdaa6f763a2438c9cd3))
+
 ## [0.22.2](https://github.com/Celasha/Toolasha/compare/v0.22.1...v0.22.2) (2026-02-08)
 
 ### Bug Fixes
