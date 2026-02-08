@@ -7,6 +7,7 @@ import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
 import dataManager from '../../core/data-manager.js';
 import alchemyProfit from './alchemy-profit.js';
+import alchemyProfitCalculator from '../market/alchemy-profit-calculator.js';
 import { formatWithSeparator, formatPercentage, formatLargeNumber } from '../../utils/formatters.js';
 import { createCollapsibleSection } from '../../utils/ui-components.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
@@ -129,15 +130,60 @@ class AlchemyProfitDisplay {
      */
     async updateDisplay(infoContainer) {
         try {
-            // Extract action data
-            const actionData = await alchemyProfit.extractActionData();
-            if (!actionData) {
-                this.removeDisplay();
-                return;
+            // Get current action HRID to determine action type
+            const actionHrid = alchemyProfit.getCurrentActionHrid();
+
+            let profitData = null;
+
+            // Check alchemy action type by examining the drops and requirements
+            const drops = await alchemyProfit.extractDrops(actionHrid);
+            const requirements = await alchemyProfit.extractRequirements();
+
+            // Determine action type:
+            // - Coinify: First drop is coins
+            // - Transmute: First drop is NOT coins AND requirement has transmuteDropTable
+            // - Decompose: Everything else
+            const isCoinify = drops.length > 0 && drops[0].itemHrid === '/items/coin';
+            let isTransmute = false;
+
+            if (!isCoinify && requirements && requirements.length > 0) {
+                const itemHrid = requirements[0].itemHrid;
+                const itemDetails = dataManager.getItemDetails(itemHrid);
+                isTransmute = !!itemDetails?.alchemyDetail?.transmuteDropTable;
             }
 
-            // Calculate profit
-            const profitData = alchemyProfit.calculateProfit(actionData);
+            if (isCoinify) {
+                // Use unified calculator for coinify
+                if (requirements && requirements.length > 0) {
+                    const itemHrid = requirements[0].itemHrid;
+                    const enhancementLevel = requirements[0].enhancementLevel || 0;
+
+                    // Call unified calculator
+                    profitData = alchemyProfitCalculator.calculateCoinifyProfit(itemHrid, enhancementLevel);
+                }
+            } else if (isTransmute) {
+                // Use unified calculator for transmute
+                if (requirements && requirements.length > 0) {
+                    const itemHrid = requirements[0].itemHrid;
+
+                    // Call unified calculator
+                    profitData = alchemyProfitCalculator.calculateTransmuteProfit(itemHrid);
+                }
+            } else if (requirements && requirements.length > 0) {
+                // Use unified calculator for decompose
+                const itemHrid = requirements[0].itemHrid;
+                const enhancementLevel = requirements[0].enhancementLevel || 0;
+
+                // Call unified calculator
+                profitData = alchemyProfitCalculator.calculateDecomposeProfit(itemHrid, enhancementLevel);
+            } else {
+                // Fallback to OLD system if no requirements found
+                const actionData = await alchemyProfit.extractActionData();
+                if (actionData) {
+                    profitData = alchemyProfit.calculateProfit(actionData);
+                }
+            }
+
             if (!profitData) {
                 this.removeDisplay();
                 return;
