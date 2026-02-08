@@ -18,6 +18,7 @@ class TradeHistoryDisplay {
         this.currentEnhancementLevel = 0;
         this.currentOrderBookData = null;
         this.isInitialized = false;
+        this.needsPriceDataRetry = false; // Track if we need to retry due to missing price data
     }
 
     /**
@@ -82,10 +83,24 @@ class TradeHistoryDisplay {
                 // Store order book data for current item
                 this.currentOrderBookData = data.marketItemOrderBooks;
 
-                // Trigger display update if we're viewing this item
-                const existingPanel = document.querySelector('[class*="MarketplacePanel_currentItem"]');
-                if (existingPanel) {
-                    this.handleItemPanelUpdate(existingPanel);
+                // Only retry if we previously failed due to missing price data
+                if (this.needsPriceDataRetry) {
+                    const existingPanel = document.querySelector('[class*="MarketplacePanel_currentItem"]');
+                    if (existingPanel) {
+                        // Force update by clearing current item tracking
+                        const tempHrid = this.currentItemHrid;
+                        const tempLevel = this.currentEnhancementLevel;
+                        this.currentItemHrid = null;
+                        this.currentEnhancementLevel = 0;
+
+                        this.handleItemPanelUpdate(existingPanel);
+
+                        // Restore tracking if update failed
+                        if (this.needsPriceDataRetry) {
+                            this.currentItemHrid = tempHrid;
+                            this.currentEnhancementLevel = tempLevel;
+                        }
+                    }
                 }
             }
         };
@@ -180,10 +195,8 @@ class TradeHistoryDisplay {
      */
     updateDisplay(panel, history) {
         // Remove existing display
-        const existing = panel.querySelector('.mwi-trade-history');
-        if (existing) {
-            existing.remove();
-        }
+        const existing = document.querySelectorAll('.mwi-trade-history');
+        existing.forEach((el) => el.remove());
 
         // Don't show anything if no history
         if (!history || (!history.buy && !history.sell)) {
@@ -193,33 +206,38 @@ class TradeHistoryDisplay {
         // Get current top order prices from the DOM
         const currentPrices = this.extractCurrentPrices(panel);
 
+        // Don't show display if we don't have current prices yet
+        if (!currentPrices) {
+            this.needsPriceDataRetry = true;
+            return;
+        }
+
         // Get comparison mode setting
         const comparisonMode = config.getSettingValue('market_tradeHistoryComparisonMode', 'instant');
 
-        // Ensure panel has position relative for absolute positioning to work
-        if (!panel.style.position || panel.style.position === 'static') {
-            panel.style.position = 'relative';
+        // Find the button container - it's outside the currentItem panel
+        // Search in the entire document since button container is at a higher level
+        const buttonContainer = document.querySelector('[class*="MarketplacePanel_marketNavButtonContainer"]');
+        if (!buttonContainer) {
+            return;
         }
 
         // Create history display
         const historyDiv = document.createElement('div');
         historyDiv.className = 'mwi-trade-history';
+
         historyDiv.style.cssText = `
-            position: absolute;
-            top: -35px;
-            left: 50%;
-            transform: translateX(-50%);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            margin-left: 12px;
             font-size: 0.85rem;
             color: #888;
             padding: 6px 12px;
             background: rgba(0,0,0,0.8);
             border-radius: 4px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
             white-space: nowrap;
-            z-index: 10;
         `;
 
         // Build content
@@ -246,8 +264,11 @@ class TradeHistoryDisplay {
 
         historyDiv.innerHTML = parts.join('');
 
-        // Append to panel (position is controlled by absolute positioning)
-        panel.appendChild(historyDiv);
+        // Append to button container
+        buttonContainer.appendChild(historyDiv);
+
+        // Clear retry flag since we successfully displayed
+        this.needsPriceDataRetry = false;
     }
 
     /**
@@ -300,15 +321,21 @@ class TradeHistoryDisplay {
             return '#888'; // Grey if no market data
         }
 
-        // Instant mode: Compare to ask (what you'd pay to instant-buy now)
-        // Listing mode: Compare to bid (what buyers are offering)
-        if (comparePrice > lastBuy) {
-            return config.COLOR_LOSS; // Red - current price is higher (worse deal now)
+        if (comparisonMode === 'instant') {
+            // Instant mode: Compare to ask (what you'd pay to instant-buy now)
+            if (comparePrice > lastBuy) {
+                return config.COLOR_LOSS; // Red - would pay more now
+            } else if (comparePrice < lastBuy) {
+                return config.COLOR_PROFIT; // Green - would pay less now
+            }
+        } else if (comparePrice > lastBuy) {
+            // Listing mode: Compare to bid (what buyers are offering = what you could sell for)
+            return config.COLOR_PROFIT; // Green - can sell for more than you bought (profit)
         } else if (comparePrice < lastBuy) {
-            return config.COLOR_PROFIT; // Green - current price is lower (better deal now)
-        } else {
-            return '#888'; // Grey - same price
+            return config.COLOR_LOSS; // Red - can only sell for less than you bought (loss)
         }
+
+        return '#888'; // Grey - same price
     }
 
     /**
@@ -330,15 +357,21 @@ class TradeHistoryDisplay {
             return '#888'; // Grey if no market data
         }
 
-        // Instant mode: Compare to bid (what you'd get to instant-sell now)
-        // Listing mode: Compare to ask (what sellers are asking)
-        if (comparePrice > lastSell) {
-            return config.COLOR_PROFIT; // Green - current price is higher (better deal now to sell)
+        if (comparisonMode === 'instant') {
+            // Instant mode: Compare to bid (what you'd get to instant-sell now)
+            if (comparePrice > lastSell) {
+                return config.COLOR_PROFIT; // Green - would get more now
+            } else if (comparePrice < lastSell) {
+                return config.COLOR_LOSS; // Red - would get less now
+            }
+        } else if (comparePrice > lastSell) {
+            // Listing mode: Compare to ask (what sellers are asking)
+            return config.COLOR_LOSS; // Red - others selling for more (you sold too cheap)
         } else if (comparePrice < lastSell) {
-            return config.COLOR_LOSS; // Red - current price is lower (worse deal now to sell)
-        } else {
-            return '#888'; // Grey - same price
+            return config.COLOR_PROFIT; // Green - others selling for less (you sold well)
         }
+
+        return '#888'; // Grey - same price
     }
 
     /**
