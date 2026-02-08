@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 0.22.2
+ * Version: 0.22.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -4248,15 +4248,9 @@
                 return;
             }
 
-            // Determine if this is a sell order by checking the price label
+            // Determine if this is a sell order by checking header text
             // Only auto-click Max for sell orders (not buy orders)
-            const priceLabel = modal.querySelector('div[class*="MarketplacePanel_priceLabel"]');
-            if (!priceLabel) {
-                return;
-            }
-
-            const labelText = priceLabel.textContent.toLowerCase();
-            const isSellOrder = labelText.includes('best sell');
+            const isSellOrder = headerText.includes('Sell Listing');
 
             if (!isSellOrder) {
                 return; // Skip buy orders
@@ -4286,7 +4280,6 @@
             });
 
             if (!maxButton) {
-                // Button might not be rendered yet or modal structure changed
                 return;
             }
 
@@ -9208,7 +9201,6 @@
             }
 
             this.isInitialized = true;
-            this.setupObserver();
             this.setupWebSocketListener();
             this.setupSettingListener();
             this.isActive = true;
@@ -9220,32 +9212,11 @@
         setupSettingListener() {
             config.onSettingChange('market_tradeHistoryComparisonMode', () => {
                 // Refresh display if currently viewing an item
-                const existingPanel = document.querySelector('[class*="MarketplacePanel_currentItem"]');
-                if (existingPanel && this.currentItemHrid) {
+                if (this.currentItemHrid) {
                     const history = tradeHistory.getHistory(this.currentItemHrid, this.currentEnhancementLevel);
-                    this.updateDisplay(existingPanel, history);
+                    this.updateDisplay(null, history);
                 }
             });
-        }
-
-        /**
-         * Setup DOM observer to watch for marketplace current item panel
-         */
-        setupObserver() {
-            // Watch for the current item panel (when viewing a specific item in marketplace)
-            this.unregisterObserver = domObserver.onClass(
-                'TradeHistoryDisplay',
-                'MarketplacePanel_currentItem',
-                (currentItemPanel) => {
-                    this.handleItemPanelUpdate(currentItemPanel);
-                }
-            );
-
-            // Check for existing panel
-            const existingPanel = document.querySelector('[class*="MarketplacePanel_currentItem"]');
-            if (existingPanel) {
-                this.handleItemPanelUpdate(existingPanel);
-            }
         }
 
         /**
@@ -9257,25 +9228,29 @@
                     // Store order book data for current item
                     this.currentOrderBookData = data.marketItemOrderBooks;
 
-                    // Only retry if we previously failed due to missing price data
-                    if (this.needsPriceDataRetry) {
-                        const existingPanel = document.querySelector('[class*="MarketplacePanel_currentItem"]');
-                        if (existingPanel) {
-                            // Force update by clearing current item tracking
-                            const tempHrid = this.currentItemHrid;
-                            const tempLevel = this.currentEnhancementLevel;
-                            this.currentItemHrid = null;
-                            this.currentEnhancementLevel = 0;
+                    // Extract item info from WebSocket data
+                    const itemHrid = data.marketItemOrderBooks.itemHrid;
 
-                            this.handleItemPanelUpdate(existingPanel);
+                    // Get enhancement level from DOM
+                    const enhancementLevel = this.getCurrentEnhancementLevel();
 
-                            // Restore tracking if update failed
-                            if (this.needsPriceDataRetry) {
-                                this.currentItemHrid = tempHrid;
-                                this.currentEnhancementLevel = tempLevel;
-                            }
+                    // Check if this is a different item
+                    if (itemHrid === this.currentItemHrid && enhancementLevel === this.currentEnhancementLevel) {
+                        // Only update if we previously failed due to missing price data
+                        if (!this.needsPriceDataRetry) {
+                            return;
                         }
                     }
+
+                    // Update tracking
+                    this.currentItemHrid = itemHrid;
+                    this.currentEnhancementLevel = enhancementLevel;
+
+                    // Get trade history for this item
+                    const history = tradeHistory.getHistory(itemHrid, enhancementLevel);
+
+                    // Update display (pass null for panel since we don't use it)
+                    this.updateDisplay(null, history);
                 }
             };
 
@@ -9288,83 +9263,29 @@
         }
 
         /**
-         * Handle current item panel update
-         * @param {HTMLElement} currentItemPanel - The current item panel container
+         * Get current enhancement level being viewed in order book
+         * @returns {number} Enhancement level (0 for non-equipment)
          */
-        handleItemPanelUpdate(currentItemPanel) {
-            // Extract item information
-            const itemInfo = this.extractItemInfo(currentItemPanel);
-            if (!itemInfo) {
-                return;
-            }
-
-            const { itemHrid, enhancementLevel } = itemInfo;
-
-            // Check if this is a different item
-            if (itemHrid === this.currentItemHrid && enhancementLevel === this.currentEnhancementLevel) {
-                return; // Same item, no need to update
-            }
-
-            // Update tracking
-            this.currentItemHrid = itemHrid;
-            this.currentEnhancementLevel = enhancementLevel;
-
-            // Get trade history for this item
-            const history = tradeHistory.getHistory(itemHrid, enhancementLevel);
-
-            // Update or create display
-            this.updateDisplay(currentItemPanel, history);
-        }
-
-        /**
-         * Extract item HRID and enhancement level from current item panel
-         * @param {HTMLElement} panel - Current item panel
-         * @returns {Object|null} { itemHrid, enhancementLevel } or null
-         */
-        extractItemInfo(panel) {
-            // Get enhancement level from badge
-            const levelBadge = panel.querySelector('[class*="Item_enhancementLevel"]');
-            const enhancementLevel = levelBadge ? parseInt(levelBadge.textContent.replace('+', '')) || 0 : 0;
-
-            // Get item HRID from icon aria-label
-            const icon = panel.querySelector('[class*="Icon_icon"]');
-            if (!icon || !icon.ariaLabel) {
-                return null;
-            }
-
-            const itemName = icon.ariaLabel.trim();
-
-            // Convert item name to HRID
-            const itemHrid = this.nameToHrid(itemName);
-            if (!itemHrid) {
-                return null;
-            }
-
-            return { itemHrid, enhancementLevel };
-        }
-
-        /**
-         * Convert item display name to HRID
-         * @param {string} itemName - Item display name
-         * @returns {string|null} Item HRID or null
-         */
-        nameToHrid(itemName) {
-            // Try to find item in game data
-            const gameData = dataManager.getInitClientData();
-            if (!gameData) return null;
-
-            for (const [hrid, item] of Object.entries(gameData.itemDetailMap)) {
-                if (item.name === itemName) {
-                    return hrid;
+        getCurrentEnhancementLevel() {
+            // Check for enhancement level indicator in the current item display
+            const currentItemElement = document.querySelector('[class*="MarketplacePanel_currentItem"]');
+            if (currentItemElement) {
+                const enhancementElement = currentItemElement.querySelector('[class*="Item_enhancementLevel"]');
+                if (enhancementElement) {
+                    const match = enhancementElement.textContent.match(/\+(\d+)/);
+                    if (match) {
+                        return parseInt(match[1], 10);
+                    }
                 }
             }
 
-            return null;
+            // Default to enhancement level 0 (non-equipment or base equipment)
+            return 0;
         }
 
         /**
          * Update trade history display
-         * @param {HTMLElement} panel - Current item panel
+         * @param {HTMLElement} panel - Current item panel (unused, kept for signature compatibility)
          * @param {Object|null} history - Trade history { buy, sell } or null
          */
         updateDisplay(panel, history) {
@@ -9456,7 +9377,11 @@
                 return null;
             }
 
-            const orderBook = this.currentOrderBookData.orderBooks[0];
+            // Get current enhancement level to find correct order book
+            const enhancementLevel = this.getCurrentEnhancementLevel();
+
+            // orderBooks is an array indexed by enhancement level
+            const orderBook = this.currentOrderBookData.orderBooks[enhancementLevel];
             if (!orderBook) {
                 return null;
             }
