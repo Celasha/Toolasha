@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.22.3
+// @version      0.23.0
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -15742,6 +15742,18 @@ return plugin;
                     type: 'checkbox',
                     default: true,
                 },
+                market_autoFillSellStrategy: {
+                    id: 'market_autoFillSellStrategy',
+                    label: '  └─ Auto-fill sell price strategy',
+                    type: 'select',
+                    default: 'match',
+                    options: [
+                        { value: 'match', label: 'Match best sell price' },
+                        { value: 'undercut', label: 'Undercut by 1 (best sell - 1)' },
+                    ],
+                    dependencies: ['fillMarketOrderPrice'],
+                    help: 'When creating sell listings, choose whether to match or undercut the current best sell price',
+                },
                 market_autoClickMax: {
                     id: 'market_autoClickMax',
                     label: 'Auto-click Max button on sell listing dialogs',
@@ -29589,22 +29601,22 @@ return plugin;
             // Click the best price label to populate the suggested price
             bestPriceLabel.click();
 
-            // Only adjust price for buy orders (increment by 1 to outbid)
-            // Sell orders use the best sell price as-is (no decrement)
-            if (isBuyOrder) {
-                const adjustTimeout = setTimeout(() => {
-                    this.adjustPrice(modal, isBuyOrder);
-                }, 50);
-                this.timerRegistry.registerTimeout(adjustTimeout);
-            }
+            // Adjust price after clicking to be optimally competitive
+            // For buy orders: increment by 1 to outbid
+            // For sell orders: depends on user setting (match or undercut)
+            const adjustTimeout = setTimeout(() => {
+                this.adjustPrice(modal, isBuyOrder, isSellOrder);
+            }, 50);
+            this.timerRegistry.registerTimeout(adjustTimeout);
         }
 
         /**
          * Adjust the price to be optimally competitive
          * @param {HTMLElement} modal - Modal container element
-         * @param {boolean} isBuyOrder - True if buy order, false if sell order
+         * @param {boolean} isBuyOrder - True if buy order
+         * @param {boolean} isSellOrder - True if sell order
          */
-        adjustPrice(modal, isBuyOrder) {
+        adjustPrice(modal, isBuyOrder, isSellOrder) {
             // Find the price input container
             const inputContainer = modal.querySelector(
                 'div[class*="MarketplacePanel_inputContainer"] div[class*="MarketplacePanel_priceInputs"]'
@@ -29620,13 +29632,26 @@ return plugin;
                 return;
             }
 
-            // For buy orders: click the 3rd button container's button (increment)
-            // For sell orders: click the 2nd button container's button (decrement)
-            const targetContainer = isBuyOrder ? buttonContainers[2] : buttonContainers[1];
-            const button = targetContainer.querySelector('div button');
+            if (isBuyOrder) {
+                // For buy orders: click the 3rd button container's button (increment)
+                const targetContainer = buttonContainers[2];
+                const button = targetContainer.querySelector('div button');
+                if (button) {
+                    button.click();
+                }
+            } else if (isSellOrder) {
+                // For sell orders: check user setting
+                const sellStrategy = config$1.getSettingValue('market_autoFillSellStrategy', 'match');
 
-            if (button) {
-                button.click();
+                if (sellStrategy === 'undercut') {
+                    // Click the 2nd button container's button (decrement)
+                    const targetContainer = buttonContainers[1];
+                    const button = targetContainer.querySelector('div button');
+                    if (button) {
+                        button.click();
+                    }
+                }
+                // If 'match', do nothing (use best sell price as-is)
             }
         }
 

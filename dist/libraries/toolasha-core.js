@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 0.22.3
+ * Version: 0.23.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1106,6 +1106,18 @@
                     label: 'Auto-fill marketplace orders with optimal price',
                     type: 'checkbox',
                     default: true,
+                },
+                market_autoFillSellStrategy: {
+                    id: 'market_autoFillSellStrategy',
+                    label: '  └─ Auto-fill sell price strategy',
+                    type: 'select',
+                    default: 'match',
+                    options: [
+                        { value: 'match', label: 'Match best sell price' },
+                        { value: 'undercut', label: 'Undercut by 1 (best sell - 1)' },
+                    ],
+                    dependencies: ['fillMarketOrderPrice'],
+                    help: 'When creating sell listings, choose whether to match or undercut the current best sell price',
                 },
                 market_autoClickMax: {
                     id: 'market_autoClickMax',
