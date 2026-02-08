@@ -68,15 +68,9 @@ class AutoClickMax {
             return;
         }
 
-        // Determine if this is a sell order by checking the price label
+        // Determine if this is a sell order by checking header text
         // Only auto-click Max for sell orders (not buy orders)
-        const priceLabel = modal.querySelector('div[class*="MarketplacePanel_priceLabel"]');
-        if (!priceLabel) {
-            return;
-        }
-
-        const labelText = priceLabel.textContent.toLowerCase();
-        const isSellOrder = labelText.includes('best sell');
+        const isSellOrder = headerText.includes('Sell Listing');
 
         if (!isSellOrder) {
             return; // Skip buy orders
@@ -106,7 +100,6 @@ class AutoClickMax {
         });
 
         if (!maxButton) {
-            // Button might not be rendered yet or modal structure changed
             return;
         }
 
