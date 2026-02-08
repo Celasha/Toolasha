@@ -176,12 +176,6 @@ class AlchemyProfitDisplay {
 
                 // Call unified calculator
                 profitData = alchemyProfitCalculator.calculateDecomposeProfit(itemHrid, enhancementLevel);
-            } else {
-                // Fallback to OLD system if no requirements found
-                const actionData = await alchemyProfit.extractActionData();
-                if (actionData) {
-                    profitData = alchemyProfit.calculateProfit(actionData);
-                }
             }
 
             if (!profitData) {

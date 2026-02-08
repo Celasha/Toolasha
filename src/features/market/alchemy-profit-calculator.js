@@ -14,7 +14,6 @@
 
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
-import { parseEquipmentSpeedBonuses } from '../../utils/equipment-parser.js';
 import { getDrinkConcentration } from '../../utils/tea-parser.js';
 import { getItemPrice } from '../../utils/market-data.js';
 import { SECONDS_PER_HOUR } from '../../utils/profit-constants.js';
@@ -24,7 +23,6 @@ import {
     calculateActionsPerHour,
     calculatePriceAfterTax,
     calculateProfitPerDay,
-    calculateDrinksPerHour,
     calculateTeaCostsPerHour,
 } from '../../utils/profit-helpers.js';
 
@@ -34,9 +32,6 @@ const BASE_SUCCESS_RATES = {
     DECOMPOSE: 0.6, // 60%
     // TRANSMUTE: varies by item (from alchemyDetail.transmuteSuccessRate)
 };
-
-// Base action time for all alchemy actions (20 seconds)
-const BASE_ALCHEMY_TIME_SECONDS = 20;
 
 class AlchemyProfitCalculator {
     constructor() {
@@ -54,100 +49,6 @@ class AlchemyProfitCalculator {
             this._itemDetailMap = initData?.itemDetailMap || {};
         }
         return this._itemDetailMap;
-    }
-
-    /**
-     * Calculate alchemy success rate with tea modifiers
-     * Uses active character buffs for accurate success rate calculation
-     * @param {number} baseRate - Base success rate (0-1)
-     * @returns {number} Final success rate after modifiers
-     */
-    getAlchemySuccessRate(baseRate) {
-        try {
-            // Get alchemy success bonus from active buffs (already includes drink concentration scaling)
-            const teaBonus = getAlchemySuccessBonus();
-
-            // Calculate final success rate
-            // Formula: total = base × (1 + tea_ratio_boost)
-            const finalRate = baseRate * (1 + teaBonus);
-
-            return Math.min(1.0, finalRate); // Cap at 100%
-        } catch (error) {
-            console.error('[AlchemyProfitCalculator] Failed to calculate success rate:', error);
-            return baseRate;
-        }
-    }
-
-    /**
-     * Calculate alchemy action time with speed bonuses
-     * @returns {number} Action time in seconds
-     */
-    calculateAlchemyActionTime() {
-        try {
-            const gameData = dataManager.getInitClientData();
-            const equipment = dataManager.getEquipment();
-            const itemDetailMap = this.getItemDetailMap();
-
-            if (!gameData || !equipment) {
-                return BASE_ALCHEMY_TIME_SECONDS;
-            }
-
-            const actionTypeHrid = '/action_types/alchemy';
-
-            // Get equipment speed bonus
-            const equipmentSpeedBonus = parseEquipmentSpeedBonuses(equipment, actionTypeHrid, itemDetailMap);
-
-            // Calculate action time with speed bonuses
-            // Formula: baseTime / (1 + speedBonus)
-            const actionTime = BASE_ALCHEMY_TIME_SECONDS / (1 + equipmentSpeedBonus);
-
-            return actionTime;
-        } catch (error) {
-            console.error('[AlchemyProfitCalculator] Failed to calculate action time:', error);
-            return BASE_ALCHEMY_TIME_SECONDS;
-        }
-    }
-
-    /**
-     * Calculate tea costs per hour for alchemy actions
-     * @returns {number} Tea cost per hour
-     */
-    calculateAlchemyTeaCosts() {
-        try {
-            const gameData = dataManager.getInitClientData();
-            const equipment = dataManager.getEquipment();
-
-            if (!gameData || !equipment) {
-                return 0;
-            }
-
-            const actionTypeHrid = '/action_types/alchemy';
-            const drinkSlots = dataManager.getActionDrinkSlots(actionTypeHrid);
-
-            if (!drinkSlots || drinkSlots.length === 0) {
-                return 0;
-            }
-
-            const drinkConcentration = getDrinkConcentration(equipment, gameData.itemDetailMap);
-            const drinksPerHour = calculateDrinksPerHour(drinkConcentration);
-
-            let totalTeaCost = 0;
-
-            for (const drink of drinkSlots) {
-                if (!drink || !drink.itemHrid) continue;
-
-                // Get tea price based on pricing mode
-                const teaPrice = getItemPrice(drink.itemHrid, { context: 'profit', side: 'buy' });
-                const resolvedPrice = teaPrice === null ? 0 : teaPrice;
-
-                totalTeaCost += resolvedPrice;
-            }
-
-            return totalTeaCost * drinksPerHour;
-        } catch (error) {
-            console.error('[AlchemyProfitCalculator] Failed to calculate tea costs:', error);
-            return 0;
-        }
     }
 
     /**
