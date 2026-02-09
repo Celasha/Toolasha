@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 0.24.0
+ * Version: 0.24.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -513,6 +513,14 @@
                     type: 'checkbox',
                     default: true,
                     help: 'Adds button to production panels that opens marketplace with tabs for missing materials',
+                },
+                actions_missingMaterialsButton_ignoreQueue: {
+                    id: 'actions_missingMaterialsButton_ignoreQueue',
+                    label: 'Ignore queued actions when calculating missing materials',
+                    type: 'checkbox',
+                    default: false,
+                    dependencies: ['actions_missingMaterialsButton'],
+                    help: 'When enabled, missing materials calculation only considers current action request, ignoring materials already reserved by queued actions. Default (off) accounts for queue.',
                 },
             },
         },

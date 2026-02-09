@@ -1,11 +1,11 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 0.24.0
+ * Version: 0.24.1
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (dataManager, domObserver, config, enhancementConfig_js, enhancementCalculator_js, formatters_js, marketAPI, domObserverHelpers_js, equipmentParser_js, teaParser_js, bonusRevenueCalculator_js, marketData_js, profitConstants_js, efficiency_js, profitHelpers_js, houseEfficiency_js, uiComponents_js, actionPanelHelper_js, dom_js, timerRegistry_js, actionCalculator_js, cleanupRegistry_js, experienceParser_js, reactInput_js, experienceCalculator_js, storage, webSocketHook, materialCalculator_js, tokenValuation_js, buffParser_js) {
+(function (dataManager, domObserver, config, enhancementConfig_js, enhancementCalculator_js, formatters_js, marketAPI, domObserverHelpers_js, equipmentParser_js, teaParser_js, bonusRevenueCalculator_js, marketData_js, profitConstants_js, efficiency_js, profitHelpers_js, houseEfficiency_js, uiComponents_js, actionPanelHelper_js, dom_js, timerRegistry_js, actionCalculator_js, cleanupRegistry_js, experienceParser_js, reactInput_js, experienceCalculator_js, storage, materialCalculator_js, webSocketHook, tokenValuation_js, buffParser_js) {
     'use strict';
 
     /**
@@ -8709,15 +8709,16 @@
                 return;
             }
 
-            // Get artisan bonus for material reduction calculation
-            const artisanBonus = this.getArtisanBonus(panel);
+            // Get action HRID from panel
+            const actionHrid = this.getActionHridFromPanel(panel);
+            if (!actionHrid) {
+                return;
+            }
 
-            // Get base material requirements from action details (separated into upgrade and regular)
-            const { upgradeItemCount, regularMaterials } = this.getBaseMaterialRequirements(panel);
-
-            // Process upgrade item first (if exists)
-            if (upgradeItemCount !== null) {
-                this.processUpgradeItem(panel, numActions, upgradeItemCount);
+            // Use shared material calculator with queue accounting (always enabled for Required Materials)
+            const materials = materialCalculator_js.calculateMaterialRequirements(actionHrid, numActions, true);
+            if (!materials || materials.length === 0) {
+                return;
             }
 
             // Find requirements container for regular materials
@@ -8726,46 +8727,29 @@
                 return;
             }
 
-            // Get inventory spans and input spans
-            const inventorySpans = panel.querySelectorAll('[class*="SkillActionDetail_inventoryCount"]');
-            const inputSpans = Array.from(panel.querySelectorAll('[class*="SkillActionDetail_inputCount"]')).filter(
-                (span) => !span.textContent.includes('Required')
-            );
-
-            // Process each regular material using MWIT-E's approach
-            // Iterate through requiresDiv children to find inputCount spans and their target containers
+            // Process each material
             const children = Array.from(requiresDiv.children);
             let materialIndex = 0;
 
+            // Separate upgrade items from regular materials
+            const regularMaterials = materials.filter((m) => !m.isUpgradeItem);
+            const upgradeMaterial = materials.find((m) => m.isUpgradeItem);
+
+            // Process upgrade item first (if exists)
+            if (upgradeMaterial) {
+                this.processUpgradeItemWithData(panel, upgradeMaterial);
+            }
+
+            // Process regular materials
             children.forEach((child, index) => {
                 if (child.className && child.className.includes('inputCount')) {
                     // Found an inputCount span - the next sibling is our target container
                     const targetContainer = requiresDiv.children[index + 1];
                     if (!targetContainer) return;
 
-                    // Get corresponding inventory and input data
-                    if (materialIndex >= inventorySpans.length || materialIndex >= inputSpans.length) return;
-
-                    const invText = inventorySpans[materialIndex].textContent.trim();
-
-                    // Parse inventory amount (handle K/M suffixes)
-                    const invValue = this.parseAmount(invText);
-
-                    // Get base requirement from action details (now correctly indexed)
-                    const materialReq = regularMaterials[materialIndex];
-                    if (!materialReq || materialReq.count <= 0) {
-                        materialIndex++;
-                        return;
-                    }
-
-                    // Apply artisan reduction to regular materials
-                    // Materials are consumed PER ACTION
-                    // Efficiency gives bonus actions for FREE (no material cost)
-                    const materialsPerAction = materialReq.count * (1 - artisanBonus);
-
-                    // Calculate total materials needed for queued actions
-                    const totalRequired = Math.ceil(materialsPerAction * numActions);
-                    const missing = Math.max(0, totalRequired - invValue);
+                    // Get corresponding material data
+                    if (materialIndex >= regularMaterials.length) return;
+                    const material = regularMaterials[materialIndex];
 
                     // Create display element
                     const displaySpan = document.createElement('span');
@@ -8779,10 +8763,13 @@
                     margin-top: 2px;
                 `;
 
-                    // Build text
-                    let text = `Required: ${formatters_js.numberFormatter(totalRequired)}`;
-                    if (missing > 0) {
-                        text += ` || Missing: ${formatters_js.numberFormatter(missing)}`;
+                    // Build text with queue info
+                    const queuedText = material.queued > 0 ? ` (${formatters_js.numberFormatter(material.queued)} Q'd)` : '';
+                    let text = `Required: ${formatters_js.numberFormatter(material.required)}${queuedText}`;
+
+                    if (material.missing > 0) {
+                        const missingQueuedText = material.queued > 0 ? ` (${formatters_js.numberFormatter(material.queued)} Q'd)` : '';
+                        text += ` || Missing: ${formatters_js.numberFormatter(material.missing)}${missingQueuedText}`;
                         displaySpan.style.color = config.COLOR_LOSS; // Missing materials
                     } else {
                         displaySpan.style.color = config.COLOR_PROFIT; // Sufficient materials
@@ -8799,59 +8786,17 @@
         }
 
         /**
-         * Process upgrade item display in "Upgrades From" section
+         * Process upgrade item display with material data
          * @param {HTMLElement} panel - Action panel element
-         * @param {number} numActions - Number of actions to perform
-         * @param {number} upgradeItemCount - Base count of upgrade item (always 1)
+         * @param {Object} material - Material object from calculateMaterialRequirements
          */
-        processUpgradeItem(panel, numActions, upgradeItemCount) {
+        processUpgradeItemWithData(panel, material) {
             try {
                 // Find upgrade item selector container
                 const upgradeContainer = panel.querySelector('[class*="SkillActionDetail_upgradeItemSelectorInput"]');
                 if (!upgradeContainer) {
                     return;
                 }
-
-                // Find the inventory count from game UI
-                const inventoryElement = upgradeContainer.querySelector('[class*="Item_count"]');
-                let invValue = 0;
-
-                if (inventoryElement) {
-                    // Found the game's native inventory count display
-                    invValue = this.parseAmount(inventoryElement.textContent.trim());
-                } else {
-                    // Fallback: Get inventory from game data using item name
-                    const svg = upgradeContainer.querySelector('svg[role="img"]');
-                    if (svg) {
-                        const itemName = svg.getAttribute('aria-label');
-
-                        if (itemName) {
-                            // Look up inventory from game data
-                            const gameData = dataManager.getInitClientData();
-                            const inventory = dataManager.getInventory();
-
-                            if (gameData && inventory) {
-                                // Find item HRID by name
-                                let itemHrid = null;
-                                for (const [hrid, details] of Object.entries(gameData.itemDetailMap || {})) {
-                                    if (details.name === itemName) {
-                                        itemHrid = hrid;
-                                        break;
-                                    }
-                                }
-
-                                if (itemHrid) {
-                                    // Get inventory count (default to 0 if not found)
-                                    invValue = inventory[itemHrid] || 0;
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Calculate requirements (upgrade items always need exactly 1 per action, no artisan)
-                const totalRequired = upgradeItemCount * numActions;
-                const missing = Math.max(0, totalRequired - invValue);
 
                 // Create display element (matching style of regular materials)
                 const displaySpan = document.createElement('span');
@@ -8865,10 +8810,13 @@
                 margin-top: 2px;
             `;
 
-                // Build text
-                let text = `Required: ${formatters_js.numberFormatter(totalRequired)}`;
-                if (missing > 0) {
-                    text += ` || Missing: ${formatters_js.numberFormatter(missing)}`;
+                // Build text with queue info
+                const queuedText = material.queued > 0 ? ` (${formatters_js.numberFormatter(material.queued)} Q'd)` : '';
+                let text = `Required: ${formatters_js.numberFormatter(material.required)}${queuedText}`;
+
+                if (material.missing > 0) {
+                    const missingQueuedText = material.queued > 0 ? ` (${formatters_js.numberFormatter(material.queued)} Q'd)` : '';
+                    text += ` || Missing: ${formatters_js.numberFormatter(material.missing)}${missingQueuedText}`;
                     displaySpan.style.color = config.COLOR_LOSS; // Missing materials
                 } else {
                     displaySpan.style.color = config.COLOR_PROFIT; // Sufficient materials
@@ -8884,128 +8832,41 @@
         }
 
         /**
-         * Get base material requirements from action details
+         * Get action HRID from panel
          * @param {HTMLElement} panel - Action panel element
-         * @returns {Object} Object with upgradeItemCount (number|null) and regularMaterials (Array)
+         * @returns {string|null} Action HRID or null
          */
-        getBaseMaterialRequirements(panel) {
-            try {
-                // Get action name from panel
-                const actionNameElement = panel.querySelector('[class*="SkillActionDetail_name"]');
-                if (!actionNameElement) {
-                    return { upgradeItemCount: null, regularMaterials: [] };
-                }
-
-                const actionName = actionNameElement.textContent.trim();
-
-                // Look up action details
-                const gameData = dataManager.getInitClientData();
-                if (!gameData || !gameData.actionDetailMap) {
-                    return { upgradeItemCount: null, regularMaterials: [] };
-                }
-
-                let actionDetails = null;
-                for (const [_hrid, details] of Object.entries(gameData.actionDetailMap)) {
-                    if (details.name === actionName) {
-                        actionDetails = details;
-                        break;
-                    }
-                }
-
-                if (!actionDetails) {
-                    return { upgradeItemCount: null, regularMaterials: [] };
-                }
-
-                // Separate upgrade item from regular materials
-                const upgradeItemCount = actionDetails.upgradeItemHrid ? 1 : null;
-                const regularMaterials = [];
-
-                // Add regular input items (affected by Artisan Tea)
-                if (actionDetails.inputItems && actionDetails.inputItems.length > 0) {
-                    actionDetails.inputItems.forEach((item) => {
-                        regularMaterials.push({
-                            count: item.count || 0,
-                        });
-                    });
-                }
-
-                // Return separated data
-                return { upgradeItemCount, regularMaterials };
-            } catch (error) {
-                console.error('[Required Materials] Error getting base requirements:', error);
-                return { upgradeItemCount: null, regularMaterials: [] };
+        getActionHridFromPanel(panel) {
+            // Get action name from panel
+            const actionNameElement = panel.querySelector('[class*="SkillActionDetail_name"]');
+            if (!actionNameElement) {
+                return null;
             }
+
+            const actionName = actionNameElement.textContent.trim();
+            return this.getActionHridFromName(actionName);
         }
 
         /**
-         * Get artisan bonus (material reduction) for the current action
-         * @param {HTMLElement} panel - Action panel element
-         * @returns {number} Artisan bonus (0-1 decimal, e.g., 0.1129 for 11.29% reduction)
+         * Convert action name to HRID
+         * @param {string} actionName - Display name of action
+         * @returns {string|null} Action HRID or null if not found
          */
-        getArtisanBonus(panel) {
-            try {
-                // Get action name from panel
-                const actionNameElement = panel.querySelector('[class*="SkillActionDetail_name"]');
-                if (!actionNameElement) {
-                    return 0;
-                }
-
-                const actionName = actionNameElement.textContent.trim();
-
-                // Look up action details
-                const gameData = dataManager.getInitClientData();
-                if (!gameData || !gameData.actionDetailMap) {
-                    return 0;
-                }
-
-                let actionDetails = null;
-                for (const [_hrid, details] of Object.entries(gameData.actionDetailMap)) {
-                    if (details.name === actionName) {
-                        actionDetails = details;
-                        break;
-                    }
-                }
-
-                if (!actionDetails) {
-                    return 0;
-                }
-
-                // Get character data
-                const equipment = dataManager.getEquipment();
-                const itemDetailMap = gameData.itemDetailMap || {};
-
-                // Calculate artisan bonus (material reduction from Artisan Tea)
-                const drinkConcentration = teaParser_js.getDrinkConcentration(equipment, itemDetailMap);
-                const activeDrinks = dataManager.getActionDrinkSlots(actionDetails.type);
-                const artisanBonus = teaParser_js.parseArtisanBonus(activeDrinks, itemDetailMap, drinkConcentration);
-
-                return artisanBonus;
-            } catch (error) {
-                console.error('[Required Materials] Error calculating artisan bonus:', error);
-                return 0;
+        getActionHridFromName(actionName) {
+            const gameData = dataManager.getInitClientData();
+            if (!gameData?.actionDetailMap) {
+                return null;
             }
+
+            // Search for action by name
+            for (const [hrid, detail] of Object.entries(gameData.actionDetailMap)) {
+                if (detail.name === actionName) {
+                    return hrid;
+                }
+            }
+
+            return null;
         }
-
-        /**
-         * Parse amount from text (handles K/M suffixes and number formatting)
-         */
-        parseAmount(text) {
-            // Remove spaces
-            text = text.replace(/\s/g, '');
-
-            // Handle K/M suffixes (case insensitive)
-            const lowerText = text.toLowerCase();
-            if (lowerText.includes('k')) {
-                return parseFloat(lowerText.replace('k', '')) * 1000;
-            }
-            if (lowerText.includes('m')) {
-                return parseFloat(lowerText.replace('m', '')) * 1000000;
-            }
-
-            // Remove commas and parse
-            return parseFloat(text.replace(/,/g, '')) || 0;
-        }
-
         cleanup() {
             this.observers.forEach((unregister) => unregister());
             this.observers = [];
@@ -9205,7 +9066,10 @@
         }
 
         // Get missing materials using shared utility
-        const missingMaterials = materialCalculator_js.calculateMaterialRequirements(actionHrid, numActions);
+        // Check if user wants to ignore queue (default: false, meaning we DO account for queue)
+        const ignoreQueue = config.getSetting('actions_missingMaterialsButton_ignoreQueue') || false;
+        const accountForQueue = !ignoreQueue; // Invert: ignoreQueue=false means accountForQueue=true
+        const missingMaterials = materialCalculator_js.calculateMaterialRequirements(actionHrid, numActions, accountForQueue);
         if (missingMaterials.length === 0) {
             return;
         }
@@ -9488,8 +9352,10 @@
             return;
         }
 
-        // Recalculate materials with current inventory
-        const updatedMaterials = materialCalculator_js.calculateMaterialRequirements(storedActionHrid, storedNumActions);
+        // Recalculate materials with current inventory (respecting queue setting)
+        const ignoreQueue = config.getSetting('actions_missingMaterialsButton_ignoreQueue') || false;
+        const accountForQueue = !ignoreQueue;
+        const updatedMaterials = materialCalculator_js.calculateMaterialRequirements(storedActionHrid, storedNumActions, accountForQueue);
 
         // Update each existing tab
         currentMaterialsTabs.forEach((tab) => {
@@ -9525,7 +9391,9 @@
             statusText = 'Not Tradeable';
         } else if (material.missing > 0) {
             statusColor = '#ef4444'; // Red - missing materials
-            statusText = `Missing: ${formatters_js.formatWithSeparator(material.missing)}`;
+            // Show queued amount if any materials are reserved by queue
+            const queuedText = material.queued > 0 ? ` (${formatters_js.formatWithSeparator(material.queued)} Q'd)` : '';
+            statusText = `Missing: ${formatters_js.formatWithSeparator(material.missing)}${queuedText}`;
         } else {
             statusColor = '#4ade80'; // Green - sufficient materials
             statusText = 'Sufficient';
@@ -9585,7 +9453,9 @@
             statusText = 'Not Tradeable';
         } else if (material.missing > 0) {
             statusColor = '#ef4444'; // Red - missing materials
-            statusText = `Missing: ${formatters_js.formatWithSeparator(material.missing)}`;
+            // Show queued amount if any materials are reserved by queue
+            const queuedText = material.queued > 0 ? ` (${formatters_js.formatWithSeparator(material.queued)} Q'd)` : '';
+            statusText = `Missing: ${formatters_js.formatWithSeparator(material.missing)}${queuedText}`;
         } else {
             statusColor = '#4ade80'; // Green - sufficient materials
             statusText = 'Sufficient';
@@ -12707,4 +12577,4 @@
 
     console.log('[Toolasha] Actions library loaded');
 
-})(Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.config, Toolasha.Utils.enhancementConfig, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.formatters, Toolasha.Core.marketAPI, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.equipmentParser, Toolasha.Utils.teaParser, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.marketData, Toolasha.Utils.profitConstants, Toolasha.Utils.efficiency, Toolasha.Utils.profitHelpers, Toolasha.Utils.houseEfficiency, Toolasha.Utils.uiComponents, Toolasha.Utils.actionPanelHelper, Toolasha.Utils.dom, Toolasha.Utils.timerRegistry, Toolasha.Utils.actionCalculator, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.experienceParser, Toolasha.Utils.reactInput, Toolasha.Utils.experienceCalculator, Toolasha.Core.storage, Toolasha.Core.webSocketHook, Toolasha.Utils.materialCalculator, Toolasha.Utils.tokenValuation, Toolasha.Utils.buffParser);
+})(Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.config, Toolasha.Utils.enhancementConfig, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.formatters, Toolasha.Core.marketAPI, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.equipmentParser, Toolasha.Utils.teaParser, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.marketData, Toolasha.Utils.profitConstants, Toolasha.Utils.efficiency, Toolasha.Utils.profitHelpers, Toolasha.Utils.houseEfficiency, Toolasha.Utils.uiComponents, Toolasha.Utils.actionPanelHelper, Toolasha.Utils.dom, Toolasha.Utils.timerRegistry, Toolasha.Utils.actionCalculator, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.experienceParser, Toolasha.Utils.reactInput, Toolasha.Utils.experienceCalculator, Toolasha.Core.storage, Toolasha.Utils.materialCalculator, Toolasha.Core.webSocketHook, Toolasha.Utils.tokenValuation, Toolasha.Utils.buffParser);
