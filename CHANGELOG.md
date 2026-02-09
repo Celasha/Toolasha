@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.5](https://github.com/Celasha/Toolasha/compare/v0.24.4...v0.24.5) (2026-02-09)
+
+
+### Bug Fixes
+
+* correct alchemy profit calculation and display bugs ([12ff1a7](https://github.com/Celasha/Toolasha/commit/12ff1a731d753eb222b9670c9b8709650c1c116c))
+
 ## [0.24.4](https://github.com/Celasha/Toolasha/compare/v0.24.3...v0.24.4) (2026-02-09)
 
 ### Bug Fixes
