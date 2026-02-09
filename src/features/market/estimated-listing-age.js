@@ -40,22 +40,24 @@ class EstimatedListingAge {
         } else {
             // Show date/time (e.g., "01-13 14:30:45" or "01-13 2:30:45 PM")
             const timeFormat = config.getSettingValue('market_listingTimeFormat', '24hour');
+            const dateFormat = config.getSettingValue('market_listingDateFormat', 'MM-DD');
             const use12Hour = timeFormat === '12hour';
 
             const date = new Date(timestamp);
-            const formatted = date
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            const datePart = dateFormat === 'DD-MM' ? `${day}-${month}` : `${month}-${day}`;
+
+            const timePart = date
                 .toLocaleString('en-US', {
-                    month: '2-digit',
-                    day: '2-digit',
                     hour: '2-digit',
                     minute: '2-digit',
                     second: '2-digit',
                     hour12: use12Hour,
                 })
-                .replace(/\//g, '-')
-                .replace(',', '');
+                .trim();
 
-            return formatted;
+            return `${datePart} ${timePart}`;
         }
     }
 

@@ -208,6 +208,11 @@ function calculateCurrencyValue(itemHrid) {
 
     // Task Tokens: Expected value from Task Shop chests
     if (itemHrid === '/items/task_token') {
+        const includeTaskTokens = config.getSetting('networth_includeTaskTokens');
+        if (includeTaskTokens === false) {
+            return null; // Don't include task tokens in net worth
+        }
+
         const tokenData = calculateTaskTokenValue();
         if (tokenData && tokenData.tokenValue > 0) {
             return tokenData.tokenValue;
@@ -493,8 +498,9 @@ export async function calculateNetworth() {
         // Check if this is an ability book
         const categoryHrid = itemDetails?.categoryHrid || '/item_categories/other';
         const isAbilityBook = categoryHrid === '/item_categories/ability_book';
+        const booksAsInventory = config.getSetting('networth_abilityBooksAsInventory') === true;
 
-        if (isAbilityBook) {
+        if (isAbilityBook && !booksAsInventory) {
             // Add to ability books (Fixed Assets)
             abilityBooksValue += value;
             abilityBooksBreakdown.push(itemData);
