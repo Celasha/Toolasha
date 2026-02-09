@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 0.24.5
+ * Version: 0.25.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -5294,7 +5294,7 @@
                     .querySelector('div#mwi-combat-encounters')
                     ?.insertAdjacentHTML(
                         'afterend',
-                        `<div id="mwi-combat-revenue" style="color: ${textColor};">Total revenue: ${formatters_js.formatWithSeparator(Math.round(totalPriceAsk))} / ${formatters_js.formatWithSeparator(Math.round(totalPriceBid))}</div>`
+                        `<div id="mwi-combat-revenue" style="color: ${textColor};">Total revenue: ${formatters_js.formatLargeNumber(Math.round(totalPriceAsk))} / ${formatters_js.formatLargeNumber(Math.round(totalPriceBid))}</div>`
                     );
 
                 // Per-hour revenue
@@ -5306,7 +5306,7 @@
                         .querySelector('div#mwi-combat-revenue')
                         ?.insertAdjacentHTML(
                             'afterend',
-                            `<div id="mwi-combat-revenue-hour" style="color: ${textColor};">Revenue/hour: ${formatters_js.formatWithSeparator(Math.round(revenuePerHourAsk))} / ${formatters_js.formatWithSeparator(Math.round(revenuePerHourBid))}</div>`
+                            `<div id="mwi-combat-revenue-hour" style="color: ${textColor};">Revenue/hour: ${formatters_js.formatLargeNumber(Math.round(revenuePerHourAsk))} / ${formatters_js.formatLargeNumber(Math.round(revenuePerHourBid))}</div>`
                         );
 
                     // Per-day revenue
@@ -5314,7 +5314,7 @@
                         .querySelector('div#mwi-combat-revenue-hour')
                         ?.insertAdjacentHTML(
                             'afterend',
-                            `<div id="mwi-combat-revenue-day" style="color: ${textColor};">Revenue/day: ${formatters_js.formatWithSeparator(Math.round(revenuePerHourAsk * 24))} / ${formatters_js.formatWithSeparator(Math.round(revenuePerHourBid * 24))}</div>`
+                            `<div id="mwi-combat-revenue-day" style="color: ${textColor};">Revenue/day: ${formatters_js.formatLargeNumber(Math.round(revenuePerHourAsk * 24))} / ${formatters_js.formatLargeNumber(Math.round(revenuePerHourBid * 24))}</div>`
                         );
                 }
 
@@ -5323,7 +5323,7 @@
                     .querySelector('div#mwi-combat-revenue-day')
                     ?.insertAdjacentHTML(
                         'afterend',
-                        `<div id="mwi-combat-total-exp" style="color: ${textColor};">Total exp: ${formatters_js.formatWithSeparator(Math.round(totalSkillsExp))}</div>`
+                        `<div id="mwi-combat-total-exp" style="color: ${textColor};">Total exp: ${formatters_js.formatLargeNumber(Math.round(totalSkillsExp))}</div>`
                     );
 
                 // Per-hour experience breakdowns
@@ -5335,7 +5335,7 @@
                         .querySelector('div#mwi-combat-total-exp')
                         ?.insertAdjacentHTML(
                             'afterend',
-                            `<div id="mwi-combat-total-exp-hour" style="color: ${textColor};">Total exp/hour: ${formatters_js.formatWithSeparator(Math.round(totalExpPerHour))}</div>`
+                            `<div id="mwi-combat-total-exp-hour" style="color: ${textColor};">Total exp/hour: ${formatters_js.formatLargeNumber(Math.round(totalExpPerHour))}</div>`
                         );
 
                     // Individual skill exp/hour
@@ -5359,7 +5359,7 @@
                                 const expPerHour = expGained / (battleDurationSec / 3600);
                                 lastElement.insertAdjacentHTML(
                                     'afterend',
-                                    `<div style="color: ${textColor};">${skill.name} exp/hour: ${formatters_js.formatWithSeparator(Math.round(expPerHour))}</div>`
+                                    `<div style="color: ${textColor};">${skill.name} exp/hour: ${formatters_js.formatLargeNumber(Math.round(expPerHour))}</div>`
                                 );
                                 // Update lastElement to the newly inserted div
                                 lastElement = lastElement.nextElementSibling;

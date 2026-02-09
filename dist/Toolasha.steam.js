@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.24.5
+// @version      0.25.0
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -15482,6 +15482,22 @@ return plugin;
                     dependencies: ['networth'],
                     help: 'Cowbells are not tradeable, but they have a value based on Bag of 10 Cowbells market price',
                 },
+                networth_includeTaskTokens: {
+                    id: 'networth_includeTaskTokens',
+                    label: 'Include task tokens in net worth',
+                    type: 'checkbox',
+                    default: true,
+                    dependencies: ['networth'],
+                    help: 'Value task tokens based on expected value from Task Shop chests. Disable to exclude them from net worth.',
+                },
+                networth_abilityBooksAsInventory: {
+                    id: 'networth_abilityBooksAsInventory',
+                    label: 'Count ability books as inventory (Current Assets)',
+                    type: 'checkbox',
+                    default: false,
+                    dependencies: ['networth'],
+                    help: 'Move ability books from Fixed Assets to Current Assets inventory value. Useful if you plan to sell them.',
+                },
             },
         },
 
@@ -15877,6 +15893,18 @@ return plugin;
                     ],
                     dependencies: ['market_showEstimatedListingAge'],
                     help: 'Time format when using Date/Time display (only applies if Date/Time format is selected)',
+                },
+                market_listingDateFormat: {
+                    id: 'market_listingDateFormat',
+                    label: 'Market: Date format for date/time display',
+                    type: 'select',
+                    default: 'MM-DD',
+                    options: [
+                        { value: 'MM-DD', label: 'MM-DD (01-13)' },
+                        { value: 'DD-MM', label: 'DD-MM (13-01)' },
+                    ],
+                    dependencies: ['market_showEstimatedListingAge'],
+                    help: 'Date format when using Date/Time display (only applies if Date/Time format is selected)',
                 },
                 market_showOrderTotals: {
                     id: 'market_showOrderTotals',
@@ -28012,7 +28040,7 @@ return plugin;
                 '</div>';
         }
 
-        html += '<div>Expected Attempts: ' + numberFormatter(optimalStrategy.expectedAttempts.toFixed(1)) + '</div>';
+        html += '<div>Expected Attempts: ' + formatLargeNumber(optimalStrategy.expectedAttempts.toFixed(1)) + '</div>';
 
         // Costs
         html += '<div>';
@@ -28037,29 +28065,30 @@ return plugin;
                     ': ' +
                     item.quantity +
                     ' × ' +
-                    numberFormatter(item.costEach) +
+                    formatLargeNumber(item.costEach) +
                     ' = ' +
-                    numberFormatter(item.totalCost);
+                    formatLargeNumber(item.totalCost);
             });
 
             html += '</div>';
             // Philosopher's Mirror cost
             if (optimalStrategy.philosopherMirrorCost > 0) {
                 const mirrorPrice = getRealisticBaseItemPrice('/items/philosophers_mirror');
-                html += "Philosopher's Mirror: " + numberFormatter(optimalStrategy.philosopherMirrorCost);
+                html += "Philosopher's Mirror: " + formatLargeNumber(optimalStrategy.philosopherMirrorCost);
                 if (optimalStrategy.mirrorCount > 0 && mirrorPrice > 0) {
-                    html += ' (' + optimalStrategy.mirrorCount + 'x @ ' + numberFormatter(mirrorPrice) + ' each)';
+                    html += ' (' + optimalStrategy.mirrorCount + 'x @ ' + formatLargeNumber(mirrorPrice) + ' each)';
                 }
             }
 
-            html += '<br><span style="font-weight: bold;">Total: ' + numberFormatter(optimalStrategy.totalCost) + '</span>';
+            html +=
+                '<br><span style="font-weight: bold;">Total: ' + formatLargeNumber(optimalStrategy.totalCost) + '</span>';
         } else {
             // Traditional (non-mirror) breakdown
-            html += 'Base Item: ' + numberFormatter(optimalStrategy.baseCost);
-            html += '<br>Materials: ' + numberFormatter(optimalStrategy.materialCost);
+            html += 'Base Item: ' + formatLargeNumber(optimalStrategy.baseCost);
+            html += '<br>Materials: ' + formatLargeNumber(optimalStrategy.materialCost);
 
             if (optimalStrategy.protectionCost > 0) {
-                let protectionDisplay = numberFormatter(optimalStrategy.protectionCost);
+                let protectionDisplay = formatLargeNumber(optimalStrategy.protectionCost);
 
                 // Show protection count and item name if available
                 if (optimalStrategy.protectionCount > 0) {
@@ -28079,7 +28108,8 @@ return plugin;
                 html += '<br>Protection: ' + protectionDisplay;
             }
 
-            html += '<br><span style="font-weight: bold;">Total: ' + numberFormatter(optimalStrategy.totalCost) + '</span>';
+            html +=
+                '<br><span style="font-weight: bold;">Total: ' + formatLargeNumber(optimalStrategy.totalCost) + '</span>';
         }
 
         html += '</div>';
@@ -30700,22 +30730,24 @@ return plugin;
             } else {
                 // Show date/time (e.g., "01-13 14:30:45" or "01-13 2:30:45 PM")
                 const timeFormat = config$1.getSettingValue('market_listingTimeFormat', '24hour');
+                const dateFormat = config$1.getSettingValue('market_listingDateFormat', 'MM-DD');
                 const use12Hour = timeFormat === '12hour';
 
                 const date = new Date(timestamp);
-                const formatted = date
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const day = String(date.getDate()).padStart(2, '0');
+                const datePart = dateFormat === 'DD-MM' ? `${day}-${month}` : `${month}-${day}`;
+
+                const timePart = date
                     .toLocaleString('en-US', {
-                        month: '2-digit',
-                        day: '2-digit',
                         hour: '2-digit',
                         minute: '2-digit',
                         second: '2-digit',
                         hour12: use12Hour,
                     })
-                    .replace(/\//g, '-')
-                    .replace(',', '');
+                    .trim();
 
-                return formatted;
+                return `${datePart} ${timePart}`;
             }
         }
 
@@ -36413,6 +36445,11 @@ return plugin;
 
         // Task Tokens: Expected value from Task Shop chests
         if (itemHrid === '/items/task_token') {
+            const includeTaskTokens = config$1.getSetting('networth_includeTaskTokens');
+            if (includeTaskTokens === false) {
+                return null; // Don't include task tokens in net worth
+            }
+
             const tokenData = calculateTaskTokenValue();
             if (tokenData && tokenData.tokenValue > 0) {
                 return tokenData.tokenValue;
@@ -36698,8 +36735,9 @@ return plugin;
             // Check if this is an ability book
             const categoryHrid = itemDetails?.categoryHrid || '/item_categories/other';
             const isAbilityBook = categoryHrid === '/item_categories/ability_book';
+            const booksAsInventory = config$1.getSetting('networth_abilityBooksAsInventory') === true;
 
-            if (isAbilityBook) {
+            if (isAbilityBook && !booksAsInventory) {
                 // Add to ability books (Fixed Assets)
                 abilityBooksValue += value;
                 abilityBooksBreakdown.push(itemData);
@@ -55127,7 +55165,7 @@ return plugin;
                     .querySelector('div#mwi-combat-encounters')
                     ?.insertAdjacentHTML(
                         'afterend',
-                        `<div id="mwi-combat-revenue" style="color: ${textColor};">Total revenue: ${formatWithSeparator(Math.round(totalPriceAsk))} / ${formatWithSeparator(Math.round(totalPriceBid))}</div>`
+                        `<div id="mwi-combat-revenue" style="color: ${textColor};">Total revenue: ${formatLargeNumber(Math.round(totalPriceAsk))} / ${formatLargeNumber(Math.round(totalPriceBid))}</div>`
                     );
 
                 // Per-hour revenue
@@ -55139,7 +55177,7 @@ return plugin;
                         .querySelector('div#mwi-combat-revenue')
                         ?.insertAdjacentHTML(
                             'afterend',
-                            `<div id="mwi-combat-revenue-hour" style="color: ${textColor};">Revenue/hour: ${formatWithSeparator(Math.round(revenuePerHourAsk))} / ${formatWithSeparator(Math.round(revenuePerHourBid))}</div>`
+                            `<div id="mwi-combat-revenue-hour" style="color: ${textColor};">Revenue/hour: ${formatLargeNumber(Math.round(revenuePerHourAsk))} / ${formatLargeNumber(Math.round(revenuePerHourBid))}</div>`
                         );
 
                     // Per-day revenue
@@ -55147,7 +55185,7 @@ return plugin;
                         .querySelector('div#mwi-combat-revenue-hour')
                         ?.insertAdjacentHTML(
                             'afterend',
-                            `<div id="mwi-combat-revenue-day" style="color: ${textColor};">Revenue/day: ${formatWithSeparator(Math.round(revenuePerHourAsk * 24))} / ${formatWithSeparator(Math.round(revenuePerHourBid * 24))}</div>`
+                            `<div id="mwi-combat-revenue-day" style="color: ${textColor};">Revenue/day: ${formatLargeNumber(Math.round(revenuePerHourAsk * 24))} / ${formatLargeNumber(Math.round(revenuePerHourBid * 24))}</div>`
                         );
                 }
 
@@ -55156,7 +55194,7 @@ return plugin;
                     .querySelector('div#mwi-combat-revenue-day')
                     ?.insertAdjacentHTML(
                         'afterend',
-                        `<div id="mwi-combat-total-exp" style="color: ${textColor};">Total exp: ${formatWithSeparator(Math.round(totalSkillsExp))}</div>`
+                        `<div id="mwi-combat-total-exp" style="color: ${textColor};">Total exp: ${formatLargeNumber(Math.round(totalSkillsExp))}</div>`
                     );
 
                 // Per-hour experience breakdowns
@@ -55168,7 +55206,7 @@ return plugin;
                         .querySelector('div#mwi-combat-total-exp')
                         ?.insertAdjacentHTML(
                             'afterend',
-                            `<div id="mwi-combat-total-exp-hour" style="color: ${textColor};">Total exp/hour: ${formatWithSeparator(Math.round(totalExpPerHour))}</div>`
+                            `<div id="mwi-combat-total-exp-hour" style="color: ${textColor};">Total exp/hour: ${formatLargeNumber(Math.round(totalExpPerHour))}</div>`
                         );
 
                     // Individual skill exp/hour
@@ -55192,7 +55230,7 @@ return plugin;
                                 const expPerHour = expGained / (battleDurationSec / 3600);
                                 lastElement.insertAdjacentHTML(
                                     'afterend',
-                                    `<div style="color: ${textColor};">${skill.name} exp/hour: ${formatWithSeparator(Math.round(expPerHour))}</div>`
+                                    `<div style="color: ${textColor};">${skill.name} exp/hour: ${formatLargeNumber(Math.round(expPerHour))}</div>`
                                 );
                                 // Update lastElement to the newly inserted div
                                 lastElement = lastElement.nextElementSibling;

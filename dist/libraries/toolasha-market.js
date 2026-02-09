@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 0.24.5
+ * Version: 0.25.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2426,7 +2426,7 @@
                 '</div>';
         }
 
-        html += '<div>Expected Attempts: ' + formatters_js.numberFormatter(optimalStrategy.expectedAttempts.toFixed(1)) + '</div>';
+        html += '<div>Expected Attempts: ' + formatters_js.formatLargeNumber(optimalStrategy.expectedAttempts.toFixed(1)) + '</div>';
 
         // Costs
         html += '<div>';
@@ -2451,29 +2451,30 @@
                     ': ' +
                     item.quantity +
                     ' × ' +
-                    formatters_js.numberFormatter(item.costEach) +
+                    formatters_js.formatLargeNumber(item.costEach) +
                     ' = ' +
-                    formatters_js.numberFormatter(item.totalCost);
+                    formatters_js.formatLargeNumber(item.totalCost);
             });
 
             html += '</div>';
             // Philosopher's Mirror cost
             if (optimalStrategy.philosopherMirrorCost > 0) {
                 const mirrorPrice = getRealisticBaseItemPrice('/items/philosophers_mirror');
-                html += "Philosopher's Mirror: " + formatters_js.numberFormatter(optimalStrategy.philosopherMirrorCost);
+                html += "Philosopher's Mirror: " + formatters_js.formatLargeNumber(optimalStrategy.philosopherMirrorCost);
                 if (optimalStrategy.mirrorCount > 0 && mirrorPrice > 0) {
-                    html += ' (' + optimalStrategy.mirrorCount + 'x @ ' + formatters_js.numberFormatter(mirrorPrice) + ' each)';
+                    html += ' (' + optimalStrategy.mirrorCount + 'x @ ' + formatters_js.formatLargeNumber(mirrorPrice) + ' each)';
                 }
             }
 
-            html += '<br><span style="font-weight: bold;">Total: ' + formatters_js.numberFormatter(optimalStrategy.totalCost) + '</span>';
+            html +=
+                '<br><span style="font-weight: bold;">Total: ' + formatters_js.formatLargeNumber(optimalStrategy.totalCost) + '</span>';
         } else {
             // Traditional (non-mirror) breakdown
-            html += 'Base Item: ' + formatters_js.numberFormatter(optimalStrategy.baseCost);
-            html += '<br>Materials: ' + formatters_js.numberFormatter(optimalStrategy.materialCost);
+            html += 'Base Item: ' + formatters_js.formatLargeNumber(optimalStrategy.baseCost);
+            html += '<br>Materials: ' + formatters_js.formatLargeNumber(optimalStrategy.materialCost);
 
             if (optimalStrategy.protectionCost > 0) {
-                let protectionDisplay = formatters_js.numberFormatter(optimalStrategy.protectionCost);
+                let protectionDisplay = formatters_js.formatLargeNumber(optimalStrategy.protectionCost);
 
                 // Show protection count and item name if available
                 if (optimalStrategy.protectionCount > 0) {
@@ -2493,7 +2494,8 @@
                 html += '<br>Protection: ' + protectionDisplay;
             }
 
-            html += '<br><span style="font-weight: bold;">Total: ' + formatters_js.numberFormatter(optimalStrategy.totalCost) + '</span>';
+            html +=
+                '<br><span style="font-weight: bold;">Total: ' + formatters_js.formatLargeNumber(optimalStrategy.totalCost) + '</span>';
         }
 
         html += '</div>';
@@ -5114,22 +5116,24 @@
             } else {
                 // Show date/time (e.g., "01-13 14:30:45" or "01-13 2:30:45 PM")
                 const timeFormat = config.getSettingValue('market_listingTimeFormat', '24hour');
+                const dateFormat = config.getSettingValue('market_listingDateFormat', 'MM-DD');
                 const use12Hour = timeFormat === '12hour';
 
                 const date = new Date(timestamp);
-                const formatted = date
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const day = String(date.getDate()).padStart(2, '0');
+                const datePart = dateFormat === 'DD-MM' ? `${day}-${month}` : `${month}-${day}`;
+
+                const timePart = date
                     .toLocaleString('en-US', {
-                        month: '2-digit',
-                        day: '2-digit',
                         hour: '2-digit',
                         minute: '2-digit',
                         second: '2-digit',
                         hour12: use12Hour,
                     })
-                    .replace(/\//g, '-')
-                    .replace(',', '');
+                    .trim();
 
-                return formatted;
+                return `${datePart} ${timePart}`;
             }
         }
 
@@ -10759,6 +10763,11 @@
 
         // Task Tokens: Expected value from Task Shop chests
         if (itemHrid === '/items/task_token') {
+            const includeTaskTokens = config.getSetting('networth_includeTaskTokens');
+            if (includeTaskTokens === false) {
+                return null; // Don't include task tokens in net worth
+            }
+
             const tokenData = calculateTaskTokenValue();
             if (tokenData && tokenData.tokenValue > 0) {
                 return tokenData.tokenValue;
@@ -11044,8 +11053,9 @@
             // Check if this is an ability book
             const categoryHrid = itemDetails?.categoryHrid || '/item_categories/other';
             const isAbilityBook = categoryHrid === '/item_categories/ability_book';
+            const booksAsInventory = config.getSetting('networth_abilityBooksAsInventory') === true;
 
-            if (isAbilityBook) {
+            if (isAbilityBook && !booksAsInventory) {
                 // Add to ability books (Fixed Assets)
                 abilityBooksValue += value;
                 abilityBooksBreakdown.push(itemData);

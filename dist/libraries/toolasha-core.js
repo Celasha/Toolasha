@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 0.24.5
+ * Version: 0.25.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -847,6 +847,22 @@
                     dependencies: ['networth'],
                     help: 'Cowbells are not tradeable, but they have a value based on Bag of 10 Cowbells market price',
                 },
+                networth_includeTaskTokens: {
+                    id: 'networth_includeTaskTokens',
+                    label: 'Include task tokens in net worth',
+                    type: 'checkbox',
+                    default: true,
+                    dependencies: ['networth'],
+                    help: 'Value task tokens based on expected value from Task Shop chests. Disable to exclude them from net worth.',
+                },
+                networth_abilityBooksAsInventory: {
+                    id: 'networth_abilityBooksAsInventory',
+                    label: 'Count ability books as inventory (Current Assets)',
+                    type: 'checkbox',
+                    default: false,
+                    dependencies: ['networth'],
+                    help: 'Move ability books from Fixed Assets to Current Assets inventory value. Useful if you plan to sell them.',
+                },
             },
         },
 
@@ -1242,6 +1258,18 @@
                     ],
                     dependencies: ['market_showEstimatedListingAge'],
                     help: 'Time format when using Date/Time display (only applies if Date/Time format is selected)',
+                },
+                market_listingDateFormat: {
+                    id: 'market_listingDateFormat',
+                    label: 'Market: Date format for date/time display',
+                    type: 'select',
+                    default: 'MM-DD',
+                    options: [
+                        { value: 'MM-DD', label: 'MM-DD (01-13)' },
+                        { value: 'DD-MM', label: 'DD-MM (13-01)' },
+                    ],
+                    dependencies: ['market_showEstimatedListingAge'],
+                    help: 'Date format when using Date/Time display (only applies if Date/Time format is selected)',
                 },
                 market_showOrderTotals: {
                     id: 'market_showOrderTotals',
