@@ -2,10 +2,9 @@
 
 ## [0.24.3](https://github.com/Celasha/Toolasha/compare/v0.24.2...v0.24.3) (2026-02-09)
 
-
 ### Bug Fixes
 
-* debounce profile panel cleanup observer to prevent premature removal ([0437dd8](https://github.com/Celasha/Toolasha/commit/0437dd8c1fb52fbf476d172e3234903fe666a502))
+- debounce profile panel cleanup observer to prevent premature removal ([0437dd8](https://github.com/Celasha/Toolasha/commit/0437dd8c1fb52fbf476d172e3234903fe666a502))
 
 ## [0.24.2](https://github.com/Celasha/Toolasha/compare/v0.24.1...v0.24.2) (2026-02-09)
 
