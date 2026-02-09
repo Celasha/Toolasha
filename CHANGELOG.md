@@ -2,10 +2,9 @@
 
 ## [0.24.2](https://github.com/Celasha/Toolasha/compare/v0.24.1...v0.24.2) (2026-02-09)
 
-
 ### Bug Fixes
 
-* correct alchemy profit calculations and add essence/rare drop revenue ([0aac51a](https://github.com/Celasha/Toolasha/commit/0aac51ae37f60359be6e5b2f9fce91df5dee8718))
+- correct alchemy profit calculations and add essence/rare drop revenue ([0aac51a](https://github.com/Celasha/Toolasha/commit/0aac51ae37f60359be6e5b2f9fce91df5dee8718))
 
 ## [0.24.1](https://github.com/Celasha/Toolasha/compare/v0.24.0...v0.24.1) (2026-02-09)
 
