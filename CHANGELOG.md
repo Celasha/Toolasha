@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.24.1](https://github.com/Celasha/Toolasha/compare/v0.24.0...v0.24.1) (2026-02-09)
+
+### Bug Fixes
+
+- account for queued materials in Missing Materials feature ([3bbbde2](https://github.com/Celasha/Toolasha/commit/3bbbde217d460ebe0986d498246f5eec06f72927))
+
 ## [0.24.0](https://github.com/Celasha/Toolasha/compare/v0.23.0...v0.24.0) (2026-02-08)
 
 ### Features
