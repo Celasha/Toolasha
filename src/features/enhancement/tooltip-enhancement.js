@@ -11,7 +11,7 @@
 
 import { calculateEnhancement } from '../../utils/enhancement-calculator.js';
 import dataManager from '../../core/data-manager.js';
-import { numberFormatter } from '../../utils/formatters.js';
+import { formatLargeNumber } from '../../utils/formatters.js';
 import { getItemPrice, getItemPrices } from '../../utils/market-data.js';
 
 /**
@@ -547,7 +547,7 @@ export function buildEnhancementTooltipHTML(enhancementData) {
             '</div>';
     }
 
-    html += '<div>Expected Attempts: ' + numberFormatter(optimalStrategy.expectedAttempts.toFixed(1)) + '</div>';
+    html += '<div>Expected Attempts: ' + formatLargeNumber(optimalStrategy.expectedAttempts.toFixed(1)) + '</div>';
 
     // Costs
     html += '<div>';
@@ -572,29 +572,30 @@ export function buildEnhancementTooltipHTML(enhancementData) {
                 ': ' +
                 item.quantity +
                 ' × ' +
-                numberFormatter(item.costEach) +
+                formatLargeNumber(item.costEach) +
                 ' = ' +
-                numberFormatter(item.totalCost);
+                formatLargeNumber(item.totalCost);
         });
 
         html += '</div>';
         // Philosopher's Mirror cost
         if (optimalStrategy.philosopherMirrorCost > 0) {
             const mirrorPrice = getRealisticBaseItemPrice('/items/philosophers_mirror');
-            html += "Philosopher's Mirror: " + numberFormatter(optimalStrategy.philosopherMirrorCost);
+            html += "Philosopher's Mirror: " + formatLargeNumber(optimalStrategy.philosopherMirrorCost);
             if (optimalStrategy.mirrorCount > 0 && mirrorPrice > 0) {
-                html += ' (' + optimalStrategy.mirrorCount + 'x @ ' + numberFormatter(mirrorPrice) + ' each)';
+                html += ' (' + optimalStrategy.mirrorCount + 'x @ ' + formatLargeNumber(mirrorPrice) + ' each)';
             }
         }
 
-        html += '<br><span style="font-weight: bold;">Total: ' + numberFormatter(optimalStrategy.totalCost) + '</span>';
+        html +=
+            '<br><span style="font-weight: bold;">Total: ' + formatLargeNumber(optimalStrategy.totalCost) + '</span>';
     } else {
         // Traditional (non-mirror) breakdown
-        html += 'Base Item: ' + numberFormatter(optimalStrategy.baseCost);
-        html += '<br>Materials: ' + numberFormatter(optimalStrategy.materialCost);
+        html += 'Base Item: ' + formatLargeNumber(optimalStrategy.baseCost);
+        html += '<br>Materials: ' + formatLargeNumber(optimalStrategy.materialCost);
 
         if (optimalStrategy.protectionCost > 0) {
-            let protectionDisplay = numberFormatter(optimalStrategy.protectionCost);
+            let protectionDisplay = formatLargeNumber(optimalStrategy.protectionCost);
 
             // Show protection count and item name if available
             if (optimalStrategy.protectionCount > 0) {
@@ -614,7 +615,8 @@ export function buildEnhancementTooltipHTML(enhancementData) {
             html += '<br>Protection: ' + protectionDisplay;
         }
 
-        html += '<br><span style="font-weight: bold;">Total: ' + numberFormatter(optimalStrategy.totalCost) + '</span>';
+        html +=
+            '<br><span style="font-weight: bold;">Total: ' + formatLargeNumber(optimalStrategy.totalCost) + '</span>';
     }
 
     html += '</div>';

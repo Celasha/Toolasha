@@ -6,7 +6,7 @@
 import config from '../../core/config.js';
 import marketAPI from '../../api/marketplace.js';
 import webSocketHook from '../../core/websocket.js';
-import { formatWithSeparator } from '../../utils/formatters.js';
+import { formatLargeNumber } from '../../utils/formatters.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 
 /**
@@ -156,7 +156,7 @@ class CombatSummary {
                 .querySelector('div#mwi-combat-encounters')
                 ?.insertAdjacentHTML(
                     'afterend',
-                    `<div id="mwi-combat-revenue" style="color: ${textColor};">Total revenue: ${formatWithSeparator(Math.round(totalPriceAsk))} / ${formatWithSeparator(Math.round(totalPriceBid))}</div>`
+                    `<div id="mwi-combat-revenue" style="color: ${textColor};">Total revenue: ${formatLargeNumber(Math.round(totalPriceAsk))} / ${formatLargeNumber(Math.round(totalPriceBid))}</div>`
                 );
 
             // Per-hour revenue
@@ -168,7 +168,7 @@ class CombatSummary {
                     .querySelector('div#mwi-combat-revenue')
                     ?.insertAdjacentHTML(
                         'afterend',
-                        `<div id="mwi-combat-revenue-hour" style="color: ${textColor};">Revenue/hour: ${formatWithSeparator(Math.round(revenuePerHourAsk))} / ${formatWithSeparator(Math.round(revenuePerHourBid))}</div>`
+                        `<div id="mwi-combat-revenue-hour" style="color: ${textColor};">Revenue/hour: ${formatLargeNumber(Math.round(revenuePerHourAsk))} / ${formatLargeNumber(Math.round(revenuePerHourBid))}</div>`
                     );
 
                 // Per-day revenue
@@ -176,7 +176,7 @@ class CombatSummary {
                     .querySelector('div#mwi-combat-revenue-hour')
                     ?.insertAdjacentHTML(
                         'afterend',
-                        `<div id="mwi-combat-revenue-day" style="color: ${textColor};">Revenue/day: ${formatWithSeparator(Math.round(revenuePerHourAsk * 24))} / ${formatWithSeparator(Math.round(revenuePerHourBid * 24))}</div>`
+                        `<div id="mwi-combat-revenue-day" style="color: ${textColor};">Revenue/day: ${formatLargeNumber(Math.round(revenuePerHourAsk * 24))} / ${formatLargeNumber(Math.round(revenuePerHourBid * 24))}</div>`
                     );
             }
 
@@ -185,7 +185,7 @@ class CombatSummary {
                 .querySelector('div#mwi-combat-revenue-day')
                 ?.insertAdjacentHTML(
                     'afterend',
-                    `<div id="mwi-combat-total-exp" style="color: ${textColor};">Total exp: ${formatWithSeparator(Math.round(totalSkillsExp))}</div>`
+                    `<div id="mwi-combat-total-exp" style="color: ${textColor};">Total exp: ${formatLargeNumber(Math.round(totalSkillsExp))}</div>`
                 );
 
             // Per-hour experience breakdowns
@@ -197,7 +197,7 @@ class CombatSummary {
                     .querySelector('div#mwi-combat-total-exp')
                     ?.insertAdjacentHTML(
                         'afterend',
-                        `<div id="mwi-combat-total-exp-hour" style="color: ${textColor};">Total exp/hour: ${formatWithSeparator(Math.round(totalExpPerHour))}</div>`
+                        `<div id="mwi-combat-total-exp-hour" style="color: ${textColor};">Total exp/hour: ${formatLargeNumber(Math.round(totalExpPerHour))}</div>`
                     );
 
                 // Individual skill exp/hour
@@ -221,7 +221,7 @@ class CombatSummary {
                             const expPerHour = expGained / (battleDurationSec / 3600);
                             lastElement.insertAdjacentHTML(
                                 'afterend',
-                                `<div style="color: ${textColor};">${skill.name} exp/hour: ${formatWithSeparator(Math.round(expPerHour))}</div>`
+                                `<div style="color: ${textColor};">${skill.name} exp/hour: ${formatLargeNumber(Math.round(expPerHour))}</div>`
                             );
                             // Update lastElement to the newly inserted div
                             lastElement = lastElement.nextElementSibling;
