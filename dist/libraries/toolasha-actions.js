@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 0.24.1
+ * Version: 0.24.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -11010,6 +11010,122 @@
         // TRANSMUTE: varies by item (from alchemyDetail.transmuteSuccessRate)
     };
 
+    /**
+     * Calculate alchemy-specific bonus drops (essences + rares) from item level.
+     * Alchemy actions don't have essenceDropTable/rareDropTable in game data,
+     * so we compute them from the item's level using reverse-engineered formulas.
+     *
+     * Essence: baseRate = (100 + itemLevel) / 1800
+     * Rare (Small, level 1-34):  baseRate = (100 + itemLevel) / 144000
+     * Rare (Medium, level 35-69): baseRate = (65 + itemLevel) / 216000
+     * Rare (Large, level 70+):    baseRate = (30 + itemLevel) / 288000
+     *
+     * @param {number} itemLevel - The item's level (from itemDetails.itemLevel)
+     * @param {number} actionsPerHour - Actions per hour (with efficiency)
+     * @param {Map} equipment - Character equipment map
+     * @param {Object} itemDetailMap - Item details map
+     * @returns {Object} Bonus drop data with drops array and breakdowns
+     */
+    function calculateAlchemyBonusDrops(itemLevel, actionsPerHour, equipment, itemDetailMap) {
+        const essenceFindBonus = equipmentParser_js.parseEssenceFindBonus(equipment, itemDetailMap);
+
+        const equipmentRareFindBonus = equipmentParser_js.parseRareFindBonus(equipment, '/action_types/alchemy', itemDetailMap);
+        const houseRareFindBonus = houseEfficiency_js.calculateHouseRareFind();
+        const achievementRareFindBonus =
+            dataManager.getAchievementBuffFlatBoost('/action_types/alchemy', '/buff_types/rare_find') * 100;
+        const rareFindBonus = equipmentRareFindBonus + houseRareFindBonus + achievementRareFindBonus;
+
+        const bonusDrops = [];
+        let totalBonusRevenue = 0;
+
+        // Essence drop: Alchemy Essence
+        const baseEssenceRate = (100 + itemLevel) / 1800;
+        const finalEssenceRate = baseEssenceRate * (1 + essenceFindBonus / 100);
+        const essenceDropsPerHour = actionsPerHour * finalEssenceRate;
+
+        let essencePrice = 0;
+        const essenceItemDetails = itemDetailMap['/items/alchemy_essence'];
+        if (essenceItemDetails?.isOpenable) {
+            essencePrice = expectedValueCalculator.getCachedValue('/items/alchemy_essence') || 0;
+        } else {
+            const price = marketAPI.getPrice('/items/alchemy_essence', 0);
+            essencePrice = price?.bid ?? 0;
+        }
+
+        const essenceRevenuePerHour = essenceDropsPerHour * essencePrice;
+        bonusDrops.push({
+            itemHrid: '/items/alchemy_essence',
+            count: 1,
+            dropRate: finalEssenceRate,
+            effectiveDropRate: finalEssenceRate,
+            price: essencePrice,
+            isEssence: true,
+            isRare: false,
+            revenuePerAttempt: finalEssenceRate * essencePrice,
+            revenuePerHour: essenceRevenuePerHour,
+            dropsPerHour: essenceDropsPerHour,
+        });
+        totalBonusRevenue += essenceRevenuePerHour;
+
+        // Rare drop: Artisan's Crate (size depends on item level)
+        let baseRareRate;
+        let crateHrid;
+        if (itemLevel < 35) {
+            baseRareRate = (100 + itemLevel) / 144000;
+            crateHrid = '/items/small_artisans_crate';
+        } else if (itemLevel < 70) {
+            baseRareRate = (65 + itemLevel) / 216000;
+            crateHrid = '/items/medium_artisans_crate';
+        } else {
+            baseRareRate = (30 + itemLevel) / 288000;
+            crateHrid = '/items/large_artisans_crate';
+        }
+
+        const finalRareRate = baseRareRate * (1 + rareFindBonus / 100);
+        const rareDropsPerHour = actionsPerHour * finalRareRate;
+
+        let cratePrice = 0;
+        const crateItemDetails = itemDetailMap[crateHrid];
+        if (crateItemDetails?.isOpenable) {
+            cratePrice = expectedValueCalculator.getCachedValue(crateHrid) || 0;
+        } else {
+            const price = marketAPI.getPrice(crateHrid, 0);
+            cratePrice = price?.bid ?? 0;
+        }
+
+        const rareRevenuePerHour = rareDropsPerHour * cratePrice;
+        bonusDrops.push({
+            itemHrid: crateHrid,
+            count: 1,
+            dropRate: finalRareRate,
+            effectiveDropRate: finalRareRate,
+            price: cratePrice,
+            isEssence: false,
+            isRare: true,
+            revenuePerAttempt: finalRareRate * cratePrice,
+            revenuePerHour: rareRevenuePerHour,
+            dropsPerHour: rareDropsPerHour,
+        });
+        totalBonusRevenue += rareRevenuePerHour;
+
+        return {
+            bonusDrops,
+            totalBonusRevenue,
+            essenceFindBonus,
+            rareFindBonus,
+            rareFindBreakdown: {
+                equipment: equipmentRareFindBonus,
+                house: houseRareFindBonus,
+                achievement: achievementRareFindBonus,
+                total: rareFindBonus,
+            },
+            essenceFindBreakdown: {
+                equipment: essenceFindBonus,
+                total: essenceFindBonus,
+            },
+        };
+    }
+
     class AlchemyProfitCalculator {
         constructor() {
             // Cache for item detail map
@@ -11098,12 +11214,14 @@
                 }
 
                 // Calculate action stats (time + efficiency) using shared helper
+                // Alchemy uses item level (not action requirement) for efficiency calculation
                 const actionStats = actionCalculator_js.calculateActionStats(actionDetails, {
                     skills: dataManager.getSkills(),
                     equipment: dataManager.getEquipment(),
                     itemDetailMap: gameData.itemDetailMap,
                     includeCommunityBuff: true,
                     includeBreakdown: true,
+                    levelRequirementOverride: itemDetails.itemLevel || 1,
                 });
 
                 const { actionTime, totalEfficiency, efficiencyBreakdown } = actionStats;
@@ -11158,15 +11276,25 @@
                 const efficiencyDecimal = totalEfficiency / 100;
                 const actionsPerHourWithEfficiency = profitHelpers_js.calculateActionsPerHour(actionTime) * (1 + efficiencyDecimal);
 
+                // Calculate bonus revenue (essences + rares) from item level
+                const itemLevel = itemDetails.itemLevel || 1;
+                const alchemyBonus = calculateAlchemyBonusDrops(
+                    itemLevel,
+                    actionsPerHourWithEfficiency,
+                    equipment,
+                    gameData.itemDetailMap
+                );
+
                 // Material and revenue calculations (for breakdown display)
                 const materialCostPerHour = materialCost * actionsPerHourWithEfficiency;
                 const catalystCostPerHour = 0; // No catalyst for coinify
-                const revenuePerHour = revenuePerAttempt * actionsPerHourWithEfficiency;
+                const revenuePerHour = revenuePerAttempt * actionsPerHourWithEfficiency + alchemyBonus.totalBonusRevenue;
 
                 // Profit calculation (matches OLD system formula)
-                // Formula: (netProfit × (1 + efficiency)) / actionTime × 3600 - teaCost
+                // Formula: (netProfit × (1 + efficiency)) / actionTime × 3600 + bonusRevenue - teaCost
                 const profitPerSecond = (netProfitPerAttempt * (1 + efficiencyDecimal)) / actionTime;
-                const profitPerHour = profitPerSecond * profitConstants_js.SECONDS_PER_HOUR - teaCostData.totalCostPerHour;
+                const profitPerHour =
+                    profitPerSecond * profitConstants_js.SECONDS_PER_HOUR + alchemyBonus.totalBonusRevenue - teaCostData.totalCostPerHour;
                 const profitPerDay = profitHelpers_js.calculateProfitPerDay(profitPerHour);
 
                 // Build detailed breakdowns
@@ -11181,6 +11309,8 @@
                     },
                 ];
 
+                const coinRevenuePerHour = revenuePerAttempt * actionsPerHourWithEfficiency;
+
                 const dropRevenues = [
                     {
                         itemHrid: '/items/coin',
@@ -11191,10 +11321,15 @@
                         isEssence: false,
                         isRare: false,
                         revenuePerAttempt,
-                        revenuePerHour,
+                        revenuePerHour: coinRevenuePerHour,
                         dropsPerHour: coinsProduced * successRate * actionsPerHourWithEfficiency,
                     },
                 ];
+
+                // Add alchemy essence and rare drops
+                for (const drop of alchemyBonus.bonusDrops) {
+                    dropRevenues.push(drop);
+                }
 
                 const catalystCost = {
                     itemHrid: null,
@@ -11252,7 +11387,8 @@
                     // Modifier breakdowns
                     successRateBreakdown,
                     efficiencyBreakdown,
-                    actionSpeedBreakdown: efficiencyBreakdown.speedBreakdown,
+                    rareFindBreakdown: alchemyBonus.rareFindBreakdown,
+                    essenceFindBreakdown: alchemyBonus.essenceFindBreakdown,
 
                     // Pricing info
                     pricingMode,
@@ -11306,12 +11442,14 @@
                 }
 
                 // Calculate action stats (time + efficiency) using shared helper
+                // Alchemy uses item level (not action requirement) for efficiency calculation
                 const actionStats = actionCalculator_js.calculateActionStats(actionDetails, {
                     skills: dataManager.getSkills(),
                     equipment: dataManager.getEquipment(),
                     itemDetailMap: gameData.itemDetailMap,
                     includeCommunityBuff: true,
                     includeBreakdown: true,
+                    levelRequirementOverride: itemDetails.itemLevel || 1,
                 });
 
                 const { actionTime, totalEfficiency, efficiencyBreakdown } = actionStats;
@@ -11399,14 +11537,24 @@
                 const efficiencyDecimal = totalEfficiency / 100;
                 const actionsPerHourWithEfficiency = profitHelpers_js.calculateActionsPerHour(actionTime) * (1 + efficiencyDecimal);
 
+                // Calculate bonus revenue (essences + rares) from item level
+                const itemLevel = itemDetails.itemLevel || 1;
+                const alchemyBonus = calculateAlchemyBonusDrops(
+                    itemLevel,
+                    actionsPerHourWithEfficiency,
+                    equipment,
+                    gameData.itemDetailMap
+                );
+
                 // Material and revenue calculations (for breakdown display)
                 const materialCostPerHour = inputPrice * actionsPerHourWithEfficiency;
                 const catalystCostPerHour = 0; // No catalyst for decompose
-                const revenuePerHour = revenuePerAttempt * actionsPerHourWithEfficiency;
+                const revenuePerHour = revenuePerAttempt * actionsPerHourWithEfficiency + alchemyBonus.totalBonusRevenue;
 
                 // Profit calculation (matches OLD system formula)
                 const profitPerSecond = (netProfitPerAttempt * (1 + efficiencyDecimal)) / actionTime;
-                const profitPerHour = profitPerSecond * profitConstants_js.SECONDS_PER_HOUR - teaCostData.totalCostPerHour;
+                const profitPerHour =
+                    profitPerSecond * profitConstants_js.SECONDS_PER_HOUR + alchemyBonus.totalBonusRevenue - teaCostData.totalCostPerHour;
                 const profitPerDay = profitHelpers_js.calculateProfitPerDay(profitPerHour);
 
                 // Build detailed breakdowns
@@ -11433,6 +11581,11 @@
                     revenuePerHour: drop.expectedValue * successRate * actionsPerHourWithEfficiency,
                     dropsPerHour: drop.count * successRate * actionsPerHourWithEfficiency,
                 }));
+
+                // Add alchemy essence and rare drops
+                for (const drop of alchemyBonus.bonusDrops) {
+                    dropRevenues.push(drop);
+                }
 
                 const catalystCost = {
                     itemHrid: null,
@@ -11490,7 +11643,8 @@
                     // Modifier breakdowns
                     successRateBreakdown,
                     efficiencyBreakdown,
-                    actionSpeedBreakdown: efficiencyBreakdown.speedBreakdown,
+                    rareFindBreakdown: alchemyBonus.rareFindBreakdown,
+                    essenceFindBreakdown: alchemyBonus.essenceFindBreakdown,
 
                     // Pricing info
                     pricingMode,
@@ -11549,12 +11703,14 @@
                 }
 
                 // Calculate action stats (time + efficiency) using shared helper
+                // Alchemy uses item level (not action requirement) for efficiency calculation
                 const actionStats = actionCalculator_js.calculateActionStats(actionDetails, {
                     skills: dataManager.getSkills(),
                     equipment: dataManager.getEquipment(),
                     itemDetailMap: gameData.itemDetailMap,
                     includeCommunityBuff: true,
                     includeBreakdown: true,
+                    levelRequirementOverride: itemDetails.itemLevel || 1,
                 });
 
                 const { actionTime, totalEfficiency, efficiencyBreakdown } = actionStats;
@@ -11620,14 +11776,24 @@
                 const efficiencyDecimal = totalEfficiency / 100;
                 const actionsPerHourWithEfficiency = profitHelpers_js.calculateActionsPerHour(actionTime) * (1 + efficiencyDecimal);
 
+                // Calculate bonus revenue (essences + rares) from item level
+                const itemLevel = itemDetails.itemLevel || 1;
+                const alchemyBonus = calculateAlchemyBonusDrops(
+                    itemLevel,
+                    actionsPerHourWithEfficiency,
+                    equipment,
+                    gameData.itemDetailMap
+                );
+
                 // Material and revenue calculations (for breakdown display)
                 const materialCostPerHour = inputPrice * actionsPerHourWithEfficiency;
                 const catalystCostPerHour = 0; // No catalyst for transmute
-                const revenuePerHour = revenuePerAttempt * actionsPerHourWithEfficiency;
+                const revenuePerHour = revenuePerAttempt * actionsPerHourWithEfficiency + alchemyBonus.totalBonusRevenue;
 
                 // Profit calculation (matches OLD system formula)
                 const profitPerSecond = (netProfitPerAttempt * (1 + efficiencyDecimal)) / actionTime;
-                const profitPerHour = profitPerSecond * profitConstants_js.SECONDS_PER_HOUR - teaCostData.totalCostPerHour;
+                const profitPerHour =
+                    profitPerSecond * profitConstants_js.SECONDS_PER_HOUR + alchemyBonus.totalBonusRevenue - teaCostData.totalCostPerHour;
                 const profitPerDay = profitHelpers_js.calculateProfitPerDay(profitPerHour);
 
                 // Build detailed breakdowns
@@ -11654,6 +11820,11 @@
                     revenuePerHour: drop.expectedValue * successRate * actionsPerHourWithEfficiency,
                     dropsPerHour: drop.averageCount * drop.dropRate * successRate * actionsPerHourWithEfficiency,
                 }));
+
+                // Add alchemy essence and rare drops
+                for (const drop of alchemyBonus.bonusDrops) {
+                    dropRevenues.push(drop);
+                }
 
                 const catalystCost = {
                     itemHrid: null,
@@ -11711,7 +11882,8 @@
                     // Modifier breakdowns
                     successRateBreakdown,
                     efficiencyBreakdown,
-                    actionSpeedBreakdown: efficiencyBreakdown.speedBreakdown,
+                    rareFindBreakdown: alchemyBonus.rareFindBreakdown,
+                    essenceFindBreakdown: alchemyBonus.essenceFindBreakdown,
 
                     // Pricing info
                     pricingMode,
@@ -12064,9 +12236,14 @@
                     const decimals = drop.dropsPerHour < 1 ? 2 : 1;
                     const dropRatePct = formatters_js.formatPercentage(drop.dropRate, drop.dropRate < 0.01 ? 3 : 2);
 
+                    const dropsDisplay =
+                        drop.dropsPerHour >= 10000
+                            ? formatters_js.formatLargeNumber(Math.round(drop.dropsPerHour))
+                            : drop.dropsPerHour.toFixed(decimals);
+
                     const line = document.createElement('div');
                     line.style.marginLeft = '8px';
-                    line.textContent = `• ${itemName}: ${drop.dropsPerHour.toFixed(decimals)}/hr (${dropRatePct} × ${formatters_js.formatPercentage(profitData.successRate, 1)} success) @ ${formatters_js.formatWithSeparator(Math.round(drop.price))} → ${formatters_js.formatLargeNumber(Math.round(drop.revenuePerHour))}/hr`;
+                    line.textContent = `• ${itemName}: ${dropsDisplay}/hr (${dropRatePct} × ${formatters_js.formatPercentage(profitData.successRate, 1)} success) @ ${formatters_js.formatWithSeparator(Math.round(drop.price))} → ${formatters_js.formatLargeNumber(Math.round(drop.revenuePerHour))}/hr`;
                     normalDropsContent.appendChild(line);
 
                     normalDropsRevenue += drop.revenuePerHour;
@@ -12131,12 +12308,12 @@
                     const line = document.createElement('div');
                     line.style.marginLeft = '8px';
 
-                    // Show both base and effective drop rate
+                    // Show both base and effective drop rate (not affected by success rate)
                     if (profitData.rareFindBreakdown && profitData.rareFindBreakdown.total > 0) {
-                        const rareFindBonus = formatters_js.formatPercentage(profitData.rareFindBreakdown.total, 1);
-                        line.textContent = `• ${itemName}: ${drop.dropsPerHour.toFixed(decimals)}/hr (${baseDropRatePct} base × ${rareFindBonus} rare find = ${effectiveDropRatePct}, × ${formatters_js.formatPercentage(profitData.successRate, 1)} success) @ ${formatters_js.formatWithSeparator(Math.round(drop.price))} → ${formatters_js.formatLargeNumber(Math.round(drop.revenuePerHour))}/hr`;
+                        const rareFindBonus = `${profitData.rareFindBreakdown.total.toFixed(1)}%`;
+                        line.textContent = `• ${itemName}: ${drop.dropsPerHour.toFixed(decimals)}/hr (${baseDropRatePct} base × ${rareFindBonus} rare find = ${effectiveDropRatePct}, not affected by success rate) @ ${formatters_js.formatWithSeparator(Math.round(drop.price))} → ${formatters_js.formatLargeNumber(Math.round(drop.revenuePerHour))}/hr`;
                     } else {
-                        line.textContent = `• ${itemName}: ${drop.dropsPerHour.toFixed(decimals)}/hr (${baseDropRatePct} × ${formatters_js.formatPercentage(profitData.successRate, 1)} success) @ ${formatters_js.formatWithSeparator(Math.round(drop.price))} → ${formatters_js.formatLargeNumber(Math.round(drop.revenuePerHour))}/hr`;
+                        line.textContent = `• ${itemName}: ${drop.dropsPerHour.toFixed(decimals)}/hr (${baseDropRatePct}, not affected by success rate) @ ${formatters_js.formatWithSeparator(Math.round(drop.price))} → ${formatters_js.formatLargeNumber(Math.round(drop.revenuePerHour))}/hr`;
                     }
 
                     rareContent.appendChild(line);
@@ -12298,45 +12475,45 @@
                 const effBreakdown = profitData.efficiencyBreakdown;
                 const effContent = document.createElement('div');
 
-                if (effBreakdown.level > 0) {
+                if (effBreakdown.levelEfficiency > 0) {
                     const line = document.createElement('div');
                     line.style.marginLeft = '8px';
-                    line.textContent = `• Level Bonus: +${effBreakdown.level.toFixed(1)}%`;
+                    line.textContent = `• Level Bonus: +${effBreakdown.levelEfficiency.toFixed(1)}%`;
                     effContent.appendChild(line);
                 }
 
-                if (effBreakdown.house > 0) {
+                if (effBreakdown.houseEfficiency > 0) {
                     const line = document.createElement('div');
                     line.style.marginLeft = '8px';
-                    line.textContent = `• House Bonus: +${effBreakdown.house.toFixed(1)}%`;
+                    line.textContent = `• House Bonus: +${effBreakdown.houseEfficiency.toFixed(1)}%`;
                     effContent.appendChild(line);
                 }
 
-                if (effBreakdown.tea > 0) {
+                if (effBreakdown.teaEfficiency > 0) {
                     const line = document.createElement('div');
                     line.style.marginLeft = '8px';
-                    line.textContent = `• Tea Bonus: +${effBreakdown.tea.toFixed(1)}%`;
+                    line.textContent = `• Tea Bonus: +${effBreakdown.teaEfficiency.toFixed(1)}%`;
                     effContent.appendChild(line);
                 }
 
-                if (effBreakdown.equipment > 0) {
+                if (effBreakdown.equipmentEfficiency > 0) {
                     const line = document.createElement('div');
                     line.style.marginLeft = '8px';
-                    line.textContent = `• Equipment Bonus: +${effBreakdown.equipment.toFixed(1)}%`;
+                    line.textContent = `• Equipment Bonus: +${effBreakdown.equipmentEfficiency.toFixed(1)}%`;
                     effContent.appendChild(line);
                 }
 
-                if (effBreakdown.community > 0) {
+                if (effBreakdown.communityEfficiency > 0) {
                     const line = document.createElement('div');
                     line.style.marginLeft = '8px';
-                    line.textContent = `• Community Buff: +${effBreakdown.community.toFixed(1)}%`;
+                    line.textContent = `• Community Buff: +${effBreakdown.communityEfficiency.toFixed(1)}%`;
                     effContent.appendChild(line);
                 }
 
-                if (effBreakdown.achievement > 0) {
+                if (effBreakdown.achievementEfficiency > 0) {
                     const line = document.createElement('div');
                     line.style.marginLeft = '8px';
-                    line.textContent = `• Achievement Bonus: +${effBreakdown.achievement.toFixed(1)}%`;
+                    line.textContent = `• Achievement Bonus: +${effBreakdown.achievementEfficiency.toFixed(1)}%`;
                     effContent.appendChild(line);
                 }
 
@@ -12409,7 +12586,7 @@
 
                     const rareSection = uiComponents_js.createCollapsibleSection(
                         '',
-                        `Rare Find: +${formatters_js.formatPercentage(rareBreakdown.total, 1)}`,
+                        `Rare Find: +${rareBreakdown.total.toFixed(1)}%`,
                         null,
                         rareContent,
                         false,
@@ -12435,7 +12612,7 @@
 
                     const essenceSection = uiComponents_js.createCollapsibleSection(
                         '',
-                        `Essence Find: +${formatters_js.formatPercentage(essenceBreakdown.total, 1)}`,
+                        `Essence Find: +${essenceBreakdown.total.toFixed(1)}%`,
                         null,
                         essenceContent,
                         false,
