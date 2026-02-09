@@ -28,6 +28,7 @@ import { stackAdditive } from './efficiency.js';
  * @param {boolean} options.includeCommunityBuff - Include community buff in efficiency (default: false)
  * @param {boolean} options.includeBreakdown - Include detailed breakdown data (default: false)
  * @param {boolean} options.floorActionLevel - Floor Action Level bonus for requirement calculation (default: true)
+ * @param {number} options.levelRequirementOverride - Override base level requirement (e.g., item level for alchemy)
  * @returns {Object} { actionTime, totalEfficiency, breakdown? }
  */
 export function calculateActionStats(actionDetails, options = {}) {
@@ -39,6 +40,7 @@ export function calculateActionStats(actionDetails, options = {}) {
         includeCommunityBuff = false,
         includeBreakdown = false,
         floorActionLevel = true,
+        levelRequirementOverride,
     } = options;
 
     try {
@@ -59,7 +61,7 @@ export function calculateActionStats(actionDetails, options = {}) {
 
         // Calculate efficiency
         const skillLevel = getSkillLevel(skills, actionDetails.type);
-        const baseRequirement = actionDetails.levelRequirement?.level || 1;
+        const baseRequirement = levelRequirementOverride ?? actionDetails.levelRequirement?.level ?? 1;
 
         // Get drink concentration
         const drinkConcentration = getDrinkConcentration(equipment, itemDetailMap);
@@ -120,8 +122,9 @@ export function calculateActionStats(actionDetails, options = {}) {
         // Get community buff efficiency (if requested)
         let communityEfficiency = 0;
         if (includeCommunityBuff) {
-            // Production Efficiency buff only applies to production skills
+            // Production Efficiency buff applies to production skills and alchemy
             const productionSkills = [
+                '/action_types/alchemy',
                 '/action_types/brewing',
                 '/action_types/cheesesmithing',
                 '/action_types/cooking',

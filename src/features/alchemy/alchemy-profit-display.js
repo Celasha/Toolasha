@@ -311,9 +311,14 @@ class AlchemyProfitDisplay {
                 const decimals = drop.dropsPerHour < 1 ? 2 : 1;
                 const dropRatePct = formatPercentage(drop.dropRate, drop.dropRate < 0.01 ? 3 : 2);
 
+                const dropsDisplay =
+                    drop.dropsPerHour >= 10000
+                        ? formatLargeNumber(Math.round(drop.dropsPerHour))
+                        : drop.dropsPerHour.toFixed(decimals);
+
                 const line = document.createElement('div');
                 line.style.marginLeft = '8px';
-                line.textContent = `• ${itemName}: ${drop.dropsPerHour.toFixed(decimals)}/hr (${dropRatePct} × ${formatPercentage(profitData.successRate, 1)} success) @ ${formatWithSeparator(Math.round(drop.price))} → ${formatLargeNumber(Math.round(drop.revenuePerHour))}/hr`;
+                line.textContent = `• ${itemName}: ${dropsDisplay}/hr (${dropRatePct} × ${formatPercentage(profitData.successRate, 1)} success) @ ${formatWithSeparator(Math.round(drop.price))} → ${formatLargeNumber(Math.round(drop.revenuePerHour))}/hr`;
                 normalDropsContent.appendChild(line);
 
                 normalDropsRevenue += drop.revenuePerHour;
@@ -378,12 +383,12 @@ class AlchemyProfitDisplay {
                 const line = document.createElement('div');
                 line.style.marginLeft = '8px';
 
-                // Show both base and effective drop rate
+                // Show both base and effective drop rate (not affected by success rate)
                 if (profitData.rareFindBreakdown && profitData.rareFindBreakdown.total > 0) {
-                    const rareFindBonus = formatPercentage(profitData.rareFindBreakdown.total, 1);
-                    line.textContent = `• ${itemName}: ${drop.dropsPerHour.toFixed(decimals)}/hr (${baseDropRatePct} base × ${rareFindBonus} rare find = ${effectiveDropRatePct}, × ${formatPercentage(profitData.successRate, 1)} success) @ ${formatWithSeparator(Math.round(drop.price))} → ${formatLargeNumber(Math.round(drop.revenuePerHour))}/hr`;
+                    const rareFindBonus = `${profitData.rareFindBreakdown.total.toFixed(1)}%`;
+                    line.textContent = `• ${itemName}: ${drop.dropsPerHour.toFixed(decimals)}/hr (${baseDropRatePct} base × ${rareFindBonus} rare find = ${effectiveDropRatePct}, not affected by success rate) @ ${formatWithSeparator(Math.round(drop.price))} → ${formatLargeNumber(Math.round(drop.revenuePerHour))}/hr`;
                 } else {
-                    line.textContent = `• ${itemName}: ${drop.dropsPerHour.toFixed(decimals)}/hr (${baseDropRatePct} × ${formatPercentage(profitData.successRate, 1)} success) @ ${formatWithSeparator(Math.round(drop.price))} → ${formatLargeNumber(Math.round(drop.revenuePerHour))}/hr`;
+                    line.textContent = `• ${itemName}: ${drop.dropsPerHour.toFixed(decimals)}/hr (${baseDropRatePct}, not affected by success rate) @ ${formatWithSeparator(Math.round(drop.price))} → ${formatLargeNumber(Math.round(drop.revenuePerHour))}/hr`;
                 }
 
                 rareContent.appendChild(line);
@@ -545,45 +550,45 @@ class AlchemyProfitDisplay {
             const effBreakdown = profitData.efficiencyBreakdown;
             const effContent = document.createElement('div');
 
-            if (effBreakdown.level > 0) {
+            if (effBreakdown.levelEfficiency > 0) {
                 const line = document.createElement('div');
                 line.style.marginLeft = '8px';
-                line.textContent = `• Level Bonus: +${effBreakdown.level.toFixed(1)}%`;
+                line.textContent = `• Level Bonus: +${effBreakdown.levelEfficiency.toFixed(1)}%`;
                 effContent.appendChild(line);
             }
 
-            if (effBreakdown.house > 0) {
+            if (effBreakdown.houseEfficiency > 0) {
                 const line = document.createElement('div');
                 line.style.marginLeft = '8px';
-                line.textContent = `• House Bonus: +${effBreakdown.house.toFixed(1)}%`;
+                line.textContent = `• House Bonus: +${effBreakdown.houseEfficiency.toFixed(1)}%`;
                 effContent.appendChild(line);
             }
 
-            if (effBreakdown.tea > 0) {
+            if (effBreakdown.teaEfficiency > 0) {
                 const line = document.createElement('div');
                 line.style.marginLeft = '8px';
-                line.textContent = `• Tea Bonus: +${effBreakdown.tea.toFixed(1)}%`;
+                line.textContent = `• Tea Bonus: +${effBreakdown.teaEfficiency.toFixed(1)}%`;
                 effContent.appendChild(line);
             }
 
-            if (effBreakdown.equipment > 0) {
+            if (effBreakdown.equipmentEfficiency > 0) {
                 const line = document.createElement('div');
                 line.style.marginLeft = '8px';
-                line.textContent = `• Equipment Bonus: +${effBreakdown.equipment.toFixed(1)}%`;
+                line.textContent = `• Equipment Bonus: +${effBreakdown.equipmentEfficiency.toFixed(1)}%`;
                 effContent.appendChild(line);
             }
 
-            if (effBreakdown.community > 0) {
+            if (effBreakdown.communityEfficiency > 0) {
                 const line = document.createElement('div');
                 line.style.marginLeft = '8px';
-                line.textContent = `• Community Buff: +${effBreakdown.community.toFixed(1)}%`;
+                line.textContent = `• Community Buff: +${effBreakdown.communityEfficiency.toFixed(1)}%`;
                 effContent.appendChild(line);
             }
 
-            if (effBreakdown.achievement > 0) {
+            if (effBreakdown.achievementEfficiency > 0) {
                 const line = document.createElement('div');
                 line.style.marginLeft = '8px';
-                line.textContent = `• Achievement Bonus: +${effBreakdown.achievement.toFixed(1)}%`;
+                line.textContent = `• Achievement Bonus: +${effBreakdown.achievementEfficiency.toFixed(1)}%`;
                 effContent.appendChild(line);
             }
 
@@ -656,7 +661,7 @@ class AlchemyProfitDisplay {
 
                 const rareSection = createCollapsibleSection(
                     '',
-                    `Rare Find: +${formatPercentage(rareBreakdown.total, 1)}`,
+                    `Rare Find: +${rareBreakdown.total.toFixed(1)}%`,
                     null,
                     rareContent,
                     false,
@@ -682,7 +687,7 @@ class AlchemyProfitDisplay {
 
                 const essenceSection = createCollapsibleSection(
                     '',
-                    `Essence Find: +${formatPercentage(essenceBreakdown.total, 1)}`,
+                    `Essence Find: +${essenceBreakdown.total.toFixed(1)}%`,
                     null,
                     essenceContent,
                     false,
