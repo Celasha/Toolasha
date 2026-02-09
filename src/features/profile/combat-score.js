@@ -11,6 +11,7 @@ import { numberFormatter } from '../../utils/formatters.js';
 import { constructExportObject } from '../combat/combat-sim-export.js';
 import { clearCurrentProfile } from '../../core/profile-manager.js';
 import { constructMilkonomyExport } from '../combat/milkonomy-export.js';
+import { handleViewCardClick } from './character-card-button.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 
@@ -214,6 +215,21 @@ class CombatScore {
             )
             .join('');
 
+        // Build View Card button HTML (only if characterCard setting is enabled)
+        const viewCardButtonHTML = config.getSetting('characterCard')
+            ? `<button id="mwi-character-card-btn" style="
+                    padding: 8px 12px;
+                    background: ${config.COLOR_ACCENT};
+                    color: black;
+                    border: none;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    font-weight: bold;
+                    font-size: 0.85rem;
+                    width: 100%;
+                ">View Card</button>`
+            : '';
+
         // Create panel HTML
         panel.innerHTML = `
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
@@ -287,6 +303,7 @@ class CombatScore {
                     font-size: 0.85rem;
                     width: 100%;
                 ">Milkonomy Export</button>
+                ${viewCardButtonHTML}
             </div>
         `;
 
@@ -297,7 +314,7 @@ class CombatScore {
         this.positionPanel(panel, modalContainer);
 
         // Set up event listeners
-        this.setupPanelEvents(panel, modalContainer, scoreData, equipmentHiddenText);
+        this.setupPanelEvents(panel, modalContainer, scoreData, equipmentHiddenText, profileData);
 
         // Set up cleanup observer
         this.setupCleanupObserver(panel, modalContainer);
@@ -330,8 +347,9 @@ class CombatScore {
      * @param {Element} modal - Modal container element
      * @param {Object} scoreData - Score data
      * @param {string} equipmentHiddenText - Equipment hidden text
+     * @param {Object} profileData - Profile data from WebSocket
      */
-    setupPanelEvents(panel, modal, scoreData, equipmentHiddenText) {
+    setupPanelEvents(panel, modal, scoreData, equipmentHiddenText, profileData) {
         // Close button
         const closeBtn = panel.querySelector('#mwi-score-close-btn');
         if (closeBtn) {
@@ -447,6 +465,20 @@ class CombatScore {
             });
             milkonomyBtn.addEventListener('mouseleave', () => {
                 milkonomyBtn.style.opacity = '1';
+            });
+        }
+
+        // View Card button
+        const viewCardBtn = panel.querySelector('#mwi-character-card-btn');
+        if (viewCardBtn) {
+            viewCardBtn.addEventListener('click', () => {
+                handleViewCardClick(profileData);
+            });
+            viewCardBtn.addEventListener('mouseenter', () => {
+                viewCardBtn.style.opacity = '0.8';
+            });
+            viewCardBtn.addEventListener('mouseleave', () => {
+                viewCardBtn.style.opacity = '1';
             });
         }
     }
@@ -777,8 +809,8 @@ class CombatScore {
             titleElem.style.color = config.COLOR_ACCENT;
         }
 
-        // Update both export buttons
-        const buttons = this.currentPanel.querySelectorAll('button[id*="export-btn"]');
+        // Update all panel buttons
+        const buttons = this.currentPanel.querySelectorAll('#mwi-button-container button');
         buttons.forEach((button) => {
             button.style.background = config.COLOR_ACCENT;
         });
