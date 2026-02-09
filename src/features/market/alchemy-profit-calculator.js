@@ -114,7 +114,11 @@ function calculateAlchemyBonusDrops(itemLevel, actionsPerHour, equipment, itemDe
     let cratePrice = 0;
     const crateItemDetails = itemDetailMap[crateHrid];
     if (crateItemDetails?.isOpenable) {
-        cratePrice = expectedValueCalculator.getCachedValue(crateHrid) || 0;
+        // Try cached EV first, then compute on-demand if cache is empty
+        cratePrice =
+            expectedValueCalculator.getCachedValue(crateHrid) ||
+            expectedValueCalculator.calculateSingleContainer(crateHrid) ||
+            0;
     } else {
         const price = marketAPI.getPrice(crateHrid, 0);
         cratePrice = price?.bid ?? 0;
@@ -275,8 +279,11 @@ class AlchemyProfitCalculator {
             // Coinify has no catalyst (catalyst is 0 for coinify)
             const catalystPrice = 0;
 
+            // Get coin cost per action attempt
+            const coinCost = actionDetails.coinCost || 0;
+
             // Calculate cost per attempt (materials consumed on all attempts)
-            const costPerAttempt = materialCost;
+            const costPerAttempt = materialCost + coinCost;
 
             // Calculate output value (coins produced)
             // Formula: sellPrice × bulkMultiplier × 5
@@ -313,7 +320,7 @@ class AlchemyProfitCalculator {
             );
 
             // Material and revenue calculations (for breakdown display)
-            const materialCostPerHour = materialCost * actionsPerHourWithEfficiency;
+            const materialCostPerHour = (materialCost + coinCost) * actionsPerHourWithEfficiency;
             const catalystCostPerHour = 0; // No catalyst for coinify
             const revenuePerHour = revenuePerAttempt * actionsPerHourWithEfficiency + alchemyBonus.totalBonusRevenue;
 
@@ -331,10 +338,22 @@ class AlchemyProfitCalculator {
                     count: bulkMultiplier,
                     price: pricePerItem,
                     costPerAction: materialCost,
-                    costPerHour: materialCostPerHour,
+                    costPerHour: materialCost * actionsPerHourWithEfficiency,
                     enhancementLevel: enhancementLevel || 0,
                 },
             ];
+
+            // Add coin cost entry if applicable
+            if (coinCost > 0) {
+                requirementCosts.push({
+                    itemHrid: '/items/coin',
+                    count: coinCost,
+                    price: 1,
+                    costPerAction: coinCost,
+                    costPerHour: coinCost * actionsPerHourWithEfficiency,
+                    enhancementLevel: 0,
+                });
+            }
 
             const coinRevenuePerHour = revenuePerAttempt * actionsPerHourWithEfficiency;
 
@@ -545,8 +564,11 @@ class AlchemyProfitCalculator {
             // Revenue per attempt (only on success)
             const revenuePerAttempt = outputValue * successRate;
 
+            // Get coin cost per action attempt
+            const coinCost = actionDetails.coinCost || 0;
+
             // Cost per attempt (input consumed on every attempt)
-            const costPerAttempt = inputPrice;
+            const costPerAttempt = inputPrice + coinCost;
 
             // Net profit per attempt (before efficiency)
             const netProfitPerAttempt = revenuePerAttempt - costPerAttempt;
@@ -574,7 +596,7 @@ class AlchemyProfitCalculator {
             );
 
             // Material and revenue calculations (for breakdown display)
-            const materialCostPerHour = inputPrice * actionsPerHourWithEfficiency;
+            const materialCostPerHour = (inputPrice + coinCost) * actionsPerHourWithEfficiency;
             const catalystCostPerHour = 0; // No catalyst for decompose
             const revenuePerHour = revenuePerAttempt * actionsPerHourWithEfficiency + alchemyBonus.totalBonusRevenue;
 
@@ -591,10 +613,22 @@ class AlchemyProfitCalculator {
                     count: 1,
                     price: inputPrice,
                     costPerAction: inputPrice,
-                    costPerHour: materialCostPerHour,
+                    costPerHour: inputPrice * actionsPerHourWithEfficiency,
                     enhancementLevel: enhancementLevel || 0,
                 },
             ];
+
+            // Add coin cost entry if applicable
+            if (coinCost > 0) {
+                requirementCosts.push({
+                    itemHrid: '/items/coin',
+                    count: coinCost,
+                    price: 1,
+                    costPerAction: coinCost,
+                    costPerHour: coinCost * actionsPerHourWithEfficiency,
+                    enhancementLevel: 0,
+                });
+            }
 
             const dropRevenues = dropDetails.map((drop) => ({
                 itemHrid: drop.itemHrid,
@@ -784,8 +818,15 @@ class AlchemyProfitCalculator {
             // Revenue per attempt (expected value on success)
             const revenuePerAttempt = expectedOutputValue * successRate;
 
+            // Get bulk multiplier (number of items consumed per action)
+            const bulkMultiplier = itemDetails.alchemyDetail?.bulkMultiplier || 1;
+            const materialCost = inputPrice * bulkMultiplier;
+
+            // Get coin cost per action attempt
+            const coinCost = actionDetails.coinCost || 0;
+
             // Cost per attempt (input consumed on every attempt)
-            const costPerAttempt = inputPrice;
+            const costPerAttempt = materialCost + coinCost;
 
             // Net profit per attempt (before efficiency)
             const netProfitPerAttempt = revenuePerAttempt - costPerAttempt;
@@ -813,7 +854,7 @@ class AlchemyProfitCalculator {
             );
 
             // Material and revenue calculations (for breakdown display)
-            const materialCostPerHour = inputPrice * actionsPerHourWithEfficiency;
+            const materialCostPerHour = (materialCost + coinCost) * actionsPerHourWithEfficiency;
             const catalystCostPerHour = 0; // No catalyst for transmute
             const revenuePerHour = revenuePerAttempt * actionsPerHourWithEfficiency + alchemyBonus.totalBonusRevenue;
 
@@ -827,13 +868,25 @@ class AlchemyProfitCalculator {
             const requirementCosts = [
                 {
                     itemHrid,
-                    count: 1,
+                    count: bulkMultiplier,
                     price: inputPrice,
-                    costPerAction: inputPrice,
-                    costPerHour: materialCostPerHour,
+                    costPerAction: materialCost,
+                    costPerHour: materialCost * actionsPerHourWithEfficiency,
                     enhancementLevel: 0,
                 },
             ];
+
+            // Add coin cost entry if applicable
+            if (coinCost > 0) {
+                requirementCosts.push({
+                    itemHrid: '/items/coin',
+                    count: coinCost,
+                    price: 1,
+                    costPerAction: coinCost,
+                    costPerHour: coinCost * actionsPerHourWithEfficiency,
+                    enhancementLevel: 0,
+                });
+            }
 
             const dropRevenues = dropDetails.map((drop) => ({
                 itemHrid: drop.itemHrid,
@@ -885,7 +938,7 @@ class AlchemyProfitCalculator {
                 actionTime,
 
                 // Per-attempt economics
-                materialCost: inputPrice,
+                materialCost,
                 catalystPrice: 0,
                 costPerAttempt,
                 incomePerAttempt: revenuePerAttempt,

@@ -139,17 +139,40 @@ class AlchemyProfitDisplay {
             const drops = await alchemyProfit.extractDrops(actionHrid);
             const requirements = await alchemyProfit.extractRequirements();
 
-            // Determine action type:
-            // - Coinify: First drop is coins
-            // - Transmute: First drop is NOT coins AND requirement has transmuteDropTable
-            // - Decompose: Everything else
-            const isCoinify = drops.length > 0 && drops[0].itemHrid === '/items/coin';
+            // Determine action type from actionHrid (most reliable) or DOM tab state
+            let isCoinify = false;
             let isTransmute = false;
+            let isDecompose = false;
 
-            if (!isCoinify && requirements && requirements.length > 0) {
-                const itemHrid = requirements[0].itemHrid;
-                const itemDetails = dataManager.getItemDetails(itemHrid);
-                isTransmute = !!itemDetails?.alchemyDetail?.transmuteDropTable;
+            if (actionHrid) {
+                // Player is actively performing an alchemy action - use actionHrid
+                isCoinify = actionHrid === '/actions/alchemy/coinify';
+                isTransmute = actionHrid === '/actions/alchemy/transmute';
+                isDecompose = actionHrid === '/actions/alchemy/decompose';
+            } else {
+                // Not actively performing - check which tab is selected in the DOM
+                const selectedTab = document.querySelector(
+                    '[class*="AlchemyPanel_tabButton"][aria-selected="true"], ' +
+                        '[class*="AlchemyPanel_tab"][aria-selected="true"]'
+                );
+                const tabText = selectedTab?.textContent?.trim()?.toLowerCase() || '';
+
+                if (tabText.includes('coinify')) {
+                    isCoinify = true;
+                } else if (tabText.includes('transmute')) {
+                    isTransmute = true;
+                } else if (tabText.includes('decompose')) {
+                    isDecompose = true;
+                } else {
+                    // Final fallback: use drop/item data heuristics
+                    isCoinify = drops.length > 0 && drops[0].itemHrid === '/items/coin';
+                    if (!isCoinify && requirements && requirements.length > 0) {
+                        const reqItemHrid = requirements[0].itemHrid;
+                        const reqItemDetails = dataManager.getItemDetails(reqItemHrid);
+                        isTransmute = !!reqItemDetails?.alchemyDetail?.transmuteDropTable;
+                    }
+                    isDecompose = !isCoinify && !isTransmute;
+                }
             }
 
             if (isCoinify) {
@@ -169,7 +192,7 @@ class AlchemyProfitDisplay {
                     // Call unified calculator
                     profitData = alchemyProfitCalculator.calculateTransmuteProfit(itemHrid);
                 }
-            } else if (requirements && requirements.length > 0) {
+            } else if ((isDecompose || (!isCoinify && !isTransmute)) && requirements && requirements.length > 0) {
                 // Use unified calculator for decompose
                 const itemHrid = requirements[0].itemHrid;
                 const enhancementLevel = requirements[0].enhancementLevel || 0;
@@ -649,6 +672,13 @@ class AlchemyProfitDisplay {
                     const line = document.createElement('div');
                     line.style.marginLeft = '8px';
                     line.textContent = `• Equipment Bonus: +${rareBreakdown.equipment.toFixed(1)}%`;
+                    rareContent.appendChild(line);
+                }
+
+                if (rareBreakdown.house > 0) {
+                    const line = document.createElement('div');
+                    line.style.marginLeft = '8px';
+                    line.textContent = `• House Bonus: +${rareBreakdown.house.toFixed(1)}%`;
                     rareContent.appendChild(line);
                 }
 

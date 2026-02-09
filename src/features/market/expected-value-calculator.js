@@ -160,6 +160,11 @@ class ExpectedValueCalculator {
             totalExpectedValue += dropValue;
         }
 
+        // Cache the result for future lookups
+        if (totalExpectedValue > 0) {
+            this.containerCache.set(containerHrid, totalExpectedValue);
+        }
+
         return totalExpectedValue;
     }
 
