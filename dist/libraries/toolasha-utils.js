@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 0.24.4
+ * Version: 0.24.5
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2233,6 +2233,11 @@
                     ? calculatePriceAfterTax(avgCount * dropRate * price, this.MARKET_TAX)
                     : avgCount * dropRate * price;
                 totalExpectedValue += dropValue;
+            }
+
+            // Cache the result for future lookups
+            if (totalExpectedValue > 0) {
+                this.containerCache.set(containerHrid, totalExpectedValue);
             }
 
             return totalExpectedValue;

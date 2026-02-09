@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.24.4
+// @version      0.24.5
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -21940,6 +21940,11 @@ return plugin;
                 totalExpectedValue += dropValue;
             }
 
+            // Cache the result for future lookups
+            if (totalExpectedValue > 0) {
+                this.containerCache.set(containerHrid, totalExpectedValue);
+            }
+
             return totalExpectedValue;
         }
 
@@ -26567,7 +26572,11 @@ return plugin;
         let cratePrice = 0;
         const crateItemDetails = itemDetailMap[crateHrid];
         if (crateItemDetails?.isOpenable) {
-            cratePrice = expectedValueCalculator.getCachedValue(crateHrid) || 0;
+            // Try cached EV first, then compute on-demand if cache is empty
+            cratePrice =
+                expectedValueCalculator.getCachedValue(crateHrid) ||
+                expectedValueCalculator.calculateSingleContainer(crateHrid) ||
+                0;
         } else {
             const price = marketAPI.getPrice(crateHrid, 0);
             cratePrice = price?.bid ?? 0;
@@ -26728,8 +26737,11 @@ return plugin;
                 // Coinify has no catalyst (catalyst is 0 for coinify)
                 const catalystPrice = 0;
 
+                // Get coin cost per action attempt
+                const coinCost = actionDetails.coinCost || 0;
+
                 // Calculate cost per attempt (materials consumed on all attempts)
-                const costPerAttempt = materialCost;
+                const costPerAttempt = materialCost + coinCost;
 
                 // Calculate output value (coins produced)
                 // Formula: sellPrice × bulkMultiplier × 5
@@ -26766,7 +26778,7 @@ return plugin;
                 );
 
                 // Material and revenue calculations (for breakdown display)
-                const materialCostPerHour = materialCost * actionsPerHourWithEfficiency;
+                const materialCostPerHour = (materialCost + coinCost) * actionsPerHourWithEfficiency;
                 const catalystCostPerHour = 0; // No catalyst for coinify
                 const revenuePerHour = revenuePerAttempt * actionsPerHourWithEfficiency + alchemyBonus.totalBonusRevenue;
 
@@ -26784,10 +26796,22 @@ return plugin;
                         count: bulkMultiplier,
                         price: pricePerItem,
                         costPerAction: materialCost,
-                        costPerHour: materialCostPerHour,
+                        costPerHour: materialCost * actionsPerHourWithEfficiency,
                         enhancementLevel: enhancementLevel || 0,
                     },
                 ];
+
+                // Add coin cost entry if applicable
+                if (coinCost > 0) {
+                    requirementCosts.push({
+                        itemHrid: '/items/coin',
+                        count: coinCost,
+                        price: 1,
+                        costPerAction: coinCost,
+                        costPerHour: coinCost * actionsPerHourWithEfficiency,
+                        enhancementLevel: 0,
+                    });
+                }
 
                 const coinRevenuePerHour = revenuePerAttempt * actionsPerHourWithEfficiency;
 
@@ -26998,8 +27022,11 @@ return plugin;
                 // Revenue per attempt (only on success)
                 const revenuePerAttempt = outputValue * successRate;
 
+                // Get coin cost per action attempt
+                const coinCost = actionDetails.coinCost || 0;
+
                 // Cost per attempt (input consumed on every attempt)
-                const costPerAttempt = inputPrice;
+                const costPerAttempt = inputPrice + coinCost;
 
                 // Net profit per attempt (before efficiency)
                 const netProfitPerAttempt = revenuePerAttempt - costPerAttempt;
@@ -27027,7 +27054,7 @@ return plugin;
                 );
 
                 // Material and revenue calculations (for breakdown display)
-                const materialCostPerHour = inputPrice * actionsPerHourWithEfficiency;
+                const materialCostPerHour = (inputPrice + coinCost) * actionsPerHourWithEfficiency;
                 const catalystCostPerHour = 0; // No catalyst for decompose
                 const revenuePerHour = revenuePerAttempt * actionsPerHourWithEfficiency + alchemyBonus.totalBonusRevenue;
 
@@ -27044,10 +27071,22 @@ return plugin;
                         count: 1,
                         price: inputPrice,
                         costPerAction: inputPrice,
-                        costPerHour: materialCostPerHour,
+                        costPerHour: inputPrice * actionsPerHourWithEfficiency,
                         enhancementLevel: enhancementLevel || 0,
                     },
                 ];
+
+                // Add coin cost entry if applicable
+                if (coinCost > 0) {
+                    requirementCosts.push({
+                        itemHrid: '/items/coin',
+                        count: coinCost,
+                        price: 1,
+                        costPerAction: coinCost,
+                        costPerHour: coinCost * actionsPerHourWithEfficiency,
+                        enhancementLevel: 0,
+                    });
+                }
 
                 const dropRevenues = dropDetails.map((drop) => ({
                     itemHrid: drop.itemHrid,
@@ -27237,8 +27276,15 @@ return plugin;
                 // Revenue per attempt (expected value on success)
                 const revenuePerAttempt = expectedOutputValue * successRate;
 
+                // Get bulk multiplier (number of items consumed per action)
+                const bulkMultiplier = itemDetails.alchemyDetail?.bulkMultiplier || 1;
+                const materialCost = inputPrice * bulkMultiplier;
+
+                // Get coin cost per action attempt
+                const coinCost = actionDetails.coinCost || 0;
+
                 // Cost per attempt (input consumed on every attempt)
-                const costPerAttempt = inputPrice;
+                const costPerAttempt = materialCost + coinCost;
 
                 // Net profit per attempt (before efficiency)
                 const netProfitPerAttempt = revenuePerAttempt - costPerAttempt;
@@ -27266,7 +27312,7 @@ return plugin;
                 );
 
                 // Material and revenue calculations (for breakdown display)
-                const materialCostPerHour = inputPrice * actionsPerHourWithEfficiency;
+                const materialCostPerHour = (materialCost + coinCost) * actionsPerHourWithEfficiency;
                 const catalystCostPerHour = 0; // No catalyst for transmute
                 const revenuePerHour = revenuePerAttempt * actionsPerHourWithEfficiency + alchemyBonus.totalBonusRevenue;
 
@@ -27280,13 +27326,25 @@ return plugin;
                 const requirementCosts = [
                     {
                         itemHrid,
-                        count: 1,
+                        count: bulkMultiplier,
                         price: inputPrice,
-                        costPerAction: inputPrice,
-                        costPerHour: materialCostPerHour,
+                        costPerAction: materialCost,
+                        costPerHour: materialCost * actionsPerHourWithEfficiency,
                         enhancementLevel: 0,
                     },
                 ];
+
+                // Add coin cost entry if applicable
+                if (coinCost > 0) {
+                    requirementCosts.push({
+                        itemHrid: '/items/coin',
+                        count: coinCost,
+                        price: 1,
+                        costPerAction: coinCost,
+                        costPerHour: coinCost * actionsPerHourWithEfficiency,
+                        enhancementLevel: 0,
+                    });
+                }
 
                 const dropRevenues = dropDetails.map((drop) => ({
                     itemHrid: drop.itemHrid,
@@ -27338,7 +27396,7 @@ return plugin;
                     actionTime,
 
                     // Per-attempt economics
-                    materialCost: inputPrice,
+                    materialCost,
                     catalystPrice: 0,
                     costPerAttempt,
                     incomePerAttempt: revenuePerAttempt,
@@ -49063,17 +49121,40 @@ return plugin;
                 const drops = await alchemyProfit.extractDrops(actionHrid);
                 const requirements = await alchemyProfit.extractRequirements();
 
-                // Determine action type:
-                // - Coinify: First drop is coins
-                // - Transmute: First drop is NOT coins AND requirement has transmuteDropTable
-                // - Decompose: Everything else
-                const isCoinify = drops.length > 0 && drops[0].itemHrid === '/items/coin';
+                // Determine action type from actionHrid (most reliable) or DOM tab state
+                let isCoinify = false;
                 let isTransmute = false;
+                let isDecompose = false;
 
-                if (!isCoinify && requirements && requirements.length > 0) {
-                    const itemHrid = requirements[0].itemHrid;
-                    const itemDetails = dataManager$1.getItemDetails(itemHrid);
-                    isTransmute = !!itemDetails?.alchemyDetail?.transmuteDropTable;
+                if (actionHrid) {
+                    // Player is actively performing an alchemy action - use actionHrid
+                    isCoinify = actionHrid === '/actions/alchemy/coinify';
+                    isTransmute = actionHrid === '/actions/alchemy/transmute';
+                    isDecompose = actionHrid === '/actions/alchemy/decompose';
+                } else {
+                    // Not actively performing - check which tab is selected in the DOM
+                    const selectedTab = document.querySelector(
+                        '[class*="AlchemyPanel_tabButton"][aria-selected="true"], ' +
+                            '[class*="AlchemyPanel_tab"][aria-selected="true"]'
+                    );
+                    const tabText = selectedTab?.textContent?.trim()?.toLowerCase() || '';
+
+                    if (tabText.includes('coinify')) {
+                        isCoinify = true;
+                    } else if (tabText.includes('transmute')) {
+                        isTransmute = true;
+                    } else if (tabText.includes('decompose')) {
+                        isDecompose = true;
+                    } else {
+                        // Final fallback: use drop/item data heuristics
+                        isCoinify = drops.length > 0 && drops[0].itemHrid === '/items/coin';
+                        if (!isCoinify && requirements && requirements.length > 0) {
+                            const reqItemHrid = requirements[0].itemHrid;
+                            const reqItemDetails = dataManager$1.getItemDetails(reqItemHrid);
+                            isTransmute = !!reqItemDetails?.alchemyDetail?.transmuteDropTable;
+                        }
+                        isDecompose = !isCoinify && !isTransmute;
+                    }
                 }
 
                 if (isCoinify) {
@@ -49093,7 +49174,7 @@ return plugin;
                         // Call unified calculator
                         profitData = alchemyProfitCalculator.calculateTransmuteProfit(itemHrid);
                     }
-                } else if (requirements && requirements.length > 0) {
+                } else if ((isDecompose || (!isCoinify && !isTransmute)) && requirements && requirements.length > 0) {
                     // Use unified calculator for decompose
                     const itemHrid = requirements[0].itemHrid;
                     const enhancementLevel = requirements[0].enhancementLevel || 0;
@@ -49573,6 +49654,13 @@ return plugin;
                         const line = document.createElement('div');
                         line.style.marginLeft = '8px';
                         line.textContent = `• Equipment Bonus: +${rareBreakdown.equipment.toFixed(1)}%`;
+                        rareContent.appendChild(line);
+                    }
+
+                    if (rareBreakdown.house > 0) {
+                        const line = document.createElement('div');
+                        line.style.marginLeft = '8px';
+                        line.textContent = `• House Bonus: +${rareBreakdown.house.toFixed(1)}%`;
                         rareContent.appendChild(line);
                     }
 
