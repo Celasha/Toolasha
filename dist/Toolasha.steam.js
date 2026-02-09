@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.24.2
+// @version      0.24.3
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -59189,17 +59189,27 @@ return plugin;
                 return;
             }
 
+            let cleanupTimeout = null;
+
             const cleanupObserver = createMutationWatcher(
                 document.body,
                 () => {
-                    if (
-                        !document.body.contains(modal) ||
-                        !document.querySelector('div.SharableProfile_overviewTab__W4dCV')
-                    ) {
-                        panel.remove();
-                        this.currentPanel = null;
-                        cleanupObserver();
+                    // Debounce cleanup check to avoid false positives during React re-renders.
+                    // Without this, intermediate DOM states (e.g., Edge browser timing differences)
+                    // can cause the selector check to fail momentarily, removing the panel.
+                    if (cleanupTimeout) {
+                        clearTimeout(cleanupTimeout);
                     }
+                    cleanupTimeout = setTimeout(() => {
+                        if (
+                            !document.body.contains(modal) ||
+                            !document.querySelector('div.SharableProfile_overviewTab__W4dCV')
+                        ) {
+                            panel.remove();
+                            this.currentPanel = null;
+                            cleanupObserver();
+                        }
+                    }, 100);
                 },
                 {
                     childList: true,

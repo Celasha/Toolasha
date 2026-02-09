@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 0.24.2
+ * Version: 0.24.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -9949,17 +9949,27 @@
                 return;
             }
 
+            let cleanupTimeout = null;
+
             const cleanupObserver = domObserverHelpers_js.createMutationWatcher(
                 document.body,
                 () => {
-                    if (
-                        !document.body.contains(modal) ||
-                        !document.querySelector('div.SharableProfile_overviewTab__W4dCV')
-                    ) {
-                        panel.remove();
-                        this.currentPanel = null;
-                        cleanupObserver();
+                    // Debounce cleanup check to avoid false positives during React re-renders.
+                    // Without this, intermediate DOM states (e.g., Edge browser timing differences)
+                    // can cause the selector check to fail momentarily, removing the panel.
+                    if (cleanupTimeout) {
+                        clearTimeout(cleanupTimeout);
                     }
+                    cleanupTimeout = setTimeout(() => {
+                        if (
+                            !document.body.contains(modal) ||
+                            !document.querySelector('div.SharableProfile_overviewTab__W4dCV')
+                        ) {
+                            panel.remove();
+                            this.currentPanel = null;
+                            cleanupObserver();
+                        }
+                    }, 100);
                 },
                 {
                     childList: true,
