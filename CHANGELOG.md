@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.25.0](https://github.com/Celasha/Toolasha/compare/v0.24.5...v0.25.0) (2026-02-09)
+
+
+### Features
+
+* add DD-MM date format, task token toggle, and ability books toggle ([c04a974](https://github.com/Celasha/Toolasha/commit/c04a974c355c339647fa97bcfeaeaa3edd57ac38))
+* use KMB formatting for combat summary and enhancement tooltip numbers ([1df5f41](https://github.com/Celasha/Toolasha/commit/1df5f41d5556b354b07293b1c92675a410040335))
+
 ## [0.24.5](https://github.com/Celasha/Toolasha/compare/v0.24.4...v0.24.5) (2026-02-09)
 
 ### Bug Fixes
