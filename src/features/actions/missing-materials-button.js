@@ -189,7 +189,10 @@ function updateButtonForPanel(panel, value) {
     }
 
     // Get missing materials using shared utility
-    const missingMaterials = calculateMaterialRequirements(actionHrid, numActions);
+    // Check if user wants to ignore queue (default: false, meaning we DO account for queue)
+    const ignoreQueue = config.getSetting('actions_missingMaterialsButton_ignoreQueue') || false;
+    const accountForQueue = !ignoreQueue; // Invert: ignoreQueue=false means accountForQueue=true
+    const missingMaterials = calculateMaterialRequirements(actionHrid, numActions, accountForQueue);
     if (missingMaterials.length === 0) {
         return;
     }
@@ -472,8 +475,10 @@ function updateTabsOnInventoryChange() {
         return;
     }
 
-    // Recalculate materials with current inventory
-    const updatedMaterials = calculateMaterialRequirements(storedActionHrid, storedNumActions);
+    // Recalculate materials with current inventory (respecting queue setting)
+    const ignoreQueue = config.getSetting('actions_missingMaterialsButton_ignoreQueue') || false;
+    const accountForQueue = !ignoreQueue;
+    const updatedMaterials = calculateMaterialRequirements(storedActionHrid, storedNumActions, accountForQueue);
 
     // Update each existing tab
     currentMaterialsTabs.forEach((tab) => {
@@ -509,7 +514,9 @@ function updateTabBadge(tab, material) {
         statusText = 'Not Tradeable';
     } else if (material.missing > 0) {
         statusColor = '#ef4444'; // Red - missing materials
-        statusText = `Missing: ${formatWithSeparator(material.missing)}`;
+        // Show queued amount if any materials are reserved by queue
+        const queuedText = material.queued > 0 ? ` (${formatWithSeparator(material.queued)} Q'd)` : '';
+        statusText = `Missing: ${formatWithSeparator(material.missing)}${queuedText}`;
     } else {
         statusColor = '#4ade80'; // Green - sufficient materials
         statusText = 'Sufficient';
@@ -569,7 +576,9 @@ function createCustomTab(material, referenceTab) {
         statusText = 'Not Tradeable';
     } else if (material.missing > 0) {
         statusColor = '#ef4444'; // Red - missing materials
-        statusText = `Missing: ${formatWithSeparator(material.missing)}`;
+        // Show queued amount if any materials are reserved by queue
+        const queuedText = material.queued > 0 ? ` (${formatWithSeparator(material.queued)} Q'd)` : '';
+        statusText = `Missing: ${formatWithSeparator(material.missing)}${queuedText}`;
     } else {
         statusColor = '#4ade80'; // Green - sufficient materials
         statusText = 'Sufficient';
