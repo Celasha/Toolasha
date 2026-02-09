@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.4](https://github.com/Celasha/Toolasha/compare/v0.24.3...v0.24.4) (2026-02-09)
+
+
+### Bug Fixes
+
+* move View Card button into combat score panel template to prevent disappearing ([ddd8e47](https://github.com/Celasha/Toolasha/commit/ddd8e47328ecce522af49d097620e838f0c8a749))
+
 ## [0.24.3](https://github.com/Celasha/Toolasha/compare/v0.24.2...v0.24.3) (2026-02-09)
 
 ### Bug Fixes
