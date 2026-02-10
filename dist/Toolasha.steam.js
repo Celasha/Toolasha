@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.26.1
+// @version      0.26.2
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -48282,6 +48282,394 @@ return plugin;
     const requiredMaterials = new RequiredMaterials();
 
     /**
+     * Marketplace Buy Modal Autofill Utility
+     * Provides shared functionality for auto-filling quantity in marketplace buy modals
+     * Used by missing materials features (actions, houses, etc.)
+     */
+
+
+    /**
+     * Find the quantity input in the buy modal
+     * For equipment items, there are multiple number inputs (enhancement level + quantity)
+     * We need to find the correct one by checking parent containers for label text
+     * @param {HTMLElement} modal - Modal container element
+     * @returns {HTMLInputElement|null} Quantity input element or null
+     */
+    function findQuantityInput(modal) {
+        // Get all number inputs in the modal
+        const allInputs = Array.from(modal.querySelectorAll('input[type="number"]'));
+
+        if (allInputs.length === 0) {
+            return null;
+        }
+
+        if (allInputs.length === 1) {
+            // Only one input - must be quantity
+            return allInputs[0];
+        }
+
+        // Multiple inputs - identify by checking CLOSEST parent first
+        // Strategy 1: Check each parent level individually, prioritizing closer parents
+        // This prevents matching on the outermost container that has all text
+        for (let level = 0; level < 4; level++) {
+            for (let i = 0; i < allInputs.length; i++) {
+                const input = allInputs[i];
+                let parent = input.parentElement;
+
+                // Navigate to the specific level
+                for (let j = 0; j < level && parent; j++) {
+                    parent = parent.parentElement;
+                }
+
+                if (!parent) continue;
+
+                const text = parent.textContent;
+
+                // At this specific level, check if it contains "Quantity" but NOT "Enhancement Level"
+                if (text.includes('Quantity') && !text.includes('Enhancement Level')) {
+                    return input;
+                }
+            }
+        }
+
+        // Strategy 2: Exclude inputs that have "Enhancement Level" in close parents (level 0-2)
+        for (let i = 0; i < allInputs.length; i++) {
+            const input = allInputs[i];
+            let parent = input.parentElement;
+            let isEnhancementInput = false;
+
+            // Check only the first 3 levels (not the outermost container)
+            for (let j = 0; j < 3 && parent; j++) {
+                const text = parent.textContent;
+
+                if (text.includes('Enhancement Level') && !text.includes('Quantity')) {
+                    isEnhancementInput = true;
+                    break;
+                }
+
+                parent = parent.parentElement;
+            }
+
+            if (!isEnhancementInput) {
+                return input;
+            }
+        }
+
+        // Fallback: Return first input and log warning
+        console.warn('[MarketplaceAutofill] Could not definitively identify quantity input, using first input');
+        return allInputs[0];
+    }
+
+    /**
+     * Handle buy modal appearance and auto-fill quantity if available
+     * @param {HTMLElement} modal - Modal container element
+     * @param {number|null} activeQuantity - Quantity to auto-fill (null if none)
+     */
+    function handleBuyModal(modal, activeQuantity) {
+        // Check if we have an active quantity to fill
+        if (!activeQuantity || activeQuantity <= 0) {
+            return;
+        }
+
+        // Check if this is a "Buy Now" modal
+        const header = modal.querySelector('div[class*="MarketplacePanel_header"]');
+        if (!header) {
+            return;
+        }
+
+        const headerText = header.textContent.trim();
+        if (!headerText.includes('Buy Now')) {
+            return;
+        }
+
+        // Find the quantity input - need to be specific to avoid enhancement level input
+        const quantityInput = findQuantityInput(modal);
+        if (!quantityInput) {
+            return;
+        }
+
+        // Set the quantity value
+        const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+        nativeInputValueSetter.call(quantityInput, activeQuantity.toString());
+
+        // Trigger input event to notify React
+        const inputEvent = new Event('input', { bubbles: true });
+        quantityInput.dispatchEvent(inputEvent);
+    }
+
+    /**
+     * Create an autofill manager instance
+     * Manages storing quantity to autofill and observing buy modals
+     * @param {string} observerId - Unique ID for this observer (e.g., 'MissingMats-Actions')
+     * @returns {Object} Autofill manager with methods: setQuantity, clearQuantity, initialize, cleanup
+     */
+    function createAutofillManager(observerId) {
+        let activeQuantity = null;
+        let observerUnregister = null;
+
+        return {
+            /**
+             * Set the quantity to auto-fill in the next buy modal
+             * @param {number} quantity - Quantity to auto-fill
+             */
+            setQuantity(quantity) {
+                activeQuantity = quantity;
+            },
+
+            /**
+             * Clear the stored quantity (cancel autofill)
+             */
+            clearQuantity() {
+                activeQuantity = null;
+            },
+
+            /**
+             * Get the current active quantity
+             * @returns {number|null} Current quantity or null
+             */
+            getQuantity() {
+                return activeQuantity;
+            },
+
+            /**
+             * Initialize buy modal observer
+             * Sets up watching for buy modals to appear and auto-fills them
+             */
+            initialize() {
+                observerUnregister = domObserver$1.onClass(observerId, 'Modal_modalContainer', (modal) => {
+                    handleBuyModal(modal, activeQuantity);
+                });
+            },
+
+            /**
+             * Cleanup observer
+             * Stops watching for buy modals and clears quantity
+             */
+            cleanup() {
+                if (observerUnregister) {
+                    observerUnregister();
+                    observerUnregister = null;
+                }
+                activeQuantity = null;
+            },
+        };
+    }
+
+    /**
+     * Marketplace Custom Tabs Utility
+     * Provides shared functionality for creating and managing custom marketplace tabs
+     * Used by missing materials features (actions, houses, etc.)
+     */
+
+
+    /**
+     * Create a custom material tab for the marketplace
+     * @param {Object} material - Material data object
+     * @param {string} material.itemHrid - Item HRID
+     * @param {string} material.itemName - Display name for the item
+     * @param {number} material.missing - Amount missing (0 if sufficient)
+     * @param {number} [material.queued=0] - Amount reserved by queue
+     * @param {boolean} material.isTradeable - Whether item can be traded
+     * @param {HTMLElement} referenceTab - Tab element to clone structure from
+     * @param {Function} onClickCallback - Callback when tab is clicked, receives (e, material)
+     * @returns {HTMLElement} Created tab element
+     */
+    function createMaterialTab(material, referenceTab, onClickCallback) {
+        // Clone reference tab structure
+        const tab = referenceTab.cloneNode(true);
+
+        // Mark as custom tab for later identification
+        tab.setAttribute('data-mwi-custom-tab', 'true');
+        tab.setAttribute('data-item-hrid', material.itemHrid);
+        tab.setAttribute('data-missing-quantity', material.missing.toString());
+
+        // Color coding:
+        // - Red: Missing materials (missing > 0)
+        // - Green: Sufficient materials (missing = 0)
+        // - Gray: Not tradeable
+        let statusColor;
+        let statusText;
+
+        if (!material.isTradeable) {
+            statusColor = '#888888'; // Gray - not tradeable
+            statusText = 'Not Tradeable';
+        } else if (material.missing > 0) {
+            statusColor = '#ef4444'; // Red - missing materials
+            // Show queued amount if any materials are reserved by queue
+            const queuedText = material.queued > 0 ? ` (${formatWithSeparator(material.queued)} Q'd)` : '';
+            statusText = `Missing: ${formatWithSeparator(material.missing)}${queuedText}`;
+        } else {
+            statusColor = '#4ade80'; // Green - sufficient materials
+            statusText = 'Sufficient';
+        }
+
+        // Update text content
+        const badgeSpan = tab.querySelector('.TabsComponent_badge__1Du26');
+        if (badgeSpan) {
+            // Title case: capitalize first letter of each word
+            const titleCaseName = material.itemName
+                .split(' ')
+                .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+                .join(' ');
+
+            badgeSpan.innerHTML = `
+            <div style="text-align: center;">
+                <div>${titleCaseName}</div>
+                <div style="font-size: 0.75em; color: ${statusColor};">
+                    ${statusText}
+                </div>
+            </div>
+        `;
+        }
+
+        // Gray out if not tradeable
+        if (!material.isTradeable) {
+            tab.style.opacity = '0.5';
+            tab.style.cursor = 'not-allowed';
+        }
+
+        // Remove selected state
+        tab.classList.remove('Mui-selected');
+        tab.setAttribute('aria-selected', 'false');
+        tab.setAttribute('tabindex', '-1');
+
+        // Add click handler
+        tab.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+
+            if (!material.isTradeable) {
+                // Not tradeable - do nothing
+                return;
+            }
+
+            // Call the provided callback
+            if (onClickCallback) {
+                onClickCallback(e, material);
+            }
+        });
+
+        return tab;
+    }
+
+    /**
+     * Remove all custom material tabs from the marketplace
+     */
+    function removeMaterialTabs() {
+        const customTabs = document.querySelectorAll('[data-mwi-custom-tab="true"]');
+        customTabs.forEach((tab) => tab.remove());
+    }
+
+    /**
+     * Setup marketplace cleanup observer
+     * Watches for marketplace panel removal and calls cleanup callback
+     * @param {Function} onCleanup - Callback when marketplace closes, receives no args
+     * @param {Array} tabsArray - Array reference to track tabs (will be checked for length)
+     * @returns {Function} Unregister function to stop observing
+     */
+    function setupMarketplaceCleanupObserver(onCleanup, tabsArray) {
+        let debounceTimer = null;
+
+        const cleanupObserver = createMutationWatcher(
+            document.body,
+            () => {
+                // Only check if we have custom tabs
+                if (!tabsArray || tabsArray.length === 0) {
+                    return;
+                }
+
+                // Clear existing debounce timer
+                if (debounceTimer) {
+                    clearTimeout(debounceTimer);
+                    debounceTimer = null;
+                }
+
+                // Debounce to avoid false positives from rapid DOM changes
+                debounceTimer = setTimeout(() => {
+                    // Check if we still have custom tabs
+                    if (!tabsArray || tabsArray.length === 0) {
+                        return;
+                    }
+
+                    // Check if our custom tabs still exist in the DOM
+                    const hasCustomTabsInDOM = tabsArray.some((tab) => document.body.contains(tab));
+
+                    // If our tabs were removed from DOM, clean up
+                    if (!hasCustomTabsInDOM) {
+                        if (onCleanup) {
+                            onCleanup();
+                        }
+                        return;
+                    }
+
+                    // Check if marketplace navbar is active
+                    const marketplaceNavActive = Array.from(document.querySelectorAll('.NavigationBar_nav__3uuUl')).some(
+                        (nav) => {
+                            const svg = nav.querySelector('svg[aria-label="navigationBar.marketplace"]');
+                            return svg && nav.classList.contains('NavigationBar_active__2Oj_e');
+                        }
+                    );
+
+                    // Check if tabs container still exists (marketplace panel is open)
+                    const tabsContainer = document.querySelector('.MuiTabs-flexContainer[role="tablist"]');
+                    const hasMarketListingsTab =
+                        tabsContainer &&
+                        Array.from(tabsContainer.children).some((btn) => btn.textContent.includes('Market Listings'));
+
+                    // Only cleanup if BOTH navbar is inactive AND marketplace tabs are gone
+                    // This prevents cleanup during transitions when navbar might briefly be inactive
+                    if (!marketplaceNavActive && !hasMarketListingsTab) {
+                        if (onCleanup) {
+                            onCleanup();
+                        }
+                    }
+                }, 100);
+            },
+            {
+                childList: true,
+                subtree: true,
+            }
+        );
+
+        // Return cleanup function that also clears the debounce timer
+        return () => {
+            if (debounceTimer) {
+                clearTimeout(debounceTimer);
+                debounceTimer = null;
+            }
+            cleanupObserver();
+        };
+    }
+
+    /**
+     * Get game object via React fiber
+     * @returns {Object|null} Game component instance
+     */
+    function getGameObject() {
+        const gamePageEl = document.querySelector('[class^="GamePage"]');
+        if (!gamePageEl) return null;
+
+        const fiberKey = Object.keys(gamePageEl).find((k) => k.startsWith('__reactFiber$'));
+        if (!fiberKey) return null;
+
+        return gamePageEl[fiberKey]?.return?.stateNode;
+    }
+
+    /**
+     * Navigate to marketplace for a specific item
+     * @param {string} itemHrid - Item HRID to navigate to
+     * @param {number} enhancementLevel - Enhancement level (default 0)
+     */
+    function navigateToMarketplace(itemHrid, enhancementLevel = 0) {
+        const game = getGameObject();
+        if (game?.handleGoToMarketplace) {
+            game.handleGoToMarketplace(itemHrid, enhancementLevel);
+        } else {
+            console.error('[MarketplaceTabs] Game API not available');
+        }
+    }
+
+    /**
      * Missing Materials Marketplace Button
      * Adds button to production panels that opens marketplace with tabs for missing materials
      */
@@ -48297,9 +48685,8 @@ return plugin;
     let inventoryUpdateHandler = null;
     let storedActionHrid = null;
     let storedNumActions = 0;
-    let buyModalObserverUnregister = null;
-    let activeMissingQuantity = null;
     const timerRegistry$1 = createTimerRegistry();
+    const autofillManager = createAutofillManager('MissingMats-Actions');
 
     /**
      * Production action types (where button should appear)
@@ -48313,37 +48700,11 @@ return plugin;
     ];
 
     /**
-     * Get the game object via React fiber
-     * @returns {Object|null} Game component instance or null
-     */
-    function getGameObject() {
-        const gamePageEl = document.querySelector('[class^="GamePage"]');
-        if (!gamePageEl) return null;
-
-        const fiberKey = Object.keys(gamePageEl).find((k) => k.startsWith('__reactFiber$'));
-        if (!fiberKey) return null;
-
-        return gamePageEl[fiberKey]?.return?.stateNode;
-    }
-
-    /**
-     * Navigate to marketplace for a specific item
-     * @param {string} itemHrid - Item HRID
-     * @param {number} enhancementLevel - Enhancement level (default 0)
-     */
-    function goToMarketplace(itemHrid, enhancementLevel = 0) {
-        const game = getGameObject();
-        if (game?.handleGoToMarketplace) {
-            game.handleGoToMarketplace(itemHrid, enhancementLevel);
-        }
-    }
-
-    /**
      * Initialize missing materials button feature
      */
     function initialize$2() {
-        setupMarketplaceCleanupObserver();
-        setupBuyModalObserver();
+        cleanupObserver = setupMarketplaceCleanupObserver(handleMarketplaceCleanup, currentMaterialsTabs);
+        autofillManager.initialize();
 
         // Watch for action panels appearing
         domObserverUnregister = domObserver$1.onClass(
@@ -48371,13 +48732,10 @@ return plugin;
             cleanupObserver = null;
         }
 
-        if (buyModalObserverUnregister) {
-            buyModalObserverUnregister();
-            buyModalObserverUnregister = null;
-        }
+        autofillManager.cleanup();
 
         // Remove any existing custom tabs
-        removeMissingMaterialTabs();
+        handleMarketplaceCleanup();
 
         // Clear processed panels
         processedPanels = new WeakSet();
@@ -48584,7 +48942,7 @@ return plugin;
         storedNumActions = numActions;
 
         // Navigate to marketplace
-        const success = await navigateToMarketplace();
+        const success = await openMarketplacePage();
         if (!success) {
             console.error('[MissingMats] Failed to navigate to marketplace');
             return;
@@ -48607,7 +48965,7 @@ return plugin;
      * Navigate to marketplace by simulating click on navbar
      * @returns {Promise<boolean>} True if successful
      */
-    async function navigateToMarketplace() {
+    async function openMarketplacePage() {
         // Find marketplace navbar button
         const navButtons = document.querySelectorAll('.NavigationBar_nav__3uuUl');
         const marketplaceButton = Array.from(navButtons).find((nav) => {
@@ -48671,7 +49029,7 @@ return plugin;
         }
 
         // Remove any existing custom tabs first
-        removeMissingMaterialTabs();
+        handleMarketplaceCleanup();
 
         // Get reference tab for cloning (use "My Listings" as template)
         const referenceTab = Array.from(tabsContainer.children).find((btn) => btn.textContent.includes('My Listings'));
@@ -48686,18 +49044,28 @@ return plugin;
             tabsContainer.style.flexWrap = 'wrap';
         }
 
-        // Add click listeners to regular tabs to clear active quantity
-        const regularTabs = tabsContainer.querySelectorAll('button:not([data-mwi-custom-tab])');
-        regularTabs.forEach((tab) => {
-            tab.addEventListener('click', () => {
-                activeMissingQuantity = null;
+        // Use event delegation on tabs container to clear quantity when regular tabs are clicked
+        // This avoids memory leaks from adding listeners to each tab repeatedly
+        if (!tabsContainer.hasAttribute('data-mwi-delegated-listener')) {
+            tabsContainer.setAttribute('data-mwi-delegated-listener', 'true');
+            tabsContainer.addEventListener('click', (e) => {
+                // Check if clicked element is a regular tab (not our custom tab)
+                const clickedTab = e.target.closest('button');
+                if (clickedTab && !clickedTab.hasAttribute('data-mwi-custom-tab')) {
+                    autofillManager.clearQuantity();
+                }
             });
-        });
+        }
 
         // Create tab for each missing material
         currentMaterialsTabs = [];
         for (const material of missingMaterials) {
-            const tab = createCustomTab(material, referenceTab);
+            const tab = createMaterialTab(material, referenceTab, (_e, mat) => {
+                // Store the missing quantity for auto-fill when buy modal opens
+                autofillManager.setQuantity(mat.missing);
+                // Navigate to marketplace
+                navigateToMarketplace(mat.itemHrid, 0);
+            });
             tabsContainer.appendChild(tab);
             currentMaterialsTabs.push(tab);
         }
@@ -48824,96 +49192,11 @@ return plugin;
     }
 
     /**
-     * Create a custom tab for a material
-     * @param {Object} material - Material object with itemHrid, itemName, missing, have, isTradeable
-     * @param {HTMLElement} referenceTab - Reference tab to clone structure from
-     * @returns {HTMLElement} Custom tab element
+     * Handle marketplace cleanup (when leaving marketplace)
+     * Called by the marketplace cleanup observer
      */
-    function createCustomTab(material, referenceTab) {
-        // Clone reference tab structure
-        const tab = referenceTab.cloneNode(true);
-
-        // Mark as custom tab for later identification
-        tab.setAttribute('data-mwi-custom-tab', 'true');
-        tab.setAttribute('data-item-hrid', material.itemHrid);
-        tab.setAttribute('data-missing-quantity', material.missing.toString());
-
-        // Color coding:
-        // - Red: Missing materials (missing > 0)
-        // - Green: Sufficient materials (missing = 0)
-        // - Gray: Not tradeable
-        let statusColor;
-        let statusText;
-
-        if (!material.isTradeable) {
-            statusColor = '#888888'; // Gray - not tradeable
-            statusText = 'Not Tradeable';
-        } else if (material.missing > 0) {
-            statusColor = '#ef4444'; // Red - missing materials
-            // Show queued amount if any materials are reserved by queue
-            const queuedText = material.queued > 0 ? ` (${formatWithSeparator(material.queued)} Q'd)` : '';
-            statusText = `Missing: ${formatWithSeparator(material.missing)}${queuedText}`;
-        } else {
-            statusColor = '#4ade80'; // Green - sufficient materials
-            statusText = 'Sufficient';
-        }
-
-        // Update text content
-        const badgeSpan = tab.querySelector('.TabsComponent_badge__1Du26');
-        if (badgeSpan) {
-            // Title case: capitalize first letter of each word
-            const titleCaseName = material.itemName
-                .split(' ')
-                .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-                .join(' ');
-
-            badgeSpan.innerHTML = `
-            <div style="text-align: center;">
-                <div>${titleCaseName}</div>
-                <div style="font-size: 0.75em; color: ${statusColor};">
-                    ${statusText}
-                </div>
-            </div>
-        `;
-        }
-
-        // Gray out if not tradeable
-        if (!material.isTradeable) {
-            tab.style.opacity = '0.5';
-            tab.style.cursor = 'not-allowed';
-        }
-
-        // Remove selected state
-        tab.classList.remove('Mui-selected');
-        tab.setAttribute('aria-selected', 'false');
-        tab.setAttribute('tabindex', '-1');
-
-        // Add click handler
-        tab.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-
-            if (!material.isTradeable) {
-                // Not tradeable - do nothing
-                return;
-            }
-
-            // Store the missing quantity for auto-fill when buy modal opens
-            activeMissingQuantity = material.missing;
-
-            // Navigate to marketplace using game API
-            goToMarketplace(material.itemHrid, 0);
-        });
-
-        return tab;
-    }
-
-    /**
-     * Remove all missing material tabs
-     */
-    function removeMissingMaterialTabs() {
-        const customTabs = document.querySelectorAll('[data-mwi-custom-tab="true"]');
-        customTabs.forEach((tab) => tab.remove());
+    function handleMarketplaceCleanup() {
+        removeMaterialTabs();
         currentMaterialsTabs = [];
 
         // Clean up inventory listener
@@ -48925,195 +49208,7 @@ return plugin;
         // Clear stored context
         storedActionHrid = null;
         storedNumActions = 0;
-        activeMissingQuantity = null;
-    }
-
-    /**
-     * Setup marketplace cleanup observer
-     * Watches for marketplace panel removal and cleans up custom tabs
-     */
-    function setupMarketplaceCleanupObserver() {
-        let debounceTimer = null;
-
-        cleanupObserver = createMutationWatcher(
-            document.body,
-            (_mutations) => {
-                // Only check if we have custom tabs
-                if (currentMaterialsTabs.length === 0) {
-                    return;
-                }
-
-                // Clear existing debounce timer
-                if (debounceTimer) {
-                    clearTimeout(debounceTimer);
-                    debounceTimer = null;
-                }
-
-                // Debounce to avoid false positives from rapid DOM changes
-                debounceTimer = setTimeout(() => {
-                    // Check if we still have custom tabs
-                    if (currentMaterialsTabs.length === 0) {
-                        return;
-                    }
-
-                    // Check if our custom tabs still exist in the DOM
-                    const hasCustomTabsInDOM = currentMaterialsTabs.some((tab) => document.body.contains(tab));
-
-                    // If our tabs were removed from DOM, clean up references
-                    if (!hasCustomTabsInDOM) {
-                        removeMissingMaterialTabs();
-                        return;
-                    }
-
-                    // Check if marketplace navbar is active
-                    const marketplaceNavActive = Array.from(document.querySelectorAll('.NavigationBar_nav__3uuUl')).some(
-                        (nav) => {
-                            const svg = nav.querySelector('svg[aria-label="navigationBar.marketplace"]');
-                            return svg && nav.classList.contains('NavigationBar_active__2Oj_e');
-                        }
-                    );
-
-                    // Check if tabs container still exists (marketplace panel is open)
-                    const tabsContainer = document.querySelector('.MuiTabs-flexContainer[role="tablist"]');
-                    const hasMarketListingsTab =
-                        tabsContainer &&
-                        Array.from(tabsContainer.children).some((btn) => btn.textContent.includes('Market Listings'));
-
-                    // Only cleanup if BOTH navbar is inactive AND marketplace tabs are gone
-                    // This prevents cleanup during transitions when navbar might briefly be inactive
-                    if (!marketplaceNavActive && !hasMarketListingsTab) {
-                        removeMissingMaterialTabs();
-                    }
-                }, 100);
-            },
-            {
-                childList: true,
-                subtree: true,
-            }
-        );
-    }
-
-    /**
-     * Setup buy modal observer
-     * Watches for buy modals appearing and auto-fills quantity if from missing materials tab
-     */
-    function setupBuyModalObserver() {
-        buyModalObserverUnregister = domObserver$1.onClass(
-            'MissingMaterialsButton-BuyModal',
-            'Modal_modalContainer',
-            (modal) => {
-                handleBuyModal(modal);
-            }
-        );
-    }
-
-    /**
-     * Handle buy modal appearance
-     * Auto-fills quantity if we have an active missing quantity
-     * @param {HTMLElement} modal - Modal container element
-     */
-    function handleBuyModal(modal) {
-        // Check if we have an active missing quantity to fill
-        if (!activeMissingQuantity || activeMissingQuantity <= 0) {
-            return;
-        }
-
-        // Check if this is a "Buy Now" modal
-        const header = modal.querySelector('div[class*="MarketplacePanel_header"]');
-        if (!header) {
-            return;
-        }
-
-        const headerText = header.textContent.trim();
-        if (!headerText.includes('Buy Now')) {
-            return;
-        }
-
-        // Find the quantity input - need to be specific to avoid enhancement level input
-        const quantityInput = findQuantityInput(modal);
-        if (!quantityInput) {
-            return;
-        }
-
-        // Set the quantity value
-        const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-        nativeInputValueSetter.call(quantityInput, activeMissingQuantity.toString());
-
-        // Trigger input event to notify React
-        const inputEvent = new Event('input', { bubbles: true });
-        quantityInput.dispatchEvent(inputEvent);
-    }
-
-    /**
-     * Find the quantity input in the buy modal
-     * For equipment items, there are multiple number inputs (enhancement level + quantity)
-     * We need to find the correct one by checking parent containers for label text
-     * @param {HTMLElement} modal - Modal container element
-     * @returns {HTMLInputElement|null} Quantity input element or null
-     */
-    function findQuantityInput(modal) {
-        // Get all number inputs in the modal
-        const allInputs = Array.from(modal.querySelectorAll('input[type="number"]'));
-
-        if (allInputs.length === 0) {
-            return null;
-        }
-
-        if (allInputs.length === 1) {
-            // Only one input - must be quantity
-            return allInputs[0];
-        }
-
-        // Multiple inputs - identify by checking CLOSEST parent first
-        // Strategy 1: Check each parent level individually, prioritizing closer parents
-        // This prevents matching on the outermost container that has all text
-        for (let level = 0; level < 4; level++) {
-            for (let i = 0; i < allInputs.length; i++) {
-                const input = allInputs[i];
-                let parent = input.parentElement;
-
-                // Navigate to the specific level
-                for (let j = 0; j < level && parent; j++) {
-                    parent = parent.parentElement;
-                }
-
-                if (!parent) continue;
-
-                const text = parent.textContent;
-
-                // At this specific level, check if it contains "Quantity" but NOT "Enhancement Level"
-                if (text.includes('Quantity') && !text.includes('Enhancement Level')) {
-                    return input;
-                }
-            }
-        }
-
-        // Strategy 2: Exclude inputs that have "Enhancement Level" in close parents (level 0-2)
-        for (let i = 0; i < allInputs.length; i++) {
-            const input = allInputs[i];
-            let parent = input.parentElement;
-            let isEnhancementInput = false;
-
-            // Check only the first 3 levels (not the outermost container)
-            for (let j = 0; j < 3 && parent; j++) {
-                const text = parent.textContent;
-
-                if (text.includes('Enhancement Level') && !text.includes('Quantity')) {
-                    isEnhancementInput = true;
-                    break;
-                }
-
-                parent = parent.parentElement;
-            }
-
-            if (!isEnhancementInput) {
-                return input;
-            }
-        }
-
-        // Fallback: Return first input and log warning
-        console.warn('[MissingMats] Could not definitively identify quantity input, using first input');
-        return allInputs[0];
+        autofillManager.clearQuantity();
     }
 
     var missingMaterialsButton = {
@@ -65889,6 +65984,7 @@ return plugin;
             this.currentMaterialsTabs = []; // Track marketplace tabs
             this.cleanupObserver = null; // Marketplace cleanup observer
             this.timerRegistry = createTimerRegistry();
+            this.autofillManager = createAutofillManager('MissingMats-Houses');
         }
 
         /**
@@ -65920,6 +66016,14 @@ return plugin;
 
             this.isActive = true;
             this.isInitialized = true;
+
+            // Setup cleanup observer for marketplace tabs (consistent with actions feature)
+            this.cleanupObserver = setupMarketplaceCleanupObserver(
+                () => this.handleMarketplaceCleanup(),
+                this.currentMaterialsTabs
+            );
+
+            this.autofillManager.initialize();
         }
 
         /**
@@ -66424,37 +66528,6 @@ return plugin;
 
             // Create custom tabs
             this.createMissingMaterialTabs(missingMaterials);
-
-            // Setup cleanup observer if not already setup
-            if (!this.cleanupObserver) {
-                this.setupMarketplaceCleanupObserver();
-            }
-        }
-
-        /**
-         * Get game object via React fiber
-         * @returns {Object|null} Game component instance
-         */
-        getGameObject() {
-            const gamePageEl = document.querySelector('[class^="GamePage"]');
-            if (!gamePageEl) return null;
-
-            const fiberKey = Object.keys(gamePageEl).find((k) => k.startsWith('__reactFiber$'));
-            if (!fiberKey) return null;
-
-            return gamePageEl[fiberKey]?.return?.stateNode;
-        }
-
-        /**
-         * Navigate to marketplace for a specific item
-         * @param {string} itemHrid - Item HRID
-         * @param {number} enhancementLevel - Enhancement level
-         */
-        goToMarketplace(itemHrid, enhancementLevel = 0) {
-            const game = this.getGameObject();
-            if (game?.handleGoToMarketplace) {
-                game.handleGoToMarketplace(itemHrid, enhancementLevel);
-            }
         }
 
         /**
@@ -66522,7 +66595,7 @@ return plugin;
             }
 
             // Remove existing custom tabs
-            this.removeMissingMaterialTabs();
+            removeMaterialTabs();
 
             // Get reference tab
             const referenceTab = Array.from(tabsContainer.children).find((btn) => btn.textContent.includes('My Listings'));
@@ -66534,115 +66607,41 @@ return plugin;
             // Enable flex wrapping
             tabsContainer.style.flexWrap = 'wrap';
 
+            // Use event delegation on tabs container to clear quantity when regular tabs are clicked
+            // This avoids memory leaks from adding listeners to each tab repeatedly
+            if (!tabsContainer.hasAttribute('data-mwi-delegated-listener')) {
+                tabsContainer.setAttribute('data-mwi-delegated-listener', 'true');
+                tabsContainer.addEventListener('click', (e) => {
+                    // Check if clicked element is a regular tab (not our custom tab)
+                    const clickedTab = e.target.closest('button');
+                    if (clickedTab && !clickedTab.hasAttribute('data-mwi-custom-tab')) {
+                        this.autofillManager.clearQuantity();
+                    }
+                });
+            }
+
             // Create tab for each missing material
             this.currentMaterialsTabs = [];
             for (const material of missingMaterials) {
-                const tab = this.createCustomTab(material, referenceTab);
+                const tab = createMaterialTab(material, referenceTab, (_e, mat) => {
+                    // Store the missing quantity for auto-fill when buy modal opens
+                    this.autofillManager.setQuantity(mat.missing);
+                    // Navigate to marketplace
+                    navigateToMarketplace(mat.itemHrid, 0);
+                });
                 tabsContainer.appendChild(tab);
                 this.currentMaterialsTabs.push(tab);
             }
         }
 
         /**
-         * Create custom tab for a material
-         * @param {Object} material - Material object
-         * @param {HTMLElement} referenceTab - Reference tab to clone
-         * @returns {HTMLElement} Custom tab element
+         * Handle marketplace cleanup (when leaving marketplace)
+         * Called by the marketplace cleanup observer
          */
-        createCustomTab(material, referenceTab) {
-            const tab = referenceTab.cloneNode(true);
-
-            // Mark as custom tab
-            tab.setAttribute('data-mwi-custom-tab', 'true');
-            tab.setAttribute('data-item-hrid', material.itemHrid);
-
-            // Color coding
-            const statusColor = material.isTradeable ? '#ef4444' : '#888888';
-            const statusText = material.isTradeable ? `Missing: ${formatWithSeparator(material.missing)}` : 'Not Tradeable';
-
-            // Update badge
-            const badgeSpan = tab.querySelector('.TabsComponent_badge__1Du26');
-            if (badgeSpan) {
-                const titleCaseName = material.itemName
-                    .split(' ')
-                    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-                    .join(' ');
-
-                badgeSpan.innerHTML = `
-                <div style="text-align: center;">
-                    <div>${titleCaseName}</div>
-                    <div style="font-size: 0.75em; color: ${statusColor};">
-                        ${statusText}
-                    </div>
-                </div>
-            `;
-            }
-
-            // Gray out if not tradeable
-            if (!material.isTradeable) {
-                tab.style.opacity = '0.5';
-                tab.style.cursor = 'not-allowed';
-            }
-
-            // Remove selected state
-            tab.classList.remove('Mui-selected');
-            tab.setAttribute('aria-selected', 'false');
-            tab.setAttribute('tabindex', '-1');
-
-            // Click handler
-            tab.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-
-                if (!material.isTradeable) {
-                    return;
-                }
-
-                this.goToMarketplace(material.itemHrid, 0);
-            });
-
-            return tab;
-        }
-
-        /**
-         * Remove all missing material tabs
-         */
-        removeMissingMaterialTabs() {
-            const customTabs = document.querySelectorAll('[data-mwi-custom-tab="true"]');
-            customTabs.forEach((tab) => tab.remove());
+        handleMarketplaceCleanup() {
+            removeMaterialTabs();
             this.currentMaterialsTabs = [];
-        }
-
-        /**
-         * Setup marketplace cleanup observer
-         */
-        setupMarketplaceCleanupObserver() {
-            if (!document.body) {
-                return;
-            }
-
-            this.cleanupObserver = createMutationWatcher(
-                document.body,
-                (mutations) => {
-                    for (const mutation of mutations) {
-                        for (const removedNode of mutation.removedNodes) {
-                            if (removedNode.nodeType === Node.ELEMENT_NODE) {
-                                const hadTabsContainer = removedNode.querySelector(
-                                    '.MuiTabs-flexContainer[role="tablist"]'
-                                );
-                                if (hadTabsContainer) {
-                                    this.removeMissingMaterialTabs();
-                                    console.log('[HouseCostDisplay] Marketplace closed, cleaned up tabs');
-                                }
-                            }
-                        }
-                    }
-                },
-                {
-                    childList: true,
-                    subtree: true,
-                }
-            );
+            this.autofillManager.clearQuantity();
         }
 
         /**
@@ -66690,12 +66689,13 @@ return plugin;
             });
 
             // Clean up marketplace tabs and observer
-            this.removeMissingMaterialTabs();
+            this.handleMarketplaceCleanup();
             if (this.cleanupObserver) {
                 this.cleanupObserver();
                 this.cleanupObserver = null;
             }
 
+            this.autofillManager.cleanup();
             this.timerRegistry.clearAll();
 
             this.currentModalContent = null;
@@ -71521,7 +71521,8 @@ return plugin;
     // Environment mismatch detection
     (function checkBuildEnvironment() {
         const buildTarget = window.Toolasha?.__buildTarget;
-        const hasScriptManager = typeof GM !== 'undefined' || typeof GM_info !== 'undefined';
+        // Check for GM_info specifically - the Steam polyfill provides GM but not GM_info
+        const hasScriptManager = typeof GM_info !== 'undefined';
 
         if (buildTarget === 'browser' && !hasScriptManager) {
             alert(
@@ -72007,7 +72008,8 @@ return plugin;
     // Environment mismatch detection
     (function checkBuildEnvironment() {
         const buildTarget = window.Toolasha?.__buildTarget;
-        const hasScriptManager = typeof GM !== 'undefined' || typeof GM_info !== 'undefined';
+        // Check for GM_info specifically - the Steam polyfill provides GM but not GM_info
+        const hasScriptManager = typeof GM_info !== 'undefined';
 
         if (buildTarget === 'browser' && !hasScriptManager) {
             alert(
