@@ -14,7 +14,8 @@
 // Environment mismatch detection
 (function checkBuildEnvironment() {
     const buildTarget = window.Toolasha?.__buildTarget;
-    const hasScriptManager = typeof GM !== 'undefined' || typeof GM_info !== 'undefined';
+    // Check for GM_info specifically - the Steam polyfill provides GM but not GM_info
+    const hasScriptManager = typeof GM_info !== 'undefined';
 
     if (buildTarget === 'browser' && !hasScriptManager) {
         alert(
