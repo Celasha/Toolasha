@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.27.0](https://github.com/Celasha/Toolasha/compare/v0.26.3...v0.27.0) (2026-02-10)
+
+### Features
+
+- patch market API prices with fresh order book data ([b8ac1aa](https://github.com/Celasha/Toolasha/commit/b8ac1aa83306073256d7e83c3494e24f0f88cf82))
+
+### Bug Fixes
+
+- improve alchemy profit calculations with 5 bug fixes ([226b34c](https://github.com/Celasha/Toolasha/commit/226b34ce0ce679df300556c7a4c9cc08a53a9b9a))
+- preserve array reference in marketplace tabs cleanup ([0a9e3f8](https://github.com/Celasha/Toolasha/commit/0a9e3f820d31906fbd285651fda3c81394091666))
+
+### Miscellaneous Chores
+
+- show all commit types in changelog and bump refactor/perf/build/revert as patch ([72e3c15](https://github.com/Celasha/Toolasha/commit/72e3c15a2ed4dfe36ae57ab9bd275aadc67aa364))
+- show all commit types in changelog and bump refactor/perf/build/revert as patch ([3ff4d9a](https://github.com/Celasha/Toolasha/commit/3ff4d9af9a816b1809ee72ab1e39e47bc1b5b2ad))
+
 ## [0.26.3](https://github.com/Celasha/Toolasha/compare/v0.26.2...v0.26.3) (2026-02-10)
 
 ### Bug Fixes
