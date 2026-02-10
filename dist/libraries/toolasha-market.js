@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 0.26.2
+ * Version: 0.26.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -6466,7 +6466,7 @@
          * @param {number} enhancementLevel - Enhancement level
          * @param {boolean} isSell - Is sell order
          * @param {number} price - Listing price
-         * @param {Map} priceCache - Pre-fetched price cache
+         * @param {Map} priceCache - Pre-fetched price cache (fallback)
          * @returns {HTMLElement} Table cell element
          */
         createTopOrderPriceCell(itemHrid, enhancementLevel, isSell, price, priceCache) {
@@ -6476,10 +6476,39 @@
             const span = document.createElement('span');
             span.classList.add('mwi-listing-price-value');
 
-            // Get current market price from cache
-            const key = `${itemHrid}:${enhancementLevel}`;
-            const marketPrice = priceCache.get(key);
-            const topOrderPrice = marketPrice ? (isSell ? marketPrice.ask : marketPrice.bid) : null;
+            // PRIMARY: Get price from order book cache (same source as Top Order Age)
+            let topOrderPrice = null;
+            let lastUpdated = null;
+
+            const cacheEntry = estimatedListingAge.orderBooksCache[itemHrid];
+            if (cacheEntry) {
+                const orderBookData = cacheEntry.data || cacheEntry;
+                lastUpdated = cacheEntry.lastUpdated;
+
+                if (orderBookData && orderBookData.orderBooks) {
+                    // Find matching order book for this enhancement level
+                    let orderBook = orderBookData.orderBooks.find((ob) => ob.enhancementLevel === enhancementLevel);
+
+                    // For non-enhanceable items (enh level 0), use first entry
+                    if (!orderBook && enhancementLevel === 0 && orderBookData.orderBooks.length > 0) {
+                        orderBook = orderBookData.orderBooks[0];
+                    }
+
+                    if (orderBook) {
+                        const topOrders = isSell ? orderBook.asks : orderBook.bids;
+                        if (topOrders && topOrders.length > 0) {
+                            topOrderPrice = topOrders[0].price;
+                        }
+                    }
+                }
+            }
+
+            // FALLBACK: Use market API if no order book data
+            if (topOrderPrice === null) {
+                const key = `${itemHrid}:${enhancementLevel}`;
+                const marketPrice = priceCache.get(key);
+                topOrderPrice = marketPrice ? (isSell ? marketPrice.ask : marketPrice.bid) : null;
+            }
 
             if (topOrderPrice === null || topOrderPrice === -1) {
                 span.textContent = formatters_js.coinFormatter(null);
@@ -6494,6 +6523,11 @@
                 } else {
                     // Buy order: green if our price is higher (better), red if lower (undercut)
                     span.style.color = topOrderPrice > price ? '#FF0000' : '#00FF00';
+                }
+
+                // Add staleness indicator via tooltip if using order book cache
+                if (lastUpdated) {
+                    span.title = estimatedListingAge.getStalenessTooltip(lastUpdated);
                 }
             }
 
