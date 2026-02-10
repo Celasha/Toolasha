@@ -2,15 +2,13 @@
 
 ## [0.26.0](https://github.com/Celasha/Toolasha/compare/v0.25.0...v0.26.0) (2026-02-10)
 
-
 ### Features
 
-* add philo calculator and move market history to marketplace tab ([54fe928](https://github.com/Celasha/Toolasha/commit/54fe928d4f73f7a0867770495c478765830cdbfd))
-
+- add philo calculator and move market history to marketplace tab ([54fe928](https://github.com/Celasha/Toolasha/commit/54fe928d4f73f7a0867770495c478765830cdbfd))
 
 ### Bug Fixes
 
-* remove debounce from combat score panel cleanup observer ([3f1028c](https://github.com/Celasha/Toolasha/commit/3f1028c680f0f968b7ef2ab7c8be3747678308fe))
+- remove debounce from combat score panel cleanup observer ([3f1028c](https://github.com/Celasha/Toolasha/commit/3f1028c680f0f968b7ef2ab7c8be3747678308fe))
 
 ## [0.25.0](https://github.com/Celasha/Toolasha/compare/v0.24.5...v0.25.0) (2026-02-09)
 
