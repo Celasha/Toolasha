@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.26.2](https://github.com/Celasha/Toolasha/compare/v0.26.1...v0.26.2) (2026-02-10)
+
+
+### Bug Fixes
+
+* use GM_info for script manager detection to avoid Steam polyfill ([160ec7e](https://github.com/Celasha/Toolasha/commit/160ec7e71b03e04fccab0c7b45a8d1343087b07a))
+
 ## [0.26.1](https://github.com/Celasha/Toolasha/compare/v0.26.0...v0.26.1) (2026-02-10)
 
 ### Bug Fixes
