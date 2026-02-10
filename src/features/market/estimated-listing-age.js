@@ -11,6 +11,7 @@ import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
 import config from '../../core/config.js';
 import storage from '../../core/storage.js';
+import marketAPI from '../../api/marketplace.js';
 import { formatRelativeTime } from '../../utils/formatters.js';
 
 class EstimatedListingAge {
@@ -200,6 +201,7 @@ class EstimatedListingAge {
         const orderBookHandler = (data) => {
             if (data.marketItemOrderBooks) {
                 const itemHrid = data.marketItemOrderBooks.itemHrid;
+                const orderBooks = data.marketItemOrderBooks.orderBooks;
 
                 // Store with timestamp for staleness tracking
                 this.orderBooksCache[itemHrid] = {
@@ -208,6 +210,20 @@ class EstimatedListingAge {
                 };
 
                 this.currentItemHrid = itemHrid; // Track current item
+
+                // Update market API with fresh prices from order book
+                if (orderBooks) {
+                    for (const orderBook of orderBooks) {
+                        const enhancementLevel = orderBook.enhancementLevel || 0;
+                        const topAsk = orderBook.asks?.[0]?.price ?? null;
+                        const topBid = orderBook.bids?.[0]?.price ?? null;
+
+                        // Only update if we have at least one price
+                        if (topAsk !== null || topBid !== null) {
+                            marketAPI.updatePrice(itemHrid, enhancementLevel, topAsk, topBid);
+                        }
+                    }
+                }
 
                 // Save to storage (debounced)
                 this.saveOrderBooksCache();

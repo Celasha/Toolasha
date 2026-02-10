@@ -19,11 +19,16 @@ class MarketAPI {
         this.CACHE_DURATION = 15 * 60 * 1000; // 15 minutes in milliseconds
         this.CACHE_KEY_DATA = 'MWITools_marketAPI_json';
         this.CACHE_KEY_TIMESTAMP = 'MWITools_marketAPI_timestamp';
+        this.CACHE_KEY_PATCHES = 'MWITools_marketAPI_patches';
 
         // Current market data
         this.marketData = null;
         this.lastFetchTimestamp = null;
         this.errorLog = [];
+
+        // Price patches from order book data (fresher than API)
+        // Structure: { "itemHrid:enhLevel": { a: ask, b: bid, timestamp: ms } }
+        this.pricePatchs = {};
     }
 
     /**
@@ -38,6 +43,8 @@ class MarketAPI {
             if (cached) {
                 this.marketData = cached.data;
                 this.lastFetchTimestamp = cached.timestamp;
+                // Load patches from storage
+                await this.loadPatches();
                 // Hide alert on successful cache load
                 networkAlert.hide();
                 return this.marketData;
@@ -49,6 +56,8 @@ class MarketAPI {
             if (cachedFallback?.marketData) {
                 this.marketData = cachedFallback.marketData;
                 this.lastFetchTimestamp = cachedFallback.timestamp;
+                // Load patches from storage
+                await this.loadPatches();
                 console.warn('[MarketAPI] Skipping fetch; disconnected. Using cached data.');
                 return this.marketData;
             }
@@ -66,6 +75,8 @@ class MarketAPI {
                 this.cacheData(response);
                 this.marketData = response.marketData;
                 this.lastFetchTimestamp = response.timestamp;
+                // Load patches from storage (they may still be fresher than new API data)
+                await this.loadPatches();
                 // Hide alert on successful fetch
                 networkAlert.hide();
                 return this.marketData;
@@ -80,6 +91,8 @@ class MarketAPI {
             console.warn('[MarketAPI] Using expired cache as fallback');
             this.marketData = expiredCache.marketData;
             this.lastFetchTimestamp = expiredCache.timestamp;
+            // Load patches from storage
+            await this.loadPatches();
             // Show alert when using expired cache
             networkAlert.show('⚠️ Using outdated market data');
             return this.marketData;
@@ -159,6 +172,31 @@ class MarketAPI {
      * @returns {Object|null} { ask: number, bid: number } or null if not found
      */
     getPrice(itemHrid, enhancementLevel = 0) {
+        const normalizeMarketPriceValue = (value) => {
+            if (typeof value !== 'number') {
+                return null;
+            }
+
+            if (value < 0) {
+                return null;
+            }
+
+            return value;
+        };
+
+        // Check for fresh patch first
+        const patchKey = `${itemHrid}:${enhancementLevel}`;
+        const patch = this.pricePatchs[patchKey];
+
+        if (patch && patch.timestamp > this.lastFetchTimestamp) {
+            // Patch is fresher than API data - use it
+            return {
+                ask: normalizeMarketPriceValue(patch.a),
+                bid: normalizeMarketPriceValue(patch.b),
+            };
+        }
+
+        // Fall back to API data
         if (!this.marketData) {
             console.warn('[MarketAPI] ⚠️ No market data available');
             return null;
@@ -179,18 +217,6 @@ class MarketAPI {
             // No price data for this enhancement level
             return null;
         }
-
-        const normalizeMarketPriceValue = (value) => {
-            if (typeof value !== 'number') {
-                return null;
-            }
-
-            if (value < 0) {
-                return null;
-            }
-
-            return value;
-        };
 
         return {
             ask: normalizeMarketPriceValue(price.a), // Sell price
@@ -286,6 +312,46 @@ class MarketAPI {
      */
     clearErrors() {
         this.errorLog = [];
+    }
+
+    /**
+     * Update price from order book data (fresher than API)
+     * @param {string} itemHrid - Item HRID
+     * @param {number} enhancementLevel - Enhancement level
+     * @param {number|null} ask - Top ask price (null if no asks)
+     * @param {number|null} bid - Top bid price (null if no bids)
+     */
+    updatePrice(itemHrid, enhancementLevel, ask, bid) {
+        const key = `${itemHrid}:${enhancementLevel}`;
+
+        this.pricePatchs[key] = {
+            a: ask,
+            b: bid,
+            timestamp: Date.now(),
+        };
+
+        // Save patches to storage (debounced via storage module)
+        this.savePatches();
+    }
+
+    /**
+     * Load price patches from storage
+     */
+    async loadPatches() {
+        try {
+            const patches = await storage.getJSON(this.CACHE_KEY_PATCHES, 'settings', {});
+            this.pricePatchs = patches || {};
+        } catch (error) {
+            console.error('[MarketAPI] Failed to load price patches:', error);
+            this.pricePatchs = {};
+        }
+    }
+
+    /**
+     * Save price patches to storage
+     */
+    savePatches() {
+        storage.setJSON(this.CACHE_KEY_PATCHES, this.pricePatchs, 'settings', true);
     }
 
     /**
