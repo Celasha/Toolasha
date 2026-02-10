@@ -169,9 +169,19 @@ class AlchemyProfitDisplay {
                     if (!isCoinify && requirements && requirements.length > 0) {
                         const reqItemHrid = requirements[0].itemHrid;
                         const reqItemDetails = dataManager.getItemDetails(reqItemHrid);
-                        isTransmute = !!reqItemDetails?.alchemyDetail?.transmuteDropTable;
+                        const hasDecompose =
+                            Array.isArray(reqItemDetails?.alchemyDetail?.decomposeItems) &&
+                            reqItemDetails.alchemyDetail.decomposeItems.length > 0;
+                        const hasTransmute = !!reqItemDetails?.alchemyDetail?.transmuteDropTable;
+                        // If both exist, default to transmute; if only one, use that one
+                        if (hasDecompose && !hasTransmute) {
+                            isDecompose = true;
+                        } else if (hasTransmute) {
+                            isTransmute = true;
+                        } else if (hasDecompose) {
+                            isDecompose = true;
+                        }
                     }
-                    isDecompose = !isCoinify && !isTransmute;
                 }
             }
 
@@ -341,6 +351,10 @@ class AlchemyProfitDisplay {
 
                 const line = document.createElement('div');
                 line.style.marginLeft = '8px';
+                if (drop.isSelfReturn) {
+                    line.style.textDecoration = 'line-through';
+                    line.style.opacity = '0.6';
+                }
                 line.textContent = `• ${itemName}: ${dropsDisplay}/hr (${dropRatePct} × ${formatPercentage(profitData.successRate, 1)} success) @ ${formatWithSeparator(Math.round(drop.price))} → ${formatLargeNumber(Math.round(drop.revenuePerHour))}/hr`;
                 normalDropsContent.appendChild(line);
 
