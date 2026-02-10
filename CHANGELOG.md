@@ -2,10 +2,9 @@
 
 ## [0.26.3](https://github.com/Celasha/Toolasha/compare/v0.26.2...v0.26.3) (2026-02-10)
 
-
 ### Bug Fixes
 
-* use order book cache for Top Order Price to match Top Order Age ([f3de521](https://github.com/Celasha/Toolasha/commit/f3de521dbc44d9b1d1b889ea658d158c7e248515))
+- use order book cache for Top Order Price to match Top Order Age ([f3de521](https://github.com/Celasha/Toolasha/commit/f3de521dbc44d9b1d1b889ea658d158c7e248515))
 
 ## [0.26.2](https://github.com/Celasha/Toolasha/compare/v0.26.1...v0.26.2) (2026-02-10)
 
