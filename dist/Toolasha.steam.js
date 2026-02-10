@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.26.0
+// @version      0.26.1
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -16718,7 +16718,8 @@ return plugin;
                 messageType === 'items_updated' ||
                 messageType === 'market_item_order_books_updated' ||
                 messageType === 'market_listings_updated' ||
-                messageType === 'profile_shared';
+                messageType === 'profile_shared' ||
+                messageType === 'battle_consumable_ability_updated';
 
             if (!skipDedup) {
                 // Deduplicate by message content to prevent 4x JSON.parse on same message

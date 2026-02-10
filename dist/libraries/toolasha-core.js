@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 0.26.0
+ * Version: 0.26.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2083,7 +2083,8 @@
                 messageType === 'items_updated' ||
                 messageType === 'market_item_order_books_updated' ||
                 messageType === 'market_listings_updated' ||
-                messageType === 'profile_shared';
+                messageType === 'profile_shared' ||
+                messageType === 'battle_consumable_ability_updated';
 
             if (!skipDedup) {
                 // Deduplicate by message content to prevent 4x JSON.parse on same message
