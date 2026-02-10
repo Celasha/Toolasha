@@ -7,7 +7,21 @@
             "include-component-in-tag": false,
             "draft": true,
             "bootstrap-sha": "bfcf9634a2a8af61dd3f8e9467c41268dfa32b44",
-            "force-tag-creation": true
+            "force-tag-creation": true,
+            "changelog-sections": [
+                { "type": "feat", "section": "Features", "hidden": false },
+                { "type": "fix", "section": "Bug Fixes", "hidden": false },
+                { "type": "refactor", "section": "Code Refactoring", "hidden": false, "bump": "patch" },
+                { "type": "perf", "section": "Performance Improvements", "hidden": false, "bump": "patch" },
+                { "type": "docs", "section": "Documentation", "hidden": false },
+                { "type": "style", "section": "Styles", "hidden": false },
+                { "type": "test", "section": "Tests", "hidden": false },
+                { "type": "build", "section": "Build System", "hidden": false, "bump": "patch" },
+                { "type": "ci", "section": "Continuous Integration", "hidden": false },
+                { "type": "chore", "section": "Miscellaneous Chores", "hidden": false },
+                { "type": "revert", "section": "Reverts", "hidden": false, "bump": "patch" }
+            ],
+            "exclude-commits": ["^chore\\(main\\): release", "^chore: sync version and format release notes"]
         }
     }
 }
