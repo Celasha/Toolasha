@@ -2,10 +2,9 @@
 
 ## [0.26.1](https://github.com/Celasha/Toolasha/compare/v0.26.0...v0.26.1) (2026-02-10)
 
-
 ### Bug Fixes
 
-* skip deduplication for battle_consumable_ability_updated events ([5a8fda5](https://github.com/Celasha/Toolasha/commit/5a8fda566ba89245acc28adbfb4f311f9d333daf))
+- skip deduplication for battle_consumable_ability_updated events ([5a8fda5](https://github.com/Celasha/Toolasha/commit/5a8fda566ba89245acc28adbfb4f311f9d333daf))
 
 ## [0.26.0](https://github.com/Celasha/Toolasha/compare/v0.25.0...v0.26.0) (2026-02-10)
 
