@@ -5,10 +5,16 @@
 
 import houseCostCalculator from './house-cost-calculator.js';
 import config from '../../core/config.js';
-import { coinFormatter, formatWithSeparator } from '../../utils/formatters.js';
+import { coinFormatter } from '../../utils/formatters.js';
 import dataManager from '../../core/data-manager.js';
-import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
+import { createAutofillManager } from '../../utils/marketplace-autofill.js';
+import {
+    createMaterialTab,
+    removeMaterialTabs,
+    setupMarketplaceCleanupObserver,
+    navigateToMarketplace,
+} from '../../utils/marketplace-tabs.js';
 
 class HouseCostDisplay {
     constructor() {
@@ -18,6 +24,7 @@ class HouseCostDisplay {
         this.currentMaterialsTabs = []; // Track marketplace tabs
         this.cleanupObserver = null; // Marketplace cleanup observer
         this.timerRegistry = createTimerRegistry();
+        this.autofillManager = createAutofillManager('MissingMats-Houses');
     }
 
     /**
@@ -49,6 +56,14 @@ class HouseCostDisplay {
 
         this.isActive = true;
         this.isInitialized = true;
+
+        // Setup cleanup observer for marketplace tabs (consistent with actions feature)
+        this.cleanupObserver = setupMarketplaceCleanupObserver(
+            () => this.handleMarketplaceCleanup(),
+            this.currentMaterialsTabs
+        );
+
+        this.autofillManager.initialize();
     }
 
     /**
@@ -553,37 +568,6 @@ class HouseCostDisplay {
 
         // Create custom tabs
         this.createMissingMaterialTabs(missingMaterials);
-
-        // Setup cleanup observer if not already setup
-        if (!this.cleanupObserver) {
-            this.setupMarketplaceCleanupObserver();
-        }
-    }
-
-    /**
-     * Get game object via React fiber
-     * @returns {Object|null} Game component instance
-     */
-    getGameObject() {
-        const gamePageEl = document.querySelector('[class^="GamePage"]');
-        if (!gamePageEl) return null;
-
-        const fiberKey = Object.keys(gamePageEl).find((k) => k.startsWith('__reactFiber$'));
-        if (!fiberKey) return null;
-
-        return gamePageEl[fiberKey]?.return?.stateNode;
-    }
-
-    /**
-     * Navigate to marketplace for a specific item
-     * @param {string} itemHrid - Item HRID
-     * @param {number} enhancementLevel - Enhancement level
-     */
-    goToMarketplace(itemHrid, enhancementLevel = 0) {
-        const game = this.getGameObject();
-        if (game?.handleGoToMarketplace) {
-            game.handleGoToMarketplace(itemHrid, enhancementLevel);
-        }
     }
 
     /**
@@ -651,7 +635,7 @@ class HouseCostDisplay {
         }
 
         // Remove existing custom tabs
-        this.removeMissingMaterialTabs();
+        removeMaterialTabs();
 
         // Get reference tab
         const referenceTab = Array.from(tabsContainer.children).find((btn) => btn.textContent.includes('My Listings'));
@@ -663,115 +647,41 @@ class HouseCostDisplay {
         // Enable flex wrapping
         tabsContainer.style.flexWrap = 'wrap';
 
+        // Use event delegation on tabs container to clear quantity when regular tabs are clicked
+        // This avoids memory leaks from adding listeners to each tab repeatedly
+        if (!tabsContainer.hasAttribute('data-mwi-delegated-listener')) {
+            tabsContainer.setAttribute('data-mwi-delegated-listener', 'true');
+            tabsContainer.addEventListener('click', (e) => {
+                // Check if clicked element is a regular tab (not our custom tab)
+                const clickedTab = e.target.closest('button');
+                if (clickedTab && !clickedTab.hasAttribute('data-mwi-custom-tab')) {
+                    this.autofillManager.clearQuantity();
+                }
+            });
+        }
+
         // Create tab for each missing material
         this.currentMaterialsTabs = [];
         for (const material of missingMaterials) {
-            const tab = this.createCustomTab(material, referenceTab);
+            const tab = createMaterialTab(material, referenceTab, (_e, mat) => {
+                // Store the missing quantity for auto-fill when buy modal opens
+                this.autofillManager.setQuantity(mat.missing);
+                // Navigate to marketplace
+                navigateToMarketplace(mat.itemHrid, 0);
+            });
             tabsContainer.appendChild(tab);
             this.currentMaterialsTabs.push(tab);
         }
     }
 
     /**
-     * Create custom tab for a material
-     * @param {Object} material - Material object
-     * @param {HTMLElement} referenceTab - Reference tab to clone
-     * @returns {HTMLElement} Custom tab element
+     * Handle marketplace cleanup (when leaving marketplace)
+     * Called by the marketplace cleanup observer
      */
-    createCustomTab(material, referenceTab) {
-        const tab = referenceTab.cloneNode(true);
-
-        // Mark as custom tab
-        tab.setAttribute('data-mwi-custom-tab', 'true');
-        tab.setAttribute('data-item-hrid', material.itemHrid);
-
-        // Color coding
-        const statusColor = material.isTradeable ? '#ef4444' : '#888888';
-        const statusText = material.isTradeable ? `Missing: ${formatWithSeparator(material.missing)}` : 'Not Tradeable';
-
-        // Update badge
-        const badgeSpan = tab.querySelector('.TabsComponent_badge__1Du26');
-        if (badgeSpan) {
-            const titleCaseName = material.itemName
-                .split(' ')
-                .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-                .join(' ');
-
-            badgeSpan.innerHTML = `
-                <div style="text-align: center;">
-                    <div>${titleCaseName}</div>
-                    <div style="font-size: 0.75em; color: ${statusColor};">
-                        ${statusText}
-                    </div>
-                </div>
-            `;
-        }
-
-        // Gray out if not tradeable
-        if (!material.isTradeable) {
-            tab.style.opacity = '0.5';
-            tab.style.cursor = 'not-allowed';
-        }
-
-        // Remove selected state
-        tab.classList.remove('Mui-selected');
-        tab.setAttribute('aria-selected', 'false');
-        tab.setAttribute('tabindex', '-1');
-
-        // Click handler
-        tab.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-
-            if (!material.isTradeable) {
-                return;
-            }
-
-            this.goToMarketplace(material.itemHrid, 0);
-        });
-
-        return tab;
-    }
-
-    /**
-     * Remove all missing material tabs
-     */
-    removeMissingMaterialTabs() {
-        const customTabs = document.querySelectorAll('[data-mwi-custom-tab="true"]');
-        customTabs.forEach((tab) => tab.remove());
+    handleMarketplaceCleanup() {
+        removeMaterialTabs();
         this.currentMaterialsTabs = [];
-    }
-
-    /**
-     * Setup marketplace cleanup observer
-     */
-    setupMarketplaceCleanupObserver() {
-        if (!document.body) {
-            return;
-        }
-
-        this.cleanupObserver = createMutationWatcher(
-            document.body,
-            (mutations) => {
-                for (const mutation of mutations) {
-                    for (const removedNode of mutation.removedNodes) {
-                        if (removedNode.nodeType === Node.ELEMENT_NODE) {
-                            const hadTabsContainer = removedNode.querySelector(
-                                '.MuiTabs-flexContainer[role="tablist"]'
-                            );
-                            if (hadTabsContainer) {
-                                this.removeMissingMaterialTabs();
-                                console.log('[HouseCostDisplay] Marketplace closed, cleaned up tabs');
-                            }
-                        }
-                    }
-                }
-            },
-            {
-                childList: true,
-                subtree: true,
-            }
-        );
+        this.autofillManager.clearQuantity();
     }
 
     /**
@@ -819,12 +729,13 @@ class HouseCostDisplay {
         });
 
         // Clean up marketplace tabs and observer
-        this.removeMissingMaterialTabs();
+        this.handleMarketplaceCleanup();
         if (this.cleanupObserver) {
             this.cleanupObserver();
             this.cleanupObserver = null;
         }
 
+        this.autofillManager.cleanup();
         this.timerRegistry.clearAll();
 
         this.currentModalContent = null;
