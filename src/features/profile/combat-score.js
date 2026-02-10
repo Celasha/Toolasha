@@ -669,27 +669,17 @@ class CombatScore {
             return;
         }
 
-        let cleanupTimeout = null;
-
         const cleanupObserver = createMutationWatcher(
             document.body,
             () => {
-                // Debounce cleanup check to avoid false positives during React re-renders.
-                // Without this, intermediate DOM states (e.g., Edge browser timing differences)
-                // can cause the selector check to fail momentarily, removing the panel.
-                if (cleanupTimeout) {
-                    clearTimeout(cleanupTimeout);
+                if (
+                    !document.body.contains(modal) ||
+                    !document.querySelector('div.SharableProfile_overviewTab__W4dCV')
+                ) {
+                    panel.remove();
+                    this.currentPanel = null;
+                    cleanupObserver();
                 }
-                cleanupTimeout = setTimeout(() => {
-                    if (
-                        !document.body.contains(modal) ||
-                        !document.querySelector('div.SharableProfile_overviewTab__W4dCV')
-                    ) {
-                        panel.remove();
-                        this.currentPanel = null;
-                        cleanupObserver();
-                    }
-                }, 100);
             },
             {
                 childList: true,
