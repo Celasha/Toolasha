@@ -661,7 +661,7 @@ class HouseCostDisplay {
         }
 
         // Create tab for each missing material
-        this.currentMaterialsTabs = [];
+        this.currentMaterialsTabs.length = 0; // Clear without reassigning (preserves observer reference)
         for (const material of missingMaterials) {
             const tab = createMaterialTab(material, referenceTab, (_e, mat) => {
                 // Store the missing quantity for auto-fill when buy modal opens
@@ -680,7 +680,7 @@ class HouseCostDisplay {
      */
     handleMarketplaceCleanup() {
         removeMaterialTabs();
-        this.currentMaterialsTabs = [];
+        this.currentMaterialsTabs.length = 0; // Clear without reassigning (preserves observer reference)
         this.autofillManager.clearQuantity();
     }
 

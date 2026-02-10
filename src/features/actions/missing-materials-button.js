@@ -23,7 +23,7 @@ import {
  * Module-level state
  */
 let cleanupObserver = null;
-let currentMaterialsTabs = [];
+const currentMaterialsTabs = [];
 let domObserverUnregister = null;
 let processedPanels = new WeakSet();
 let inventoryUpdateHandler = null;
@@ -402,7 +402,7 @@ function createMissingMaterialTabs(missingMaterials) {
     }
 
     // Create tab for each missing material
-    currentMaterialsTabs = [];
+    currentMaterialsTabs.length = 0; // Clear without reassigning (preserves observer reference)
     for (const material of missingMaterials) {
         const tab = createMaterialTab(material, referenceTab, (_e, mat) => {
             // Store the missing quantity for auto-fill when buy modal opens
@@ -541,7 +541,7 @@ function updateTabBadge(tab, material) {
  */
 function handleMarketplaceCleanup() {
     removeMaterialTabs();
-    currentMaterialsTabs = [];
+    currentMaterialsTabs.length = 0; // Clear without reassigning (preserves observer reference)
 
     // Clean up inventory listener
     if (inventoryUpdateHandler) {
