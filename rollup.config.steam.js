@@ -96,6 +96,7 @@ const steamConfig = {
         file: 'dist/Toolasha.steam.js',
         format: 'iife',
         name: 'Toolasha',
+        intro: 'window.Toolasha = window.Toolasha || {}; window.Toolasha.__buildTarget = "steam";',
         // No banner - we inject it via plugin for proper ordering
     },
     plugins: [

@@ -149,12 +149,21 @@ class CombatStatsDataCollector {
                             // MCS-style weighted average with DEFAULT_TIME constant
                             // Adds 10 minutes (600s) of baseline data to make estimates stable from start
                             const DEFAULT_TIME = 10 * 60; // 600 seconds
-                            const actualRate = elapsedSeconds > 0 ? totalActualConsumed / elapsedSeconds : 0;
-                            const combinedTotal = defaultConsumed + totalActualConsumed;
-                            const combinedTime = DEFAULT_TIME + elapsedSeconds;
-                            const combinedRate = combinedTotal / combinedTime;
-                            // 90% actual rate + 10% combined (baseline+actual) rate
-                            const consumptionRate = actualRate * 0.9 + combinedRate * 0.1;
+                            const baselineRate = defaultConsumed / DEFAULT_TIME;
+
+                            let consumptionRate;
+                            if (totalActualConsumed === 0) {
+                                // No consumption detected yet — use pure baseline rate
+                                consumptionRate = baselineRate;
+                            } else {
+                                // Blend actual data with baseline for stability
+                                const actualRate = totalActualConsumed / elapsedSeconds;
+                                const combinedTotal = defaultConsumed + totalActualConsumed;
+                                const combinedTime = DEFAULT_TIME + elapsedSeconds;
+                                const combinedRate = combinedTotal / combinedTime;
+                                // 90% actual rate + 10% combined (baseline+actual) rate
+                                consumptionRate = actualRate * 0.9 + combinedRate * 0.1;
+                            }
 
                             // Estimate total consumed for the entire combat duration
                             const estimatedConsumed = consumptionRate * durationSeconds;

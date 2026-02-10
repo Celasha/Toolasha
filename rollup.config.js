@@ -101,6 +101,8 @@ const isProduction = process.env.BUILD_MODE === 'production';
 const buildTarget = process.env.BUILD_TARGET || 'dev';
 const devOutputFile = buildTarget === 'dev-standalone' ? 'dist/Toolasha-dev.user.js' : 'dist/Toolasha.user.js';
 
+const browserBuildIntro = 'window.Toolasha = window.Toolasha || {}; window.Toolasha.__buildTarget = "browser";';
+
 // Development build configuration (single bundle for local testing)
 const devConfig = {
     input: 'src/dev-entrypoint.js',
@@ -109,6 +111,7 @@ const devConfig = {
         format: 'iife',
         name: 'Toolasha',
         banner: userscriptHeader,
+        intro: browserBuildIntro,
     },
     plugins: [
         cssRawPlugin(),
@@ -191,6 +194,7 @@ const prodEntrypoint = {
         format: 'iife',
         name: 'ToolashaEntrypoint',
         banner: entrypointHeader,
+        intro: browserBuildIntro,
     },
     // Entrypoint doesn't need any plugins - it just uses window.Toolasha
     plugins: [],
@@ -219,6 +223,7 @@ const prodConfig = [
             output: {
                 ...libraryConfig.output,
                 ...(globals ? { globals } : {}),
+                intro: browserBuildIntro,
             },
             plugins: [
                 cssRawPlugin(),

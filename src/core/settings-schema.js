@@ -902,6 +902,13 @@ export const settingsGroups = {
                 default: true,
                 help: 'Adds "View Market History" button to settings panel for viewing and exporting all market listing history',
             },
+            market_showPhiloCalculator: {
+                id: 'market_showPhiloCalculator',
+                label: 'Market: Show Philo Gamba calculator button in settings',
+                type: 'checkbox',
+                default: true,
+                help: 'Adds "Philo Gamba" button to settings panel for calculating transmutation ROI into Philosopher\'s Stones',
+            },
             itemDictionary_transmuteRates: {
                 id: 'itemDictionary_transmuteRates',
                 label: 'Item Dictionary: Show transmutation success rates',

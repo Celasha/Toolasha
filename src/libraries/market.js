@@ -17,6 +17,7 @@ import listingPriceDisplay from '../features/market/listing-price-display.js';
 import estimatedListingAge from '../features/market/estimated-listing-age.js';
 import marketOrderTotals from '../features/market/market-order-totals.js';
 import marketHistoryViewer from '../features/market/market-history-viewer.js';
+import philoCalculator from '../features/market/philo-calculator.js';
 import tradeHistory from '../features/market/trade-history.js';
 import tradeHistoryDisplay from '../features/market/trade-history-display.js';
 import networkAlert from '../features/market/network-alert.js';
@@ -52,6 +53,7 @@ toolashaRoot.Market = {
     estimatedListingAge,
     marketOrderTotals,
     marketHistoryViewer,
+    philoCalculator,
     tradeHistory,
     tradeHistoryDisplay,
     networkAlert,

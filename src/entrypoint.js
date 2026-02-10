@@ -11,6 +11,31 @@
  * - UI (tasks, skills, settings, misc)
  */
 
+// Environment mismatch detection
+(function checkBuildEnvironment() {
+    const buildTarget = window.Toolasha?.__buildTarget;
+    const hasScriptManager = typeof GM !== 'undefined' || typeof GM_info !== 'undefined';
+
+    if (buildTarget === 'browser' && !hasScriptManager) {
+        alert(
+            'Toolasha: Wrong build installed!\n\n' +
+                'You have the BROWSER build installed, but you are running on Steam.\n' +
+                'The browser build requires Tampermonkey and will not work on Steam.\n\n' +
+                'Please install the Steam build instead.'
+        );
+        throw new Error('[Toolasha] Browser build cannot run on Steam. Install the Steam build.');
+    }
+    if (buildTarget === 'steam' && hasScriptManager) {
+        alert(
+            'Toolasha: Wrong build installed!\n\n' +
+                'You have the STEAM build installed, but you are running in a browser.\n' +
+                'The Steam build is unnecessarily large for browser use.\n\n' +
+                'Please install the browser build instead.'
+        );
+        throw new Error('[Toolasha] Steam build should not run in a browser. Install the browser build.');
+    }
+})();
+
 // Access libraries from global namespace
 const Core = window.Toolasha.Core;
 const Utils = window.Toolasha.Utils;
@@ -110,6 +135,13 @@ function registerFeatures() {
             name: 'Market History Viewer',
             category: 'Market',
             module: Market.marketHistoryViewer,
+            async: false,
+        },
+        {
+            key: 'philoCalculator',
+            name: 'Philo Calculator',
+            category: 'Market',
+            module: Market.philoCalculator,
             async: false,
         },
         { key: 'tradeHistory', name: 'Trade History', category: 'Market', module: Market.tradeHistory, async: false },

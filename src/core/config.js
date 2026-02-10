@@ -113,6 +113,13 @@ class Config {
                 description: 'View and export all market listing history',
                 settingKey: 'market_showHistoryViewer',
             },
+            market_showPhiloCalculator: {
+                enabled: true,
+                name: 'Philo Gamba Calculator',
+                category: 'Market',
+                description: "Calculate expected value of transmuting items into Philosopher's Stones",
+                settingKey: 'market_showPhiloCalculator',
+            },
 
             // Action Features
             actionTimeDisplay: {

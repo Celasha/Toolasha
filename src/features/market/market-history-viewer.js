@@ -14,6 +14,7 @@ import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import { formatWithSeparator, formatKMB } from '../../utils/formatters.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
+import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
 
 class MarketHistoryViewer {
     constructor() {
@@ -42,6 +43,10 @@ class MarketHistoryViewer {
         };
         this.activeFilterPopup = null; // Track currently open filter popup
         this.popupCloseHandler = null; // Track the close handler to clean it up properly
+
+        // Marketplace tab tracking
+        this.marketplaceTab = null;
+        this.tabCleanupObserver = null;
     }
 
     /**
@@ -77,8 +82,8 @@ class MarketHistoryViewer {
         // Load saved filters
         await this.loadFilters();
 
-        // Add button to settings panel
-        this.addSettingsButton();
+        // Add marketplace tab
+        this.addMarketplaceTab();
     }
 
     /**
@@ -120,59 +125,112 @@ class MarketHistoryViewer {
     }
 
     /**
-     * Add "View Market History" button to settings panel
+     * Add "Market History" tab to marketplace tabs
      */
-    addSettingsButton() {
-        // Function to check and add button if needed
-        const ensureButtonExists = () => {
-            const settingsPanel = document.querySelector('[class*="SettingsPanel"]');
-            if (!settingsPanel) return;
+    addMarketplaceTab() {
+        const ensureTabExists = () => {
+            // Get tabs container
+            const tabsContainer = document.querySelector('.MuiTabs-flexContainer[role="tablist"]');
+            if (!tabsContainer) return;
 
-            // Check if button already exists
-            if (settingsPanel.querySelector('.mwi-market-history-button')) {
+            // Verify this is the marketplace tabs (check for Market Listings tab)
+            const hasMarketListingsTab = Array.from(tabsContainer.children).some((btn) =>
+                btn.textContent.includes('Market Listings')
+            );
+            if (!hasMarketListingsTab) return;
+
+            // Check if tab already exists
+            if (tabsContainer.querySelector('[data-mwi-market-history-tab="true"]')) {
                 return;
             }
 
-            // Create button
-            const button = document.createElement('button');
-            button.className = 'mwi-market-history-button';
-            button.textContent = 'View Market History';
-            button.style.cssText = `
-                margin: 10px;
-                padding: 8px 16px;
-                background: #4a90e2;
-                color: white;
-                border: none;
-                border-radius: 4px;
-                cursor: pointer;
-                font-size: 14px;
-            `;
+            // Get reference tab (My Listings) to clone structure
+            const referenceTab = Array.from(tabsContainer.children).find((btn) =>
+                btn.textContent.includes('My Listings')
+            );
+            if (!referenceTab) return;
 
-            button.addEventListener('mouseenter', () => {
-                button.style.background = '#357abd';
-            });
+            // Clone reference tab
+            const tab = referenceTab.cloneNode(true);
 
-            button.addEventListener('mouseleave', () => {
-                button.style.background = '#4a90e2';
-            });
+            // Mark as market history tab
+            tab.setAttribute('data-mwi-market-history-tab', 'true');
 
-            button.addEventListener('click', () => {
+            // Update badge content
+            const badgeSpan = tab.querySelector('.TabsComponent_badge__1Du26');
+            if (badgeSpan) {
+                badgeSpan.innerHTML = `
+                    <div style="text-align: center;">
+                        <div>Market History</div>
+                    </div>
+                `;
+            }
+
+            // Remove selected state
+            tab.classList.remove('Mui-selected');
+            tab.setAttribute('aria-selected', 'false');
+            tab.setAttribute('tabindex', '-1');
+
+            // Add click handler
+            tab.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
                 this.openModal();
             });
 
-            // Insert button at top of settings panel
-            settingsPanel.insertBefore(button, settingsPanel.firstChild);
+            // Insert before any missing materials custom tabs (data-mwi-custom-tab="true")
+            const firstCustomTab = Array.from(tabsContainer.children).find(
+                (btn) => btn.getAttribute('data-mwi-custom-tab') === 'true'
+            );
+
+            if (firstCustomTab) {
+                firstCustomTab.before(tab);
+            } else {
+                // No custom tabs, append to end
+                tabsContainer.appendChild(tab);
+            }
+
+            this.marketplaceTab = tab;
         };
 
-        // Register callback with settings UI to be notified when settings panel appears
-        // Access settingsUI from global namespace to ensure we use the same instance
-        const settingsUI = window.Toolasha?.UI?.settingsUI;
-        if (settingsUI && typeof settingsUI.onSettingsPanelAppear === 'function') {
-            settingsUI.onSettingsPanelAppear(ensureButtonExists);
+        // Watch for marketplace tabs container to appear
+        if (!this.tabCleanupObserver) {
+            this.tabCleanupObserver = createMutationWatcher(
+                document.body,
+                () => {
+                    // Check if marketplace is still active
+                    const tabsContainer = document.querySelector('.MuiTabs-flexContainer[role="tablist"]');
+                    if (!tabsContainer) {
+                        // Marketplace closed, clean up tab
+                        if (this.marketplaceTab && !document.body.contains(this.marketplaceTab)) {
+                            this.marketplaceTab = null;
+                        }
+                        return;
+                    }
+
+                    // Check if this is still the marketplace (Market Listings tab exists)
+                    const hasMarketListingsTab = Array.from(tabsContainer.children).some((btn) =>
+                        btn.textContent.includes('Market Listings')
+                    );
+
+                    if (!hasMarketListingsTab) {
+                        // No longer on marketplace, clean up
+                        if (this.marketplaceTab && document.body.contains(this.marketplaceTab)) {
+                            this.marketplaceTab.remove();
+                            this.marketplaceTab = null;
+                        }
+                        return;
+                    }
+
+                    // Try to ensure tab exists
+                    ensureTabExists();
+                },
+                { childList: true, subtree: true }
+            );
         }
 
-        // Also try immediately in case settings is already open
-        ensureButtonExists();
+        // Initial attempt
+        ensureTabExists();
     }
 
     /**
