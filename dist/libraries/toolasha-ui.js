@@ -1,12 +1,14 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 0.25.0
+ * Version: 0.26.0
  * License: CC-BY-NC-SA-4.0
  */
 
 (function (config, dataManager, domObserver, formatters_js, timerRegistry_js, domObserverHelpers_js, webSocketHook, marketAPI, tokenValuation_js, marketData_js, profitHelpers_js, equipmentParser_js, teaParser_js, bonusRevenueCalculator_js, profitConstants_js, efficiency_js, houseEfficiency_js, selectors_js, storage, cleanupRegistry_js, settingsSchema_js, settingsStorage, enhancementCalculator_js) {
     'use strict';
+
+    window.Toolasha = window.Toolasha || {}; window.Toolasha.__buildTarget = "browser";
 
     /**
      * Equipment Level Display

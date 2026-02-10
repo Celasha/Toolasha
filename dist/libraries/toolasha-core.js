@@ -1,12 +1,14 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 0.25.0
+ * Version: 0.26.0
  * License: CC-BY-NC-SA-4.0
  */
 
 (function () {
     'use strict';
+
+    window.Toolasha = window.Toolasha || {}; window.Toolasha.__buildTarget = "browser";
 
     /**
      * Centralized IndexedDB Storage
@@ -1284,6 +1286,13 @@
                     type: 'checkbox',
                     default: true,
                     help: 'Adds "View Market History" button to settings panel for viewing and exporting all market listing history',
+                },
+                market_showPhiloCalculator: {
+                    id: 'market_showPhiloCalculator',
+                    label: 'Market: Show Philo Gamba calculator button in settings',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Adds "Philo Gamba" button to settings panel for calculating transmutation ROI into Philosopher\'s Stones',
                 },
                 itemDictionary_transmuteRates: {
                     id: 'itemDictionary_transmuteRates',
@@ -3526,6 +3535,13 @@
                     category: 'Market',
                     description: 'View and export all market listing history',
                     settingKey: 'market_showHistoryViewer',
+                },
+                market_showPhiloCalculator: {
+                    enabled: true,
+                    name: 'Philo Gamba Calculator',
+                    category: 'Market',
+                    description: "Calculate expected value of transmuting items into Philosopher's Stones",
+                    settingKey: 'market_showPhiloCalculator',
                 },
 
                 // Action Features

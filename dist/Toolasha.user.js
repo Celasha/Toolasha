@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.25.0
+// @version      0.26.0
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -21,17 +21,19 @@
 // @require      https://cdnjs.cloudflare.com/ajax/libs/mathjs/12.4.2/math.js
 // @require      https://cdn.jsdelivr.net/npm/chart.js@3.7.0/dist/chart.min.js
 // @require      https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0/dist/chartjs-plugin-datalabels.min.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@8cd8130e17767a75787cc669744f78d4b8affcde/dist/libraries/toolasha-core.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@8cd8130e17767a75787cc669744f78d4b8affcde/dist/libraries/toolasha-utils.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@8cd8130e17767a75787cc669744f78d4b8affcde/dist/libraries/toolasha-market.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@8cd8130e17767a75787cc669744f78d4b8affcde/dist/libraries/toolasha-actions.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@8cd8130e17767a75787cc669744f78d4b8affcde/dist/libraries/toolasha-combat.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@8cd8130e17767a75787cc669744f78d4b8affcde/dist/libraries/toolasha-ui.js
+// @require      https://UPDATE-THIS-URL/toolasha-core.js
+// @require      https://UPDATE-THIS-URL/toolasha-utils.js
+// @require      https://UPDATE-THIS-URL/toolasha-market.js
+// @require      https://UPDATE-THIS-URL/toolasha-actions.js
+// @require      https://UPDATE-THIS-URL/toolasha-combat.js
+// @require      https://UPDATE-THIS-URL/toolasha-ui.js
 // ==/UserScript==
 // Note: Combat Sim auto-import requires Tampermonkey for cross-domain storage. Not available on Steam (use manual clipboard copy/paste instead).
 
 (function () {
     'use strict';
+
+    window.Toolasha = window.Toolasha || {}; window.Toolasha.__buildTarget = "browser";
 
     /**
      * Toolasha Entrypoint
@@ -45,6 +47,31 @@
      * - Combat (combat, stats, abilities)
      * - UI (tasks, skills, settings, misc)
      */
+
+    // Environment mismatch detection
+    (function checkBuildEnvironment() {
+        const buildTarget = window.Toolasha?.__buildTarget;
+        const hasScriptManager = typeof GM !== 'undefined' || typeof GM_info !== 'undefined';
+
+        if (buildTarget === 'browser' && !hasScriptManager) {
+            alert(
+                'Toolasha: Wrong build installed!\n\n' +
+                    'You have the BROWSER build installed, but you are running on Steam.\n' +
+                    'The browser build requires Tampermonkey and will not work on Steam.\n\n' +
+                    'Please install the Steam build instead.'
+            );
+            throw new Error('[Toolasha] Browser build cannot run on Steam. Install the Steam build.');
+        }
+        if (buildTarget === 'steam' && hasScriptManager) {
+            alert(
+                'Toolasha: Wrong build installed!\n\n' +
+                    'You have the STEAM build installed, but you are running in a browser.\n' +
+                    'The Steam build is unnecessarily large for browser use.\n\n' +
+                    'Please install the browser build instead.'
+            );
+            throw new Error('[Toolasha] Steam build should not run in a browser. Install the browser build.');
+        }
+    })();
 
     // Access libraries from global namespace
     const Core = window.Toolasha.Core;
@@ -145,6 +172,13 @@
                 name: 'Market History Viewer',
                 category: 'Market',
                 module: Market.marketHistoryViewer,
+                async: false,
+            },
+            {
+                key: 'philoCalculator',
+                name: 'Philo Calculator',
+                category: 'Market',
+                module: Market.philoCalculator,
                 async: false,
             },
             { key: 'tradeHistory', name: 'Trade History', category: 'Market', module: Market.tradeHistory, async: false },

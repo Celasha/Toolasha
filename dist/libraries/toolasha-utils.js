@@ -1,12 +1,14 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 0.25.0
+ * Version: 0.26.0
  * License: CC-BY-NC-SA-4.0
  */
 
 (function (config, domObserver, marketAPI, dataManager) {
     'use strict';
+
+    window.Toolasha = window.Toolasha || {}; window.Toolasha.__buildTarget = "browser";
 
     /**
      * Formatting Utilities

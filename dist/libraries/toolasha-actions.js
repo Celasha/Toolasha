@@ -1,12 +1,14 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 0.25.0
+ * Version: 0.26.0
  * License: CC-BY-NC-SA-4.0
  */
 
 (function (dataManager, domObserver, config, enhancementConfig_js, enhancementCalculator_js, formatters_js, marketAPI, domObserverHelpers_js, equipmentParser_js, teaParser_js, bonusRevenueCalculator_js, marketData_js, profitConstants_js, efficiency_js, profitHelpers_js, houseEfficiency_js, uiComponents_js, actionPanelHelper_js, dom_js, timerRegistry_js, actionCalculator_js, cleanupRegistry_js, experienceParser_js, reactInput_js, experienceCalculator_js, storage, materialCalculator_js, webSocketHook, tokenValuation_js, buffParser_js) {
     'use strict';
+
+    window.Toolasha = window.Toolasha || {}; window.Toolasha.__buildTarget = "browser";
 
     /**
      * Enhancement Display
