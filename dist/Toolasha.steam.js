@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.26.3
+// @version      0.27.0
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -19434,11 +19434,16 @@ return plugin;
             this.CACHE_DURATION = 15 * 60 * 1000; // 15 minutes in milliseconds
             this.CACHE_KEY_DATA = 'MWITools_marketAPI_json';
             this.CACHE_KEY_TIMESTAMP = 'MWITools_marketAPI_timestamp';
+            this.CACHE_KEY_PATCHES = 'MWITools_marketAPI_patches';
 
             // Current market data
             this.marketData = null;
             this.lastFetchTimestamp = null;
             this.errorLog = [];
+
+            // Price patches from order book data (fresher than API)
+            // Structure: { "itemHrid:enhLevel": { a: ask, b: bid, timestamp: ms } }
+            this.pricePatchs = {};
         }
 
         /**
@@ -19453,6 +19458,8 @@ return plugin;
                 if (cached) {
                     this.marketData = cached.data;
                     this.lastFetchTimestamp = cached.timestamp;
+                    // Load patches from storage
+                    await this.loadPatches();
                     // Hide alert on successful cache load
                     networkAlert.hide();
                     return this.marketData;
@@ -19464,6 +19471,8 @@ return plugin;
                 if (cachedFallback?.marketData) {
                     this.marketData = cachedFallback.marketData;
                     this.lastFetchTimestamp = cachedFallback.timestamp;
+                    // Load patches from storage
+                    await this.loadPatches();
                     console.warn('[MarketAPI] Skipping fetch; disconnected. Using cached data.');
                     return this.marketData;
                 }
@@ -19481,6 +19490,8 @@ return plugin;
                     this.cacheData(response);
                     this.marketData = response.marketData;
                     this.lastFetchTimestamp = response.timestamp;
+                    // Load patches from storage (they may still be fresher than new API data)
+                    await this.loadPatches();
                     // Hide alert on successful fetch
                     networkAlert.hide();
                     return this.marketData;
@@ -19495,6 +19506,8 @@ return plugin;
                 console.warn('[MarketAPI] Using expired cache as fallback');
                 this.marketData = expiredCache.marketData;
                 this.lastFetchTimestamp = expiredCache.timestamp;
+                // Load patches from storage
+                await this.loadPatches();
                 // Show alert when using expired cache
                 networkAlert.show('⚠️ Using outdated market data');
                 return this.marketData;
@@ -19574,6 +19587,31 @@ return plugin;
          * @returns {Object|null} { ask: number, bid: number } or null if not found
          */
         getPrice(itemHrid, enhancementLevel = 0) {
+            const normalizeMarketPriceValue = (value) => {
+                if (typeof value !== 'number') {
+                    return null;
+                }
+
+                if (value < 0) {
+                    return null;
+                }
+
+                return value;
+            };
+
+            // Check for fresh patch first
+            const patchKey = `${itemHrid}:${enhancementLevel}`;
+            const patch = this.pricePatchs[patchKey];
+
+            if (patch && patch.timestamp > this.lastFetchTimestamp) {
+                // Patch is fresher than API data - use it
+                return {
+                    ask: normalizeMarketPriceValue(patch.a),
+                    bid: normalizeMarketPriceValue(patch.b),
+                };
+            }
+
+            // Fall back to API data
             if (!this.marketData) {
                 console.warn('[MarketAPI] ⚠️ No market data available');
                 return null;
@@ -19594,18 +19632,6 @@ return plugin;
                 // No price data for this enhancement level
                 return null;
             }
-
-            const normalizeMarketPriceValue = (value) => {
-                if (typeof value !== 'number') {
-                    return null;
-                }
-
-                if (value < 0) {
-                    return null;
-                }
-
-                return value;
-            };
 
             return {
                 ask: normalizeMarketPriceValue(price.a), // Sell price
@@ -19701,6 +19727,46 @@ return plugin;
          */
         clearErrors() {
             this.errorLog = [];
+        }
+
+        /**
+         * Update price from order book data (fresher than API)
+         * @param {string} itemHrid - Item HRID
+         * @param {number} enhancementLevel - Enhancement level
+         * @param {number|null} ask - Top ask price (null if no asks)
+         * @param {number|null} bid - Top bid price (null if no bids)
+         */
+        updatePrice(itemHrid, enhancementLevel, ask, bid) {
+            const key = `${itemHrid}:${enhancementLevel}`;
+
+            this.pricePatchs[key] = {
+                a: ask,
+                b: bid,
+                timestamp: Date.now(),
+            };
+
+            // Save patches to storage (debounced via storage module)
+            this.savePatches();
+        }
+
+        /**
+         * Load price patches from storage
+         */
+        async loadPatches() {
+            try {
+                const patches = await storage$1.getJSON(this.CACHE_KEY_PATCHES, 'settings', {});
+                this.pricePatchs = patches || {};
+            } catch (error) {
+                console.error('[MarketAPI] Failed to load price patches:', error);
+                this.pricePatchs = {};
+            }
+        }
+
+        /**
+         * Save price patches to storage
+         */
+        savePatches() {
+            storage$1.setJSON(this.CACHE_KEY_PATCHES, this.pricePatchs, 'settings', true);
         }
 
         /**
@@ -22751,8 +22817,11 @@ return plugin;
                 let itemPrice = 0;
                 let isMissingPrice = false;
                 if (itemDetails.isOpenable) {
-                    // Use expected value for openable containers
-                    itemPrice = expectedValueCalculator.getCachedValue(drop.itemHrid) || 0;
+                    // Use expected value for openable containers (with on-demand fallback)
+                    itemPrice =
+                        expectedValueCalculator.getCachedValue(drop.itemHrid) ||
+                        expectedValueCalculator.calculateSingleContainer(drop.itemHrid) ||
+                        0;
                 } else {
                     // Use market price for regular items
                     const price = marketAPI.getPrice(drop.itemHrid, 0);
@@ -22804,8 +22873,11 @@ return plugin;
                 let itemPrice = 0;
                 let isMissingPrice = false;
                 if (itemDetails.isOpenable) {
-                    // Use expected value for openable containers
-                    itemPrice = expectedValueCalculator.getCachedValue(drop.itemHrid) || 0;
+                    // Use expected value for openable containers (with on-demand fallback)
+                    itemPrice =
+                        expectedValueCalculator.getCachedValue(drop.itemHrid) ||
+                        expectedValueCalculator.calculateSingleContainer(drop.itemHrid) ||
+                        0;
                 } else {
                     // Use market price for regular items
                     const price = marketAPI.getPrice(drop.itemHrid, 0);
@@ -26734,7 +26806,7 @@ return plugin;
                 }
 
                 // Get pricing mode
-                const pricingMode = config$1.getSetting('profitCalc_pricingMode') || 'hybrid';
+                const pricingMode = config$1.getSettingValue('profitCalc_pricingMode', 'hybrid');
                 let buyType, sellType;
                 if (pricingMode === 'conservative') {
                     buyType = 'ask';
@@ -26783,7 +26855,8 @@ return plugin;
                 const catalystPrice = 0;
 
                 // Get coin cost per action attempt
-                const coinCost = actionDetails.coinCost || 0;
+                // If not in action data, calculate as 1/5 of item's sell price per item
+                const coinCost = actionDetails.coinCost || Math.floor((itemDetails.sellPrice || 0) * 0.2) * bulkMultiplier;
 
                 // Calculate cost per attempt (materials consumed on all attempts)
                 const costPerAttempt = materialCost + coinCost;
@@ -26977,7 +27050,7 @@ return plugin;
                 }
 
                 // Get pricing mode
-                const pricingMode = config$1.getSetting('profitCalc_pricingMode') || 'hybrid';
+                const pricingMode = config$1.getSettingValue('profitCalc_pricingMode', 'hybrid');
                 let buyType, sellType;
                 if (pricingMode === 'conservative') {
                     buyType = 'ask';
@@ -27068,7 +27141,8 @@ return plugin;
                 const revenuePerAttempt = outputValue * successRate;
 
                 // Get coin cost per action attempt
-                const coinCost = actionDetails.coinCost || 0;
+                // If not in action data, calculate as 1/5 of item's sell price
+                const coinCost = actionDetails.coinCost || Math.floor((itemDetails.sellPrice || 0) * 0.2);
 
                 // Cost per attempt (input consumed on every attempt)
                 const costPerAttempt = inputPrice + coinCost;
@@ -27253,7 +27327,7 @@ return plugin;
                 }
 
                 // Get pricing mode
-                const pricingMode = config$1.getSetting('profitCalc_pricingMode') || 'hybrid';
+                const pricingMode = config$1.getSettingValue('profitCalc_pricingMode', 'hybrid');
                 let buyType, sellType;
                 if (pricingMode === 'conservative') {
                     buyType = 'ask';
@@ -27293,18 +27367,36 @@ return plugin;
                     return null; // No market data
                 }
 
-                // Calculate expected value of outputs
+                // Get bulk multiplier (number of items consumed AND produced per action)
+                const bulkMultiplier = itemDetails.alchemyDetail?.bulkMultiplier || 1;
+
+                // Calculate expected value of outputs, excluding self-returns (Milkonomy-style)
+                // Self-returns are when you get the same item back - these don't count as income
                 let expectedOutputValue = 0;
+                let selfReturnRate = 0;
+                let selfReturnCount = 0;
                 const dropDetails = [];
 
                 for (const drop of itemDetails.alchemyDetail.transmuteDropTable) {
+                    const isSelfReturn = drop.itemHrid === itemHrid;
+                    const averageCount = (drop.minCount + drop.maxCount) / 2;
+
+                    if (isSelfReturn) {
+                        // Track self-return for cost adjustment
+                        selfReturnRate = drop.dropRate;
+                        selfReturnCount = averageCount * bulkMultiplier;
+                    }
+
                     const outputPrice = getItemPrice(drop.itemHrid, { context: 'profit', side: sellType });
                     if (outputPrice !== null) {
                         const afterTax = calculatePriceAfterTax(outputPrice);
-                        // Expected value: price × dropRate × averageCount
-                        const averageCount = (drop.minCount + drop.maxCount) / 2;
-                        const dropValue = afterTax * drop.dropRate * averageCount;
-                        expectedOutputValue += dropValue;
+                        // Expected value: price × dropRate × averageCount × bulkMultiplier
+                        const dropValue = afterTax * drop.dropRate * averageCount * bulkMultiplier;
+
+                        // Only add to revenue if NOT a self-return
+                        if (!isSelfReturn) {
+                            expectedOutputValue += dropValue;
+                        }
 
                         dropDetails.push({
                             itemHrid: drop.itemHrid,
@@ -27313,23 +27405,29 @@ return plugin;
                             maxCount: drop.maxCount,
                             averageCount,
                             price: outputPrice,
-                            expectedValue: dropValue,
+                            expectedValue: isSelfReturn ? 0 : dropValue, // Self-return has 0 effective value
+                            isSelfReturn,
                         });
                     }
                 }
 
-                // Revenue per attempt (expected value on success)
+                // Revenue per attempt (expected value on success, excluding self-returns)
                 const revenuePerAttempt = expectedOutputValue * successRate;
 
-                // Get bulk multiplier (number of items consumed per action)
-                const bulkMultiplier = itemDetails.alchemyDetail?.bulkMultiplier || 1;
-                const materialCost = inputPrice * bulkMultiplier;
+                // Material cost calculation with self-return adjustment
+                // Gross cost = input price × bulk
+                // Self-return value = input price × self return rate × success rate × bulk
+                // Net cost = gross - self-return value
+                const grossMaterialCost = inputPrice * bulkMultiplier;
+                const selfReturnValue = inputPrice * selfReturnRate * successRate * selfReturnCount;
+                const netMaterialCost = grossMaterialCost - selfReturnValue;
 
                 // Get coin cost per action attempt
-                const coinCost = actionDetails.coinCost || 0;
+                // If not in action data, calculate as 1/5 of item's sell price per item
+                const coinCost = actionDetails.coinCost || Math.floor((itemDetails.sellPrice || 0) * 0.2) * bulkMultiplier;
 
-                // Cost per attempt (input consumed on every attempt)
-                const costPerAttempt = materialCost + coinCost;
+                // Cost per attempt (net material cost after self-return + coin cost)
+                const costPerAttempt = netMaterialCost + coinCost;
 
                 // Net profit per attempt (before efficiency)
                 const netProfitPerAttempt = revenuePerAttempt - costPerAttempt;
@@ -27357,7 +27455,8 @@ return plugin;
                 );
 
                 // Material and revenue calculations (for breakdown display)
-                const materialCostPerHour = (materialCost + coinCost) * actionsPerHourWithEfficiency;
+                // Use net material cost (after self-return adjustment)
+                const materialCostPerHour = (netMaterialCost + coinCost) * actionsPerHourWithEfficiency;
                 const catalystCostPerHour = 0; // No catalyst for transmute
                 const revenuePerHour = revenuePerAttempt * actionsPerHourWithEfficiency + alchemyBonus.totalBonusRevenue;
 
@@ -27373,9 +27472,11 @@ return plugin;
                         itemHrid,
                         count: bulkMultiplier,
                         price: inputPrice,
-                        costPerAction: materialCost,
-                        costPerHour: materialCost * actionsPerHourWithEfficiency,
+                        costPerAction: netMaterialCost, // Net cost after self-return
+                        costPerHour: netMaterialCost * actionsPerHourWithEfficiency,
                         enhancementLevel: 0,
+                        selfReturnRate: selfReturnRate > 0 ? selfReturnRate : undefined,
+                        selfReturnValue: selfReturnValue > 0 ? selfReturnValue : undefined,
                     },
                 ];
 
@@ -27393,15 +27494,17 @@ return plugin;
 
                 const dropRevenues = dropDetails.map((drop) => ({
                     itemHrid: drop.itemHrid,
-                    count: drop.averageCount,
+                    count: drop.averageCount * bulkMultiplier,
                     dropRate: drop.dropRate,
                     effectiveDropRate: drop.dropRate,
                     price: drop.price,
                     isEssence: false,
                     isRare: false,
+                    isSelfReturn: drop.isSelfReturn || false,
                     revenuePerAttempt: drop.expectedValue * successRate,
                     revenuePerHour: drop.expectedValue * successRate * actionsPerHourWithEfficiency,
-                    dropsPerHour: drop.averageCount * drop.dropRate * successRate * actionsPerHourWithEfficiency,
+                    dropsPerHour:
+                        drop.averageCount * bulkMultiplier * drop.dropRate * successRate * actionsPerHourWithEfficiency,
                 }));
 
                 // Add alchemy essence and rare drops
@@ -27441,7 +27544,9 @@ return plugin;
                     actionTime,
 
                     // Per-attempt economics
-                    materialCost,
+                    materialCost: netMaterialCost, // Net cost after self-return adjustment
+                    grossMaterialCost,
+                    selfReturnValue,
                     catalystPrice: 0,
                     costPerAttempt,
                     incomePerAttempt: revenuePerAttempt,
@@ -30907,6 +31012,7 @@ return plugin;
             const orderBookHandler = (data) => {
                 if (data.marketItemOrderBooks) {
                     const itemHrid = data.marketItemOrderBooks.itemHrid;
+                    const orderBooks = data.marketItemOrderBooks.orderBooks;
 
                     // Store with timestamp for staleness tracking
                     this.orderBooksCache[itemHrid] = {
@@ -30915,6 +31021,20 @@ return plugin;
                     };
 
                     this.currentItemHrid = itemHrid; // Track current item
+
+                    // Update market API with fresh prices from order book
+                    if (orderBooks) {
+                        for (const orderBook of orderBooks) {
+                            const enhancementLevel = orderBook.enhancementLevel || 0;
+                            const topAsk = orderBook.asks?.[0]?.price ?? null;
+                            const topBid = orderBook.bids?.[0]?.price ?? null;
+
+                            // Only update if we have at least one price
+                            if (topAsk !== null || topBid !== null) {
+                                marketAPI.updatePrice(itemHrid, enhancementLevel, topAsk, topBid);
+                            }
+                        }
+                    }
 
                     // Save to storage (debounced)
                     this.saveOrderBooksCache();
@@ -48713,7 +48833,7 @@ return plugin;
      * Module-level state
      */
     let cleanupObserver = null;
-    let currentMaterialsTabs = [];
+    const currentMaterialsTabs = [];
     let domObserverUnregister = null;
     let processedPanels = new WeakSet();
     let inventoryUpdateHandler = null;
@@ -49092,7 +49212,7 @@ return plugin;
         }
 
         // Create tab for each missing material
-        currentMaterialsTabs = [];
+        currentMaterialsTabs.length = 0; // Clear without reassigning (preserves observer reference)
         for (const material of missingMaterials) {
             const tab = createMaterialTab(material, referenceTab, (_e, mat) => {
                 // Store the missing quantity for auto-fill when buy modal opens
@@ -49231,7 +49351,7 @@ return plugin;
      */
     function handleMarketplaceCleanup() {
         removeMaterialTabs();
-        currentMaterialsTabs = [];
+        currentMaterialsTabs.length = 0; // Clear without reassigning (preserves observer reference)
 
         // Clean up inventory listener
         if (inventoryUpdateHandler) {
@@ -50336,9 +50456,19 @@ return plugin;
                         if (!isCoinify && requirements && requirements.length > 0) {
                             const reqItemHrid = requirements[0].itemHrid;
                             const reqItemDetails = dataManager$1.getItemDetails(reqItemHrid);
-                            isTransmute = !!reqItemDetails?.alchemyDetail?.transmuteDropTable;
+                            const hasDecompose =
+                                Array.isArray(reqItemDetails?.alchemyDetail?.decomposeItems) &&
+                                reqItemDetails.alchemyDetail.decomposeItems.length > 0;
+                            const hasTransmute = !!reqItemDetails?.alchemyDetail?.transmuteDropTable;
+                            // If both exist, default to transmute; if only one, use that one
+                            if (hasDecompose && !hasTransmute) {
+                                isDecompose = true;
+                            } else if (hasTransmute) {
+                                isTransmute = true;
+                            } else if (hasDecompose) {
+                                isDecompose = true;
+                            }
                         }
-                        isDecompose = !isCoinify && !isTransmute;
                     }
                 }
 
@@ -50508,6 +50638,10 @@ return plugin;
 
                     const line = document.createElement('div');
                     line.style.marginLeft = '8px';
+                    if (drop.isSelfReturn) {
+                        line.style.textDecoration = 'line-through';
+                        line.style.opacity = '0.6';
+                    }
                     line.textContent = `• ${itemName}: ${dropsDisplay}/hr (${dropRatePct} × ${formatPercentage(profitData.successRate, 1)} success) @ ${formatWithSeparator(Math.round(drop.price))} → ${formatLargeNumber(Math.round(drop.revenuePerHour))}/hr`;
                     normalDropsContent.appendChild(line);
 
@@ -66655,7 +66789,7 @@ return plugin;
             }
 
             // Create tab for each missing material
-            this.currentMaterialsTabs = [];
+            this.currentMaterialsTabs.length = 0; // Clear without reassigning (preserves observer reference)
             for (const material of missingMaterials) {
                 const tab = createMaterialTab(material, referenceTab, (_e, mat) => {
                     // Store the missing quantity for auto-fill when buy modal opens
@@ -66674,7 +66808,7 @@ return plugin;
          */
         handleMarketplaceCleanup() {
             removeMaterialTabs();
-            this.currentMaterialsTabs = [];
+            this.currentMaterialsTabs.length = 0; // Clear without reassigning (preserves observer reference)
             this.autofillManager.clearQuantity();
         }
 

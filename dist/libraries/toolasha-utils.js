@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 0.26.3
+ * Version: 0.27.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -3003,8 +3003,11 @@
                 let itemPrice = 0;
                 let isMissingPrice = false;
                 if (itemDetails.isOpenable) {
-                    // Use expected value for openable containers
-                    itemPrice = expectedValueCalculator.getCachedValue(drop.itemHrid) || 0;
+                    // Use expected value for openable containers (with on-demand fallback)
+                    itemPrice =
+                        expectedValueCalculator.getCachedValue(drop.itemHrid) ||
+                        expectedValueCalculator.calculateSingleContainer(drop.itemHrid) ||
+                        0;
                 } else {
                     // Use market price for regular items
                     const price = marketAPI.getPrice(drop.itemHrid, 0);
@@ -3056,8 +3059,11 @@
                 let itemPrice = 0;
                 let isMissingPrice = false;
                 if (itemDetails.isOpenable) {
-                    // Use expected value for openable containers
-                    itemPrice = expectedValueCalculator.getCachedValue(drop.itemHrid) || 0;
+                    // Use expected value for openable containers (with on-demand fallback)
+                    itemPrice =
+                        expectedValueCalculator.getCachedValue(drop.itemHrid) ||
+                        expectedValueCalculator.calculateSingleContainer(drop.itemHrid) ||
+                        0;
                 } else {
                     // Use market price for regular items
                     const price = marketAPI.getPrice(drop.itemHrid, 0);

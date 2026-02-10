@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 0.26.3
+ * Version: 0.27.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1105,7 +1105,7 @@
                 }
 
                 // Get pricing mode
-                const pricingMode = config.getSetting('profitCalc_pricingMode') || 'hybrid';
+                const pricingMode = config.getSettingValue('profitCalc_pricingMode', 'hybrid');
                 let buyType, sellType;
                 if (pricingMode === 'conservative') {
                     buyType = 'ask';
@@ -1154,7 +1154,8 @@
                 const catalystPrice = 0;
 
                 // Get coin cost per action attempt
-                const coinCost = actionDetails.coinCost || 0;
+                // If not in action data, calculate as 1/5 of item's sell price per item
+                const coinCost = actionDetails.coinCost || Math.floor((itemDetails.sellPrice || 0) * 0.2) * bulkMultiplier;
 
                 // Calculate cost per attempt (materials consumed on all attempts)
                 const costPerAttempt = materialCost + coinCost;
@@ -1348,7 +1349,7 @@
                 }
 
                 // Get pricing mode
-                const pricingMode = config.getSetting('profitCalc_pricingMode') || 'hybrid';
+                const pricingMode = config.getSettingValue('profitCalc_pricingMode', 'hybrid');
                 let buyType, sellType;
                 if (pricingMode === 'conservative') {
                     buyType = 'ask';
@@ -1439,7 +1440,8 @@
                 const revenuePerAttempt = outputValue * successRate;
 
                 // Get coin cost per action attempt
-                const coinCost = actionDetails.coinCost || 0;
+                // If not in action data, calculate as 1/5 of item's sell price
+                const coinCost = actionDetails.coinCost || Math.floor((itemDetails.sellPrice || 0) * 0.2);
 
                 // Cost per attempt (input consumed on every attempt)
                 const costPerAttempt = inputPrice + coinCost;
@@ -1624,7 +1626,7 @@
                 }
 
                 // Get pricing mode
-                const pricingMode = config.getSetting('profitCalc_pricingMode') || 'hybrid';
+                const pricingMode = config.getSettingValue('profitCalc_pricingMode', 'hybrid');
                 let buyType, sellType;
                 if (pricingMode === 'conservative') {
                     buyType = 'ask';
@@ -1664,18 +1666,36 @@
                     return null; // No market data
                 }
 
-                // Calculate expected value of outputs
+                // Get bulk multiplier (number of items consumed AND produced per action)
+                const bulkMultiplier = itemDetails.alchemyDetail?.bulkMultiplier || 1;
+
+                // Calculate expected value of outputs, excluding self-returns (Milkonomy-style)
+                // Self-returns are when you get the same item back - these don't count as income
                 let expectedOutputValue = 0;
+                let selfReturnRate = 0;
+                let selfReturnCount = 0;
                 const dropDetails = [];
 
                 for (const drop of itemDetails.alchemyDetail.transmuteDropTable) {
+                    const isSelfReturn = drop.itemHrid === itemHrid;
+                    const averageCount = (drop.minCount + drop.maxCount) / 2;
+
+                    if (isSelfReturn) {
+                        // Track self-return for cost adjustment
+                        selfReturnRate = drop.dropRate;
+                        selfReturnCount = averageCount * bulkMultiplier;
+                    }
+
                     const outputPrice = marketData_js.getItemPrice(drop.itemHrid, { context: 'profit', side: sellType });
                     if (outputPrice !== null) {
                         const afterTax = profitHelpers_js.calculatePriceAfterTax(outputPrice);
-                        // Expected value: price × dropRate × averageCount
-                        const averageCount = (drop.minCount + drop.maxCount) / 2;
-                        const dropValue = afterTax * drop.dropRate * averageCount;
-                        expectedOutputValue += dropValue;
+                        // Expected value: price × dropRate × averageCount × bulkMultiplier
+                        const dropValue = afterTax * drop.dropRate * averageCount * bulkMultiplier;
+
+                        // Only add to revenue if NOT a self-return
+                        if (!isSelfReturn) {
+                            expectedOutputValue += dropValue;
+                        }
 
                         dropDetails.push({
                             itemHrid: drop.itemHrid,
@@ -1684,23 +1704,29 @@
                             maxCount: drop.maxCount,
                             averageCount,
                             price: outputPrice,
-                            expectedValue: dropValue,
+                            expectedValue: isSelfReturn ? 0 : dropValue, // Self-return has 0 effective value
+                            isSelfReturn,
                         });
                     }
                 }
 
-                // Revenue per attempt (expected value on success)
+                // Revenue per attempt (expected value on success, excluding self-returns)
                 const revenuePerAttempt = expectedOutputValue * successRate;
 
-                // Get bulk multiplier (number of items consumed per action)
-                const bulkMultiplier = itemDetails.alchemyDetail?.bulkMultiplier || 1;
-                const materialCost = inputPrice * bulkMultiplier;
+                // Material cost calculation with self-return adjustment
+                // Gross cost = input price × bulk
+                // Self-return value = input price × self return rate × success rate × bulk
+                // Net cost = gross - self-return value
+                const grossMaterialCost = inputPrice * bulkMultiplier;
+                const selfReturnValue = inputPrice * selfReturnRate * successRate * selfReturnCount;
+                const netMaterialCost = grossMaterialCost - selfReturnValue;
 
                 // Get coin cost per action attempt
-                const coinCost = actionDetails.coinCost || 0;
+                // If not in action data, calculate as 1/5 of item's sell price per item
+                const coinCost = actionDetails.coinCost || Math.floor((itemDetails.sellPrice || 0) * 0.2) * bulkMultiplier;
 
-                // Cost per attempt (input consumed on every attempt)
-                const costPerAttempt = materialCost + coinCost;
+                // Cost per attempt (net material cost after self-return + coin cost)
+                const costPerAttempt = netMaterialCost + coinCost;
 
                 // Net profit per attempt (before efficiency)
                 const netProfitPerAttempt = revenuePerAttempt - costPerAttempt;
@@ -1728,7 +1754,8 @@
                 );
 
                 // Material and revenue calculations (for breakdown display)
-                const materialCostPerHour = (materialCost + coinCost) * actionsPerHourWithEfficiency;
+                // Use net material cost (after self-return adjustment)
+                const materialCostPerHour = (netMaterialCost + coinCost) * actionsPerHourWithEfficiency;
                 const catalystCostPerHour = 0; // No catalyst for transmute
                 const revenuePerHour = revenuePerAttempt * actionsPerHourWithEfficiency + alchemyBonus.totalBonusRevenue;
 
@@ -1744,9 +1771,11 @@
                         itemHrid,
                         count: bulkMultiplier,
                         price: inputPrice,
-                        costPerAction: materialCost,
-                        costPerHour: materialCost * actionsPerHourWithEfficiency,
+                        costPerAction: netMaterialCost, // Net cost after self-return
+                        costPerHour: netMaterialCost * actionsPerHourWithEfficiency,
                         enhancementLevel: 0,
+                        selfReturnRate: selfReturnRate > 0 ? selfReturnRate : undefined,
+                        selfReturnValue: selfReturnValue > 0 ? selfReturnValue : undefined,
                     },
                 ];
 
@@ -1764,15 +1793,17 @@
 
                 const dropRevenues = dropDetails.map((drop) => ({
                     itemHrid: drop.itemHrid,
-                    count: drop.averageCount,
+                    count: drop.averageCount * bulkMultiplier,
                     dropRate: drop.dropRate,
                     effectiveDropRate: drop.dropRate,
                     price: drop.price,
                     isEssence: false,
                     isRare: false,
+                    isSelfReturn: drop.isSelfReturn || false,
                     revenuePerAttempt: drop.expectedValue * successRate,
                     revenuePerHour: drop.expectedValue * successRate * actionsPerHourWithEfficiency,
-                    dropsPerHour: drop.averageCount * drop.dropRate * successRate * actionsPerHourWithEfficiency,
+                    dropsPerHour:
+                        drop.averageCount * bulkMultiplier * drop.dropRate * successRate * actionsPerHourWithEfficiency,
                 }));
 
                 // Add alchemy essence and rare drops
@@ -1812,7 +1843,9 @@
                     actionTime,
 
                     // Per-attempt economics
-                    materialCost,
+                    materialCost: netMaterialCost, // Net cost after self-return adjustment
+                    grossMaterialCost,
+                    selfReturnValue,
                     catalystPrice: 0,
                     costPerAttempt,
                     incomePerAttempt: revenuePerAttempt,
@@ -5278,6 +5311,7 @@
             const orderBookHandler = (data) => {
                 if (data.marketItemOrderBooks) {
                     const itemHrid = data.marketItemOrderBooks.itemHrid;
+                    const orderBooks = data.marketItemOrderBooks.orderBooks;
 
                     // Store with timestamp for staleness tracking
                     this.orderBooksCache[itemHrid] = {
@@ -5286,6 +5320,20 @@
                     };
 
                     this.currentItemHrid = itemHrid; // Track current item
+
+                    // Update market API with fresh prices from order book
+                    if (orderBooks) {
+                        for (const orderBook of orderBooks) {
+                            const enhancementLevel = orderBook.enhancementLevel || 0;
+                            const topAsk = orderBook.asks?.[0]?.price ?? null;
+                            const topBid = orderBook.bids?.[0]?.price ?? null;
+
+                            // Only update if we have at least one price
+                            if (topAsk !== null || topBid !== null) {
+                                marketAPI.updatePrice(itemHrid, enhancementLevel, topAsk, topBid);
+                            }
+                        }
+                    }
 
                     // Save to storage (debounced)
                     this.saveOrderBooksCache();

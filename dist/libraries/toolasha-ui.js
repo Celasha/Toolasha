@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 0.26.3
+ * Version: 0.27.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -7301,7 +7301,7 @@
             }
 
             // Create tab for each missing material
-            this.currentMaterialsTabs = [];
+            this.currentMaterialsTabs.length = 0; // Clear without reassigning (preserves observer reference)
             for (const material of missingMaterials) {
                 const tab = createMaterialTab(material, referenceTab, (_e, mat) => {
                     // Store the missing quantity for auto-fill when buy modal opens
@@ -7320,7 +7320,7 @@
          */
         handleMarketplaceCleanup() {
             removeMaterialTabs();
-            this.currentMaterialsTabs = [];
+            this.currentMaterialsTabs.length = 0; // Clear without reassigning (preserves observer reference)
             this.autofillManager.clearQuantity();
         }
 
