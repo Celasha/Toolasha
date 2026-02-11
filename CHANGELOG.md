@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.28.1](https://github.com/Celasha/Toolasha/compare/v0.28.0...v0.28.1) (2026-02-11)
+
+
+### Bug Fixes
+
+* align task time calculations ([0154ae2](https://github.com/Celasha/Toolasha/commit/0154ae2f1eb7b74579b6b13fe4466d20d3843b68))
+* apply efficiency to task time ([8c3d7e1](https://github.com/Celasha/Toolasha/commit/8c3d7e1732e95d537391532a6450d6748e5628bf))
+
+
+### Code Refactoring
+
+* unify effective actions per hour ([4fdcd1f](https://github.com/Celasha/Toolasha/commit/4fdcd1fd517f25426442fa83a235e1f570b450a0))
+
 ## [0.28.0](https://github.com/Celasha/Toolasha/compare/v0.27.0...v0.28.0) (2026-02-11)
 
 ### Features
