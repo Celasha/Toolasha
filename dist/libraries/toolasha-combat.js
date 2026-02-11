@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 0.28.1
+ * Version: 0.28.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -5260,6 +5260,11 @@
             const elem = document.querySelector('[class*="BattlePanel_gainedExp"]')?.parentElement;
 
             if (elem) {
+                // Check if we've already injected stats (deduplication)
+                if (elem.querySelector('#mwi-combat-encounters')) {
+                    return; // Already injected, skip
+                }
+
                 // Get primary text color from settings
                 const textColor = config.getSetting('color_text_primary') || config.COLOR_TEXT_PRIMARY;
 

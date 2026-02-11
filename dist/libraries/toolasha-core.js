@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 0.28.1
+ * Version: 0.28.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -889,7 +889,7 @@
                 },
                 skillbook: {
                     id: 'skillbook',
-                    label: 'Skill books: Show books needed to reach target level',
+                    label: 'Skill books: Show books needed to reach target level (in the ability book item dictionary window)',
                     type: 'checkbox',
                     default: true,
                 },

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.28.1
+// @version      0.28.2
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -15524,7 +15524,7 @@ return plugin;
                 },
                 skillbook: {
                     id: 'skillbook',
-                    label: 'Skill books: Show books needed to reach target level',
+                    label: 'Skill books: Show books needed to reach target level (in the ability book item dictionary window)',
                     type: 'checkbox',
                     default: true,
                 },
@@ -56523,6 +56523,11 @@ return plugin;
             const elem = document.querySelector('[class*="BattlePanel_gainedExp"]')?.parentElement;
 
             if (elem) {
+                // Check if we've already injected stats (deduplication)
+                if (elem.querySelector('#mwi-combat-encounters')) {
+                    return; // Already injected, skip
+                }
+
                 // Get primary text color from settings
                 const textColor = config$1.getSetting('color_text_primary') || config$1.COLOR_TEXT_PRIMARY;
 
