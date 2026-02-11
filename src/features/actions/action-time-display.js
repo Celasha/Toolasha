@@ -32,6 +32,7 @@ import {
     calculateProductionActionTotalsFromBase,
     calculateGatheringActionTotalsFromBase,
     calculateActionsPerHour,
+    calculateEffectiveActionsPerHour,
 } from '../../utils/profit-helpers.js';
 
 /**
@@ -506,7 +507,10 @@ class ActionTimeDisplay {
         const avgActionsPerBaseAction = calculateEfficiencyMultiplier(totalEfficiency);
 
         // Calculate actions per hour WITH efficiency (total action completions including instant repeats)
-        const actionsPerHourWithEfficiency = baseActionsPerHour * avgActionsPerBaseAction;
+        const actionsPerHourWithEfficiency = calculateEffectiveActionsPerHour(
+            baseActionsPerHour,
+            avgActionsPerBaseAction
+        );
 
         // Calculate items per hour based on action type
         let itemsPerHour;
