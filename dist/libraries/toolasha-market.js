@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 0.28.2
+ * Version: 0.28.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -5323,16 +5323,32 @@
 
                     // Update market API with fresh prices from order book
                     if (orderBooks) {
-                        // Enhancement level is the ARRAY INDEX, not a property on the orderBook object
-                        orderBooks.forEach((orderBook, enhancementLevel) => {
-                            const topAsk = orderBook.asks?.[0]?.price ?? null;
-                            const topBid = orderBook.bids?.[0]?.price ?? null;
+                        // Handle both array and object format for orderBooks
+                        if (Array.isArray(orderBooks)) {
+                            // Enhancement level is the ARRAY INDEX
+                            orderBooks.forEach((orderBook, enhancementLevel) => {
+                                if (!orderBook) return; // Skip empty slots in sparse array
+                                const topAsk = orderBook.asks?.[0]?.price ?? null;
+                                const topBid = orderBook.bids?.[0]?.price ?? null;
 
-                            // Only update if we have at least one price
-                            if (topAsk !== null || topBid !== null) {
-                                marketAPI.updatePrice(itemHrid, enhancementLevel, topAsk, topBid);
+                                // Only update if we have at least one price
+                                if (topAsk !== null || topBid !== null) {
+                                    marketAPI.updatePrice(itemHrid, enhancementLevel, topAsk, topBid);
+                                }
+                            });
+                        } else {
+                            // Fallback: Handle object format { "0": {...}, "5": {...} }
+                            for (const [level, orderBook] of Object.entries(orderBooks)) {
+                                if (!orderBook) continue;
+                                const enhancementLevel = parseInt(level, 10);
+                                const topAsk = orderBook.asks?.[0]?.price ?? null;
+                                const topBid = orderBook.bids?.[0]?.price ?? null;
+
+                                if (topAsk !== null || topBid !== null) {
+                                    marketAPI.updatePrice(itemHrid, enhancementLevel, topAsk, topBid);
+                                }
                             }
-                        });
+                        }
                     }
 
                     // Save to storage (debounced)
@@ -5577,11 +5593,8 @@
                             return itemMatch && priceMatch && qtyMatch && sideMatch;
                         });
 
-                        // Pick the newest listing (highest ID) if multiple matches
-                        const matchedListing =
-                            potentialMatches.length > 0
-                                ? potentialMatches.reduce((newest, current) => (current.id > newest.id ? current : newest))
-                                : null;
+                        // Pick the first match (oldest ID) to preserve DOM order
+                        const matchedListing = potentialMatches.length > 0 ? potentialMatches[0] : null;
 
                         if (matchedListing) {
                             usedListingIds.add(matchedListing.id);

@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 0.28.2
+ * Version: 0.28.3
  * License: CC-BY-NC-SA-4.0
  */
 

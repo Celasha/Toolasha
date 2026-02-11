@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.28.2
+// @version      0.28.3
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -16711,7 +16711,7 @@ return plugin;
 
             // Skip deduplication for events where consecutive messages have similar first 100 chars
             // but contain different data (counts, timestamps, etc. beyond the 100-char hash window)
-            // OR events that should always trigger UI updates (profile_shared)
+            // OR events that should always trigger UI updates (profile_shared, battle_unit_fetched)
             const skipDedup =
                 messageType === 'quests_updated' ||
                 messageType === 'action_completed' ||
@@ -16719,7 +16719,8 @@ return plugin;
                 messageType === 'market_item_order_books_updated' ||
                 messageType === 'market_listings_updated' ||
                 messageType === 'profile_shared' ||
-                messageType === 'battle_consumable_ability_updated';
+                messageType === 'battle_consumable_ability_updated' ||
+                messageType === 'battle_unit_fetched';
 
             if (!skipDedup) {
                 // Deduplicate by message content to prevent 4x JSON.parse on same message
@@ -18492,7 +18493,19 @@ return plugin;
             }
             // Handle both boolean (isTrue) and value-based settings
             if (setting.hasOwnProperty('value')) {
-                return setting.value;
+                let value = setting.value;
+
+                // Parse JSON strings for template-type settings
+                if (typeof value === 'string' && (value.startsWith('[') || value.startsWith('{'))) {
+                    try {
+                        value = JSON.parse(value);
+                    } catch (e) {
+                        console.warn(`[Config] Failed to parse JSON for setting '${key}':`, e);
+                        // Return as-is if parsing fails
+                    }
+                }
+
+                return value;
             } else if (setting.hasOwnProperty('isTrue')) {
                 return setting.isTrue;
             }
@@ -19800,7 +19813,8 @@ return plugin;
             const keysToDelete = [];
 
             for (const [key, patch] of Object.entries(this.pricePatchs)) {
-                if (patch.timestamp < this.lastFetchTimestamp) {
+                // Check for corrupted/invalid patches or stale timestamps
+                if (!patch || !patch.timestamp || patch.timestamp < this.lastFetchTimestamp) {
                     keysToDelete.push(key);
                     purgedCount++;
                 }
@@ -31101,16 +31115,32 @@ return plugin;
 
                     // Update market API with fresh prices from order book
                     if (orderBooks) {
-                        // Enhancement level is the ARRAY INDEX, not a property on the orderBook object
-                        orderBooks.forEach((orderBook, enhancementLevel) => {
-                            const topAsk = orderBook.asks?.[0]?.price ?? null;
-                            const topBid = orderBook.bids?.[0]?.price ?? null;
+                        // Handle both array and object format for orderBooks
+                        if (Array.isArray(orderBooks)) {
+                            // Enhancement level is the ARRAY INDEX
+                            orderBooks.forEach((orderBook, enhancementLevel) => {
+                                if (!orderBook) return; // Skip empty slots in sparse array
+                                const topAsk = orderBook.asks?.[0]?.price ?? null;
+                                const topBid = orderBook.bids?.[0]?.price ?? null;
 
-                            // Only update if we have at least one price
-                            if (topAsk !== null || topBid !== null) {
-                                marketAPI.updatePrice(itemHrid, enhancementLevel, topAsk, topBid);
+                                // Only update if we have at least one price
+                                if (topAsk !== null || topBid !== null) {
+                                    marketAPI.updatePrice(itemHrid, enhancementLevel, topAsk, topBid);
+                                }
+                            });
+                        } else {
+                            // Fallback: Handle object format { "0": {...}, "5": {...} }
+                            for (const [level, orderBook] of Object.entries(orderBooks)) {
+                                if (!orderBook) continue;
+                                const enhancementLevel = parseInt(level, 10);
+                                const topAsk = orderBook.asks?.[0]?.price ?? null;
+                                const topBid = orderBook.bids?.[0]?.price ?? null;
+
+                                if (topAsk !== null || topBid !== null) {
+                                    marketAPI.updatePrice(itemHrid, enhancementLevel, topAsk, topBid);
+                                }
                             }
-                        });
+                        }
                     }
 
                     // Save to storage (debounced)
@@ -31355,11 +31385,8 @@ return plugin;
                             return itemMatch && priceMatch && qtyMatch && sideMatch;
                         });
 
-                        // Pick the newest listing (highest ID) if multiple matches
-                        const matchedListing =
-                            potentialMatches.length > 0
-                                ? potentialMatches.reduce((newest, current) => (current.id > newest.id ? current : newest))
-                                : null;
+                        // Pick the first match (oldest ID) to preserve DOM order
+                        const matchedListing = potentialMatches.length > 0 ? potentialMatches[0] : null;
 
                         if (matchedListing) {
                             usedListingIds.add(matchedListing.id);
@@ -56523,8 +56550,13 @@ return plugin;
             const elem = document.querySelector('[class*="BattlePanel_gainedExp"]')?.parentElement;
 
             if (elem) {
-                // Check if we've already injected stats (deduplication)
-                if (elem.querySelector('#mwi-combat-encounters')) {
+                // Check if we've already injected stats (check for any of our divs, not just the first one)
+                const alreadyInjected =
+                    elem.querySelector('#mwi-combat-encounters') ||
+                    elem.querySelector('#mwi-combat-revenue') ||
+                    elem.querySelector('#mwi-combat-total-exp');
+
+                if (alreadyInjected) {
                     return; // Already injected, skip
                 }
 

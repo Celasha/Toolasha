@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 0.28.2
+ * Version: 0.28.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2076,7 +2076,7 @@
 
             // Skip deduplication for events where consecutive messages have similar first 100 chars
             // but contain different data (counts, timestamps, etc. beyond the 100-char hash window)
-            // OR events that should always trigger UI updates (profile_shared)
+            // OR events that should always trigger UI updates (profile_shared, battle_unit_fetched)
             const skipDedup =
                 messageType === 'quests_updated' ||
                 messageType === 'action_completed' ||
@@ -2084,7 +2084,8 @@
                 messageType === 'market_item_order_books_updated' ||
                 messageType === 'market_listings_updated' ||
                 messageType === 'profile_shared' ||
-                messageType === 'battle_consumable_ability_updated';
+                messageType === 'battle_consumable_ability_updated' ||
+                messageType === 'battle_unit_fetched';
 
             if (!skipDedup) {
                 // Deduplicate by message content to prevent 4x JSON.parse on same message
@@ -3852,7 +3853,19 @@
             }
             // Handle both boolean (isTrue) and value-based settings
             if (setting.hasOwnProperty('value')) {
-                return setting.value;
+                let value = setting.value;
+
+                // Parse JSON strings for template-type settings
+                if (typeof value === 'string' && (value.startsWith('[') || value.startsWith('{'))) {
+                    try {
+                        value = JSON.parse(value);
+                    } catch (e) {
+                        console.warn(`[Config] Failed to parse JSON for setting '${key}':`, e);
+                        // Return as-is if parsing fails
+                    }
+                }
+
+                return value;
             } else if (setting.hasOwnProperty('isTrue')) {
                 return setting.isTrue;
             }
@@ -5160,7 +5173,8 @@
             const keysToDelete = [];
 
             for (const [key, patch] of Object.entries(this.pricePatchs)) {
-                if (patch.timestamp < this.lastFetchTimestamp) {
+                // Check for corrupted/invalid patches or stale timestamps
+                if (!patch || !patch.timestamp || patch.timestamp < this.lastFetchTimestamp) {
                     keysToDelete.push(key);
                     purgedCount++;
                 }
