@@ -213,8 +213,8 @@ class EstimatedListingAge {
 
                 // Update market API with fresh prices from order book
                 if (orderBooks) {
-                    for (const orderBook of orderBooks) {
-                        const enhancementLevel = orderBook.enhancementLevel || 0;
+                    // Enhancement level is the ARRAY INDEX, not a property on the orderBook object
+                    orderBooks.forEach((orderBook, enhancementLevel) => {
                         const topAsk = orderBook.asks?.[0]?.price ?? null;
                         const topBid = orderBook.bids?.[0]?.price ?? null;
 
@@ -222,7 +222,7 @@ class EstimatedListingAge {
                         if (topAsk !== null || topBid !== null) {
                             marketAPI.updatePrice(itemHrid, enhancementLevel, topAsk, topBid);
                         }
-                    }
+                    });
                 }
 
                 // Save to storage (debounced)

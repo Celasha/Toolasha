@@ -20,6 +20,8 @@ class MarketAPI {
         this.CACHE_KEY_DATA = 'MWITools_marketAPI_json';
         this.CACHE_KEY_TIMESTAMP = 'MWITools_marketAPI_timestamp';
         this.CACHE_KEY_PATCHES = 'MWITools_marketAPI_patches';
+        this.CACHE_KEY_MIGRATION = 'MWITools_marketAPI_migration_version';
+        this.CURRENT_MIGRATION_VERSION = 1; // Increment this when patches need to be cleared
 
         // Current market data
         this.marketData = null;
@@ -339,6 +341,22 @@ class MarketAPI {
      */
     async loadPatches() {
         try {
+            // Check migration version - clear patches if old version
+            const migrationVersion = await storage.get(this.CACHE_KEY_MIGRATION, 'settings', 0);
+
+            if (migrationVersion < this.CURRENT_MIGRATION_VERSION) {
+                console.log(
+                    `[MarketAPI] Migrating price patches from v${migrationVersion} to v${this.CURRENT_MIGRATION_VERSION}`
+                );
+                // Clear old patches (they may have corrupted data)
+                this.pricePatchs = {};
+                await storage.set(this.CACHE_KEY_PATCHES, {}, 'settings');
+                await storage.set(this.CACHE_KEY_MIGRATION, this.CURRENT_MIGRATION_VERSION, 'settings');
+                console.log('[MarketAPI] Price patches cleared due to migration');
+                return;
+            }
+
+            // Load patches normally
             const patches = await storage.getJSON(this.CACHE_KEY_PATCHES, 'settings', {});
             this.pricePatchs = patches || {};
         } catch (error) {
