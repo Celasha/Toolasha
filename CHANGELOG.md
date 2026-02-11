@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.28.3](https://github.com/Celasha/Toolasha/compare/v0.28.2...v0.28.3) (2026-02-11)
+
+### Bug Fixes
+
+- parse JSON strings in getSettingValue for template settings ([970e8fb](https://github.com/Celasha/Toolasha/commit/970e8fbdbc1a6db12e0d5124f38ef043016dcdfc))
+- resolve combat summary and market listing age issues ([3b1a007](https://github.com/Celasha/Toolasha/commit/3b1a007b3e5f281de05fd9ea37d13b1e8f6e73d8))
+
 ## [0.28.2](https://github.com/Celasha/Toolasha/compare/v0.28.1...v0.28.2) (2026-02-11)
 
 ### Bug Fixes
