@@ -448,17 +448,30 @@ class EstimatedListingAge {
                     const price = this.parsePrice(priceText);
                     const quantity = this.parseQuantity(quantityText);
 
+                    // Get currently active listings to validate matches
+                    const activeListings = dataManager.getMarketListings();
+                    const activeListingIds = new Set(activeListings.map((l) => l.id));
+
                     // Match from knownListings (filtering out already-used and top-20 listings)
+                    // Find ALL potential matches, then pick the newest one (highest ID)
                     const allOrderBookIds = new Set(listings.map((l) => l.listingId));
-                    const matchedListing = this.knownListings.find((listing) => {
+                    const potentialMatches = this.knownListings.filter((listing) => {
                         if (usedListingIds.has(listing.id)) return false;
                         if (allOrderBookIds.has(listing.id)) return false; // Skip top 20
+                        if (!activeListingIds.has(listing.id)) return false; // Only match active listings
 
                         const itemMatch = listing.itemHrid === currentItemHrid;
                         const priceMatch = Math.abs(listing.price - price) < 0.01;
                         const qtyMatch = listing.orderQuantity - listing.filledQuantity === quantity;
-                        return itemMatch && priceMatch && qtyMatch;
+                        const sideMatch = listing.isSell === isSellTable;
+                        return itemMatch && priceMatch && qtyMatch && sideMatch;
                     });
+
+                    // Pick the newest listing (highest ID) if multiple matches
+                    const matchedListing =
+                        potentialMatches.length > 0
+                            ? potentialMatches.reduce((newest, current) => (current.id > newest.id ? current : newest))
+                            : null;
 
                     if (matchedListing) {
                         usedListingIds.add(matchedListing.id);
