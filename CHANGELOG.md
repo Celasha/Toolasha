@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.28.2](https://github.com/Celasha/Toolasha/compare/v0.28.1...v0.28.2) (2026-02-11)
+
+### Bug Fixes
+
+- add deduplication check for combat summary stats injection ([cac7739](https://github.com/Celasha/Toolasha/commit/cac77397bd96b9d1585fb1a4426f03d56420a9f1))
+
+### Documentation
+
+- clarify skillbook setting applies to item dictionary window ([452d9bb](https://github.com/Celasha/Toolasha/commit/452d9bbbae16f7dd656b244da6c76ca0b17cdf1c))
+
 ## [0.28.1](https://github.com/Celasha/Toolasha/compare/v0.28.0...v0.28.1) (2026-02-11)
 
 ### Bug Fixes
