@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 0.27.0
+ * Version: 0.28.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -4795,6 +4795,8 @@
             this.CACHE_KEY_DATA = 'MWITools_marketAPI_json';
             this.CACHE_KEY_TIMESTAMP = 'MWITools_marketAPI_timestamp';
             this.CACHE_KEY_PATCHES = 'MWITools_marketAPI_patches';
+            this.CACHE_KEY_MIGRATION = 'MWITools_marketAPI_migration_version';
+            this.CURRENT_MIGRATION_VERSION = 1; // Increment this when patches need to be cleared
 
             // Current market data
             this.marketData = null;
@@ -4817,7 +4819,8 @@
                 const cached = await this.getCachedData();
                 if (cached) {
                     this.marketData = cached.data;
-                    this.lastFetchTimestamp = cached.timestamp;
+                    // API timestamp is in seconds, convert to milliseconds for comparison with Date.now()
+                    this.lastFetchTimestamp = cached.timestamp * 1000;
                     // Load patches from storage
                     await this.loadPatches();
                     // Hide alert on successful cache load
@@ -4830,7 +4833,8 @@
                 const cachedFallback = await storage.getJSON(this.CACHE_KEY_DATA, 'settings', null);
                 if (cachedFallback?.marketData) {
                     this.marketData = cachedFallback.marketData;
-                    this.lastFetchTimestamp = cachedFallback.timestamp;
+                    // API timestamp is in seconds, convert to milliseconds
+                    this.lastFetchTimestamp = cachedFallback.timestamp * 1000;
                     // Load patches from storage
                     await this.loadPatches();
                     console.warn('[MarketAPI] Skipping fetch; disconnected. Using cached data.');
@@ -4849,7 +4853,8 @@
                     // Cache the fresh data
                     this.cacheData(response);
                     this.marketData = response.marketData;
-                    this.lastFetchTimestamp = response.timestamp;
+                    // API timestamp is in seconds, convert to milliseconds
+                    this.lastFetchTimestamp = response.timestamp * 1000;
                     // Load patches from storage (they may still be fresher than new API data)
                     await this.loadPatches();
                     // Hide alert on successful fetch
@@ -4865,7 +4870,8 @@
             if (expiredCache) {
                 console.warn('[MarketAPI] Using expired cache as fallback');
                 this.marketData = expiredCache.marketData;
-                this.lastFetchTimestamp = expiredCache.timestamp;
+                // API timestamp is in seconds, convert to milliseconds
+                this.lastFetchTimestamp = expiredCache.timestamp * 1000;
                 // Load patches from storage
                 await this.loadPatches();
                 // Show alert when using expired cache
@@ -5114,11 +5120,61 @@
          */
         async loadPatches() {
             try {
+                // Check migration version - clear patches if old version
+                const migrationVersion = await storage.get(this.CACHE_KEY_MIGRATION, 'settings', 0);
+
+                if (migrationVersion < this.CURRENT_MIGRATION_VERSION) {
+                    console.log(
+                        `[MarketAPI] Migrating price patches from v${migrationVersion} to v${this.CURRENT_MIGRATION_VERSION}`
+                    );
+                    // Clear old patches (they may have corrupted data)
+                    this.pricePatchs = {};
+                    await storage.set(this.CACHE_KEY_PATCHES, {}, 'settings');
+                    await storage.set(this.CACHE_KEY_MIGRATION, this.CURRENT_MIGRATION_VERSION, 'settings');
+                    console.log('[MarketAPI] Price patches cleared due to migration');
+                    return;
+                }
+
+                // Load patches normally
                 const patches = await storage.getJSON(this.CACHE_KEY_PATCHES, 'settings', {});
                 this.pricePatchs = patches || {};
+
+                // Purge stale patches (older than API data)
+                this.purgeStalePatches();
             } catch (error) {
                 console.error('[MarketAPI] Failed to load price patches:', error);
                 this.pricePatchs = {};
+            }
+        }
+
+        /**
+         * Remove patches older than the current API data
+         * Called after loadPatches() to clean up stale patches
+         */
+        purgeStalePatches() {
+            if (!this.lastFetchTimestamp) {
+                return; // No API data loaded yet
+            }
+
+            let purgedCount = 0;
+            const keysToDelete = [];
+
+            for (const [key, patch] of Object.entries(this.pricePatchs)) {
+                if (patch.timestamp < this.lastFetchTimestamp) {
+                    keysToDelete.push(key);
+                    purgedCount++;
+                }
+            }
+
+            // Remove stale patches
+            for (const key of keysToDelete) {
+                delete this.pricePatchs[key];
+            }
+
+            if (purgedCount > 0) {
+                console.log(`[MarketAPI] Purged ${purgedCount} stale price patches`);
+                // Save cleaned patches
+                this.savePatches();
             }
         }
 

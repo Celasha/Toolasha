@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 0.27.0
+ * Version: 0.28.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -5323,8 +5323,8 @@
 
                     // Update market API with fresh prices from order book
                     if (orderBooks) {
-                        for (const orderBook of orderBooks) {
-                            const enhancementLevel = orderBook.enhancementLevel || 0;
+                        // Enhancement level is the ARRAY INDEX, not a property on the orderBook object
+                        orderBooks.forEach((orderBook, enhancementLevel) => {
                             const topAsk = orderBook.asks?.[0]?.price ?? null;
                             const topBid = orderBook.bids?.[0]?.price ?? null;
 
@@ -5332,7 +5332,7 @@
                             if (topAsk !== null || topBid !== null) {
                                 marketAPI.updatePrice(itemHrid, enhancementLevel, topAsk, topBid);
                             }
-                        }
+                        });
                     }
 
                     // Save to storage (debounced)
@@ -5558,17 +5558,30 @@
                         const price = this.parsePrice(priceText);
                         const quantity = this.parseQuantity(quantityText);
 
+                        // Get currently active listings to validate matches
+                        const activeListings = dataManager.getMarketListings();
+                        const activeListingIds = new Set(activeListings.map((l) => l.id));
+
                         // Match from knownListings (filtering out already-used and top-20 listings)
+                        // Find ALL potential matches, then pick the newest one (highest ID)
                         const allOrderBookIds = new Set(listings.map((l) => l.listingId));
-                        const matchedListing = this.knownListings.find((listing) => {
+                        const potentialMatches = this.knownListings.filter((listing) => {
                             if (usedListingIds.has(listing.id)) return false;
                             if (allOrderBookIds.has(listing.id)) return false; // Skip top 20
+                            if (!activeListingIds.has(listing.id)) return false; // Only match active listings
 
                             const itemMatch = listing.itemHrid === currentItemHrid;
                             const priceMatch = Math.abs(listing.price - price) < 0.01;
                             const qtyMatch = listing.orderQuantity - listing.filledQuantity === quantity;
-                            return itemMatch && priceMatch && qtyMatch;
+                            const sideMatch = listing.isSell === isSellTable;
+                            return itemMatch && priceMatch && qtyMatch && sideMatch;
                         });
+
+                        // Pick the newest listing (highest ID) if multiple matches
+                        const matchedListing =
+                            potentialMatches.length > 0
+                                ? potentialMatches.reduce((newest, current) => (current.id > newest.id ? current : newest))
+                                : null;
 
                         if (matchedListing) {
                             usedListingIds.add(matchedListing.id);
@@ -12617,7 +12630,11 @@
                         ${this.renderInventoryBreakdown(networthData.currentAssets.inventory.byCategory)}
                     </div>
 
-                    <div style="margin-top: 4px;">Market listings: ${formatters_js.networthFormatter(Math.round(networthData.currentAssets.listings.value))}</div>
+                    <!-- Market Listings -->
+                    <div style="cursor: pointer; margin-top: 4px;" id="mwi-listings-toggle">
+                        + Market listings: ${formatters_js.networthFormatter(Math.round(networthData.currentAssets.listings.value))}
+                    </div>
+                    <div id="mwi-listings-breakdown" style="display: none; margin-left: 20px; font-size: 0.8rem; color: #bbb; white-space: pre-line;">${this.renderListingsBreakdown(networthData.currentAssets.listings.breakdown)}</div>
                 </div>
 
                 <!-- Fixed Assets -->
@@ -12759,6 +12776,24 @@
         }
 
         /**
+         * Render market listings breakdown HTML
+         * @param {Array} breakdown - Array of listing objects
+         * @returns {string} HTML string
+         */
+        renderListingsBreakdown(breakdown) {
+            if (!breakdown || breakdown.length === 0) {
+                return '<div>No market listings</div>';
+            }
+
+            return breakdown
+                .map((listing) => {
+                    const typeLabel = listing.isSell ? 'Sell' : 'Buy';
+                    return `${listing.name} (${typeLabel}): ${formatters_js.networthFormatter(Math.round(listing.value))}`;
+                })
+                .join('\n');
+        }
+
+        /**
          * Render inventory breakdown HTML (grouped by category)
          * @param {Object} byCategory - Object with category names as keys
          * @returns {string} HTML string
@@ -12839,6 +12874,13 @@
                     `${categoryName}: ${formatters_js.networthFormatter(Math.round(categoryData.totalValue))}`
                 );
             });
+
+            // Market Listings toggle
+            this.setupToggle(
+                'mwi-listings-toggle',
+                'mwi-listings-breakdown',
+                `Market listings: ${formatters_js.networthFormatter(Math.round(networthData.currentAssets.listings.value))}`
+            );
 
             // Fixed assets toggle
             this.setupToggle(
@@ -13604,22 +13646,12 @@
                             askPrice = craftingCost;
                             bidPrice = craftingCost;
                         } else if (!this.warnedItems.has(itemHrid)) {
-                            // No crafting recipe found (likely drop-only item)
-                            console.warn(
-                                '[InventoryBadgeManager] No market data or crafting recipe for equipment:',
-                                itemName,
-                                itemHrid
-                            );
+                            // No crafting recipe found (likely drop-only item) - silently skip
                             this.warnedItems.add(itemHrid);
                         }
                     } else if (!isEquipment && askPrice === 0 && bidPrice === 0) {
-                        // Non-equipment with no market data
+                        // Non-equipment with no market data - silently skip
                         if (!this.warnedItems.has(itemHrid)) {
-                            console.warn(
-                                '[InventoryBadgeManager] No market data for non-equipment item:',
-                                itemName,
-                                itemHrid
-                            );
                             this.warnedItems.add(itemHrid);
                         }
                         // Leave values at 0 (no badge will be shown)

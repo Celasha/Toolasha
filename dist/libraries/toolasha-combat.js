@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 0.27.0
+ * Version: 0.28.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -6707,22 +6707,33 @@
         constructor() {
             this.isInitialized = false;
             this.newBattleHandler = null;
-            this.consumableEventHandler = null; // NEW: for battle_consumable_ability_updated
+            this.consumableEventHandler = null;
             this.latestCombatData = null;
             this.currentBattleId = null;
-            this.consumableActualConsumed = {}; // { characterId: { itemHrid: count } } - from consumption events
-            this.trackingStartTime = {}; // { characterId: timestamp } - when we started tracking
+
+            // Consumable tracking state (persisted to storage like MCS)
+            this.consumableTracker = {
+                actualConsumed: {}, // { itemHrid: count }
+                defaultConsumed: {}, // { itemHrid: baselineCount }
+                inventoryAmount: {}, // { itemHrid: currentCount }
+                startTime: null, // When tracking started
+                lastUpdate: null, // Last consumption event timestamp
+                lastEventByItem: {}, // { itemHrid: timestamp } - for deduplication
+            };
         }
 
         /**
          * Initialize the data collector
          */
-        initialize() {
+        async initialize() {
             if (this.isInitialized) {
                 return;
             }
 
             this.isInitialized = true;
+
+            // Load persisted tracking state from storage (MCS-style)
+            await this.loadConsumableTracking();
 
             // Store handler references for cleanup
             this.newBattleHandler = (data) => this.onNewBattle(data);
@@ -6736,34 +6747,144 @@
         }
 
         /**
+         * Get default consumed count for an item (MCS-style baseline)
+         * @param {string} itemHrid - Item HRID
+         * @returns {number} Default consumed count (2 for drinks, 10 for food)
+         */
+        getDefaultConsumed(itemHrid) {
+            const name = itemHrid.toLowerCase();
+            if (name.includes('coffee') || name.includes('drink')) return 2;
+            if (
+                name.includes('donut') ||
+                name.includes('cupcake') ||
+                name.includes('cake') ||
+                name.includes('gummy') ||
+                name.includes('yogurt')
+            )
+                return 10;
+            return 0;
+        }
+
+        /**
+         * Calculate elapsed seconds since tracking started (MCS-style)
+         * @returns {number} Elapsed seconds
+         */
+        calcElapsedSeconds() {
+            if (!this.consumableTracker.startTime) {
+                return 0;
+            }
+            return Math.max(0, (Date.now() - this.consumableTracker.startTime) / 1000);
+        }
+
+        /**
+         * Load consumable tracking state from storage
+         */
+        async loadConsumableTracking() {
+            try {
+                const saved = await storage.getJSON('consumableTracker', 'combatStats', null);
+                if (saved) {
+                    // Restore tracking state
+                    this.consumableTracker.actualConsumed = saved.actualConsumed || {};
+                    this.consumableTracker.defaultConsumed = saved.defaultConsumed || {};
+                    this.consumableTracker.inventoryAmount = saved.inventoryAmount || {};
+                    this.consumableTracker.lastUpdate = saved.lastUpdate || null;
+
+                    // Restore elapsed time by adjusting startTime
+                    // saved.elapsedMs = how much time had passed when we saved
+                    // saved.saveTimestamp = when we saved
+                    // Time since save = Date.now() - saved.saveTimestamp
+                    // New startTime = Date.now() - saved.elapsedMs (resume from where we left off)
+                    if (saved.elapsedMs !== undefined && saved.saveTimestamp) {
+                        this.consumableTracker.startTime = Date.now() - saved.elapsedMs;
+                    } else if (saved.startTime) {
+                        // Legacy: direct startTime (will include offline time)
+                        this.consumableTracker.startTime = saved.startTime;
+                    }
+                }
+            } catch (error) {
+                console.error('[Combat Stats] Error loading consumable tracking:', error);
+            }
+        }
+
+        /**
+         * Save consumable tracking state to storage
+         */
+        async saveConsumableTracking() {
+            try {
+                const toSave = {
+                    actualConsumed: this.consumableTracker.actualConsumed,
+                    defaultConsumed: this.consumableTracker.defaultConsumed,
+                    inventoryAmount: this.consumableTracker.inventoryAmount,
+                    lastUpdate: this.consumableTracker.lastUpdate,
+                    // Save elapsed time, not raw startTime (MCS-style)
+                    elapsedMs: this.consumableTracker.startTime ? Date.now() - this.consumableTracker.startTime : 0,
+                    saveTimestamp: Date.now(),
+                };
+                await storage.setJSON('consumableTracker', toSave, 'combatStats');
+            } catch (error) {
+                console.error('[Combat Stats] Error saving consumable tracking:', error);
+            }
+        }
+
+        /**
+         * Reset consumable tracking (for new combat session)
+         */
+        async resetConsumableTracking() {
+            this.consumableTracker = {
+                actualConsumed: {},
+                defaultConsumed: {},
+                inventoryAmount: {},
+                startTime: Date.now(),
+                lastUpdate: null,
+                lastEventByItem: {},
+            };
+            await storage.setJSON('consumableTracker', null, 'combatStats');
+        }
+
+        /**
          * Handle battle_consumable_ability_updated event (fires on each consumption)
          * NOTE: This event only fires for the CURRENT PLAYER (solo tracking)
          * @param {Object} data - Consumable update data
          */
-        onConsumableUsed(data) {
+        async onConsumableUsed(data) {
             try {
                 if (!data || !data.consumable || !data.consumable.itemHrid) {
                     return;
                 }
 
-                // Use 'current' key for solo player tracking (event only fires for current player)
-                const characterId = 'current';
-
-                // Initialize tracking for current player if needed
-                if (!this.consumableActualConsumed[characterId]) {
-                    this.consumableActualConsumed[characterId] = {};
-                    this.trackingStartTime[characterId] = Date.now();
-                }
-
                 const itemHrid = data.consumable.itemHrid;
+                const now = Date.now();
 
-                // Initialize count for this item if first time seen
-                if (!this.consumableActualConsumed[characterId][itemHrid]) {
-                    this.consumableActualConsumed[characterId][itemHrid] = 0;
+                // Deduplicate: skip if we already processed this item within 100ms
+                // (game sometimes sends duplicate events)
+                const lastEventTime = this.consumableTracker.lastEventByItem[itemHrid] || 0;
+                if (now - lastEventTime < 100) {
+                    return; // Skip duplicate event
+                }
+                this.consumableTracker.lastEventByItem[itemHrid] = now;
+
+                // Initialize tracking if first event
+                if (!this.consumableTracker.startTime) {
+                    this.consumableTracker.startTime = now;
                 }
 
-                // Increment consumption count (this event fires once per use)
-                this.consumableActualConsumed[characterId][itemHrid]++;
+                // Initialize item if first time seen (MCS-style)
+                if (this.consumableTracker.actualConsumed[itemHrid] === undefined) {
+                    this.consumableTracker.actualConsumed[itemHrid] = 0;
+                    this.consumableTracker.defaultConsumed[itemHrid] = this.getDefaultConsumed(itemHrid);
+                }
+
+                // Increment consumption count
+                this.consumableTracker.actualConsumed[itemHrid]++;
+                this.consumableTracker.lastUpdate = now;
+
+                // Update inventory amount from event data
+                if (data.consumable.count !== undefined) {
+                    this.consumableTracker.inventoryAmount[itemHrid] = data.consumable.count;
+                }
+
+                // Persist after each consumption (MCS-style)
+                await this.saveConsumableTracking();
             } catch (error) {
                 console.error('[Combat Stats] Error processing consumable event:', error);
             }
@@ -6780,16 +6901,18 @@
                     return;
                 }
 
-                // Detect new combat run (new battleId)
                 const battleId = data.battleId || 0;
-
-                // Only reset if we haven't initialized yet (first run after script load)
-                // Don't reset on every battleId change since that happens every wave!
 
                 // Calculate duration from combat start time
                 const combatStartTime = new Date(data.combatStartTime).getTime() / 1000;
                 const currentTime = Date.now() / 1000;
                 const durationSeconds = currentTime - combatStartTime;
+
+                // Calculate elapsed tracking time (MCS-style)
+                const elapsedSeconds = this.calcElapsedSeconds();
+
+                // Get current character ID to identify which player is the current user
+                const currentCharacterId = dataManager.getCurrentCharacterId();
 
                 // Extract combat data
                 const combatData = {
@@ -6797,88 +6920,76 @@
                     battleId: battleId,
                     combatStartTime: data.combatStartTime,
                     durationSeconds: durationSeconds,
-                    players: data.players.map((player, index) => {
-                        const characterId = player.character.id;
+                    players: data.players.map((player) => {
+                        // Check if this player is the current user by matching character ID
+                        const isCurrentPlayer = player.character.id === currentCharacterId;
 
-                        // For the first player (current player), use event-based consumption tracking
-                        // For other players (party members), we'd need snapshot-based tracking (TODO)
-                        const trackingKey = index === 0 ? 'current' : characterId;
-
-                        // Initialize tracking for this character if needed
-                        if (!this.consumableActualConsumed[trackingKey]) {
-                            this.consumableActualConsumed[trackingKey] = {};
-                            this.trackingStartTime[trackingKey] = Date.now();
-                        }
-
-                        // Calculate time elapsed since we started tracking
-                        const trackingStartTime = this.trackingStartTime[trackingKey] || Date.now();
-                        const elapsedSeconds = (Date.now() - trackingStartTime) / 1000;
-
-                        // Process consumables using event-based consumption data
+                        // Process consumables - only track for current player
                         const consumablesWithConsumed = [];
-                        const seenItems = new Set(); // Deduplicate by itemHrid (game allows 1 of each type)
+                        const seenItems = new Set();
 
                         if (player.combatConsumables) {
                             for (const consumable of player.combatConsumables) {
-                                // Skip duplicate entries (game UI enforces 1 per type, but WS data may have dupes)
                                 if (seenItems.has(consumable.itemHrid)) {
                                     continue;
                                 }
                                 seenItems.add(consumable.itemHrid);
 
-                                // Get actual consumed count from consumption events
-                                const totalActualConsumed =
-                                    this.consumableActualConsumed[trackingKey]?.[consumable.itemHrid] || 0;
-
-                                // MCS-style baseline: fixed item counts (not rates)
-                                // Baseline assumes 2 drinks or 10 foods consumed in DEFAULT_TIME (600s)
-                                const itemName = consumable.itemHrid.toLowerCase();
-                                const isDrink = itemName.includes('coffee') || itemName.includes('drink');
-                                const isFood =
-                                    itemName.includes('donut') ||
-                                    itemName.includes('cupcake') ||
-                                    itemName.includes('cake') ||
-                                    itemName.includes('gummy') ||
-                                    itemName.includes('yogurt');
-
-                                const defaultConsumed = isDrink ? 2 : isFood ? 10 : 0;
-
-                                // MCS-style weighted average with DEFAULT_TIME constant
-                                // Adds 10 minutes (600s) of baseline data to make estimates stable from start
-                                const DEFAULT_TIME = 10 * 60; // 600 seconds
-                                const baselineRate = defaultConsumed / DEFAULT_TIME;
-
-                                let consumptionRate;
-                                if (totalActualConsumed === 0) {
-                                    // No consumption detected yet — use pure baseline rate
-                                    consumptionRate = baselineRate;
-                                } else {
-                                    // Blend actual data with baseline for stability
-                                    const actualRate = totalActualConsumed / elapsedSeconds;
-                                    const combinedTotal = defaultConsumed + totalActualConsumed;
-                                    const combinedTime = DEFAULT_TIME + elapsedSeconds;
-                                    const combinedRate = combinedTotal / combinedTime;
-                                    // 90% actual rate + 10% combined (baseline+actual) rate
-                                    consumptionRate = actualRate * 0.9 + combinedRate * 0.1;
+                                // Update inventory amount from new_battle data (only for current player)
+                                if (isCurrentPlayer) {
+                                    this.consumableTracker.inventoryAmount[consumable.itemHrid] = consumable.count;
                                 }
 
-                                // Estimate total consumed for the entire combat duration
+                                // Get tracking data (only accurate for current player)
+                                const actualConsumed = isCurrentPlayer
+                                    ? this.consumableTracker.actualConsumed[consumable.itemHrid] || 0
+                                    : 0;
+                                const defaultConsumed = isCurrentPlayer
+                                    ? this.consumableTracker.defaultConsumed[consumable.itemHrid] ||
+                                      this.getDefaultConsumed(consumable.itemHrid)
+                                    : this.getDefaultConsumed(consumable.itemHrid);
+
+                                // MCS formula (exact match to MCS code lines 26027-26030)
+                                const DEFAULT_TIME = 10 * 60; // 600 seconds
+                                const trackingElapsed = isCurrentPlayer ? elapsedSeconds : 0;
+
+                                const actualRate = trackingElapsed > 0 ? actualConsumed / trackingElapsed : 0;
+                                const combinedRate = (defaultConsumed + actualConsumed) / (DEFAULT_TIME + trackingElapsed);
+                                const consumptionRate = actualRate * 0.9 + combinedRate * 0.1;
+
+                                // Per-day rate (MCS uses Math.ceil)
+                                const consumedPerDay = Math.ceil(consumptionRate * 86400);
+
+                                // Estimate for this combat session
                                 const estimatedConsumed = consumptionRate * durationSeconds;
 
-                                consumablesWithConsumed.push({
+                                // Time until inventory runs out (MCS-style)
+                                const inventoryAmount = isCurrentPlayer
+                                    ? this.consumableTracker.inventoryAmount[consumable.itemHrid] || consumable.count
+                                    : consumable.count;
+                                const timeToZeroSeconds =
+                                    consumptionRate > 0 ? inventoryAmount / consumptionRate : Infinity;
+
+                                const consumableData = {
                                     itemHrid: consumable.itemHrid,
                                     currentCount: consumable.count,
-                                    actualConsumed: totalActualConsumed,
+                                    actualConsumed: actualConsumed,
+                                    defaultConsumed: defaultConsumed,
                                     consumed: estimatedConsumed,
+                                    consumedPerDay: consumedPerDay,
                                     consumptionRate: consumptionRate,
-                                    elapsedSeconds: elapsedSeconds,
-                                });
+                                    elapsedSeconds: trackingElapsed,
+                                    inventoryAmount: inventoryAmount,
+                                    timeToZeroSeconds: timeToZeroSeconds,
+                                };
+                                consumablesWithConsumed.push(consumableData);
                             }
                         }
 
                         return {
                             name: player.character.name,
-                            characterId: characterId,
+                            characterId: player.character.id,
+                            isCurrentPlayer: isCurrentPlayer,
                             loot: player.totalLootMap || {},
                             experience: player.totalSkillExperienceMap || {},
                             deathCount: player.deathCount || 0,
@@ -6896,8 +7007,11 @@
                 // Store in memory
                 this.latestCombatData = combatData;
 
-                // Store in IndexedDB (debounced - will update continuously during combat)
+                // Store in IndexedDB
                 await storage.setJSON('latestCombatRun', combatData, 'combatStats');
+
+                // Also save tracking state periodically
+                await this.saveConsumableTracking();
             } catch (error) {
                 console.error('[Combat Stats] Error collecting combat data:', error);
             }
@@ -6940,8 +7054,7 @@
             this.isInitialized = false;
             this.latestCombatData = null;
             this.currentBattleId = null;
-            this.consumableActualConsumed = {};
-            this.trackingStartTime = {};
+            // Note: Don't reset consumableTracker here - it's persisted
         }
     }
 
@@ -7024,14 +7137,18 @@
             breakdown.push({
                 itemHrid: consumable.itemHrid,
                 itemName: itemName,
-                count: consumed, // Use estimated consumption
+                count: consumed,
+                consumedPerDay: consumable.consumedPerDay || 0,
                 pricePerItem: itemPrice,
                 totalCost: itemCost,
                 startingCount: consumable.startingCount,
                 currentCount: consumable.currentCount,
                 actualConsumed: actualConsumed,
+                defaultConsumed: consumable.defaultConsumed || 0,
                 consumptionRate: consumable.consumptionRate,
                 elapsedSeconds: consumable.elapsedSeconds || 0,
+                inventoryAmount: consumable.inventoryAmount || consumable.currentCount,
+                timeToZeroSeconds: consumable.timeToZeroSeconds || Infinity,
             });
         }
 
@@ -7126,8 +7243,11 @@
         const consumableCosts = consumableData.total;
         const consumableBreakdown = consumableData.breakdown;
 
-        // Calculate daily consumable costs
-        const dailyConsumableCosts = duration > 0 ? calculateDailyRate(consumableCosts, duration) : 0;
+        // Calculate daily consumable costs using pre-calculated per-day rates (MCS-style)
+        const dailyConsumableCosts = consumableBreakdown.reduce(
+            (sum, item) => sum + (item.consumedPerDay || 0) * item.pricePerItem,
+            0
+        );
 
         // Calculate daily profit
         const dailyProfitAsk = dailyIncomeAsk - dailyConsumableCosts;
@@ -7138,6 +7258,9 @@
 
         // Calculate experience per hour
         const expPerHour = duration > 0 ? (totalExp / duration) * 3600 : 0;
+
+        // Calculate deaths per hour
+        const deathsPerHour = duration > 0 ? (playerData.deathCount / duration) * 3600 : 0;
 
         // Format loot list
         const lootList = formatLootList(playerData.loot);
@@ -7162,6 +7285,7 @@
             totalExp,
             expPerHour,
             deathCount: playerData.deathCount,
+            deathsPerHour,
             lootList,
             duration,
         };
@@ -7253,6 +7377,15 @@
 
             this.isInitialized = true;
 
+            // Setup setting listener
+            config.onSettingChange('combatStats', (enabled) => {
+                if (enabled) {
+                    this.injectButton();
+                } else {
+                    this.removeButton();
+                }
+            });
+
             // Start observing for Combat panel
             this.startObserver();
         }
@@ -7295,6 +7428,11 @@
          * Inject Statistics button into Combat panel tabs
          */
         injectButton() {
+            // Check if feature is enabled
+            if (!config.getSetting('combatStats')) {
+                return;
+            }
+
             // Find the tabs container
             const tabsContainer = document.querySelector(
                 'div.GamePage_mainPanel__2njyb > div > div:nth-child(1) > div > div > div > div[class*="TabsComponent_tabsContainer"] > div > div > div'
@@ -7327,6 +7465,16 @@
             // Insert button at the end
             const lastTab = tabsContainer.children[tabsContainer.children.length - 1];
             tabsContainer.insertBefore(button, lastTab.nextSibling);
+        }
+
+        /**
+         * Remove Statistics button from Combat panel tabs
+         */
+        removeButton() {
+            const button = document.querySelector('.toolasha-combat-stats-btn');
+            if (button) {
+                button.remove();
+            }
         }
 
         /**
@@ -7466,10 +7614,6 @@
                 durationSeconds = combatData.durationSeconds;
             }
 
-            if (!durationSeconds) {
-                console.warn('[Combat Stats] No duration data available');
-            }
-
             // Calculate statistics
             const playerStats = calculateAllPlayerStats(combatData, durationSeconds);
 
@@ -7539,6 +7683,40 @@
             font-size: 24px;
         `;
 
+            // Button container for reset and close
+            const buttonContainer = document.createElement('div');
+            buttonContainer.style.cssText = `
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        `;
+
+            const resetButton = document.createElement('button');
+            resetButton.textContent = 'Reset Tracking';
+            resetButton.style.cssText = `
+            background: #4a4a4a;
+            border: 1px solid #5a5a5a;
+            color: ${textColor};
+            font-size: 12px;
+            cursor: pointer;
+            padding: 6px 12px;
+            border-radius: 4px;
+        `;
+            resetButton.onmouseover = () => {
+                resetButton.style.background = '#5a5a5a';
+            };
+            resetButton.onmouseout = () => {
+                resetButton.style.background = '#4a4a4a';
+            };
+            resetButton.onclick = async () => {
+                if (confirm('Reset consumable tracking? This will clear all tracked consumption data and start fresh.')) {
+                    await combatStatsDataCollector.resetConsumableTracking();
+                    this.closePopup();
+                    // Reopen popup to show fresh data
+                    setTimeout(() => this.showPopup(), 100);
+                }
+            };
+
             const closeButton = document.createElement('button');
             closeButton.textContent = '×';
             closeButton.style.cssText = `
@@ -7552,8 +7730,11 @@
         `;
             closeButton.onclick = () => this.closePopup();
 
+            buttonContainer.appendChild(resetButton);
+            buttonContainer.appendChild(closeButton);
+
             header.appendChild(title);
-            header.appendChild(closeButton);
+            header.appendChild(buttonContainer);
 
             // Create player cards container
             const cardsContainer = document.createElement('div');
@@ -7621,7 +7802,6 @@
             // Find symbol in document
             const symbol = document.querySelector(`symbol[id="${symbolId}"]`);
             if (!symbol) {
-                console.warn('[Combat Stats] Symbol not found:', symbolId);
                 return false;
             }
 
@@ -7703,6 +7883,7 @@
                 { label: 'Total EXP', value: formatNum(stats.totalExp) },
                 { label: 'EXP/hour', value: `${formatNum(stats.expPerHour)}/h` },
                 { label: 'Death Count', value: `${stats.deathCount}` },
+                { label: 'Deaths/hr', value: `${stats.deathsPerHour.toFixed(2)}/h` },
             ];
 
             const statsContainer = document.createElement('div');
@@ -7783,14 +7964,14 @@
                                     color: ${textColor};
                                 `;
 
-                                    // For daily: show per-day quantities at same price
-                                    // For total: show actual quantities and costs
-                                    const displayQty = row.isDaily ? (item.count / stats.duration) * 86400 : item.count;
+                                    // For daily: use MCS-style consumedPerDay directly
+                                    // For total: show actual quantities and costs for this session
+                                    const displayQty = row.isDaily ? item.consumedPerDay : item.count;
 
                                     const displayPrice = item.pricePerItem; // Price stays the same
 
                                     const displayCost = row.isDaily
-                                        ? (item.totalCost / stats.duration) * 86400
+                                        ? item.consumedPerDay * item.pricePerItem
                                         : item.totalCost;
 
                                     itemRow.innerHTML = `
@@ -7860,9 +8041,9 @@
                                     const hasActualData = firstItem.actualConsumed > 0;
 
                                     if (!hasActualData) {
-                                        trackingNote.textContent = `📊 Tracked ${formatTrackingDuration(trackingDuration)} - Using baseline rates (no consumption detected yet)`;
+                                        trackingNote.textContent = `📊 Tracked ${formatTrackingDuration(trackingDuration)} - No consumption yet (rate decreases over time)`;
                                     } else {
-                                        trackingNote.textContent = `📊 Tracked ${formatTrackingDuration(trackingDuration)} - Using 90% actual + 10% combined (baseline+actual)`;
+                                        trackingNote.textContent = `📊 Tracked ${formatTrackingDuration(trackingDuration)} - 90% actual + 10% baseline blend`;
                                     }
 
                                     breakdownDiv.appendChild(trackingNote);
@@ -8037,8 +8218,8 @@
      * Initialize combat statistics feature
      */
     async function initialize() {
-        // Initialize data collector (WebSocket listener)
-        combatStatsDataCollector.initialize();
+        // Initialize data collector (WebSocket listener + load persisted state)
+        await combatStatsDataCollector.initialize();
 
         // Initialize UI (button injection and popup)
         combatStatsUI.initialize();

@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 0.27.0
+ * Version: 0.28.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -6229,7 +6229,14 @@
             const inventory = dataManager.getInventory();
             if (!inventory) return 0;
 
-            const item = inventory.find((i) => i.itemHrid === itemHrid);
+            // Only count items in inventory (not equipped) with no enhancement
+            // Enhanced items and equipped items cannot be used for house construction
+            const item = inventory.find(
+                (i) =>
+                    i.itemHrid === itemHrid &&
+                    i.itemLocationHrid === '/item_locations/inventory' &&
+                    (!i.enhancementLevel || i.enhancementLevel === 0)
+            );
             return item ? item.count : 0;
         }
 
@@ -7120,7 +7127,14 @@
 
             // Process all materials (skip coins)
             for (const material of costData.materials) {
-                const inventoryItem = inventory.find((i) => i.itemHrid === material.itemHrid);
+                // Only count items in inventory (not equipped) with no enhancement
+                // Enhanced items and equipped items cannot be used for house construction
+                const inventoryItem = inventory.find(
+                    (i) =>
+                        i.itemHrid === material.itemHrid &&
+                        i.itemLocationHrid === '/item_locations/inventory' &&
+                        (!i.enhancementLevel || i.enhancementLevel === 0)
+                );
                 const have = inventoryItem?.count || 0;
                 const missingAmount = Math.max(0, material.count - have);
 

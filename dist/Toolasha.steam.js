@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.27.0
+// @version      0.28.0
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -19435,6 +19435,8 @@ return plugin;
             this.CACHE_KEY_DATA = 'MWITools_marketAPI_json';
             this.CACHE_KEY_TIMESTAMP = 'MWITools_marketAPI_timestamp';
             this.CACHE_KEY_PATCHES = 'MWITools_marketAPI_patches';
+            this.CACHE_KEY_MIGRATION = 'MWITools_marketAPI_migration_version';
+            this.CURRENT_MIGRATION_VERSION = 1; // Increment this when patches need to be cleared
 
             // Current market data
             this.marketData = null;
@@ -19457,7 +19459,8 @@ return plugin;
                 const cached = await this.getCachedData();
                 if (cached) {
                     this.marketData = cached.data;
-                    this.lastFetchTimestamp = cached.timestamp;
+                    // API timestamp is in seconds, convert to milliseconds for comparison with Date.now()
+                    this.lastFetchTimestamp = cached.timestamp * 1000;
                     // Load patches from storage
                     await this.loadPatches();
                     // Hide alert on successful cache load
@@ -19470,7 +19473,8 @@ return plugin;
                 const cachedFallback = await storage$1.getJSON(this.CACHE_KEY_DATA, 'settings', null);
                 if (cachedFallback?.marketData) {
                     this.marketData = cachedFallback.marketData;
-                    this.lastFetchTimestamp = cachedFallback.timestamp;
+                    // API timestamp is in seconds, convert to milliseconds
+                    this.lastFetchTimestamp = cachedFallback.timestamp * 1000;
                     // Load patches from storage
                     await this.loadPatches();
                     console.warn('[MarketAPI] Skipping fetch; disconnected. Using cached data.');
@@ -19489,7 +19493,8 @@ return plugin;
                     // Cache the fresh data
                     this.cacheData(response);
                     this.marketData = response.marketData;
-                    this.lastFetchTimestamp = response.timestamp;
+                    // API timestamp is in seconds, convert to milliseconds
+                    this.lastFetchTimestamp = response.timestamp * 1000;
                     // Load patches from storage (they may still be fresher than new API data)
                     await this.loadPatches();
                     // Hide alert on successful fetch
@@ -19505,7 +19510,8 @@ return plugin;
             if (expiredCache) {
                 console.warn('[MarketAPI] Using expired cache as fallback');
                 this.marketData = expiredCache.marketData;
-                this.lastFetchTimestamp = expiredCache.timestamp;
+                // API timestamp is in seconds, convert to milliseconds
+                this.lastFetchTimestamp = expiredCache.timestamp * 1000;
                 // Load patches from storage
                 await this.loadPatches();
                 // Show alert when using expired cache
@@ -19754,11 +19760,61 @@ return plugin;
          */
         async loadPatches() {
             try {
+                // Check migration version - clear patches if old version
+                const migrationVersion = await storage$1.get(this.CACHE_KEY_MIGRATION, 'settings', 0);
+
+                if (migrationVersion < this.CURRENT_MIGRATION_VERSION) {
+                    console.log(
+                        `[MarketAPI] Migrating price patches from v${migrationVersion} to v${this.CURRENT_MIGRATION_VERSION}`
+                    );
+                    // Clear old patches (they may have corrupted data)
+                    this.pricePatchs = {};
+                    await storage$1.set(this.CACHE_KEY_PATCHES, {}, 'settings');
+                    await storage$1.set(this.CACHE_KEY_MIGRATION, this.CURRENT_MIGRATION_VERSION, 'settings');
+                    console.log('[MarketAPI] Price patches cleared due to migration');
+                    return;
+                }
+
+                // Load patches normally
                 const patches = await storage$1.getJSON(this.CACHE_KEY_PATCHES, 'settings', {});
                 this.pricePatchs = patches || {};
+
+                // Purge stale patches (older than API data)
+                this.purgeStalePatches();
             } catch (error) {
                 console.error('[MarketAPI] Failed to load price patches:', error);
                 this.pricePatchs = {};
+            }
+        }
+
+        /**
+         * Remove patches older than the current API data
+         * Called after loadPatches() to clean up stale patches
+         */
+        purgeStalePatches() {
+            if (!this.lastFetchTimestamp) {
+                return; // No API data loaded yet
+            }
+
+            let purgedCount = 0;
+            const keysToDelete = [];
+
+            for (const [key, patch] of Object.entries(this.pricePatchs)) {
+                if (patch.timestamp < this.lastFetchTimestamp) {
+                    keysToDelete.push(key);
+                    purgedCount++;
+                }
+            }
+
+            // Remove stale patches
+            for (const key of keysToDelete) {
+                delete this.pricePatchs[key];
+            }
+
+            if (purgedCount > 0) {
+                console.log(`[MarketAPI] Purged ${purgedCount} stale price patches`);
+                // Save cleaned patches
+                this.savePatches();
             }
         }
 
@@ -31024,8 +31080,8 @@ return plugin;
 
                     // Update market API with fresh prices from order book
                     if (orderBooks) {
-                        for (const orderBook of orderBooks) {
-                            const enhancementLevel = orderBook.enhancementLevel || 0;
+                        // Enhancement level is the ARRAY INDEX, not a property on the orderBook object
+                        orderBooks.forEach((orderBook, enhancementLevel) => {
                             const topAsk = orderBook.asks?.[0]?.price ?? null;
                             const topBid = orderBook.bids?.[0]?.price ?? null;
 
@@ -31033,7 +31089,7 @@ return plugin;
                             if (topAsk !== null || topBid !== null) {
                                 marketAPI.updatePrice(itemHrid, enhancementLevel, topAsk, topBid);
                             }
-                        }
+                        });
                     }
 
                     // Save to storage (debounced)
@@ -31259,17 +31315,30 @@ return plugin;
                         const price = this.parsePrice(priceText);
                         const quantity = this.parseQuantity(quantityText);
 
+                        // Get currently active listings to validate matches
+                        const activeListings = dataManager$1.getMarketListings();
+                        const activeListingIds = new Set(activeListings.map((l) => l.id));
+
                         // Match from knownListings (filtering out already-used and top-20 listings)
+                        // Find ALL potential matches, then pick the newest one (highest ID)
                         const allOrderBookIds = new Set(listings.map((l) => l.listingId));
-                        const matchedListing = this.knownListings.find((listing) => {
+                        const potentialMatches = this.knownListings.filter((listing) => {
                             if (usedListingIds.has(listing.id)) return false;
                             if (allOrderBookIds.has(listing.id)) return false; // Skip top 20
+                            if (!activeListingIds.has(listing.id)) return false; // Only match active listings
 
                             const itemMatch = listing.itemHrid === currentItemHrid;
                             const priceMatch = Math.abs(listing.price - price) < 0.01;
                             const qtyMatch = listing.orderQuantity - listing.filledQuantity === quantity;
-                            return itemMatch && priceMatch && qtyMatch;
+                            const sideMatch = listing.isSell === isSellTable;
+                            return itemMatch && priceMatch && qtyMatch && sideMatch;
                         });
+
+                        // Pick the newest listing (highest ID) if multiple matches
+                        const matchedListing =
+                            potentialMatches.length > 0
+                                ? potentialMatches.reduce((newest, current) => (current.id > newest.id ? current : newest))
+                                : null;
 
                         if (matchedListing) {
                             usedListingIds.add(matchedListing.id);
@@ -38386,7 +38455,11 @@ return plugin;
                         ${this.renderInventoryBreakdown(networthData.currentAssets.inventory.byCategory)}
                     </div>
 
-                    <div style="margin-top: 4px;">Market listings: ${networthFormatter(Math.round(networthData.currentAssets.listings.value))}</div>
+                    <!-- Market Listings -->
+                    <div style="cursor: pointer; margin-top: 4px;" id="mwi-listings-toggle">
+                        + Market listings: ${networthFormatter(Math.round(networthData.currentAssets.listings.value))}
+                    </div>
+                    <div id="mwi-listings-breakdown" style="display: none; margin-left: 20px; font-size: 0.8rem; color: #bbb; white-space: pre-line;">${this.renderListingsBreakdown(networthData.currentAssets.listings.breakdown)}</div>
                 </div>
 
                 <!-- Fixed Assets -->
@@ -38528,6 +38601,24 @@ return plugin;
         }
 
         /**
+         * Render market listings breakdown HTML
+         * @param {Array} breakdown - Array of listing objects
+         * @returns {string} HTML string
+         */
+        renderListingsBreakdown(breakdown) {
+            if (!breakdown || breakdown.length === 0) {
+                return '<div>No market listings</div>';
+            }
+
+            return breakdown
+                .map((listing) => {
+                    const typeLabel = listing.isSell ? 'Sell' : 'Buy';
+                    return `${listing.name} (${typeLabel}): ${networthFormatter(Math.round(listing.value))}`;
+                })
+                .join('\n');
+        }
+
+        /**
          * Render inventory breakdown HTML (grouped by category)
          * @param {Object} byCategory - Object with category names as keys
          * @returns {string} HTML string
@@ -38608,6 +38699,13 @@ return plugin;
                     `${categoryName}: ${networthFormatter(Math.round(categoryData.totalValue))}`
                 );
             });
+
+            // Market Listings toggle
+            this.setupToggle(
+                'mwi-listings-toggle',
+                'mwi-listings-breakdown',
+                `Market listings: ${networthFormatter(Math.round(networthData.currentAssets.listings.value))}`
+            );
 
             // Fixed assets toggle
             this.setupToggle(
@@ -39373,22 +39471,12 @@ return plugin;
                             askPrice = craftingCost;
                             bidPrice = craftingCost;
                         } else if (!this.warnedItems.has(itemHrid)) {
-                            // No crafting recipe found (likely drop-only item)
-                            console.warn(
-                                '[InventoryBadgeManager] No market data or crafting recipe for equipment:',
-                                itemName,
-                                itemHrid
-                            );
+                            // No crafting recipe found (likely drop-only item) - silently skip
                             this.warnedItems.add(itemHrid);
                         }
                     } else if (!isEquipment && askPrice === 0 && bidPrice === 0) {
-                        // Non-equipment with no market data
+                        // Non-equipment with no market data - silently skip
                         if (!this.warnedItems.has(itemHrid)) {
-                            console.warn(
-                                '[InventoryBadgeManager] No market data for non-equipment item:',
-                                itemName,
-                                itemHrid
-                            );
                             this.warnedItems.add(itemHrid);
                         }
                         // Leave values at 0 (no badge will be shown)
@@ -57857,22 +57945,33 @@ return plugin;
         constructor() {
             this.isInitialized = false;
             this.newBattleHandler = null;
-            this.consumableEventHandler = null; // NEW: for battle_consumable_ability_updated
+            this.consumableEventHandler = null;
             this.latestCombatData = null;
             this.currentBattleId = null;
-            this.consumableActualConsumed = {}; // { characterId: { itemHrid: count } } - from consumption events
-            this.trackingStartTime = {}; // { characterId: timestamp } - when we started tracking
+
+            // Consumable tracking state (persisted to storage like MCS)
+            this.consumableTracker = {
+                actualConsumed: {}, // { itemHrid: count }
+                defaultConsumed: {}, // { itemHrid: baselineCount }
+                inventoryAmount: {}, // { itemHrid: currentCount }
+                startTime: null, // When tracking started
+                lastUpdate: null, // Last consumption event timestamp
+                lastEventByItem: {}, // { itemHrid: timestamp } - for deduplication
+            };
         }
 
         /**
          * Initialize the data collector
          */
-        initialize() {
+        async initialize() {
             if (this.isInitialized) {
                 return;
             }
 
             this.isInitialized = true;
+
+            // Load persisted tracking state from storage (MCS-style)
+            await this.loadConsumableTracking();
 
             // Store handler references for cleanup
             this.newBattleHandler = (data) => this.onNewBattle(data);
@@ -57886,34 +57985,144 @@ return plugin;
         }
 
         /**
+         * Get default consumed count for an item (MCS-style baseline)
+         * @param {string} itemHrid - Item HRID
+         * @returns {number} Default consumed count (2 for drinks, 10 for food)
+         */
+        getDefaultConsumed(itemHrid) {
+            const name = itemHrid.toLowerCase();
+            if (name.includes('coffee') || name.includes('drink')) return 2;
+            if (
+                name.includes('donut') ||
+                name.includes('cupcake') ||
+                name.includes('cake') ||
+                name.includes('gummy') ||
+                name.includes('yogurt')
+            )
+                return 10;
+            return 0;
+        }
+
+        /**
+         * Calculate elapsed seconds since tracking started (MCS-style)
+         * @returns {number} Elapsed seconds
+         */
+        calcElapsedSeconds() {
+            if (!this.consumableTracker.startTime) {
+                return 0;
+            }
+            return Math.max(0, (Date.now() - this.consumableTracker.startTime) / 1000);
+        }
+
+        /**
+         * Load consumable tracking state from storage
+         */
+        async loadConsumableTracking() {
+            try {
+                const saved = await storage$1.getJSON('consumableTracker', 'combatStats', null);
+                if (saved) {
+                    // Restore tracking state
+                    this.consumableTracker.actualConsumed = saved.actualConsumed || {};
+                    this.consumableTracker.defaultConsumed = saved.defaultConsumed || {};
+                    this.consumableTracker.inventoryAmount = saved.inventoryAmount || {};
+                    this.consumableTracker.lastUpdate = saved.lastUpdate || null;
+
+                    // Restore elapsed time by adjusting startTime
+                    // saved.elapsedMs = how much time had passed when we saved
+                    // saved.saveTimestamp = when we saved
+                    // Time since save = Date.now() - saved.saveTimestamp
+                    // New startTime = Date.now() - saved.elapsedMs (resume from where we left off)
+                    if (saved.elapsedMs !== undefined && saved.saveTimestamp) {
+                        this.consumableTracker.startTime = Date.now() - saved.elapsedMs;
+                    } else if (saved.startTime) {
+                        // Legacy: direct startTime (will include offline time)
+                        this.consumableTracker.startTime = saved.startTime;
+                    }
+                }
+            } catch (error) {
+                console.error('[Combat Stats] Error loading consumable tracking:', error);
+            }
+        }
+
+        /**
+         * Save consumable tracking state to storage
+         */
+        async saveConsumableTracking() {
+            try {
+                const toSave = {
+                    actualConsumed: this.consumableTracker.actualConsumed,
+                    defaultConsumed: this.consumableTracker.defaultConsumed,
+                    inventoryAmount: this.consumableTracker.inventoryAmount,
+                    lastUpdate: this.consumableTracker.lastUpdate,
+                    // Save elapsed time, not raw startTime (MCS-style)
+                    elapsedMs: this.consumableTracker.startTime ? Date.now() - this.consumableTracker.startTime : 0,
+                    saveTimestamp: Date.now(),
+                };
+                await storage$1.setJSON('consumableTracker', toSave, 'combatStats');
+            } catch (error) {
+                console.error('[Combat Stats] Error saving consumable tracking:', error);
+            }
+        }
+
+        /**
+         * Reset consumable tracking (for new combat session)
+         */
+        async resetConsumableTracking() {
+            this.consumableTracker = {
+                actualConsumed: {},
+                defaultConsumed: {},
+                inventoryAmount: {},
+                startTime: Date.now(),
+                lastUpdate: null,
+                lastEventByItem: {},
+            };
+            await storage$1.setJSON('consumableTracker', null, 'combatStats');
+        }
+
+        /**
          * Handle battle_consumable_ability_updated event (fires on each consumption)
          * NOTE: This event only fires for the CURRENT PLAYER (solo tracking)
          * @param {Object} data - Consumable update data
          */
-        onConsumableUsed(data) {
+        async onConsumableUsed(data) {
             try {
                 if (!data || !data.consumable || !data.consumable.itemHrid) {
                     return;
                 }
 
-                // Use 'current' key for solo player tracking (event only fires for current player)
-                const characterId = 'current';
-
-                // Initialize tracking for current player if needed
-                if (!this.consumableActualConsumed[characterId]) {
-                    this.consumableActualConsumed[characterId] = {};
-                    this.trackingStartTime[characterId] = Date.now();
-                }
-
                 const itemHrid = data.consumable.itemHrid;
+                const now = Date.now();
 
-                // Initialize count for this item if first time seen
-                if (!this.consumableActualConsumed[characterId][itemHrid]) {
-                    this.consumableActualConsumed[characterId][itemHrid] = 0;
+                // Deduplicate: skip if we already processed this item within 100ms
+                // (game sometimes sends duplicate events)
+                const lastEventTime = this.consumableTracker.lastEventByItem[itemHrid] || 0;
+                if (now - lastEventTime < 100) {
+                    return; // Skip duplicate event
+                }
+                this.consumableTracker.lastEventByItem[itemHrid] = now;
+
+                // Initialize tracking if first event
+                if (!this.consumableTracker.startTime) {
+                    this.consumableTracker.startTime = now;
                 }
 
-                // Increment consumption count (this event fires once per use)
-                this.consumableActualConsumed[characterId][itemHrid]++;
+                // Initialize item if first time seen (MCS-style)
+                if (this.consumableTracker.actualConsumed[itemHrid] === undefined) {
+                    this.consumableTracker.actualConsumed[itemHrid] = 0;
+                    this.consumableTracker.defaultConsumed[itemHrid] = this.getDefaultConsumed(itemHrid);
+                }
+
+                // Increment consumption count
+                this.consumableTracker.actualConsumed[itemHrid]++;
+                this.consumableTracker.lastUpdate = now;
+
+                // Update inventory amount from event data
+                if (data.consumable.count !== undefined) {
+                    this.consumableTracker.inventoryAmount[itemHrid] = data.consumable.count;
+                }
+
+                // Persist after each consumption (MCS-style)
+                await this.saveConsumableTracking();
             } catch (error) {
                 console.error('[Combat Stats] Error processing consumable event:', error);
             }
@@ -57930,16 +58139,18 @@ return plugin;
                     return;
                 }
 
-                // Detect new combat run (new battleId)
                 const battleId = data.battleId || 0;
-
-                // Only reset if we haven't initialized yet (first run after script load)
-                // Don't reset on every battleId change since that happens every wave!
 
                 // Calculate duration from combat start time
                 const combatStartTime = new Date(data.combatStartTime).getTime() / 1000;
                 const currentTime = Date.now() / 1000;
                 const durationSeconds = currentTime - combatStartTime;
+
+                // Calculate elapsed tracking time (MCS-style)
+                const elapsedSeconds = this.calcElapsedSeconds();
+
+                // Get current character ID to identify which player is the current user
+                const currentCharacterId = dataManager$1.getCurrentCharacterId();
 
                 // Extract combat data
                 const combatData = {
@@ -57947,88 +58158,76 @@ return plugin;
                     battleId: battleId,
                     combatStartTime: data.combatStartTime,
                     durationSeconds: durationSeconds,
-                    players: data.players.map((player, index) => {
-                        const characterId = player.character.id;
+                    players: data.players.map((player) => {
+                        // Check if this player is the current user by matching character ID
+                        const isCurrentPlayer = player.character.id === currentCharacterId;
 
-                        // For the first player (current player), use event-based consumption tracking
-                        // For other players (party members), we'd need snapshot-based tracking (TODO)
-                        const trackingKey = index === 0 ? 'current' : characterId;
-
-                        // Initialize tracking for this character if needed
-                        if (!this.consumableActualConsumed[trackingKey]) {
-                            this.consumableActualConsumed[trackingKey] = {};
-                            this.trackingStartTime[trackingKey] = Date.now();
-                        }
-
-                        // Calculate time elapsed since we started tracking
-                        const trackingStartTime = this.trackingStartTime[trackingKey] || Date.now();
-                        const elapsedSeconds = (Date.now() - trackingStartTime) / 1000;
-
-                        // Process consumables using event-based consumption data
+                        // Process consumables - only track for current player
                         const consumablesWithConsumed = [];
-                        const seenItems = new Set(); // Deduplicate by itemHrid (game allows 1 of each type)
+                        const seenItems = new Set();
 
                         if (player.combatConsumables) {
                             for (const consumable of player.combatConsumables) {
-                                // Skip duplicate entries (game UI enforces 1 per type, but WS data may have dupes)
                                 if (seenItems.has(consumable.itemHrid)) {
                                     continue;
                                 }
                                 seenItems.add(consumable.itemHrid);
 
-                                // Get actual consumed count from consumption events
-                                const totalActualConsumed =
-                                    this.consumableActualConsumed[trackingKey]?.[consumable.itemHrid] || 0;
-
-                                // MCS-style baseline: fixed item counts (not rates)
-                                // Baseline assumes 2 drinks or 10 foods consumed in DEFAULT_TIME (600s)
-                                const itemName = consumable.itemHrid.toLowerCase();
-                                const isDrink = itemName.includes('coffee') || itemName.includes('drink');
-                                const isFood =
-                                    itemName.includes('donut') ||
-                                    itemName.includes('cupcake') ||
-                                    itemName.includes('cake') ||
-                                    itemName.includes('gummy') ||
-                                    itemName.includes('yogurt');
-
-                                const defaultConsumed = isDrink ? 2 : isFood ? 10 : 0;
-
-                                // MCS-style weighted average with DEFAULT_TIME constant
-                                // Adds 10 minutes (600s) of baseline data to make estimates stable from start
-                                const DEFAULT_TIME = 10 * 60; // 600 seconds
-                                const baselineRate = defaultConsumed / DEFAULT_TIME;
-
-                                let consumptionRate;
-                                if (totalActualConsumed === 0) {
-                                    // No consumption detected yet — use pure baseline rate
-                                    consumptionRate = baselineRate;
-                                } else {
-                                    // Blend actual data with baseline for stability
-                                    const actualRate = totalActualConsumed / elapsedSeconds;
-                                    const combinedTotal = defaultConsumed + totalActualConsumed;
-                                    const combinedTime = DEFAULT_TIME + elapsedSeconds;
-                                    const combinedRate = combinedTotal / combinedTime;
-                                    // 90% actual rate + 10% combined (baseline+actual) rate
-                                    consumptionRate = actualRate * 0.9 + combinedRate * 0.1;
+                                // Update inventory amount from new_battle data (only for current player)
+                                if (isCurrentPlayer) {
+                                    this.consumableTracker.inventoryAmount[consumable.itemHrid] = consumable.count;
                                 }
 
-                                // Estimate total consumed for the entire combat duration
+                                // Get tracking data (only accurate for current player)
+                                const actualConsumed = isCurrentPlayer
+                                    ? this.consumableTracker.actualConsumed[consumable.itemHrid] || 0
+                                    : 0;
+                                const defaultConsumed = isCurrentPlayer
+                                    ? this.consumableTracker.defaultConsumed[consumable.itemHrid] ||
+                                      this.getDefaultConsumed(consumable.itemHrid)
+                                    : this.getDefaultConsumed(consumable.itemHrid);
+
+                                // MCS formula (exact match to MCS code lines 26027-26030)
+                                const DEFAULT_TIME = 10 * 60; // 600 seconds
+                                const trackingElapsed = isCurrentPlayer ? elapsedSeconds : 0;
+
+                                const actualRate = trackingElapsed > 0 ? actualConsumed / trackingElapsed : 0;
+                                const combinedRate = (defaultConsumed + actualConsumed) / (DEFAULT_TIME + trackingElapsed);
+                                const consumptionRate = actualRate * 0.9 + combinedRate * 0.1;
+
+                                // Per-day rate (MCS uses Math.ceil)
+                                const consumedPerDay = Math.ceil(consumptionRate * 86400);
+
+                                // Estimate for this combat session
                                 const estimatedConsumed = consumptionRate * durationSeconds;
 
-                                consumablesWithConsumed.push({
+                                // Time until inventory runs out (MCS-style)
+                                const inventoryAmount = isCurrentPlayer
+                                    ? this.consumableTracker.inventoryAmount[consumable.itemHrid] || consumable.count
+                                    : consumable.count;
+                                const timeToZeroSeconds =
+                                    consumptionRate > 0 ? inventoryAmount / consumptionRate : Infinity;
+
+                                const consumableData = {
                                     itemHrid: consumable.itemHrid,
                                     currentCount: consumable.count,
-                                    actualConsumed: totalActualConsumed,
+                                    actualConsumed: actualConsumed,
+                                    defaultConsumed: defaultConsumed,
                                     consumed: estimatedConsumed,
+                                    consumedPerDay: consumedPerDay,
                                     consumptionRate: consumptionRate,
-                                    elapsedSeconds: elapsedSeconds,
-                                });
+                                    elapsedSeconds: trackingElapsed,
+                                    inventoryAmount: inventoryAmount,
+                                    timeToZeroSeconds: timeToZeroSeconds,
+                                };
+                                consumablesWithConsumed.push(consumableData);
                             }
                         }
 
                         return {
                             name: player.character.name,
-                            characterId: characterId,
+                            characterId: player.character.id,
+                            isCurrentPlayer: isCurrentPlayer,
                             loot: player.totalLootMap || {},
                             experience: player.totalSkillExperienceMap || {},
                             deathCount: player.deathCount || 0,
@@ -58046,8 +58245,11 @@ return plugin;
                 // Store in memory
                 this.latestCombatData = combatData;
 
-                // Store in IndexedDB (debounced - will update continuously during combat)
+                // Store in IndexedDB
                 await storage$1.setJSON('latestCombatRun', combatData, 'combatStats');
+
+                // Also save tracking state periodically
+                await this.saveConsumableTracking();
             } catch (error) {
                 console.error('[Combat Stats] Error collecting combat data:', error);
             }
@@ -58090,8 +58292,7 @@ return plugin;
             this.isInitialized = false;
             this.latestCombatData = null;
             this.currentBattleId = null;
-            this.consumableActualConsumed = {};
-            this.trackingStartTime = {};
+            // Note: Don't reset consumableTracker here - it's persisted
         }
     }
 
@@ -58174,14 +58375,18 @@ return plugin;
             breakdown.push({
                 itemHrid: consumable.itemHrid,
                 itemName: itemName,
-                count: consumed, // Use estimated consumption
+                count: consumed,
+                consumedPerDay: consumable.consumedPerDay || 0,
                 pricePerItem: itemPrice,
                 totalCost: itemCost,
                 startingCount: consumable.startingCount,
                 currentCount: consumable.currentCount,
                 actualConsumed: actualConsumed,
+                defaultConsumed: consumable.defaultConsumed || 0,
                 consumptionRate: consumable.consumptionRate,
                 elapsedSeconds: consumable.elapsedSeconds || 0,
+                inventoryAmount: consumable.inventoryAmount || consumable.currentCount,
+                timeToZeroSeconds: consumable.timeToZeroSeconds || Infinity,
             });
         }
 
@@ -58276,8 +58481,11 @@ return plugin;
         const consumableCosts = consumableData.total;
         const consumableBreakdown = consumableData.breakdown;
 
-        // Calculate daily consumable costs
-        const dailyConsumableCosts = duration > 0 ? calculateDailyRate(consumableCosts, duration) : 0;
+        // Calculate daily consumable costs using pre-calculated per-day rates (MCS-style)
+        const dailyConsumableCosts = consumableBreakdown.reduce(
+            (sum, item) => sum + (item.consumedPerDay || 0) * item.pricePerItem,
+            0
+        );
 
         // Calculate daily profit
         const dailyProfitAsk = dailyIncomeAsk - dailyConsumableCosts;
@@ -58288,6 +58496,9 @@ return plugin;
 
         // Calculate experience per hour
         const expPerHour = duration > 0 ? (totalExp / duration) * 3600 : 0;
+
+        // Calculate deaths per hour
+        const deathsPerHour = duration > 0 ? (playerData.deathCount / duration) * 3600 : 0;
 
         // Format loot list
         const lootList = formatLootList(playerData.loot);
@@ -58312,6 +58523,7 @@ return plugin;
             totalExp,
             expPerHour,
             deathCount: playerData.deathCount,
+            deathsPerHour,
             lootList,
             duration,
         };
@@ -58403,6 +58615,15 @@ return plugin;
 
             this.isInitialized = true;
 
+            // Setup setting listener
+            config$1.onSettingChange('combatStats', (enabled) => {
+                if (enabled) {
+                    this.injectButton();
+                } else {
+                    this.removeButton();
+                }
+            });
+
             // Start observing for Combat panel
             this.startObserver();
         }
@@ -58445,6 +58666,11 @@ return plugin;
          * Inject Statistics button into Combat panel tabs
          */
         injectButton() {
+            // Check if feature is enabled
+            if (!config$1.getSetting('combatStats')) {
+                return;
+            }
+
             // Find the tabs container
             const tabsContainer = document.querySelector(
                 'div.GamePage_mainPanel__2njyb > div > div:nth-child(1) > div > div > div > div[class*="TabsComponent_tabsContainer"] > div > div > div'
@@ -58477,6 +58703,16 @@ return plugin;
             // Insert button at the end
             const lastTab = tabsContainer.children[tabsContainer.children.length - 1];
             tabsContainer.insertBefore(button, lastTab.nextSibling);
+        }
+
+        /**
+         * Remove Statistics button from Combat panel tabs
+         */
+        removeButton() {
+            const button = document.querySelector('.toolasha-combat-stats-btn');
+            if (button) {
+                button.remove();
+            }
         }
 
         /**
@@ -58616,10 +58852,6 @@ return plugin;
                 durationSeconds = combatData.durationSeconds;
             }
 
-            if (!durationSeconds) {
-                console.warn('[Combat Stats] No duration data available');
-            }
-
             // Calculate statistics
             const playerStats = calculateAllPlayerStats(combatData, durationSeconds);
 
@@ -58689,6 +58921,40 @@ return plugin;
             font-size: 24px;
         `;
 
+            // Button container for reset and close
+            const buttonContainer = document.createElement('div');
+            buttonContainer.style.cssText = `
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        `;
+
+            const resetButton = document.createElement('button');
+            resetButton.textContent = 'Reset Tracking';
+            resetButton.style.cssText = `
+            background: #4a4a4a;
+            border: 1px solid #5a5a5a;
+            color: ${textColor};
+            font-size: 12px;
+            cursor: pointer;
+            padding: 6px 12px;
+            border-radius: 4px;
+        `;
+            resetButton.onmouseover = () => {
+                resetButton.style.background = '#5a5a5a';
+            };
+            resetButton.onmouseout = () => {
+                resetButton.style.background = '#4a4a4a';
+            };
+            resetButton.onclick = async () => {
+                if (confirm('Reset consumable tracking? This will clear all tracked consumption data and start fresh.')) {
+                    await combatStatsDataCollector.resetConsumableTracking();
+                    this.closePopup();
+                    // Reopen popup to show fresh data
+                    setTimeout(() => this.showPopup(), 100);
+                }
+            };
+
             const closeButton = document.createElement('button');
             closeButton.textContent = '×';
             closeButton.style.cssText = `
@@ -58702,8 +58968,11 @@ return plugin;
         `;
             closeButton.onclick = () => this.closePopup();
 
+            buttonContainer.appendChild(resetButton);
+            buttonContainer.appendChild(closeButton);
+
             header.appendChild(title);
-            header.appendChild(closeButton);
+            header.appendChild(buttonContainer);
 
             // Create player cards container
             const cardsContainer = document.createElement('div');
@@ -58771,7 +59040,6 @@ return plugin;
             // Find symbol in document
             const symbol = document.querySelector(`symbol[id="${symbolId}"]`);
             if (!symbol) {
-                console.warn('[Combat Stats] Symbol not found:', symbolId);
                 return false;
             }
 
@@ -58853,6 +59121,7 @@ return plugin;
                 { label: 'Total EXP', value: formatNum(stats.totalExp) },
                 { label: 'EXP/hour', value: `${formatNum(stats.expPerHour)}/h` },
                 { label: 'Death Count', value: `${stats.deathCount}` },
+                { label: 'Deaths/hr', value: `${stats.deathsPerHour.toFixed(2)}/h` },
             ];
 
             const statsContainer = document.createElement('div');
@@ -58933,14 +59202,14 @@ return plugin;
                                     color: ${textColor};
                                 `;
 
-                                    // For daily: show per-day quantities at same price
-                                    // For total: show actual quantities and costs
-                                    const displayQty = row.isDaily ? (item.count / stats.duration) * 86400 : item.count;
+                                    // For daily: use MCS-style consumedPerDay directly
+                                    // For total: show actual quantities and costs for this session
+                                    const displayQty = row.isDaily ? item.consumedPerDay : item.count;
 
                                     const displayPrice = item.pricePerItem; // Price stays the same
 
                                     const displayCost = row.isDaily
-                                        ? (item.totalCost / stats.duration) * 86400
+                                        ? item.consumedPerDay * item.pricePerItem
                                         : item.totalCost;
 
                                     itemRow.innerHTML = `
@@ -59010,9 +59279,9 @@ return plugin;
                                     const hasActualData = firstItem.actualConsumed > 0;
 
                                     if (!hasActualData) {
-                                        trackingNote.textContent = `📊 Tracked ${formatTrackingDuration(trackingDuration)} - Using baseline rates (no consumption detected yet)`;
+                                        trackingNote.textContent = `📊 Tracked ${formatTrackingDuration(trackingDuration)} - No consumption yet (rate decreases over time)`;
                                     } else {
-                                        trackingNote.textContent = `📊 Tracked ${formatTrackingDuration(trackingDuration)} - Using 90% actual + 10% combined (baseline+actual)`;
+                                        trackingNote.textContent = `📊 Tracked ${formatTrackingDuration(trackingDuration)} - 90% actual + 10% baseline blend`;
                                     }
 
                                     breakdownDiv.appendChild(trackingNote);
@@ -59187,8 +59456,8 @@ return plugin;
      * Initialize combat statistics feature
      */
     async function initialize() {
-        // Initialize data collector (WebSocket listener)
-        combatStatsDataCollector.initialize();
+        // Initialize data collector (WebSocket listener + load persisted state)
+        await combatStatsDataCollector.initialize();
 
         // Initialize UI (button injection and popup)
         combatStatsUI.initialize();
@@ -66105,7 +66374,14 @@ return plugin;
             const inventory = dataManager$1.getInventory();
             if (!inventory) return 0;
 
-            const item = inventory.find((i) => i.itemHrid === itemHrid);
+            // Only count items in inventory (not equipped) with no enhancement
+            // Enhanced items and equipped items cannot be used for house construction
+            const item = inventory.find(
+                (i) =>
+                    i.itemHrid === itemHrid &&
+                    i.itemLocationHrid === '/item_locations/inventory' &&
+                    (!i.enhancementLevel || i.enhancementLevel === 0)
+            );
             return item ? item.count : 0;
         }
 
@@ -66608,7 +66884,14 @@ return plugin;
 
             // Process all materials (skip coins)
             for (const material of costData.materials) {
-                const inventoryItem = inventory.find((i) => i.itemHrid === material.itemHrid);
+                // Only count items in inventory (not equipped) with no enhancement
+                // Enhanced items and equipped items cannot be used for house construction
+                const inventoryItem = inventory.find(
+                    (i) =>
+                        i.itemHrid === material.itemHrid &&
+                        i.itemLocationHrid === '/item_locations/inventory' &&
+                        (!i.enhancementLevel || i.enhancementLevel === 0)
+                );
                 const have = inventoryItem?.count || 0;
                 const missingAmount = Math.max(0, material.count - have);
 
@@ -71952,7 +72235,7 @@ return plugin;
                 module: Combat.combatSummary,
                 async: false,
             },
-            { key: 'combatStats', name: 'Combat Stats', category: 'Combat', module: Combat.combatStats, async: false },
+            { key: 'combatStats', name: 'Combat Stats', category: 'Combat', module: Combat.combatStats, async: true },
         ];
 
         // UI Features
