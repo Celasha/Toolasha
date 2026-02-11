@@ -12,7 +12,7 @@ import { calculateTaskProfit } from './task-profit-calculator.js';
 import expectedValueCalculator from '../market/expected-value-calculator.js';
 import { numberFormatter, timeReadable, formatPercentage } from '../../utils/formatters.js';
 import { GAME, TOOLASHA } from '../../utils/selectors.js';
-import { calculateSecondsForActions } from '../../utils/profit-helpers.js';
+import { calculateSecondsForActions, calculateEffectiveActionsPerHour } from '../../utils/profit-helpers.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 
 // Compiled regex pattern (created once, reused for performance)
@@ -40,7 +40,7 @@ function calculateTaskCompletionSeconds(profitData) {
     }
 
     const efficiencyMultiplier = profitData.action.details.efficiencyMultiplier || 1;
-    const baseActionsNeeded = efficiencyMultiplier > 0 ? remainingActions / efficiencyMultiplier : remainingActions;
+    const baseActionsNeeded = Math.ceil(remainingActions / (efficiencyMultiplier > 0 ? efficiencyMultiplier : 1));
 
     return calculateSecondsForActions(baseActionsNeeded, actionsPerHour);
 }
@@ -1021,7 +1021,11 @@ class TaskProfitDisplay {
 
             if (details?.materialCosts) {
                 const actionsNeeded = profitData.action.breakdown.quantity;
-                const hoursNeeded = actionsNeeded / (details.actionsPerHour * (details.efficiencyMultiplier || 1));
+                const effectiveActionsPerHour = calculateEffectiveActionsPerHour(
+                    details.actionsPerHour,
+                    details.efficiencyMultiplier || 1
+                );
+                const hoursNeeded = effectiveActionsPerHour > 0 ? actionsNeeded / effectiveActionsPerHour : 0;
                 lines.push(
                     `<div style="margin-top: 4px; color: #aaa;">Material Costs: ${formatTotalValue(profitData.action.breakdown.materialCost)}</div>`
                 );

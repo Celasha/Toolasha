@@ -35,7 +35,7 @@ import { calculateExperienceMultiplier } from '../../utils/experience-parser.js'
 import { setReactInputValue } from '../../utils/react-input.js';
 import { calculateExpPerHour } from '../../utils/experience-calculator.js';
 import { createCollapsibleSection } from '../../utils/ui-components.js';
-import { calculateActionsPerHour } from '../../utils/profit-helpers.js';
+import { calculateActionsPerHour, calculateEffectiveActionsPerHour } from '../../utils/profit-helpers.js';
 import { createCleanupRegistry } from '../../utils/cleanup-registry.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
 
@@ -398,7 +398,7 @@ class QuickInputButtons {
 
                 // Create initial summary for Action Speed & Time
                 const actionsPerHourWithEfficiency = Math.round(
-                    calculateActionsPerHour(actionTime) * efficiencyMultiplier
+                    calculateEffectiveActionsPerHour(calculateActionsPerHour(actionTime), efficiencyMultiplier)
                 );
                 const initialSummary = `${actionsPerHourWithEfficiency}/hr | Total time: 0s`;
 

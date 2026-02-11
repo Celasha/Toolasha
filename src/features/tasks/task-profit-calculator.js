@@ -297,6 +297,7 @@ async function calculateProductionTaskProfit(actionHrid, quantity) {
             priceEach: profitData.outputPrice,
             outputPriceMissing: profitData.outputPriceMissing,
             actionsPerHour: profitData.actionsPerHour,
+            efficiencyMultiplier: profitData.efficiencyMultiplier || 1,
             bonusRevenue: profitData.bonusRevenue, // Pass through bonus revenue data
         },
     };
