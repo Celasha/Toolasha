@@ -40,9 +40,9 @@ function calculateTaskCompletionSeconds(profitData) {
     }
 
     const efficiencyMultiplier = profitData.action.details.efficiencyMultiplier || 1;
-    const baseActionsNeeded = efficiencyMultiplier > 0 ? remainingActions / efficiencyMultiplier : remainingActions;
+    const effectiveActionsPerHour = actionsPerHour * efficiencyMultiplier;
 
-    return calculateSecondsForActions(baseActionsNeeded, actionsPerHour);
+    return calculateSecondsForActions(remainingActions, effectiveActionsPerHour);
 }
 
 /**
