@@ -120,8 +120,13 @@ class CombatSummary {
         const elem = document.querySelector('[class*="BattlePanel_gainedExp"]')?.parentElement;
 
         if (elem) {
-            // Check if we've already injected stats (deduplication)
-            if (elem.querySelector('#mwi-combat-encounters')) {
+            // Check if we've already injected stats (check for any of our divs, not just the first one)
+            const alreadyInjected =
+                elem.querySelector('#mwi-combat-encounters') ||
+                elem.querySelector('#mwi-combat-revenue') ||
+                elem.querySelector('#mwi-combat-total-exp');
+
+            if (alreadyInjected) {
                 return; // Already injected, skip
             }
 

@@ -385,7 +385,8 @@ class MarketAPI {
         const keysToDelete = [];
 
         for (const [key, patch] of Object.entries(this.pricePatchs)) {
-            if (patch.timestamp < this.lastFetchTimestamp) {
+            // Check for corrupted/invalid patches or stale timestamps
+            if (!patch || !patch.timestamp || patch.timestamp < this.lastFetchTimestamp) {
                 keysToDelete.push(key);
                 purgedCount++;
             }

@@ -321,7 +321,7 @@ class WebSocketHook {
 
         // Skip deduplication for events where consecutive messages have similar first 100 chars
         // but contain different data (counts, timestamps, etc. beyond the 100-char hash window)
-        // OR events that should always trigger UI updates (profile_shared)
+        // OR events that should always trigger UI updates (profile_shared, battle_unit_fetched)
         const skipDedup =
             messageType === 'quests_updated' ||
             messageType === 'action_completed' ||
@@ -329,7 +329,8 @@ class WebSocketHook {
             messageType === 'market_item_order_books_updated' ||
             messageType === 'market_listings_updated' ||
             messageType === 'profile_shared' ||
-            messageType === 'battle_consumable_ability_updated';
+            messageType === 'battle_consumable_ability_updated' ||
+            messageType === 'battle_unit_fetched';
 
         if (!skipDedup) {
             // Deduplicate by message content to prevent 4x JSON.parse on same message
