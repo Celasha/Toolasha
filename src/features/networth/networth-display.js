@@ -345,7 +345,11 @@ class NetworthInventoryDisplay {
                         ${this.renderInventoryBreakdown(networthData.currentAssets.inventory.byCategory)}
                     </div>
 
-                    <div style="margin-top: 4px;">Market listings: ${networthFormatter(Math.round(networthData.currentAssets.listings.value))}</div>
+                    <!-- Market Listings -->
+                    <div style="cursor: pointer; margin-top: 4px;" id="mwi-listings-toggle">
+                        + Market listings: ${networthFormatter(Math.round(networthData.currentAssets.listings.value))}
+                    </div>
+                    <div id="mwi-listings-breakdown" style="display: none; margin-left: 20px; font-size: 0.8rem; color: #bbb; white-space: pre-line;">${this.renderListingsBreakdown(networthData.currentAssets.listings.breakdown)}</div>
                 </div>
 
                 <!-- Fixed Assets -->
@@ -487,6 +491,24 @@ class NetworthInventoryDisplay {
     }
 
     /**
+     * Render market listings breakdown HTML
+     * @param {Array} breakdown - Array of listing objects
+     * @returns {string} HTML string
+     */
+    renderListingsBreakdown(breakdown) {
+        if (!breakdown || breakdown.length === 0) {
+            return '<div>No market listings</div>';
+        }
+
+        return breakdown
+            .map((listing) => {
+                const typeLabel = listing.isSell ? 'Sell' : 'Buy';
+                return `${listing.name} (${typeLabel}): ${networthFormatter(Math.round(listing.value))}`;
+            })
+            .join('\n');
+    }
+
+    /**
      * Render inventory breakdown HTML (grouped by category)
      * @param {Object} byCategory - Object with category names as keys
      * @returns {string} HTML string
@@ -567,6 +589,13 @@ class NetworthInventoryDisplay {
                 `${categoryName}: ${networthFormatter(Math.round(categoryData.totalValue))}`
             );
         });
+
+        // Market Listings toggle
+        this.setupToggle(
+            'mwi-listings-toggle',
+            'mwi-listings-breakdown',
+            `Market listings: ${networthFormatter(Math.round(networthData.currentAssets.listings.value))}`
+        );
 
         // Fixed assets toggle
         this.setupToggle(
