@@ -77,14 +77,18 @@ export function calculateConsumableCosts(consumables, durationSeconds) {
         breakdown.push({
             itemHrid: consumable.itemHrid,
             itemName: itemName,
-            count: consumed, // Use estimated consumption
+            count: consumed,
+            consumedPerDay: consumable.consumedPerDay || 0,
             pricePerItem: itemPrice,
             totalCost: itemCost,
             startingCount: consumable.startingCount,
             currentCount: consumable.currentCount,
             actualConsumed: actualConsumed,
+            defaultConsumed: consumable.defaultConsumed || 0,
             consumptionRate: consumable.consumptionRate,
             elapsedSeconds: consumable.elapsedSeconds || 0,
+            inventoryAmount: consumable.inventoryAmount || consumable.currentCount,
+            timeToZeroSeconds: consumable.timeToZeroSeconds || Infinity,
         });
     }
 
@@ -179,8 +183,11 @@ export function calculatePlayerStats(playerData, durationSeconds = null) {
     const consumableCosts = consumableData.total;
     const consumableBreakdown = consumableData.breakdown;
 
-    // Calculate daily consumable costs
-    const dailyConsumableCosts = duration > 0 ? calculateDailyRate(consumableCosts, duration) : 0;
+    // Calculate daily consumable costs using pre-calculated per-day rates (MCS-style)
+    const dailyConsumableCosts = consumableBreakdown.reduce(
+        (sum, item) => sum + (item.consumedPerDay || 0) * item.pricePerItem,
+        0
+    );
 
     // Calculate daily profit
     const dailyProfitAsk = dailyIncomeAsk - dailyConsumableCosts;
@@ -191,6 +198,9 @@ export function calculatePlayerStats(playerData, durationSeconds = null) {
 
     // Calculate experience per hour
     const expPerHour = duration > 0 ? (totalExp / duration) * 3600 : 0;
+
+    // Calculate deaths per hour
+    const deathsPerHour = duration > 0 ? (playerData.deathCount / duration) * 3600 : 0;
 
     // Format loot list
     const lootList = formatLootList(playerData.loot);
@@ -215,6 +225,7 @@ export function calculatePlayerStats(playerData, durationSeconds = null) {
         totalExp,
         expPerHour,
         deathCount: playerData.deathCount,
+        deathsPerHour,
         lootList,
         duration,
     };

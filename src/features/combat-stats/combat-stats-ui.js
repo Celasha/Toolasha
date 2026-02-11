@@ -239,10 +239,6 @@ class CombatStatsUI {
             durationSeconds = combatData.durationSeconds;
         }
 
-        if (!durationSeconds) {
-            console.warn('[Combat Stats] No duration data available');
-        }
-
         // Calculate statistics
         const playerStats = calculateAllPlayerStats(combatData, durationSeconds);
 
@@ -312,6 +308,40 @@ class CombatStatsUI {
             font-size: 24px;
         `;
 
+        // Button container for reset and close
+        const buttonContainer = document.createElement('div');
+        buttonContainer.style.cssText = `
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        `;
+
+        const resetButton = document.createElement('button');
+        resetButton.textContent = 'Reset Tracking';
+        resetButton.style.cssText = `
+            background: #4a4a4a;
+            border: 1px solid #5a5a5a;
+            color: ${textColor};
+            font-size: 12px;
+            cursor: pointer;
+            padding: 6px 12px;
+            border-radius: 4px;
+        `;
+        resetButton.onmouseover = () => {
+            resetButton.style.background = '#5a5a5a';
+        };
+        resetButton.onmouseout = () => {
+            resetButton.style.background = '#4a4a4a';
+        };
+        resetButton.onclick = async () => {
+            if (confirm('Reset consumable tracking? This will clear all tracked consumption data and start fresh.')) {
+                await combatStatsDataCollector.resetConsumableTracking();
+                this.closePopup();
+                // Reopen popup to show fresh data
+                setTimeout(() => this.showPopup(), 100);
+            }
+        };
+
         const closeButton = document.createElement('button');
         closeButton.textContent = '×';
         closeButton.style.cssText = `
@@ -325,8 +355,11 @@ class CombatStatsUI {
         `;
         closeButton.onclick = () => this.closePopup();
 
+        buttonContainer.appendChild(resetButton);
+        buttonContainer.appendChild(closeButton);
+
         header.appendChild(title);
-        header.appendChild(closeButton);
+        header.appendChild(buttonContainer);
 
         // Create player cards container
         const cardsContainer = document.createElement('div');
@@ -394,7 +427,6 @@ class CombatStatsUI {
         // Find symbol in document
         const symbol = document.querySelector(`symbol[id="${symbolId}"]`);
         if (!symbol) {
-            console.warn('[Combat Stats] Symbol not found:', symbolId);
             return false;
         }
 
@@ -476,6 +508,7 @@ class CombatStatsUI {
             { label: 'Total EXP', value: formatNum(stats.totalExp) },
             { label: 'EXP/hour', value: `${formatNum(stats.expPerHour)}/h` },
             { label: 'Death Count', value: `${stats.deathCount}` },
+            { label: 'Deaths/hr', value: `${stats.deathsPerHour.toFixed(2)}/h` },
         ];
 
         const statsContainer = document.createElement('div');
@@ -556,14 +589,14 @@ class CombatStatsUI {
                                     color: ${textColor};
                                 `;
 
-                                // For daily: show per-day quantities at same price
-                                // For total: show actual quantities and costs
-                                const displayQty = row.isDaily ? (item.count / stats.duration) * 86400 : item.count;
+                                // For daily: use MCS-style consumedPerDay directly
+                                // For total: show actual quantities and costs for this session
+                                const displayQty = row.isDaily ? item.consumedPerDay : item.count;
 
                                 const displayPrice = item.pricePerItem; // Price stays the same
 
                                 const displayCost = row.isDaily
-                                    ? (item.totalCost / stats.duration) * 86400
+                                    ? item.consumedPerDay * item.pricePerItem
                                     : item.totalCost;
 
                                 itemRow.innerHTML = `
@@ -633,9 +666,9 @@ class CombatStatsUI {
                                 const hasActualData = firstItem.actualConsumed > 0;
 
                                 if (!hasActualData) {
-                                    trackingNote.textContent = `📊 Tracked ${formatTrackingDuration(trackingDuration)} - Using baseline rates (no consumption detected yet)`;
+                                    trackingNote.textContent = `📊 Tracked ${formatTrackingDuration(trackingDuration)} - No consumption yet (rate decreases over time)`;
                                 } else {
-                                    trackingNote.textContent = `📊 Tracked ${formatTrackingDuration(trackingDuration)} - Using 90% actual + 10% combined (baseline+actual)`;
+                                    trackingNote.textContent = `📊 Tracked ${formatTrackingDuration(trackingDuration)} - 90% actual + 10% baseline blend`;
                                 }
 
                                 breakdownDiv.appendChild(trackingNote);

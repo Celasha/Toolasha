@@ -480,7 +480,14 @@ class HouseCostDisplay {
 
         // Process all materials (skip coins)
         for (const material of costData.materials) {
-            const inventoryItem = inventory.find((i) => i.itemHrid === material.itemHrid);
+            // Only count items in inventory (not equipped) with no enhancement
+            // Enhanced items and equipped items cannot be used for house construction
+            const inventoryItem = inventory.find(
+                (i) =>
+                    i.itemHrid === material.itemHrid &&
+                    i.itemLocationHrid === '/item_locations/inventory' &&
+                    (!i.enhancementLevel || i.enhancementLevel === 0)
+            );
             const have = inventoryItem?.count || 0;
             const missingAmount = Math.max(0, material.count - have);
 

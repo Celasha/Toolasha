@@ -277,7 +277,7 @@ function registerFeatures() {
             module: Combat.combatSummary,
             async: false,
         },
-        { key: 'combatStats', name: 'Combat Stats', category: 'Combat', module: Combat.combatStats, async: false },
+        { key: 'combatStats', name: 'Combat Stats', category: 'Combat', module: Combat.combatStats, async: true },
     ];
 
     // UI Features

@@ -10,8 +10,8 @@ import combatStatsUI from './combat-stats-ui.js';
  * Initialize combat statistics feature
  */
 async function initialize() {
-    // Initialize data collector (WebSocket listener)
-    combatStatsDataCollector.initialize();
+    // Initialize data collector (WebSocket listener + load persisted state)
+    await combatStatsDataCollector.initialize();
 
     // Initialize UI (button injection and popup)
     combatStatsUI.initialize();

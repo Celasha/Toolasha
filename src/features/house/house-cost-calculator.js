@@ -162,7 +162,14 @@ class HouseCostCalculator {
         const inventory = dataManager.getInventory();
         if (!inventory) return 0;
 
-        const item = inventory.find((i) => i.itemHrid === itemHrid);
+        // Only count items in inventory (not equipped) with no enhancement
+        // Enhanced items and equipped items cannot be used for house construction
+        const item = inventory.find(
+            (i) =>
+                i.itemHrid === itemHrid &&
+                i.itemLocationHrid === '/item_locations/inventory' &&
+                (!i.enhancementLevel || i.enhancementLevel === 0)
+        );
         return item ? item.count : 0;
     }
 
