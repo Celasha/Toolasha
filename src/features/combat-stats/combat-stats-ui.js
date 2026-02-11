@@ -26,6 +26,15 @@ class CombatStatsUI {
 
         this.isInitialized = true;
 
+        // Setup setting listener
+        config.onSettingChange('combatStats', (enabled) => {
+            if (enabled) {
+                this.injectButton();
+            } else {
+                this.removeButton();
+            }
+        });
+
         // Start observing for Combat panel
         this.startObserver();
     }
@@ -68,6 +77,11 @@ class CombatStatsUI {
      * Inject Statistics button into Combat panel tabs
      */
     injectButton() {
+        // Check if feature is enabled
+        if (!config.getSetting('combatStats')) {
+            return;
+        }
+
         // Find the tabs container
         const tabsContainer = document.querySelector(
             'div.GamePage_mainPanel__2njyb > div > div:nth-child(1) > div > div > div > div[class*="TabsComponent_tabsContainer"] > div > div > div'
@@ -100,6 +114,16 @@ class CombatStatsUI {
         // Insert button at the end
         const lastTab = tabsContainer.children[tabsContainer.children.length - 1];
         tabsContainer.insertBefore(button, lastTab.nextSibling);
+    }
+
+    /**
+     * Remove Statistics button from Combat panel tabs
+     */
+    removeButton() {
+        const button = document.querySelector('.toolasha-combat-stats-btn');
+        if (button) {
+            button.remove();
+        }
     }
 
     /**
