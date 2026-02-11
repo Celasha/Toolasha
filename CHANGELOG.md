@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.28.0](https://github.com/Celasha/Toolasha/compare/v0.27.0...v0.28.0) (2026-02-11)
+
+### Features
+
+- make Market Listings expandable in networth display ([4cfdd83](https://github.com/Celasha/Toolasha/commit/4cfdd83ca0e63f8f41d62f8add4c49b00b435d34))
+
+### Bug Fixes
+
+- convert API timestamps to milliseconds and purge stale price patches ([e9c7984](https://github.com/Celasha/Toolasha/commit/e9c79845baddcc4993d4c136bbf389e439d82b6c))
+- correct enhancement level detection in order book price patches ([d9e95db](https://github.com/Celasha/Toolasha/commit/d9e95db7af95398d32a5ab7604d437f2e88ba2cb))
+- correct house inventory counting and add combat deaths/hour ([d63239e](https://github.com/Celasha/Toolasha/commit/d63239eb8b601c3c2241390e71d63b73ba99218e))
+- respect combatStats setting to show/hide Statistics tab ([3f0671a](https://github.com/Celasha/Toolasha/commit/3f0671af927774d2417a96c2a197bef2d0871c2a))
+- validate active listings when matching beyond top 20 in order book ([2db7155](https://github.com/Celasha/Toolasha/commit/2db715507853985289d9a651bd81d35c425b000a))
+
 ## [0.27.0](https://github.com/Celasha/Toolasha/compare/v0.26.3...v0.27.0) (2026-02-10)
 
 ### Features
