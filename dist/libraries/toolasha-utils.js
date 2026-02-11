@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 0.28.0
+ * Version: 0.28.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -658,6 +658,25 @@
     }
 
     /**
+     * Calculate effective actions per hour after efficiency
+     * @param {number} actionsPerHour - Base actions per hour (without efficiency)
+     * @param {number} [efficiencyMultiplier=1] - Efficiency multiplier (1 + efficiencyPercent/100)
+     * @returns {number} Effective actions per hour (0 if invalid input)
+     *
+     * @example
+     * calculateEffectiveActionsPerHour(600, 1.2) // Returns 720
+     */
+    function calculateEffectiveActionsPerHour(actionsPerHour, efficiencyMultiplier = 1) {
+        if (!actionsPerHour || actionsPerHour <= 0) {
+            return 0;
+        }
+        if (!efficiencyMultiplier || efficiencyMultiplier <= 0) {
+            return 0;
+        }
+        return actionsPerHour * efficiencyMultiplier;
+    }
+
+    /**
      * Calculate hours needed for a number of actions
      * @param {number} actionCount - Number of queued actions
      * @param {number} actionsPerHour - Actions per hour rate
@@ -858,7 +877,7 @@
         totalTeaCostPerHour,
         efficiencyMultiplier = 1,
     }) {
-        const effectiveActionsPerHour = actionsPerHour * efficiencyMultiplier;
+        const effectiveActionsPerHour = calculateEffectiveActionsPerHour(actionsPerHour, efficiencyMultiplier);
         if (!effectiveActionsPerHour || effectiveActionsPerHour <= 0) {
             return {
                 totalBaseItems: 0,
@@ -929,7 +948,7 @@
         drinkCostPerHour,
         efficiencyMultiplier = 1,
     }) {
-        const effectiveActionsPerHour = actionsPerHour * efficiencyMultiplier;
+        const effectiveActionsPerHour = calculateEffectiveActionsPerHour(actionsPerHour, efficiencyMultiplier);
         if (!effectiveActionsPerHour || effectiveActionsPerHour <= 0) {
             return {
                 totalBaseRevenue: 0,
@@ -975,6 +994,7 @@
     var profitHelpers = {
         // Rate conversions
         calculateActionsPerHour,
+        calculateEffectiveActionsPerHour,
         calculateHoursForActions,
         calculateSecondsForActions,
 
@@ -996,6 +1016,7 @@
         __proto__: null,
         calculateActionsPerHour: calculateActionsPerHour,
         calculateDrinksPerHour: calculateDrinksPerHour,
+        calculateEffectiveActionsPerHour: calculateEffectiveActionsPerHour,
         calculateGatheringActionTotalsFromBase: calculateGatheringActionTotalsFromBase,
         calculateHoursForActions: calculateHoursForActions,
         calculatePriceAfterTax: calculatePriceAfterTax,
@@ -4533,7 +4554,7 @@
         const avgActionsPerBaseAction = calculateEfficiencyMultiplier(totalEfficiency);
 
         // Calculate actions per hour WITH efficiency (total completions including instant repeats)
-        const actionsPerHourWithEfficiency = baseActionsPerHour * avgActionsPerBaseAction;
+        const actionsPerHourWithEfficiency = calculateEffectiveActionsPerHour(baseActionsPerHour, avgActionsPerBaseAction);
 
         // Calculate experience multiplier (Wisdom + Charm Experience)
         const skillHrid = actionDetails.experienceGain.skillHrid;

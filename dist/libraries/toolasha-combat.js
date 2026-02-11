@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 0.28.0
+ * Version: 0.28.1
  * License: CC-BY-NC-SA-4.0
  */
 

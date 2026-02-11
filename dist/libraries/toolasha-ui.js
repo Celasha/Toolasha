@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 0.28.0
+ * Version: 0.28.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2407,6 +2407,7 @@
                 priceEach: profitData.outputPrice,
                 outputPriceMissing: profitData.outputPriceMissing,
                 actionsPerHour: profitData.actionsPerHour,
+                efficiencyMultiplier: profitData.efficiencyMultiplier || 1,
                 bonusRevenue: profitData.bonusRevenue, // Pass through bonus revenue data
             },
         };
@@ -2502,7 +2503,7 @@
         }
 
         const efficiencyMultiplier = profitData.action.details.efficiencyMultiplier || 1;
-        const baseActionsNeeded = efficiencyMultiplier > 0 ? remainingActions / efficiencyMultiplier : remainingActions;
+        const baseActionsNeeded = Math.ceil(remainingActions / (efficiencyMultiplier > 0 ? efficiencyMultiplier : 1));
 
         return profitHelpers_js.calculateSecondsForActions(baseActionsNeeded, actionsPerHour);
     }
@@ -3483,7 +3484,11 @@
 
                 if (details?.materialCosts) {
                     const actionsNeeded = profitData.action.breakdown.quantity;
-                    const hoursNeeded = actionsNeeded / (details.actionsPerHour * (details.efficiencyMultiplier || 1));
+                    const effectiveActionsPerHour = profitHelpers_js.calculateEffectiveActionsPerHour(
+                        details.actionsPerHour,
+                        details.efficiencyMultiplier || 1
+                    );
+                    const hoursNeeded = effectiveActionsPerHour > 0 ? actionsNeeded / effectiveActionsPerHour : 0;
                     lines.push(
                         `<div style="margin-top: 4px; color: #aaa;">Material Costs: ${formatTotalValue(profitData.action.breakdown.materialCost)}</div>`
                     );

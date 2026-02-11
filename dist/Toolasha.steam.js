@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.28.0
+// @version      0.28.1
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -20528,6 +20528,25 @@ return plugin;
     }
 
     /**
+     * Calculate effective actions per hour after efficiency
+     * @param {number} actionsPerHour - Base actions per hour (without efficiency)
+     * @param {number} [efficiencyMultiplier=1] - Efficiency multiplier (1 + efficiencyPercent/100)
+     * @returns {number} Effective actions per hour (0 if invalid input)
+     *
+     * @example
+     * calculateEffectiveActionsPerHour(600, 1.2) // Returns 720
+     */
+    function calculateEffectiveActionsPerHour(actionsPerHour, efficiencyMultiplier = 1) {
+        if (!actionsPerHour || actionsPerHour <= 0) {
+            return 0;
+        }
+        if (!efficiencyMultiplier || efficiencyMultiplier <= 0) {
+            return 0;
+        }
+        return actionsPerHour * efficiencyMultiplier;
+    }
+
+    /**
      * Calculate hours needed for a number of actions
      * @param {number} actionCount - Number of queued actions
      * @param {number} actionsPerHour - Actions per hour rate
@@ -20728,7 +20747,7 @@ return plugin;
         totalTeaCostPerHour,
         efficiencyMultiplier = 1,
     }) {
-        const effectiveActionsPerHour = actionsPerHour * efficiencyMultiplier;
+        const effectiveActionsPerHour = calculateEffectiveActionsPerHour(actionsPerHour, efficiencyMultiplier);
         if (!effectiveActionsPerHour || effectiveActionsPerHour <= 0) {
             return {
                 totalBaseItems: 0,
@@ -20799,7 +20818,7 @@ return plugin;
         drinkCostPerHour,
         efficiencyMultiplier = 1,
     }) {
-        const effectiveActionsPerHour = actionsPerHour * efficiencyMultiplier;
+        const effectiveActionsPerHour = calculateEffectiveActionsPerHour(actionsPerHour, efficiencyMultiplier);
         if (!effectiveActionsPerHour || effectiveActionsPerHour <= 0) {
             return {
                 totalBaseRevenue: 0,
@@ -20845,6 +20864,7 @@ return plugin;
     var profitHelpers = {
         // Rate conversions
         calculateActionsPerHour,
+        calculateEffectiveActionsPerHour,
         calculateHoursForActions,
         calculateSecondsForActions,
 
@@ -20866,6 +20886,7 @@ return plugin;
         __proto__: null,
         calculateActionsPerHour: calculateActionsPerHour,
         calculateDrinksPerHour: calculateDrinksPerHour,
+        calculateEffectiveActionsPerHour: calculateEffectiveActionsPerHour,
         calculateGatheringActionTotalsFromBase: calculateGatheringActionTotalsFromBase,
         calculateHoursForActions: calculateHoursForActions,
         calculatePriceAfterTax: calculatePriceAfterTax,
@@ -24358,7 +24379,7 @@ return plugin;
         const avgActionsPerBaseAction = calculateEfficiencyMultiplier(totalEfficiency);
 
         // Calculate actions per hour WITH efficiency (total completions including instant repeats)
-        const actionsPerHourWithEfficiency = baseActionsPerHour * avgActionsPerBaseAction;
+        const actionsPerHourWithEfficiency = calculateEffectiveActionsPerHour(baseActionsPerHour, avgActionsPerBaseAction);
 
         // Calculate experience multiplier (Wisdom + Charm Experience)
         const skillHrid = actionDetails.experienceGain.skillHrid;
@@ -37298,6 +37319,7 @@ return plugin;
                 priceEach: profitData.outputPrice,
                 outputPriceMissing: profitData.outputPriceMissing,
                 actionsPerHour: profitData.actionsPerHour,
+                efficiencyMultiplier: profitData.efficiencyMultiplier || 1,
                 bonusRevenue: profitData.bonusRevenue, // Pass through bonus revenue data
             },
         };
@@ -44269,7 +44291,10 @@ return plugin;
             const avgActionsPerBaseAction = calculateEfficiencyMultiplier(totalEfficiency);
 
             // Calculate actions per hour WITH efficiency (total action completions including instant repeats)
-            const actionsPerHourWithEfficiency = baseActionsPerHour * avgActionsPerBaseAction;
+            const actionsPerHourWithEfficiency = calculateEffectiveActionsPerHour(
+                baseActionsPerHour,
+                avgActionsPerBaseAction
+            );
 
             // Calculate items per hour based on action type
             let itemsPerHour;
@@ -45849,7 +45874,7 @@ return plugin;
 
                     // Create initial summary for Action Speed & Time
                     const actionsPerHourWithEfficiency = Math.round(
-                        calculateActionsPerHour(actionTime) * efficiencyMultiplier
+                        calculateEffectiveActionsPerHour(calculateActionsPerHour(actionTime), efficiencyMultiplier)
                     );
                     const initialSummary = `${actionsPerHourWithEfficiency}/hr | Total time: 0s`;
 
@@ -62647,7 +62672,7 @@ return plugin;
         }
 
         const efficiencyMultiplier = profitData.action.details.efficiencyMultiplier || 1;
-        const baseActionsNeeded = efficiencyMultiplier > 0 ? remainingActions / efficiencyMultiplier : remainingActions;
+        const baseActionsNeeded = Math.ceil(remainingActions / (efficiencyMultiplier > 0 ? efficiencyMultiplier : 1));
 
         return calculateSecondsForActions(baseActionsNeeded, actionsPerHour);
     }
@@ -63628,7 +63653,11 @@ return plugin;
 
                 if (details?.materialCosts) {
                     const actionsNeeded = profitData.action.breakdown.quantity;
-                    const hoursNeeded = actionsNeeded / (details.actionsPerHour * (details.efficiencyMultiplier || 1));
+                    const effectiveActionsPerHour = calculateEffectiveActionsPerHour(
+                        details.actionsPerHour,
+                        details.efficiencyMultiplier || 1
+                    );
+                    const hoursNeeded = effectiveActionsPerHour > 0 ? actionsNeeded / effectiveActionsPerHour : 0;
                     lines.push(
                         `<div style="margin-top: 4px; color: #aaa;">Material Costs: ${formatTotalValue(profitData.action.breakdown.materialCost)}</div>`
                     );

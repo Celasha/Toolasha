@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 0.28.0
+ * Version: 0.28.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -4632,7 +4632,10 @@
             const avgActionsPerBaseAction = efficiency_js.calculateEfficiencyMultiplier(totalEfficiency);
 
             // Calculate actions per hour WITH efficiency (total action completions including instant repeats)
-            const actionsPerHourWithEfficiency = baseActionsPerHour * avgActionsPerBaseAction;
+            const actionsPerHourWithEfficiency = profitHelpers_js.calculateEffectiveActionsPerHour(
+                baseActionsPerHour,
+                avgActionsPerBaseAction
+            );
 
             // Calculate items per hour based on action type
             let itemsPerHour;
@@ -6212,7 +6215,7 @@
 
                     // Create initial summary for Action Speed & Time
                     const actionsPerHourWithEfficiency = Math.round(
-                        profitHelpers_js.calculateActionsPerHour(actionTime) * efficiencyMultiplier
+                        profitHelpers_js.calculateEffectiveActionsPerHour(profitHelpers_js.calculateActionsPerHour(actionTime), efficiencyMultiplier)
                     );
                     const initialSummary = `${actionsPerHourWithEfficiency}/hr | Total time: 0s`;
 
