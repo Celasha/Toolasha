@@ -428,7 +428,19 @@ class Config {
         }
         // Handle both boolean (isTrue) and value-based settings
         if (setting.hasOwnProperty('value')) {
-            return setting.value;
+            let value = setting.value;
+
+            // Parse JSON strings for template-type settings
+            if (typeof value === 'string' && (value.startsWith('[') || value.startsWith('{'))) {
+                try {
+                    value = JSON.parse(value);
+                } catch (e) {
+                    console.warn(`[Config] Failed to parse JSON for setting '${key}':`, e);
+                    // Return as-is if parsing fails
+                }
+            }
+
+            return value;
         } else if (setting.hasOwnProperty('isTrue')) {
             return setting.isTrue;
         }
