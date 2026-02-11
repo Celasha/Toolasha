@@ -504,7 +504,7 @@ export const settingsGroups = {
             },
             skillbook: {
                 id: 'skillbook',
-                label: 'Skill books: Show books needed to reach target level',
+                label: 'Skill books: Show books needed to reach target level (in the ability book item dictionary window)',
                 type: 'checkbox',
                 default: true,
             },
