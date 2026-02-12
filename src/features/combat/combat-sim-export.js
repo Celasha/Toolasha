@@ -327,6 +327,29 @@ function constructPartyPlayer(profile, clientObj, battleObj) {
                 playerObj.food['/action_types/combat'][foodIndex++] = { itemHrid: itemHrid };
             }
         });
+    } else {
+        // Fallback: Get consumables from profile trigger map (for non-party members)
+        // The keys of consumableCombatTriggersMap are the equipped consumable HRIDs
+        const consumableHrids = Object.keys(profile.profile?.consumableCombatTriggersMap || {});
+
+        if (consumableHrids.length > 0) {
+            let foodIndex = 0;
+            let drinkIndex = 0;
+
+            consumableHrids.forEach((itemHrid) => {
+                // Check if it's a drink
+                const isDrink =
+                    itemHrid.includes('/drinks/') ||
+                    itemHrid.includes('coffee') ||
+                    clientObj?.itemDetailMap?.[itemHrid]?.type === 'drink';
+
+                if (isDrink && drinkIndex < 3) {
+                    playerObj.drinks['/action_types/combat'][drinkIndex++] = { itemHrid: itemHrid };
+                } else if (!isDrink && foodIndex < 3) {
+                    playerObj.food['/action_types/combat'][foodIndex++] = { itemHrid: itemHrid };
+                }
+            });
+        }
     }
 
     // Initialize abilities (5 slots)
@@ -425,10 +448,10 @@ export async function constructExportObject(externalProfileId = null, singlePlay
 
         // If single-player format requested, return player object directly
         if (singlePlayerFormat) {
-            // Add name field and remove zone/simulationTime for single-player format
+            // Add required fields for solo format
             playerObj.name = profile.characterName;
-            delete playerObj.zone;
-            delete playerObj.simulationTime;
+            playerObj.zone = '/actions/combat/fly';
+            playerObj.simulationTime = '100';
 
             return {
                 exportObj: playerObj,
@@ -539,10 +562,10 @@ export async function constructExportObject(externalProfileId = null, singlePlay
         // Parse the player JSON string back to an object
         const playerObj = JSON.parse(exportObj[slotToExport]);
 
-        // Add name field and remove zone/simulationTime for single-player format
+        // Add required fields for solo format
         playerObj.name = playerIDs[slotToExport - 1];
-        delete playerObj.zone;
-        delete playerObj.simulationTime;
+        playerObj.zone = zone;
+        playerObj.simulationTime = '100';
 
         return {
             exportObj: playerObj, // Single player object instead of multi-player format
