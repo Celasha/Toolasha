@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.29.0](https://github.com/Celasha/Toolasha/compare/v0.28.3...v0.29.0) (2026-02-12)
+
+
+### Features
+
+* add market listing status tracking and fix party consumable calculation ([d1e1831](https://github.com/Celasha/Toolasha/commit/d1e183121d3809c57102bb12e7be88ab35c747fb))
+
 ## [0.28.3](https://github.com/Celasha/Toolasha/compare/v0.28.2...v0.28.3) (2026-02-11)
 
 ### Bug Fixes
