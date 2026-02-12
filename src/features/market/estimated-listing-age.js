@@ -90,6 +90,9 @@ class EstimatedListingAge {
 
         // Setup DOM observer for order book table
         this.setupObserver();
+
+        // Setup DOM observer for My Listings table (expired detection)
+        this.setupMyListingsObserver();
     }
 
     /**
@@ -190,8 +193,46 @@ class EstimatedListingAge {
 
         // Handle listing updates
         const updateHandler = (data) => {
+            // Handle newly created listings (user just placed an order)
+            if (data.newMarketListings) {
+                for (const listing of data.newMarketListings) {
+                    // New listings should start as 'unknown' (will be marked 'active' by history viewer)
+                    listing._toolashaStatus = 'unknown';
+                    this.recordListing(listing);
+                }
+            }
+
+            // Update all active listings (if provided)
+            if (data.myMarketListings) {
+                for (const listing of data.myMarketListings) {
+                    // Active listings - record them but don't set status (let history viewer handle it)
+                    this.recordListing(listing);
+                }
+            }
+
+            // Handle endMarketListings (confusing name - contains both new AND ending listings)
             if (data.endMarketListings) {
                 for (const listing of data.endMarketListings) {
+                    // Use game's status HRID to determine what happened
+                    if (listing.status === '/market_listing_status/active') {
+                        // New listing being created - mark as unknown (history viewer will set to active)
+                        listing._toolashaStatus = 'unknown';
+                    } else if (listing.status === '/market_listing_status/cancelled') {
+                        // User canceled the listing
+                        listing._toolashaStatus = 'canceled';
+                    } else if (listing.status === '/market_listing_status/filled') {
+                        // Listing was filled
+                        listing._toolashaStatus = 'filled';
+                    } else if (listing.status === '/market_listing_status/expired') {
+                        // Listing expired
+                        listing._toolashaStatus = 'expired';
+                    } else if (listing.filledQuantity >= listing.orderQuantity) {
+                        // Unknown status - fallback to old logic
+                        listing._toolashaStatus = 'filled';
+                    } else {
+                        listing._toolashaStatus = 'canceled';
+                    }
+
                     this.recordListing(listing);
                 }
             }
@@ -290,6 +331,21 @@ class EstimatedListingAge {
         // Check if we already have this listing
         const existingIndex = this.knownListings.findIndex((entry) => entry.id === listing.id);
 
+        // Determine status (NEVER use listing.status from game data - it's an HRID like "/market_listing_status/active")
+        // Priority: new status update from WebSocket > existing status > default unknown
+        let status;
+        if (listing._toolashaStatus) {
+            // Use explicitly set status from updateHandler (canceled/filled detection)
+            // This takes priority over existing status (allows status updates)
+            status = listing._toolashaStatus;
+        } else if (existingIndex !== -1 && this.knownListings[existingIndex].status) {
+            // Preserve existing tracked status if no new update
+            status = this.knownListings[existingIndex].status;
+        } else {
+            // Default to unknown for new listings
+            status = 'unknown';
+        }
+
         // Add new entry with full data
         const entry = {
             id: listing.id,
@@ -301,6 +357,7 @@ class EstimatedListingAge {
             orderQuantity: listing.orderQuantity,
             filledQuantity: listing.filledQuantity,
             isSell: listing.isSell,
+            status: status,
         };
 
         if (existingIndex !== -1) {
@@ -330,6 +387,137 @@ class EstimatedListingAge {
                 this.processOrderBook(container);
             }
         );
+    }
+
+    /**
+     * Setup DOM observer for My Listings table to detect expired listings
+     */
+    setupMyListingsObserver() {
+        // Watch for the My Listings table container
+        this.unregisterMyListingsObserver = domObserver.onClass(
+            'EstimatedListingAge_MyListings',
+            'MarketplacePanel_myListingsTableContainer__2s6pm',
+            (container) => {
+                this.checkForExpiredListings(container);
+            }
+        );
+
+        // Also use polling as fallback - watch for visible table
+        const checkInterval = setInterval(() => {
+            const myListingsTable = document.querySelector('.MarketplacePanel_myListingsTableContainer__2s6pm');
+            if (myListingsTable) {
+                // Check if the table is actually visible (not display:none)
+                const isVisible = myListingsTable.offsetParent !== null;
+                if (isVisible) {
+                    this.checkForExpiredListings(myListingsTable);
+                }
+            }
+        }, 2000); // Check every 2 seconds
+
+        // Store interval for cleanup
+        this.myListingsCheckInterval = checkInterval;
+    }
+
+    /**
+     * Check for expired listings in the My Listings table
+     * @param {HTMLElement} container - My Listings table container
+     */
+    async checkForExpiredListings(container) {
+        const tbody = container.querySelector('table tbody');
+        if (!tbody) {
+            return;
+        }
+
+        const rows = tbody.querySelectorAll('tr');
+
+        for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+            const row = rows[rowIndex];
+
+            try {
+                const allCells = row.querySelectorAll('td');
+
+                // Get status cell (first td)
+                const statusCell = allCells[0];
+                if (!statusCell) continue;
+
+                const statusText = statusCell.textContent.trim();
+
+                if (statusText !== 'Expired') continue;
+
+                // Extract Type (Buy/Sell)
+                const typeCell = allCells[1];
+                const typeText = typeCell?.textContent.trim();
+                const isSell = typeText === 'Sell';
+
+                // Extract Progress (e.g., "0 / 1")
+                // The cell has multiple nested divs. The progress text is in the LAST div overall.
+                const progressCell = allCells[2];
+                const allDivsInCell = progressCell?.querySelectorAll('div');
+                const progressDiv = allDivsInCell ? allDivsInCell[allDivsInCell.length - 1] : null;
+                const progressText = progressDiv?.textContent.trim();
+
+                const progressMatch = progressText?.match(/(\d+)\s*\/\s*(\d+)/);
+
+                if (!progressMatch) continue;
+
+                const filledQuantity = parseInt(progressMatch[1], 10);
+                const orderQuantity = parseInt(progressMatch[2], 10);
+
+                // Extract Price
+                const priceCell = allCells[3];
+                const priceText = priceCell?.textContent.trim();
+                const price = this.parsePrice(priceText);
+
+                if (price === null) continue;
+
+                // Find matching listing in our stored data
+                const matchingListing = this.knownListings.find(
+                    (listing) =>
+                        listing.isSell === isSell &&
+                        listing.price === price &&
+                        listing.orderQuantity === orderQuantity &&
+                        listing.filledQuantity === filledQuantity
+                );
+
+                if (matchingListing && matchingListing.status !== 'expired') {
+                    matchingListing.status = 'expired';
+                    await this.saveHistoricalData();
+                }
+            } catch (error) {
+                console.error(`[EstimatedListingAge] Error processing expired listing row:`, error);
+            }
+        }
+    }
+
+    /**
+     * Parse price string (handles K/M/B suffixes)
+     * @param {string} priceText - Price text (e.g., "12M", "1.5K", "100")
+     * @returns {number|null} Parsed price or null if invalid
+     */
+    parsePrice(priceText) {
+        if (!priceText) return null;
+
+        const normalized = priceText.trim().toUpperCase();
+        const match = normalized.match(/^([\d,.]+)([KMB])?$/);
+
+        if (!match) return null;
+
+        // Remove commas from number
+        const value = parseFloat(match[1].replace(/,/g, ''));
+        const suffix = match[2];
+
+        if (isNaN(value)) return null;
+
+        switch (suffix) {
+            case 'K':
+                return Math.round(value * 1000);
+            case 'M':
+                return Math.round(value * 1000000);
+            case 'B':
+                return Math.round(value * 1000000000);
+            default:
+                return Math.round(value);
+        }
     }
 
     /**
@@ -795,6 +983,16 @@ class EstimatedListingAge {
         if (this.unregisterObserver) {
             this.unregisterObserver();
             this.unregisterObserver = null;
+        }
+
+        if (this.unregisterMyListingsObserver) {
+            this.unregisterMyListingsObserver();
+            this.unregisterMyListingsObserver = null;
+        }
+
+        if (this.myListingsCheckInterval) {
+            clearInterval(this.myListingsCheckInterval);
+            this.myListingsCheckInterval = null;
         }
 
         this.clearDisplays();

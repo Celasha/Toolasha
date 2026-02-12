@@ -253,16 +253,32 @@ class CombatStatsDataCollector {
                                   this.getDefaultConsumed(consumable.itemHrid)
                                 : this.getDefaultConsumed(consumable.itemHrid);
 
-                            // MCS formula (exact match to MCS code lines 26027-26030)
-                            const DEFAULT_TIME = 10 * 60; // 600 seconds
-                            const trackingElapsed = isCurrentPlayer ? elapsedSeconds : 0;
+                            let consumptionRate;
+                            let consumedPerDay;
+                            let trackingElapsed;
 
-                            const actualRate = trackingElapsed > 0 ? actualConsumed / trackingElapsed : 0;
-                            const combinedRate = (defaultConsumed + actualConsumed) / (DEFAULT_TIME + trackingElapsed);
-                            const consumptionRate = actualRate * 0.9 + combinedRate * 0.1;
+                            if (isCurrentPlayer) {
+                                // Current player: Use MCS formula with tracked consumption
+                                const DEFAULT_TIME = 10 * 60; // 600 seconds
+                                trackingElapsed = elapsedSeconds;
 
-                            // Per-day rate (MCS uses Math.ceil)
-                            const consumedPerDay = Math.ceil(consumptionRate * 86400);
+                                const actualRate = trackingElapsed > 0 ? actualConsumed / trackingElapsed : 0;
+                                const combinedRate =
+                                    (defaultConsumed + actualConsumed) / (DEFAULT_TIME + trackingElapsed);
+                                consumptionRate = actualRate * 0.9 + combinedRate * 0.1;
+
+                                // Per-day rate (MCS uses Math.ceil)
+                                consumedPerDay = Math.ceil(consumptionRate * 86400);
+                            } else {
+                                // Party member: Use baseline only (we don't receive their consumable events)
+                                // Baseline assumption: consume once per 10 minutes (600 seconds)
+                                const BASELINE_INTERVAL = 10 * 60; // 600 seconds
+                                consumptionRate = defaultConsumed / BASELINE_INTERVAL;
+                                trackingElapsed = 0; // Party members don't have tracking
+
+                                // Per-day rate based on baseline
+                                consumedPerDay = Math.ceil(consumptionRate * 86400);
+                            }
 
                             // Estimate for this combat session
                             const estimatedConsumed = consumptionRate * durationSeconds;

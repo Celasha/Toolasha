@@ -29,6 +29,7 @@ class MarketHistoryViewer {
         this.sortDirection = 'desc'; // Most recent first
         this.searchTerm = '';
         this.typeFilter = 'all'; // 'all', 'buy', 'sell'
+        this.statusFilter = 'all'; // 'all', 'active', 'filled', 'canceled', 'expired', 'unknown'
         this.useKMBFormat = false; // K/M/B formatting toggle
         this.storageKey = 'marketListingTimestamps';
         this.timerRegistry = createTimerRegistry();
@@ -241,12 +242,194 @@ class MarketHistoryViewer {
             const stored = await storage.getJSON(this.storageKey, 'marketListings', []);
             // Filter out listings without itemHrid (e.g., seed listings from estimated-listing-age)
             this.listings = stored.filter((listing) => listing && listing.itemHrid);
+
+            // Migrate old listings without status field
+            for (const listing of this.listings) {
+                if (!listing.status) {
+                    listing.status = 'unknown';
+                }
+            }
+
+            // Update statuses (active and expired detection)
+            await this.updateListingStatuses();
+
             this.cachedDateRange = null; // Clear cache when loading new data
             this.applyFilters();
         } catch (error) {
             console.error('[MarketHistoryViewer] Failed to load listings:', error);
             this.listings = [];
             this.filteredListings = [];
+        }
+    }
+
+    /**
+     * Update listing statuses by checking active listings
+     */
+    async updateListingStatuses() {
+        // Get current active listings from dataManager
+        const activeListings = dataManager.getMarketListings() || [];
+        const activeListingIds = new Set(activeListings.map((l) => l.id));
+
+        // Update active status (but don't overwrite expired/canceled/filled statuses)
+        for (const listing of this.listings) {
+            if (activeListingIds.has(listing.id)) {
+                // Only mark as active if status is currently unknown or was previously active
+                if (listing.status === 'unknown' || listing.status === 'active') {
+                    listing.status = 'active';
+                }
+                // If it's already expired/canceled/filled, keep that status
+            }
+        }
+
+        // Save updated statuses
+        await storage.setJSON(this.storageKey, this.listings, 'marketListings', true);
+    }
+
+    /**
+     * Detect expired listings by scraping the My Listings DOM table
+     */
+    async detectExpiredListings() {
+        console.log('[MarketHistoryViewer] Starting expired listing detection');
+
+        // Find the My Listings table
+        const myListingsTable = document.querySelector('.MarketplacePanel_myListingsTableContainer__2s6pm table tbody');
+
+        if (!myListingsTable) {
+            console.warn('[MarketHistoryViewer] My Listings table not found - cannot detect expired listings');
+            return;
+        }
+
+        console.log('[MarketHistoryViewer] Found My Listings table');
+
+        // Scrape each row
+        const rows = myListingsTable.querySelectorAll('tr');
+        console.log('[MarketHistoryViewer] Found', rows.length, 'rows in My Listings table');
+
+        for (const row of rows) {
+            try {
+                // Get status cell (first td)
+                const statusCell = row.querySelector('td:nth-child(1)');
+                if (!statusCell) continue;
+
+                const statusText = statusCell.textContent.trim();
+                console.log('[MarketHistoryViewer] Row status:', statusText);
+
+                if (statusText !== 'Expired') continue;
+
+                console.log('[MarketHistoryViewer] Found expired row, extracting data...');
+
+                // This row is expired - now match it to our stored listings
+                // Extract identifying information from the row
+                const allCells = row.querySelectorAll('td');
+                console.log('[MarketHistoryViewer] Row has', allCells.length, 'cells');
+                allCells.forEach((cell, idx) => {
+                    console.log(`  Cell ${idx + 1}:`, cell.textContent.trim().substring(0, 50));
+                });
+
+                const typeCell = allCells[1]; // Buy/Sell
+                const progressCell = allCells[2]; // Progress
+                const priceCell = allCells[3]; // Price
+
+                if (!typeCell || !priceCell || !progressCell) {
+                    console.warn('[MarketHistoryViewer] Missing cells in expired row');
+                    continue;
+                }
+
+                const isSell = typeCell.textContent.trim() === 'Sell';
+                const priceText = priceCell.textContent.trim();
+                const price = this.parsePrice(priceText);
+                const progressText = progressCell.textContent.trim();
+                const progressMatch = progressText.match(/(\d+)\s*\/\s*(\d+)/);
+
+                console.log('[MarketHistoryViewer] Parsing progress:', progressText, 'match:', progressMatch);
+
+                if (!progressMatch || price === null) {
+                    console.warn('[MarketHistoryViewer] Failed to parse expired row data:', {
+                        priceText,
+                        price,
+                        progressText,
+                        progressMatch,
+                    });
+                    continue;
+                }
+
+                const filledQuantity = parseInt(progressMatch[1], 10);
+                const orderQuantity = parseInt(progressMatch[2], 10);
+
+                console.log('[MarketHistoryViewer] Expired listing data:', {
+                    isSell,
+                    price,
+                    filledQuantity,
+                    orderQuantity,
+                });
+
+                // Find matching listing in our stored data
+                const matchingListing = this.listings.find(
+                    (listing) =>
+                        listing.isSell === isSell &&
+                        listing.price === price &&
+                        listing.orderQuantity === orderQuantity &&
+                        listing.filledQuantity === filledQuantity &&
+                        (listing.status === 'active' || listing.status === 'unknown')
+                );
+
+                if (matchingListing) {
+                    matchingListing.status = 'expired';
+                    console.log('[MarketHistoryViewer] Detected expired listing:', matchingListing.id);
+                } else {
+                    console.warn('[MarketHistoryViewer] No matching listing found for expired row:', {
+                        isSell,
+                        price,
+                        filledQuantity,
+                        orderQuantity,
+                    });
+                    console.log(
+                        '[MarketHistoryViewer] Available listings:',
+                        this.listings
+                            .filter((l) => l.isSell === isSell && l.price === price)
+                            .map((l) => ({
+                                id: l.id,
+                                status: l.status,
+                                filled: l.filledQuantity,
+                                total: l.orderQuantity,
+                            }))
+                    );
+                }
+            } catch (error) {
+                console.error('[MarketHistoryViewer] Error parsing expired listing row:', error);
+            }
+        }
+
+        console.log('[MarketHistoryViewer] Finished expired listing detection');
+    }
+
+    /**
+     * Parse price string to number (handles K/M/B suffixes)
+     * @param {string} priceText - Price text (e.g., "12M", "1.5K", "100")
+     * @returns {number|null} Parsed price or null if invalid
+     */
+    parsePrice(priceText) {
+        if (!priceText) return null;
+
+        const normalized = priceText.trim().toUpperCase();
+        const match = normalized.match(/^([\d.]+)([KMB])?$/);
+
+        if (!match) return null;
+
+        const value = parseFloat(match[1]);
+        const suffix = match[2];
+
+        if (isNaN(value)) return null;
+
+        switch (suffix) {
+            case 'K':
+                return Math.round(value * 1000);
+            case 'M':
+                return Math.round(value * 1000000);
+            case 'B':
+                return Math.round(value * 1000000000);
+            default:
+                return Math.round(value);
         }
     }
 
@@ -264,6 +447,11 @@ class MarketHistoryViewer {
             filtered = filtered.filter((listing) => !listing.isSell);
         } else if (this.typeFilter === 'sell') {
             filtered = filtered.filter((listing) => listing.isSell);
+        }
+
+        // Apply status filter
+        if (this.statusFilter && this.statusFilter !== 'all') {
+            filtered = filtered.filter((listing) => listing.status === this.statusFilter);
         }
 
         // Apply search term (search in item name)
@@ -672,8 +860,41 @@ class MarketHistoryViewer {
             this.renderTable();
         });
 
+        // Status filter
+        const statusFilter = document.createElement('select');
+        statusFilter.style.cssText = `
+            padding: 6px 12px;
+            border: 1px solid #555;
+            border-radius: 4px;
+            background: #1a1a1a;
+            color: #fff;
+        `;
+        const statusOptions = [
+            { value: 'all', label: 'All Statuses' },
+            { value: 'active', label: 'Active Only' },
+            { value: 'filled', label: 'Filled Only' },
+            { value: 'canceled', label: 'Canceled Only' },
+            { value: 'expired', label: 'Expired Only' },
+            { value: 'unknown', label: 'Unknown Only' },
+        ];
+        statusOptions.forEach((opt) => {
+            const option = document.createElement('option');
+            option.value = opt.value;
+            option.textContent = opt.label;
+            if (opt.value === this.statusFilter) {
+                option.selected = true;
+            }
+            statusFilter.appendChild(option);
+        });
+        statusFilter.addEventListener('change', (e) => {
+            this.statusFilter = e.target.value;
+            this.applyFilters();
+            this.renderTable();
+        });
+
         leftGroup.appendChild(searchBox);
         leftGroup.appendChild(typeFilter);
+        leftGroup.appendChild(statusFilter);
 
         // Middle group: Active filter badges
         const middleGroup = document.createElement('div');
@@ -1066,6 +1287,7 @@ class MarketHistoryViewer {
             { key: 'itemHrid', label: 'Item' },
             { key: 'enhancementLevel', label: 'Enh Lvl' },
             { key: 'isSell', label: 'Type' },
+            { key: 'status', label: 'Status' },
             { key: 'price', label: 'Price' },
             { key: 'orderQuantity', label: 'Quantity' },
             { key: 'filledQuantity', label: 'Filled' },
@@ -1230,6 +1452,24 @@ class MarketHistoryViewer {
                     color: ${listing.isSell ? '#4ade80' : '#60a5fa'};
                 `;
                 row.appendChild(typeCell);
+
+                // Status
+                const statusCell = document.createElement('td');
+                const status = listing.status || 'unknown';
+                statusCell.textContent = status.charAt(0).toUpperCase() + status.slice(1);
+                const statusColors = {
+                    active: '#60a5fa',
+                    filled: '#4ade80',
+                    canceled: '#fbbf24',
+                    expired: '#f87171',
+                    unknown: '#9ca3af',
+                };
+                statusCell.style.cssText = `
+                    padding: 4px 10px;
+                    color: ${statusColors[status] || '#9ca3af'};
+                    font-weight: 500;
+                `;
+                row.appendChild(statusCell);
 
                 // Price
                 const priceCell = document.createElement('td');
@@ -1404,12 +1644,13 @@ class MarketHistoryViewer {
      * Export listings to CSV
      */
     exportCSV() {
-        const headers = ['Date', 'Item', 'Enhancement', 'Type', 'Price', 'Quantity', 'Filled', 'Total', 'ID'];
+        const headers = ['Date', 'Item', 'Enhancement', 'Type', 'Status', 'Price', 'Quantity', 'Filled', 'Total', 'ID'];
         const rows = this.filteredListings.map((listing) => [
             new Date(listing.createdTimestamp || listing.timestamp).toISOString(),
             this.getItemName(listing.itemHrid),
             listing.enhancementLevel || 0,
             listing.isSell ? 'Sell' : 'Buy',
+            listing.status || 'unknown',
             listing.price,
             listing.orderQuantity,
             listing.filledQuantity,
