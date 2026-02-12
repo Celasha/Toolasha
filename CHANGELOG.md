@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.30.0](https://github.com/Celasha/Toolasha/compare/v0.29.0...v0.30.0) (2026-02-12)
+
+### Features
+
+- implement MCS-style party member consumable tracking via snapshots ([5e81c35](https://github.com/Celasha/Toolasha/commit/5e81c350f6238af741dafc4548878e3e68969490))
+
 ## [0.29.0](https://github.com/Celasha/Toolasha/compare/v0.28.3...v0.29.0) (2026-02-12)
 
 ### Features
