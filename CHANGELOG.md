@@ -2,10 +2,9 @@
 
 ## [0.30.1](https://github.com/Celasha/Toolasha/compare/v0.30.0...v0.30.1) (2026-02-12)
 
-
 ### Bug Fixes
 
-* add missing fields and consumables to Combat Sim Export ([be960e3](https://github.com/Celasha/Toolasha/commit/be960e3cca99945c0b29cd20150eb1024bdadef2))
+- add missing fields and consumables to Combat Sim Export ([be960e3](https://github.com/Celasha/Toolasha/commit/be960e3cca99945c0b29cd20150eb1024bdadef2))
 
 ## [0.30.0](https://github.com/Celasha/Toolasha/compare/v0.29.0...v0.30.0) (2026-02-12)
 
