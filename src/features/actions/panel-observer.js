@@ -16,6 +16,7 @@ import { displayGatheringProfit, displayProductionProfit } from './profit-displa
 import { getOriginalText } from '../../utils/dom.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
+import actionFilter from './action-filter.js';
 
 /**
  * Action types for gathering skills (3 skills)
@@ -109,6 +110,9 @@ export function initActionPanelObserver() {
 
     // Listen for equipment and consumable changes to refresh enhancement calculator
     setupEnhancementRefreshListeners();
+
+    // Initialize action filter
+    actionFilter.initialize();
 }
 
 /**
@@ -135,7 +139,16 @@ function setupMutationObserver() {
         }
     );
 
-    unregisterHandlers = [unregisterModalObserver, unregisterEnhancingObserver];
+    // NEW: Observe for skill action grid tiles (the clickable action tiles on gathering/production pages)
+    const unregisterSkillActionObserver = domObserver.onClass(
+        'ActionPanelObserver-SkillAction',
+        'SkillAction_skillAction__1esCp',
+        (actionTile) => {
+            handleSkillActionTile(actionTile);
+        }
+    );
+
+    unregisterHandlers = [unregisterModalObserver, unregisterEnhancingObserver, unregisterSkillActionObserver];
 }
 
 /**
@@ -272,6 +285,29 @@ function handleEnhancingPanelMutations(panel, mutations) {
 }
 
 /**
+ * Handle skill action tile appearance (the clickable tiles on gathering/production pages)
+ * @param {HTMLElement} actionTile - Skill action tile element
+ */
+function handleSkillActionTile(actionTile) {
+    if (!actionTile) return;
+
+    // Get action name from the tile
+    const nameElement = actionTile.querySelector('[class*="name"]');
+    if (!nameElement) {
+        return;
+    }
+
+    const actionName = nameElement.textContent.trim();
+
+    if (!actionName) {
+        return;
+    }
+
+    // Register tile with action filter
+    actionFilter.registerPanel(actionTile, actionName);
+}
+
+/**
  * Handle action panel appearance (gathering/crafting/production)
  * @param {HTMLElement} panel - Action panel element
  */
@@ -280,19 +316,28 @@ async function handleActionPanel(panel) {
 
     // Filter out combat action panels (they don't have XP gain display)
     const expGainElement = panel.querySelector(SELECTORS.EXP_GAIN);
-    if (!expGainElement) return; // Combat panel, skip
+    if (!expGainElement) {
+        return; // Combat panel, skip
+    }
 
     // Get action name
     const actionNameElement = panel.querySelector(SELECTORS.ACTION_NAME);
-    if (!actionNameElement) return;
+    if (!actionNameElement) {
+        return;
+    }
 
     const actionName = getOriginalText(actionNameElement);
+
     const actionHrid = getActionHridFromName(actionName);
-    if (!actionHrid) return;
+    if (!actionHrid) {
+        return;
+    }
 
     const gameData = dataManager.getInitClientData();
     const actionDetail = gameData.actionDetailMap[actionHrid];
-    if (!actionDetail) return;
+    if (!actionDetail) {
+        return;
+    }
 
     // Check if this is a gathering action
     if (GATHERING_TYPES.includes(actionDetail.type)) {
@@ -621,4 +666,7 @@ export function disablePanelObserver() {
         dataManager.off('consumables_updated', consumablesUpdatedHandler);
         consumablesUpdatedHandler = null;
     }
+
+    // Cleanup action filter
+    actionFilter.cleanup();
 }

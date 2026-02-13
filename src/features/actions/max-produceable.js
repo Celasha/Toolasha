@@ -14,6 +14,7 @@ import domObserver from '../../core/dom-observer.js';
 import config from '../../core/config.js';
 import marketAPI from '../../api/marketplace.js';
 import actionPanelSort from './action-panel-sort.js';
+import actionFilter from './action-filter.js';
 import { calculateGatheringProfit } from './gathering-profit.js';
 import { calculateProductionProfit } from './production-profit.js';
 import { formatKMB } from '../../utils/formatters.js';
@@ -395,8 +396,14 @@ class MaxProduceable {
         // Check if we should hide actions with negative profit (unless pinned)
         const hideNegativeProfit = config.getSetting('actionPanel_hideNegativeProfit');
         const isPinned = actionPanelSort.isPinned(data.actionHrid);
+        const isFilterHidden = actionFilter.isFilterHidden(actionPanel);
+
         if (hideNegativeProfit && resolvedProfitPerHour !== null && resolvedProfitPerHour < 0 && !isPinned) {
             // Hide the entire action panel (unless it's pinned)
+            actionPanel.style.display = 'none';
+            return;
+        } else if (isFilterHidden) {
+            // Hide the panel if filter doesn't match
             actionPanel.style.display = 'none';
             return;
         } else {

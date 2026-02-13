@@ -9,6 +9,7 @@ import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
 import config from '../../core/config.js';
 import actionPanelSort from './action-panel-sort.js';
+import actionFilter from './action-filter.js';
 import { calculateGatheringProfit } from './gathering-profit.js';
 import { formatKMB } from '../../utils/formatters.js';
 import { calculateExpPerHour } from '../../utils/experience-calculator.js';
@@ -219,8 +220,14 @@ class GatheringStats {
         // Check if we should hide actions with negative profit (unless pinned)
         const hideNegativeProfit = config.getSetting('actionPanel_hideNegativeProfit');
         const isPinned = actionPanelSort.isPinned(data.actionHrid);
+        const isFilterHidden = actionFilter.isFilterHidden(actionPanel);
+
         if (hideNegativeProfit && profitPerHour !== null && profitPerHour < 0 && !isPinned) {
             // Hide the entire action panel
+            actionPanel.style.display = 'none';
+            return;
+        } else if (isFilterHidden) {
+            // Hide the panel if filter doesn't match
             actionPanel.style.display = 'none';
             return;
         } else {
