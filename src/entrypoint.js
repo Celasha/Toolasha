@@ -125,6 +125,13 @@ function registerFeatures() {
             async: false,
         },
         {
+            key: 'queueLengthEstimator',
+            name: 'Queue Length Estimator',
+            category: 'Market',
+            module: Market.queueLengthEstimator,
+            async: false,
+        },
+        {
             key: 'marketOrderTotals',
             name: 'Market Order Totals',
             category: 'Market',

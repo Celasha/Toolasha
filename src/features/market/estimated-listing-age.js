@@ -244,6 +244,37 @@ class EstimatedListingAge {
                 const itemHrid = data.marketItemOrderBooks.itemHrid;
                 const orderBooks = data.marketItemOrderBooks.orderBooks;
 
+                // IMPORTANT: Populate createdTimestamp on all listings (for queue length estimator)
+                // RWI does this in their saveOrderBooks function
+                if (orderBooks) {
+                    // Handle both array and object format
+                    const orderBooksArray = Array.isArray(orderBooks) ? orderBooks : Object.values(orderBooks);
+
+                    for (const orderBook of orderBooksArray) {
+                        if (!orderBook) continue;
+
+                        // Process asks
+                        if (orderBook.asks) {
+                            for (const listing of orderBook.asks) {
+                                if (!listing.createdTimestamp && listing.listingId) {
+                                    const estimatedTimestamp = this.estimateTimestamp(listing.listingId);
+                                    listing.createdTimestamp = new Date(estimatedTimestamp).toISOString();
+                                }
+                            }
+                        }
+
+                        // Process bids
+                        if (orderBook.bids) {
+                            for (const listing of orderBook.bids) {
+                                if (!listing.createdTimestamp && listing.listingId) {
+                                    const estimatedTimestamp = this.estimateTimestamp(listing.listingId);
+                                    listing.createdTimestamp = new Date(estimatedTimestamp).toISOString();
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // Store with timestamp for staleness tracking
                 this.orderBooksCache[itemHrid] = {
                     data: data.marketItemOrderBooks,
