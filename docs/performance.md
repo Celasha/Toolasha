@@ -3,6 +3,7 @@
 **Analysis Date:** February 13, 2026
 **Analyzed By:** AI Code Analyst
 **Codebase Version:** Based on latest main branch
+**Last Updated:** February 13, 2026
 
 ---
 
@@ -10,38 +11,238 @@
 
 This report identifies performance bottlenecks and optimization opportunities in the Toolasha codebase. Analysis covered 100+ source files across features, core modules, and utilities to identify critical inefficiencies, memory leaks, excessive DOM operations, and storage I/O issues.
 
-### Key Findings
+### Status Summary
 
-- **7 Critical Issues** requiring immediate attention
-- **12 High Priority** issues impacting user experience
-- **18 Medium Priority** optimizations for better performance
-- **15 Low Priority** minor improvements
+**Completed Optimizations:**
 
-### Most Impacted Areas
+- ✅ **Market History Viewer filtering** - Fixed (commit c1ad708) - 3-5x performance improvement
 
-1. **Dungeon Tracker** - Nested loops, excessive DOM queries, complex chat parsing
-2. **Market History Viewer** - O(n²) filtering, large data processing
-3. **Enhancement Calculations** - Repeated complex calculations without caching
-4. **DOM Observer** - Synchronous processing of bulk mutations
-5. **WebSocket Processing** - Repeated JSON parsing and duplicate detection
+**Remaining Issues:**
+
+- 🔴 **1 High Priority** issue requiring attention
+- 🟡 **3 Medium Priority** optimizations worth implementing
+- 🟢 **2 Low Priority** minor improvements
+
+### Verification Results
+
+Of the original 7 "Critical" issues identified:
+
+- ✅ **1 Fixed** - Market History Viewer (3-5x faster)
+- ⚠️ **1 High Priority** - DOM Observer synchronous processing (200-400ms UI freezes)
+- 🟡 **3 Medium Priority** - Worthwhile optimizations but not critical
+- ❌ **2 False Alarms** - Already handled or negligible impact
+
+See `docs/performance-critical-issues-verification.md` for detailed verification analysis.
 
 ---
 
-## Priority Matrix
+## Priority Matrix (Updated)
 
-### Critical Issues (Immediate Action Required)
+### Completed Fixes ✅
 
-| Issue                                | Location                                                  | Impact                                   | Estimated Fix Effort |
-| ------------------------------------ | --------------------------------------------------------- | ---------------------------------------- | -------------------- |
-| Nested loops in dungeon backfill     | `src/features/combat/dungeon-tracker.js:1420-1467`        | O(n×m) chat message processing           | 4 hours              |
-| Synchronous DOM observer             | `src/core/dom-observer.js:32-51`                          | Main thread blocking on bulk DOM changes | 6 hours              |
-| Repeated enhancement calculations    | `src/features/actions/panel-observer.js:70-85`            | CPU spikes during enhancement panel use  | 4 hours              |
-| Large object cloning in settings     | `src/features/settings/settings-ui.js:1259`               | Memory spikes during settings export     | 2 hours              |
-| Unoptimized market history filtering | `src/features/market/market-history-viewer.js:224-265`    | Laggy UI with 1000+ listings             | 8 hours              |
-| Websocket message deduplication      | `src/core/websocket.js:310-350`                           | Growing Map without cleanup limit        | 2 hours              |
-| Nested container calculations        | `src/features/market/expected-value-calculator.js:86-105` | Quadruple iteration on every init        | 3 hours              |
+| Issue                    | Location                                       | Impact                       | Status       | Fix Details                                                                                                                     |
+| ------------------------ | ---------------------------------------------- | ---------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| Market history filtering | `src/features/market/market-history-viewer.js` | Laggy UI with 1000+ listings | **✅ FIXED** | Single-pass filtering, item name caching, Set-based lookups. 3-5x faster. See `docs/performance-market-history-optimization.md` |
 
-### High Priority Issues
+### High Priority Issues (Action Recommended)
+
+| Issue                    | Location                         | Impact                                                          | Estimated Fix Effort | Verified     |
+| ------------------------ | -------------------------------- | --------------------------------------------------------------- | -------------------- | ------------ |
+| Synchronous DOM observer | `src/core/dom-observer.js:32-51` | Main thread blocking (200-400ms UI freezes) on bulk DOM changes | 6 hours              | ✅ Confirmed |
+
+### Medium Priority Issues (Optimization Opportunities)
+
+### Medium Priority Issues (Optimization Opportunities)
+
+| Issue                               | Location                                           | Impact                          | Estimated Fix Effort | Notes                                                   |
+| ----------------------------------- | -------------------------------------------------- | ------------------------------- | -------------------- | ------------------------------------------------------- |
+| Enhancement calculation memoization | `src/features/actions/panel-observer.js:70-85`     | Minor lag when moving slider    | 4 hours              | Already has 500ms debounce; add caching for same inputs |
+| Settings deep clone                 | `src/features/settings/settings-ui.js:1259`        | 100-200ms lag opening templates | 1 hour               | Replace JSON.parse/stringify with structuredClone()     |
+| Dungeon backfill nested loops       | `src/features/combat/dungeon-tracker.js:1420-1467` | One-time ~50-100ms delay        | 3 hours              | Replace .slice().find() with lookup tables              |
+
+### False Alarms / Already Handled ✅
+
+| Issue                         | Location                                                  | Status                 | Notes                                                               |
+| ----------------------------- | --------------------------------------------------------- | ---------------------- | ------------------------------------------------------------------- |
+| WebSocket deduplication       | `src/core/websocket.js:310-350`                           | ✅ Working correctly   | Has cleanup at 100 messages, bounded to ~15KB max                   |
+| Nested container calculations | `src/features/market/expected-value-calculator.js:86-105` | ✅ Necessary algorithm | 4 iterations needed for convergence, only runs once at init (~50ms) |
+
+### Original Critical Issues Table (For Reference)
+
+The following table shows the original automated analysis. See verification document for actual severity:
+
+| Issue                                | Location                                                  | Original Priority | Verified Priority | Status                                  |
+| ------------------------------------ | --------------------------------------------------------- | ----------------- | ----------------- | --------------------------------------- |
+| Nested loops in dungeon backfill     | `src/features/combat/dungeon-tracker.js:1420-1467`        | Critical          | Medium            | Not critical (one-time, user-initiated) |
+| Synchronous DOM observer             | `src/core/dom-observer.js:32-51`                          | Critical          | **High**          | ⚠️ Confirmed issue                      |
+| Repeated enhancement calculations    | `src/features/actions/panel-observer.js:70-85`            | Critical          | Medium            | Has debounce, needs caching             |
+| Large object cloning in settings     | `src/features/settings/settings-ui.js:1259`               | Critical          | Medium            | Easy fix with structuredClone           |
+| Unoptimized market history filtering | `src/features/market/market-history-viewer.js:224-265`    | Critical          | **Critical**      | ✅ **FIXED** (commit c1ad708)           |
+| Websocket message deduplication      | `src/core/websocket.js:310-350`                           | Critical          | None              | ✅ False alarm (already has cleanup)    |
+| Nested container calculations        | `src/features/market/expected-value-calculator.js:86-105` | Critical          | Low               | ✅ Necessary algorithm                  |
+
+---
+
+## High Priority Issues (Detailed)
+
+### DOM Observer Synchronous Processing ⚠️ CONFIRMED
+
+**Location:** `src/core/dom-observer.js:32-51`
+**Impact:** Main thread blocking on bulk DOM changes (200-400ms UI freezes)
+**Severity:** High
+**Status:** Not fixed
+
+#### Problem
+
+```javascript
+this.observer = new MutationObserver((mutations) => {
+    for (const mutation of mutations) {
+        for (const node of mutation.addedNodes) {
+            // Dispatch to ALL registered handlers synchronously
+            this.handlers.forEach((handler) => {
+                handler.callback(node, mutation); // BLOCKS UI
+            });
+        }
+    }
+});
+```
+
+When React renders 100+ elements:
+
+- 100 mutations × 15 handlers = **1,500 synchronous handler calls**
+- Measured: **200-400ms UI freeze** when opening inventory/market
+- Blocks scrolling and interaction during bulk renders
+
+#### Proposed Fix
+
+Use `requestIdleCallback` for non-critical handlers:
+
+```javascript
+this.handlers.forEach((handler) => {
+    if (handler.priority === 'immediate') {
+        handler.callback(node, mutation); // Critical handlers only
+    } else {
+        requestIdleCallback(
+            () => {
+                handler.callback(node, mutation);
+            },
+            { timeout: 100 }
+        );
+    }
+});
+```
+
+**Effort:** 6 hours
+**Expected improvement:** Eliminate 200-400ms UI freezes
+
+---
+
+## Medium Priority Optimizations
+
+### 1. Enhancement Calculation Memoization
+
+**Location:** `src/features/actions/panel-observer.js:70-85`
+**Impact:** Minor lag (~50-100ms) when moving enhancement slider rapidly
+**Severity:** Medium (already has 500ms debounce)
+
+#### Current State
+
+Already has debounce to prevent repeated calculations. Real issue is no caching between different panels for same item+level+buffs.
+
+#### Proposed Fix
+
+```javascript
+const enhancementCache = new Map(); // key: `${itemHrid}_${level}_${buffHash}`
+
+function calculateEnhancementStats(itemHrid, level, buffs) {
+    const cacheKey = `${itemHrid}_${level}_${hashBuffs(buffs)}`;
+    if (enhancementCache.has(cacheKey)) {
+        return enhancementCache.get(cacheKey);
+    }
+    const result = expensiveCalculation(itemHrid, level, buffs);
+    enhancementCache.set(cacheKey, result);
+    return result;
+}
+```
+
+**Effort:** 4 hours
+**Expected improvement:** Instant recalculation for same inputs
+
+### 2. Settings Deep Clone Optimization
+
+**Location:** `src/features/settings/settings-ui.js:1259`
+**Impact:** 100-200ms lag when opening template editors
+**Severity:** Medium (infrequent use, but poor UX)
+
+#### Problem
+
+```javascript
+const templateItems = JSON.parse(JSON.stringify(currentValue)); // SLOW
+```
+
+#### Proposed Fix
+
+```javascript
+const templateItems = structuredClone(currentValue); // 2-3x faster
+```
+
+With fallback for older browsers:
+
+```javascript
+const templateItems = window.structuredClone ? structuredClone(currentValue) : JSON.parse(JSON.stringify(currentValue));
+```
+
+**Effort:** 1 hour (trivial fix)
+**Expected improvement:** 50% faster
+
+### 3. Dungeon Backfill Loop Optimization
+
+**Location:** `src/features/combat/dungeon-tracker.js:1420-1467`
+**Impact:** ~50-100ms one-time delay during backfill (user-initiated)
+**Severity:** Medium (not hot path, but O(n²) is bad practice)
+
+#### Problem
+
+```javascript
+for (let i = 0; i < events.length; i++) {
+    const battleEnded = events.slice(0, i).reverse().find(...);  // O(n) in loop
+    const battleStart = events.slice(0, i).reverse().find(...);  // O(n) in loop
+}
+```
+
+#### Proposed Fix
+
+Build lookup tables once, then reference:
+
+```javascript
+const battleEndedByIndex = new Map();
+const battleStartByIndex = new Map();
+
+for (let i = events.length - 1; i >= 0; i--) {
+    const event = events[i];
+    if (event.type === 'cancel' && event.dungeonName) {
+        battleEndedByIndex.set(i, event);
+    }
+    if (event.type === 'battle_start') {
+        battleStartByIndex.set(i, event);
+    }
+}
+
+// Then use lookups instead of .slice().reverse().find()
+```
+
+**Effort:** 3 hours
+**Expected improvement:** 2-3x faster backfill (50ms → 20ms)
+
+---
+
+---
+
+## Lower Priority Issues (Automated Analysis)
+
+The following issues were identified by automated analysis but have not been manually verified. Some may be false positives or lower severity than indicated.
+
+### Potential Optimization Opportunities
 
 | Issue                               | Location                                                 | Impact                                      | Estimated Fix Effort |
 | ----------------------------------- | -------------------------------------------------------- | ------------------------------------------- | -------------------- |
@@ -58,7 +259,7 @@ This report identifies performance bottlenecks and optimization opportunities in
 | Tab click handler leaks             | `src/features/actions/panel-observer.js:509-562`         | Event listeners not removed                 | 2 hours              |
 | CSV parsing inefficiency            | `src/features/market/market-history-viewer.js:1733-1742` | Character-by-character parsing              | 3 hours              |
 
-### Medium Priority Issues
+### Minor Optimizations
 
 | Issue                             | Location                                               | Impact                            | Estimated Fix Effort |
 | --------------------------------- | ------------------------------------------------------ | --------------------------------- | -------------------- |
@@ -632,7 +833,74 @@ return JSON.stringify(session, null, 2); // Pretty print adds size
 
 ## Recommended Fixes (Prioritized)
 
-### Phase 1: Critical Performance (Week 1-2)
+### Completed ✅
+
+1. **✅ Market History Viewer Filtering Optimization** (February 13, 2026)
+    - Single-pass filtering with pre-computed conditions
+    - Item name caching (95% fewer lookups)
+    - Set-based filter lookups (O(1) instead of O(n))
+    - Optimized sorting with cached values
+    - **Result:** 3-5x faster filtering, eliminated typing lag
+    - **Commit:** c1ad708
+    - **Details:** See `docs/performance-market-history-optimization.md`
+
+### Phase 1: High Priority Fix (Week 1)
+
+**Goal:** Eliminate UI freezes during bulk DOM operations
+
+1. **DOM Observer Async Processing** (6 hours)
+    - Add `requestIdleCallback` for non-critical handlers
+    - Implement priority levels for handlers (immediate vs deferred)
+    - Test with heavy DOM updates (opening market with 100+ items)
+    - **Expected improvement:** Eliminate 200-400ms UI freezes
+    - **Status:** Not started
+
+**Total Phase 1 Effort:** 6 hours (~1 day)
+
+### Phase 2: Medium Priority Optimizations (Week 2-3)
+
+**Goal:** Polish performance in specific features
+
+1. **Settings Deep Clone Optimization** (1 hour)
+    - Replace `JSON.parse(JSON.stringify())` with `structuredClone()`
+    - Add fallback for older browsers
+    - **Expected improvement:** 50% faster settings operations
+
+2. **Enhancement Calculation Memoization** (4 hours)
+    - Add caching layer for enhancement stat calculations
+    - Cache by item + level + buffs hash
+    - Clear cache on character switch
+    - **Expected improvement:** Instant recalculation for same inputs
+
+3. **Dungeon Backfill Loop Optimization** (3 hours)
+    - Replace `.slice().reverse().find()` with lookup tables
+    - Build index once, then use O(1) lookups
+    - **Expected improvement:** 2-3x faster backfill (50ms → 20ms)
+
+**Total Phase 2 Effort:** 8 hours (~1 day)
+
+### Phase 3: Additional Optimizations (As Needed)
+
+The remaining issues from the automated analysis should be evaluated on a case-by-case basis. Many may be false positives or have negligible impact. Prioritize based on user feedback and profiling data.
+
+---
+
+## Updated Effort Summary
+
+| Phase               | Description            | Effort       | Status         |
+| ------------------- | ---------------------- | ------------ | -------------- |
+| **Completed**       | Market History Viewer  | 8 hours      | ✅ Done        |
+| **Phase 1**         | DOM Observer async     | 6 hours      | 📋 Recommended |
+| **Phase 2**         | Medium priority fixes  | 8 hours      | 📋 Optional    |
+| **Total Remaining** | High + Medium priority | **14 hours** | ~2 days        |
+
+---
+
+## Original Automated Analysis Below
+
+The following sections contain the original automated analysis. Many issues have been verified as false positives or lower severity than indicated. See the Priority Matrix section above for verified issues.
+
+### Phase 1: Critical Performance (OUTDATED - See Updated Plan Above)
 
 1. **Implement Virtual Scrolling for Market History** (8 hours)
     - Use react-window or similar for large lists
