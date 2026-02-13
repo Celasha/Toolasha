@@ -48,6 +48,9 @@ class MarketHistoryViewer {
         // Marketplace tab tracking
         this.marketplaceTab = null;
         this.tabCleanupObserver = null;
+
+        // Performance optimization: cache item names to avoid repeated lookups
+        this.itemNameCache = new Map();
     }
 
     /**
@@ -434,109 +437,134 @@ class MarketHistoryViewer {
     }
 
     /**
-     * Apply filters and search to listings
+     * Apply filters and search to listings (optimized single-pass version)
      */
     applyFilters() {
-        let filtered = [...this.listings];
-
         // Clear cached date range when filters change
         this.cachedDateRange = null;
 
-        // Apply type filter (legacy - kept for backwards compatibility)
-        if (this.typeFilter === 'buy') {
-            filtered = filtered.filter((listing) => !listing.isSell);
-        } else if (this.typeFilter === 'sell') {
-            filtered = filtered.filter((listing) => listing.isSell);
+        // Pre-compute filter conditions to avoid repeated checks
+        const hasTypeFilter = this.typeFilter !== 'all';
+        const typeIsBuy = this.typeFilter === 'buy';
+        const typeIsSell = this.typeFilter === 'sell';
+
+        const hasStatusFilter = this.statusFilter && this.statusFilter !== 'all';
+
+        const hasSearchTerm = !!this.searchTerm;
+        const searchTerm = hasSearchTerm ? this.searchTerm.toLowerCase() : '';
+
+        const hasDateFilter = !!(this.filters.dateFrom || this.filters.dateTo);
+        let dateToEndOfDay = null;
+        if (hasDateFilter && this.filters.dateTo) {
+            dateToEndOfDay = new Date(this.filters.dateTo);
+            dateToEndOfDay.setHours(23, 59, 59, 999);
         }
 
-        // Apply status filter
-        if (this.statusFilter && this.statusFilter !== 'all') {
-            filtered = filtered.filter((listing) => listing.status === this.statusFilter);
-        }
+        const hasItemFilter = this.filters.selectedItems.length > 0;
+        const itemFilterSet = hasItemFilter ? new Set(this.filters.selectedItems) : null;
 
-        // Apply search term (search in item name)
-        if (this.searchTerm) {
-            const term = this.searchTerm.toLowerCase();
-            filtered = filtered.filter((listing) => {
-                const itemName = this.getItemName(listing.itemHrid).toLowerCase();
-                return itemName.includes(term);
-            });
-        }
+        const hasEnhLevelFilter = this.filters.selectedEnhLevels.length > 0;
+        const enhLevelFilterSet = hasEnhLevelFilter ? new Set(this.filters.selectedEnhLevels) : null;
 
-        // Apply date range filter
-        if (this.filters.dateFrom || this.filters.dateTo) {
-            filtered = filtered.filter((listing) => {
+        const hasColumnTypeFilter = this.filters.selectedTypes.length > 0 && this.filters.selectedTypes.length < 2;
+        const showBuy = hasColumnTypeFilter && this.filters.selectedTypes.includes('buy');
+        const showSell = hasColumnTypeFilter && this.filters.selectedTypes.includes('sell');
+
+        // Single-pass filter: combines all filters into one iteration
+        const filtered = this.listings.filter((listing) => {
+            // Type filter (legacy)
+            if (hasTypeFilter) {
+                if (typeIsBuy && listing.isSell) return false;
+                if (typeIsSell && !listing.isSell) return false;
+            }
+
+            // Status filter
+            if (hasStatusFilter && listing.status !== this.statusFilter) {
+                return false;
+            }
+
+            // Search term filter (with cached item names)
+            if (hasSearchTerm) {
+                const itemName = this.getItemName(listing.itemHrid);
+                if (!itemName.toLowerCase().includes(searchTerm)) {
+                    return false;
+                }
+            }
+
+            // Date range filter
+            if (hasDateFilter) {
                 const listingDate = new Date(listing.createdTimestamp || listing.timestamp);
 
                 if (this.filters.dateFrom && listingDate < this.filters.dateFrom) {
                     return false;
                 }
 
-                if (this.filters.dateTo) {
-                    // Set dateTo to end of day (23:59:59.999)
-                    const endOfDay = new Date(this.filters.dateTo);
-                    endOfDay.setHours(23, 59, 59, 999);
-                    if (listingDate > endOfDay) {
-                        return false;
-                    }
+                if (dateToEndOfDay && listingDate > dateToEndOfDay) {
+                    return false;
                 }
+            }
 
-                return true;
-            });
-        }
-
-        // Apply item filter
-        if (this.filters.selectedItems.length > 0) {
-            filtered = filtered.filter((listing) => this.filters.selectedItems.includes(listing.itemHrid));
-        }
-
-        // Apply enhancement level filter
-        if (this.filters.selectedEnhLevels.length > 0) {
-            filtered = filtered.filter((listing) => this.filters.selectedEnhLevels.includes(listing.enhancementLevel));
-        }
-
-        // Apply type filter (column filter)
-        if (this.filters.selectedTypes.length > 0 && this.filters.selectedTypes.length < 2) {
-            // Only filter if not both selected (both selected = show all)
-            const showBuy = this.filters.selectedTypes.includes('buy');
-            const showSell = this.filters.selectedTypes.includes('sell');
-
-            filtered = filtered.filter((listing) => {
-                if (showBuy && !listing.isSell) return true;
-                if (showSell && listing.isSell) return true;
+            // Item filter (using Set for O(1) lookup)
+            if (hasItemFilter && !itemFilterSet.has(listing.itemHrid)) {
                 return false;
+            }
+
+            // Enhancement level filter (using Set for O(1) lookup)
+            if (hasEnhLevelFilter && !enhLevelFilterSet.has(listing.enhancementLevel)) {
+                return false;
+            }
+
+            // Type filter (column filter)
+            if (hasColumnTypeFilter) {
+                if (showBuy && listing.isSell) return false;
+                if (showSell && !listing.isSell) return false;
+            }
+
+            return true;
+        });
+
+        // Optimize sorting: cache computed values to avoid recalculating in comparator
+        if (this.sortColumn === 'itemHrid') {
+            // Pre-compute item names for sorting
+            const itemNamesMap = new Map();
+            for (const listing of filtered) {
+                if (!itemNamesMap.has(listing.itemHrid)) {
+                    itemNamesMap.set(listing.itemHrid, this.getItemName(listing.itemHrid));
+                }
+            }
+
+            filtered.sort((a, b) => {
+                const aVal = itemNamesMap.get(a.itemHrid);
+                const bVal = itemNamesMap.get(b.itemHrid);
+                return this.sortDirection === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+            });
+        } else if (this.sortColumn === 'total') {
+            // Pre-compute totals
+            filtered.sort((a, b) => {
+                const aVal = a.price * a.filledQuantity;
+                const bVal = b.price * b.filledQuantity;
+                return this.sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
+            });
+        } else if (this.sortColumn === 'createdTimestamp') {
+            // Use numeric timestamp for fast sorting
+            filtered.sort((a, b) => {
+                const aVal = a.timestamp;
+                const bVal = b.timestamp;
+                return this.sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
+            });
+        } else {
+            // Generic sorting for other columns
+            filtered.sort((a, b) => {
+                const aVal = a[this.sortColumn];
+                const bVal = b[this.sortColumn];
+
+                if (typeof aVal === 'string') {
+                    return this.sortDirection === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+                } else {
+                    return this.sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
+                }
             });
         }
-
-        // Apply sorting
-        filtered.sort((a, b) => {
-            let aVal = a[this.sortColumn];
-            let bVal = b[this.sortColumn];
-
-            // Handle timestamp sorting
-            if (this.sortColumn === 'createdTimestamp') {
-                aVal = a.timestamp; // Use numeric timestamp for sorting
-                bVal = b.timestamp;
-            }
-
-            // Handle item name sorting
-            if (this.sortColumn === 'itemHrid') {
-                aVal = this.getItemName(a.itemHrid);
-                bVal = this.getItemName(b.itemHrid);
-            }
-
-            // Handle total (price × filled) sorting
-            if (this.sortColumn === 'total') {
-                aVal = a.price * a.filledQuantity;
-                bVal = b.price * b.filledQuantity;
-            }
-
-            if (typeof aVal === 'string') {
-                return this.sortDirection === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
-            } else {
-                return this.sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
-            }
-        });
 
         this.filteredListings = filtered;
         this.currentPage = 1; // Reset to first page when filters change
@@ -615,11 +643,19 @@ class MarketHistoryViewer {
     }
 
     /**
-     * Get item name from HRID
+     * Get item name from HRID (with caching for performance)
      */
     getItemName(itemHrid) {
+        // Check cache first
+        if (this.itemNameCache.has(itemHrid)) {
+            return this.itemNameCache.get(itemHrid);
+        }
+
+        // Get item name and cache it
         const itemDetails = dataManager.getItemDetails(itemHrid);
-        return itemDetails?.name || itemHrid.split('/').pop().replace(/_/g, ' ');
+        const name = itemDetails?.name || itemHrid.split('/').pop().replace(/_/g, ' ');
+        this.itemNameCache.set(itemHrid, name);
+        return name;
     }
 
     /**
