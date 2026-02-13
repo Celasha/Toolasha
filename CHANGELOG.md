@@ -2,22 +2,19 @@
 
 ## [0.31.0](https://github.com/Celasha/Toolasha/compare/v0.30.1...v0.31.0) (2026-02-13)
 
-
 ### Features
 
-* add chat commands (/item, /wiki, /market) ([0e265ee](https://github.com/Celasha/Toolasha/commit/0e265ee3becd69d5c6f20aa5390076bbf3148a60))
-* add market queue length estimator with color customization ([49b4ec3](https://github.com/Celasha/Toolasha/commit/49b4ec3a4e0ab6cbcb2261e6aa889f9a3e027d93))
-* add search filter for action panels ([6c5cd0d](https://github.com/Celasha/Toolasha/commit/6c5cd0ddab451b03370a7b9441171cd993a32ee3))
-
+- add chat commands (/item, /wiki, /market) ([0e265ee](https://github.com/Celasha/Toolasha/commit/0e265ee3becd69d5c6f20aa5390076bbf3148a60))
+- add market queue length estimator with color customization ([49b4ec3](https://github.com/Celasha/Toolasha/commit/49b4ec3a4e0ab6cbcb2261e6aa889f9a3e027d93))
+- add search filter for action panels ([6c5cd0d](https://github.com/Celasha/Toolasha/commit/6c5cd0ddab451b03370a7b9441171cd993a32ee3))
 
 ### Bug Fixes
 
-* exempt coins from market tax in expected value calculations ([b623b04](https://github.com/Celasha/Toolasha/commit/b623b04d48a643643599ddd8492ec63c1e3df96f))
-
+- exempt coins from market tax in expected value calculations ([b623b04](https://github.com/Celasha/Toolasha/commit/b623b04d48a643643599ddd8492ec63c1e3df96f))
 
 ### Performance Improvements
 
-* optimize market history viewer filtering for 1000+ listings ([c1ad708](https://github.com/Celasha/Toolasha/commit/c1ad708afe0b26b1a3f4438ab72eff10ba4343e9))
+- optimize market history viewer filtering for 1000+ listings ([c1ad708](https://github.com/Celasha/Toolasha/commit/c1ad708afe0b26b1a3f4438ab72eff10ba4343e9))
 
 ## [0.30.1](https://github.com/Celasha/Toolasha/compare/v0.30.0...v0.30.1) (2026-02-12)
 
