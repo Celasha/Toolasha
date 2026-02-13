@@ -14,6 +14,13 @@ export const settingsGroups = {
                 type: 'checkbox',
                 default: true,
             },
+            chatCommands: {
+                id: 'chatCommands',
+                label: 'Enable chat commands (/item, /wiki, /market)',
+                type: 'checkbox',
+                default: true,
+                help: 'Type /item, /wiki, or /market followed by an item name in chat. Example: /item radiant fiber',
+            },
         },
     },
 

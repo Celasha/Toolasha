@@ -304,6 +304,7 @@ function registerFeatures() {
             async: false,
         },
         { key: 'externalLinks', name: 'External Links', category: 'UI', module: UI.externalLinks, async: false },
+        { key: 'chatCommands', name: 'Chat Commands', category: 'Chat', module: UI.chatCommands, async: true },
         {
             key: 'taskProfitDisplay',
             name: 'Task Profit Display',
