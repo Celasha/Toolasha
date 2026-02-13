@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.30.1
+// @version      0.31.0
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -15034,6 +15034,13 @@ return plugin;
                     type: 'checkbox',
                     default: true,
                 },
+                chatCommands: {
+                    id: 'chatCommands',
+                    label: 'Enable chat commands (/item, /wiki, /market)',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Type /item, /wiki, or /market followed by an item name in chat. Example: /item radiant fiber',
+                },
             },
         },
 
@@ -15869,7 +15876,7 @@ return plugin;
                     id: 'market_showEstimatedListingAge',
                     label: 'Market: Show estimated age on order book',
                     type: 'checkbox',
-                    default: false,
+                    default: true,
                     help: 'Estimates creation time for all market listings using listing ID interpolation',
                 },
                 market_listingAgeFormat: {
@@ -15928,6 +15935,14 @@ return plugin;
                     type: 'checkbox',
                     default: true,
                     help: 'Adds "Philo Gamba" button to settings panel for calculating transmutation ROI into Philosopher\'s Stones',
+                },
+                market_showQueueLength: {
+                    id: 'market_showQueueLength',
+                    label: 'Market: Show queue length estimates',
+                    type: 'checkbox',
+                    default: true,
+                    dependencies: ['market_showEstimatedListingAge'],
+                    help: 'Displays total quantity at best price below Buy/Sell buttons. Estimated values (20+ orders at same price) are shown in a different color.',
                 },
                 itemDictionary_transmuteRates: {
                     id: 'itemDictionary_transmuteRates',
@@ -16103,6 +16118,20 @@ return plugin;
                     type: 'color',
                     default: '#ffffff',
                     help: 'Color used for transmutation success rate percentages in Item Dictionary',
+                },
+                color_queueLength_known: {
+                    id: 'color_queueLength_known',
+                    label: 'Queue Length: Known Value',
+                    type: 'color',
+                    default: '#ffffff',
+                    help: 'Color for known queue lengths (when all visible orders are counted)',
+                },
+                color_queueLength_estimated: {
+                    id: 'color_queueLength_estimated',
+                    label: 'Queue Length: Estimated Value',
+                    type: 'color',
+                    default: '#60a5fa',
+                    help: 'Color for estimated queue lengths (extrapolated from 20+ orders at same price)',
                 },
             },
         },
@@ -22136,9 +22165,15 @@ return plugin;
                 // Check if item is tradeable (for tax calculation)
                 const itemDetails = dataManager$1.getItemDetails(itemHrid);
                 const canBeSold = itemDetails?.tradeable !== false;
-                const dropValue = canBeSold
-                    ? calculatePriceAfterTax(avgCount * dropRate * price, this.MARKET_TAX)
-                    : avgCount * dropRate * price;
+
+                // Special case: Coin never has market tax (it's currency, not a market item)
+                const isCoin = itemHrid === this.COIN_HRID;
+
+                const dropValue = isCoin
+                    ? avgCount * dropRate * price // No tax for coins
+                    : canBeSold
+                      ? calculatePriceAfterTax(avgCount * dropRate * price, this.MARKET_TAX)
+                      : avgCount * dropRate * price;
                 totalExpectedValue += dropValue;
             }
 
@@ -22276,11 +22311,17 @@ return plugin;
 
                 // Calculate expected value for this drop
                 const itemCanBeSold = itemDetails.tradeable !== false;
+
+                // Special case: Coin never has market tax (it's currency, not a market item)
+                const isCoin = itemHrid === this.COIN_HRID;
+
                 const dropValue =
                     price !== null
-                        ? itemCanBeSold
-                            ? calculatePriceAfterTax(avgCount * dropRate * price, this.MARKET_TAX)
-                            : avgCount * dropRate * price
+                        ? isCoin
+                            ? avgCount * dropRate * price // No tax for coins
+                            : itemCanBeSold
+                              ? calculatePriceAfterTax(avgCount * dropRate * price, this.MARKET_TAX)
+                              : avgCount * dropRate * price
                         : 0;
 
                 drops.push({
@@ -31146,6 +31187,37 @@ return plugin;
                     const itemHrid = data.marketItemOrderBooks.itemHrid;
                     const orderBooks = data.marketItemOrderBooks.orderBooks;
 
+                    // IMPORTANT: Populate createdTimestamp on all listings (for queue length estimator)
+                    // RWI does this in their saveOrderBooks function
+                    if (orderBooks) {
+                        // Handle both array and object format
+                        const orderBooksArray = Array.isArray(orderBooks) ? orderBooks : Object.values(orderBooks);
+
+                        for (const orderBook of orderBooksArray) {
+                            if (!orderBook) continue;
+
+                            // Process asks
+                            if (orderBook.asks) {
+                                for (const listing of orderBook.asks) {
+                                    if (!listing.createdTimestamp && listing.listingId) {
+                                        const estimatedTimestamp = this.estimateTimestamp(listing.listingId);
+                                        listing.createdTimestamp = new Date(estimatedTimestamp).toISOString();
+                                    }
+                                }
+                            }
+
+                            // Process bids
+                            if (orderBook.bids) {
+                                for (const listing of orderBook.bids) {
+                                    if (!listing.createdTimestamp && listing.listingId) {
+                                        const estimatedTimestamp = this.estimateTimestamp(listing.listingId);
+                                        listing.createdTimestamp = new Date(estimatedTimestamp).toISOString();
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     // Store with timestamp for staleness tracking
                     this.orderBooksCache[itemHrid] = {
                         data: data.marketItemOrderBooks,
@@ -32834,6 +32906,292 @@ return plugin;
     const listingPriceDisplay = new ListingPriceDisplay();
 
     /**
+     * Queue Length Estimator Module
+     *
+     * Displays total quantity available at the best price in order books
+     * - Shows below Buy/Sell buttons on the market order book page
+     * - Estimates total queue depth when all 20 visible listings have the same price
+     * - Uses listing timestamps to extrapolate queue length
+     * Ported from Ranged Way Idle's estimateQueueLength feature
+     */
+
+
+    class QueueLengthEstimator {
+        constructor() {
+            this.unregisterWebSocket = null;
+            this.unregisterObserver = null;
+            this.isInitialized = false;
+            this.cleanupRegistry = createCleanupRegistry();
+        }
+
+        /**
+         * Initialize the queue length estimator
+         */
+        initialize() {
+            if (this.isInitialized) {
+                return;
+            }
+
+            if (!config$1.getSetting('market_showQueueLength')) {
+                return;
+            }
+
+            // Dependency check - requires estimated listing age feature
+            if (!config$1.getSetting('market_showEstimatedListingAge')) {
+                console.warn('[QueueLengthEstimator] Requires "Market: Show estimated listing age" to be enabled');
+                return;
+            }
+
+            this.isInitialized = true;
+
+            this.setupWebSocketListeners();
+            this.setupObserver();
+        }
+
+        /**
+         * Setup WebSocket listeners for order book updates
+         */
+        setupWebSocketListeners() {
+            const orderBookHandler = (data) => {
+                if (data.marketItemOrderBooks) {
+                    // Clear processed flags to re-render with new data
+                    document.querySelectorAll('.mwi-queue-length-set').forEach((container) => {
+                        container.classList.remove('mwi-queue-length-set');
+                    });
+
+                    // Manually re-process any existing containers
+                    const existingContainers = document.querySelectorAll('[class*="MarketplacePanel_orderBooksContainer"]');
+                    existingContainers.forEach((container) => {
+                        this.processOrderBook(container);
+                    });
+                }
+            };
+
+            dataManager$1.on('market_item_order_books_updated', orderBookHandler);
+
+            this.unregisterWebSocket = () => {
+                dataManager$1.off('market_item_order_books_updated', orderBookHandler);
+            };
+
+            this.cleanupRegistry.registerCleanup(() => {
+                if (this.unregisterWebSocket) {
+                    this.unregisterWebSocket();
+                    this.unregisterWebSocket = null;
+                }
+            });
+        }
+
+        /**
+         * Setup DOM observer to watch for order book container
+         */
+        setupObserver() {
+            this.unregisterObserver = domObserver$1.onClass(
+                'QueueLengthEstimator',
+                'MarketplacePanel_orderBooksContainer',
+                (container) => {
+                    this.processOrderBook(container);
+                }
+            );
+
+            this.cleanupRegistry.registerCleanup(() => {
+                if (this.unregisterObserver) {
+                    this.unregisterObserver();
+                    this.unregisterObserver = null;
+                }
+            });
+        }
+
+        /**
+         * Process the order book container and inject queue length displays
+         * @param {HTMLElement} _container - Order book container (unused - we query directly)
+         */
+        processOrderBook(_container) {
+            // Find the button container where we'll inject the queue lengths
+            const buttonContainer = document.querySelector('.MarketplacePanel_newListingButtonsContainer__1MhKJ');
+            if (!buttonContainer) {
+                return;
+            }
+
+            // Check if already processed
+            if (buttonContainer.classList.contains('mwi-queue-length-set')) {
+                return;
+            }
+
+            // Get current item and order book data from estimated-listing-age module
+            const currentItemHrid = this.getCurrentItemHrid();
+            if (!currentItemHrid) {
+                return;
+            }
+
+            const orderBooksCache = estimatedListingAge.orderBooksCache;
+            if (!orderBooksCache[currentItemHrid]) {
+                return;
+            }
+
+            const cacheEntry = orderBooksCache[currentItemHrid];
+            const orderBookData = cacheEntry.data || cacheEntry;
+
+            // Get current enhancement level
+            const enhancementLevel = this.getCurrentEnhancementLevel();
+            const orderBookAtLevel = orderBookData.orderBooks?.[enhancementLevel];
+
+            if (!orderBookAtLevel) {
+                return;
+            }
+
+            // Mark as processed
+            buttonContainer.classList.add('mwi-queue-length-set');
+
+            // Calculate and display queue lengths
+            this.displayQueueLength(buttonContainer, orderBookAtLevel.asks, true);
+            this.displayQueueLength(buttonContainer, orderBookAtLevel.bids, false);
+        }
+
+        /**
+         * Calculate and display queue length for asks or bids
+         * @param {HTMLElement} buttonContainer - Button container element
+         * @param {Array} listings - Array of listings (asks or bids)
+         * @param {boolean} isAsk - True for asks (sell side), false for bids (buy side)
+         */
+        displayQueueLength(buttonContainer, listings, isAsk) {
+            if (!listings || listings.length === 0) {
+                return;
+            }
+
+            // Calculate visible count at top price
+            const topPrice = listings[0].price;
+            let visibleCount = 0;
+            for (const listing of listings) {
+                if (listing.price === topPrice) {
+                    visibleCount += listing.quantity;
+                }
+            }
+
+            // Check if we should estimate (all 20 visible listings at same price)
+            let queueLength = visibleCount;
+            let isEstimated = false;
+
+            if (listings.length === 20 && listings[19].price === topPrice) {
+                // All 20 visible listings are at the same price - estimate total queue
+                const firstTimestamp = new Date(listings[0].createdTimestamp).getTime();
+                const lastTimestamp = new Date(listings[19].createdTimestamp).getTime();
+                const now = Date.now();
+
+                const timeSpan = lastTimestamp - firstTimestamp;
+                const timeSinceNow = now - lastTimestamp;
+
+                if (timeSpan > 0) {
+                    // RWI formula: 1 + 19/20 * (timeSinceNow / timeSpan)
+                    // This extrapolates based on the assumption that listings arrive at a constant rate
+                    const queueMultiplier = 1 + (19 / 20) * (timeSinceNow / timeSpan);
+                    queueLength = visibleCount * queueMultiplier;
+                    isEstimated = true;
+                }
+            }
+
+            // Create or update the display element
+            const existingElement = buttonContainer.querySelector(`.mwi-queue-length-${isAsk ? 'ask' : 'bid'}`);
+
+            if (existingElement) {
+                existingElement.remove();
+            }
+
+            const displayElement = document.createElement('div');
+            displayElement.classList.add('mwi-queue-length', `mwi-queue-length-${isAsk ? 'ask' : 'bid'}`);
+            displayElement.style.fontSize = '1.2rem';
+            displayElement.style.textAlign = 'center';
+
+            // Format the count
+            const formattedCount = formatKMB(queueLength, 1);
+            displayElement.textContent = formattedCount;
+
+            // Apply color based on whether it's estimated
+            const colorSetting = isEstimated ? 'color_queueLength_estimated' : 'color_queueLength_known';
+            const color = config$1.getSettingValue(colorSetting, isEstimated ? '#60a5fa' : '#ffffff');
+            displayElement.style.color = color;
+
+            // Add tooltip
+            if (isEstimated) {
+                displayElement.title = `Estimated total queue depth (extrapolated from ${listings.length} visible orders)`;
+            } else {
+                displayElement.title = `Total quantity at best ${isAsk ? 'sell' : 'buy'} price`;
+            }
+
+            // Insert into button container
+            // Ask goes before the first button (sell button), bid goes before the last button (buy button)
+            if (isAsk) {
+                // Insert before the second child (between first button and sell button)
+                buttonContainer.insertBefore(displayElement, buttonContainer.children[1]);
+            } else {
+                // Insert before the last child (before buy button)
+                buttonContainer.insertBefore(displayElement, buttonContainer.lastChild);
+            }
+        }
+
+        /**
+         * Get current item HRID being viewed in order book
+         * @returns {string|null} Item HRID or null
+         */
+        getCurrentItemHrid() {
+            const currentItemElement = document.querySelector('.MarketplacePanel_currentItem__3ercC');
+            if (currentItemElement) {
+                const useElement = currentItemElement.querySelector('use');
+                if (useElement && useElement.href && useElement.href.baseVal) {
+                    const itemHrid = '/items/' + useElement.href.baseVal.split('#')[1];
+                    return itemHrid;
+                }
+            }
+            return null;
+        }
+
+        /**
+         * Get current enhancement level being viewed in order book
+         * @returns {number} Enhancement level (0 for non-equipment)
+         */
+        getCurrentEnhancementLevel() {
+            const currentItemElement = document.querySelector('.MarketplacePanel_currentItem__3ercC');
+            if (currentItemElement) {
+                const enhancementElement = currentItemElement.querySelector('[class*="Item_enhancementLevel"]');
+                if (enhancementElement) {
+                    const match = enhancementElement.textContent.match(/\+(\d+)/);
+                    if (match) {
+                        return parseInt(match[1], 10);
+                    }
+                }
+            }
+            return 0;
+        }
+
+        /**
+         * Clear all injected displays
+         */
+        clearDisplays() {
+            document.querySelectorAll('.mwi-queue-length-set').forEach((container) => {
+                container.classList.remove('mwi-queue-length-set');
+            });
+            document.querySelectorAll('.mwi-queue-length').forEach((el) => el.remove());
+        }
+
+        /**
+         * Disable the queue length estimator
+         */
+        disable() {
+            this.clearDisplays();
+            this.cleanupRegistry.cleanup();
+            this.isInitialized = false;
+        }
+
+        /**
+         * Cleanup when feature is disabled or character switches
+         */
+        cleanup() {
+            this.disable();
+        }
+    }
+
+    const queueLengthEstimator = new QueueLengthEstimator();
+
+    /**
      * Market Order Totals Module
      *
      * Displays market listing totals in the header area:
@@ -33179,6 +33537,9 @@ return plugin;
             // Marketplace tab tracking
             this.marketplaceTab = null;
             this.tabCleanupObserver = null;
+
+            // Performance optimization: cache item names to avoid repeated lookups
+            this.itemNameCache = new Map();
         }
 
         /**
@@ -33565,109 +33926,134 @@ return plugin;
         }
 
         /**
-         * Apply filters and search to listings
+         * Apply filters and search to listings (optimized single-pass version)
          */
         applyFilters() {
-            let filtered = [...this.listings];
-
             // Clear cached date range when filters change
             this.cachedDateRange = null;
 
-            // Apply type filter (legacy - kept for backwards compatibility)
-            if (this.typeFilter === 'buy') {
-                filtered = filtered.filter((listing) => !listing.isSell);
-            } else if (this.typeFilter === 'sell') {
-                filtered = filtered.filter((listing) => listing.isSell);
+            // Pre-compute filter conditions to avoid repeated checks
+            const hasTypeFilter = this.typeFilter !== 'all';
+            const typeIsBuy = this.typeFilter === 'buy';
+            const typeIsSell = this.typeFilter === 'sell';
+
+            const hasStatusFilter = this.statusFilter && this.statusFilter !== 'all';
+
+            const hasSearchTerm = !!this.searchTerm;
+            const searchTerm = hasSearchTerm ? this.searchTerm.toLowerCase() : '';
+
+            const hasDateFilter = !!(this.filters.dateFrom || this.filters.dateTo);
+            let dateToEndOfDay = null;
+            if (hasDateFilter && this.filters.dateTo) {
+                dateToEndOfDay = new Date(this.filters.dateTo);
+                dateToEndOfDay.setHours(23, 59, 59, 999);
             }
 
-            // Apply status filter
-            if (this.statusFilter && this.statusFilter !== 'all') {
-                filtered = filtered.filter((listing) => listing.status === this.statusFilter);
-            }
+            const hasItemFilter = this.filters.selectedItems.length > 0;
+            const itemFilterSet = hasItemFilter ? new Set(this.filters.selectedItems) : null;
 
-            // Apply search term (search in item name)
-            if (this.searchTerm) {
-                const term = this.searchTerm.toLowerCase();
-                filtered = filtered.filter((listing) => {
-                    const itemName = this.getItemName(listing.itemHrid).toLowerCase();
-                    return itemName.includes(term);
-                });
-            }
+            const hasEnhLevelFilter = this.filters.selectedEnhLevels.length > 0;
+            const enhLevelFilterSet = hasEnhLevelFilter ? new Set(this.filters.selectedEnhLevels) : null;
 
-            // Apply date range filter
-            if (this.filters.dateFrom || this.filters.dateTo) {
-                filtered = filtered.filter((listing) => {
+            const hasColumnTypeFilter = this.filters.selectedTypes.length > 0 && this.filters.selectedTypes.length < 2;
+            const showBuy = hasColumnTypeFilter && this.filters.selectedTypes.includes('buy');
+            const showSell = hasColumnTypeFilter && this.filters.selectedTypes.includes('sell');
+
+            // Single-pass filter: combines all filters into one iteration
+            const filtered = this.listings.filter((listing) => {
+                // Type filter (legacy)
+                if (hasTypeFilter) {
+                    if (typeIsBuy && listing.isSell) return false;
+                    if (typeIsSell && !listing.isSell) return false;
+                }
+
+                // Status filter
+                if (hasStatusFilter && listing.status !== this.statusFilter) {
+                    return false;
+                }
+
+                // Search term filter (with cached item names)
+                if (hasSearchTerm) {
+                    const itemName = this.getItemName(listing.itemHrid);
+                    if (!itemName.toLowerCase().includes(searchTerm)) {
+                        return false;
+                    }
+                }
+
+                // Date range filter
+                if (hasDateFilter) {
                     const listingDate = new Date(listing.createdTimestamp || listing.timestamp);
 
                     if (this.filters.dateFrom && listingDate < this.filters.dateFrom) {
                         return false;
                     }
 
-                    if (this.filters.dateTo) {
-                        // Set dateTo to end of day (23:59:59.999)
-                        const endOfDay = new Date(this.filters.dateTo);
-                        endOfDay.setHours(23, 59, 59, 999);
-                        if (listingDate > endOfDay) {
-                            return false;
-                        }
+                    if (dateToEndOfDay && listingDate > dateToEndOfDay) {
+                        return false;
                     }
+                }
 
-                    return true;
-                });
-            }
-
-            // Apply item filter
-            if (this.filters.selectedItems.length > 0) {
-                filtered = filtered.filter((listing) => this.filters.selectedItems.includes(listing.itemHrid));
-            }
-
-            // Apply enhancement level filter
-            if (this.filters.selectedEnhLevels.length > 0) {
-                filtered = filtered.filter((listing) => this.filters.selectedEnhLevels.includes(listing.enhancementLevel));
-            }
-
-            // Apply type filter (column filter)
-            if (this.filters.selectedTypes.length > 0 && this.filters.selectedTypes.length < 2) {
-                // Only filter if not both selected (both selected = show all)
-                const showBuy = this.filters.selectedTypes.includes('buy');
-                const showSell = this.filters.selectedTypes.includes('sell');
-
-                filtered = filtered.filter((listing) => {
-                    if (showBuy && !listing.isSell) return true;
-                    if (showSell && listing.isSell) return true;
+                // Item filter (using Set for O(1) lookup)
+                if (hasItemFilter && !itemFilterSet.has(listing.itemHrid)) {
                     return false;
+                }
+
+                // Enhancement level filter (using Set for O(1) lookup)
+                if (hasEnhLevelFilter && !enhLevelFilterSet.has(listing.enhancementLevel)) {
+                    return false;
+                }
+
+                // Type filter (column filter)
+                if (hasColumnTypeFilter) {
+                    if (showBuy && listing.isSell) return false;
+                    if (showSell && !listing.isSell) return false;
+                }
+
+                return true;
+            });
+
+            // Optimize sorting: cache computed values to avoid recalculating in comparator
+            if (this.sortColumn === 'itemHrid') {
+                // Pre-compute item names for sorting
+                const itemNamesMap = new Map();
+                for (const listing of filtered) {
+                    if (!itemNamesMap.has(listing.itemHrid)) {
+                        itemNamesMap.set(listing.itemHrid, this.getItemName(listing.itemHrid));
+                    }
+                }
+
+                filtered.sort((a, b) => {
+                    const aVal = itemNamesMap.get(a.itemHrid);
+                    const bVal = itemNamesMap.get(b.itemHrid);
+                    return this.sortDirection === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+                });
+            } else if (this.sortColumn === 'total') {
+                // Pre-compute totals
+                filtered.sort((a, b) => {
+                    const aVal = a.price * a.filledQuantity;
+                    const bVal = b.price * b.filledQuantity;
+                    return this.sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
+                });
+            } else if (this.sortColumn === 'createdTimestamp') {
+                // Use numeric timestamp for fast sorting
+                filtered.sort((a, b) => {
+                    const aVal = a.timestamp;
+                    const bVal = b.timestamp;
+                    return this.sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
+                });
+            } else {
+                // Generic sorting for other columns
+                filtered.sort((a, b) => {
+                    const aVal = a[this.sortColumn];
+                    const bVal = b[this.sortColumn];
+
+                    if (typeof aVal === 'string') {
+                        return this.sortDirection === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+                    } else {
+                        return this.sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
+                    }
                 });
             }
-
-            // Apply sorting
-            filtered.sort((a, b) => {
-                let aVal = a[this.sortColumn];
-                let bVal = b[this.sortColumn];
-
-                // Handle timestamp sorting
-                if (this.sortColumn === 'createdTimestamp') {
-                    aVal = a.timestamp; // Use numeric timestamp for sorting
-                    bVal = b.timestamp;
-                }
-
-                // Handle item name sorting
-                if (this.sortColumn === 'itemHrid') {
-                    aVal = this.getItemName(a.itemHrid);
-                    bVal = this.getItemName(b.itemHrid);
-                }
-
-                // Handle total (price × filled) sorting
-                if (this.sortColumn === 'total') {
-                    aVal = a.price * a.filledQuantity;
-                    bVal = b.price * b.filledQuantity;
-                }
-
-                if (typeof aVal === 'string') {
-                    return this.sortDirection === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
-                } else {
-                    return this.sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
-                }
-            });
 
             this.filteredListings = filtered;
             this.currentPage = 1; // Reset to first page when filters change
@@ -33746,11 +34132,19 @@ return plugin;
         }
 
         /**
-         * Get item name from HRID
+         * Get item name from HRID (with caching for performance)
          */
         getItemName(itemHrid) {
+            // Check cache first
+            if (this.itemNameCache.has(itemHrid)) {
+                return this.itemNameCache.get(itemHrid);
+            }
+
+            // Get item name and cache it
             const itemDetails = dataManager$1.getItemDetails(itemHrid);
-            return itemDetails?.name || itemHrid.split('/').pop().replace(/_/g, ' ');
+            const name = itemDetails?.name || itemHrid.split('/').pop().replace(/_/g, ' ');
+            this.itemNameCache.set(itemHrid, name);
+            return name;
         }
 
         /**
@@ -41133,6 +41527,7 @@ return plugin;
         itemCountDisplay,
         listingPriceDisplay,
         estimatedListingAge,
+        queueLengthEstimator,
         marketOrderTotals,
         marketHistoryViewer,
         philoCalculator,
@@ -43701,6 +44096,341 @@ return plugin;
     }
 
     /**
+     * Action Filter Manager
+     *
+     * Adds a search/filter input box to action panel pages (gathering/production).
+     * Filters action panels in real-time based on action name.
+     * Works alongside existing sorting and hide negative profit features.
+     */
+
+
+    class ActionFilter {
+        constructor() {
+            this.panels = new Map(); // actionPanel → {actionName, container}
+            this.filterValue = ''; // Current filter text
+            this.filterInput = null; // Reference to the input element
+            this.noResultsMessage = null; // Reference to "No matching actions" message
+            this.initialized = false;
+            this.timerRegistry = createTimerRegistry();
+            this.filterTimeout = null;
+            this.unregisterHandlers = [];
+            this.currentTitleElement = null; // Track which title we're attached to
+        }
+
+        /**
+         * Initialize - set up DOM observers
+         */
+        async initialize() {
+            if (this.initialized) return;
+
+            // Observe for skill page title bars
+            const unregisterTitleObserver = domObserver$1.onClass(
+                'ActionFilter-Title',
+                'GatheringProductionSkillPanel_title__3VihQ',
+                (titleElement) => {
+                    this.injectFilterInput(titleElement);
+                }
+            );
+
+            this.unregisterHandlers.push(unregisterTitleObserver);
+            this.initialized = true;
+        }
+
+        /**
+         * Inject filter input into the title bar
+         * @param {HTMLElement} titleElement - The h1 title element
+         */
+        injectFilterInput(titleElement) {
+            // If this is a different title than we're currently attached to, clean up the old one first
+            if (this.currentTitleElement && this.currentTitleElement !== titleElement) {
+                this.clearFilter();
+            }
+
+            // Check if we already injected into THIS specific title
+            if (titleElement.querySelector('#mwi-action-filter')) {
+                return;
+            }
+
+            // Track the new title element
+            this.currentTitleElement = titleElement;
+
+            // Reset filter state for new page
+            this.filterValue = '';
+            this.panels.clear();
+            this.filterInput = null;
+            this.noResultsMessage = null;
+
+            // The h1 has display: block from game CSS, need to override it
+            titleElement.style.setProperty('display', 'flex', 'important');
+            titleElement.style.alignItems = 'center';
+            titleElement.style.gap = '15px';
+            titleElement.style.flexWrap = 'wrap';
+
+            // Create input element (match game's input style)
+            const input = document.createElement('input');
+            input.id = 'mwi-action-filter';
+            input.type = 'text';
+            input.placeholder = 'Filter actions...';
+            input.className = 'MuiInputBase-input'; // Use game's input class
+            input.style.padding = '8px 12px';
+            input.style.fontSize = '14px';
+            input.style.border = '1px solid rgba(255, 255, 255, 0.23)';
+            input.style.borderRadius = '4px';
+            input.style.backgroundColor = 'transparent';
+            input.style.color = 'inherit';
+            input.style.width = '200px';
+            input.style.fontFamily = 'inherit';
+            input.style.flexShrink = '0'; // Don't shrink the input
+
+            // Add focus styles
+            input.addEventListener('focus', () => {
+                input.style.borderColor = config$1.COLOR_ACCENT;
+                input.style.outline = 'none';
+            });
+
+            input.addEventListener('blur', () => {
+                input.style.borderColor = 'rgba(255, 255, 255, 0.23)';
+            });
+
+            // Add input listener with debouncing
+            input.addEventListener('input', (e) => {
+                this.handleFilterInput(e.target.value);
+            });
+
+            // Insert at the beginning of the title element (before the skill name div)
+            titleElement.insertBefore(input, titleElement.firstChild);
+
+            // Store reference
+            this.filterInput = input;
+
+            // Find the container for action panels to inject "No results" message
+            this.setupNoResultsMessage(titleElement);
+        }
+
+        /**
+         * Set up "No matching actions" message container
+         * @param {HTMLElement} titleElement - The h1 title element
+         */
+        setupNoResultsMessage(titleElement) {
+            // Walk up the DOM to find the skill panel container
+            let container = titleElement.parentElement;
+            let depth = 0;
+            const maxDepth = 3;
+
+            while (container && depth < maxDepth) {
+                // Look for the container that holds action panels
+                const actionPanels = container.querySelectorAll('.SkillActionDetail_regularComponent__3oCgr');
+                if (actionPanels.length > 0) {
+                    // Found the container, create message element
+                    const message = document.createElement('div');
+                    message.id = 'mwi-action-filter-no-results';
+                    message.style.display = 'none';
+                    message.style.textAlign = 'center';
+                    message.style.padding = '40px 20px';
+                    message.style.color = 'rgba(255, 255, 255, 0.6)';
+                    message.style.fontSize = '16px';
+                    message.textContent = 'No matching actions';
+
+                    // Insert after the title
+                    titleElement.parentElement.insertBefore(message, titleElement.nextSibling);
+                    this.noResultsMessage = message;
+                    break;
+                }
+
+                container = container.parentElement;
+                depth++;
+            }
+        }
+
+        /**
+         * Handle filter input with debouncing
+         * @param {string} value - Filter text
+         */
+        handleFilterInput(value) {
+            // Clear existing timeout
+            if (this.filterTimeout) {
+                clearTimeout(this.filterTimeout);
+            }
+
+            // Schedule filter update after 300ms of inactivity
+            this.filterTimeout = setTimeout(() => {
+                this.filterValue = value.toLowerCase().trim();
+                this.applyFilter();
+                this.filterTimeout = null;
+            }, 300);
+
+            this.timerRegistry.registerTimeout(this.filterTimeout);
+        }
+
+        /**
+         * Register a panel for filtering
+         * @param {HTMLElement} actionPanel - The action panel element
+         * @param {string} actionName - The action/item name
+         */
+        registerPanel(actionPanel, actionName) {
+            // Store the container for later "no results" check
+            const container = actionPanel.parentElement;
+
+            this.panels.set(actionPanel, {
+                actionName: actionName.toLowerCase(),
+                container: container,
+            });
+
+            // Apply current filter if one is active
+            if (this.filterValue) {
+                this.applyFilterToPanel(actionPanel);
+            }
+        }
+
+        /**
+         * Unregister a panel (cleanup when panel removed from DOM)
+         * @param {HTMLElement} actionPanel - The action panel element
+         */
+        unregisterPanel(actionPanel) {
+            this.panels.delete(actionPanel);
+        }
+
+        /**
+         * Apply filter to a specific panel
+         * @param {HTMLElement} actionPanel - The action panel element
+         */
+        applyFilterToPanel(actionPanel) {
+            const data = this.panels.get(actionPanel);
+            if (!data) return;
+
+            // If no filter, show the panel
+            if (!this.filterValue) {
+                actionPanel.dataset.mwiFilterHidden = 'false';
+                return;
+            }
+
+            // Check if action name matches filter
+            const matches = data.actionName.includes(this.filterValue);
+
+            // Mark panel as hidden by filter (but don't actually hide it here)
+            // The actual hiding is done in applyFilter() to respect other hiding mechanisms
+            actionPanel.dataset.mwiFilterHidden = matches ? 'false' : 'true';
+        }
+
+        /**
+         * Apply filter to all registered panels
+         */
+        applyFilter() {
+            let totalPanels = 0;
+            let visiblePanels = 0;
+            const containerMap = new Map(); // Track panels per container
+
+            // Apply filter to each panel
+            for (const [actionPanel, data] of this.panels.entries()) {
+                // Clean up detached panels
+                if (!actionPanel.parentElement) {
+                    this.panels.delete(actionPanel);
+                    continue;
+                }
+
+                totalPanels++;
+
+                // Track container
+                if (!containerMap.has(data.container)) {
+                    containerMap.set(data.container, { total: 0, visible: 0 });
+                }
+                const containerStats = containerMap.get(data.container);
+                containerStats.total++;
+
+                // Apply filter
+                this.applyFilterToPanel(actionPanel);
+
+                // Check if panel should be visible
+                const isFilterHidden = actionPanel.dataset.mwiFilterHidden === 'true';
+
+                if (!isFilterHidden) {
+                    visiblePanels++;
+                    containerStats.visible++;
+                }
+            }
+
+            // Show/hide "No matching actions" message
+            if (this.noResultsMessage) {
+                if (this.filterValue && visiblePanels === 0 && totalPanels > 0) {
+                    this.noResultsMessage.style.display = 'block';
+                } else {
+                    this.noResultsMessage.style.display = 'none';
+                }
+            }
+        }
+
+        /**
+         * Check if a panel is hidden by the filter
+         * @param {HTMLElement} actionPanel - The action panel element
+         * @returns {boolean} True if panel is hidden by filter
+         */
+        isFilterHidden(actionPanel) {
+            return actionPanel.dataset.mwiFilterHidden === 'true';
+        }
+
+        /**
+         * Clear filter and reset state
+         */
+        clearFilter() {
+            // Clear input value
+            if (this.filterInput) {
+                this.filterInput.value = '';
+            }
+
+            // Reset filter value
+            this.filterValue = '';
+
+            // Clear all panel filter states
+            for (const actionPanel of this.panels.keys()) {
+                actionPanel.dataset.mwiFilterHidden = 'false';
+            }
+
+            // Hide "No results" message
+            if (this.noResultsMessage) {
+                this.noResultsMessage.style.display = 'none';
+            }
+
+            // Clear panels registry
+            this.panels.clear();
+
+            // Remove injected input
+            if (this.filterInput && this.filterInput.parentElement) {
+                this.filterInput.remove();
+                this.filterInput = null;
+            }
+
+            if (this.noResultsMessage && this.noResultsMessage.parentElement) {
+                this.noResultsMessage.remove();
+                this.noResultsMessage = null;
+            }
+        }
+
+        /**
+         * Cleanup function for disabling filter
+         */
+        cleanup() {
+            // Clear timeout
+            if (this.filterTimeout) {
+                clearTimeout(this.filterTimeout);
+                this.filterTimeout = null;
+            }
+
+            this.timerRegistry.clearAll();
+
+            // Unregister observers
+            this.unregisterHandlers.forEach((unregister) => unregister());
+            this.unregisterHandlers = [];
+
+            // Clear filter
+            this.clearFilter();
+
+            this.initialized = false;
+        }
+    }
+
+    const actionFilter = new ActionFilter();
+
+    /**
      * Action Panel Observer
      *
      * Detects when action panels appear and enhances them with:
@@ -43792,6 +44522,9 @@ return plugin;
 
         // Listen for equipment and consumable changes to refresh enhancement calculator
         setupEnhancementRefreshListeners();
+
+        // Initialize action filter
+        actionFilter.initialize();
     }
 
     /**
@@ -43815,6 +44548,15 @@ return plugin;
             (panel) => {
                 handleEnhancingPanel(panel);
                 registerEnhancingPanelWatcher(panel);
+            }
+        );
+
+        // NEW: Observe for skill action grid tiles (the clickable action tiles on gathering/production pages)
+        domObserver$1.onClass(
+            'ActionPanelObserver-SkillAction',
+            'SkillAction_skillAction__1esCp',
+            (actionTile) => {
+                handleSkillActionTile(actionTile);
             }
         );
     }
@@ -43952,6 +44694,29 @@ return plugin;
     }
 
     /**
+     * Handle skill action tile appearance (the clickable tiles on gathering/production pages)
+     * @param {HTMLElement} actionTile - Skill action tile element
+     */
+    function handleSkillActionTile(actionTile) {
+        if (!actionTile) return;
+
+        // Get action name from the tile
+        const nameElement = actionTile.querySelector('[class*="name"]');
+        if (!nameElement) {
+            return;
+        }
+
+        const actionName = nameElement.textContent.trim();
+
+        if (!actionName) {
+            return;
+        }
+
+        // Register tile with action filter
+        actionFilter.registerPanel(actionTile, actionName);
+    }
+
+    /**
      * Handle action panel appearance (gathering/crafting/production)
      * @param {HTMLElement} panel - Action panel element
      */
@@ -43960,19 +44725,28 @@ return plugin;
 
         // Filter out combat action panels (they don't have XP gain display)
         const expGainElement = panel.querySelector(SELECTORS.EXP_GAIN);
-        if (!expGainElement) return; // Combat panel, skip
+        if (!expGainElement) {
+            return; // Combat panel, skip
+        }
 
         // Get action name
         const actionNameElement = panel.querySelector(SELECTORS.ACTION_NAME);
-        if (!actionNameElement) return;
+        if (!actionNameElement) {
+            return;
+        }
 
         const actionName = getOriginalText(actionNameElement);
+
         const actionHrid = getActionHridFromName$1(actionName);
-        if (!actionHrid) return;
+        if (!actionHrid) {
+            return;
+        }
 
         const gameData = dataManager$1.getInitClientData();
         const actionDetail = gameData.actionDetailMap[actionHrid];
-        if (!actionDetail) return;
+        if (!actionDetail) {
+            return;
+        }
 
         // Check if this is a gathering action
         if (GATHERING_TYPES$1.includes(actionDetail.type)) {
@@ -48210,8 +48984,14 @@ return plugin;
             // Check if we should hide actions with negative profit (unless pinned)
             const hideNegativeProfit = config$1.getSetting('actionPanel_hideNegativeProfit');
             const isPinned = actionPanelSort.isPinned(data.actionHrid);
+            const isFilterHidden = actionFilter.isFilterHidden(actionPanel);
+
             if (hideNegativeProfit && resolvedProfitPerHour !== null && resolvedProfitPerHour < 0 && !isPinned) {
                 // Hide the entire action panel (unless it's pinned)
+                actionPanel.style.display = 'none';
+                return;
+            } else if (isFilterHidden) {
+                // Hide the panel if filter doesn't match
                 actionPanel.style.display = 'none';
                 return;
             } else {
@@ -48648,8 +49428,14 @@ return plugin;
             // Check if we should hide actions with negative profit (unless pinned)
             const hideNegativeProfit = config$1.getSetting('actionPanel_hideNegativeProfit');
             const isPinned = actionPanelSort.isPinned(data.actionHrid);
+            const isFilterHidden = actionFilter.isFilterHidden(actionPanel);
+
             if (hideNegativeProfit && profitPerHour !== null && profitPerHour < 0 && !isPinned) {
                 // Hide the entire action panel
+                actionPanel.style.display = 'none';
+                return;
+            } else if (isFilterHidden) {
+                // Hide the panel if filter doesn't match
                 actionPanel.style.display = 'none';
                 return;
             } else {
@@ -63350,6 +64136,426 @@ return plugin;
     const externalLinks = new ExternalLinks();
 
     /**
+     * Chat Commands Module
+     * Adds /item, /wiki, and /market commands to in-game chat
+     * Port of MWI Game Commands by Mists, integrated into Toolasha architecture
+     */
+
+
+    class ChatCommands {
+        constructor() {
+            this.gameCore = null;
+            this.itemData = null;
+            this.chatInput = null;
+            this.boundKeydownHandler = null;
+            this.initialized = false;
+            this.timerRegistry = createTimerRegistry();
+        }
+
+        /**
+         * Initialize chat commands feature
+         */
+        async initialize() {
+            if (this.initialized) return;
+
+            const enabled = config$1.getSetting('chatCommands');
+            if (!enabled) return;
+
+            this.loadItemData();
+            this.setupGameCore();
+            await this.waitForChatInput();
+
+            if (this.chatInput) {
+                this.attachChatListener();
+                this.initialized = true;
+            }
+
+            // Listen for character switch to cleanup
+            dataManager$1.on('character_switching', () => {
+                this.cleanup();
+            });
+        }
+
+        /**
+         * Disable the feature and cleanup
+         */
+        disable() {
+            if (this.chatInput && this.boundKeydownHandler) {
+                this.chatInput.removeEventListener('keydown', this.boundKeydownHandler, true);
+                this.chatInput = null;
+                this.boundKeydownHandler = null;
+            }
+            this.initialized = false;
+        }
+
+        /**
+         * Cleanup when disabling or character switching
+         */
+        cleanup() {
+            this.disable();
+            this.timerRegistry.clearAll();
+        }
+
+        /**
+         * Load item data from dataManager
+         */
+        loadItemData() {
+            const initClientData = dataManager$1.getInitClientData();
+            if (!initClientData) {
+                console.warn('[Chat Commands] Failed to load item data');
+                return;
+            }
+
+            this.itemData = {
+                itemNameToHrid: {},
+                itemHridToName: {},
+            };
+
+            for (const [hrid, item] of Object.entries(initClientData.itemDetailMap)) {
+                if (item?.name) {
+                    const normalizedName = item.name.toLowerCase();
+                    this.itemData.itemNameToHrid[normalizedName] = hrid;
+                    this.itemData.itemHridToName[hrid] = item.name;
+                }
+            }
+        }
+
+        /**
+         * Setup game core access via React Fiber traversal
+         */
+        setupGameCore() {
+            try {
+                const el = document.querySelector('[class*="GamePage_gamePage"]');
+                if (!el) return;
+
+                const k = Object.keys(el).find((k) => k.startsWith('__reactFiber$'));
+                if (!k) return;
+
+                let f = el[k];
+                while (f) {
+                    if (f.stateNode?.sendPing) {
+                        this.gameCore = f.stateNode;
+                        return;
+                    }
+                    f = f.return;
+                }
+            } catch (error) {
+                console.error('[Chat Commands] Error accessing game core:', error);
+            }
+        }
+
+        /**
+         * Wait for chat input to be available
+         */
+        async waitForChatInput() {
+            for (let i = 0; i < 50; i++) {
+                const input = document.querySelector('[class*="Chat_chatInputContainer"] input');
+                if (input) {
+                    this.chatInput = input;
+                    return;
+                }
+                await new Promise((resolve) => {
+                    const timeout = setTimeout(resolve, 200);
+                    this.timerRegistry.registerTimeout(timeout);
+                });
+            }
+            console.warn('[Chat Commands] Chat input not found after 10 seconds');
+        }
+
+        /**
+         * Attach keydown listener to chat input
+         */
+        attachChatListener() {
+            if (!this.chatInput) return;
+
+            this.boundKeydownHandler = (event) => this.handleKeydown(event);
+            this.chatInput.addEventListener('keydown', this.boundKeydownHandler, true);
+        }
+
+        /**
+         * Handle keydown on chat input
+         * @param {KeyboardEvent} event - Keyboard event
+         */
+        handleKeydown(event) {
+            if (event.key !== 'Enter') return;
+
+            const command = this.parseCommand(event.target.value);
+            if (!command) return;
+
+            // Prevent chat submission
+            event.preventDefault();
+            event.stopPropagation();
+
+            // Execute command
+            this.executeCommand(command);
+
+            // Clear input
+            this.clearChatInput(event.target);
+        }
+
+        /**
+         * Parse command from chat input
+         * @param {string} inputValue - Chat input value
+         * @returns {Object|null} Command object or null if not a command
+         */
+        parseCommand(inputValue) {
+            const trimmed = inputValue.trim();
+            const lower = trimmed.toLowerCase();
+
+            if (lower.startsWith('/item ')) {
+                const itemName = trimmed.substring(6).trim();
+                if (!itemName) return null;
+                return { type: 'item', itemName };
+            }
+
+            if (lower.startsWith('/wiki ')) {
+                const itemName = trimmed.substring(6).trim();
+                if (!itemName) return null;
+                return { type: 'wiki', itemName };
+            }
+
+            if (lower.startsWith('/market ')) {
+                const itemName = trimmed.substring(8).trim();
+                if (!itemName) return null;
+                return { type: 'market', itemName };
+            }
+
+            return null;
+        }
+
+        /**
+         * Execute parsed command
+         * @param {Object} command - Command object {type, itemName}
+         */
+        executeCommand(command) {
+            const normalizedName = this.normalizeItemName(command.itemName);
+
+            // normalizedName is null when there are multiple matches (already shown to user)
+            if (!normalizedName) return;
+
+            const lowerName = normalizedName.replace(/_/g, ' ').toLowerCase();
+            const itemHrid = this.itemData?.itemNameToHrid[lowerName];
+
+            switch (command.type) {
+                case 'item':
+                    if (itemHrid) {
+                        this.openItemDictionary(itemHrid);
+                    } else {
+                        // Item not found in game data (best effort normalization was used)
+                        this.showError(`Item "${command.itemName}" not found in game data`);
+                    }
+                    break;
+
+                case 'wiki':
+                    // Wiki always works (uses best effort normalization if no match)
+                    window.open(`https://milkywayidle.wiki.gg/wiki/${normalizedName}`, '_blank');
+                    break;
+
+                case 'market':
+                    if (itemHrid) {
+                        this.openMarketplace(itemHrid);
+                    } else {
+                        // Item not found in game data (best effort normalization was used)
+                        this.showError(`Item "${command.itemName}" not found in game data`);
+                    }
+                    break;
+            }
+        }
+
+        /**
+         * Normalize item name with fuzzy matching
+         * @param {string} itemName - Raw item name from user
+         * @returns {string|null} Normalized name for URL/HRID lookup, or null if multiple matches
+         */
+        normalizeItemName(itemName) {
+            if (!this.itemData) {
+                return null;
+            }
+
+            const lowerName = itemName.toLowerCase();
+
+            // Try exact match first
+            if (this.itemData.itemNameToHrid[lowerName]) {
+                const hrid = this.itemData.itemNameToHrid[lowerName];
+                return this.itemData.itemHridToName[hrid].replace(/ /g, '_');
+            }
+
+            // Try fuzzy match
+            const allNames = Object.keys(this.itemData.itemNameToHrid);
+            const matches = allNames.filter((name) => name.includes(lowerName));
+
+            if (matches.length === 1) {
+                // Single match found
+                const hrid = this.itemData.itemNameToHrid[matches[0]];
+                return this.itemData.itemHridToName[hrid].replace(/ /g, '_');
+            }
+
+            if (matches.length > 1) {
+                // Multiple matches - show user
+                this.showMultipleMatches(matches);
+                return null;
+            }
+
+            // No matches - do best effort normalization for wiki
+            return itemName
+                .split(' ')
+                .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+                .join('_');
+        }
+
+        /**
+         * Show multiple match warning in chat
+         * @param {Array<string>} matches - Array of matching item names (lowercase keys)
+         */
+        showMultipleMatches(matches) {
+            // Find all chat history elements
+            const allChatHistories = document.querySelectorAll('[class*="ChatHistory_chatHistory"]');
+
+            // Find the visible one by checking if the grandparent TabPanel is not hidden
+            let chatHistory = null;
+            for (const history of allChatHistories) {
+                const grandparent = history.parentElement?.parentElement;
+                if (grandparent && !grandparent.classList.contains('TabPanel_hidden__26UM3')) {
+                    chatHistory = history;
+                    break;
+                }
+            }
+
+            if (!chatHistory) {
+                console.warn('[Chat Commands] No visible chat history found');
+                return;
+            }
+
+            const messageDiv = document.createElement('div');
+            messageDiv.style.cssText = `
+            padding: 8px;
+            margin: 4px 0;
+            background: rgba(255, 100, 100, 0.2);
+            border-left: 3px solid #ff6464;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
+            color: #ffcccc;
+        `;
+
+            // Convert lowercase keys to proper item names
+            const properNames = matches.map((lowerName) => {
+                const hrid = this.itemData.itemNameToHrid[lowerName];
+                return this.itemData.itemHridToName[hrid];
+            });
+
+            const matchList = properNames.slice(0, 5).join(', ') + (properNames.length > 5 ? '...' : '');
+            messageDiv.textContent = `Multiple items match: ${matchList}. Please be more specific.`;
+
+            chatHistory.appendChild(messageDiv);
+            chatHistory.scrollTop = chatHistory.scrollHeight;
+        }
+
+        /**
+         * Show error message in chat
+         * @param {string} message - Error message to display
+         */
+        showError(message) {
+            // Find all chat history elements
+            const allChatHistories = document.querySelectorAll('[class*="ChatHistory_chatHistory"]');
+
+            // Find the visible one by checking if the grandparent TabPanel is not hidden
+            let chatHistory = null;
+            for (const history of allChatHistories) {
+                const grandparent = history.parentElement?.parentElement;
+                if (grandparent && !grandparent.classList.contains('TabPanel_hidden__26UM3')) {
+                    chatHistory = history;
+                    break;
+                }
+            }
+
+            if (!chatHistory) {
+                console.warn('[Chat Commands] No visible chat history found');
+                return;
+            }
+
+            const messageDiv = document.createElement('div');
+            messageDiv.style.cssText = `
+            padding: 8px;
+            margin: 4px 0;
+            background: rgba(255, 100, 100, 0.2);
+            border-left: 3px solid #ff6464;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
+            color: #ffcccc;
+        `;
+
+            messageDiv.textContent = message;
+
+            chatHistory.appendChild(messageDiv);
+            chatHistory.scrollTop = chatHistory.scrollHeight;
+        }
+
+        /**
+         * Open Item Dictionary for specific item
+         * @param {string} itemHrid - Item HRID (e.g., "/items/radiant_fiber")
+         */
+        openItemDictionary(itemHrid) {
+            if (!this.gameCore?.handleOpenItemDictionary) {
+                this.showError('Unable to open Item Dictionary (game core not accessible)');
+                return;
+            }
+
+            try {
+                this.gameCore.handleOpenItemDictionary(itemHrid);
+            } catch (error) {
+                console.error('[Chat Commands] Failed to open Item Dictionary:', error);
+                this.showError('Failed to open Item Dictionary');
+            }
+        }
+
+        /**
+         * Open marketplace for specific item
+         * @param {string} itemHrid - Item HRID (e.g., "/items/radiant_fiber")
+         */
+        openMarketplace(itemHrid) {
+            if (!this.gameCore?.handleGoToMarketplace) {
+                this.showError('Unable to open marketplace (game core not accessible)');
+                return;
+            }
+
+            try {
+                this.gameCore.handleGoToMarketplace(itemHrid, 0);
+            } catch (error) {
+                console.error('[Chat Commands] Failed to open marketplace:', error);
+                this.showError('Failed to open marketplace');
+            }
+        }
+
+        /**
+         * Clear chat input using React-compatible method
+         * @param {HTMLInputElement} inputElement - Chat input element
+         */
+        clearChatInput(inputElement) {
+            const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+
+            nativeInputValueSetter.call(inputElement, '');
+            inputElement.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+    }
+
+    // Export as feature module
+    var chatCommands = {
+        name: 'Chat Commands',
+        initialize: async () => {
+            const chatCommands = new ChatCommands();
+            await chatCommands.initialize();
+            return chatCommands;
+        },
+        cleanup: (instance) => {
+            if (instance) {
+                instance.cleanup();
+            }
+        },
+    };
+
+    /**
      * Task Profit Display
      * Shows profit calculation on task cards
      * Expandable breakdown on click
@@ -72680,6 +73886,7 @@ return plugin;
         alchemyItemDimming,
         skillExperiencePercentage,
         externalLinks,
+        chatCommands,
         taskProfitDisplay,
         taskRerollTracker,
         taskSorter,
@@ -72818,6 +74025,13 @@ return plugin;
                 name: 'Estimated Listing Age',
                 category: 'Market',
                 module: Market.estimatedListingAge,
+                async: false,
+            },
+            {
+                key: 'queueLengthEstimator',
+                name: 'Queue Length Estimator',
+                category: 'Market',
+                module: Market.queueLengthEstimator,
                 async: false,
             },
             {
@@ -73000,6 +74214,7 @@ return plugin;
                 async: false,
             },
             { key: 'externalLinks', name: 'External Links', category: 'UI', module: UI.externalLinks, async: false },
+            { key: 'chatCommands', name: 'Chat Commands', category: 'Chat', module: UI.chatCommands, async: true },
             {
                 key: 'taskProfitDisplay',
                 name: 'Task Profit Display',

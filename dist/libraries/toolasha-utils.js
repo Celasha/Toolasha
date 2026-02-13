@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 0.30.1
+ * Version: 0.31.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2252,9 +2252,15 @@
                 // Check if item is tradeable (for tax calculation)
                 const itemDetails = dataManager.getItemDetails(itemHrid);
                 const canBeSold = itemDetails?.tradeable !== false;
-                const dropValue = canBeSold
-                    ? calculatePriceAfterTax(avgCount * dropRate * price, this.MARKET_TAX)
-                    : avgCount * dropRate * price;
+
+                // Special case: Coin never has market tax (it's currency, not a market item)
+                const isCoin = itemHrid === this.COIN_HRID;
+
+                const dropValue = isCoin
+                    ? avgCount * dropRate * price // No tax for coins
+                    : canBeSold
+                      ? calculatePriceAfterTax(avgCount * dropRate * price, this.MARKET_TAX)
+                      : avgCount * dropRate * price;
                 totalExpectedValue += dropValue;
             }
 
@@ -2392,11 +2398,17 @@
 
                 // Calculate expected value for this drop
                 const itemCanBeSold = itemDetails.tradeable !== false;
+
+                // Special case: Coin never has market tax (it's currency, not a market item)
+                const isCoin = itemHrid === this.COIN_HRID;
+
                 const dropValue =
                     price !== null
-                        ? itemCanBeSold
-                            ? calculatePriceAfterTax(avgCount * dropRate * price, this.MARKET_TAX)
-                            : avgCount * dropRate * price
+                        ? isCoin
+                            ? avgCount * dropRate * price // No tax for coins
+                            : itemCanBeSold
+                              ? calculatePriceAfterTax(avgCount * dropRate * price, this.MARKET_TAX)
+                              : avgCount * dropRate * price
                         : 0;
 
                 drops.push({

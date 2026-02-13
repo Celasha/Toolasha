@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 0.30.1
+ * Version: 0.31.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -692,9 +692,15 @@
                 // Check if item is tradeable (for tax calculation)
                 const itemDetails = dataManager.getItemDetails(itemHrid);
                 const canBeSold = itemDetails?.tradeable !== false;
-                const dropValue = canBeSold
-                    ? profitHelpers_js.calculatePriceAfterTax(avgCount * dropRate * price, this.MARKET_TAX)
-                    : avgCount * dropRate * price;
+
+                // Special case: Coin never has market tax (it's currency, not a market item)
+                const isCoin = itemHrid === this.COIN_HRID;
+
+                const dropValue = isCoin
+                    ? avgCount * dropRate * price // No tax for coins
+                    : canBeSold
+                      ? profitHelpers_js.calculatePriceAfterTax(avgCount * dropRate * price, this.MARKET_TAX)
+                      : avgCount * dropRate * price;
                 totalExpectedValue += dropValue;
             }
 
@@ -832,11 +838,17 @@
 
                 // Calculate expected value for this drop
                 const itemCanBeSold = itemDetails.tradeable !== false;
+
+                // Special case: Coin never has market tax (it's currency, not a market item)
+                const isCoin = itemHrid === this.COIN_HRID;
+
                 const dropValue =
                     price !== null
-                        ? itemCanBeSold
-                            ? profitHelpers_js.calculatePriceAfterTax(avgCount * dropRate * price, this.MARKET_TAX)
-                            : avgCount * dropRate * price
+                        ? isCoin
+                            ? avgCount * dropRate * price // No tax for coins
+                            : itemCanBeSold
+                              ? profitHelpers_js.calculatePriceAfterTax(avgCount * dropRate * price, this.MARKET_TAX)
+                              : avgCount * dropRate * price
                         : 0;
 
                 drops.push({
@@ -5354,6 +5366,37 @@
                     const itemHrid = data.marketItemOrderBooks.itemHrid;
                     const orderBooks = data.marketItemOrderBooks.orderBooks;
 
+                    // IMPORTANT: Populate createdTimestamp on all listings (for queue length estimator)
+                    // RWI does this in their saveOrderBooks function
+                    if (orderBooks) {
+                        // Handle both array and object format
+                        const orderBooksArray = Array.isArray(orderBooks) ? orderBooks : Object.values(orderBooks);
+
+                        for (const orderBook of orderBooksArray) {
+                            if (!orderBook) continue;
+
+                            // Process asks
+                            if (orderBook.asks) {
+                                for (const listing of orderBook.asks) {
+                                    if (!listing.createdTimestamp && listing.listingId) {
+                                        const estimatedTimestamp = this.estimateTimestamp(listing.listingId);
+                                        listing.createdTimestamp = new Date(estimatedTimestamp).toISOString();
+                                    }
+                                }
+                            }
+
+                            // Process bids
+                            if (orderBook.bids) {
+                                for (const listing of orderBook.bids) {
+                                    if (!listing.createdTimestamp && listing.listingId) {
+                                        const estimatedTimestamp = this.estimateTimestamp(listing.listingId);
+                                        listing.createdTimestamp = new Date(estimatedTimestamp).toISOString();
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     // Store with timestamp for staleness tracking
                     this.orderBooksCache[itemHrid] = {
                         data: data.marketItemOrderBooks,
@@ -7042,6 +7085,292 @@
     const listingPriceDisplay = new ListingPriceDisplay();
 
     /**
+     * Queue Length Estimator Module
+     *
+     * Displays total quantity available at the best price in order books
+     * - Shows below Buy/Sell buttons on the market order book page
+     * - Estimates total queue depth when all 20 visible listings have the same price
+     * - Uses listing timestamps to extrapolate queue length
+     * Ported from Ranged Way Idle's estimateQueueLength feature
+     */
+
+
+    class QueueLengthEstimator {
+        constructor() {
+            this.unregisterWebSocket = null;
+            this.unregisterObserver = null;
+            this.isInitialized = false;
+            this.cleanupRegistry = cleanupRegistry_js.createCleanupRegistry();
+        }
+
+        /**
+         * Initialize the queue length estimator
+         */
+        initialize() {
+            if (this.isInitialized) {
+                return;
+            }
+
+            if (!config.getSetting('market_showQueueLength')) {
+                return;
+            }
+
+            // Dependency check - requires estimated listing age feature
+            if (!config.getSetting('market_showEstimatedListingAge')) {
+                console.warn('[QueueLengthEstimator] Requires "Market: Show estimated listing age" to be enabled');
+                return;
+            }
+
+            this.isInitialized = true;
+
+            this.setupWebSocketListeners();
+            this.setupObserver();
+        }
+
+        /**
+         * Setup WebSocket listeners for order book updates
+         */
+        setupWebSocketListeners() {
+            const orderBookHandler = (data) => {
+                if (data.marketItemOrderBooks) {
+                    // Clear processed flags to re-render with new data
+                    document.querySelectorAll('.mwi-queue-length-set').forEach((container) => {
+                        container.classList.remove('mwi-queue-length-set');
+                    });
+
+                    // Manually re-process any existing containers
+                    const existingContainers = document.querySelectorAll('[class*="MarketplacePanel_orderBooksContainer"]');
+                    existingContainers.forEach((container) => {
+                        this.processOrderBook(container);
+                    });
+                }
+            };
+
+            dataManager.on('market_item_order_books_updated', orderBookHandler);
+
+            this.unregisterWebSocket = () => {
+                dataManager.off('market_item_order_books_updated', orderBookHandler);
+            };
+
+            this.cleanupRegistry.registerCleanup(() => {
+                if (this.unregisterWebSocket) {
+                    this.unregisterWebSocket();
+                    this.unregisterWebSocket = null;
+                }
+            });
+        }
+
+        /**
+         * Setup DOM observer to watch for order book container
+         */
+        setupObserver() {
+            this.unregisterObserver = domObserver.onClass(
+                'QueueLengthEstimator',
+                'MarketplacePanel_orderBooksContainer',
+                (container) => {
+                    this.processOrderBook(container);
+                }
+            );
+
+            this.cleanupRegistry.registerCleanup(() => {
+                if (this.unregisterObserver) {
+                    this.unregisterObserver();
+                    this.unregisterObserver = null;
+                }
+            });
+        }
+
+        /**
+         * Process the order book container and inject queue length displays
+         * @param {HTMLElement} _container - Order book container (unused - we query directly)
+         */
+        processOrderBook(_container) {
+            // Find the button container where we'll inject the queue lengths
+            const buttonContainer = document.querySelector('.MarketplacePanel_newListingButtonsContainer__1MhKJ');
+            if (!buttonContainer) {
+                return;
+            }
+
+            // Check if already processed
+            if (buttonContainer.classList.contains('mwi-queue-length-set')) {
+                return;
+            }
+
+            // Get current item and order book data from estimated-listing-age module
+            const currentItemHrid = this.getCurrentItemHrid();
+            if (!currentItemHrid) {
+                return;
+            }
+
+            const orderBooksCache = estimatedListingAge.orderBooksCache;
+            if (!orderBooksCache[currentItemHrid]) {
+                return;
+            }
+
+            const cacheEntry = orderBooksCache[currentItemHrid];
+            const orderBookData = cacheEntry.data || cacheEntry;
+
+            // Get current enhancement level
+            const enhancementLevel = this.getCurrentEnhancementLevel();
+            const orderBookAtLevel = orderBookData.orderBooks?.[enhancementLevel];
+
+            if (!orderBookAtLevel) {
+                return;
+            }
+
+            // Mark as processed
+            buttonContainer.classList.add('mwi-queue-length-set');
+
+            // Calculate and display queue lengths
+            this.displayQueueLength(buttonContainer, orderBookAtLevel.asks, true);
+            this.displayQueueLength(buttonContainer, orderBookAtLevel.bids, false);
+        }
+
+        /**
+         * Calculate and display queue length for asks or bids
+         * @param {HTMLElement} buttonContainer - Button container element
+         * @param {Array} listings - Array of listings (asks or bids)
+         * @param {boolean} isAsk - True for asks (sell side), false for bids (buy side)
+         */
+        displayQueueLength(buttonContainer, listings, isAsk) {
+            if (!listings || listings.length === 0) {
+                return;
+            }
+
+            // Calculate visible count at top price
+            const topPrice = listings[0].price;
+            let visibleCount = 0;
+            for (const listing of listings) {
+                if (listing.price === topPrice) {
+                    visibleCount += listing.quantity;
+                }
+            }
+
+            // Check if we should estimate (all 20 visible listings at same price)
+            let queueLength = visibleCount;
+            let isEstimated = false;
+
+            if (listings.length === 20 && listings[19].price === topPrice) {
+                // All 20 visible listings are at the same price - estimate total queue
+                const firstTimestamp = new Date(listings[0].createdTimestamp).getTime();
+                const lastTimestamp = new Date(listings[19].createdTimestamp).getTime();
+                const now = Date.now();
+
+                const timeSpan = lastTimestamp - firstTimestamp;
+                const timeSinceNow = now - lastTimestamp;
+
+                if (timeSpan > 0) {
+                    // RWI formula: 1 + 19/20 * (timeSinceNow / timeSpan)
+                    // This extrapolates based on the assumption that listings arrive at a constant rate
+                    const queueMultiplier = 1 + (19 / 20) * (timeSinceNow / timeSpan);
+                    queueLength = visibleCount * queueMultiplier;
+                    isEstimated = true;
+                }
+            }
+
+            // Create or update the display element
+            const existingElement = buttonContainer.querySelector(`.mwi-queue-length-${isAsk ? 'ask' : 'bid'}`);
+
+            if (existingElement) {
+                existingElement.remove();
+            }
+
+            const displayElement = document.createElement('div');
+            displayElement.classList.add('mwi-queue-length', `mwi-queue-length-${isAsk ? 'ask' : 'bid'}`);
+            displayElement.style.fontSize = '1.2rem';
+            displayElement.style.textAlign = 'center';
+
+            // Format the count
+            const formattedCount = formatters_js.formatKMB(queueLength, 1);
+            displayElement.textContent = formattedCount;
+
+            // Apply color based on whether it's estimated
+            const colorSetting = isEstimated ? 'color_queueLength_estimated' : 'color_queueLength_known';
+            const color = config.getSettingValue(colorSetting, isEstimated ? '#60a5fa' : '#ffffff');
+            displayElement.style.color = color;
+
+            // Add tooltip
+            if (isEstimated) {
+                displayElement.title = `Estimated total queue depth (extrapolated from ${listings.length} visible orders)`;
+            } else {
+                displayElement.title = `Total quantity at best ${isAsk ? 'sell' : 'buy'} price`;
+            }
+
+            // Insert into button container
+            // Ask goes before the first button (sell button), bid goes before the last button (buy button)
+            if (isAsk) {
+                // Insert before the second child (between first button and sell button)
+                buttonContainer.insertBefore(displayElement, buttonContainer.children[1]);
+            } else {
+                // Insert before the last child (before buy button)
+                buttonContainer.insertBefore(displayElement, buttonContainer.lastChild);
+            }
+        }
+
+        /**
+         * Get current item HRID being viewed in order book
+         * @returns {string|null} Item HRID or null
+         */
+        getCurrentItemHrid() {
+            const currentItemElement = document.querySelector('.MarketplacePanel_currentItem__3ercC');
+            if (currentItemElement) {
+                const useElement = currentItemElement.querySelector('use');
+                if (useElement && useElement.href && useElement.href.baseVal) {
+                    const itemHrid = '/items/' + useElement.href.baseVal.split('#')[1];
+                    return itemHrid;
+                }
+            }
+            return null;
+        }
+
+        /**
+         * Get current enhancement level being viewed in order book
+         * @returns {number} Enhancement level (0 for non-equipment)
+         */
+        getCurrentEnhancementLevel() {
+            const currentItemElement = document.querySelector('.MarketplacePanel_currentItem__3ercC');
+            if (currentItemElement) {
+                const enhancementElement = currentItemElement.querySelector('[class*="Item_enhancementLevel"]');
+                if (enhancementElement) {
+                    const match = enhancementElement.textContent.match(/\+(\d+)/);
+                    if (match) {
+                        return parseInt(match[1], 10);
+                    }
+                }
+            }
+            return 0;
+        }
+
+        /**
+         * Clear all injected displays
+         */
+        clearDisplays() {
+            document.querySelectorAll('.mwi-queue-length-set').forEach((container) => {
+                container.classList.remove('mwi-queue-length-set');
+            });
+            document.querySelectorAll('.mwi-queue-length').forEach((el) => el.remove());
+        }
+
+        /**
+         * Disable the queue length estimator
+         */
+        disable() {
+            this.clearDisplays();
+            this.cleanupRegistry.cleanup();
+            this.isInitialized = false;
+        }
+
+        /**
+         * Cleanup when feature is disabled or character switches
+         */
+        cleanup() {
+            this.disable();
+        }
+    }
+
+    const queueLengthEstimator = new QueueLengthEstimator();
+
+    /**
      * Market Order Totals Module
      *
      * Displays market listing totals in the header area:
@@ -7387,6 +7716,9 @@
             // Marketplace tab tracking
             this.marketplaceTab = null;
             this.tabCleanupObserver = null;
+
+            // Performance optimization: cache item names to avoid repeated lookups
+            this.itemNameCache = new Map();
         }
 
         /**
@@ -7773,109 +8105,134 @@
         }
 
         /**
-         * Apply filters and search to listings
+         * Apply filters and search to listings (optimized single-pass version)
          */
         applyFilters() {
-            let filtered = [...this.listings];
-
             // Clear cached date range when filters change
             this.cachedDateRange = null;
 
-            // Apply type filter (legacy - kept for backwards compatibility)
-            if (this.typeFilter === 'buy') {
-                filtered = filtered.filter((listing) => !listing.isSell);
-            } else if (this.typeFilter === 'sell') {
-                filtered = filtered.filter((listing) => listing.isSell);
+            // Pre-compute filter conditions to avoid repeated checks
+            const hasTypeFilter = this.typeFilter !== 'all';
+            const typeIsBuy = this.typeFilter === 'buy';
+            const typeIsSell = this.typeFilter === 'sell';
+
+            const hasStatusFilter = this.statusFilter && this.statusFilter !== 'all';
+
+            const hasSearchTerm = !!this.searchTerm;
+            const searchTerm = hasSearchTerm ? this.searchTerm.toLowerCase() : '';
+
+            const hasDateFilter = !!(this.filters.dateFrom || this.filters.dateTo);
+            let dateToEndOfDay = null;
+            if (hasDateFilter && this.filters.dateTo) {
+                dateToEndOfDay = new Date(this.filters.dateTo);
+                dateToEndOfDay.setHours(23, 59, 59, 999);
             }
 
-            // Apply status filter
-            if (this.statusFilter && this.statusFilter !== 'all') {
-                filtered = filtered.filter((listing) => listing.status === this.statusFilter);
-            }
+            const hasItemFilter = this.filters.selectedItems.length > 0;
+            const itemFilterSet = hasItemFilter ? new Set(this.filters.selectedItems) : null;
 
-            // Apply search term (search in item name)
-            if (this.searchTerm) {
-                const term = this.searchTerm.toLowerCase();
-                filtered = filtered.filter((listing) => {
-                    const itemName = this.getItemName(listing.itemHrid).toLowerCase();
-                    return itemName.includes(term);
-                });
-            }
+            const hasEnhLevelFilter = this.filters.selectedEnhLevels.length > 0;
+            const enhLevelFilterSet = hasEnhLevelFilter ? new Set(this.filters.selectedEnhLevels) : null;
 
-            // Apply date range filter
-            if (this.filters.dateFrom || this.filters.dateTo) {
-                filtered = filtered.filter((listing) => {
+            const hasColumnTypeFilter = this.filters.selectedTypes.length > 0 && this.filters.selectedTypes.length < 2;
+            const showBuy = hasColumnTypeFilter && this.filters.selectedTypes.includes('buy');
+            const showSell = hasColumnTypeFilter && this.filters.selectedTypes.includes('sell');
+
+            // Single-pass filter: combines all filters into one iteration
+            const filtered = this.listings.filter((listing) => {
+                // Type filter (legacy)
+                if (hasTypeFilter) {
+                    if (typeIsBuy && listing.isSell) return false;
+                    if (typeIsSell && !listing.isSell) return false;
+                }
+
+                // Status filter
+                if (hasStatusFilter && listing.status !== this.statusFilter) {
+                    return false;
+                }
+
+                // Search term filter (with cached item names)
+                if (hasSearchTerm) {
+                    const itemName = this.getItemName(listing.itemHrid);
+                    if (!itemName.toLowerCase().includes(searchTerm)) {
+                        return false;
+                    }
+                }
+
+                // Date range filter
+                if (hasDateFilter) {
                     const listingDate = new Date(listing.createdTimestamp || listing.timestamp);
 
                     if (this.filters.dateFrom && listingDate < this.filters.dateFrom) {
                         return false;
                     }
 
-                    if (this.filters.dateTo) {
-                        // Set dateTo to end of day (23:59:59.999)
-                        const endOfDay = new Date(this.filters.dateTo);
-                        endOfDay.setHours(23, 59, 59, 999);
-                        if (listingDate > endOfDay) {
-                            return false;
-                        }
+                    if (dateToEndOfDay && listingDate > dateToEndOfDay) {
+                        return false;
                     }
+                }
 
-                    return true;
-                });
-            }
-
-            // Apply item filter
-            if (this.filters.selectedItems.length > 0) {
-                filtered = filtered.filter((listing) => this.filters.selectedItems.includes(listing.itemHrid));
-            }
-
-            // Apply enhancement level filter
-            if (this.filters.selectedEnhLevels.length > 0) {
-                filtered = filtered.filter((listing) => this.filters.selectedEnhLevels.includes(listing.enhancementLevel));
-            }
-
-            // Apply type filter (column filter)
-            if (this.filters.selectedTypes.length > 0 && this.filters.selectedTypes.length < 2) {
-                // Only filter if not both selected (both selected = show all)
-                const showBuy = this.filters.selectedTypes.includes('buy');
-                const showSell = this.filters.selectedTypes.includes('sell');
-
-                filtered = filtered.filter((listing) => {
-                    if (showBuy && !listing.isSell) return true;
-                    if (showSell && listing.isSell) return true;
+                // Item filter (using Set for O(1) lookup)
+                if (hasItemFilter && !itemFilterSet.has(listing.itemHrid)) {
                     return false;
+                }
+
+                // Enhancement level filter (using Set for O(1) lookup)
+                if (hasEnhLevelFilter && !enhLevelFilterSet.has(listing.enhancementLevel)) {
+                    return false;
+                }
+
+                // Type filter (column filter)
+                if (hasColumnTypeFilter) {
+                    if (showBuy && listing.isSell) return false;
+                    if (showSell && !listing.isSell) return false;
+                }
+
+                return true;
+            });
+
+            // Optimize sorting: cache computed values to avoid recalculating in comparator
+            if (this.sortColumn === 'itemHrid') {
+                // Pre-compute item names for sorting
+                const itemNamesMap = new Map();
+                for (const listing of filtered) {
+                    if (!itemNamesMap.has(listing.itemHrid)) {
+                        itemNamesMap.set(listing.itemHrid, this.getItemName(listing.itemHrid));
+                    }
+                }
+
+                filtered.sort((a, b) => {
+                    const aVal = itemNamesMap.get(a.itemHrid);
+                    const bVal = itemNamesMap.get(b.itemHrid);
+                    return this.sortDirection === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+                });
+            } else if (this.sortColumn === 'total') {
+                // Pre-compute totals
+                filtered.sort((a, b) => {
+                    const aVal = a.price * a.filledQuantity;
+                    const bVal = b.price * b.filledQuantity;
+                    return this.sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
+                });
+            } else if (this.sortColumn === 'createdTimestamp') {
+                // Use numeric timestamp for fast sorting
+                filtered.sort((a, b) => {
+                    const aVal = a.timestamp;
+                    const bVal = b.timestamp;
+                    return this.sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
+                });
+            } else {
+                // Generic sorting for other columns
+                filtered.sort((a, b) => {
+                    const aVal = a[this.sortColumn];
+                    const bVal = b[this.sortColumn];
+
+                    if (typeof aVal === 'string') {
+                        return this.sortDirection === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+                    } else {
+                        return this.sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
+                    }
                 });
             }
-
-            // Apply sorting
-            filtered.sort((a, b) => {
-                let aVal = a[this.sortColumn];
-                let bVal = b[this.sortColumn];
-
-                // Handle timestamp sorting
-                if (this.sortColumn === 'createdTimestamp') {
-                    aVal = a.timestamp; // Use numeric timestamp for sorting
-                    bVal = b.timestamp;
-                }
-
-                // Handle item name sorting
-                if (this.sortColumn === 'itemHrid') {
-                    aVal = this.getItemName(a.itemHrid);
-                    bVal = this.getItemName(b.itemHrid);
-                }
-
-                // Handle total (price × filled) sorting
-                if (this.sortColumn === 'total') {
-                    aVal = a.price * a.filledQuantity;
-                    bVal = b.price * b.filledQuantity;
-                }
-
-                if (typeof aVal === 'string') {
-                    return this.sortDirection === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
-                } else {
-                    return this.sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
-                }
-            });
 
             this.filteredListings = filtered;
             this.currentPage = 1; // Reset to first page when filters change
@@ -7954,11 +8311,19 @@
         }
 
         /**
-         * Get item name from HRID
+         * Get item name from HRID (with caching for performance)
          */
         getItemName(itemHrid) {
+            // Check cache first
+            if (this.itemNameCache.has(itemHrid)) {
+                return this.itemNameCache.get(itemHrid);
+            }
+
+            // Get item name and cache it
             const itemDetails = dataManager.getItemDetails(itemHrid);
-            return itemDetails?.name || itemHrid.split('/').pop().replace(/_/g, ' ');
+            const name = itemDetails?.name || itemHrid.split('/').pop().replace(/_/g, ' ');
+            this.itemNameCache.set(itemHrid, name);
+            return name;
         }
 
         /**
@@ -15272,6 +15637,7 @@
         itemCountDisplay,
         listingPriceDisplay,
         estimatedListingAge,
+        queueLengthEstimator,
         marketOrderTotals,
         marketHistoryViewer,
         philoCalculator,

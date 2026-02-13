@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 0.30.1
+ * Version: 0.31.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -398,6 +398,13 @@
                     label: 'Show alert when market price data cannot be fetched',
                     type: 'checkbox',
                     default: true,
+                },
+                chatCommands: {
+                    id: 'chatCommands',
+                    label: 'Enable chat commands (/item, /wiki, /market)',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Type /item, /wiki, or /market followed by an item name in chat. Example: /item radiant fiber',
                 },
             },
         },
@@ -1234,7 +1241,7 @@
                     id: 'market_showEstimatedListingAge',
                     label: 'Market: Show estimated age on order book',
                     type: 'checkbox',
-                    default: false,
+                    default: true,
                     help: 'Estimates creation time for all market listings using listing ID interpolation',
                 },
                 market_listingAgeFormat: {
@@ -1293,6 +1300,14 @@
                     type: 'checkbox',
                     default: true,
                     help: 'Adds "Philo Gamba" button to settings panel for calculating transmutation ROI into Philosopher\'s Stones',
+                },
+                market_showQueueLength: {
+                    id: 'market_showQueueLength',
+                    label: 'Market: Show queue length estimates',
+                    type: 'checkbox',
+                    default: true,
+                    dependencies: ['market_showEstimatedListingAge'],
+                    help: 'Displays total quantity at best price below Buy/Sell buttons. Estimated values (20+ orders at same price) are shown in a different color.',
                 },
                 itemDictionary_transmuteRates: {
                     id: 'itemDictionary_transmuteRates',
@@ -1468,6 +1483,20 @@
                     type: 'color',
                     default: '#ffffff',
                     help: 'Color used for transmutation success rate percentages in Item Dictionary',
+                },
+                color_queueLength_known: {
+                    id: 'color_queueLength_known',
+                    label: 'Queue Length: Known Value',
+                    type: 'color',
+                    default: '#ffffff',
+                    help: 'Color for known queue lengths (when all visible orders are counted)',
+                },
+                color_queueLength_estimated: {
+                    id: 'color_queueLength_estimated',
+                    label: 'Queue Length: Estimated Value',
+                    type: 'color',
+                    default: '#60a5fa',
+                    help: 'Color for estimated queue lengths (extrapolated from 20+ orders at same price)',
                 },
             },
         },
