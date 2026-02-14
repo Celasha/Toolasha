@@ -691,6 +691,13 @@ export const settingsGroups = {
                 default: false,
                 help: 'Automatically sorts tasks by skill type when you open the task panel',
             },
+            taskInventoryHighlighter: {
+                id: 'taskInventoryHighlighter',
+                label: 'Enable Task Inventory Highlighter button',
+                type: 'checkbox',
+                default: true,
+                help: 'Adds a button to dim inventory items not needed for your current non-combat tasks',
+            },
         },
     },
 

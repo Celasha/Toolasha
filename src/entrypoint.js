@@ -328,6 +328,13 @@ function registerFeatures() {
         },
         { key: 'taskSorter', name: 'Task Sorter', category: 'Tasks', module: UI.taskSorter, async: false },
         { key: 'taskIcons', name: 'Task Icons', category: 'Tasks', module: UI.taskIcons, async: false },
+        {
+            key: 'taskInventoryHighlighter',
+            name: 'Task Inventory Highlighter',
+            category: 'Tasks',
+            module: UI.taskInventoryHighlighter,
+            async: false,
+        },
         { key: 'skillRemainingXP', name: 'Remaining XP', category: 'Skills', module: UI.remainingXP, async: false },
         {
             key: 'housePanelObserver',

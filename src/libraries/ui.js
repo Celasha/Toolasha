@@ -19,6 +19,7 @@ import taskProfitDisplay from '../features/tasks/task-profit-display.js';
 import taskRerollTracker from '../features/tasks/task-reroll-tracker.js';
 import taskSorter from '../features/tasks/task-sorter.js';
 import taskIcons from '../features/tasks/task-icons.js';
+import taskInventoryHighlighter from '../features/tasks/task-inventory-highlighter.js';
 
 // Skills
 import remainingXP from '../features/skills/remaining-xp.js';
@@ -56,6 +57,7 @@ toolashaRoot.UI = {
     taskRerollTracker,
     taskSorter,
     taskIcons,
+    taskInventoryHighlighter,
     remainingXP,
     housePanelObserver,
     settingsUI,

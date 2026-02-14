@@ -196,8 +196,8 @@ class MarketOrderTotals {
                 <button
                     type="button"
                     class="mwi-market-order-totals-link"
-                    title="Open Marketplace"
-                    aria-label="Open Marketplace"
+                    title="No market orders"
+                    aria-label="No market orders"
                     style="background: none; border: none; padding: 0; cursor: pointer; display: flex; align-items: center;"
                 >
                     ${marketplaceIcon}
