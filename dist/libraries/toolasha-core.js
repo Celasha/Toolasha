@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 0.31.0
+ * Version: 0.32.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1075,6 +1075,13 @@
                     type: 'checkbox',
                     default: false,
                     help: 'Automatically sorts tasks by skill type when you open the task panel',
+                },
+                taskInventoryHighlighter: {
+                    id: 'taskInventoryHighlighter',
+                    label: 'Enable Task Inventory Highlighter button',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Adds a button to dim inventory items not needed for your current non-combat tasks',
                 },
             },
         },

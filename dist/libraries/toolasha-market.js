@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 0.31.0
+ * Version: 0.32.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -7564,8 +7564,8 @@
                 <button
                     type="button"
                     class="mwi-market-order-totals-link"
-                    title="Open Marketplace"
-                    aria-label="Open Marketplace"
+                    title="No market orders"
+                    aria-label="No market orders"
                     style="background: none; border: none; padding: 0; cursor: pointer; display: flex; align-items: center;"
                 >
                     ${marketplaceIcon}
