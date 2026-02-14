@@ -1,6 +1,7 @@
 /**
  * Combat Simulator Integration Module
  * Injects import button on Shykai Combat Simulator page
+ * Adds skill calculator box to simulation results
  *
  * Automatically fills character/party data from game into simulator
  */
@@ -9,6 +10,12 @@ import { constructExportObject } from './combat-sim-export.js';
 import config from '../../core/config.js';
 import { setReactInputValue } from '../../utils/react-input.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
+import dataManager from '../../core/data-manager.js';
+import webSocketHook from '../../core/websocket.js';
+import { createCalculatorUI, extractExpRates } from '../combat-sim-integration/skill-calculator-ui.js';
+
+// Detect if we're running on Tampermonkey or Steam
+const hasScriptManager = typeof GM_info !== 'undefined';
 
 /**
  * Check if running on Steam client (no extension manager)
@@ -20,6 +27,10 @@ function isSteamClient() {
 
 const timerRegistry = createTimerRegistry();
 const IMPORT_CONTAINER_ID = 'toolasha-import-container';
+
+// Skill calculator state
+let calculatorObserver = null;
+let calculatorUIElements = null;
 
 /**
  * Initialize combat sim integration (runs on sim page only)
@@ -34,6 +45,9 @@ export function initialize() {
 
     // Wait for simulator UI to load
     waitForSimulatorUI();
+
+    // Initialize skill calculator
+    initializeSkillCalculator();
 }
 
 /**
@@ -46,6 +60,18 @@ export function disable() {
     if (container) {
         container.remove();
     }
+
+    // Cleanup skill calculator
+    if (calculatorObserver) {
+        calculatorObserver.disconnect();
+        calculatorObserver = null;
+    }
+
+    if (calculatorUIElements?.wrapper) {
+        calculatorUIElements.wrapper.remove();
+    }
+
+    calculatorUIElements = null;
 }
 
 /**
@@ -312,5 +338,227 @@ function selectZone(zoneHrid, isDungeon) {
             }
         }, 100);
         timerRegistry.registerTimeout(zoneTimeout);
+    }
+}
+
+/**
+ * Initialize skill calculator - waits for results panel and sets up observer
+ */
+async function initializeSkillCalculator() {
+    try {
+        // Wait for sim results panel to exist
+        const resultsPanel = await waitForSimResults();
+        if (!resultsPanel) {
+            console.warn('[Toolasha Combat Sim Calculator] Results panel not found');
+            return;
+        }
+
+        // Wait for experience gain div to exist
+        const expDiv = await waitForExpDiv();
+        if (!expDiv) {
+            console.warn('[Toolasha Combat Sim Calculator] Experience div not found');
+            return;
+        }
+
+        // Setup mutation observer to watch for sim results
+        setupSkillCalculatorObserver(expDiv, resultsPanel);
+    } catch (error) {
+        console.error('[Toolasha Combat Sim Calculator] Failed to initialize:', error);
+    }
+}
+
+/**
+ * Wait for sim results panel to appear
+ * @returns {Promise<HTMLElement|null>} Results panel element
+ */
+async function waitForSimResults() {
+    return new Promise((resolve) => {
+        let attempts = 0;
+        const maxAttempts = 100; // 10 seconds
+
+        const check = () => {
+            attempts++;
+
+            // Try to find results panel
+            const resultsPanel = document
+                .querySelector('div.row')
+                ?.querySelectorAll('div.col-md-5')?.[2]
+                ?.querySelector('div.row > div.col-md-5');
+
+            if (resultsPanel) {
+                resolve(resultsPanel);
+            } else if (attempts >= maxAttempts) {
+                resolve(null);
+            } else {
+                setTimeout(check, 100);
+            }
+        };
+
+        check();
+    });
+}
+
+/**
+ * Wait for experience gain div to appear
+ * @returns {Promise<HTMLElement|null>} Experience div element
+ */
+async function waitForExpDiv() {
+    return new Promise((resolve) => {
+        let attempts = 0;
+        const maxAttempts = 100; // 10 seconds
+
+        const check = () => {
+            attempts++;
+            const expDiv = document.querySelector('#simulationResultExperienceGain');
+
+            if (expDiv) {
+                resolve(expDiv);
+            } else if (attempts >= maxAttempts) {
+                resolve(null);
+            } else {
+                setTimeout(check, 100);
+            }
+        };
+
+        check();
+    });
+}
+
+/**
+ * Setup mutation observer to watch for sim results
+ * @param {HTMLElement} expDiv - Experience gain div
+ * @param {HTMLElement} resultsPanel - Results panel container
+ */
+function setupSkillCalculatorObserver(expDiv, resultsPanel) {
+    calculatorObserver = new MutationObserver((mutations) => {
+        for (const mutation of mutations) {
+            if (mutation.addedNodes.length >= 3) {
+                // Sim results updated, inject/update calculator
+                handleSimResults(resultsPanel);
+                break;
+            }
+        }
+    });
+
+    calculatorObserver.observe(expDiv, {
+        childList: true,
+        subtree: true,
+    });
+}
+
+/**
+ * Handle sim results update - inject or update calculator
+ * @param {HTMLElement} resultsPanel - Results panel container
+ */
+async function handleSimResults(resultsPanel) {
+    try {
+        // Extract exp rates from sim results
+        const expRates = extractExpRates();
+
+        if (!expRates || Object.keys(expRates).length === 0) {
+            console.warn('[Toolasha Combat Sim Calculator] No exp rates found');
+            return;
+        }
+
+        // Get character data from storage (cross-domain)
+        const characterData = await getCharacterDataFromStorage();
+
+        if (!characterData) {
+            console.warn('[Toolasha Combat Sim Calculator] No character data available');
+            return;
+        }
+
+        const characterSkills = characterData.characterSkills;
+
+        if (!characterSkills) {
+            console.warn('[Toolasha Combat Sim Calculator] No character skills data');
+            return;
+        }
+
+        // Get level exp table from storage (cross-domain)
+        const clientData = await getClientDataFromStorage();
+
+        if (!clientData) {
+            console.warn('[Toolasha Combat Sim Calculator] No client data available');
+            return;
+        }
+
+        const levelExpTable = clientData.levelExperienceTable;
+
+        if (!levelExpTable) {
+            console.warn('[Toolasha Combat Sim Calculator] No level exp table');
+            return;
+        }
+
+        // Remove existing calculator if present
+        const existing = document.getElementById('mwi-skill-calculator');
+        if (existing) {
+            existing.remove();
+        }
+
+        // Create new calculator UI
+        calculatorUIElements = createCalculatorUI(resultsPanel, characterSkills, expRates, levelExpTable);
+    } catch (error) {
+        console.error('[Toolasha Combat Sim Calculator] Failed to handle sim results:', error);
+    }
+}
+
+/**
+ * Get saved character data from storage
+ * @returns {Promise<Object|null>} Parsed character data or null
+ */
+async function getCharacterDataFromStorage() {
+    try {
+        // Tampermonkey: Use GM storage (cross-domain, persisted)
+        if (hasScriptManager) {
+            const data = await webSocketHook.loadFromStorage('toolasha_init_character_data', null);
+            if (!data) {
+                console.error(
+                    '[Toolasha Combat Sim Calculator] No character data in storage. Please refresh game page.'
+                );
+                return null;
+            }
+            return JSON.parse(data);
+        }
+
+        // Steam: Use dataManager (which has its own fallback handling)
+        const characterData = dataManager.characterData;
+        if (!characterData) {
+            console.error('[Toolasha Combat Sim Calculator] No character data found. Please refresh game page.');
+            return null;
+        }
+        return characterData;
+    } catch (error) {
+        console.error('[Toolasha Combat Sim Calculator] Failed to get character data:', error);
+        return null;
+    }
+}
+
+/**
+ * Get init_client_data from storage
+ * @returns {Promise<Object|null>} Parsed client data or null
+ */
+async function getClientDataFromStorage() {
+    try {
+        // Tampermonkey: Use GM storage (cross-domain, persisted)
+        if (hasScriptManager) {
+            const data = await webSocketHook.loadFromStorage('toolasha_init_client_data', null);
+            if (!data) {
+                console.warn('[Toolasha Combat Sim Calculator] No client data in storage');
+                return null;
+            }
+            return JSON.parse(data);
+        }
+
+        // Steam: Use dataManager (RAM only, no GM storage available)
+        const clientData = dataManager.getInitClientData();
+        if (!clientData) {
+            console.warn('[Toolasha Combat Sim Calculator] No client data found');
+            return null;
+        }
+        return clientData;
+    } catch (error) {
+        console.error('[Toolasha Combat Sim Calculator] Failed to get client data:', error);
+        return null;
     }
 }
