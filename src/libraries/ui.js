@@ -35,6 +35,7 @@ import settingsUI from '../features/settings/settings-ui.js';
 
 // Dictionary
 import transmuteRates from '../features/dictionary/transmute-rates.js';
+import viewActionButton from '../features/dictionary/view-action-button.js';
 
 // Enhancement
 import enhancementFeature from '../features/enhancement/enhancement-feature.js';
@@ -66,6 +67,7 @@ toolashaRoot.UI = {
     housePanelObserver,
     settingsUI,
     transmuteRates,
+    viewActionButton,
     enhancementFeature,
     emptyQueueNotification,
 };
