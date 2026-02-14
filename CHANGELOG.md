@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.34.0](https://github.com/Celasha/Toolasha/compare/v0.33.1...v0.34.0) (2026-02-14)
+
+### Features
+
+- add skill progression calculator to combat simulator ([7e3650a](https://github.com/Celasha/Toolasha/commit/7e3650a1adb79761b6db55e69421878a369e0c61))
+
 ## [0.33.1](https://github.com/Celasha/Toolasha/compare/v0.33.0...v0.33.1) (2026-02-14)
 
 ### Bug Fixes
