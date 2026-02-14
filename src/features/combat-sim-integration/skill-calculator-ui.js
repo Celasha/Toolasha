@@ -17,9 +17,10 @@ export function createCalculatorUI(container, characterSkills, expRates, levelEx
     const wrapper = document.createElement('div');
     wrapper.id = 'mwi-skill-calculator';
     wrapper.style.cssText = `
-        background-color: #FFFFE0;
-        color: black;
+        background: rgba(0, 0, 0, 0.4);
+        color: #ffffff;
         padding: 12px;
+        border: 1px solid #555;
         border-radius: 4px;
         margin-top: 10px;
         font-family: inherit;
@@ -32,11 +33,15 @@ export function createCalculatorUI(container, characterSkills, expRates, levelEx
     for (const skillName of skillOrder) {
         const skill = characterSkills.find((s) => s.skillHrid.includes(skillName));
         if (skill) {
-            const currentLevel = getLevelFromExp(skill.experience, levelExpTable);
+            // If skill has experience, calculate level from exp
+            // If skill only has level (from simulator extraction), use that directly
+            const currentLevel = skill.experience ? getLevelFromExp(skill.experience, levelExpTable) : skill.level;
+            const currentExp = skill.experience || 0;
+
             skillData[skillName] = {
                 displayName: capitalize(skillName),
                 currentLevel,
-                currentExp: skill.experience,
+                currentExp,
             };
         }
     }
@@ -58,7 +63,8 @@ export function createCalculatorUI(container, characterSkills, expRates, levelEx
         input.value = skillData[skillName].currentLevel + 1;
         input.min = skillData[skillName].currentLevel + 1;
         input.max = 200;
-        input.style.cssText = 'width: 60px; padding: 2px 4px;';
+        input.style.cssText =
+            'width: 60px; padding: 4px; background: #2a2a2a; color: white; border: 1px solid #555; border-radius: 3px;';
         input.dataset.skill = skillName;
 
         skillInputs[skillName] = input;
@@ -184,6 +190,7 @@ function updateCalculatorResults(
     if (hasIndividualTarget && activeSkill && activeInput) {
         // Calculate time to reach specific level
         const targetLevel = Number(activeInput.value);
+        const currentLevel = skillData[activeSkill].currentLevel;
         const currentExp = skillData[activeSkill].currentExp;
         const expRate = expRates[activeSkill] || 0;
 
@@ -191,6 +198,8 @@ function updateCalculatorResults(
 
         if (expRate === 0) {
             resultsContent.innerHTML = '<div>No experience gain (not trained in simulation)</div>';
+        } else if (targetLevel <= currentLevel) {
+            resultsContent.innerHTML = '<div>Already achieved</div>';
         } else {
             const timeResult = calculateTimeToLevel(currentExp, targetLevel, expRate, levelExpTable);
             if (timeResult) {
@@ -205,6 +214,7 @@ function updateCalculatorResults(
         resultsHeader.textContent = `After ${days} days:`;
 
         const projected = calculateLevelsAfterDays(characterSkills, expRates, days, levelExpTable);
+
         if (projected) {
             let html = '';
             const skillOrder = ['stamina', 'intelligence', 'attack', 'melee', 'defense', 'ranged', 'magic'];

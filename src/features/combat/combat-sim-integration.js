@@ -430,12 +430,31 @@ async function waitForExpDiv() {
  * @param {HTMLElement} resultsPanel - Results panel container
  */
 function setupSkillCalculatorObserver(expDiv, resultsPanel) {
+    let debounceTimer = null;
+
     calculatorObserver = new MutationObserver((mutations) => {
+        let hasSignificantChange = false;
+
         for (const mutation of mutations) {
-            if (mutation.addedNodes.length >= 3) {
-                // Sim results updated, inject/update calculator
-                handleSimResults(resultsPanel);
-                break;
+            // Check if exp div now has content (sim completed)
+            if (mutation.addedNodes.length > 0 || mutation.removedNodes.length > 0) {
+                hasSignificantChange = true;
+            }
+        }
+
+        if (hasSignificantChange) {
+            // Check if exp div has actual skill data
+            const rows = expDiv.querySelectorAll('.row');
+
+            if (rows.length > 0) {
+                // Debounce to avoid multiple rapid calls
+                if (debounceTimer) {
+                    clearTimeout(debounceTimer);
+                }
+
+                debounceTimer = setTimeout(() => {
+                    handleSimResults(resultsPanel);
+                }, 100);
             }
         }
     });
@@ -444,6 +463,51 @@ function setupSkillCalculatorObserver(expDiv, resultsPanel) {
         childList: true,
         subtree: true,
     });
+}
+
+/**
+ * Extract skill levels from simulator's active player tab
+ * @returns {Array|null} Character skills array matching dataManager format, or null if not found
+ */
+function extractSimulatorSkillLevels() {
+    // The player tab structure is complex - find the actual container with the inputs
+    // First, find which player tab is active
+    const activeTabLink = document.querySelector('.nav-link.active[id*="player"]');
+
+    if (!activeTabLink) {
+        return null;
+    }
+
+    // Try finding the inputs by exact ID (they should be global/unique)
+    const skillLevels = {
+        stamina: document.querySelector('input#inputLevel_stamina')?.value,
+        intelligence: document.querySelector('input#inputLevel_intelligence')?.value,
+        attack: document.querySelector('input#inputLevel_attack')?.value,
+        melee: document.querySelector('input#inputLevel_melee')?.value,
+        defense: document.querySelector('input#inputLevel_defense')?.value,
+        ranged: document.querySelector('input#inputLevel_ranged')?.value,
+        magic: document.querySelector('input#inputLevel_magic')?.value,
+    };
+
+    // Check if we got valid values
+    const hasValidValues = Object.values(skillLevels).some((val) => val !== undefined && val !== null);
+
+    if (!hasValidValues) {
+        return null;
+    }
+
+    // Convert to characterSkills array format (matching dataManager structure)
+    const characterSkills = [
+        { skillHrid: '/skills/stamina', level: Number(skillLevels.stamina) || 1, experience: 0 },
+        { skillHrid: '/skills/intelligence', level: Number(skillLevels.intelligence) || 1, experience: 0 },
+        { skillHrid: '/skills/attack', level: Number(skillLevels.attack) || 1, experience: 0 },
+        { skillHrid: '/skills/melee', level: Number(skillLevels.melee) || 1, experience: 0 },
+        { skillHrid: '/skills/defense', level: Number(skillLevels.defense) || 1, experience: 0 },
+        { skillHrid: '/skills/ranged', level: Number(skillLevels.ranged) || 1, experience: 0 },
+        { skillHrid: '/skills/magic', level: Number(skillLevels.magic) || 1, experience: 0 },
+    ];
+
+    return characterSkills;
 }
 
 /**
@@ -460,15 +524,20 @@ async function handleSimResults(resultsPanel) {
             return;
         }
 
-        // Get character data from storage (cross-domain)
-        const characterData = await getCharacterDataFromStorage();
+        // Extract skill levels from simulator's active player tab
+        let characterSkills = extractSimulatorSkillLevels();
 
-        if (!characterData) {
-            console.warn('[Toolasha Combat Sim Calculator] No character data available');
-            return;
+        // Fallback to real character data if simulator extraction fails
+        if (!characterSkills) {
+            const characterData = await getCharacterDataFromStorage();
+
+            if (!characterData) {
+                console.warn('[Toolasha Combat Sim Calculator] No character data available');
+                return;
+            }
+
+            characterSkills = characterData.characterSkills;
         }
-
-        const characterSkills = characterData.characterSkills;
 
         if (!characterSkills) {
             console.warn('[Toolasha Combat Sim Calculator] No character skills data');
@@ -489,6 +558,18 @@ async function handleSimResults(resultsPanel) {
             console.warn('[Toolasha Combat Sim Calculator] No level exp table');
             return;
         }
+
+        // Convert simulator-extracted levels to experience values
+        // (simulator extraction sets experience: 0, but we need actual exp for projections)
+        characterSkills = characterSkills.map((skill) => {
+            if (skill.experience === 0 && skill.level > 1) {
+                return {
+                    ...skill,
+                    experience: levelExpTable[skill.level] || 0,
+                };
+            }
+            return skill;
+        });
 
         // Remove existing calculator if present
         const existing = document.getElementById('mwi-skill-calculator');

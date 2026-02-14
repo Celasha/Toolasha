@@ -95,6 +95,7 @@ export function calculateLevelsAfterDays(skills, expRates, days, levelExpTable) 
 
 /**
  * Calculate combat level from skill levels
+ * Formula: 0.1 * (Stamina + Intelligence + Attack + Defense + MAX(Melee, Ranged, Magic)) + 0.5 * MAX(Attack, Defense, Melee, Ranged, Magic)
  * @param {Object} skills - Skill levels object
  * @returns {number} Combat level
  */
@@ -107,7 +108,10 @@ export function calculateCombatLevel(skills) {
     const ranged = skills.ranged?.level || 1;
     const magic = skills.magic?.level || 1;
 
-    return 0.2 * (stamina + intelligence + defense) + 0.4 * Math.max(0.5 * (attack + melee), ranged, magic);
+    const maxCombatSkill = Math.max(melee, ranged, magic);
+    const maxAllCombat = Math.max(attack, defense, melee, ranged, magic);
+
+    return 0.1 * (stamina + intelligence + attack + defense + maxCombatSkill) + 0.5 * maxAllCombat;
 }
 
 /**
