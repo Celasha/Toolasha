@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 0.33.0
+ * Version: 0.33.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -7017,6 +7017,20 @@
 
                 // Calculate elapsed tracking time (MCS-style)
                 const elapsedSeconds = this.calcElapsedSeconds();
+
+                // Detect new combat session and reset consumable tracking
+                // Primary: battleId decreased (went back to 1 or lower)
+                // Fallback: combat duration is shorter than tracking duration (missed a reset while offline)
+                const shouldResetTracking =
+                    (this.currentBattleId !== null && battleId < this.currentBattleId) ||
+                    (elapsedSeconds > 0 && durationSeconds < elapsedSeconds);
+
+                if (shouldResetTracking) {
+                    this.resetConsumableTracking();
+                }
+
+                // Update current battle ID
+                this.currentBattleId = battleId;
 
                 // Get current character ID to identify which player is the current user
                 const currentCharacterId = dataManager.getCurrentCharacterId();

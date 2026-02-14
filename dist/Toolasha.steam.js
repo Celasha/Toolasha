@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.33.0
+// @version      0.33.1
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -59539,6 +59539,20 @@ return plugin;
 
                 // Calculate elapsed tracking time (MCS-style)
                 const elapsedSeconds = this.calcElapsedSeconds();
+
+                // Detect new combat session and reset consumable tracking
+                // Primary: battleId decreased (went back to 1 or lower)
+                // Fallback: combat duration is shorter than tracking duration (missed a reset while offline)
+                const shouldResetTracking =
+                    (this.currentBattleId !== null && battleId < this.currentBattleId) ||
+                    (elapsedSeconds > 0 && durationSeconds < elapsedSeconds);
+
+                if (shouldResetTracking) {
+                    this.resetConsumableTracking();
+                }
+
+                // Update current battle ID
+                this.currentBattleId = battleId;
 
                 // Get current character ID to identify which player is the current user
                 const currentCharacterId = dataManager$1.getCurrentCharacterId();
