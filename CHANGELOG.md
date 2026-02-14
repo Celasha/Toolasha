@@ -2,20 +2,17 @@
 
 ## [0.32.0](https://github.com/Celasha/Toolasha/compare/v0.31.0...v0.32.0) (2026-02-14)
 
-
 ### Features
 
-* add task inventory highlighter and fix market tooltip ([e496b92](https://github.com/Celasha/Toolasha/commit/e496b9274a4afed1e1a9998690025861cabfbc6e))
-
+- add task inventory highlighter and fix market tooltip ([e496b92](https://github.com/Celasha/Toolasha/commit/e496b9274a4afed1e1a9998690025861cabfbc6e))
 
 ### Documentation
 
-* update performance.md with verification results and completed fixes ([c1602d1](https://github.com/Celasha/Toolasha/commit/c1602d10643fc756a003e5576ed011d08312885a))
-
+- update performance.md with verification results and completed fixes ([c1602d1](https://github.com/Celasha/Toolasha/commit/c1602d10643fc756a003e5576ed011d08312885a))
 
 ### Miscellaneous Chores
 
-* add docs/ to .gitignore to exclude documentation from repo ([f2403ba](https://github.com/Celasha/Toolasha/commit/f2403ba0e523169fb337df733a2f75f85720aa5a))
+- add docs/ to .gitignore to exclude documentation from repo ([f2403ba](https://github.com/Celasha/Toolasha/commit/f2403ba0e523169fb337df733a2f75f85720aa5a))
 
 ## [0.31.0](https://github.com/Celasha/Toolasha/compare/v0.30.1...v0.31.0) (2026-02-13)
 
