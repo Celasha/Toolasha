@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.35.0](https://github.com/Celasha/Toolasha/compare/v0.34.0...v0.35.0) (2026-02-14)
+
+### Features
+
+- add Alt+click item navigation to crafting/gathering pages ([1825eed](https://github.com/Celasha/Toolasha/commit/1825eed9002eef3073d4da0a58a8a2d39d9838c6))
+
+### Bug Fixes
+
+- resolve combat simulator skill calculator issues ([226ec15](https://github.com/Celasha/Toolasha/commit/226ec15a8e0bb5432fb28f1e46f5eab3691290db))
+
 ## [0.34.0](https://github.com/Celasha/Toolasha/compare/v0.33.1...v0.34.0) (2026-02-14)
 
 ### Features
