@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.32.0
+// @version      0.33.0
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -61788,9 +61788,10 @@ return plugin;
      * @param {Object} characterData - Character data from dataManager or profile cache
      * @param {Object} clientData - Init client data for lookups
      * @param {Object} consumablesData - Optional character data containing consumables (for profile_shared data)
+     * @param {number} combatScore - Optional combat score to include in the URL
      * @returns {Object} Character sheet segments
      */
-    function buildSegmentsFromCharacterData(characterData, clientData, consumablesData = null) {
+    function buildSegmentsFromCharacterData(characterData, clientData, consumablesData = null, combatScore = null) {
         if (!characterData) {
             throw new Error('Character data is required');
         }
@@ -61849,7 +61850,14 @@ return plugin;
             nameColor = character.chatBorderColorHrid.replace('/chat_border_colors/', '');
         }
 
-        const general = [name, avatar, outfit, nameIcon, nameColor].join(',');
+        const general = [
+            name,
+            avatar,
+            outfit,
+            nameIcon,
+            nameColor,
+            combatScore ? Math.round(combatScore * 100) / 100 : '',
+        ].join(',');
 
         // Extract skills
         const skillMap = {};
@@ -62154,6 +62162,7 @@ return plugin;
      * @param {Object} characterData - Character data from cache (preferred)
      * @param {Object} clientData - Init client data for lookups
      * @param {Object} consumablesData - Optional character data containing consumables (for profile_shared data)
+     * @param {number} combatScore - Optional combat score to include in the URL
      * @returns {string} Character sheet URL
      */
     function buildCharacterSheetLink(
@@ -62161,13 +62170,14 @@ return plugin;
         baseUrl = 'https://tib-san.gitlab.io/mwi-character-sheet/',
         characterData = null,
         clientData = null,
-        consumablesData = null
+        consumablesData = null,
+        combatScore = null
     ) {
         let segments;
 
         // Prefer cached character data over DOM parsing
         if (characterData && clientData) {
-            segments = buildSegmentsFromCharacterData(characterData, clientData, consumablesData);
+            segments = buildSegmentsFromCharacterData(characterData, clientData, consumablesData, combatScore);
         } else {
             // DOM parsing fallback not yet implemented
             throw new Error('Character data and client data are required (DOM parsing not implemented)');
@@ -62230,7 +62240,7 @@ return plugin;
      * Handle View Card button click - opens character sheet in new tab
      * @param {Object} profileData - Profile data from WebSocket (profile_shared event)
      */
-    function handleViewCardClick(profileData) {
+    async function handleViewCardClick(profileData) {
         try {
             const clientData = dataManager$1.getInitClientData();
 
@@ -62268,13 +62278,23 @@ return plugin;
             // Find the profile modal for fallback
             const _modal = document.querySelector('.SharableProfile_modal__2OmCQ');
 
+            // Calculate combat score
+            let combatScore = null;
+            try {
+                const scoreResult = await calculateCombatScore(profileData || { profile: characterData });
+                combatScore = scoreResult?.total || null;
+            } catch (error) {
+                console.warn('[CharacterCardButton] Failed to calculate combat score:', error);
+            }
+
             // Build character sheet link using cached data (preferred) or DOM fallback
             const url = buildCharacterSheetLink(
                 _modal,
                 'https://tib-san.gitlab.io/mwi-character-sheet/',
                 characterData,
                 clientData,
-                consumablesData
+                consumablesData,
+                combatScore
             );
 
             // Open in new tab
