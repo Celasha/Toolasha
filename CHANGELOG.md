@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.33.1](https://github.com/Celasha/Toolasha/compare/v0.33.0...v0.33.1) (2026-02-14)
+
+
+### Bug Fixes
+
+* reset consumable tracking when combat restarts ([f4768d8](https://github.com/Celasha/Toolasha/commit/f4768d8f4d6310d88891deadee22509f35f1f5c4))
+
 ## [0.33.0](https://github.com/Celasha/Toolasha/compare/v0.32.0...v0.33.0) (2026-02-14)
 
 ### Features
