@@ -447,6 +447,14 @@ class MaxProduceable {
             html += `<br><span style="color: #fff;">Exp/hr: ${formatKMB(expPerHour)}</span>`;
         }
 
+        // Add coins/xp efficiency metric if both profit and exp are available
+        if (!hasMissingPrices && resolvedProfitPerHour !== null && expPerHour !== null && expPerHour > 0) {
+            const coinsPerXp = resolvedProfitPerHour / expPerHour;
+            const efficiencyColor = coinsPerXp >= 0 ? config.COLOR_INFO : config.COLOR_WARNING;
+            const efficiencySign = coinsPerXp >= 0 ? '' : '-';
+            html += `<br><span style="color: ${efficiencyColor};">Coins/XP: ${efficiencySign}${formatKMB(Math.abs(coinsPerXp))}</span>`;
+        }
+
         data.displayElement.style.display = 'block';
         data.displayElement.innerHTML = html;
     }
