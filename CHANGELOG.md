@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.36.0](https://github.com/Celasha/Toolasha/compare/v0.35.0...v0.36.0) (2026-02-14)
+
+### Features
+
+- add Coins/XP efficiency metric to action panels ([e83dde1](https://github.com/Celasha/Toolasha/commit/e83dde150570f4bf6f204030340fb6c346088c8c))
+- add View Action button to Item Dictionary modal ([ca763e0](https://github.com/Celasha/Toolasha/commit/ca763e0a7a8417e840d116d23ad6199e0bf7ca5e))
+
 ## [0.35.0](https://github.com/Celasha/Toolasha/compare/v0.34.0...v0.35.0) (2026-02-14)
 
 ### Features
