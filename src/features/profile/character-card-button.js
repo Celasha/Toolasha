@@ -7,6 +7,7 @@
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import { buildCharacterSheetLink } from './character-sheet.js';
+import { calculateCombatScore } from './score-calculator.js';
 
 /**
  * Convert combatConsumables array to actionTypeFoodSlotsMap/actionTypeDrinkSlotsMap format
@@ -53,7 +54,7 @@ function convertCombatConsumablesToSlots(combatConsumables, clientData) {
  * Handle View Card button click - opens character sheet in new tab
  * @param {Object} profileData - Profile data from WebSocket (profile_shared event)
  */
-export function handleViewCardClick(profileData) {
+export async function handleViewCardClick(profileData) {
     try {
         const clientData = dataManager.getInitClientData();
 
@@ -91,13 +92,23 @@ export function handleViewCardClick(profileData) {
         // Find the profile modal for fallback
         const _modal = document.querySelector('.SharableProfile_modal__2OmCQ');
 
+        // Calculate combat score
+        let combatScore = null;
+        try {
+            const scoreResult = await calculateCombatScore(profileData || { profile: characterData });
+            combatScore = scoreResult?.total || null;
+        } catch (error) {
+            console.warn('[CharacterCardButton] Failed to calculate combat score:', error);
+        }
+
         // Build character sheet link using cached data (preferred) or DOM fallback
         const url = buildCharacterSheetLink(
             _modal,
             'https://tib-san.gitlab.io/mwi-character-sheet/',
             characterData,
             clientData,
-            consumablesData
+            consumablesData,
+            combatScore
         );
 
         // Open in new tab

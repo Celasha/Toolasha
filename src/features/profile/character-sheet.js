@@ -178,9 +178,10 @@ const _extractAchievements = (modal) => {
  * @param {Object} characterData - Character data from dataManager or profile cache
  * @param {Object} clientData - Init client data for lookups
  * @param {Object} consumablesData - Optional character data containing consumables (for profile_shared data)
+ * @param {number} combatScore - Optional combat score to include in the URL
  * @returns {Object} Character sheet segments
  */
-export function buildSegmentsFromCharacterData(characterData, clientData, consumablesData = null) {
+export function buildSegmentsFromCharacterData(characterData, clientData, consumablesData = null, combatScore = null) {
     if (!characterData) {
         throw new Error('Character data is required');
     }
@@ -239,7 +240,14 @@ export function buildSegmentsFromCharacterData(characterData, clientData, consum
         nameColor = character.chatBorderColorHrid.replace('/chat_border_colors/', '');
     }
 
-    const general = [name, avatar, outfit, nameIcon, nameColor].join(',');
+    const general = [
+        name,
+        avatar,
+        outfit,
+        nameIcon,
+        nameColor,
+        combatScore ? Math.round(combatScore * 100) / 100 : '',
+    ].join(',');
 
     // Extract skills
     const skillMap = {};
@@ -544,6 +552,7 @@ export function formatFoodData(foodSlots, drinkSlots) {
  * @param {Object} characterData - Character data from cache (preferred)
  * @param {Object} clientData - Init client data for lookups
  * @param {Object} consumablesData - Optional character data containing consumables (for profile_shared data)
+ * @param {number} combatScore - Optional combat score to include in the URL
  * @returns {string} Character sheet URL
  */
 export function buildCharacterSheetLink(
@@ -551,13 +560,14 @@ export function buildCharacterSheetLink(
     baseUrl = 'https://tib-san.gitlab.io/mwi-character-sheet/',
     characterData = null,
     clientData = null,
-    consumablesData = null
+    consumablesData = null,
+    combatScore = null
 ) {
     let segments;
 
     // Prefer cached character data over DOM parsing
     if (characterData && clientData) {
-        segments = buildSegmentsFromCharacterData(characterData, clientData, consumablesData);
+        segments = buildSegmentsFromCharacterData(characterData, clientData, consumablesData, combatScore);
     } else {
         // DOM parsing fallback not yet implemented
         throw new Error('Character data and client data are required (DOM parsing not implemented)');
