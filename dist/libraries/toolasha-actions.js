@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 0.35.0
+ * Version: 0.36.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -8515,6 +8515,14 @@
                 html += `<br><span style="color: #fff;">Exp/hr: ${formatters_js.formatKMB(expPerHour)}</span>`;
             }
 
+            // Add coins/xp efficiency metric if both profit and exp are available
+            if (!hasMissingPrices && resolvedProfitPerHour !== null && expPerHour !== null && expPerHour > 0) {
+                const coinsPerXp = resolvedProfitPerHour / expPerHour;
+                const efficiencyColor = coinsPerXp >= 0 ? config.COLOR_INFO : config.COLOR_WARNING;
+                const efficiencySign = coinsPerXp >= 0 ? '' : '-';
+                html += `<br><span style="color: ${efficiencyColor};">Coins/XP: ${efficiencySign}${formatters_js.formatKMB(Math.abs(coinsPerXp))}</span>`;
+            }
+
             data.displayElement.style.display = 'block';
             data.displayElement.innerHTML = html;
         }
@@ -8937,6 +8945,15 @@
             if (expPerHour !== null && expPerHour > 0) {
                 if (html) html += '<br>';
                 html += `<span style="color: #fff;">Exp/hr: ${formatters_js.formatKMB(expPerHour)}</span>`;
+            }
+
+            // Add coins/xp efficiency metric if both profit and exp are available
+            if (profitPerHour !== null && expPerHour !== null && expPerHour > 0) {
+                const coinsPerXp = profitPerHour / expPerHour;
+                const efficiencyColor = coinsPerXp >= 0 ? config.COLOR_INFO : config.COLOR_WARNING;
+                const efficiencySign = coinsPerXp >= 0 ? '' : '-';
+                if (html) html += '<br>';
+                html += `<span style="color: ${efficiencyColor};">Coins/XP: ${efficiencySign}${formatters_js.formatKMB(Math.abs(coinsPerXp))}</span>`;
             }
 
             data.displayElement.style.display = 'block';
