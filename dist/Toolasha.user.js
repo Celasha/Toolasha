@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.34.0
+// @version      0.35.0
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -21,12 +21,12 @@
 // @require      https://cdnjs.cloudflare.com/ajax/libs/mathjs/12.4.2/math.js
 // @require      https://cdn.jsdelivr.net/npm/chart.js@3.7.0/dist/chart.min.js
 // @require      https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0/dist/chartjs-plugin-datalabels.min.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@d175a24a2167abaafd1821d01aa6976b7572592b/dist/libraries/toolasha-core.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@d175a24a2167abaafd1821d01aa6976b7572592b/dist/libraries/toolasha-utils.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@d175a24a2167abaafd1821d01aa6976b7572592b/dist/libraries/toolasha-market.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@d175a24a2167abaafd1821d01aa6976b7572592b/dist/libraries/toolasha-actions.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@d175a24a2167abaafd1821d01aa6976b7572592b/dist/libraries/toolasha-combat.js
-// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@d175a24a2167abaafd1821d01aa6976b7572592b/dist/libraries/toolasha-ui.js
+// @require      https://UPDATE-THIS-URL/toolasha-core.js
+// @require      https://UPDATE-THIS-URL/toolasha-utils.js
+// @require      https://UPDATE-THIS-URL/toolasha-market.js
+// @require      https://UPDATE-THIS-URL/toolasha-actions.js
+// @require      https://UPDATE-THIS-URL/toolasha-combat.js
+// @require      https://UPDATE-THIS-URL/toolasha-ui.js
 // ==/UserScript==
 // Note: Combat Sim auto-import requires Tampermonkey for cross-domain storage. Not available on Steam (use manual clipboard copy/paste instead).
 
@@ -348,6 +348,13 @@
                 async: false,
             },
             { key: 'externalLinks', name: 'External Links', category: 'UI', module: UI.externalLinks, async: false },
+            {
+                key: 'altClickNavigation',
+                name: 'Alt+Click Navigation',
+                category: 'Navigation',
+                module: UI.altClickNavigation,
+                async: false,
+            },
             { key: 'chatCommands', name: 'Chat Commands', category: 'Chat', module: UI.chatCommands, async: true },
             {
                 key: 'taskProfitDisplay',

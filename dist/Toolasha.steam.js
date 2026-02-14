@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.34.0
+// @version      0.35.0
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -15040,6 +15040,13 @@ return plugin;
                     type: 'checkbox',
                     default: true,
                     help: 'Type /item, /wiki, or /market followed by an item name in chat. Example: /item radiant fiber',
+                },
+                altClickNavigation: {
+                    id: 'altClickNavigation',
+                    label: 'Alt+click items to navigate to crafting/gathering or dictionary',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Hold Alt/Option and click any item to navigate to its crafting/gathering page, or item dictionary if not craftable',
                 },
             },
         },
@@ -50171,7 +50178,7 @@ return plugin;
      * Get game object via React fiber
      * @returns {Object|null} Game component instance
      */
-    function getGameObject() {
+    function getGameObject$1() {
         const gamePageEl = document.querySelector('[class^="GamePage"]');
         if (!gamePageEl) return null;
 
@@ -50187,7 +50194,7 @@ return plugin;
      * @param {number} enhancementLevel - Enhancement level (default 0)
      */
     function navigateToMarketplace(itemHrid, enhancementLevel = 0) {
-        const game = getGameObject();
+        const game = getGameObject$1();
         if (game?.handleGoToMarketplace) {
             game.handleGoToMarketplace(itemHrid, enhancementLevel);
         } else {
@@ -58616,6 +58623,7 @@ return plugin;
 
     /**
      * Calculate combat level from skill levels
+     * Formula: 0.1 * (Stamina + Intelligence + Attack + Defense + MAX(Melee, Ranged, Magic)) + 0.5 * MAX(Attack, Defense, Melee, Ranged, Magic)
      * @param {Object} skills - Skill levels object
      * @returns {number} Combat level
      */
@@ -58628,7 +58636,10 @@ return plugin;
         const ranged = skills.ranged?.level || 1;
         const magic = skills.magic?.level || 1;
 
-        return 0.2 * (stamina + intelligence + defense) + 0.4 * Math.max(0.5 * (attack + melee), ranged, magic);
+        const maxCombatSkill = Math.max(melee, ranged, magic);
+        const maxAllCombat = Math.max(attack, defense, melee, ranged, magic);
+
+        return 0.1 * (stamina + intelligence + attack + defense + maxCombatSkill) + 0.5 * maxAllCombat;
     }
 
     /**
@@ -58686,9 +58697,10 @@ return plugin;
         const wrapper = document.createElement('div');
         wrapper.id = 'mwi-skill-calculator';
         wrapper.style.cssText = `
-        background-color: #FFFFE0;
-        color: black;
+        background: rgba(0, 0, 0, 0.4);
+        color: #ffffff;
         padding: 12px;
+        border: 1px solid #555;
         border-radius: 4px;
         margin-top: 10px;
         font-family: inherit;
@@ -58701,11 +58713,15 @@ return plugin;
         for (const skillName of skillOrder) {
             const skill = characterSkills.find((s) => s.skillHrid.includes(skillName));
             if (skill) {
-                const currentLevel = getLevelFromExp(skill.experience, levelExpTable);
+                // If skill has experience, calculate level from exp
+                // If skill only has level (from simulator extraction), use that directly
+                const currentLevel = skill.experience ? getLevelFromExp(skill.experience, levelExpTable) : skill.level;
+                const currentExp = skill.experience || 0;
+
                 skillData[skillName] = {
                     displayName: capitalize(skillName),
                     currentLevel,
-                    currentExp: skill.experience,
+                    currentExp,
                 };
             }
         }
@@ -58727,7 +58743,8 @@ return plugin;
             input.value = skillData[skillName].currentLevel + 1;
             input.min = skillData[skillName].currentLevel + 1;
             input.max = 200;
-            input.style.cssText = 'width: 60px; padding: 2px 4px;';
+            input.style.cssText =
+                'width: 60px; padding: 4px; background: #2a2a2a; color: white; border: 1px solid #555; border-radius: 3px;';
             input.dataset.skill = skillName;
 
             skillInputs[skillName] = input;
@@ -58853,6 +58870,7 @@ return plugin;
         if (hasIndividualTarget && activeSkill && activeInput) {
             // Calculate time to reach specific level
             const targetLevel = Number(activeInput.value);
+            const currentLevel = skillData[activeSkill].currentLevel;
             const currentExp = skillData[activeSkill].currentExp;
             const expRate = expRates[activeSkill] || 0;
 
@@ -58860,6 +58878,8 @@ return plugin;
 
             if (expRate === 0) {
                 resultsContent.innerHTML = '<div>No experience gain (not trained in simulation)</div>';
+            } else if (targetLevel <= currentLevel) {
+                resultsContent.innerHTML = '<div>Already achieved</div>';
             } else {
                 const timeResult = calculateTimeToLevel(currentExp, targetLevel, expRate, levelExpTable);
                 if (timeResult) {
@@ -58874,6 +58894,7 @@ return plugin;
             resultsHeader.textContent = `After ${days} days:`;
 
             const projected = calculateLevelsAfterDays(characterSkills, expRates, days, levelExpTable);
+
             if (projected) {
                 let html = '';
                 const skillOrder = ['stamina', 'intelligence', 'attack', 'melee', 'defense', 'ranged', 'magic'];
@@ -59367,12 +59388,31 @@ return plugin;
      * @param {HTMLElement} resultsPanel - Results panel container
      */
     function setupSkillCalculatorObserver(expDiv, resultsPanel) {
+        let debounceTimer = null;
+
         calculatorObserver = new MutationObserver((mutations) => {
+            let hasSignificantChange = false;
+
             for (const mutation of mutations) {
-                if (mutation.addedNodes.length >= 3) {
-                    // Sim results updated, inject/update calculator
-                    handleSimResults(resultsPanel);
-                    break;
+                // Check if exp div now has content (sim completed)
+                if (mutation.addedNodes.length > 0 || mutation.removedNodes.length > 0) {
+                    hasSignificantChange = true;
+                }
+            }
+
+            if (hasSignificantChange) {
+                // Check if exp div has actual skill data
+                const rows = expDiv.querySelectorAll('.row');
+
+                if (rows.length > 0) {
+                    // Debounce to avoid multiple rapid calls
+                    if (debounceTimer) {
+                        clearTimeout(debounceTimer);
+                    }
+
+                    debounceTimer = setTimeout(() => {
+                        handleSimResults(resultsPanel);
+                    }, 100);
                 }
             }
         });
@@ -59381,6 +59421,51 @@ return plugin;
             childList: true,
             subtree: true,
         });
+    }
+
+    /**
+     * Extract skill levels from simulator's active player tab
+     * @returns {Array|null} Character skills array matching dataManager format, or null if not found
+     */
+    function extractSimulatorSkillLevels() {
+        // The player tab structure is complex - find the actual container with the inputs
+        // First, find which player tab is active
+        const activeTabLink = document.querySelector('.nav-link.active[id*="player"]');
+
+        if (!activeTabLink) {
+            return null;
+        }
+
+        // Try finding the inputs by exact ID (they should be global/unique)
+        const skillLevels = {
+            stamina: document.querySelector('input#inputLevel_stamina')?.value,
+            intelligence: document.querySelector('input#inputLevel_intelligence')?.value,
+            attack: document.querySelector('input#inputLevel_attack')?.value,
+            melee: document.querySelector('input#inputLevel_melee')?.value,
+            defense: document.querySelector('input#inputLevel_defense')?.value,
+            ranged: document.querySelector('input#inputLevel_ranged')?.value,
+            magic: document.querySelector('input#inputLevel_magic')?.value,
+        };
+
+        // Check if we got valid values
+        const hasValidValues = Object.values(skillLevels).some((val) => val !== undefined && val !== null);
+
+        if (!hasValidValues) {
+            return null;
+        }
+
+        // Convert to characterSkills array format (matching dataManager structure)
+        const characterSkills = [
+            { skillHrid: '/skills/stamina', level: Number(skillLevels.stamina) || 1, experience: 0 },
+            { skillHrid: '/skills/intelligence', level: Number(skillLevels.intelligence) || 1, experience: 0 },
+            { skillHrid: '/skills/attack', level: Number(skillLevels.attack) || 1, experience: 0 },
+            { skillHrid: '/skills/melee', level: Number(skillLevels.melee) || 1, experience: 0 },
+            { skillHrid: '/skills/defense', level: Number(skillLevels.defense) || 1, experience: 0 },
+            { skillHrid: '/skills/ranged', level: Number(skillLevels.ranged) || 1, experience: 0 },
+            { skillHrid: '/skills/magic', level: Number(skillLevels.magic) || 1, experience: 0 },
+        ];
+
+        return characterSkills;
     }
 
     /**
@@ -59397,15 +59482,20 @@ return plugin;
                 return;
             }
 
-            // Get character data from storage (cross-domain)
-            const characterData = await getCharacterDataFromStorage();
+            // Extract skill levels from simulator's active player tab
+            let characterSkills = extractSimulatorSkillLevels();
 
-            if (!characterData) {
-                console.warn('[Toolasha Combat Sim Calculator] No character data available');
-                return;
+            // Fallback to real character data if simulator extraction fails
+            if (!characterSkills) {
+                const characterData = await getCharacterDataFromStorage();
+
+                if (!characterData) {
+                    console.warn('[Toolasha Combat Sim Calculator] No character data available');
+                    return;
+                }
+
+                characterSkills = characterData.characterSkills;
             }
-
-            const characterSkills = characterData.characterSkills;
 
             if (!characterSkills) {
                 console.warn('[Toolasha Combat Sim Calculator] No character skills data');
@@ -59426,6 +59516,18 @@ return plugin;
                 console.warn('[Toolasha Combat Sim Calculator] No level exp table');
                 return;
             }
+
+            // Convert simulator-extracted levels to experience values
+            // (simulator extraction sets experience: 0, but we need actual exp for projections)
+            characterSkills = characterSkills.map((skill) => {
+                if (skill.experience === 0 && skill.level > 1) {
+                    return {
+                        ...skill,
+                        experience: levelExpTable[skill.level] || 0,
+                    };
+                }
+                return skill;
+            });
 
             // Remove existing calculator if present
             const existing = document.getElementById('mwi-skill-calculator');
@@ -64843,6 +64945,250 @@ return plugin;
     }
 
     const externalLinks = new ExternalLinks();
+
+    /**
+     * Item Navigation Utilities
+     * Handles Alt+click navigation to crafting/gathering actions or item dictionary
+     */
+
+
+    /**
+     * Get game object via React fiber
+     * @returns {Object|null} Game component instance
+     */
+    function getGameObject() {
+        const gamePageEl = document.querySelector('[class^="GamePage"]');
+        if (!gamePageEl) return null;
+
+        const fiberKey = Object.keys(gamePageEl).find((k) => k.startsWith('__reactFiber$'));
+        if (!fiberKey) return null;
+
+        return gamePageEl[fiberKey]?.return?.stateNode;
+    }
+
+    /**
+     * Find which action produces a given item
+     * Prioritizes production actions over gathering actions
+     * @param {string} itemHrid - Item HRID to search for
+     * @returns {Object|null} { actionHrid, type: 'production'|'gathering' } or null
+     */
+    function findActionForItem(itemHrid) {
+        const gameData = dataManager$1.getInitClientData();
+        if (!gameData?.actionDetailMap) {
+            return null;
+        }
+
+        // First pass: Look for production actions (outputItems)
+        for (const [actionHrid, action] of Object.entries(gameData.actionDetailMap)) {
+            if (action.outputItems?.some((item) => item.itemHrid === itemHrid)) {
+                return { actionHrid, type: 'production' };
+            }
+        }
+
+        // Second pass: Look for gathering actions (dropTable)
+        for (const [actionHrid, action] of Object.entries(gameData.actionDetailMap)) {
+            if (action.dropTable?.some((drop) => drop.itemHrid === itemHrid)) {
+                return { actionHrid, type: 'gathering' };
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Navigate to the action page for an item, or item dictionary if no action found
+     * @param {string} itemHrid - Item HRID to navigate to
+     * @returns {boolean} True if navigation was attempted, false if game API unavailable
+     */
+    function navigateToItem(itemHrid) {
+        const game = getGameObject();
+        if (!game) {
+            return false;
+        }
+
+        // Try to find action that produces this item
+        const actionInfo = findActionForItem(itemHrid);
+
+        if (actionInfo && game.handleGoToAction) {
+            // Navigate to the action page
+            game.handleGoToAction(actionInfo.actionHrid);
+            return true;
+        } else if (game.handleOpenItemDictionary) {
+            // Fallback to item dictionary
+            game.handleOpenItemDictionary(itemHrid);
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Alt+Click Item Navigation Feature
+     * Adds Alt+click handlers to item tooltips and inventory/marketplace items
+     */
+
+
+    class AltClickNavigation {
+        constructor() {
+            this.isActive = false;
+            this.unregisterObserver = null;
+            this.clickHandler = null;
+            this.currentItemHrid = null;
+        }
+
+        /**
+         * Setup settings listener
+         */
+        setupSettingListener() {
+            config$1.onSettingChange('altClickNavigation', (value) => {
+                if (value) {
+                    this.initialize();
+                } else {
+                    this.disable();
+                }
+            });
+        }
+
+        /**
+         * Initialize Alt+click navigation
+         */
+        initialize() {
+            if (this.isActive) {
+                return;
+            }
+
+            if (!config$1.getSetting('altClickNavigation')) {
+                return;
+            }
+
+            // Watch for tooltip poppers to track current hovered item
+            this.unregisterObserver = domObserver$1.onClass('AltClickNav', 'MuiTooltip-popper', (tooltipElement) => {
+                this.handleTooltipAppear(tooltipElement);
+            });
+
+            // Create global click handler for Alt+click
+            this.clickHandler = (event) => {
+                // Only handle Alt+click
+                if (!event.altKey) {
+                    return;
+                }
+
+                // Try multiple strategies to find item HRID
+                let itemHrid = null;
+
+                // Strategy 1: Check for data-item-hrid attribute (our custom tabs, etc.)
+                const dataItemElement = event.target.closest('[data-item-hrid]');
+                if (dataItemElement) {
+                    itemHrid = dataItemElement.getAttribute('data-item-hrid');
+                }
+
+                // Strategy 2: If clicking while tooltip is visible, use tracked item
+                if (!itemHrid && this.currentItemHrid) {
+                    itemHrid = this.currentItemHrid;
+                }
+
+                // Strategy 3: Check parent chain for item link hrefs
+                if (!itemHrid) {
+                    const linkElement = event.target.closest('a[href*="/items/"]');
+                    if (linkElement) {
+                        const href = linkElement.getAttribute('href');
+                        const match = href.match(/\/items\/(.+?)(?:\/|$)/);
+                        if (match) {
+                            itemHrid = `/items/${match[1]}`;
+                        }
+                    }
+                }
+
+                if (!itemHrid) {
+                    return;
+                }
+
+                // Navigate to item
+                event.preventDefault();
+                event.stopPropagation();
+                navigateToItem(itemHrid);
+            };
+
+            // Attach global click handler (capture phase to intercept before game handlers)
+            document.addEventListener('click', this.clickHandler, true);
+
+            this.isActive = true;
+        }
+
+        /**
+         * Handle tooltip appearance - extract item HRID
+         * @param {HTMLElement} tooltipElement - Tooltip popper element
+         */
+        handleTooltipAppear(tooltipElement) {
+            // Reset current item
+            this.currentItemHrid = null;
+
+            try {
+                // Look for item link in tooltip content
+                const itemLink = tooltipElement.querySelector('a[href*="/items/"]');
+
+                if (itemLink) {
+                    const href = itemLink.getAttribute('href');
+
+                    const match = href.match(/\/items\/(.+?)(?:\/|$)/);
+                    if (match) {
+                        this.currentItemHrid = `/items/${match[1]}`;
+                        return;
+                    }
+                }
+
+                // Try to find item from SVG icon href
+                const svgUse = tooltipElement.querySelector('use[href*="items_sprite"]');
+                if (svgUse) {
+                    const svgHref = svgUse.getAttribute('href');
+
+                    // Extract item name from sprite reference: /static/media/items_sprite.hash.svg#item_name
+                    const match = svgHref.match(/#(.+)$/);
+                    if (match) {
+                        const itemName = match[1];
+                        // Convert sprite item name to HRID format
+                        this.currentItemHrid = `/items/${itemName}`;
+                        return;
+                    }
+                }
+
+                // Try to extract from ItemTooltipText_name div
+                const nameElement = tooltipElement.querySelector(
+                    '.ItemTooltipText_name__2JAHA span, [class*="ItemTooltipText_name"] span'
+                );
+                if (nameElement) {
+                    const itemName = nameElement.textContent.trim();
+
+                    // Convert name to HRID format (lowercase, replace spaces with underscores)
+                    const itemHrid = `/items/${itemName.toLowerCase().replace(/\s+/g, '_')}`;
+                    this.currentItemHrid = itemHrid;
+                }
+            } catch (error) {
+                console.error('[AltClickNav] Error parsing tooltip:', error);
+            }
+        }
+
+        /**
+         * Disable the feature
+         */
+        disable() {
+            if (this.clickHandler) {
+                document.removeEventListener('click', this.clickHandler, true);
+                this.clickHandler = null;
+            }
+
+            if (this.unregisterObserver) {
+                this.unregisterObserver();
+                this.unregisterObserver = null;
+            }
+
+            this.currentItemHrid = null;
+            this.isActive = false;
+        }
+    }
+
+    const altClickNavigation = new AltClickNavigation();
+    altClickNavigation.setupSettingListener();
 
     /**
      * Chat Commands Module
@@ -74980,6 +75326,7 @@ return plugin;
         alchemyItemDimming,
         skillExperiencePercentage,
         externalLinks,
+        altClickNavigation,
         chatCommands,
         taskProfitDisplay,
         taskRerollTracker,
@@ -75309,6 +75656,13 @@ return plugin;
                 async: false,
             },
             { key: 'externalLinks', name: 'External Links', category: 'UI', module: UI.externalLinks, async: false },
+            {
+                key: 'altClickNavigation',
+                name: 'Alt+Click Navigation',
+                category: 'Navigation',
+                module: UI.altClickNavigation,
+                async: false,
+            },
             { key: 'chatCommands', name: 'Chat Commands', category: 'Chat', module: UI.chatCommands, async: true },
             {
                 key: 'taskProfitDisplay',
