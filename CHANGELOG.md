@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.33.0](https://github.com/Celasha/Toolasha/compare/v0.32.0...v0.33.0) (2026-02-14)
+
+### Features
+
+- add combat score to character sheet URL ([2524253](https://github.com/Celasha/Toolasha/commit/25242537aaaff264e4490e75dbca50fd608f4e53))
+
 ## [0.32.0](https://github.com/Celasha/Toolasha/compare/v0.31.0...v0.32.0) (2026-02-14)
 
 ### Features
