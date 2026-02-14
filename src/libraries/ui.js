@@ -11,6 +11,9 @@ import alchemyItemDimming from '../features/ui/alchemy-item-dimming.js';
 import skillExperiencePercentage from '../features/ui/skill-experience-percentage.js';
 import externalLinks from '../features/ui/external-links.js';
 
+// Navigation features
+import altClickNavigation from '../features/navigation/alt-click-navigation.js';
+
 // Chat features
 import chatCommands from '../features/chat/chat-commands.js';
 
@@ -52,6 +55,7 @@ toolashaRoot.UI = {
     alchemyItemDimming,
     skillExperiencePercentage,
     externalLinks,
+    altClickNavigation,
     chatCommands,
     taskProfitDisplay,
     taskRerollTracker,

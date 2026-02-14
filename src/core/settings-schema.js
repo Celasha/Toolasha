@@ -21,6 +21,13 @@ export const settingsGroups = {
                 default: true,
                 help: 'Type /item, /wiki, or /market followed by an item name in chat. Example: /item radiant fiber',
             },
+            altClickNavigation: {
+                id: 'altClickNavigation',
+                label: 'Alt+click items to navigate to crafting/gathering or dictionary',
+                type: 'checkbox',
+                default: true,
+                help: 'Hold Alt/Option and click any item to navigate to its crafting/gathering page, or item dictionary if not craftable',
+            },
         },
     },
 
