@@ -62,10 +62,20 @@ class ActionTimeDisplay {
             return;
         }
 
-        const enabled = config.getSettingValue('totalActionTime', true);
-        if (!enabled) {
+        const displayMode = config.getSettingValue('totalActionTime', 'full');
+        if (!displayMode || displayMode === 'off') {
             return;
         }
+
+        // Set up setting change listener to update display mode in real-time
+        config.onSettingChange('totalActionTime', (newMode) => {
+            if (!newMode || newMode === 'off') {
+                this.disable();
+                return;
+            }
+            // Re-trigger display update with new mode
+            this.updateDisplay();
+        });
 
         // Set up handler for character switching
         if (!this.characterInitHandler) {
@@ -437,39 +447,77 @@ class ActionTimeDisplay {
         // ONLY for non-combat actions (combat needs normal width for HP/MP bars)
         // Use setProperty with 'important' to ensure we override game's styles
 
-        // Check if compact mode is enabled
-        const compactMode = config.getSettingValue('actions_compactActionBar', false);
+        // Check display mode setting
+        const displayMode = config.getSettingValue('totalActionTime', 'full');
 
-        if (compactMode) {
-            // COMPACT MODE: Only modify action name element, NOT parents
-            // This prevents breaking the header layout (community buffs, profile, etc.)
+        if (displayMode === 'compact') {
+            // COMPACT MODE: Limit to 800px and reset parents
             actionNameElement.style.setProperty('max-width', '800px', 'important');
             actionNameElement.style.setProperty('overflow', 'hidden', 'important');
             actionNameElement.style.setProperty('text-overflow', 'clip', 'important');
             actionNameElement.style.setProperty('white-space', 'nowrap', 'important');
+            actionNameElement.style.setProperty('width', '', 'important'); // Reset width
 
-            // DO NOT modify parent containers - let game's CSS control header layout
+            // Reset parent containers to their original game constraints
+            const parent1 = actionNameElement.parentElement;
+            const parent2 = parent1?.parentElement;
+
+            if (parent1) {
+                parent1.style.removeProperty('max-width');
+                parent1.style.removeProperty('width');
+                parent1.style.removeProperty('overflow');
+            }
+
+            if (parent2) {
+                parent2.style.removeProperty('max-width');
+                parent2.style.removeProperty('width');
+                parent2.style.removeProperty('overflow');
+            }
+        } else if (displayMode === 'minimal') {
+            // MINIMAL MODE: Keep game's default width constraints, just show less info
+            actionNameElement.style.setProperty('overflow', 'visible', 'important');
+            actionNameElement.style.setProperty('text-overflow', 'clip', 'important');
+            actionNameElement.style.setProperty('white-space', 'nowrap', 'important');
+            actionNameElement.style.setProperty('max-width', 'none', 'important');
+            actionNameElement.style.setProperty('width', '', 'important'); // Reset to default
+
+            // Reset parent containers to game defaults (don't expand)
+            const parent1 = actionNameElement.parentElement;
+            const parent2 = parent1?.parentElement;
+
+            if (parent1) {
+                parent1.style.removeProperty('max-width');
+                parent1.style.removeProperty('width');
+                parent1.style.removeProperty('overflow');
+            }
+
+            if (parent2) {
+                parent2.style.removeProperty('max-width');
+                parent2.style.removeProperty('width');
+                parent2.style.removeProperty('overflow');
+            }
         } else {
-            // FULL WIDTH MODE (default): Expand to show all text
+            // FULL DETAILS MODE: Expand containers to show all text
             actionNameElement.style.setProperty('overflow', 'visible', 'important');
             actionNameElement.style.setProperty('text-overflow', 'clip', 'important');
             actionNameElement.style.setProperty('white-space', 'nowrap', 'important');
             actionNameElement.style.setProperty('max-width', 'none', 'important');
             actionNameElement.style.setProperty('width', 'auto', 'important');
-            actionNameElement.style.setProperty('min-width', 'max-content', 'important');
 
-            // Apply to entire parent chain (up to 5 levels)
-            let parent = actionNameElement.parentElement;
-            let levels = 0;
-            while (parent && levels < 5) {
-                parent.style.setProperty('overflow', 'visible', 'important');
-                parent.style.setProperty('text-overflow', 'clip', 'important');
-                parent.style.setProperty('white-space', 'nowrap', 'important');
-                parent.style.setProperty('max-width', 'none', 'important');
-                parent.style.setProperty('width', 'auto', 'important');
-                parent.style.setProperty('min-width', 'max-content', 'important');
-                parent = parent.parentElement;
-                levels++;
+            // Remove max-width constraints from first 2 parent levels
+            const parent1 = actionNameElement.parentElement;
+            const parent2 = parent1?.parentElement;
+
+            if (parent1) {
+                parent1.style.setProperty('max-width', 'none', 'important');
+                parent1.style.setProperty('width', 'auto', 'important');
+                parent1.style.setProperty('overflow', 'visible', 'important');
+            }
+
+            if (parent2) {
+                parent2.style.setProperty('max-width', 'none', 'important');
+                parent2.style.setProperty('width', 'auto', 'important');
+                parent2.style.setProperty('overflow', 'visible', 'important');
             }
         }
 
@@ -669,35 +717,48 @@ class ActionTimeDisplay {
         // Line 1: Append stats to game's action name div
         const statsToAppend = [];
 
-        // Queue size (with thousand separators)
-        if (queueSizeDisplay !== Infinity) {
-            statsToAppend.push(`(${queueSizeDisplay.toLocaleString()} queued)`);
-        } else if (materialLimit !== null) {
-            // Show infinity with material limit and what's limiting it
-            let limitLabel = '';
-            if (limitType === 'gold') {
-                limitLabel = 'gold limit';
-            } else if (limitType && limitType.startsWith('material:')) {
-                limitLabel = 'mat limit';
-            } else if (limitType && limitType.startsWith('upgrade:')) {
-                limitLabel = 'upgrade limit';
-            } else if (limitType === 'alchemy_item') {
-                limitLabel = 'item limit';
+        // For minimal mode, only show remaining actions (not detailed stats)
+        if (displayMode === 'minimal') {
+            // Only show remaining actions count
+            if (queueSizeDisplay !== Infinity) {
+                statsToAppend.push(`(${queueSizeDisplay.toLocaleString()} remaining)`);
+            } else if (materialLimit !== null) {
+                statsToAppend.push(`(∞ · ${this.formatLargeNumber(materialLimit)} max)`);
             } else {
-                limitLabel = 'max';
+                statsToAppend.push(`(∞)`);
             }
-            statsToAppend.push(`(∞ · ${limitLabel}: ${this.formatLargeNumber(materialLimit)})`);
         } else {
-            statsToAppend.push(`(∞)`);
+            // Full and Compact modes: Show all stats
+            // Queue size (with thousand separators)
+            if (queueSizeDisplay !== Infinity) {
+                statsToAppend.push(`(${queueSizeDisplay.toLocaleString()} queued)`);
+            } else if (materialLimit !== null) {
+                // Show infinity with material limit and what's limiting it
+                let limitLabel = '';
+                if (limitType === 'gold') {
+                    limitLabel = 'gold limit';
+                } else if (limitType && limitType.startsWith('material:')) {
+                    limitLabel = 'mat limit';
+                } else if (limitType && limitType.startsWith('upgrade:')) {
+                    limitLabel = 'upgrade limit';
+                } else if (limitType === 'alchemy_item') {
+                    limitLabel = 'item limit';
+                } else {
+                    limitLabel = 'max';
+                }
+                statsToAppend.push(`(∞ · ${limitLabel}: ${this.formatLargeNumber(materialLimit)})`);
+            } else {
+                statsToAppend.push(`(∞)`);
+            }
+
+            // Time per action and actions/hour
+            statsToAppend.push(`${actionTime.toFixed(2)}s/action`);
+
+            // Show both actions/hr (with efficiency) and items/hr (actual item output)
+            statsToAppend.push(
+                `${actionsPerHourWithEfficiency.toFixed(0)} actions/hr (${itemsPerHour.toFixed(0)} items/hr)`
+            );
         }
-
-        // Time per action and actions/hour
-        statsToAppend.push(`${actionTime.toFixed(2)}s/action`);
-
-        // Show both actions/hr (with efficiency) and items/hr (actual item output)
-        statsToAppend.push(
-            `${actionsPerHourWithEfficiency.toFixed(0)} actions/hr (${itemsPerHour.toFixed(0)} items/hr)`
-        );
 
         // Append to game's div (with marker for cleanup)
         this.appendStatsToActionName(actionNameElement, statsToAppend.join(' · '));
@@ -850,10 +911,10 @@ class ActionTimeDisplay {
         const statsSpan = document.createElement('span');
         statsSpan.className = 'mwi-appended-stats';
 
-        // Check if compact mode is enabled
-        const compactMode = config.getSettingValue('actions_compactActionBar', false);
+        // Check display mode
+        const displayMode = config.getSettingValue('totalActionTime', 'full');
 
-        if (compactMode) {
+        if (displayMode === 'compact') {
             // COMPACT MODE: Truncate stats if too long
             statsSpan.style.cssText = `
                 color: var(--text-color-secondary, ${config.COLOR_TEXT_SECONDARY});
@@ -869,7 +930,7 @@ class ActionTimeDisplay {
             statsSpan.setAttribute('title', fullText);
             actionNameElement.setAttribute('title', fullText);
         } else {
-            // FULL WIDTH MODE: Show all stats
+            // FULL WIDTH and MINIMAL modes: Show all stats
             statsSpan.style.cssText = `color: var(--text-color-secondary, ${config.COLOR_TEXT_SECONDARY});`;
             // Remove tooltip in full width mode
             actionNameElement.removeAttribute('title');
