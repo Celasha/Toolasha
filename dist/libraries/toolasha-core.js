@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 0.36.0
+ * Version: 0.37.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -422,17 +422,15 @@
             settings: {
                 totalActionTime: {
                     id: 'totalActionTime',
-                    label: 'Top left: Estimated total time and completion time',
-                    type: 'checkbox',
-                    default: true,
-                },
-                actions_compactActionBar: {
-                    id: 'actions_compactActionBar',
-                    label: 'Compact action bar (limit width, truncate long names)',
-                    type: 'checkbox',
-                    default: false,
-                    dependencies: ['totalActionTime'],
-                    help: 'Limits action bar width to prevent screen-spanning on wide monitors. Long action names will be truncated with "..." - hover to see full text.',
+                    label: 'Top left: Action bar display mode',
+                    type: 'select',
+                    default: 'full',
+                    options: [
+                        { value: 'full', label: 'Full Details (all stats + time)' },
+                        { value: 'compact', label: 'Compact (all stats, limited width)' },
+                        { value: 'minimal', label: 'Minimal (remaining + time only)' },
+                    ],
+                    help: 'Choose what information to display in the action bar. Full shows all stats, Compact limits width for wide monitors, Minimal shows only remaining actions and time to complete.',
                 },
                 actionPanel_totalTime: {
                     id: 'actionPanel_totalTime',

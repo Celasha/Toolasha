@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.36.0
+// @version      0.37.1
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -15057,17 +15057,15 @@ return plugin;
             settings: {
                 totalActionTime: {
                     id: 'totalActionTime',
-                    label: 'Top left: Estimated total time and completion time',
-                    type: 'checkbox',
-                    default: true,
-                },
-                actions_compactActionBar: {
-                    id: 'actions_compactActionBar',
-                    label: 'Compact action bar (limit width, truncate long names)',
-                    type: 'checkbox',
-                    default: false,
-                    dependencies: ['totalActionTime'],
-                    help: 'Limits action bar width to prevent screen-spanning on wide monitors. Long action names will be truncated with "..." - hover to see full text.',
+                    label: 'Top left: Action bar display mode',
+                    type: 'select',
+                    default: 'full',
+                    options: [
+                        { value: 'full', label: 'Full Details (all stats + time)' },
+                        { value: 'compact', label: 'Compact (all stats, limited width)' },
+                        { value: 'minimal', label: 'Minimal (remaining + time only)' },
+                    ],
+                    help: 'Choose what information to display in the action bar. Full shows all stats, Compact limits width for wide monitors, Minimal shows only remaining actions and time to complete.',
                 },
                 actionPanel_totalTime: {
                     id: 'actionPanel_totalTime',
@@ -35391,30 +35389,57 @@ return plugin;
         }
 
         /**
-         * Import market listing data (supports Edible Tools format)
+         * Import market listing data (supports multiple JSON formats)
+         * Accepts:
+         * - Edible Tools format: {"market_list": "[...]"} (double-encoded JSON string)
+         * - Edible Tools modern: {"market_list": [...]} (proper JSON array)
+         * - Direct array: [{listing1}, {listing2}, ...]
          */
         async importEdibleToolsData(jsonText) {
             try {
-                // Check for truncated file
-                if (!jsonText.trim().endsWith('}')) {
+                // Check for truncated file (only if it looks like an object)
+                const trimmed = jsonText.trim();
+                if (trimmed.startsWith('{') && !trimmed.endsWith('}')) {
                     throw new Error(
                         'File appears to be truncated or incomplete. The JSON does not end properly. ' +
                             'Try exporting from Edible Tools again, or export to CSV from the Market History Viewer and import that instead.'
                     );
                 }
 
-                // Parse the storage file
+                // Parse the file
                 const data = JSON.parse(jsonText);
 
-                if (!data.market_list) {
-                    throw new Error('No market_list found in file. Expected format: {"market_list": "[...]"}');
+                let marketList;
+
+                // Format 1: Direct array [{}, {}, ...]
+                if (Array.isArray(data)) {
+                    marketList = data;
+                }
+                // Format 2 & 3: Object with market_list key
+                else if (data && typeof data === 'object' && data.market_list) {
+                    // Format 2a: market_list is a JSON string (Edible Tools legacy format)
+                    if (typeof data.market_list === 'string') {
+                        marketList = JSON.parse(data.market_list);
+                    }
+                    // Format 2b: market_list is already an array (Edible Tools modern format)
+                    else if (Array.isArray(data.market_list)) {
+                        marketList = data.market_list;
+                    } else {
+                        throw new Error('market_list must be an array or JSON string containing an array');
+                    }
+                }
+                // Unrecognized format
+                else {
+                    throw new Error(
+                        'Unrecognized format. Expected:\n' +
+                            '- Direct array: [{listing1}, {listing2}, ...]\n' +
+                            '- Object format: {"market_list": [...]}\n' +
+                            '- Edible Tools format: {"market_list": "[...]"}'
+                    );
                 }
 
-                // Parse the market_list JSON string
-                const marketList = JSON.parse(data.market_list);
-
                 if (!Array.isArray(marketList) || marketList.length === 0) {
-                    throw new Error('market_list is empty or invalid');
+                    throw new Error('No listings found in file or array is empty');
                 }
 
                 // Show progress message
@@ -45100,10 +45125,20 @@ return plugin;
                 return;
             }
 
-            const enabled = config$1.getSettingValue('totalActionTime', true);
-            if (!enabled) {
+            const displayMode = config$1.getSettingValue('totalActionTime', 'full');
+            if (!displayMode || displayMode === 'off') {
                 return;
             }
+
+            // Set up setting change listener to update display mode in real-time
+            config$1.onSettingChange('totalActionTime', (newMode) => {
+                if (!newMode || newMode === 'off') {
+                    this.disable();
+                    return;
+                }
+                // Re-trigger display update with new mode
+                this.updateDisplay();
+            });
 
             // Set up handler for character switching
             if (!this.characterInitHandler) {
@@ -45475,39 +45510,77 @@ return plugin;
             // ONLY for non-combat actions (combat needs normal width for HP/MP bars)
             // Use setProperty with 'important' to ensure we override game's styles
 
-            // Check if compact mode is enabled
-            const compactMode = config$1.getSettingValue('actions_compactActionBar', false);
+            // Check display mode setting
+            const displayMode = config$1.getSettingValue('totalActionTime', 'full');
 
-            if (compactMode) {
-                // COMPACT MODE: Only modify action name element, NOT parents
-                // This prevents breaking the header layout (community buffs, profile, etc.)
+            if (displayMode === 'compact') {
+                // COMPACT MODE: Limit to 800px and reset parents
                 actionNameElement.style.setProperty('max-width', '800px', 'important');
                 actionNameElement.style.setProperty('overflow', 'hidden', 'important');
                 actionNameElement.style.setProperty('text-overflow', 'clip', 'important');
                 actionNameElement.style.setProperty('white-space', 'nowrap', 'important');
+                actionNameElement.style.setProperty('width', '', 'important'); // Reset width
 
-                // DO NOT modify parent containers - let game's CSS control header layout
+                // Reset parent containers to their original game constraints
+                const parent1 = actionNameElement.parentElement;
+                const parent2 = parent1?.parentElement;
+
+                if (parent1) {
+                    parent1.style.removeProperty('max-width');
+                    parent1.style.removeProperty('width');
+                    parent1.style.removeProperty('overflow');
+                }
+
+                if (parent2) {
+                    parent2.style.removeProperty('max-width');
+                    parent2.style.removeProperty('width');
+                    parent2.style.removeProperty('overflow');
+                }
+            } else if (displayMode === 'minimal') {
+                // MINIMAL MODE: Keep game's default width constraints, just show less info
+                actionNameElement.style.setProperty('overflow', 'visible', 'important');
+                actionNameElement.style.setProperty('text-overflow', 'clip', 'important');
+                actionNameElement.style.setProperty('white-space', 'nowrap', 'important');
+                actionNameElement.style.setProperty('max-width', 'none', 'important');
+                actionNameElement.style.setProperty('width', '', 'important'); // Reset to default
+
+                // Reset parent containers to game defaults (don't expand)
+                const parent1 = actionNameElement.parentElement;
+                const parent2 = parent1?.parentElement;
+
+                if (parent1) {
+                    parent1.style.removeProperty('max-width');
+                    parent1.style.removeProperty('width');
+                    parent1.style.removeProperty('overflow');
+                }
+
+                if (parent2) {
+                    parent2.style.removeProperty('max-width');
+                    parent2.style.removeProperty('width');
+                    parent2.style.removeProperty('overflow');
+                }
             } else {
-                // FULL WIDTH MODE (default): Expand to show all text
+                // FULL DETAILS MODE: Expand containers to show all text
                 actionNameElement.style.setProperty('overflow', 'visible', 'important');
                 actionNameElement.style.setProperty('text-overflow', 'clip', 'important');
                 actionNameElement.style.setProperty('white-space', 'nowrap', 'important');
                 actionNameElement.style.setProperty('max-width', 'none', 'important');
                 actionNameElement.style.setProperty('width', 'auto', 'important');
-                actionNameElement.style.setProperty('min-width', 'max-content', 'important');
 
-                // Apply to entire parent chain (up to 5 levels)
-                let parent = actionNameElement.parentElement;
-                let levels = 0;
-                while (parent && levels < 5) {
-                    parent.style.setProperty('overflow', 'visible', 'important');
-                    parent.style.setProperty('text-overflow', 'clip', 'important');
-                    parent.style.setProperty('white-space', 'nowrap', 'important');
-                    parent.style.setProperty('max-width', 'none', 'important');
-                    parent.style.setProperty('width', 'auto', 'important');
-                    parent.style.setProperty('min-width', 'max-content', 'important');
-                    parent = parent.parentElement;
-                    levels++;
+                // Remove max-width constraints from first 2 parent levels
+                const parent1 = actionNameElement.parentElement;
+                const parent2 = parent1?.parentElement;
+
+                if (parent1) {
+                    parent1.style.setProperty('max-width', 'none', 'important');
+                    parent1.style.setProperty('width', 'auto', 'important');
+                    parent1.style.setProperty('overflow', 'visible', 'important');
+                }
+
+                if (parent2) {
+                    parent2.style.setProperty('max-width', 'none', 'important');
+                    parent2.style.setProperty('width', 'auto', 'important');
+                    parent2.style.setProperty('overflow', 'visible', 'important');
                 }
             }
 
@@ -45707,35 +45780,48 @@ return plugin;
             // Line 1: Append stats to game's action name div
             const statsToAppend = [];
 
-            // Queue size (with thousand separators)
-            if (queueSizeDisplay !== Infinity) {
-                statsToAppend.push(`(${queueSizeDisplay.toLocaleString()} queued)`);
-            } else if (materialLimit !== null) {
-                // Show infinity with material limit and what's limiting it
-                let limitLabel = '';
-                if (limitType === 'gold') {
-                    limitLabel = 'gold limit';
-                } else if (limitType && limitType.startsWith('material:')) {
-                    limitLabel = 'mat limit';
-                } else if (limitType && limitType.startsWith('upgrade:')) {
-                    limitLabel = 'upgrade limit';
-                } else if (limitType === 'alchemy_item') {
-                    limitLabel = 'item limit';
+            // For minimal mode, only show remaining actions (not detailed stats)
+            if (displayMode === 'minimal') {
+                // Only show remaining actions count
+                if (queueSizeDisplay !== Infinity) {
+                    statsToAppend.push(`(${queueSizeDisplay.toLocaleString()} remaining)`);
+                } else if (materialLimit !== null) {
+                    statsToAppend.push(`(∞ · ${this.formatLargeNumber(materialLimit)} max)`);
                 } else {
-                    limitLabel = 'max';
+                    statsToAppend.push(`(∞)`);
                 }
-                statsToAppend.push(`(∞ · ${limitLabel}: ${this.formatLargeNumber(materialLimit)})`);
             } else {
-                statsToAppend.push(`(∞)`);
+                // Full and Compact modes: Show all stats
+                // Queue size (with thousand separators)
+                if (queueSizeDisplay !== Infinity) {
+                    statsToAppend.push(`(${queueSizeDisplay.toLocaleString()} queued)`);
+                } else if (materialLimit !== null) {
+                    // Show infinity with material limit and what's limiting it
+                    let limitLabel = '';
+                    if (limitType === 'gold') {
+                        limitLabel = 'gold limit';
+                    } else if (limitType && limitType.startsWith('material:')) {
+                        limitLabel = 'mat limit';
+                    } else if (limitType && limitType.startsWith('upgrade:')) {
+                        limitLabel = 'upgrade limit';
+                    } else if (limitType === 'alchemy_item') {
+                        limitLabel = 'item limit';
+                    } else {
+                        limitLabel = 'max';
+                    }
+                    statsToAppend.push(`(∞ · ${limitLabel}: ${this.formatLargeNumber(materialLimit)})`);
+                } else {
+                    statsToAppend.push(`(∞)`);
+                }
+
+                // Time per action and actions/hour
+                statsToAppend.push(`${actionTime.toFixed(2)}s/action`);
+
+                // Show both actions/hr (with efficiency) and items/hr (actual item output)
+                statsToAppend.push(
+                    `${actionsPerHourWithEfficiency.toFixed(0)} actions/hr (${itemsPerHour.toFixed(0)} items/hr)`
+                );
             }
-
-            // Time per action and actions/hour
-            statsToAppend.push(`${actionTime.toFixed(2)}s/action`);
-
-            // Show both actions/hr (with efficiency) and items/hr (actual item output)
-            statsToAppend.push(
-                `${actionsPerHourWithEfficiency.toFixed(0)} actions/hr (${itemsPerHour.toFixed(0)} items/hr)`
-            );
 
             // Append to game's div (with marker for cleanup)
             this.appendStatsToActionName(actionNameElement, statsToAppend.join(' · '));
@@ -45888,10 +45974,10 @@ return plugin;
             const statsSpan = document.createElement('span');
             statsSpan.className = 'mwi-appended-stats';
 
-            // Check if compact mode is enabled
-            const compactMode = config$1.getSettingValue('actions_compactActionBar', false);
+            // Check display mode
+            const displayMode = config$1.getSettingValue('totalActionTime', 'full');
 
-            if (compactMode) {
+            if (displayMode === 'compact') {
                 // COMPACT MODE: Truncate stats if too long
                 statsSpan.style.cssText = `
                 color: var(--text-color-secondary, ${config$1.COLOR_TEXT_SECONDARY});
@@ -45907,7 +45993,7 @@ return plugin;
                 statsSpan.setAttribute('title', fullText);
                 actionNameElement.setAttribute('title', fullText);
             } else {
-                // FULL WIDTH MODE: Show all stats
+                // FULL WIDTH and MINIMAL modes: Show all stats
                 statsSpan.style.cssText = `color: var(--text-color-secondary, ${config$1.COLOR_TEXT_SECONDARY});`;
                 // Remove tooltip in full width mode
                 actionNameElement.removeAttribute('title');
@@ -62117,6 +62203,368 @@ return plugin;
     abilityBookCalculator.setupSettingListener();
 
     /**
+     * Worker Pool Manager
+     * Manages a pool of Web Workers for parallel task execution
+     */
+
+    class WorkerPool {
+        constructor(workerScript, poolSize = null) {
+            // Auto-detect optimal pool size (max 4 workers)
+            this.poolSize = poolSize || Math.min(navigator.hardwareConcurrency || 2, 4);
+            this.workerScript = workerScript;
+            this.workers = [];
+            this.taskQueue = [];
+            this.activeWorkers = new Set();
+            this.nextTaskId = 0;
+            this.initialized = false;
+        }
+
+        /**
+         * Initialize the worker pool
+         */
+        async initialize() {
+            if (this.initialized) {
+                return;
+            }
+
+            try {
+                // Create workers
+                for (let i = 0; i < this.poolSize; i++) {
+                    const worker = new Worker(URL.createObjectURL(this.workerScript));
+                    this.workers.push({
+                        id: i,
+                        worker,
+                        busy: false,
+                        currentTask: null,
+                    });
+                }
+
+                this.initialized = true;
+                console.log(`[WorkerPool] Initialized with ${this.poolSize} workers`);
+            } catch (error) {
+                console.error('[WorkerPool] Failed to initialize:', error);
+                throw error;
+            }
+        }
+
+        /**
+         * Execute a task in the worker pool
+         * @param {Object} taskData - Data to send to worker
+         * @returns {Promise} Promise that resolves with worker result
+         */
+        async execute(taskData) {
+            if (!this.initialized) {
+                await this.initialize();
+            }
+
+            return new Promise((resolve, reject) => {
+                const taskId = this.nextTaskId++;
+                const task = {
+                    id: taskId,
+                    data: taskData,
+                    resolve,
+                    reject,
+                    timestamp: Date.now(),
+                };
+
+                // Try to assign to an available worker immediately
+                const availableWorker = this.workers.find((w) => !w.busy);
+
+                if (availableWorker) {
+                    this.assignTask(availableWorker, task);
+                } else {
+                    // Queue the task if all workers are busy
+                    this.taskQueue.push(task);
+                }
+            });
+        }
+
+        /**
+         * Execute multiple tasks in parallel
+         * @param {Array} taskDataArray - Array of task data objects
+         * @returns {Promise<Array>} Promise that resolves with array of results
+         */
+        async executeAll(taskDataArray) {
+            if (!this.initialized) {
+                await this.initialize();
+            }
+
+            const promises = taskDataArray.map((taskData) => this.execute(taskData));
+            return Promise.all(promises);
+        }
+
+        /**
+         * Assign a task to a worker
+         * @private
+         */
+        assignTask(workerWrapper, task) {
+            workerWrapper.busy = true;
+            workerWrapper.currentTask = task;
+
+            // Set up message handler for this specific task
+            const messageHandler = (e) => {
+                const { taskId, result, error } = e.data;
+
+                if (taskId === task.id) {
+                    // Clean up
+                    workerWrapper.worker.removeEventListener('message', messageHandler);
+                    workerWrapper.worker.removeEventListener('error', errorHandler);
+                    workerWrapper.busy = false;
+                    workerWrapper.currentTask = null;
+
+                    // Resolve or reject the promise
+                    if (error) {
+                        task.reject(new Error(error));
+                    } else {
+                        task.resolve(result);
+                    }
+
+                    // Process next task in queue
+                    this.processQueue();
+                }
+            };
+
+            const errorHandler = (error) => {
+                console.error('[WorkerPool] Worker error:', error);
+                workerWrapper.worker.removeEventListener('message', messageHandler);
+                workerWrapper.worker.removeEventListener('error', errorHandler);
+                workerWrapper.busy = false;
+                workerWrapper.currentTask = null;
+
+                task.reject(error);
+
+                // Process next task in queue
+                this.processQueue();
+            };
+
+            workerWrapper.worker.addEventListener('message', messageHandler);
+            workerWrapper.worker.addEventListener('error', errorHandler);
+
+            // Send task to worker
+            workerWrapper.worker.postMessage({
+                taskId: task.id,
+                data: task.data,
+            });
+        }
+
+        /**
+         * Process the next task in the queue
+         * @private
+         */
+        processQueue() {
+            if (this.taskQueue.length === 0) {
+                return;
+            }
+
+            const availableWorker = this.workers.find((w) => !w.busy);
+            if (availableWorker) {
+                const task = this.taskQueue.shift();
+                this.assignTask(availableWorker, task);
+            }
+        }
+
+        /**
+         * Get pool statistics
+         */
+        getStats() {
+            return {
+                poolSize: this.poolSize,
+                busyWorkers: this.workers.filter((w) => w.busy).length,
+                queuedTasks: this.taskQueue.length,
+                totalWorkers: this.workers.length,
+            };
+        }
+
+        /**
+         * Terminate all workers and clean up
+         */
+        terminate() {
+            for (const workerWrapper of this.workers) {
+                workerWrapper.worker.terminate();
+            }
+
+            this.workers = [];
+            this.taskQueue = [];
+            this.initialized = false;
+
+            console.log('[WorkerPool] Terminated');
+        }
+    }
+
+    /**
+     * Enhancement Calculator Worker Manager
+     * Manages a worker pool for parallel enhancement calculations
+     */
+
+
+    // Worker pool instance
+    let workerPool = null;
+
+    // Worker script as inline string (bundled from enhancement-calculator.worker.js)
+    const WORKER_SCRIPT = `
+// Import math.js library from CDN
+importScripts('https://cdnjs.cloudflare.com/ajax/libs/mathjs/12.4.2/math.js');
+
+// Cache for enhancement calculation results
+const calculationCache = new Map();
+
+const BASE_SUCCESS_RATES = [50,45,45,40,40,40,35,35,35,35,30,30,30,30,30,30,30,30,30,30];
+
+function getCacheKey(params) {
+    const {enhancingLevel,toolBonus,itemLevel,targetLevel,protectFrom,blessedTea,guzzlingBonus,speedBonus} = params;
+    return \`\${enhancingLevel}|\${toolBonus}|\${itemLevel}|\${targetLevel}|\${protectFrom}|\${blessedTea}|\${guzzlingBonus}|\${speedBonus}\`;
+}
+
+function calculateSuccessMultiplier(params) {
+    const { enhancingLevel, toolBonus, itemLevel } = params;
+    let totalBonus;
+    if (enhancingLevel >= itemLevel) {
+        const levelAdvantage = 0.05 * (enhancingLevel - itemLevel);
+        totalBonus = 1 + (toolBonus + levelAdvantage) / 100;
+    } else {
+        totalBonus = 1 - 0.5 * (1 - enhancingLevel / itemLevel) + toolBonus / 100;
+    }
+    return totalBonus;
+}
+
+function calculateEnhancement(params) {
+    const {enhancingLevel,toolBonus,speedBonus=0,itemLevel,targetLevel,protectFrom=0,blessedTea=false,guzzlingBonus=1.0} = params;
+
+    if (targetLevel < 1 || targetLevel > 20) throw new Error('Target level must be between 1 and 20');
+    if (protectFrom < 0 || protectFrom > targetLevel) throw new Error('Protection level must be between 0 and target level');
+
+    const successMultiplier = calculateSuccessMultiplier({enhancingLevel,toolBonus,itemLevel});
+    const markov = math.zeros(20, 20);
+
+    for (let i = 0; i < targetLevel; i++) {
+        const baseSuccessRate = BASE_SUCCESS_RATES[i] / 100.0;
+        const successChance = baseSuccessRate * successMultiplier;
+        const failureDestination = protectFrom > 0 && i >= protectFrom ? i - 1 : 0;
+
+        if (blessedTea) {
+            const skipChance = successChance * 0.01 * guzzlingBonus;
+            const remainingSuccess = successChance * (1 - 0.01 * guzzlingBonus);
+            markov.set([i, i + 2], skipChance);
+            markov.set([i, i + 1], remainingSuccess);
+            markov.set([i, failureDestination], 1 - successChance);
+        } else {
+            markov.set([i, i + 1], successChance);
+            markov.set([i, failureDestination], 1.0 - successChance);
+        }
+    }
+
+    markov.set([targetLevel, targetLevel], 1.0);
+    const Q = markov.subset(math.index(math.range(0, targetLevel), math.range(0, targetLevel)));
+    const I = math.identity(targetLevel);
+    const M = math.inv(math.subtract(I, Q));
+
+    let attempts = 0;
+    for (let i = 0; i < targetLevel; i++) {
+        attempts += M.get([0, i]);
+    }
+
+    let protects = 0;
+    if (protectFrom > 0 && protectFrom < targetLevel) {
+        for (let i = protectFrom; i < targetLevel; i++) {
+            const timesAtLevel = M.get([0, i]);
+            const failureChance = markov.get([i, i - 1]);
+            protects += timesAtLevel * failureChance;
+        }
+    }
+
+    const baseActionTime = 12;
+    let speedMultiplier;
+    if (enhancingLevel > itemLevel) {
+        speedMultiplier = 1 + (enhancingLevel - itemLevel + speedBonus) / 100;
+    } else {
+        speedMultiplier = 1 + speedBonus / 100;
+    }
+
+    const perActionTime = baseActionTime / speedMultiplier;
+    const totalTime = perActionTime * attempts;
+
+    return {
+        attempts,
+        attemptsRounded: Math.round(attempts),
+        protectionCount: protects,
+        perActionTime,
+        totalTime,
+        successMultiplier,
+        successRates: BASE_SUCCESS_RATES.slice(0, targetLevel).map((base, i) => ({
+            level: i + 1,
+            baseRate: base,
+            actualRate: Math.min(100, base * successMultiplier)
+        }))
+    };
+}
+
+self.onmessage = function (e) {
+    const { taskId, data } = e.data;
+    try {
+        const { action, params } = data;
+        if (action === 'calculate') {
+            const cacheKey = getCacheKey(params);
+            let result = calculationCache.get(cacheKey);
+            if (!result) {
+                result = calculateEnhancement(params);
+                calculationCache.set(cacheKey, result);
+                if (calculationCache.size > 1000) {
+                    const firstKey = calculationCache.keys().next().value;
+                    calculationCache.delete(firstKey);
+                }
+            }
+            self.postMessage({taskId,result});
+        } else if (action === 'clearCache') {
+            calculationCache.clear();
+            self.postMessage({taskId,result: { success: true, message: 'Cache cleared' }});
+        } else {
+            throw new Error(\`Unknown action: \${action}\`);
+        }
+    } catch (error) {
+        self.postMessage({taskId,error: error.message || String(error)});
+    }
+};
+`;
+
+    /**
+     * Get or create the worker pool instance
+     */
+    async function getWorkerPool() {
+        if (workerPool) {
+            return workerPool;
+        }
+
+        try {
+            // Create worker blob from inline script
+            const blob = new Blob([WORKER_SCRIPT], { type: 'application/javascript' });
+
+            // Initialize worker pool with 2-4 workers
+            workerPool = new WorkerPool(blob);
+            await workerPool.initialize();
+
+            return workerPool;
+        } catch (error) {
+            throw error;
+        }
+    }
+
+    /**
+     * Calculate multiple enhancements in parallel
+     * @param {Array<Object>} paramsArray - Array of enhancement parameters
+     * @returns {Promise<Array<Object>>} Array of enhancement results
+     */
+    async function calculateEnhancementBatch(paramsArray) {
+        const pool = await getWorkerPool();
+
+        const tasks = paramsArray.map((params) => ({
+            action: 'calculate',
+            params,
+        }));
+
+        return pool.executeAll(tasks);
+    }
+
+    /**
      * Combat Score Calculator
      * Calculates player gear score based on:
      * - House Score: Cost of battle houses
@@ -62217,11 +62665,11 @@ return plugin;
             // 2. Calculate Ability Score
             const abilityResult = calculateAbilityScore(profileData);
 
-            // 3. Calculate Combat Equipment Score
-            const combatEquipmentResult = calculateEquipmentScore(profileData, 'combat');
+            // 3. Calculate Combat Equipment Score (async - runs first)
+            const combatEquipmentResult = await calculateEquipmentScore(profileData, 'combat');
 
-            // 4. Calculate Skiller Equipment Score
-            const skillerEquipmentResult = calculateEquipmentScore(profileData, 'skiller');
+            // 4. Calculate Skiller Equipment Score (async - runs after combat completes)
+            const skillerEquipmentResult = await calculateEquipmentScore(profileData, 'skiller');
 
             const combatTotalScore = houseResult.score + abilityResult.score + combatEquipmentResult.score;
             const skillerTotalScore = skillerEquipmentResult.score;
@@ -62449,9 +62897,9 @@ return plugin;
      * Calculate equipment score from equipped items
      * @param {Object} profileData - Profile data
      * @param {string} scoreType - 'combat' or 'skiller'
-     * @returns {Object} {score, breakdown, hasEquipmentData}
+     * @returns {Promise<Object>} {score, breakdown, hasEquipmentData}
      */
-    function calculateEquipmentScore(profileData, scoreType = 'combat') {
+    async function calculateEquipmentScore(profileData, scoreType = 'combat') {
         const equippedItems = profileData.profile?.wearableItemMap || {};
         const hideEquipment = profileData.profile?.hideWearableItems || false;
 
@@ -62468,8 +62916,13 @@ return plugin;
         const gameData = dataManager$1.getInitClientData();
         if (!gameData) return { score: 0, breakdown: [], hasEquipmentData: false };
 
-        let totalValue = 0;
-        const breakdown = [];
+        const useHighEnhancementCost = config$1.getSetting('networth_highEnhancementUseCost');
+        const minLevel = config$1.getSetting('networth_highEnhancementMinLevel') || 13;
+        const enhancementParams = getEnhancingParams();
+
+        // Phase 1: Collect items and identify which need worker calculations
+        const itemsToProcess = [];
+        const workerTasks = [];
 
         for (const [slot, itemData] of Object.entries(equippedItems)) {
             if (!itemData?.itemHrid) continue;
@@ -62482,79 +62935,117 @@ return plugin;
             const category = categorizeEquipmentItem(slot, itemDetails.equipmentDetail);
 
             // Filter by score type
-            if (scoreType === 'combat' && !category.combat) {
-                continue; // Skip non-combat items for combat score
-            }
-            if (scoreType === 'skiller' && !category.skiller) {
-                continue; // Skip non-skilling items for skiller score
-            }
+            if (scoreType === 'combat' && !category.combat) continue;
+            if (scoreType === 'skiller' && !category.skiller) continue;
 
-            // Get enhancement level from itemData (separate field, not in HRID)
             const enhancementLevel = itemData.enhancementLevel || 0;
+            const itemLevel = itemDetails.itemLevel || 1;
 
+            itemsToProcess.push({
+                itemHrid,
+                enhancementLevel,
+                itemDetails,
+                itemLevel,
+                needsEnhancementCalc: false,
+                workerIndex: -1,
+            });
+
+            // Check if this item needs enhancement calculation via worker
+            const tokenValue = calculateTokenBasedItemValue(itemHrid);
+            if (tokenValue === 0) {
+                // Not a token item, might need enhancement calculation
+                if (enhancementLevel >= 1 && useHighEnhancementCost && enhancementLevel >= minLevel) {
+                    // High enhancement mode - always calculate cost
+                    const workerIndex = workerTasks.length;
+                    itemsToProcess[itemsToProcess.length - 1].needsEnhancementCalc = true;
+                    itemsToProcess[itemsToProcess.length - 1].workerIndex = workerIndex;
+
+                    workerTasks.push({
+                        enhancingLevel: enhancementParams.enhancingLevel,
+                        toolBonus: enhancementParams.toolBonus || 0,
+                        speedBonus: enhancementParams.speedBonus || 0,
+                        itemLevel,
+                        targetLevel: enhancementLevel,
+                        protectFrom: Math.max(0, enhancementLevel - 2),
+                        blessedTea: enhancementParams.teas.blessed,
+                        guzzlingBonus: enhancementParams.guzzlingBonus,
+                    });
+                } else if (enhancementLevel > 1) {
+                    // Check market price first
+                    const marketPrice = getMarketPriceWithFallback(itemHrid, enhancementLevel);
+                    if (!marketPrice || marketPrice === 0) {
+                        // No market data - need enhancement calculation
+                        const workerIndex = workerTasks.length;
+                        itemsToProcess[itemsToProcess.length - 1].needsEnhancementCalc = true;
+                        itemsToProcess[itemsToProcess.length - 1].workerIndex = workerIndex;
+
+                        workerTasks.push({
+                            enhancingLevel: enhancementParams.enhancingLevel,
+                            toolBonus: enhancementParams.toolBonus || 0,
+                            speedBonus: enhancementParams.speedBonus || 0,
+                            itemLevel,
+                            targetLevel: enhancementLevel,
+                            protectFrom: Math.max(0, enhancementLevel - 2),
+                            blessedTea: enhancementParams.teas.blessed,
+                            guzzlingBonus: enhancementParams.guzzlingBonus,
+                        });
+                    }
+                }
+            }
+        }
+
+        // Phase 2: Execute all worker tasks in parallel
+        let workerResults = [];
+        if (workerTasks.length > 0) {
+            try {
+                workerResults = await calculateEnhancementBatch(workerTasks);
+            } catch {
+                // Continue with empty results - will use fallback pricing
+            }
+        }
+
+        // Phase 3: Calculate costs using worker results
+        let totalValue = 0;
+        const breakdown = [];
+
+        for (const item of itemsToProcess) {
             let itemCost = 0;
 
-            // First, check if this is a token-based back slot item (cape/cloak/quiver)
-            const tokenValue = calculateTokenBasedItemValue(itemHrid);
+            // Check token value first
+            const tokenValue = calculateTokenBasedItemValue(item.itemHrid);
             if (tokenValue > 0) {
                 itemCost = tokenValue;
-            } else {
-                // Check if high enhancement cost mode is enabled
-                const useHighEnhancementCost = config$1.getSetting('networth_highEnhancementUseCost');
-                const minLevel = config$1.getSetting('networth_highEnhancementMinLevel') || 13;
-
-                // For high enhancement levels, use cost instead of market price (if enabled)
-                if (enhancementLevel >= 1 && useHighEnhancementCost && enhancementLevel >= minLevel) {
-                    // Calculate enhancement cost (ignore market price)
-                    const enhancementParams = getEnhancingParams();
-                    const enhancementPath = calculateEnhancementPath(itemHrid, enhancementLevel, enhancementParams);
-
-                    if (enhancementPath && enhancementPath.optimalStrategy) {
-                        itemCost = enhancementPath.optimalStrategy.totalCost;
-                    } else {
-                        // Enhancement calculation failed, fallback to base item price
-                        console.warn(
-                            '[Combat Score] Enhancement calculation failed for:',
-                            itemHrid,
-                            '+' + enhancementLevel
-                        );
-                        const basePrice = getMarketPriceWithFallback(itemHrid, 0);
-                        itemCost = basePrice;
-                    }
+            } else if (item.needsEnhancementCalc && item.workerIndex >= 0) {
+                // Use worker result
+                const workerResult = workerResults[item.workerIndex];
+                if (workerResult && workerResult.attempts) {
+                    // Calculate total cost from worker result
+                    itemCost = calculateEnhancementCostFromWorkerResult(item.itemHrid, item.enhancementLevel, workerResult);
                 } else {
-                    // Try market price first (ask price with crafting cost fallback)
-                    const marketPrice = getMarketPriceWithFallback(itemHrid, enhancementLevel);
-
-                    if (marketPrice && marketPrice > 0) {
-                        itemCost = marketPrice;
-                    } else if (enhancementLevel > 1) {
-                        // No market data - calculate enhancement cost
-                        const enhancementParams = getEnhancingParams();
-                        const enhancementPath = calculateEnhancementPath(itemHrid, enhancementLevel, enhancementParams);
-
-                        if (enhancementPath && enhancementPath.optimalStrategy) {
-                            itemCost = enhancementPath.optimalStrategy.totalCost;
-                        } else {
-                            // Fallback to base market price if enhancement calculation fails
-                            const basePrice = getMarketPriceWithFallback(itemHrid, 0);
-                            itemCost = basePrice;
-                        }
-                    } else {
-                        // Enhancement level 0 or 1, just use base market price with fallback
-                        const basePrice = getMarketPriceWithFallback(itemHrid, 0);
-                        itemCost = basePrice;
-                    }
+                    // Worker failed, use base price
+                    itemCost = getMarketPriceWithFallback(item.itemHrid, 0);
+                }
+            } else {
+                // Use market price (already checked or not needed)
+                const marketPrice = getMarketPriceWithFallback(item.itemHrid, item.enhancementLevel);
+                if (marketPrice > 0) {
+                    itemCost = marketPrice;
+                } else if (item.enhancementLevel > 1) {
+                    // Fallback to base price
+                    itemCost = getMarketPriceWithFallback(item.itemHrid, 0);
+                } else {
+                    // Enhancement level 0 or 1
+                    itemCost = getMarketPriceWithFallback(item.itemHrid, 0);
                 }
             }
 
             totalValue += itemCost;
 
             // Format item name for display
-            const itemName = itemDetails.name || itemHrid.replace('/items/', '');
-            const displayName = enhancementLevel > 0 ? `${itemName} +${enhancementLevel}` : itemName;
+            const itemName = item.itemDetails.name || item.itemHrid.replace('/items/', '');
+            const displayName = item.enhancementLevel > 0 ? `${itemName} +${item.enhancementLevel}` : itemName;
 
             // Only add to breakdown if formatted value is not "0.0"
-            // (items worth less than 50k coins round to 0.0 and clutter the display)
             const formattedValue = (itemCost / 1_000_000).toFixed(1);
             if (formattedValue !== '0.0') {
                 breakdown.push({
@@ -62571,6 +63062,42 @@ return plugin;
         breakdown.sort((a, b) => parseFloat(b.value) - parseFloat(a.value));
 
         return { score, breakdown, hasEquipmentData };
+    }
+
+    /**
+     * Calculate total enhancement cost from worker result
+     * @param {string} itemHrid - Item HRID
+     * @param {number} targetLevel - Target enhancement level
+     * @param {Object} workerResult - Worker calculation result
+     * @returns {number} Total cost
+     */
+    function calculateEnhancementCostFromWorkerResult(itemHrid, targetLevel, workerResult) {
+        const gameData = dataManager$1.getInitClientData();
+        if (!gameData) return 0;
+
+        const itemDetails = gameData.itemDetailMap[itemHrid];
+        if (!itemDetails || !itemDetails.enhancementCosts) return 0;
+
+        // Get base item cost
+        const baseItemCost = getMarketPriceWithFallback(itemHrid, 0);
+
+        // Calculate material costs per attempt
+        let materialCostPerAttempt = 0;
+        for (let level = 1; level <= targetLevel; level++) {
+            const enhancementCost = itemDetails.enhancementCosts[level - 1];
+            if (enhancementCost && enhancementCost.itemHrid) {
+                const materialPrice = getItemPrice(enhancementCost.itemHrid, { mode: 'ask' }) || 0;
+                materialCostPerAttempt += materialPrice * (enhancementCost.count || 1);
+            }
+        }
+
+        // Calculate protection costs
+        const protectionCost = workerResult.protectionCount * 50_000; // 50k per protection
+
+        // Total cost = base item + (materials × attempts) + protection cost
+        const totalCost = baseItemCost + materialCostPerAttempt * workerResult.attemptsRounded + protectionCost;
+
+        return totalCost;
     }
 
     /**

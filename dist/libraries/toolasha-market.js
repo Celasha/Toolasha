@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 0.36.0
+ * Version: 0.37.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -9556,30 +9556,57 @@
         }
 
         /**
-         * Import market listing data (supports Edible Tools format)
+         * Import market listing data (supports multiple JSON formats)
+         * Accepts:
+         * - Edible Tools format: {"market_list": "[...]"} (double-encoded JSON string)
+         * - Edible Tools modern: {"market_list": [...]} (proper JSON array)
+         * - Direct array: [{listing1}, {listing2}, ...]
          */
         async importEdibleToolsData(jsonText) {
             try {
-                // Check for truncated file
-                if (!jsonText.trim().endsWith('}')) {
+                // Check for truncated file (only if it looks like an object)
+                const trimmed = jsonText.trim();
+                if (trimmed.startsWith('{') && !trimmed.endsWith('}')) {
                     throw new Error(
                         'File appears to be truncated or incomplete. The JSON does not end properly. ' +
                             'Try exporting from Edible Tools again, or export to CSV from the Market History Viewer and import that instead.'
                     );
                 }
 
-                // Parse the storage file
+                // Parse the file
                 const data = JSON.parse(jsonText);
 
-                if (!data.market_list) {
-                    throw new Error('No market_list found in file. Expected format: {"market_list": "[...]"}');
+                let marketList;
+
+                // Format 1: Direct array [{}, {}, ...]
+                if (Array.isArray(data)) {
+                    marketList = data;
+                }
+                // Format 2 & 3: Object with market_list key
+                else if (data && typeof data === 'object' && data.market_list) {
+                    // Format 2a: market_list is a JSON string (Edible Tools legacy format)
+                    if (typeof data.market_list === 'string') {
+                        marketList = JSON.parse(data.market_list);
+                    }
+                    // Format 2b: market_list is already an array (Edible Tools modern format)
+                    else if (Array.isArray(data.market_list)) {
+                        marketList = data.market_list;
+                    } else {
+                        throw new Error('market_list must be an array or JSON string containing an array');
+                    }
+                }
+                // Unrecognized format
+                else {
+                    throw new Error(
+                        'Unrecognized format. Expected:\n' +
+                            '- Direct array: [{listing1}, {listing2}, ...]\n' +
+                            '- Object format: {"market_list": [...]}\n' +
+                            '- Edible Tools format: {"market_list": "[...]"}'
+                    );
                 }
 
-                // Parse the market_list JSON string
-                const marketList = JSON.parse(data.market_list);
-
                 if (!Array.isArray(marketList) || marketList.length === 0) {
-                    throw new Error('market_list is empty or invalid');
+                    throw new Error('No listings found in file or array is empty');
                 }
 
                 // Show progress message
