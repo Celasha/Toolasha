@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.38.0](https://github.com/Celasha/Toolasha/compare/v0.37.1...v0.38.0) (2026-02-15)
+
+### Features
+
+- add ability book status to item tooltips ([ec22f37](https://github.com/Celasha/Toolasha/commit/ec22f37f3279675d71586a62afc9ec29e6737ef8))
+
+### Bug Fixes
+
+- correct trade history comparison logic for Orders mode ([68796f7](https://github.com/Celasha/Toolasha/commit/68796f7fb49ee1368939f50d2b819a471111eced))
+
+### Performance Improvements
+
+- add worker parallelization for networth and EV calculations ([7c540b6](https://github.com/Celasha/Toolasha/commit/7c540b6ad635dc1abac7b67d8ce0ff6bb38d13d8))
+
 ## [0.37.1](https://github.com/Celasha/Toolasha/compare/v0.37.0...v0.37.1) (2026-02-15)
 
 ### Performance Improvements
