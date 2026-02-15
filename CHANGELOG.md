@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.37.0](https://github.com/Celasha/Toolasha/compare/v0.36.0...v0.37.0) (2026-02-15)
+
+
+### Features
+
+* add action bar display modes with dropdown setting ([5bcae71](https://github.com/Celasha/Toolasha/commit/5bcae71352f3b27d72e46bdb59c7fbbd0c1e8b76))
+* support multiple JSON formats for Edible market import ([020317e](https://github.com/Celasha/Toolasha/commit/020317e67c675daeb89634b8c76edb3d0b19262b))
+
 ## [0.36.0](https://github.com/Celasha/Toolasha/compare/v0.35.0...v0.36.0) (2026-02-14)
 
 ### Features
