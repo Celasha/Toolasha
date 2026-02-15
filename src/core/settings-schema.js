@@ -256,6 +256,14 @@ export const settingsGroups = {
                 dependencies: ['itemTooltip_gathering'],
                 help: 'Shows rare find drops from gathering zones (e.g., Thread of Expertise from Asteroid Belt)',
             },
+            itemTooltip_abilityStatus: {
+                id: 'itemTooltip_abilityStatus',
+                label: 'Show ability book status',
+                type: 'checkbox',
+                default: true,
+                dependencies: ['itemTooltip_prices'],
+                help: 'Shows whether ability is learned and current level/progress on ability book tooltips',
+            },
         },
     },
 

@@ -233,6 +233,14 @@ class TooltipPrices {
             }
         }
 
+        // Check if this is an ability book and show ability status
+        if (config.getSetting('itemTooltip_abilityStatus') && itemDetails.abilityBookDetail && enhancementLevel === 0) {
+            const abilityStatus = this.getAbilityStatus(itemHrid);
+            if (abilityStatus) {
+                this.injectAbilityStatusDisplay(tooltipElement, abilityStatus, isCollectionTooltip);
+            }
+        }
+
         // Show enhancement path for enhanced items (1-20)
         if (enhancementLevel > 0) {
             // Get enhancement configuration
@@ -518,6 +526,16 @@ class TooltipPrices {
             // Fetch market prices for all materials (profit calculator only stores one price based on mode)
             const materialsWithPrices = profitData.materialCosts.map((material) => {
                 const itemHrid = material.itemHrid;
+
+                // Special case: Coins have no market price but have face value of 1
+                if (itemHrid === '/items/coin') {
+                    return {
+                        ...material,
+                        askPrice: 1,
+                        bidPrice: 1,
+                    };
+                }
+
                 const marketPrice = marketAPI.getPrice(itemHrid, 0);
 
                 return {
@@ -937,6 +955,135 @@ class TooltipPrices {
 
         profitDiv.innerHTML = html;
         tooltipText.appendChild(profitDiv);
+    }
+
+    /**
+     * Get ability status for an ability book
+     * @param {string} itemHrid - Item HRID (e.g., /items/ice_shield)
+     * @returns {Object|null} {learned, level, xp, xpToNext, percentToNext, abilityName} or null
+     */
+    getAbilityStatus(itemHrid) {
+        const characterData = dataManager.characterData;
+        const gameData = dataManager.getInitClientData();
+
+        if (!characterData || !gameData) {
+            return null;
+        }
+
+        // Convert item HRID to ability HRID (e.g., /items/ice_shield -> /abilities/ice_shield)
+        const abilityHrid = itemHrid.replace('/items/', '/abilities/');
+
+        // Get ability details from game data
+        const abilityDetails = gameData.abilityDetailMap?.[abilityHrid];
+
+        if (!abilityDetails) {
+            return null;
+        }
+
+        // Check if player has this ability
+        const ability = characterData.characterAbilities?.find((a) => a.abilityHrid === abilityHrid);
+
+        if (!ability) {
+            // Not learned
+            return {
+                learned: false,
+                abilityName: abilityDetails.name,
+            };
+        }
+
+        // Learned - calculate progress to next level
+        const currentLevel = ability.level || 0;
+        const currentXp = ability.experience || 0;
+        const levelXpTable = gameData.levelExperienceTable;
+
+        if (!levelXpTable) {
+            return {
+                learned: true,
+                level: currentLevel,
+                abilityName: abilityDetails.name,
+            };
+        }
+
+        // Calculate XP to next level
+        const nextLevel = currentLevel + 1;
+        if (nextLevel > 200 || !levelXpTable[nextLevel]) {
+            // Max level
+            return {
+                learned: true,
+                level: currentLevel,
+                abilityName: abilityDetails.name,
+                maxLevel: true,
+            };
+        }
+
+        const currentLevelXp = levelXpTable[currentLevel] || 0;
+        const nextLevelXp = levelXpTable[nextLevel];
+        const xpIntoLevel = currentXp - currentLevelXp;
+        const xpToNext = nextLevelXp - currentXp;
+        const xpForLevel = nextLevelXp - currentLevelXp;
+        const percentToNext = xpIntoLevel / xpForLevel;
+
+        return {
+            learned: true,
+            level: currentLevel,
+            xp: currentXp,
+            xpToNext,
+            percentToNext,
+            abilityName: abilityDetails.name,
+        };
+    }
+
+    /**
+     * Inject ability status display into tooltip
+     * @param {Element} tooltipElement - Tooltip element
+     * @param {Object} abilityStatus - Ability status data
+     * @param {boolean} isCollectionTooltip - Whether this is a collection tooltip
+     */
+    injectAbilityStatusDisplay(tooltipElement, abilityStatus, isCollectionTooltip) {
+        const tooltipText = isCollectionTooltip
+            ? tooltipElement.querySelector('div.Collection_tooltipContent__2IcSJ')
+            : tooltipElement.querySelector('div.ItemTooltipText_itemTooltipText__zFq3A');
+
+        if (!tooltipText) {
+            return;
+        }
+
+        // Check if already injected
+        if (tooltipText.querySelector('.mwi-ability-status')) {
+            return;
+        }
+
+        const statusDiv = document.createElement('div');
+        statusDiv.className = 'mwi-ability-status';
+        statusDiv.style.cssText = 'margin-top: 8px; border-top: 1px solid rgba(255,255,255,0.2); padding-top: 8px;';
+
+        let html = '';
+
+        if (!abilityStatus.learned) {
+            // Not learned
+            html += `<div style="color: ${config.COLOR_TOOLTIP_LOSS}; font-weight: 600;">`;
+            html += `\u26A0 Unlearned</div>`;
+        } else {
+            // Learned
+            html += `<div style="color: ${config.COLOR_TOOLTIP_INFO}; font-weight: 600;">`;
+            html += `\u2714 Learned</div>`;
+
+            // Show level and progress
+            html += `<div style="margin-top: 4px; margin-left: 8px; font-size: 0.9em;">`;
+            html += `<div>Level: ${abilityStatus.level}</div>`;
+
+            if (abilityStatus.maxLevel) {
+                html += `<div style="color: ${config.COLOR_TOOLTIP_INFO};">Max Level Reached</div>`;
+            } else if (abilityStatus.percentToNext !== undefined) {
+                html += `<div>Progress: ${formatPercentage(abilityStatus.percentToNext)}</div>`;
+                html += `<div style="opacity: 0.7;">XP to Next: ${numberFormatter(abilityStatus.xpToNext)}</div>`;
+            }
+
+            html += '</div>';
+        }
+
+        statusDiv.innerHTML = html;
+        tooltipText.appendChild(statusDiv);
     }
 
     /**
