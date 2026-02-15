@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 0.37.1
+ * Version: 0.38.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -544,6 +544,350 @@
     const profitCalculator = new ProfitCalculator();
 
     /**
+     * Worker Pool Manager
+     * Manages a pool of Web Workers for parallel task execution
+     */
+
+    class WorkerPool {
+        constructor(workerScript, poolSize = null) {
+            // Auto-detect optimal pool size (max 4 workers)
+            this.poolSize = poolSize || Math.min(navigator.hardwareConcurrency || 2, 4);
+            this.workerScript = workerScript;
+            this.workers = [];
+            this.taskQueue = [];
+            this.activeWorkers = new Set();
+            this.nextTaskId = 0;
+            this.initialized = false;
+        }
+
+        /**
+         * Initialize the worker pool
+         */
+        async initialize() {
+            if (this.initialized) {
+                return;
+            }
+
+            try {
+                // Create workers
+                for (let i = 0; i < this.poolSize; i++) {
+                    const worker = new Worker(URL.createObjectURL(this.workerScript));
+                    this.workers.push({
+                        id: i,
+                        worker,
+                        busy: false,
+                        currentTask: null,
+                    });
+                }
+
+                this.initialized = true;
+                console.log(`[WorkerPool] Initialized with ${this.poolSize} workers`);
+            } catch (error) {
+                console.error('[WorkerPool] Failed to initialize:', error);
+                throw error;
+            }
+        }
+
+        /**
+         * Execute a task in the worker pool
+         * @param {Object} taskData - Data to send to worker
+         * @returns {Promise} Promise that resolves with worker result
+         */
+        async execute(taskData) {
+            if (!this.initialized) {
+                await this.initialize();
+            }
+
+            return new Promise((resolve, reject) => {
+                const taskId = this.nextTaskId++;
+                const task = {
+                    id: taskId,
+                    data: taskData,
+                    resolve,
+                    reject,
+                    timestamp: Date.now(),
+                };
+
+                // Try to assign to an available worker immediately
+                const availableWorker = this.workers.find((w) => !w.busy);
+
+                if (availableWorker) {
+                    this.assignTask(availableWorker, task);
+                } else {
+                    // Queue the task if all workers are busy
+                    this.taskQueue.push(task);
+                }
+            });
+        }
+
+        /**
+         * Execute multiple tasks in parallel
+         * @param {Array} taskDataArray - Array of task data objects
+         * @returns {Promise<Array>} Promise that resolves with array of results
+         */
+        async executeAll(taskDataArray) {
+            if (!this.initialized) {
+                await this.initialize();
+            }
+
+            const promises = taskDataArray.map((taskData) => this.execute(taskData));
+            return Promise.all(promises);
+        }
+
+        /**
+         * Assign a task to a worker
+         * @private
+         */
+        assignTask(workerWrapper, task) {
+            workerWrapper.busy = true;
+            workerWrapper.currentTask = task;
+
+            // Set up message handler for this specific task
+            const messageHandler = (e) => {
+                const { taskId, result, error } = e.data;
+
+                if (taskId === task.id) {
+                    // Clean up
+                    workerWrapper.worker.removeEventListener('message', messageHandler);
+                    workerWrapper.worker.removeEventListener('error', errorHandler);
+                    workerWrapper.busy = false;
+                    workerWrapper.currentTask = null;
+
+                    // Resolve or reject the promise
+                    if (error) {
+                        task.reject(new Error(error));
+                    } else {
+                        task.resolve(result);
+                    }
+
+                    // Process next task in queue
+                    this.processQueue();
+                }
+            };
+
+            const errorHandler = (error) => {
+                console.error('[WorkerPool] Worker error:', error);
+                workerWrapper.worker.removeEventListener('message', messageHandler);
+                workerWrapper.worker.removeEventListener('error', errorHandler);
+                workerWrapper.busy = false;
+                workerWrapper.currentTask = null;
+
+                task.reject(error);
+
+                // Process next task in queue
+                this.processQueue();
+            };
+
+            workerWrapper.worker.addEventListener('message', messageHandler);
+            workerWrapper.worker.addEventListener('error', errorHandler);
+
+            // Send task to worker
+            workerWrapper.worker.postMessage({
+                taskId: task.id,
+                data: task.data,
+            });
+        }
+
+        /**
+         * Process the next task in the queue
+         * @private
+         */
+        processQueue() {
+            if (this.taskQueue.length === 0) {
+                return;
+            }
+
+            const availableWorker = this.workers.find((w) => !w.busy);
+            if (availableWorker) {
+                const task = this.taskQueue.shift();
+                this.assignTask(availableWorker, task);
+            }
+        }
+
+        /**
+         * Get pool statistics
+         */
+        getStats() {
+            return {
+                poolSize: this.poolSize,
+                busyWorkers: this.workers.filter((w) => w.busy).length,
+                queuedTasks: this.taskQueue.length,
+                totalWorkers: this.workers.length,
+            };
+        }
+
+        /**
+         * Terminate all workers and clean up
+         */
+        terminate() {
+            for (const workerWrapper of this.workers) {
+                workerWrapper.worker.terminate();
+            }
+
+            this.workers = [];
+            this.taskQueue = [];
+            this.initialized = false;
+
+            console.log('[WorkerPool] Terminated');
+        }
+    }
+
+    /**
+     * Expected Value Calculator Worker Manager
+     * Manages a worker pool for parallel EV container calculations
+     */
+
+
+    // Worker pool instance
+    let workerPool$1 = null;
+
+    // Worker script as inline string
+    const WORKER_SCRIPT$1 = `
+// Cache for EV calculation results
+const evCache = new Map();
+
+/**
+ * Calculate expected value for a single container
+ * @param {Object} data - Container calculation data
+ * @returns {Object} {containerHrid, ev}
+ */
+function calculateContainerEV(data) {
+    const { containerHrid, dropTable, priceMap, COIN_HRID, MARKET_TAX } = data;
+
+    if (!dropTable || dropTable.length === 0) {
+        return { containerHrid, ev: null };
+    }
+
+    let totalExpectedValue = 0;
+
+    // Calculate expected value for each drop
+    for (const drop of dropTable) {
+        const itemHrid = drop.itemHrid;
+        const dropRate = drop.dropRate || 0;
+        const minCount = drop.minCount || 0;
+        const maxCount = drop.maxCount || 0;
+
+        // Skip invalid drops
+        if (dropRate <= 0 || (minCount === 0 && maxCount === 0)) {
+            continue;
+        }
+
+        // Calculate average drop count
+        const avgCount = (minCount + maxCount) / 2;
+
+        // Get price for this drop
+        const priceData = priceMap[itemHrid];
+        if (!priceData || priceData.price === null) {
+            continue; // Skip drops with missing data
+        }
+
+        const price = priceData.price;
+        const canBeSold = priceData.canBeSold;
+        const isCoin = itemHrid === COIN_HRID;
+
+        // Calculate drop value with tax
+        const dropValue = isCoin
+            ? avgCount * dropRate * price
+            : canBeSold
+              ? avgCount * dropRate * price * (1 - MARKET_TAX)
+              : avgCount * dropRate * price;
+
+        totalExpectedValue += dropValue;
+    }
+
+    return { containerHrid, ev: totalExpectedValue };
+}
+
+/**
+ * Calculate EV for a batch of containers
+ * @param {Array} containers - Array of container data objects
+ * @returns {Array} Array of {containerHrid, ev} results
+ */
+function calculateBatchEV(containers) {
+    const results = [];
+
+    for (const container of containers) {
+        const result = calculateContainerEV(container);
+        if (result.ev !== null) {
+            evCache.set(result.containerHrid, result.ev);
+        }
+        results.push(result);
+    }
+
+    return results;
+}
+
+self.onmessage = function (e) {
+    const { taskId, data } = e.data;
+    try {
+        const { action, params } = data;
+
+        if (action === 'calculateBatch') {
+            const results = calculateBatchEV(params.containers);
+            self.postMessage({ taskId, result: results });
+        } else if (action === 'clearCache') {
+            evCache.clear();
+            self.postMessage({ taskId, result: { success: true, message: 'Cache cleared' } });
+        } else {
+            throw new Error(\`Unknown action: \${action}\`);
+        }
+    } catch (error) {
+        self.postMessage({ taskId, error: error.message || String(error) });
+    }
+};
+`;
+
+    /**
+     * Get or create the worker pool instance
+     */
+    async function getWorkerPool$1() {
+        if (workerPool$1) {
+            return workerPool$1;
+        }
+
+        try {
+            // Create worker blob from inline script
+            const blob = new Blob([WORKER_SCRIPT$1], { type: 'application/javascript' });
+
+            // Initialize worker pool with 2-4 workers
+            workerPool$1 = new WorkerPool(blob);
+            await workerPool$1.initialize();
+
+            return workerPool$1;
+        } catch (error) {
+            throw error;
+        }
+    }
+
+    /**
+     * Calculate EV for multiple containers in parallel
+     * @param {Array} containers - Array of container data objects
+     * @returns {Promise<Array>} Array of {containerHrid, ev} results
+     */
+    async function calculateEVBatch(containers) {
+        const pool = await getWorkerPool$1();
+
+        // Split containers into chunks for parallel processing
+        const chunkSize = Math.ceil(containers.length / pool.getStats().poolSize);
+        const chunks = [];
+
+        for (let i = 0; i < containers.length; i += chunkSize) {
+            chunks.push(containers.slice(i, i + chunkSize));
+        }
+
+        // Process chunks in parallel
+        const tasks = chunks.map((chunk) => ({
+            action: 'calculateBatch',
+            params: { containers: chunk },
+        }));
+
+        const results = await pool.executeAll(tasks);
+
+        // Flatten results
+        return results.flat();
+    }
+
+    /**
      * Expected Value Calculator Module
      * Calculates expected value for openable containers
      */
@@ -608,8 +952,8 @@
                 await marketAPI.fetch(true); // Force fresh fetch on init
             }
 
-            // Calculate all containers with 4-iteration convergence for nesting
-            this.calculateNestedContainers();
+            // Calculate all containers with 4-iteration convergence for nesting (now async with workers)
+            await this.calculateNestedContainers();
 
             this.isInitialized = true;
 
@@ -620,10 +964,10 @@
         }
 
         /**
-         * Calculate all containers with nested convergence
+         * Calculate all containers with nested convergence using workers
          * Iterates 4 times to resolve nested container values
          */
-        calculateNestedContainers() {
+        async calculateNestedContainers() {
             const initData = dataManager.getInitClientData();
             if (!initData || !initData.openableLootDropMap) {
                 return;
@@ -634,14 +978,73 @@
 
             // Iterate 4 times for convergence (handles nesting depth)
             for (let iteration = 0; iteration < this.CONVERGENCE_ITERATIONS; iteration++) {
-                for (const containerHrid of containerHrids) {
-                    // Calculate and cache EV for this container (pass cached initData)
-                    const ev = this.calculateSingleContainer(containerHrid, initData);
-                    if (ev !== null) {
-                        this.containerCache.set(containerHrid, ev);
+                // Build price map for all items (includes cached container EVs from previous iterations)
+                const priceMap = this.buildPriceMap(containerHrids, initData);
+
+                // Prepare container data for workers
+                const containerData = containerHrids.map((containerHrid) => ({
+                    containerHrid,
+                    dropTable: initData.openableLootDropMap[containerHrid],
+                    priceMap,
+                    COIN_HRID: this.COIN_HRID,
+                    MARKET_TAX: this.MARKET_TAX,
+                }));
+
+                // Calculate all containers in parallel using workers
+                try {
+                    const results = await calculateEVBatch(containerData);
+
+                    // Update cache with results
+                    for (const result of results) {
+                        if (result.ev !== null) {
+                            this.containerCache.set(result.containerHrid, result.ev);
+                        }
+                    }
+                } catch {
+                    // Worker failed, fall back to main thread calculation
+                    for (const containerHrid of containerHrids) {
+                        const ev = this.calculateSingleContainer(containerHrid, initData);
+                        if (ev !== null) {
+                            this.containerCache.set(containerHrid, ev);
+                        }
                     }
                 }
             }
+        }
+
+        /**
+         * Build price map for all items needed for container calculations
+         * @param {Array} containerHrids - Array of container HRIDs
+         * @param {Object} initData - Game data
+         * @returns {Object} Map of itemHrid to {price, canBeSold}
+         */
+        buildPriceMap(containerHrids, initData) {
+            const priceMap = {};
+            const processedItems = new Set();
+
+            // Collect all unique items from all containers
+            for (const containerHrid of containerHrids) {
+                const dropTable = initData.openableLootDropMap[containerHrid];
+                if (!dropTable) continue;
+
+                for (const drop of dropTable) {
+                    const itemHrid = drop.itemHrid;
+                    if (processedItems.has(itemHrid)) continue;
+                    processedItems.add(itemHrid);
+
+                    // Get price and tradeable status
+                    const price = this.getDropPrice(itemHrid);
+                    const itemDetails = dataManager.getItemDetails(itemHrid);
+                    const canBeSold = itemDetails?.tradeable !== false;
+
+                    priceMap[itemHrid] = {
+                        price,
+                        canBeSold,
+                    };
+                }
+            }
+
+            return priceMap;
         }
 
         /**
@@ -3219,6 +3622,14 @@
                 }
             }
 
+            // Check if this is an ability book and show ability status
+            if (config.getSetting('itemTooltip_abilityStatus') && itemDetails.abilityBookDetail && enhancementLevel === 0) {
+                const abilityStatus = this.getAbilityStatus(itemHrid);
+                if (abilityStatus) {
+                    this.injectAbilityStatusDisplay(tooltipElement, abilityStatus, isCollectionTooltip);
+                }
+            }
+
             // Show enhancement path for enhanced items (1-20)
             if (enhancementLevel > 0) {
                 // Get enhancement configuration
@@ -3504,6 +3915,16 @@
                 // Fetch market prices for all materials (profit calculator only stores one price based on mode)
                 const materialsWithPrices = profitData.materialCosts.map((material) => {
                     const itemHrid = material.itemHrid;
+
+                    // Special case: Coins have no market price but have face value of 1
+                    if (itemHrid === '/items/coin') {
+                        return {
+                            ...material,
+                            askPrice: 1,
+                            bidPrice: 1,
+                        };
+                    }
+
                     const marketPrice = marketAPI.getPrice(itemHrid, 0);
 
                     return {
@@ -3923,6 +4344,135 @@
 
             profitDiv.innerHTML = html;
             tooltipText.appendChild(profitDiv);
+        }
+
+        /**
+         * Get ability status for an ability book
+         * @param {string} itemHrid - Item HRID (e.g., /items/ice_shield)
+         * @returns {Object|null} {learned, level, xp, xpToNext, percentToNext, abilityName} or null
+         */
+        getAbilityStatus(itemHrid) {
+            const characterData = dataManager.characterData;
+            const gameData = dataManager.getInitClientData();
+
+            if (!characterData || !gameData) {
+                return null;
+            }
+
+            // Convert item HRID to ability HRID (e.g., /items/ice_shield -> /abilities/ice_shield)
+            const abilityHrid = itemHrid.replace('/items/', '/abilities/');
+
+            // Get ability details from game data
+            const abilityDetails = gameData.abilityDetailMap?.[abilityHrid];
+
+            if (!abilityDetails) {
+                return null;
+            }
+
+            // Check if player has this ability
+            const ability = characterData.characterAbilities?.find((a) => a.abilityHrid === abilityHrid);
+
+            if (!ability) {
+                // Not learned
+                return {
+                    learned: false,
+                    abilityName: abilityDetails.name,
+                };
+            }
+
+            // Learned - calculate progress to next level
+            const currentLevel = ability.level || 0;
+            const currentXp = ability.experience || 0;
+            const levelXpTable = gameData.levelExperienceTable;
+
+            if (!levelXpTable) {
+                return {
+                    learned: true,
+                    level: currentLevel,
+                    abilityName: abilityDetails.name,
+                };
+            }
+
+            // Calculate XP to next level
+            const nextLevel = currentLevel + 1;
+            if (nextLevel > 200 || !levelXpTable[nextLevel]) {
+                // Max level
+                return {
+                    learned: true,
+                    level: currentLevel,
+                    abilityName: abilityDetails.name,
+                    maxLevel: true,
+                };
+            }
+
+            const currentLevelXp = levelXpTable[currentLevel] || 0;
+            const nextLevelXp = levelXpTable[nextLevel];
+            const xpIntoLevel = currentXp - currentLevelXp;
+            const xpToNext = nextLevelXp - currentXp;
+            const xpForLevel = nextLevelXp - currentLevelXp;
+            const percentToNext = xpIntoLevel / xpForLevel;
+
+            return {
+                learned: true,
+                level: currentLevel,
+                xp: currentXp,
+                xpToNext,
+                percentToNext,
+                abilityName: abilityDetails.name,
+            };
+        }
+
+        /**
+         * Inject ability status display into tooltip
+         * @param {Element} tooltipElement - Tooltip element
+         * @param {Object} abilityStatus - Ability status data
+         * @param {boolean} isCollectionTooltip - Whether this is a collection tooltip
+         */
+        injectAbilityStatusDisplay(tooltipElement, abilityStatus, isCollectionTooltip) {
+            const tooltipText = isCollectionTooltip
+                ? tooltipElement.querySelector('div.Collection_tooltipContent__2IcSJ')
+                : tooltipElement.querySelector('div.ItemTooltipText_itemTooltipText__zFq3A');
+
+            if (!tooltipText) {
+                return;
+            }
+
+            // Check if already injected
+            if (tooltipText.querySelector('.mwi-ability-status')) {
+                return;
+            }
+
+            const statusDiv = document.createElement('div');
+            statusDiv.className = 'mwi-ability-status';
+            statusDiv.style.cssText = 'margin-top: 8px; border-top: 1px solid rgba(255,255,255,0.2); padding-top: 8px;';
+
+            let html = '';
+
+            if (!abilityStatus.learned) {
+                // Not learned
+                html += `<div style="color: ${config.COLOR_TOOLTIP_LOSS}; font-weight: 600;">`;
+                html += `\u26A0 Unlearned</div>`;
+            } else {
+                // Learned
+                html += `<div style="color: ${config.COLOR_TOOLTIP_INFO}; font-weight: 600;">`;
+                html += `\u2714 Learned</div>`;
+
+                // Show level and progress
+                html += `<div style="margin-top: 4px; margin-left: 8px; font-size: 0.9em;">`;
+                html += `<div>Level: ${abilityStatus.level}</div>`;
+
+                if (abilityStatus.maxLevel) {
+                    html += `<div style="color: ${config.COLOR_TOOLTIP_INFO};">Max Level Reached</div>`;
+                } else if (abilityStatus.percentToNext !== undefined) {
+                    html += `<div>Progress: ${formatters_js.formatPercentage(abilityStatus.percentToNext)}</div>`;
+                    html += `<div style="opacity: 0.7;">XP to Next: ${formatters_js.numberFormatter(abilityStatus.xpToNext)}</div>`;
+                }
+
+                html += '</div>';
+            }
+
+            statusDiv.innerHTML = html;
+            tooltipText.appendChild(statusDiv);
         }
 
         /**
@@ -11945,30 +12495,24 @@
          * @param {string} comparisonMode - 'instant' or 'listing'
          * @returns {string} Color code
          */
-        getBuyColor(lastBuy, currentPrices, comparisonMode) {
+        getBuyColor(lastBuy, currentPrices, _comparisonMode) {
             if (!currentPrices) {
                 return '#888'; // Grey if no market data
             }
 
-            // Choose comparison price based on mode
-            const comparePrice = comparisonMode === 'instant' ? currentPrices.ask : currentPrices.bid;
+            // Both modes compare to ask (what you'd pay to buy)
+            const comparePrice = currentPrices.ask;
 
             if (!comparePrice || comparePrice === -1) {
                 return '#888'; // Grey if no market data
             }
 
-            if (comparisonMode === 'instant') {
-                // Instant mode: Compare to ask (what you'd pay to instant-buy now)
-                if (comparePrice > lastBuy) {
-                    return config.COLOR_LOSS; // Red - would pay more now
-                } else if (comparePrice < lastBuy) {
-                    return config.COLOR_PROFIT; // Green - would pay less now
-                }
-            } else if (comparePrice > lastBuy) {
-                // Listing mode: Compare to bid (what buyers are offering = what you could sell for)
-                return config.COLOR_PROFIT; // Green - can sell for more than you bought (profit)
+            // Both instant and listing modes use same logic:
+            // "If I buy now, would I pay more or less than last time?"
+            if (comparePrice > lastBuy) {
+                return config.COLOR_LOSS; // Red - would pay more now (market worse)
             } else if (comparePrice < lastBuy) {
-                return config.COLOR_LOSS; // Red - can only sell for less than you bought (loss)
+                return config.COLOR_PROFIT; // Green - would pay less now (market better)
             }
 
             return '#888'; // Grey - same price
@@ -11993,18 +12537,11 @@
                 return '#888'; // Grey if no market data
             }
 
-            if (comparisonMode === 'instant') {
-                // Instant mode: Compare to bid (what you'd get to instant-sell now)
-                if (comparePrice > lastSell) {
-                    return config.COLOR_PROFIT; // Green - would get more now
-                } else if (comparePrice < lastSell) {
-                    return config.COLOR_LOSS; // Red - would get less now
-                }
-            } else if (comparePrice > lastSell) {
-                // Listing mode: Compare to ask (what sellers are asking)
-                return config.COLOR_LOSS; // Red - others selling for more (you sold too cheap)
+            // Both modes use same logic: "If I sell now, would I get more or less than last time?"
+            if (comparePrice > lastSell) {
+                return config.COLOR_PROFIT; // Green - would get more now (market better)
             } else if (comparePrice < lastSell) {
-                return config.COLOR_PROFIT; // Green - others selling for less (you sold well)
+                return config.COLOR_LOSS; // Red - would get less now (market worse)
             }
 
             return '#888'; // Grey - same price
@@ -12507,6 +13044,277 @@
     const networthCache = new NetworthCache();
 
     /**
+     * Networth Item Valuation Worker Manager
+     * Manages parallel item valuation calculations including enhancement paths
+     */
+
+
+    // Worker pool instance
+    let workerPool = null;
+
+    // Worker script as inline string
+    const WORKER_SCRIPT = `
+// Import math.js library for enhancement calculations
+importScripts('https://cdnjs.cloudflare.com/ajax/libs/mathjs/12.4.2/math.js');
+
+// Cache for item valuations
+const valuationCache = new Map();
+
+// Enhancement calculation BASE_SUCCESS_RATES
+const BASE_SUCCESS_RATES = [50,45,45,40,40,40,35,35,35,35,30,30,30,30,30,30,30,30,30,30];
+
+/**
+ * Calculate enhancement path cost (simplified version for worker)
+ * @param {Object} params - Enhancement calculation parameters
+ * @returns {number} Total cost
+ */
+function calculateEnhancementCost(params) {
+    const { itemHrid, targetLevel, enhancementParams, itemDetails, priceMap } = params;
+
+    if (!itemDetails.enhancementCosts || targetLevel < 1 || targetLevel > 20) {
+        return null;
+    }
+
+    const itemLevel = itemDetails.itemLevel || 1;
+    let totalCost = 0;
+
+    // Get base item cost
+    const basePrice = priceMap[itemHrid + ':0'] || 0;
+    totalCost += basePrice;
+
+    // Calculate material costs for all levels
+    for (let level = 1; level <= targetLevel; level++) {
+        const enhCost = itemDetails.enhancementCosts[level - 1];
+        if (!enhCost || !enhCost.itemHrid) continue;
+
+        const materialPrice = priceMap[enhCost.itemHrid + ':0'] || 0;
+        const materialCount = enhCost.count || 1;
+
+        // Calculate attempts needed (simplified - use protection at level - 2)
+        const protectFrom = Math.max(0, level - 2);
+        const attempts = calculateAttempts(enhancementParams, itemLevel, level, protectFrom);
+
+        totalCost += materialPrice * materialCount * attempts;
+    }
+
+    // Add protection costs (simplified)
+    const protections = Math.max(0, targetLevel - 2) * 2; // Rough estimate
+    totalCost += protections * 50000; // 50k per protection
+
+    return totalCost;
+}
+
+/**
+ * Calculate expected attempts for enhancement level (simplified)
+ */
+function calculateAttempts(enhancementParams, itemLevel, targetLevel, protectFrom) {
+    const { enhancingLevel, toolBonus } = enhancementParams;
+
+    // Calculate success multiplier
+    let totalBonus;
+    if (enhancingLevel >= itemLevel) {
+        const levelAdvantage = 0.05 * (enhancingLevel - itemLevel);
+        totalBonus = 1 + (toolBonus + levelAdvantage) / 100;
+    } else {
+        totalBonus = 1 - 0.5 * (1 - enhancingLevel / itemLevel) + toolBonus / 100;
+    }
+
+    // Build Markov chain (same as main enhancement calculator)
+    const markov = math.zeros(20, 20);
+
+    for (let i = 0; i < targetLevel; i++) {
+        const baseSuccessRate = BASE_SUCCESS_RATES[i] / 100.0;
+        const successChance = baseSuccessRate * totalBonus;
+        const failureDestination = protectFrom > 0 && i >= protectFrom ? i - 1 : 0;
+
+        markov.set([i, i + 1], successChance);
+        markov.set([i, failureDestination], 1.0 - successChance);
+    }
+
+    markov.set([targetLevel, targetLevel], 1.0);
+
+    // Solve for expected attempts
+    const Q = markov.subset(math.index(math.range(0, targetLevel), math.range(0, targetLevel)));
+    const I = math.identity(targetLevel);
+    const M = math.inv(math.subtract(I, Q));
+
+    let attempts = 0;
+    for (let i = 0; i < targetLevel; i++) {
+        attempts += M.get([0, i]);
+    }
+
+    return Math.round(attempts);
+}
+
+/**
+ * Calculate value for a single item
+ * @param {Object} data - Item data
+ * @returns {Object} {itemIndex, value}
+ */
+function calculateItemValue(data) {
+    const { itemIndex, item, priceMap, useHighEnhancementCost, minLevel, enhancementParams, itemDetails } = data;
+    const { itemHrid, enhancementLevel = 0, count = 1 } = item;
+
+    let itemValue = 0;
+
+    // For enhanced items (1+)
+    if (enhancementLevel >= 1) {
+        // For high enhancement levels, use cost instead of market price (if enabled)
+        if (useHighEnhancementCost && enhancementLevel >= minLevel) {
+            // Calculate enhancement cost
+            const cost = calculateEnhancementCost({
+                itemHrid,
+                targetLevel: enhancementLevel,
+                enhancementParams,
+                itemDetails,
+                priceMap
+            });
+
+            if (cost !== null && cost > 0) {
+                itemValue = cost;
+            } else {
+                // Fallback to base item price
+                itemValue = priceMap[itemHrid + ':0'] || 0;
+            }
+        } else {
+            // Normal logic: try market price first
+            const marketPrice = priceMap[itemHrid + ':' + enhancementLevel] || 0;
+
+            if (marketPrice > 0) {
+                itemValue = marketPrice;
+            } else {
+                // No market data, calculate enhancement cost
+                const cost = calculateEnhancementCost({
+                    itemHrid,
+                    targetLevel: enhancementLevel,
+                    enhancementParams,
+                    itemDetails,
+                    priceMap
+                });
+
+                if (cost !== null && cost > 0) {
+                    itemValue = cost;
+                } else {
+                    itemValue = priceMap[itemHrid + ':0'] || 0;
+                }
+            }
+        }
+    } else {
+        // Unenhanced items: use market price
+        itemValue = priceMap[itemHrid + ':0'] || 0;
+    }
+
+    return { itemIndex, value: itemValue * count };
+}
+
+/**
+ * Calculate values for a batch of items
+ * @param {Array} items - Array of item data objects
+ * @returns {Array} Array of {itemIndex, value} results
+ */
+function calculateItemValueBatch(items) {
+    const results = [];
+
+    for (const itemData of items) {
+        const result = calculateItemValue(itemData);
+        results.push(result);
+    }
+
+    return results;
+}
+
+self.onmessage = function (e) {
+    const { taskId, data } = e.data;
+    try {
+        const { action, params } = data;
+
+        if (action === 'calculateBatch') {
+            const results = calculateItemValueBatch(params.items);
+            self.postMessage({ taskId, result: results });
+        } else if (action === 'clearCache') {
+            valuationCache.clear();
+            self.postMessage({ taskId, result: { success: true, message: 'Cache cleared' } });
+        } else {
+            throw new Error(\`Unknown action: \${action}\`);
+        }
+    } catch (error) {
+        self.postMessage({ taskId, error: error.message || String(error) });
+    }
+};
+`;
+
+    /**
+     * Get or create the worker pool instance
+     */
+    async function getWorkerPool() {
+        if (workerPool) {
+            return workerPool;
+        }
+
+        try {
+            // Create worker blob from inline script
+            const blob = new Blob([WORKER_SCRIPT], { type: 'application/javascript' });
+
+            // Initialize worker pool with 2-4 workers
+            workerPool = new WorkerPool(blob);
+            await workerPool.initialize();
+
+            return workerPool;
+        } catch (error) {
+            throw error;
+        }
+    }
+
+    /**
+     * Calculate values for multiple items in parallel
+     * @param {Array} items - Array of item objects
+     * @param {Object} priceMap - Price map for all items
+     * @param {Object} config - Configuration options
+     * @param {Object} gameData - Game data with item details
+     * @returns {Promise<Array>} Array of values in same order as input
+     */
+    async function calculateItemValueBatch(items, priceMap, configOptions, gameData) {
+        const pool = await getWorkerPool();
+
+        // Prepare data for workers - need to include item details
+        const itemsWithDetails = items.map((item, index) => {
+            const itemDetails = gameData.itemDetailMap[item.itemHrid];
+            return {
+                itemIndex: index,
+                item,
+                priceMap,
+                useHighEnhancementCost: configOptions.useHighEnhancementCost,
+                minLevel: configOptions.minLevel,
+                enhancementParams: configOptions.enhancementParams,
+                itemDetails: itemDetails || {},
+            };
+        });
+
+        // Split items into chunks for parallel processing
+        const chunkSize = Math.ceil(itemsWithDetails.length / pool.getStats().poolSize);
+        const chunks = [];
+
+        for (let i = 0; i < itemsWithDetails.length; i += chunkSize) {
+            chunks.push(itemsWithDetails.slice(i, i + chunkSize));
+        }
+
+        // Process chunks in parallel
+        const tasks = chunks.map((chunk) => ({
+            action: 'calculateBatch',
+            params: { items: chunk },
+        }));
+
+        const results = await pool.executeAll(tasks);
+
+        // Flatten results and sort by itemIndex to maintain order
+        const flatResults = results.flat();
+        flatResults.sort((a, b) => a.itemIndex - b.itemIndex);
+
+        // Extract just the values
+        return flatResults.map((r) => r.value);
+    }
+
+    /**
      * Networth Calculator
      * Calculates total character networth including:
      * - Equipped items
@@ -12893,6 +13701,120 @@
     }
 
     /**
+     * Calculate values for multiple items in parallel using workers
+     * @param {Array} items - Array of items to value
+     * @param {Map} priceCache - Price cache
+     * @param {Object} gameData - Game data
+     * @returns {Promise<Array>} Array of values in same order as items
+     */
+    async function calculateItemValuesParallel(items, priceCache, gameData) {
+        // Prepare configuration options
+        const useHighEnhancementCost = config.getSetting('networth_highEnhancementUseCost');
+        const minLevel = config.getSetting('networth_highEnhancementMinLevel') || 13;
+        const enhancementParams = enhancementConfig_js.getEnhancingParams();
+
+        // Separate items into those that need workers vs those that don't
+        const itemsNeedingWorkers = [];
+        const itemsNotNeedingWorkers = [];
+        const itemMapping = []; // Track which original index goes where
+
+        for (let i = 0; i < items.length; i++) {
+            const item = items[i];
+            const enhancementLevel = item.enhancementLevel || 0;
+
+            // Check if this specific item needs worker processing
+            let needsWorker = false;
+
+            if (enhancementLevel >= 1) {
+                // Check if high enhancement cost mode applies
+                if (useHighEnhancementCost && enhancementLevel >= minLevel) {
+                    needsWorker = true;
+                } else {
+                    // Check if market price is missing
+                    const priceKey = `${item.itemHrid}:${enhancementLevel}`;
+                    const prices = priceCache ? priceCache.get(priceKey) : null;
+                    const hasMarketPrice =
+                        prices && ((typeof prices === 'number' && prices > 0) || (prices.ask && prices.ask > 0));
+
+                    if (!hasMarketPrice) {
+                        needsWorker = true;
+                    }
+                }
+            }
+
+            if (needsWorker) {
+                itemMapping.push({ originalIndex: i, workerIndex: itemsNeedingWorkers.length, useWorker: true });
+                itemsNeedingWorkers.push(item);
+            } else {
+                itemMapping.push({ originalIndex: i, sequentialIndex: itemsNotNeedingWorkers.length, useWorker: false });
+                itemsNotNeedingWorkers.push(item);
+            }
+        }
+
+        // Calculate both groups in parallel
+        const [workerResults, sequentialResults] = await Promise.all([
+            // Worker group
+            itemsNeedingWorkers.length > 0
+                ? (async () => {
+                      const priceMap = {};
+                      if (priceCache) {
+                          for (const [key, prices] of priceCache.entries()) {
+                              if (typeof prices === 'number') {
+                                  priceMap[key] = prices;
+                              } else if (prices && typeof prices === 'object') {
+                                  priceMap[key] = prices.ask || 0;
+                              } else {
+                                  priceMap[key] = 0;
+                              }
+                          }
+                      }
+
+                      try {
+                          const values = await calculateItemValueBatch(
+                              itemsNeedingWorkers,
+                              priceMap,
+                              { useHighEnhancementCost, minLevel, enhancementParams },
+                              gameData
+                          );
+                          return values;
+                      } catch {
+                          // Fallback to sequential for worker items
+                          const values = [];
+                          for (const item of itemsNeedingWorkers) {
+                              values.push(await calculateItemValue(item, priceCache));
+                          }
+                          return values;
+                      }
+                  })()
+                : Promise.resolve([]),
+
+            // Sequential group
+            itemsNotNeedingWorkers.length > 0
+                ? (async () => {
+                      const values = [];
+                      for (const item of itemsNotNeedingWorkers) {
+                          const value = await calculateItemValue(item, priceCache);
+                          values.push(value);
+                      }
+                      return values;
+                  })()
+                : Promise.resolve([]),
+        ]);
+
+        // Reconstruct results in original order
+        const finalResults = new Array(items.length);
+        for (const mapping of itemMapping) {
+            if (mapping.useWorker) {
+                finalResults[mapping.originalIndex] = workerResults[mapping.workerIndex];
+            } else {
+                finalResults[mapping.originalIndex] = sequentialResults[mapping.sequentialIndex];
+            }
+        }
+
+        return finalResults;
+    }
+
+    /**
      * Calculate total networth
      * @returns {Promise<Object>} Networth data with breakdowns
      */
@@ -12937,14 +13859,16 @@
         // Batch fetch all prices at once (eliminates ~400 redundant lookups)
         const priceCache = marketAPI.getPricesBatch(itemsToPrice);
 
-        // Calculate equipped items value
+        // Calculate equipped items value using workers
         let equippedValue = 0;
         const equippedBreakdown = [];
 
-        for (const item of characterItems) {
-            if (item.itemLocationHrid === '/item_locations/inventory') continue;
+        const equippedItems = characterItems.filter((item) => item.itemLocationHrid !== '/item_locations/inventory');
+        const equippedValues = await calculateItemValuesParallel(equippedItems, priceCache, gameData);
 
-            const value = await calculateItemValue(item, priceCache);
+        for (let i = 0; i < equippedItems.length; i++) {
+            const item = equippedItems[i];
+            const value = equippedValues[i];
             equippedValue += value;
 
             // Add to breakdown
@@ -12958,7 +13882,7 @@
             });
         }
 
-        // Calculate inventory items value
+        // Calculate inventory items value using workers
         let inventoryValue = 0;
         const inventoryBreakdown = [];
         const inventoryByCategory = {};
@@ -12970,15 +13894,17 @@
         // Track gold coins separately for header display
         let coinCount = 0;
 
-        for (const item of characterItems) {
-            if (item.itemLocationHrid !== '/item_locations/inventory') continue;
+        const inventoryItems = characterItems.filter((item) => item.itemLocationHrid === '/item_locations/inventory');
+        const inventoryValues = await calculateItemValuesParallel(inventoryItems, priceCache, gameData);
+
+        for (let i = 0; i < inventoryItems.length; i++) {
+            const item = inventoryItems[i];
+            const value = inventoryValues[i];
 
             // Extract coin count for header display
             if (item.itemHrid === '/items/coin') {
                 coinCount = item.count || 0;
             }
-
-            const value = await calculateItemValue(item, priceCache);
 
             // Add to breakdown
             const itemDetails = gameData.itemDetailMap[item.itemHrid];

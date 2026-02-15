@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 0.37.1
+ * Version: 0.38.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2104,6 +2104,350 @@
     });
 
     /**
+     * Worker Pool Manager
+     * Manages a pool of Web Workers for parallel task execution
+     */
+
+    class WorkerPool {
+        constructor(workerScript, poolSize = null) {
+            // Auto-detect optimal pool size (max 4 workers)
+            this.poolSize = poolSize || Math.min(navigator.hardwareConcurrency || 2, 4);
+            this.workerScript = workerScript;
+            this.workers = [];
+            this.taskQueue = [];
+            this.activeWorkers = new Set();
+            this.nextTaskId = 0;
+            this.initialized = false;
+        }
+
+        /**
+         * Initialize the worker pool
+         */
+        async initialize() {
+            if (this.initialized) {
+                return;
+            }
+
+            try {
+                // Create workers
+                for (let i = 0; i < this.poolSize; i++) {
+                    const worker = new Worker(URL.createObjectURL(this.workerScript));
+                    this.workers.push({
+                        id: i,
+                        worker,
+                        busy: false,
+                        currentTask: null,
+                    });
+                }
+
+                this.initialized = true;
+                console.log(`[WorkerPool] Initialized with ${this.poolSize} workers`);
+            } catch (error) {
+                console.error('[WorkerPool] Failed to initialize:', error);
+                throw error;
+            }
+        }
+
+        /**
+         * Execute a task in the worker pool
+         * @param {Object} taskData - Data to send to worker
+         * @returns {Promise} Promise that resolves with worker result
+         */
+        async execute(taskData) {
+            if (!this.initialized) {
+                await this.initialize();
+            }
+
+            return new Promise((resolve, reject) => {
+                const taskId = this.nextTaskId++;
+                const task = {
+                    id: taskId,
+                    data: taskData,
+                    resolve,
+                    reject,
+                    timestamp: Date.now(),
+                };
+
+                // Try to assign to an available worker immediately
+                const availableWorker = this.workers.find((w) => !w.busy);
+
+                if (availableWorker) {
+                    this.assignTask(availableWorker, task);
+                } else {
+                    // Queue the task if all workers are busy
+                    this.taskQueue.push(task);
+                }
+            });
+        }
+
+        /**
+         * Execute multiple tasks in parallel
+         * @param {Array} taskDataArray - Array of task data objects
+         * @returns {Promise<Array>} Promise that resolves with array of results
+         */
+        async executeAll(taskDataArray) {
+            if (!this.initialized) {
+                await this.initialize();
+            }
+
+            const promises = taskDataArray.map((taskData) => this.execute(taskData));
+            return Promise.all(promises);
+        }
+
+        /**
+         * Assign a task to a worker
+         * @private
+         */
+        assignTask(workerWrapper, task) {
+            workerWrapper.busy = true;
+            workerWrapper.currentTask = task;
+
+            // Set up message handler for this specific task
+            const messageHandler = (e) => {
+                const { taskId, result, error } = e.data;
+
+                if (taskId === task.id) {
+                    // Clean up
+                    workerWrapper.worker.removeEventListener('message', messageHandler);
+                    workerWrapper.worker.removeEventListener('error', errorHandler);
+                    workerWrapper.busy = false;
+                    workerWrapper.currentTask = null;
+
+                    // Resolve or reject the promise
+                    if (error) {
+                        task.reject(new Error(error));
+                    } else {
+                        task.resolve(result);
+                    }
+
+                    // Process next task in queue
+                    this.processQueue();
+                }
+            };
+
+            const errorHandler = (error) => {
+                console.error('[WorkerPool] Worker error:', error);
+                workerWrapper.worker.removeEventListener('message', messageHandler);
+                workerWrapper.worker.removeEventListener('error', errorHandler);
+                workerWrapper.busy = false;
+                workerWrapper.currentTask = null;
+
+                task.reject(error);
+
+                // Process next task in queue
+                this.processQueue();
+            };
+
+            workerWrapper.worker.addEventListener('message', messageHandler);
+            workerWrapper.worker.addEventListener('error', errorHandler);
+
+            // Send task to worker
+            workerWrapper.worker.postMessage({
+                taskId: task.id,
+                data: task.data,
+            });
+        }
+
+        /**
+         * Process the next task in the queue
+         * @private
+         */
+        processQueue() {
+            if (this.taskQueue.length === 0) {
+                return;
+            }
+
+            const availableWorker = this.workers.find((w) => !w.busy);
+            if (availableWorker) {
+                const task = this.taskQueue.shift();
+                this.assignTask(availableWorker, task);
+            }
+        }
+
+        /**
+         * Get pool statistics
+         */
+        getStats() {
+            return {
+                poolSize: this.poolSize,
+                busyWorkers: this.workers.filter((w) => w.busy).length,
+                queuedTasks: this.taskQueue.length,
+                totalWorkers: this.workers.length,
+            };
+        }
+
+        /**
+         * Terminate all workers and clean up
+         */
+        terminate() {
+            for (const workerWrapper of this.workers) {
+                workerWrapper.worker.terminate();
+            }
+
+            this.workers = [];
+            this.taskQueue = [];
+            this.initialized = false;
+
+            console.log('[WorkerPool] Terminated');
+        }
+    }
+
+    /**
+     * Expected Value Calculator Worker Manager
+     * Manages a worker pool for parallel EV container calculations
+     */
+
+
+    // Worker pool instance
+    let workerPool = null;
+
+    // Worker script as inline string
+    const WORKER_SCRIPT = `
+// Cache for EV calculation results
+const evCache = new Map();
+
+/**
+ * Calculate expected value for a single container
+ * @param {Object} data - Container calculation data
+ * @returns {Object} {containerHrid, ev}
+ */
+function calculateContainerEV(data) {
+    const { containerHrid, dropTable, priceMap, COIN_HRID, MARKET_TAX } = data;
+
+    if (!dropTable || dropTable.length === 0) {
+        return { containerHrid, ev: null };
+    }
+
+    let totalExpectedValue = 0;
+
+    // Calculate expected value for each drop
+    for (const drop of dropTable) {
+        const itemHrid = drop.itemHrid;
+        const dropRate = drop.dropRate || 0;
+        const minCount = drop.minCount || 0;
+        const maxCount = drop.maxCount || 0;
+
+        // Skip invalid drops
+        if (dropRate <= 0 || (minCount === 0 && maxCount === 0)) {
+            continue;
+        }
+
+        // Calculate average drop count
+        const avgCount = (minCount + maxCount) / 2;
+
+        // Get price for this drop
+        const priceData = priceMap[itemHrid];
+        if (!priceData || priceData.price === null) {
+            continue; // Skip drops with missing data
+        }
+
+        const price = priceData.price;
+        const canBeSold = priceData.canBeSold;
+        const isCoin = itemHrid === COIN_HRID;
+
+        // Calculate drop value with tax
+        const dropValue = isCoin
+            ? avgCount * dropRate * price
+            : canBeSold
+              ? avgCount * dropRate * price * (1 - MARKET_TAX)
+              : avgCount * dropRate * price;
+
+        totalExpectedValue += dropValue;
+    }
+
+    return { containerHrid, ev: totalExpectedValue };
+}
+
+/**
+ * Calculate EV for a batch of containers
+ * @param {Array} containers - Array of container data objects
+ * @returns {Array} Array of {containerHrid, ev} results
+ */
+function calculateBatchEV(containers) {
+    const results = [];
+
+    for (const container of containers) {
+        const result = calculateContainerEV(container);
+        if (result.ev !== null) {
+            evCache.set(result.containerHrid, result.ev);
+        }
+        results.push(result);
+    }
+
+    return results;
+}
+
+self.onmessage = function (e) {
+    const { taskId, data } = e.data;
+    try {
+        const { action, params } = data;
+
+        if (action === 'calculateBatch') {
+            const results = calculateBatchEV(params.containers);
+            self.postMessage({ taskId, result: results });
+        } else if (action === 'clearCache') {
+            evCache.clear();
+            self.postMessage({ taskId, result: { success: true, message: 'Cache cleared' } });
+        } else {
+            throw new Error(\`Unknown action: \${action}\`);
+        }
+    } catch (error) {
+        self.postMessage({ taskId, error: error.message || String(error) });
+    }
+};
+`;
+
+    /**
+     * Get or create the worker pool instance
+     */
+    async function getWorkerPool() {
+        if (workerPool) {
+            return workerPool;
+        }
+
+        try {
+            // Create worker blob from inline script
+            const blob = new Blob([WORKER_SCRIPT], { type: 'application/javascript' });
+
+            // Initialize worker pool with 2-4 workers
+            workerPool = new WorkerPool(blob);
+            await workerPool.initialize();
+
+            return workerPool;
+        } catch (error) {
+            throw error;
+        }
+    }
+
+    /**
+     * Calculate EV for multiple containers in parallel
+     * @param {Array} containers - Array of container data objects
+     * @returns {Promise<Array>} Array of {containerHrid, ev} results
+     */
+    async function calculateEVBatch(containers) {
+        const pool = await getWorkerPool();
+
+        // Split containers into chunks for parallel processing
+        const chunkSize = Math.ceil(containers.length / pool.getStats().poolSize);
+        const chunks = [];
+
+        for (let i = 0; i < containers.length; i += chunkSize) {
+            chunks.push(containers.slice(i, i + chunkSize));
+        }
+
+        // Process chunks in parallel
+        const tasks = chunks.map((chunk) => ({
+            action: 'calculateBatch',
+            params: { containers: chunk },
+        }));
+
+        const results = await pool.executeAll(tasks);
+
+        // Flatten results
+        return results.flat();
+    }
+
+    /**
      * Expected Value Calculator Module
      * Calculates expected value for openable containers
      */
@@ -2168,8 +2512,8 @@
                 await marketAPI.fetch(true); // Force fresh fetch on init
             }
 
-            // Calculate all containers with 4-iteration convergence for nesting
-            this.calculateNestedContainers();
+            // Calculate all containers with 4-iteration convergence for nesting (now async with workers)
+            await this.calculateNestedContainers();
 
             this.isInitialized = true;
 
@@ -2180,10 +2524,10 @@
         }
 
         /**
-         * Calculate all containers with nested convergence
+         * Calculate all containers with nested convergence using workers
          * Iterates 4 times to resolve nested container values
          */
-        calculateNestedContainers() {
+        async calculateNestedContainers() {
             const initData = dataManager.getInitClientData();
             if (!initData || !initData.openableLootDropMap) {
                 return;
@@ -2194,14 +2538,73 @@
 
             // Iterate 4 times for convergence (handles nesting depth)
             for (let iteration = 0; iteration < this.CONVERGENCE_ITERATIONS; iteration++) {
-                for (const containerHrid of containerHrids) {
-                    // Calculate and cache EV for this container (pass cached initData)
-                    const ev = this.calculateSingleContainer(containerHrid, initData);
-                    if (ev !== null) {
-                        this.containerCache.set(containerHrid, ev);
+                // Build price map for all items (includes cached container EVs from previous iterations)
+                const priceMap = this.buildPriceMap(containerHrids, initData);
+
+                // Prepare container data for workers
+                const containerData = containerHrids.map((containerHrid) => ({
+                    containerHrid,
+                    dropTable: initData.openableLootDropMap[containerHrid],
+                    priceMap,
+                    COIN_HRID: this.COIN_HRID,
+                    MARKET_TAX: this.MARKET_TAX,
+                }));
+
+                // Calculate all containers in parallel using workers
+                try {
+                    const results = await calculateEVBatch(containerData);
+
+                    // Update cache with results
+                    for (const result of results) {
+                        if (result.ev !== null) {
+                            this.containerCache.set(result.containerHrid, result.ev);
+                        }
+                    }
+                } catch {
+                    // Worker failed, fall back to main thread calculation
+                    for (const containerHrid of containerHrids) {
+                        const ev = this.calculateSingleContainer(containerHrid, initData);
+                        if (ev !== null) {
+                            this.containerCache.set(containerHrid, ev);
+                        }
                     }
                 }
             }
+        }
+
+        /**
+         * Build price map for all items needed for container calculations
+         * @param {Array} containerHrids - Array of container HRIDs
+         * @param {Object} initData - Game data
+         * @returns {Object} Map of itemHrid to {price, canBeSold}
+         */
+        buildPriceMap(containerHrids, initData) {
+            const priceMap = {};
+            const processedItems = new Set();
+
+            // Collect all unique items from all containers
+            for (const containerHrid of containerHrids) {
+                const dropTable = initData.openableLootDropMap[containerHrid];
+                if (!dropTable) continue;
+
+                for (const drop of dropTable) {
+                    const itemHrid = drop.itemHrid;
+                    if (processedItems.has(itemHrid)) continue;
+                    processedItems.add(itemHrid);
+
+                    // Get price and tradeable status
+                    const price = this.getDropPrice(itemHrid);
+                    const itemDetails = dataManager.getItemDetails(itemHrid);
+                    const canBeSold = itemDetails?.tradeable !== false;
+
+                    priceMap[itemHrid] = {
+                        price,
+                        canBeSold,
+                    };
+                }
+            }
+
+            return priceMap;
         }
 
         /**
