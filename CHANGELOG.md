@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.37.1](https://github.com/Celasha/Toolasha/compare/v0.37.0...v0.37.1) (2026-02-15)
+
+### Performance Improvements
+
+- add Web Workers for parallel enhancement calculations ([354ed52](https://github.com/Celasha/Toolasha/commit/354ed52ba9f203a6a16e4578e9eae4f0dd49ad56))
+
 ## [0.37.0](https://github.com/Celasha/Toolasha/compare/v0.36.0...v0.37.0) (2026-02-15)
 
 ### Features
