@@ -85,6 +85,27 @@ export default [
         },
     },
     {
+        // Web Worker files
+        files: ['src/workers/**/*.js'],
+        languageOptions: {
+            ecmaVersion: 2022,
+            sourceType: 'module',
+            globals: {
+                ...globals.worker,
+                // Worker-specific globals
+                importScripts: 'readonly',
+                self: 'readonly',
+                // Math.js library loaded via importScripts
+                math: 'readonly',
+            },
+        },
+        rules: {
+            'no-undef': 'error',
+            'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+            'no-console': 'off',
+        },
+    },
+    {
         // Config files (rollup.config.js, eslint.config.js, etc.)
         files: ['*.config.js', '*.config.mjs'],
         languageOptions: {

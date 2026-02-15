@@ -9,10 +9,10 @@
 import { calculateAbilityCost } from '../../utils/ability-cost-calculator.js';
 import { calculateBattleHousesCost } from '../../utils/house-cost-calculator.js';
 import dataManager from '../../core/data-manager.js';
-import { calculateEnhancementPath } from '../enhancement/tooltip-enhancement.js';
 import { getEnhancingParams } from '../../utils/enhancement-config.js';
 import { getItemPrice } from '../../utils/market-data.js';
 import config from '../../core/config.js';
+import { calculateEnhancementBatch } from '../../utils/enhancement-worker-manager.js';
 
 /**
  * Token-based item data for untradeable back slot items (capes/cloaks/quivers)
@@ -106,11 +106,11 @@ export async function calculateCombatScore(profileData) {
         // 2. Calculate Ability Score
         const abilityResult = calculateAbilityScore(profileData);
 
-        // 3. Calculate Combat Equipment Score
-        const combatEquipmentResult = calculateEquipmentScore(profileData, 'combat');
+        // 3. Calculate Combat Equipment Score (async - runs first)
+        const combatEquipmentResult = await calculateEquipmentScore(profileData, 'combat');
 
-        // 4. Calculate Skiller Equipment Score
-        const skillerEquipmentResult = calculateEquipmentScore(profileData, 'skiller');
+        // 4. Calculate Skiller Equipment Score (async - runs after combat completes)
+        const skillerEquipmentResult = await calculateEquipmentScore(profileData, 'skiller');
 
         const combatTotalScore = houseResult.score + abilityResult.score + combatEquipmentResult.score;
         const skillerTotalScore = skillerEquipmentResult.score;
@@ -338,9 +338,9 @@ function calculateTokenBasedItemValue(itemHrid) {
  * Calculate equipment score from equipped items
  * @param {Object} profileData - Profile data
  * @param {string} scoreType - 'combat' or 'skiller'
- * @returns {Object} {score, breakdown, hasEquipmentData}
+ * @returns {Promise<Object>} {score, breakdown, hasEquipmentData}
  */
-function calculateEquipmentScore(profileData, scoreType = 'combat') {
+async function calculateEquipmentScore(profileData, scoreType = 'combat') {
     const equippedItems = profileData.profile?.wearableItemMap || {};
     const hideEquipment = profileData.profile?.hideWearableItems || false;
 
@@ -357,8 +357,13 @@ function calculateEquipmentScore(profileData, scoreType = 'combat') {
     const gameData = dataManager.getInitClientData();
     if (!gameData) return { score: 0, breakdown: [], hasEquipmentData: false };
 
-    let totalValue = 0;
-    const breakdown = [];
+    const useHighEnhancementCost = config.getSetting('networth_highEnhancementUseCost');
+    const minLevel = config.getSetting('networth_highEnhancementMinLevel') || 13;
+    const enhancementParams = getEnhancingParams();
+
+    // Phase 1: Collect items and identify which need worker calculations
+    const itemsToProcess = [];
+    const workerTasks = [];
 
     for (const [slot, itemData] of Object.entries(equippedItems)) {
         if (!itemData?.itemHrid) continue;
@@ -371,79 +376,117 @@ function calculateEquipmentScore(profileData, scoreType = 'combat') {
         const category = categorizeEquipmentItem(slot, itemDetails.equipmentDetail);
 
         // Filter by score type
-        if (scoreType === 'combat' && !category.combat) {
-            continue; // Skip non-combat items for combat score
-        }
-        if (scoreType === 'skiller' && !category.skiller) {
-            continue; // Skip non-skilling items for skiller score
-        }
+        if (scoreType === 'combat' && !category.combat) continue;
+        if (scoreType === 'skiller' && !category.skiller) continue;
 
-        // Get enhancement level from itemData (separate field, not in HRID)
         const enhancementLevel = itemData.enhancementLevel || 0;
+        const itemLevel = itemDetails.itemLevel || 1;
 
+        itemsToProcess.push({
+            itemHrid,
+            enhancementLevel,
+            itemDetails,
+            itemLevel,
+            needsEnhancementCalc: false,
+            workerIndex: -1,
+        });
+
+        // Check if this item needs enhancement calculation via worker
+        const tokenValue = calculateTokenBasedItemValue(itemHrid);
+        if (tokenValue === 0) {
+            // Not a token item, might need enhancement calculation
+            if (enhancementLevel >= 1 && useHighEnhancementCost && enhancementLevel >= minLevel) {
+                // High enhancement mode - always calculate cost
+                const workerIndex = workerTasks.length;
+                itemsToProcess[itemsToProcess.length - 1].needsEnhancementCalc = true;
+                itemsToProcess[itemsToProcess.length - 1].workerIndex = workerIndex;
+
+                workerTasks.push({
+                    enhancingLevel: enhancementParams.enhancingLevel,
+                    toolBonus: enhancementParams.toolBonus || 0,
+                    speedBonus: enhancementParams.speedBonus || 0,
+                    itemLevel,
+                    targetLevel: enhancementLevel,
+                    protectFrom: Math.max(0, enhancementLevel - 2),
+                    blessedTea: enhancementParams.teas.blessed,
+                    guzzlingBonus: enhancementParams.guzzlingBonus,
+                });
+            } else if (enhancementLevel > 1) {
+                // Check market price first
+                const marketPrice = getMarketPriceWithFallback(itemHrid, enhancementLevel);
+                if (!marketPrice || marketPrice === 0) {
+                    // No market data - need enhancement calculation
+                    const workerIndex = workerTasks.length;
+                    itemsToProcess[itemsToProcess.length - 1].needsEnhancementCalc = true;
+                    itemsToProcess[itemsToProcess.length - 1].workerIndex = workerIndex;
+
+                    workerTasks.push({
+                        enhancingLevel: enhancementParams.enhancingLevel,
+                        toolBonus: enhancementParams.toolBonus || 0,
+                        speedBonus: enhancementParams.speedBonus || 0,
+                        itemLevel,
+                        targetLevel: enhancementLevel,
+                        protectFrom: Math.max(0, enhancementLevel - 2),
+                        blessedTea: enhancementParams.teas.blessed,
+                        guzzlingBonus: enhancementParams.guzzlingBonus,
+                    });
+                }
+            }
+        }
+    }
+
+    // Phase 2: Execute all worker tasks in parallel
+    let workerResults = [];
+    if (workerTasks.length > 0) {
+        try {
+            workerResults = await calculateEnhancementBatch(workerTasks);
+        } catch {
+            // Continue with empty results - will use fallback pricing
+        }
+    }
+
+    // Phase 3: Calculate costs using worker results
+    let totalValue = 0;
+    const breakdown = [];
+
+    for (const item of itemsToProcess) {
         let itemCost = 0;
 
-        // First, check if this is a token-based back slot item (cape/cloak/quiver)
-        const tokenValue = calculateTokenBasedItemValue(itemHrid);
+        // Check token value first
+        const tokenValue = calculateTokenBasedItemValue(item.itemHrid);
         if (tokenValue > 0) {
             itemCost = tokenValue;
-        } else {
-            // Check if high enhancement cost mode is enabled
-            const useHighEnhancementCost = config.getSetting('networth_highEnhancementUseCost');
-            const minLevel = config.getSetting('networth_highEnhancementMinLevel') || 13;
-
-            // For high enhancement levels, use cost instead of market price (if enabled)
-            if (enhancementLevel >= 1 && useHighEnhancementCost && enhancementLevel >= minLevel) {
-                // Calculate enhancement cost (ignore market price)
-                const enhancementParams = getEnhancingParams();
-                const enhancementPath = calculateEnhancementPath(itemHrid, enhancementLevel, enhancementParams);
-
-                if (enhancementPath && enhancementPath.optimalStrategy) {
-                    itemCost = enhancementPath.optimalStrategy.totalCost;
-                } else {
-                    // Enhancement calculation failed, fallback to base item price
-                    console.warn(
-                        '[Combat Score] Enhancement calculation failed for:',
-                        itemHrid,
-                        '+' + enhancementLevel
-                    );
-                    const basePrice = getMarketPriceWithFallback(itemHrid, 0);
-                    itemCost = basePrice;
-                }
+        } else if (item.needsEnhancementCalc && item.workerIndex >= 0) {
+            // Use worker result
+            const workerResult = workerResults[item.workerIndex];
+            if (workerResult && workerResult.attempts) {
+                // Calculate total cost from worker result
+                itemCost = calculateEnhancementCostFromWorkerResult(item.itemHrid, item.enhancementLevel, workerResult);
             } else {
-                // Try market price first (ask price with crafting cost fallback)
-                const marketPrice = getMarketPriceWithFallback(itemHrid, enhancementLevel);
-
-                if (marketPrice && marketPrice > 0) {
-                    itemCost = marketPrice;
-                } else if (enhancementLevel > 1) {
-                    // No market data - calculate enhancement cost
-                    const enhancementParams = getEnhancingParams();
-                    const enhancementPath = calculateEnhancementPath(itemHrid, enhancementLevel, enhancementParams);
-
-                    if (enhancementPath && enhancementPath.optimalStrategy) {
-                        itemCost = enhancementPath.optimalStrategy.totalCost;
-                    } else {
-                        // Fallback to base market price if enhancement calculation fails
-                        const basePrice = getMarketPriceWithFallback(itemHrid, 0);
-                        itemCost = basePrice;
-                    }
-                } else {
-                    // Enhancement level 0 or 1, just use base market price with fallback
-                    const basePrice = getMarketPriceWithFallback(itemHrid, 0);
-                    itemCost = basePrice;
-                }
+                // Worker failed, use base price
+                itemCost = getMarketPriceWithFallback(item.itemHrid, 0);
+            }
+        } else {
+            // Use market price (already checked or not needed)
+            const marketPrice = getMarketPriceWithFallback(item.itemHrid, item.enhancementLevel);
+            if (marketPrice > 0) {
+                itemCost = marketPrice;
+            } else if (item.enhancementLevel > 1) {
+                // Fallback to base price
+                itemCost = getMarketPriceWithFallback(item.itemHrid, 0);
+            } else {
+                // Enhancement level 0 or 1
+                itemCost = getMarketPriceWithFallback(item.itemHrid, 0);
             }
         }
 
         totalValue += itemCost;
 
         // Format item name for display
-        const itemName = itemDetails.name || itemHrid.replace('/items/', '');
-        const displayName = enhancementLevel > 0 ? `${itemName} +${enhancementLevel}` : itemName;
+        const itemName = item.itemDetails.name || item.itemHrid.replace('/items/', '');
+        const displayName = item.enhancementLevel > 0 ? `${itemName} +${item.enhancementLevel}` : itemName;
 
         // Only add to breakdown if formatted value is not "0.0"
-        // (items worth less than 50k coins round to 0.0 and clutter the display)
         const formattedValue = (itemCost / 1_000_000).toFixed(1);
         if (formattedValue !== '0.0') {
             breakdown.push({
@@ -460,4 +503,40 @@ function calculateEquipmentScore(profileData, scoreType = 'combat') {
     breakdown.sort((a, b) => parseFloat(b.value) - parseFloat(a.value));
 
     return { score, breakdown, hasEquipmentData };
+}
+
+/**
+ * Calculate total enhancement cost from worker result
+ * @param {string} itemHrid - Item HRID
+ * @param {number} targetLevel - Target enhancement level
+ * @param {Object} workerResult - Worker calculation result
+ * @returns {number} Total cost
+ */
+function calculateEnhancementCostFromWorkerResult(itemHrid, targetLevel, workerResult) {
+    const gameData = dataManager.getInitClientData();
+    if (!gameData) return 0;
+
+    const itemDetails = gameData.itemDetailMap[itemHrid];
+    if (!itemDetails || !itemDetails.enhancementCosts) return 0;
+
+    // Get base item cost
+    const baseItemCost = getMarketPriceWithFallback(itemHrid, 0);
+
+    // Calculate material costs per attempt
+    let materialCostPerAttempt = 0;
+    for (let level = 1; level <= targetLevel; level++) {
+        const enhancementCost = itemDetails.enhancementCosts[level - 1];
+        if (enhancementCost && enhancementCost.itemHrid) {
+            const materialPrice = getItemPrice(enhancementCost.itemHrid, { mode: 'ask' }) || 0;
+            materialCostPerAttempt += materialPrice * (enhancementCost.count || 1);
+        }
+    }
+
+    // Calculate protection costs
+    const protectionCost = workerResult.protectionCount * 50_000; // 50k per protection
+
+    // Total cost = base item + (materials × attempts) + protection cost
+    const totalCost = baseItemCost + materialCostPerAttempt * workerResult.attemptsRounded + protectionCost;
+
+    return totalCost;
 }
