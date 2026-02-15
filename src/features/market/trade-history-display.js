@@ -240,30 +240,24 @@ class TradeHistoryDisplay {
      * @param {string} comparisonMode - 'instant' or 'listing'
      * @returns {string} Color code
      */
-    getBuyColor(lastBuy, currentPrices, comparisonMode) {
+    getBuyColor(lastBuy, currentPrices, _comparisonMode) {
         if (!currentPrices) {
             return '#888'; // Grey if no market data
         }
 
-        // Choose comparison price based on mode
-        const comparePrice = comparisonMode === 'instant' ? currentPrices.ask : currentPrices.bid;
+        // Both modes compare to ask (what you'd pay to buy)
+        const comparePrice = currentPrices.ask;
 
         if (!comparePrice || comparePrice === -1) {
             return '#888'; // Grey if no market data
         }
 
-        if (comparisonMode === 'instant') {
-            // Instant mode: Compare to ask (what you'd pay to instant-buy now)
-            if (comparePrice > lastBuy) {
-                return config.COLOR_LOSS; // Red - would pay more now
-            } else if (comparePrice < lastBuy) {
-                return config.COLOR_PROFIT; // Green - would pay less now
-            }
-        } else if (comparePrice > lastBuy) {
-            // Listing mode: Compare to bid (what buyers are offering = what you could sell for)
-            return config.COLOR_PROFIT; // Green - can sell for more than you bought (profit)
+        // Both instant and listing modes use same logic:
+        // "If I buy now, would I pay more or less than last time?"
+        if (comparePrice > lastBuy) {
+            return config.COLOR_LOSS; // Red - would pay more now (market worse)
         } else if (comparePrice < lastBuy) {
-            return config.COLOR_LOSS; // Red - can only sell for less than you bought (loss)
+            return config.COLOR_PROFIT; // Green - would pay less now (market better)
         }
 
         return '#888'; // Grey - same price
@@ -288,18 +282,11 @@ class TradeHistoryDisplay {
             return '#888'; // Grey if no market data
         }
 
-        if (comparisonMode === 'instant') {
-            // Instant mode: Compare to bid (what you'd get to instant-sell now)
-            if (comparePrice > lastSell) {
-                return config.COLOR_PROFIT; // Green - would get more now
-            } else if (comparePrice < lastSell) {
-                return config.COLOR_LOSS; // Red - would get less now
-            }
-        } else if (comparePrice > lastSell) {
-            // Listing mode: Compare to ask (what sellers are asking)
-            return config.COLOR_LOSS; // Red - others selling for more (you sold too cheap)
+        // Both modes use same logic: "If I sell now, would I get more or less than last time?"
+        if (comparePrice > lastSell) {
+            return config.COLOR_PROFIT; // Green - would get more now (market better)
         } else if (comparePrice < lastSell) {
-            return config.COLOR_PROFIT; // Green - others selling for less (you sold well)
+            return config.COLOR_LOSS; // Red - would get less now (market worse)
         }
 
         return '#888'; // Grey - same price
