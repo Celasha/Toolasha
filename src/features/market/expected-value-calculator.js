@@ -8,6 +8,7 @@ import dataManager from '../../core/data-manager.js';
 import { calculateDungeonTokenValue } from '../../utils/token-valuation.js';
 import { getItemPrice } from '../../utils/market-data.js';
 import { calculatePriceAfterTax } from '../../utils/profit-helpers.js';
+import { calculateEVBatch } from '../../utils/ev-worker-manager.js';
 
 /**
  * ExpectedValueCalculator class handles EV calculations for openable containers
@@ -68,8 +69,8 @@ class ExpectedValueCalculator {
             await marketAPI.fetch(true); // Force fresh fetch on init
         }
 
-        // Calculate all containers with 4-iteration convergence for nesting
-        this.calculateNestedContainers();
+        // Calculate all containers with 4-iteration convergence for nesting (now async with workers)
+        await this.calculateNestedContainers();
 
         this.isInitialized = true;
 
@@ -80,10 +81,10 @@ class ExpectedValueCalculator {
     }
 
     /**
-     * Calculate all containers with nested convergence
+     * Calculate all containers with nested convergence using workers
      * Iterates 4 times to resolve nested container values
      */
-    calculateNestedContainers() {
+    async calculateNestedContainers() {
         const initData = dataManager.getInitClientData();
         if (!initData || !initData.openableLootDropMap) {
             return;
@@ -94,14 +95,73 @@ class ExpectedValueCalculator {
 
         // Iterate 4 times for convergence (handles nesting depth)
         for (let iteration = 0; iteration < this.CONVERGENCE_ITERATIONS; iteration++) {
-            for (const containerHrid of containerHrids) {
-                // Calculate and cache EV for this container (pass cached initData)
-                const ev = this.calculateSingleContainer(containerHrid, initData);
-                if (ev !== null) {
-                    this.containerCache.set(containerHrid, ev);
+            // Build price map for all items (includes cached container EVs from previous iterations)
+            const priceMap = this.buildPriceMap(containerHrids, initData);
+
+            // Prepare container data for workers
+            const containerData = containerHrids.map((containerHrid) => ({
+                containerHrid,
+                dropTable: initData.openableLootDropMap[containerHrid],
+                priceMap,
+                COIN_HRID: this.COIN_HRID,
+                MARKET_TAX: this.MARKET_TAX,
+            }));
+
+            // Calculate all containers in parallel using workers
+            try {
+                const results = await calculateEVBatch(containerData);
+
+                // Update cache with results
+                for (const result of results) {
+                    if (result.ev !== null) {
+                        this.containerCache.set(result.containerHrid, result.ev);
+                    }
+                }
+            } catch {
+                // Worker failed, fall back to main thread calculation
+                for (const containerHrid of containerHrids) {
+                    const ev = this.calculateSingleContainer(containerHrid, initData);
+                    if (ev !== null) {
+                        this.containerCache.set(containerHrid, ev);
+                    }
                 }
             }
         }
+    }
+
+    /**
+     * Build price map for all items needed for container calculations
+     * @param {Array} containerHrids - Array of container HRIDs
+     * @param {Object} initData - Game data
+     * @returns {Object} Map of itemHrid to {price, canBeSold}
+     */
+    buildPriceMap(containerHrids, initData) {
+        const priceMap = {};
+        const processedItems = new Set();
+
+        // Collect all unique items from all containers
+        for (const containerHrid of containerHrids) {
+            const dropTable = initData.openableLootDropMap[containerHrid];
+            if (!dropTable) continue;
+
+            for (const drop of dropTable) {
+                const itemHrid = drop.itemHrid;
+                if (processedItems.has(itemHrid)) continue;
+                processedItems.add(itemHrid);
+
+                // Get price and tradeable status
+                const price = this.getDropPrice(itemHrid);
+                const itemDetails = dataManager.getItemDetails(itemHrid);
+                const canBeSold = itemDetails?.tradeable !== false;
+
+                priceMap[itemHrid] = {
+                    price,
+                    canBeSold,
+                };
+            }
+        }
+
+        return priceMap;
     }
 
     /**

@@ -122,14 +122,12 @@ export function createCalculatorUI(container, characterSkills, expRates, levelEx
     };
 
     for (const input of Object.values(skillInputs)) {
+        input.addEventListener('input', updateHandler);
         input.addEventListener('change', updateHandler);
-        input.addEventListener('keyup', updateHandler);
-        input.addEventListener('click', updateHandler);
     }
 
+    daysInput.addEventListener('input', updateHandler);
     daysInput.addEventListener('change', updateHandler);
-    daysInput.addEventListener('keyup', updateHandler);
-    daysInput.addEventListener('click', updateHandler);
 
     // Initial calculation for "After 1 days"
     updateCalculatorResults(

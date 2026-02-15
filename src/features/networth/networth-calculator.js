@@ -20,6 +20,7 @@ import expectedValueCalculator from '../market/expected-value-calculator.js';
 import config from '../../core/config.js';
 import networthCache from './networth-cache.js';
 import { getItemPrice, getItemPrices } from '../../utils/market-data.js';
+import { calculateItemValueBatch } from '../../utils/networth-worker-manager.js';
 
 /**
  * Calculate the value of a single item
@@ -397,6 +398,120 @@ export function calculateAllAbilitiesCost(characterAbilities, abilityCombatTrigg
 }
 
 /**
+ * Calculate values for multiple items in parallel using workers
+ * @param {Array} items - Array of items to value
+ * @param {Map} priceCache - Price cache
+ * @param {Object} gameData - Game data
+ * @returns {Promise<Array>} Array of values in same order as items
+ */
+async function calculateItemValuesParallel(items, priceCache, gameData) {
+    // Prepare configuration options
+    const useHighEnhancementCost = config.getSetting('networth_highEnhancementUseCost');
+    const minLevel = config.getSetting('networth_highEnhancementMinLevel') || 13;
+    const enhancementParams = getEnhancingParams();
+
+    // Separate items into those that need workers vs those that don't
+    const itemsNeedingWorkers = [];
+    const itemsNotNeedingWorkers = [];
+    const itemMapping = []; // Track which original index goes where
+
+    for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        const enhancementLevel = item.enhancementLevel || 0;
+
+        // Check if this specific item needs worker processing
+        let needsWorker = false;
+
+        if (enhancementLevel >= 1) {
+            // Check if high enhancement cost mode applies
+            if (useHighEnhancementCost && enhancementLevel >= minLevel) {
+                needsWorker = true;
+            } else {
+                // Check if market price is missing
+                const priceKey = `${item.itemHrid}:${enhancementLevel}`;
+                const prices = priceCache ? priceCache.get(priceKey) : null;
+                const hasMarketPrice =
+                    prices && ((typeof prices === 'number' && prices > 0) || (prices.ask && prices.ask > 0));
+
+                if (!hasMarketPrice) {
+                    needsWorker = true;
+                }
+            }
+        }
+
+        if (needsWorker) {
+            itemMapping.push({ originalIndex: i, workerIndex: itemsNeedingWorkers.length, useWorker: true });
+            itemsNeedingWorkers.push(item);
+        } else {
+            itemMapping.push({ originalIndex: i, sequentialIndex: itemsNotNeedingWorkers.length, useWorker: false });
+            itemsNotNeedingWorkers.push(item);
+        }
+    }
+
+    // Calculate both groups in parallel
+    const [workerResults, sequentialResults] = await Promise.all([
+        // Worker group
+        itemsNeedingWorkers.length > 0
+            ? (async () => {
+                  const priceMap = {};
+                  if (priceCache) {
+                      for (const [key, prices] of priceCache.entries()) {
+                          if (typeof prices === 'number') {
+                              priceMap[key] = prices;
+                          } else if (prices && typeof prices === 'object') {
+                              priceMap[key] = prices.ask || 0;
+                          } else {
+                              priceMap[key] = 0;
+                          }
+                      }
+                  }
+
+                  try {
+                      const values = await calculateItemValueBatch(
+                          itemsNeedingWorkers,
+                          priceMap,
+                          { useHighEnhancementCost, minLevel, enhancementParams },
+                          gameData
+                      );
+                      return values;
+                  } catch {
+                      // Fallback to sequential for worker items
+                      const values = [];
+                      for (const item of itemsNeedingWorkers) {
+                          values.push(await calculateItemValue(item, priceCache));
+                      }
+                      return values;
+                  }
+              })()
+            : Promise.resolve([]),
+
+        // Sequential group
+        itemsNotNeedingWorkers.length > 0
+            ? (async () => {
+                  const values = [];
+                  for (const item of itemsNotNeedingWorkers) {
+                      const value = await calculateItemValue(item, priceCache);
+                      values.push(value);
+                  }
+                  return values;
+              })()
+            : Promise.resolve([]),
+    ]);
+
+    // Reconstruct results in original order
+    const finalResults = new Array(items.length);
+    for (const mapping of itemMapping) {
+        if (mapping.useWorker) {
+            finalResults[mapping.originalIndex] = workerResults[mapping.workerIndex];
+        } else {
+            finalResults[mapping.originalIndex] = sequentialResults[mapping.sequentialIndex];
+        }
+    }
+
+    return finalResults;
+}
+
+/**
  * Calculate total networth
  * @returns {Promise<Object>} Networth data with breakdowns
  */
@@ -441,14 +556,16 @@ export async function calculateNetworth() {
     // Batch fetch all prices at once (eliminates ~400 redundant lookups)
     const priceCache = marketAPI.getPricesBatch(itemsToPrice);
 
-    // Calculate equipped items value
+    // Calculate equipped items value using workers
     let equippedValue = 0;
     const equippedBreakdown = [];
 
-    for (const item of characterItems) {
-        if (item.itemLocationHrid === '/item_locations/inventory') continue;
+    const equippedItems = characterItems.filter((item) => item.itemLocationHrid !== '/item_locations/inventory');
+    const equippedValues = await calculateItemValuesParallel(equippedItems, priceCache, gameData);
 
-        const value = await calculateItemValue(item, priceCache);
+    for (let i = 0; i < equippedItems.length; i++) {
+        const item = equippedItems[i];
+        const value = equippedValues[i];
         equippedValue += value;
 
         // Add to breakdown
@@ -462,7 +579,7 @@ export async function calculateNetworth() {
         });
     }
 
-    // Calculate inventory items value
+    // Calculate inventory items value using workers
     let inventoryValue = 0;
     const inventoryBreakdown = [];
     const inventoryByCategory = {};
@@ -474,15 +591,17 @@ export async function calculateNetworth() {
     // Track gold coins separately for header display
     let coinCount = 0;
 
-    for (const item of characterItems) {
-        if (item.itemLocationHrid !== '/item_locations/inventory') continue;
+    const inventoryItems = characterItems.filter((item) => item.itemLocationHrid === '/item_locations/inventory');
+    const inventoryValues = await calculateItemValuesParallel(inventoryItems, priceCache, gameData);
+
+    for (let i = 0; i < inventoryItems.length; i++) {
+        const item = inventoryItems[i];
+        const value = inventoryValues[i];
 
         // Extract coin count for header display
         if (item.itemHrid === '/items/coin') {
             coinCount = item.count || 0;
         }
-
-        const value = await calculateItemValue(item, priceCache);
 
         // Add to breakdown
         const itemDetails = gameData.itemDetailMap[item.itemHrid];
