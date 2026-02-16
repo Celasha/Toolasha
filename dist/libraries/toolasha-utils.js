@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 0.38.0
+ * Version: 0.38.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2141,7 +2141,6 @@
                 }
 
                 this.initialized = true;
-                console.log(`[WorkerPool] Initialized with ${this.poolSize} workers`);
             } catch (error) {
                 console.error('[WorkerPool] Failed to initialize:', error);
                 throw error;
@@ -2287,8 +2286,6 @@
             this.workers = [];
             this.taskQueue = [];
             this.initialized = false;
-
-            console.log('[WorkerPool] Terminated');
         }
     }
 

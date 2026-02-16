@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 0.38.0
+ * Version: 0.38.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -9606,7 +9606,6 @@
                 }
 
                 this.initialized = true;
-                console.log(`[WorkerPool] Initialized with ${this.poolSize} workers`);
             } catch (error) {
                 console.error('[WorkerPool] Failed to initialize:', error);
                 throw error;
@@ -9752,8 +9751,6 @@
             this.workers = [];
             this.taskQueue = [];
             this.initialized = false;
-
-            console.log('[WorkerPool] Terminated');
         }
     }
 

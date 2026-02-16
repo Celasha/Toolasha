@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 0.38.0
+ * Version: 0.38.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1457,7 +1457,6 @@
                 }
 
                 this.initialized = true;
-                console.log(`[WorkerPool] Initialized with ${this.poolSize} workers`);
             } catch (error) {
                 console.error('[WorkerPool] Failed to initialize:', error);
                 throw error;
@@ -1603,8 +1602,6 @@
             this.workers = [];
             this.taskQueue = [];
             this.initialized = false;
-
-            console.log('[WorkerPool] Terminated');
         }
     }
 
@@ -11270,7 +11267,7 @@ self.onmessage = function (e) {
      * @param {Object} session - Session object
      * @param {number} previousLevel - Level that failed (level we tried to enhance from)
      */
-    function recordFailure(session, previousLevel) {
+    function recordFailure(session, previousLevel, newLevel) {
         // Initialize tracking if needed for the level that failed
         initializeLevelTracking(session, previousLevel);
 
@@ -11281,6 +11278,9 @@ self.onmessage = function (e) {
 
         // Update success rate for this level
         updateSuccessRate(session, previousLevel);
+
+        // Update current level to actual level after failure
+        session.currentLevel = newLevel;
 
         // Update streaks
         if (session.currentStreak.type === 'fail') {
@@ -12033,15 +12033,16 @@ self.onmessage = function (e) {
         /**
          * Record a failed enhancement attempt
          * @param {number} previousLevel - Level that failed
+         * @param {number} newLevel - Actual level after failure
          * @returns {Promise<void>}
          */
-        async recordFailure(previousLevel) {
+        async recordFailure(previousLevel, newLevel) {
             const session = this.getCurrentSession();
             if (!session) {
                 return;
             }
 
-            recordFailure(session, previousLevel);
+            recordFailure(session, previousLevel, newLevel);
             await saveSessions(this.sessions);
         }
 
@@ -12908,8 +12909,19 @@ self.onmessage = function (e) {
                 const actualProt = session.protectionCount || 0;
 
                 // Calculate factors (like Ultimate Tracker)
-                const attFactor = expAtt > 0 ? (totalAttempts / expAtt).toFixed(2) : null;
-                const protFactor = expProt > 0 ? (actualProt / expProt).toFixed(2) : null;
+                // Use more precision for small values to avoid showing 0.00x
+                const rawAttFactor = expAtt > 0 ? totalAttempts / expAtt : null;
+                const rawProtFactor = expProt > 0 ? actualProt / expProt : null;
+
+                // Format with appropriate precision (more decimals for small values)
+                const formatFactor = (val) => {
+                    if (val === null) return null;
+                    if (val < 0.01) return val.toFixed(3);
+                    return val.toFixed(2);
+                };
+
+                const attFactor = formatFactor(rawAttFactor);
+                const protFactor = formatFactor(rawProtFactor);
 
                 html += `
             <div style="display: flex; justify-content: space-between; font-size: 12px; margin-top: 4px;">
@@ -12965,7 +12977,15 @@ self.onmessage = function (e) {
          * Generate per-level breakdown table
          */
         generateLevelTable(session) {
-            const levels = Object.keys(session.attemptsPerLevel).sort((a, b) => b - a);
+            // Get all levels with attempts
+            const levelSet = new Set(Object.keys(session.attemptsPerLevel).map(Number));
+
+            // Always include the current level (even if no attempts yet)
+            if (session.currentLevel > 0) {
+                levelSet.add(session.currentLevel);
+            }
+
+            const levels = Array.from(levelSet).sort((a, b) => b - a);
 
             if (levels.length === 0) {
                 return '<div style="text-align: center; padding: 20px; color: ${STYLE.colors.textSecondary};">No attempts recorded yet</div>';
@@ -12973,9 +12993,9 @@ self.onmessage = function (e) {
 
             let rows = '';
             for (const level of levels) {
-                const levelData = session.attemptsPerLevel[level];
+                const levelData = session.attemptsPerLevel[level] || { success: 0, fail: 0, successRate: 0 };
                 const rate = formatters_js.formatPercentage(levelData.successRate, 1);
-                const isCurrent = parseInt(level) === session.currentLevel;
+                const isCurrent = level === session.currentLevel;
 
                 const rowStyle = isCurrent
                     ? `
@@ -13451,38 +13471,30 @@ self.onmessage = function (e) {
             }
 
             // On first attempt (rawCount === 1), start session if auto-start is enabled
-            // BUT: Ignore if we already have an active session (handles out-of-order events)
-            if (rawCount === 1) {
-                // Skip early return if we just created a session for item change
-                if (!justCreatedNewSession && currentSession && currentSession.itemHrid === itemHrid) {
-                    // Already have a session for this item, ignore this late rawCount=1 event
-                    return;
+            // BUT: Don't create a new session if we already have one for this item
+            if (rawCount === 1 && !justCreatedNewSession && !currentSession) {
+                // CRITICAL: On first event, primaryItemHash shows RESULT level, not starting level
+                // We need to infer the starting level from the result
+                const protectFrom = action.enhancingProtectionMinLevel || 0;
+                let startLevel = newLevel;
+
+                // If result > 0 and below protection threshold, must have started one level lower
+                if (newLevel > 0 && newLevel < Math.max(2, protectFrom)) {
+                    startLevel = newLevel - 1; // Successful enhancement (e.g., 0→1)
                 }
+                // Otherwise, started at same level (e.g., 0→0 failure, or protected failure)
+
+                // Always start new session when tracker is enabled
+                const targetLevel = action.enhancingMaxLevel || Math.min(newLevel + 5, 20);
+                const sessionId = await enhancementTracker.startSession(itemHrid, startLevel, targetLevel, protectFrom);
+                currentSession = enhancementTracker.getCurrentSession();
+
+                // Switch UI to new session and update display
+                enhancementUI.switchToSession(sessionId);
+                enhancementUI.scheduleUpdate();
 
                 if (!currentSession) {
-                    // CRITICAL: On first event, primaryItemHash shows RESULT level, not starting level
-                    // We need to infer the starting level from the result
-                    const protectFrom = action.enhancingProtectionMinLevel || 0;
-                    let startLevel = newLevel;
-
-                    // If result > 0 and below protection threshold, must have started one level lower
-                    if (newLevel > 0 && newLevel < Math.max(2, protectFrom)) {
-                        startLevel = newLevel - 1; // Successful enhancement (e.g., 0→1)
-                    }
-                    // Otherwise, started at same level (e.g., 0→0 failure, or protected failure)
-
-                    // Always start new session when tracker is enabled
-                    const targetLevel = action.enhancingMaxLevel || Math.min(newLevel + 5, 20);
-                    const sessionId = await enhancementTracker.startSession(itemHrid, startLevel, targetLevel, protectFrom);
-                    currentSession = enhancementTracker.getCurrentSession();
-
-                    // Switch UI to new session and update display
-                    enhancementUI.switchToSession(sessionId);
-                    enhancementUI.scheduleUpdate();
-
-                    if (!currentSession) {
-                        return;
-                    }
+                    return;
                 }
             }
 
@@ -13577,7 +13589,7 @@ self.onmessage = function (e) {
                 const xpGain = calculateFailureXP(previousLevel, itemHrid);
                 currentSession.totalXP += xpGain;
 
-                await enhancementTracker.recordFailure(previousLevel);
+                await enhancementTracker.recordFailure(previousLevel, newLevel);
                 enhancementUI.scheduleUpdate(); // Update UI after failure
             }
             // Note: If newLevel === previousLevel (and not 0->0), we track costs but don't record attempt
