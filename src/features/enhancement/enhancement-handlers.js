@@ -302,38 +302,30 @@ async function handleEnhancementResult(action, _data) {
         }
 
         // On first attempt (rawCount === 1), start session if auto-start is enabled
-        // BUT: Ignore if we already have an active session (handles out-of-order events)
-        if (rawCount === 1) {
-            // Skip early return if we just created a session for item change
-            if (!justCreatedNewSession && currentSession && currentSession.itemHrid === itemHrid) {
-                // Already have a session for this item, ignore this late rawCount=1 event
-                return;
+        // BUT: Don't create a new session if we already have one for this item
+        if (rawCount === 1 && !justCreatedNewSession && !currentSession) {
+            // CRITICAL: On first event, primaryItemHash shows RESULT level, not starting level
+            // We need to infer the starting level from the result
+            const protectFrom = action.enhancingProtectionMinLevel || 0;
+            let startLevel = newLevel;
+
+            // If result > 0 and below protection threshold, must have started one level lower
+            if (newLevel > 0 && newLevel < Math.max(2, protectFrom)) {
+                startLevel = newLevel - 1; // Successful enhancement (e.g., 0→1)
             }
+            // Otherwise, started at same level (e.g., 0→0 failure, or protected failure)
+
+            // Always start new session when tracker is enabled
+            const targetLevel = action.enhancingMaxLevel || Math.min(newLevel + 5, 20);
+            const sessionId = await enhancementTracker.startSession(itemHrid, startLevel, targetLevel, protectFrom);
+            currentSession = enhancementTracker.getCurrentSession();
+
+            // Switch UI to new session and update display
+            enhancementUI.switchToSession(sessionId);
+            enhancementUI.scheduleUpdate();
 
             if (!currentSession) {
-                // CRITICAL: On first event, primaryItemHash shows RESULT level, not starting level
-                // We need to infer the starting level from the result
-                const protectFrom = action.enhancingProtectionMinLevel || 0;
-                let startLevel = newLevel;
-
-                // If result > 0 and below protection threshold, must have started one level lower
-                if (newLevel > 0 && newLevel < Math.max(2, protectFrom)) {
-                    startLevel = newLevel - 1; // Successful enhancement (e.g., 0→1)
-                }
-                // Otherwise, started at same level (e.g., 0→0 failure, or protected failure)
-
-                // Always start new session when tracker is enabled
-                const targetLevel = action.enhancingMaxLevel || Math.min(newLevel + 5, 20);
-                const sessionId = await enhancementTracker.startSession(itemHrid, startLevel, targetLevel, protectFrom);
-                currentSession = enhancementTracker.getCurrentSession();
-
-                // Switch UI to new session and update display
-                enhancementUI.switchToSession(sessionId);
-                enhancementUI.scheduleUpdate();
-
-                if (!currentSession) {
-                    return;
-                }
+                return;
             }
         }
 
@@ -428,7 +420,7 @@ async function handleEnhancementResult(action, _data) {
             const xpGain = calculateFailureXP(previousLevel, itemHrid);
             currentSession.totalXP += xpGain;
 
-            await enhancementTracker.recordFailure(previousLevel);
+            await enhancementTracker.recordFailure(previousLevel, newLevel);
             enhancementUI.scheduleUpdate(); // Update UI after failure
         }
         // Note: If newLevel === previousLevel (and not 0->0), we track costs but don't record attempt

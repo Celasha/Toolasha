@@ -433,7 +433,11 @@ function getProductionCost(itemHrid) {
     // Sum up input material costs
     if (action.inputItems) {
         for (const input of action.inputItems) {
-            const inputPrice = getItemPrice(input.itemHrid, { mode: 'ask' }) || 0;
+            let inputPrice = getItemPrice(input.itemHrid, { mode: 'ask' }) || 0;
+            // Recursively calculate production cost if no market price
+            if (inputPrice === 0) {
+                inputPrice = getProductionCost(input.itemHrid);
+            }
             totalPrice += inputPrice * input.count;
         }
     }
@@ -443,7 +447,11 @@ function getProductionCost(itemHrid) {
 
     // Add upgrade item cost if this is an upgrade recipe (for refined items)
     if (action.upgradeItemHrid) {
-        const upgradePrice = getItemPrice(action.upgradeItemHrid, { mode: 'ask' }) || 0;
+        let upgradePrice = getItemPrice(action.upgradeItemHrid, { mode: 'ask' }) || 0;
+        // Recursively calculate production cost if no market price
+        if (upgradePrice === 0) {
+            upgradePrice = getProductionCost(action.upgradeItemHrid);
+        }
         totalPrice += upgradePrice;
     }
 
@@ -588,7 +596,9 @@ export function buildEnhancementTooltipHTML(enhancementData) {
         }
 
         html +=
-            '<br><span style="font-weight: bold;">Total: ' + formatLargeNumber(optimalStrategy.totalCost) + '</span>';
+            '<br><span style="font-weight: bold;">Total: ' +
+            formatLargeNumber(optimalStrategy.totalCost, 3) +
+            '</span>';
     } else {
         // Traditional (non-mirror) breakdown
         html += 'Base Item: ' + formatLargeNumber(optimalStrategy.baseCost);
@@ -616,7 +626,9 @@ export function buildEnhancementTooltipHTML(enhancementData) {
         }
 
         html +=
-            '<br><span style="font-weight: bold;">Total: ' + formatLargeNumber(optimalStrategy.totalCost) + '</span>';
+            '<br><span style="font-weight: bold;">Total: ' +
+            formatLargeNumber(optimalStrategy.totalCost, 3) +
+            '</span>';
     }
 
     html += '</div>';

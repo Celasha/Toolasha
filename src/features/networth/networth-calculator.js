@@ -459,7 +459,11 @@ async function calculateItemValuesParallel(items, priceCache, gameData) {
                           if (typeof prices === 'number') {
                               priceMap[key] = prices;
                           } else if (prices && typeof prices === 'object') {
-                              priceMap[key] = prices.ask || 0;
+                              // Store ask and bid WITHOUT coalescing null to 0 (preserve null for "no data" vs "0 price")
+                              priceMap[key + '_ask'] = prices.ask;
+                              priceMap[key + '_bid'] = prices.bid;
+                              // Also store ask at the base key for backward compatibility
+                              priceMap[key] = prices.ask;
                           } else {
                               priceMap[key] = 0;
                           }
@@ -542,15 +546,50 @@ export async function calculateNetworth() {
 
     // OPTIMIZATION: Pre-fetch all market prices in one batch
     const itemsToPrice = [];
+    const itemsToFetch = new Set();
+
+    // Helper to recursively add upgrade items
+    const addItemWithUpgrades = (itemHrid) => {
+        if (itemsToFetch.has(itemHrid)) return; // Already added
+        itemsToFetch.add(itemHrid);
+
+        // Find the crafting action for this item
+        for (const actionHrid in gameData.actionDetailMap) {
+            const action = gameData.actionDetailMap[actionHrid];
+            if (action.outputItems && action.outputItems.length > 0 && action.outputItems[0].itemHrid === itemHrid) {
+                // Add all input materials to price fetch list
+                if (action.inputItems) {
+                    for (const input of action.inputItems) {
+                        if (!itemsToFetch.has(input.itemHrid)) {
+                            itemsToFetch.add(input.itemHrid);
+                        }
+                    }
+                }
+
+                // If this item has an upgrade item (e.g., refined items), recursively fetch that too
+                if (action.upgradeItemHrid) {
+                    addItemWithUpgrades(action.upgradeItemHrid); // Recursive call
+                }
+                break;
+            }
+        }
+    };
 
     // Collect all items that need pricing
     for (const item of characterItems) {
         itemsToPrice.push({ itemHrid: item.itemHrid, enhancementLevel: item.enhancementLevel || 0 });
+        addItemWithUpgrades(item.itemHrid); // Add upgrade chain
     }
 
     // Collect market listings items
     for (const listing of marketListings) {
         itemsToPrice.push({ itemHrid: listing.itemHrid, enhancementLevel: listing.enhancementLevel || 0 });
+        addItemWithUpgrades(listing.itemHrid); // Add upgrade chain
+    }
+
+    // Add all collected base items at enhancement level 0
+    for (const itemHrid of itemsToFetch) {
+        itemsToPrice.push({ itemHrid, enhancementLevel: 0 });
     }
 
     // Batch fetch all prices at once (eliminates ~400 redundant lookups)

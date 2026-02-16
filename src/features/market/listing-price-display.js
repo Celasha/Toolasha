@@ -917,8 +917,6 @@ class ListingPriceDisplay {
      * Disable the listing price display
      */
     disable() {
-        console.log('[ListingPriceDisplay] 🧹 Cleaning up handlers');
-
         // Cleanup all MutationObservers
         for (const observer of this.tbodyObservers.values()) {
             observer.disconnect();

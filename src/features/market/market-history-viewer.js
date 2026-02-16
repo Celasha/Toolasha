@@ -292,21 +292,15 @@ class MarketHistoryViewer {
      * Detect expired listings by scraping the My Listings DOM table
      */
     async detectExpiredListings() {
-        console.log('[MarketHistoryViewer] Starting expired listing detection');
-
         // Find the My Listings table
         const myListingsTable = document.querySelector('.MarketplacePanel_myListingsTableContainer__2s6pm table tbody');
 
         if (!myListingsTable) {
-            console.warn('[MarketHistoryViewer] My Listings table not found - cannot detect expired listings');
             return;
         }
 
-        console.log('[MarketHistoryViewer] Found My Listings table');
-
         // Scrape each row
         const rows = myListingsTable.querySelectorAll('tr');
-        console.log('[MarketHistoryViewer] Found', rows.length, 'rows in My Listings table');
 
         for (const row of rows) {
             try {
@@ -315,26 +309,18 @@ class MarketHistoryViewer {
                 if (!statusCell) continue;
 
                 const statusText = statusCell.textContent.trim();
-                console.log('[MarketHistoryViewer] Row status:', statusText);
 
                 if (statusText !== 'Expired') continue;
-
-                console.log('[MarketHistoryViewer] Found expired row, extracting data...');
 
                 // This row is expired - now match it to our stored listings
                 // Extract identifying information from the row
                 const allCells = row.querySelectorAll('td');
-                console.log('[MarketHistoryViewer] Row has', allCells.length, 'cells');
-                allCells.forEach((cell, idx) => {
-                    console.log(`  Cell ${idx + 1}:`, cell.textContent.trim().substring(0, 50));
-                });
 
                 const typeCell = allCells[1]; // Buy/Sell
                 const progressCell = allCells[2]; // Progress
                 const priceCell = allCells[3]; // Price
 
                 if (!typeCell || !priceCell || !progressCell) {
-                    console.warn('[MarketHistoryViewer] Missing cells in expired row');
                     continue;
                 }
 
@@ -344,27 +330,12 @@ class MarketHistoryViewer {
                 const progressText = progressCell.textContent.trim();
                 const progressMatch = progressText.match(/(\d+)\s*\/\s*(\d+)/);
 
-                console.log('[MarketHistoryViewer] Parsing progress:', progressText, 'match:', progressMatch);
-
                 if (!progressMatch || price === null) {
-                    console.warn('[MarketHistoryViewer] Failed to parse expired row data:', {
-                        priceText,
-                        price,
-                        progressText,
-                        progressMatch,
-                    });
                     continue;
                 }
 
                 const filledQuantity = parseInt(progressMatch[1], 10);
                 const orderQuantity = parseInt(progressMatch[2], 10);
-
-                console.log('[MarketHistoryViewer] Expired listing data:', {
-                    isSell,
-                    price,
-                    filledQuantity,
-                    orderQuantity,
-                });
 
                 // Find matching listing in our stored data
                 const matchingListing = this.listings.find(
@@ -378,32 +349,11 @@ class MarketHistoryViewer {
 
                 if (matchingListing) {
                     matchingListing.status = 'expired';
-                    console.log('[MarketHistoryViewer] Detected expired listing:', matchingListing.id);
-                } else {
-                    console.warn('[MarketHistoryViewer] No matching listing found for expired row:', {
-                        isSell,
-                        price,
-                        filledQuantity,
-                        orderQuantity,
-                    });
-                    console.log(
-                        '[MarketHistoryViewer] Available listings:',
-                        this.listings
-                            .filter((l) => l.isSell === isSell && l.price === price)
-                            .map((l) => ({
-                                id: l.id,
-                                status: l.status,
-                                filled: l.filledQuantity,
-                                total: l.orderQuantity,
-                            }))
-                    );
                 }
-            } catch (error) {
-                console.error('[MarketHistoryViewer] Error parsing expired listing row:', error);
+            } catch {
+                // Silent failure for individual rows
             }
         }
-
-        console.log('[MarketHistoryViewer] Finished expired listing detection');
     }
 
     /**

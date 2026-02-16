@@ -36,7 +36,6 @@ class WorkerPool {
             }
 
             this.initialized = true;
-            console.log(`[WorkerPool] Initialized with ${this.poolSize} workers`);
         } catch (error) {
             console.error('[WorkerPool] Failed to initialize:', error);
             throw error;
@@ -182,8 +181,6 @@ class WorkerPool {
         this.workers = [];
         this.taskQueue = [];
         this.initialized = false;
-
-        console.log('[WorkerPool] Terminated');
     }
 }
 

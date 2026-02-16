@@ -31,6 +31,7 @@ class InventoryBadgeManager {
         this.inventoryLookupCache = null; // Cached inventory lookup map
         this.inventoryLookupCacheTime = 0; // Timestamp when cache was built
         this.INVENTORY_CACHE_TTL = 500; // 500ms cache lifetime
+        this.nameToHridMap = null; // Reverse lookup: item name -> HRID (built once, lazy)
     }
 
     /**
@@ -480,14 +481,45 @@ class InventoryBadgeManager {
      * @param {Object} gameData - Game data
      * @returns {string|null} Item HRID
      */
-    findItemHrid(itemName, gameData) {
-        // Direct lookup in itemDetailMap
+    /**
+     * Build reverse lookup map from item name to HRID
+     * Built once on first use, cached thereafter
+     * @param {Object} gameData - Game data
+     */
+    buildNameToHridMap(gameData) {
+        if (this.nameToHridMap) {
+            return; // Already built
+        }
+
+        this.nameToHridMap = new Map();
+
+        if (!gameData || !gameData.itemDetailMap) {
+            console.warn('[InventoryBadgeManager] Cannot build name lookup: missing itemDetailMap');
+            return;
+        }
+
+        // Build reverse lookup: name -> HRID (one-time O(n) operation)
         for (const [hrid, item] of Object.entries(gameData.itemDetailMap)) {
-            if (item.name === itemName) {
-                return hrid;
+            if (item.name) {
+                this.nameToHridMap.set(item.name, hrid);
             }
         }
-        return null;
+    }
+
+    /**
+     * Find item HRID by name (optimized with reverse lookup map)
+     * @param {string} itemName - Item name
+     * @param {Object} gameData - Game data
+     * @returns {string|null} Item HRID or null if not found
+     */
+    findItemHrid(itemName, gameData) {
+        // Build map on first use (lazy initialization)
+        if (!this.nameToHridMap) {
+            this.buildNameToHridMap(gameData);
+        }
+
+        // O(1) lookup
+        return this.nameToHridMap.get(itemName) || null;
     }
 
     /**

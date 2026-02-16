@@ -246,15 +246,16 @@ class EnhancementTracker {
     /**
      * Record a failed enhancement attempt
      * @param {number} previousLevel - Level that failed
+     * @param {number} newLevel - Actual level after failure
      * @returns {Promise<void>}
      */
-    async recordFailure(previousLevel) {
+    async recordFailure(previousLevel, newLevel) {
         const session = this.getCurrentSession();
         if (!session) {
             return;
         }
 
-        recordFailure(session, previousLevel);
+        recordFailure(session, previousLevel, newLevel);
         await saveSessions(this.sessions);
     }
 

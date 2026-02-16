@@ -794,8 +794,19 @@ class EnhancementUI {
             const actualProt = session.protectionCount || 0;
 
             // Calculate factors (like Ultimate Tracker)
-            const attFactor = expAtt > 0 ? (totalAttempts / expAtt).toFixed(2) : null;
-            const protFactor = expProt > 0 ? (actualProt / expProt).toFixed(2) : null;
+            // Use more precision for small values to avoid showing 0.00x
+            const rawAttFactor = expAtt > 0 ? totalAttempts / expAtt : null;
+            const rawProtFactor = expProt > 0 ? actualProt / expProt : null;
+
+            // Format with appropriate precision (more decimals for small values)
+            const formatFactor = (val) => {
+                if (val === null) return null;
+                if (val < 0.01) return val.toFixed(3);
+                return val.toFixed(2);
+            };
+
+            const attFactor = formatFactor(rawAttFactor);
+            const protFactor = formatFactor(rawProtFactor);
 
             html += `
             <div style="display: flex; justify-content: space-between; font-size: 12px; margin-top: 4px;">
@@ -851,7 +862,15 @@ class EnhancementUI {
      * Generate per-level breakdown table
      */
     generateLevelTable(session) {
-        const levels = Object.keys(session.attemptsPerLevel).sort((a, b) => b - a);
+        // Get all levels with attempts
+        const levelSet = new Set(Object.keys(session.attemptsPerLevel).map(Number));
+
+        // Always include the current level (even if no attempts yet)
+        if (session.currentLevel > 0) {
+            levelSet.add(session.currentLevel);
+        }
+
+        const levels = Array.from(levelSet).sort((a, b) => b - a);
 
         if (levels.length === 0) {
             return '<div style="text-align: center; padding: 20px; color: ${STYLE.colors.textSecondary};">No attempts recorded yet</div>';
@@ -859,9 +878,9 @@ class EnhancementUI {
 
         let rows = '';
         for (const level of levels) {
-            const levelData = session.attemptsPerLevel[level];
+            const levelData = session.attemptsPerLevel[level] || { success: 0, fail: 0, successRate: 0 };
             const rate = formatPercentage(levelData.successRate, 1);
-            const isCurrent = parseInt(level) === session.currentLevel;
+            const isCurrent = level === session.currentLevel;
 
             const rowStyle = isCurrent
                 ? `

@@ -158,7 +158,7 @@ export function recordSuccess(session, previousLevel, newLevel) {
  * @param {Object} session - Session object
  * @param {number} previousLevel - Level that failed (level we tried to enhance from)
  */
-export function recordFailure(session, previousLevel) {
+export function recordFailure(session, previousLevel, newLevel) {
     // Initialize tracking if needed for the level that failed
     initializeLevelTracking(session, previousLevel);
 
@@ -169,6 +169,9 @@ export function recordFailure(session, previousLevel) {
 
     // Update success rate for this level
     updateSuccessRate(session, previousLevel);
+
+    // Update current level to actual level after failure
+    session.currentLevel = newLevel;
 
     // Update streaks
     if (session.currentStreak.type === 'fail') {
