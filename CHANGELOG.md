@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.38.1](https://github.com/Celasha/Toolasha/compare/v0.38.0...v0.38.1) (2026-02-16)
+
+### Bug Fixes
+
+- resolve enhancement tracker and networth calculation bugs ([ddbe16e](https://github.com/Celasha/Toolasha/commit/ddbe16eb419877fbd1b96d6c051d7eaa960fb6f7))
+
 ## [0.38.0](https://github.com/Celasha/Toolasha/compare/v0.37.1...v0.38.0) (2026-02-15)
 
 ### Features
