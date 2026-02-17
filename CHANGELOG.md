@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.39.0](https://github.com/Celasha/Toolasha/compare/v0.38.2...v0.39.0) (2026-02-17)
+
+
+### Features
+
+* add marketplace sort by profitability ([fe4d790](https://github.com/Celasha/Toolasha/commit/fe4d790e13fdc1d371e94869c20fca0a9d60b61f))
+
+
+### Bug Fixes
+
+* improve marketplace sort reset and initial state ([a535bb9](https://github.com/Celasha/Toolasha/commit/a535bb954c4e62fd9c3874f656eaa7927927f38c))
+
 ## [0.38.2](https://github.com/Celasha/Toolasha/compare/v0.38.1...v0.38.2) (2026-02-17)
 
 ### Performance Improvements
