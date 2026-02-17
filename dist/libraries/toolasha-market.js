@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 0.39.0
+ * Version: 0.39.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -5293,10 +5293,30 @@ self.onmessage = function (e) {
                     this.profitCache.clear();
                     this.originalOrder = [];
                     this.hasSorted = false;
+                    this.sortDirection = 'desc';
+                    if (this.sortButton) {
+                        this.sortButton.textContent = 'Sort by Profit';
+                    }
                 }
             );
 
             this.unregisterHandlers.push(unregisterNav);
+
+            // Watch for tab changes within marketplace (items container gets replaced)
+            const unregisterItems = domObserver.onClass('market-sort-items', 'MarketplacePanel_marketItems', () => {
+                // Items container appeared/changed - reset sort state
+                this.profitCache.clear();
+                this.originalOrder = [];
+                this.hasSorted = false;
+                this.sortDirection = 'desc';
+                if (this.sortButton) {
+                    this.sortButton.textContent = 'Sort by Profit';
+                }
+                // Remove profit indicators from any stale elements
+                document.querySelectorAll('.toolasha-profit-indicator').forEach((el) => el.remove());
+            });
+
+            this.unregisterHandlers.push(unregisterItems);
 
             // Check immediately in case marketplace is already open
             const existingFilterContainer = document.querySelector('div[class*="MarketplacePanel_itemFilterContainer"]');

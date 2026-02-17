@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 0.39.0
+ * Version: 0.39.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -10996,8 +10996,8 @@ self.onmessage = function (e) {
             // Get item name from title
             const itemName = titleElem.textContent.trim();
 
-            // Convert item name to HRID format
-            const itemHrid = `/items/${itemName.toLowerCase().replace(/\s+/g, '_')}`;
+            // Convert item name to HRID format (lowercase, spaces to underscores, remove apostrophes)
+            const itemHrid = `/items/${itemName.toLowerCase().replace(/'/g, '').replace(/\s+/g, '_')}`;
 
             // Check if this item has an associated action
             const actionInfo = findActionForItem(itemHrid);

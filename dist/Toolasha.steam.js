@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.39.0
+// @version      0.39.1
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -31141,10 +31141,30 @@ self.onmessage = function (e) {
                     this.profitCache.clear();
                     this.originalOrder = [];
                     this.hasSorted = false;
+                    this.sortDirection = 'desc';
+                    if (this.sortButton) {
+                        this.sortButton.textContent = 'Sort by Profit';
+                    }
                 }
             );
 
             this.unregisterHandlers.push(unregisterNav);
+
+            // Watch for tab changes within marketplace (items container gets replaced)
+            const unregisterItems = domObserver$1.onClass('market-sort-items', 'MarketplacePanel_marketItems', () => {
+                // Items container appeared/changed - reset sort state
+                this.profitCache.clear();
+                this.originalOrder = [];
+                this.hasSorted = false;
+                this.sortDirection = 'desc';
+                if (this.sortButton) {
+                    this.sortButton.textContent = 'Sort by Profit';
+                }
+                // Remove profit indicators from any stale elements
+                document.querySelectorAll('.toolasha-profit-indicator').forEach((el) => el.remove());
+            });
+
+            this.unregisterHandlers.push(unregisterItems);
 
             // Check immediately in case marketplace is already open
             const existingFilterContainer = document.querySelector('div[class*="MarketplacePanel_itemFilterContainer"]');
@@ -74730,8 +74750,8 @@ self.onmessage = function (e) {
             // Get item name from title
             const itemName = titleElem.textContent.trim();
 
-            // Convert item name to HRID format
-            const itemHrid = `/items/${itemName.toLowerCase().replace(/\s+/g, '_')}`;
+            // Convert item name to HRID format (lowercase, spaces to underscores, remove apostrophes)
+            const itemHrid = `/items/${itemName.toLowerCase().replace(/'/g, '').replace(/\s+/g, '_')}`;
 
             // Check if this item has an associated action
             const actionInfo = findActionForItem(itemHrid);
