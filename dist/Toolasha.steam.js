@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      0.38.1
+// @version      0.38.2
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -70965,13 +70965,13 @@ self.onmessage = function (e) {
             // Wait for character data to be loaded before setting up observers
             const initHandler = () => {
                 // Setup observers for all progress bars once character data is ready
-                const initialUpdateTimeout = setTimeout(() => {
-                    const progressBars = document.querySelectorAll('[class*="currentExperience"]');
-                    progressBars.forEach((progressBar) => {
-                        this.setupProgressBarObserver(progressBar);
-                    });
-                }, 500);
-                this.timerRegistry.registerTimeout(initialUpdateTimeout);
+                // No delay needed - character data is available, update immediately
+                const progressBars = document.querySelectorAll('[class*="currentExperience"]');
+                progressBars.forEach((progressBar) => {
+                    this.setupProgressBarObserver(progressBar);
+                    // Force immediate update since bars are already rendered
+                    this.updateSingleSkillBar(progressBar);
+                });
             };
 
             dataManager$1.on('character_initialized', initHandler);
