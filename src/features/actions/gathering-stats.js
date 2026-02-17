@@ -128,7 +128,7 @@ class GatheringStats {
         display.className = 'mwi-gathering-stats';
         display.style.cssText = `
             position: absolute;
-            bottom: -45px;
+            top: 100%;
             left: 0;
             right: 0;
             font-size: 0.85em;
@@ -143,7 +143,7 @@ class GatheringStats {
         if (actionPanel.style.position !== 'relative' && actionPanel.style.position !== 'absolute') {
             actionPanel.style.position = 'relative';
         }
-        actionPanel.style.marginBottom = '50px';
+        actionPanel.style.marginBottom = '55px';
 
         // Append directly to action panel with absolute positioning
         actionPanel.appendChild(display);
