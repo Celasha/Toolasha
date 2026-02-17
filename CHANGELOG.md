@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.38.2](https://github.com/Celasha/Toolasha/compare/v0.38.1...v0.38.2) (2026-02-17)
+
+
+### Performance Improvements
+
+* remove unnecessary delay in remaining XP initialization ([8179a8d](https://github.com/Celasha/Toolasha/commit/8179a8d471b61ab2d8877af755bb009f518b8f40))
+
 ## [0.38.1](https://github.com/Celasha/Toolasha/compare/v0.38.0...v0.38.1) (2026-02-16)
 
 ### Bug Fixes
