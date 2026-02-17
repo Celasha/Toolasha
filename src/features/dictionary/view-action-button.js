@@ -60,8 +60,8 @@ class ViewActionButton {
         // Get item name from title
         const itemName = titleElem.textContent.trim();
 
-        // Convert item name to HRID format
-        const itemHrid = `/items/${itemName.toLowerCase().replace(/\s+/g, '_')}`;
+        // Convert item name to HRID format (lowercase, spaces to underscores, remove apostrophes)
+        const itemHrid = `/items/${itemName.toLowerCase().replace(/'/g, '').replace(/\s+/g, '_')}`;
 
         // Check if this item has an associated action
         const actionInfo = findActionForItem(itemHrid);
