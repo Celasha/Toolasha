@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.39.1](https://github.com/Celasha/Toolasha/compare/v0.39.0...v0.39.1) (2026-02-17)
+
+### Bug Fixes
+
+- handle apostrophes in item dictionary View Action button ([99571f7](https://github.com/Celasha/Toolasha/commit/99571f7840901441519c2533e1fb9f2a5fcbc349))
+- reset marketplace sort button state on tab change ([000d68e](https://github.com/Celasha/Toolasha/commit/000d68eb45f8e1e625fc754a60072868f2037aa7))
+
 ## [0.39.0](https://github.com/Celasha/Toolasha/compare/v0.38.2...v0.39.0) (2026-02-17)
 
 ### Features
