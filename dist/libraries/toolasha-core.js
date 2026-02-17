@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 0.38.2
+ * Version: 0.39.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1153,6 +1153,13 @@
                     label: 'Marketplace: Filter by level, class, slot',
                     type: 'checkbox',
                     default: true,
+                },
+                marketSort: {
+                    id: 'marketSort',
+                    label: 'Marketplace: Sort items by profitability',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Adds a button to sort marketplace items by profit/hour. Items without profit data (drop-only) appear at the end.',
                 },
                 fillMarketOrderPrice: {
                     id: 'fillMarketOrderPrice',
