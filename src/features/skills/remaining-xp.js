@@ -54,13 +54,13 @@ class RemainingXP {
         // Wait for character data to be loaded before setting up observers
         const initHandler = () => {
             // Setup observers for all progress bars once character data is ready
-            const initialUpdateTimeout = setTimeout(() => {
-                const progressBars = document.querySelectorAll('[class*="currentExperience"]');
-                progressBars.forEach((progressBar) => {
-                    this.setupProgressBarObserver(progressBar);
-                });
-            }, 500);
-            this.timerRegistry.registerTimeout(initialUpdateTimeout);
+            // No delay needed - character data is available, update immediately
+            const progressBars = document.querySelectorAll('[class*="currentExperience"]');
+            progressBars.forEach((progressBar) => {
+                this.setupProgressBarObserver(progressBar);
+                // Force immediate update since bars are already rendered
+                this.updateSingleSkillBar(progressBar);
+            });
         };
 
         dataManager.on('character_initialized', initHandler);
