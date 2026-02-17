@@ -769,6 +769,13 @@ export const settingsGroups = {
                 type: 'checkbox',
                 default: true,
             },
+            marketSort: {
+                id: 'marketSort',
+                label: 'Marketplace: Sort items by profitability',
+                type: 'checkbox',
+                default: true,
+                help: 'Adds a button to sort marketplace items by profit/hour. Items without profit data (drop-only) appear at the end.',
+            },
             fillMarketOrderPrice: {
                 id: 'fillMarketOrderPrice',
                 label: 'Auto-fill marketplace orders with optimal price',

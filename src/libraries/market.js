@@ -10,6 +10,7 @@ import tooltipPrices from '../features/market/tooltip-prices.js';
 import expectedValueCalculator from '../features/market/expected-value-calculator.js';
 import tooltipConsumables from '../features/market/tooltip-consumables.js';
 import marketFilter from '../features/market/market-filter.js';
+import marketSort from '../features/market/market-sort.js';
 import autoFillPrice from '../features/market/auto-fill-price.js';
 import autoClickMax from '../features/market/auto-click-max.js';
 import itemCountDisplay from '../features/market/item-count-display.js';
@@ -47,6 +48,7 @@ toolashaRoot.Market = {
     expectedValueCalculator,
     tooltipConsumables,
     marketFilter,
+    marketSort,
     autoFillPrice,
     autoClickMax,
     itemCountDisplay,

@@ -89,6 +89,7 @@ function registerFeatures() {
             async: true,
         },
         { key: 'marketFilter', name: 'Market Filter', category: 'Market', module: Market.marketFilter, async: false },
+        { key: 'marketSort', name: 'Market Sort', category: 'Market', module: Market.marketSort, async: false },
         {
             key: 'autoFillPrice',
             name: 'Auto Fill Price',
