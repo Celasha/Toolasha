@@ -19,9 +19,13 @@ class MarketSort {
         // Profit cache for current session (cleared on navigation)
         this.profitCache = new Map();
 
+        // Original order storage (item HRIDs in original order)
+        this.originalOrder = [];
+
         // Sort state
         this.sortDirection = 'desc'; // 'desc' = highest profit first
         this.isSorting = false;
+        this.hasSorted = false;
         this.sortButton = null;
     }
 
@@ -68,8 +72,10 @@ class MarketSort {
                 // Panel appeared, don't clear cache
             },
             () => {
-                // Panel disappeared, clear cache
+                // Panel disappeared, clear cache and original order
                 this.profitCache.clear();
+                this.originalOrder = [];
+                this.hasSorted = false;
             }
         );
 
@@ -100,7 +106,7 @@ class MarketSort {
         // Create sort button
         const sortButton = document.createElement('button');
         sortButton.id = 'toolasha-sort-profit-btn';
-        sortButton.textContent = 'Sort by Profit ▼';
+        sortButton.textContent = 'Sort by Profit';
         sortButton.style.cssText = `
             padding: 6px 12px;
             border-radius: 4px;
@@ -167,8 +173,11 @@ class MarketSort {
             return;
         }
 
-        // Toggle direction if already sorted
-        this.sortDirection = this.sortDirection === 'desc' ? 'asc' : 'desc';
+        // Toggle direction only if we've already sorted once
+        if (this.hasSorted) {
+            this.sortDirection = this.sortDirection === 'desc' ? 'asc' : 'desc';
+        }
+
         this.sortButton.textContent = this.sortDirection === 'desc' ? 'Sorting... ▼' : 'Sorting... ▲';
         this.sortButton.style.background = 'rgba(91, 141, 239, 0.6)';
         this.isSorting = true;
@@ -199,6 +208,17 @@ class MarketSort {
         // Get all visible item divs
         const itemDivs = Array.from(marketItemsContainer.querySelectorAll('div[class*="Item_itemContainer"]'));
         const visibleItems = itemDivs.filter((div) => div.style.display !== 'none');
+
+        // Store original order on first sort
+        if (!this.hasSorted) {
+            this.originalOrder = visibleItems.map((div) => {
+                const useElement = div.querySelector('use');
+                const href = useElement?.getAttribute('href') || '';
+                const hrefName = href.split('#')[1] || '';
+                return `/items/${hrefName}`;
+            });
+            this.hasSorted = true;
+        }
 
         // Calculate profits for all items (using cache when available)
         const itemsWithProfit = [];
@@ -376,17 +396,39 @@ class MarketSort {
         // Remove all profit indicators
         document.querySelectorAll('.toolasha-profit-indicator').forEach((el) => el.remove());
 
-        // Clear cache
+        // Restore original order if we have it
+        if (this.originalOrder.length > 0) {
+            const itemDivs = Array.from(marketItemsContainer.querySelectorAll('div[class*="Item_itemContainer"]'));
+
+            // Create a map of itemHrid -> element
+            const elementMap = new Map();
+            for (const div of itemDivs) {
+                const useElement = div.querySelector('use');
+                const href = useElement?.getAttribute('href') || '';
+                const hrefName = href.split('#')[1] || '';
+                const itemHrid = `/items/${hrefName}`;
+                elementMap.set(itemHrid, div);
+            }
+
+            // Reorder based on original order
+            for (const itemHrid of this.originalOrder) {
+                const element = elementMap.get(itemHrid);
+                if (element) {
+                    marketItemsContainer.appendChild(element);
+                }
+            }
+        }
+
+        // Clear cache and reset state
         this.profitCache.clear();
+        this.originalOrder = [];
+        this.hasSorted = false;
 
         // Reset sort direction
         this.sortDirection = 'desc';
         if (this.sortButton) {
-            this.sortButton.textContent = 'Sort by Profit ▼';
+            this.sortButton.textContent = 'Sort by Profit';
         }
-
-        // Note: We can't easily restore original order without storing it
-        // The filter/search in-game will reset the order anyway
     }
 
     /**
@@ -407,6 +449,8 @@ class MarketSort {
 
         // Clear cache
         this.profitCache.clear();
+        this.originalOrder = [];
+        this.hasSorted = false;
 
         this.isActive = false;
         this.isInitialized = false;
