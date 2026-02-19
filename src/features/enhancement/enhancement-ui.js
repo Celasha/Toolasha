@@ -70,7 +70,8 @@ class EnhancementUI {
         this.updateDebounce = null;
         this.isDragging = false;
         this.unregisterScreenObserver = null;
-        this.pollInterval = null;
+        this.panelRemovalObserver = null;
+        this.settingChangeHandlers = [];
         this.isOnEnhancingScreen = false;
         this.isCollapsed = false; // Track collapsed state
         this.updateInterval = null;
@@ -127,47 +128,119 @@ class EnhancementUI {
         }
 
         // Register with centralized DOM observer for enhancing panel detection
-        // Note: Enhancing screen uses EnhancingPanel_enhancingPanel, not SkillActionDetail_enhancingComponent
         this.unregisterScreenObserver = domObserver.onClass(
             'EnhancementUI-ScreenDetection',
             'EnhancingPanel_enhancingPanel',
-            (_node) => {
-                this.checkEnhancingScreen();
+            (panel) => {
+                this.isOnEnhancingScreen = true;
+                this.updateVisibility();
+                // Setup removal observer when panel appears
+                this.setupPanelRemovalObserver(panel);
             },
             { debounce: false }
         );
 
-        // Poll for both setting changes and panel removal
-        this.pollInterval = setInterval(() => {
-            const trackerEnabled = config.getSetting('enhancementTracker');
-            const currentSetting = config.getSetting('enhancementTracker_showOnlyOnEnhancingScreen');
+        // Setup setting change listeners (event-driven, no polling)
+        this.setupSettingChangeListeners();
 
-            // If main tracker is disabled, always hide
-            if (!trackerEnabled) {
-                if (this.floatingUI && this.floatingUI.style.display !== 'none') {
-                    this.hide();
-                }
+        // Check if panel already exists and setup removal observer
+        const existingPanel = document.querySelector('[class*="EnhancingPanel_enhancingPanel"]');
+        if (existingPanel) {
+            this.isOnEnhancingScreen = true;
+            this.updateVisibility();
+            this.setupPanelRemovalObserver(existingPanel);
+        }
+    }
+
+    /**
+     * Setup listeners for setting changes (replaces polling)
+     */
+    setupSettingChangeListeners() {
+        // Listen for main tracker toggle
+        const onTrackerChange = (enabled) => {
+            if (!enabled) {
+                this.hide();
+            } else {
+                this.updateVisibility();
+            }
+        };
+        config.onSettingChange('enhancementTracker', onTrackerChange);
+        this.settingChangeHandlers.push({ key: 'enhancementTracker', handler: onTrackerChange });
+
+        // Listen for "show only on enhancing screen" toggle
+        const onScreenSettingChange = (enabled) => {
+            if (enabled !== true) {
+                // Setting disabled - always show (if main tracker enabled)
+                this.isOnEnhancingScreen = true;
+            } else {
+                // Setting enabled - check actual screen
+                this.checkEnhancingScreen();
+            }
+            this.updateVisibility();
+        };
+        config.onSettingChange('enhancementTracker_showOnlyOnEnhancingScreen', onScreenSettingChange);
+        this.settingChangeHandlers.push({
+            key: 'enhancementTracker_showOnlyOnEnhancingScreen',
+            handler: onScreenSettingChange,
+        });
+    }
+
+    /**
+     * Setup observer to detect when enhancing panel is removed from DOM
+     * @param {HTMLElement} panel - The enhancing panel element
+     */
+    setupPanelRemovalObserver(panel) {
+        // Disconnect existing observer if any
+        if (this.panelRemovalObserver) {
+            this.panelRemovalObserver.disconnect();
+        }
+
+        // Find MainPanel_mainPanel (grandparent) - the container itself gets replaced on navigation
+        const subPanelContainer = panel.parentElement;
+        const mainPanel = subPanelContainer?.parentElement;
+
+        if (!mainPanel || !mainPanel.className?.includes?.('MainPanel_mainPanel')) {
+            // Fallback: find by class
+            const fallbackMainPanel = document.querySelector('[class*="MainPanel_mainPanel"]');
+            if (!fallbackMainPanel) {
                 return;
             }
+            this.observeMainPanelForNavigation(fallbackMainPanel);
+        } else {
+            this.observeMainPanelForNavigation(mainPanel);
+        }
+    }
 
-            if (currentSetting !== true) {
-                // Setting disabled - always show
-                if (!this.isOnEnhancingScreen) {
-                    this.isOnEnhancingScreen = true;
-                    this.updateVisibility();
-                }
-            } else {
-                // Setting enabled - check if panel exists
-                const panel = document.querySelector('[class*="EnhancingPanel_enhancingPanel"]');
-                const shouldBeOnScreen = !!panel;
-
-                if (this.isOnEnhancingScreen !== shouldBeOnScreen) {
-                    this.isOnEnhancingScreen = shouldBeOnScreen;
-                    this.updateVisibility();
+    /**
+     * Observe MainPanel_mainPanel for navigation (subPanelContainer removal)
+     * @param {HTMLElement} mainPanel - The main panel element to observe
+     */
+    observeMainPanelForNavigation(mainPanel) {
+        this.panelRemovalObserver = new MutationObserver((mutations) => {
+            for (const mutation of mutations) {
+                if (mutation.type === 'childList' && mutation.removedNodes.length > 0) {
+                    for (const node of mutation.removedNodes) {
+                        // Check if subPanelContainer was removed (contains the enhancing panel)
+                        if (
+                            node.nodeType === Node.ELEMENT_NODE &&
+                            node.className?.includes?.('MainPanel_subPanelContainer')
+                        ) {
+                            // Check if EnhancingPanel was inside the removed container
+                            const hadEnhancingPanel = node.querySelector('[class*="EnhancingPanel_enhancingPanel"]');
+                            if (hadEnhancingPanel) {
+                                this.isOnEnhancingScreen = false;
+                                this.updateVisibility();
+                                return;
+                            }
+                        }
+                    }
                 }
             }
-        }, 500);
-        this.timerRegistry.registerInterval(this.pollInterval);
+        });
+
+        this.panelRemovalObserver.observe(mainPanel, {
+            childList: true,
+        });
     }
 
     /**
@@ -1066,11 +1139,17 @@ class EnhancementUI {
             this.updateDebounce = null;
         }
 
-        // Clear poll interval
-        if (this.pollInterval) {
-            clearInterval(this.pollInterval);
-            this.pollInterval = null;
+        // Disconnect panel removal observer
+        if (this.panelRemovalObserver) {
+            this.panelRemovalObserver.disconnect();
+            this.panelRemovalObserver = null;
         }
+
+        // Unregister setting change listeners
+        for (const { key } of this.settingChangeHandlers) {
+            config.offSettingChange(key);
+        }
+        this.settingChangeHandlers = [];
 
         if (this.updateInterval) {
             clearInterval(this.updateInterval);
