@@ -332,6 +332,7 @@ class ProfitCalculator {
             gourmetBonus, // Gourmet bonus item chance
             processingBonus, // Processing conversion chance
             drinkConcentration, // Drink Concentration stat
+            teaSkillLevelBonus, // Tea skill level bonus (e.g., +8 from Ultra Cheesesmithing Tea)
             efficiencyMultiplier,
             equipmentSpeedBonus,
             skillLevel,

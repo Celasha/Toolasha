@@ -275,6 +275,7 @@ export async function calculateGatheringProfit(actionHrid) {
         const baseRevenuePerAction = baseItemsPerAction * resolvedRawPrice;
         const baseRevenueLine = baseItemsPerHour * resolvedRawPrice;
         baseRevenuePerHour += baseRevenueLine;
+
         baseOutputs.push({
             name: rawItemName,
             itemsPerHour: baseItemsPerHour,

@@ -237,6 +237,13 @@ function registerFeatures() {
             module: Actions.alchemyProfitDisplay,
             async: false,
         },
+        {
+            key: 'teaRecommendation',
+            name: 'Tea Recommendation',
+            category: 'Actions',
+            module: Actions.teaRecommendation,
+            async: false,
+        },
     ];
 
     // Combat Features

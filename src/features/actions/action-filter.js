@@ -312,6 +312,35 @@ class ActionFilter {
     }
 
     /**
+     * Get the current skill name from the tracked title element
+     * @returns {string|null} Skill name (e.g., "Foraging", "Woodcutting", "Cooking") or null
+     */
+    getCurrentSkillName() {
+        if (!this.currentTitleElement) {
+            return null;
+        }
+
+        // The title element contains multiple children:
+        // - Our injected filter input
+        // - A div with the skill name text
+        // Find the div that contains the skill name (not our input)
+        for (const child of this.currentTitleElement.children) {
+            if (child.id === 'mwi-action-filter') continue;
+            if (child.tagName === 'DIV' && child.textContent) {
+                return child.textContent.trim();
+            }
+        }
+
+        // Fallback: try to get text content minus input value
+        const text = this.currentTitleElement.textContent.trim();
+        if (this.filterInput && this.filterInput.value) {
+            return text.replace(this.filterInput.value, '').trim();
+        }
+
+        return text || null;
+    }
+
+    /**
      * Cleanup function for disabling filter
      */
     cleanup() {

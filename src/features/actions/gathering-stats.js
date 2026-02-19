@@ -20,10 +20,12 @@ class GatheringStats {
         this.unregisterObserver = null;
         this.itemsUpdatedHandler = null;
         this.actionCompletedHandler = null;
+        this.consumablesUpdatedHandler = null; // Handler for tea/drink changes
         this.characterSwitchingHandler = null; // Handler for character switch cleanup
         this.isInitialized = false;
         this.itemsUpdatedDebounceTimer = null; // Debounce timer for items_updated events
         this.actionCompletedDebounceTimer = null; // Debounce timer for action_completed events
+        this.consumablesUpdatedDebounceTimer = null; // Debounce timer for consumables_updated events
         this.DEBOUNCE_DELAY = 300; // 300ms debounce for event handlers
     }
 
@@ -60,6 +62,13 @@ class GatheringStats {
             }, this.DEBOUNCE_DELAY);
         };
 
+        this.consumablesUpdatedHandler = () => {
+            clearTimeout(this.consumablesUpdatedDebounceTimer);
+            this.consumablesUpdatedDebounceTimer = setTimeout(() => {
+                this.updateAllStats();
+            }, this.DEBOUNCE_DELAY);
+        };
+
         this.characterSwitchingHandler = () => {
             this.clearAllReferences();
         };
@@ -67,6 +76,7 @@ class GatheringStats {
         // Event-driven updates (no polling needed)
         dataManager.on('items_updated', this.itemsUpdatedHandler);
         dataManager.on('action_completed', this.actionCompletedHandler);
+        dataManager.on('consumables_updated', this.consumablesUpdatedHandler);
         dataManager.on('character_switching', this.characterSwitchingHandler);
     }
 
@@ -322,8 +332,10 @@ class GatheringStats {
         // Clear debounce timers
         clearTimeout(this.itemsUpdatedDebounceTimer);
         clearTimeout(this.actionCompletedDebounceTimer);
+        clearTimeout(this.consumablesUpdatedDebounceTimer);
         this.itemsUpdatedDebounceTimer = null;
         this.actionCompletedDebounceTimer = null;
+        this.consumablesUpdatedDebounceTimer = null;
 
         if (this.itemsUpdatedHandler) {
             dataManager.off('items_updated', this.itemsUpdatedHandler);
@@ -332,6 +344,10 @@ class GatheringStats {
         if (this.actionCompletedHandler) {
             dataManager.off('action_completed', this.actionCompletedHandler);
             this.actionCompletedHandler = null;
+        }
+        if (this.consumablesUpdatedHandler) {
+            dataManager.off('consumables_updated', this.consumablesUpdatedHandler);
+            this.consumablesUpdatedHandler = null;
         }
         if (this.characterSwitchingHandler) {
             dataManager.off('character_switching', this.characterSwitchingHandler);
