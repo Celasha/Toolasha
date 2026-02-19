@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.1.0](https://github.com/Celasha/Toolasha/compare/v1.0.0...v1.1.0) (2026-02-19)
+
+
+### Features
+
+* add mention tracker for chat [@mentions](https://github.com/mentions) ([1805fc0](https://github.com/Celasha/Toolasha/commit/1805fc0c4bd87bf357b12e3c8bc20963fad9a6cb))
+* show drink concentration impact in tea recommendations ([a5a2777](https://github.com/Celasha/Toolasha/commit/a5a27773ac3b3060b0e6919e01bc377745fde3af))
+
+
+### Bug Fixes
+
+* resolve settings reset on character switch ([71319e1](https://github.com/Celasha/Toolasha/commit/71319e1fc25ac2792d05a907f7128842002f7251))
+
+
+### Performance Improvements
+
+* remove DOM polling from listing age and dungeon tracker ([aa33e4e](https://github.com/Celasha/Toolasha/commit/aa33e4e59f3bad8203e166c28a0a7c2b6a8787c6))
+* replace alchemy profit polling with event-driven updates ([31396c0](https://github.com/Celasha/Toolasha/commit/31396c0513b8e696f5ccda7fac1bd5dc42b1429b))
+* replace enhancement UI polling with event-driven updates ([44c2e77](https://github.com/Celasha/Toolasha/commit/44c2e7742ae548a820700ac247047b311de508ad))
+
 ## [1.0.0](https://github.com/Celasha/Toolasha/compare/v0.39.1...v1.0.0) (2026-02-19)
 
 ### Features
