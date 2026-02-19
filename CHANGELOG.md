@@ -2,15 +2,13 @@
 
 ## [1.0.0](https://github.com/Celasha/Toolasha/compare/v0.39.1...v1.0.0) (2026-02-19)
 
-
 ### Features
 
-* add tea recommendation optimizer for gathering and production skills ([c9fe4d9](https://github.com/Celasha/Toolasha/commit/c9fe4d98d78ade8e836d4376838868bf7c562a26))
-
+- add tea recommendation optimizer for gathering and production skills ([c9fe4d9](https://github.com/Celasha/Toolasha/commit/c9fe4d98d78ade8e836d4376838868bf7c562a26))
 
 ### Bug Fixes
 
-* prevent gathering stats overlay from overlapping action images ([a8ca719](https://github.com/Celasha/Toolasha/commit/a8ca7197c57378d69f84508f2d49fa7b803ca297))
+- prevent gathering stats overlay from overlapping action images ([a8ca719](https://github.com/Celasha/Toolasha/commit/a8ca7197c57378d69f84508f2d49fa7b803ca297))
 
 ## [0.39.1](https://github.com/Celasha/Toolasha/compare/v0.39.0...v0.39.1) (2026-02-17)
 
