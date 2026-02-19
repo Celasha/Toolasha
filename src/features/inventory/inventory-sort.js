@@ -484,6 +484,8 @@ class InventorySort {
         this.unregisterHandlers.forEach((unregister) => unregister());
         this.unregisterHandlers = [];
 
+        // Clear caches and state
+        this.warnedItems.clear();
         this.currentInventoryElem = null;
         this.isInitialized = false;
     }

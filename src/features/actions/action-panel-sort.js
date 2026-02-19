@@ -8,6 +8,7 @@
 
 import config from '../../core/config.js';
 import storage from '../../core/storage.js';
+import dataManager from '../../core/data-manager.js';
 import { dismissTooltips } from '../../utils/dom.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 
@@ -18,6 +19,7 @@ class ActionPanelSort {
         this.sortTimeout = null; // Debounce timer
         this.initialized = false;
         this.timerRegistry = createTimerRegistry();
+        this.handlers = {};
     }
 
     /**
@@ -29,6 +31,33 @@ class ActionPanelSort {
         const pinnedData = await storage.getJSON('pinnedActions', 'settings', []);
         this.pinnedActions = new Set(pinnedData);
         this.initialized = true;
+
+        // Listen for character switch to clear character-specific data
+        if (!this.handlers.characterSwitch) {
+            this.handlers.characterSwitch = () => this.onCharacterSwitch();
+            dataManager.on('character_switching', this.handlers.characterSwitch);
+        }
+    }
+
+    /**
+     * Handle character switch - clear all cached data
+     */
+    async onCharacterSwitch() {
+        this.clearAllPanels();
+        this.pinnedActions.clear();
+        this.initialized = false;
+    }
+
+    /**
+     * Disable - cleanup event listeners
+     */
+    disable() {
+        this.clearAllPanels();
+        if (this.handlers.characterSwitch) {
+            dataManager.off('character_switching', this.handlers.characterSwitch);
+            this.handlers.characterSwitch = null;
+        }
+        this.initialized = false;
     }
 
     /**

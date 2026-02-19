@@ -124,68 +124,54 @@ function checkFeatureHealth() {
  */
 function setupCharacterSwitchHandler() {
     // Guard against overlapping switches
-    let isSwitching = false;
+    let cleanupComplete = false;
     let reinitScheduled = false;
-    let reinitTimeoutId = null;
 
     // Handle character_switching event (cleanup phase)
     dataManager.on('character_switching', async (_data) => {
-        // Prevent overlapping switches
-        if (isSwitching) {
-            console.warn('[FeatureRegistry] Character switch already in progress - ignoring rapid switch');
-            return;
-        }
+        cleanupComplete = false;
 
-        isSwitching = true;
-
-        // Defer cleanup to next tick to prevent main thread blocking
-        setTimeout(async () => {
-            try {
-                // Clear config cache to prevent stale settings
-                if (config && typeof config.clearSettingsCache === 'function') {
-                    config.clearSettingsCache();
-                }
-
-                // Disable all active features (cleanup DOM elements, event listeners, etc.)
-                // Process all features without awaiting to avoid blocking
-                const cleanupPromises = [];
-                for (const feature of featureRegistry) {
-                    try {
-                        const featureInstance = getFeatureInstance(feature.key);
-                        if (featureInstance && typeof featureInstance.disable === 'function') {
-                            const result = featureInstance.disable();
-                            // Collect promises but don't await them synchronously
-                            if (result && typeof result.then === 'function') {
-                                cleanupPromises.push(
-                                    result.catch((error) => {
-                                        console.error(`[FeatureRegistry] Failed to disable ${feature.name}:`, error);
-                                    })
-                                );
-                            }
-                        }
-                    } catch (error) {
-                        console.error(`[FeatureRegistry] Failed to disable ${feature.name}:`, error);
-                    }
-                }
-
-                // Wait for all cleanup in parallel (non-blocking)
-                if (cleanupPromises.length > 0) {
-                    await Promise.all(cleanupPromises);
-                }
-            } catch (error) {
-                console.error('[FeatureRegistry] Error during character switch cleanup:', error);
-            } finally {
-                // Always reset flag to allow next character switch
-                isSwitching = false;
+        try {
+            // Clear config cache IMMEDIATELY to prevent stale settings
+            if (config && typeof config.clearSettingsCache === 'function') {
+                config.clearSettingsCache();
             }
-        }, 0);
+
+            // Disable all active features (cleanup DOM elements, event listeners, etc.)
+            const cleanupPromises = [];
+            for (const feature of featureRegistry) {
+                try {
+                    const featureInstance = getFeatureInstance(feature.key);
+                    if (featureInstance && typeof featureInstance.disable === 'function') {
+                        const result = featureInstance.disable();
+                        if (result && typeof result.then === 'function') {
+                            cleanupPromises.push(
+                                result.catch((error) => {
+                                    console.error(`[FeatureRegistry] Failed to disable ${feature.name}:`, error);
+                                })
+                            );
+                        }
+                    }
+                } catch (error) {
+                    console.error(`[FeatureRegistry] Failed to disable ${feature.name}:`, error);
+                }
+            }
+
+            // Wait for all cleanup in parallel
+            if (cleanupPromises.length > 0) {
+                await Promise.all(cleanupPromises);
+            }
+        } catch (error) {
+            console.error('[FeatureRegistry] Error during character switch cleanup:', error);
+        } finally {
+            cleanupComplete = true;
+        }
     });
 
     // Handle character_switched event (re-initialization phase)
     dataManager.on('character_switched', async (_data) => {
         // Prevent multiple overlapping reinits
         if (reinitScheduled) {
-            console.warn('[FeatureRegistry] Reinit already scheduled - ignoring duplicate');
             return;
         }
 
@@ -197,40 +183,44 @@ function setupCharacterSwitchHandler() {
             dungeonTrackerFeature.cleanup();
         }
 
-        // Settings UI manages its own character switch lifecycle via character_initialized event
-        // No need to call settingsUI.initialize() here
-
-        // Re-initialize features
-        const reinit = async () => {
-            try {
-                // Reload config settings first (settings were cleared during cleanup)
-                await config.loadSettings();
-                config.applyColorSettings();
-
-                // Now re-initialize all features with fresh settings
-                await initializeFeatures();
-            } catch (error) {
-                console.error('[FeatureRegistry] Error during feature reinitialization:', error);
-            } finally {
-                // Reset flags to allow next switch
-                isSwitching = false;
-                reinitScheduled = false;
-                if (reinitTimeoutId) {
-                    clearTimeout(reinitTimeoutId);
-                    reinitTimeoutId = null;
+        // Wait for cleanup to complete if it hasn't yet
+        const waitForCleanup = () => {
+            return new Promise((resolve) => {
+                if (cleanupComplete) {
+                    resolve();
+                } else {
+                    const checkInterval = setInterval(() => {
+                        if (cleanupComplete) {
+                            clearInterval(checkInterval);
+                            resolve();
+                        }
+                    }, 10);
+                    // Safety timeout - proceed after 500ms even if cleanup not marked complete
+                    setTimeout(() => {
+                        clearInterval(checkInterval);
+                        resolve();
+                    }, 500);
                 }
-            }
+            });
         };
 
-        // Use requestIdleCallback for non-blocking re-init
-        if ('requestIdleCallback' in window) {
-            requestIdleCallback(() => reinit(), { timeout: 2000 });
-        } else {
-            // Fallback for browsers without requestIdleCallback
-            if (reinitTimeoutId) {
-                clearTimeout(reinitTimeoutId);
-            }
-            reinitTimeoutId = setTimeout(() => reinit(), 300); // Longer delay for game to stabilize
+        try {
+            await waitForCleanup();
+
+            // CRITICAL: Load settings BEFORE any feature initialization
+            // This ensures all features see the new character's settings
+            await config.loadSettings();
+            config.applyColorSettings();
+
+            // Small delay to ensure game state is stable
+            await new Promise((resolve) => setTimeout(resolve, 50));
+
+            // Now re-initialize all features with fresh settings
+            await initializeFeatures();
+        } catch (error) {
+            console.error('[FeatureRegistry] Error during feature reinitialization:', error);
+        } finally {
+            reinitScheduled = false;
         }
     });
 }

@@ -333,6 +333,9 @@ class EnhancementTracker {
      * Disable and cleanup
      */
     disable() {
+        // Clear in-memory session data (will be reloaded from storage on next init)
+        this.sessions = {};
+        this.currentSessionId = null;
         this.isInitialized = false;
     }
 }

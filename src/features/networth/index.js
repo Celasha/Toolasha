@@ -9,6 +9,7 @@ import { calculateNetworth } from './networth-calculator.js';
 import { networthHeaderDisplay, networthInventoryDisplay } from './networth-display.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { createPauseRegistry } from '../../utils/pause-registry.js';
+import networthCache from './networth-cache.js';
 
 class NetworthFeature {
     constructor() {
@@ -105,6 +106,9 @@ class NetworthFeature {
 
         networthHeaderDisplay.disable();
         networthInventoryDisplay.disable();
+
+        // Clear the enhancement cost cache (character-specific)
+        networthCache.clear();
 
         this.currentData = null;
         this.isActive = false;
