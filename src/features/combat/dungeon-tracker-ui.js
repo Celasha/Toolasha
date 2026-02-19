@@ -14,7 +14,6 @@ import dataManager from '../../core/data-manager.js';
 import storage from '../../core/storage.js';
 import config from '../../core/config.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
-import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
 
 class DungeonTrackerUI {
     constructor() {
@@ -32,7 +31,6 @@ class DungeonTrackerUI {
         // Callback references for cleanup
         this.dungeonUpdateHandler = null;
         this.characterSwitchingHandler = null;
-        this.characterSelectObserver = null;
     }
 
     /**
@@ -98,27 +96,6 @@ class DungeonTrackerUI {
         };
 
         dataManager.on('character_switching', this.characterSwitchingHandler);
-
-        // Watch for character selection screen appearing (when user clicks "Switch Character")
-        if (document.body) {
-            this.characterSelectObserver = createMutationWatcher(
-                document.body,
-                () => {
-                    // Check if character selection screen is visible
-                    const headings = document.querySelectorAll('h1, h2, h3');
-                    for (const heading of headings) {
-                        if (heading.textContent?.includes('Select Character')) {
-                            this.hide();
-                            break;
-                        }
-                    }
-                },
-                {
-                    childList: true,
-                    subtree: true,
-                }
-            );
-        }
     }
 
     /**
@@ -708,12 +685,6 @@ class DungeonTrackerUI {
         if (this.characterSwitchingHandler) {
             dataManager.off('character_switching', this.characterSwitchingHandler);
             this.characterSwitchingHandler = null;
-        }
-
-        // Disconnect character selection screen observer
-        if (this.characterSelectObserver) {
-            this.characterSelectObserver();
-            this.characterSelectObserver = null;
         }
 
         // Clear update interval

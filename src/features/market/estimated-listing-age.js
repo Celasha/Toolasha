@@ -432,21 +432,6 @@ class EstimatedListingAge {
                 this.checkForExpiredListings(container);
             }
         );
-
-        // Also use polling as fallback - watch for visible table
-        const checkInterval = setInterval(() => {
-            const myListingsTable = document.querySelector('.MarketplacePanel_myListingsTableContainer__2s6pm');
-            if (myListingsTable) {
-                // Check if the table is actually visible (not display:none)
-                const isVisible = myListingsTable.offsetParent !== null;
-                if (isVisible) {
-                    this.checkForExpiredListings(myListingsTable);
-                }
-            }
-        }, 2000); // Check every 2 seconds
-
-        // Store interval for cleanup
-        this.myListingsCheckInterval = checkInterval;
     }
 
     /**
@@ -1019,11 +1004,6 @@ class EstimatedListingAge {
         if (this.unregisterMyListingsObserver) {
             this.unregisterMyListingsObserver();
             this.unregisterMyListingsObserver = null;
-        }
-
-        if (this.myListingsCheckInterval) {
-            clearInterval(this.myListingsCheckInterval);
-            this.myListingsCheckInterval = null;
         }
 
         this.clearDisplays();
