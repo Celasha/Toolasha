@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 1.0.0
+ * Version: 1.1.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -6591,21 +6591,6 @@ self.onmessage = function (e) {
                     this.checkForExpiredListings(container);
                 }
             );
-
-            // Also use polling as fallback - watch for visible table
-            const checkInterval = setInterval(() => {
-                const myListingsTable = document.querySelector('.MarketplacePanel_myListingsTableContainer__2s6pm');
-                if (myListingsTable) {
-                    // Check if the table is actually visible (not display:none)
-                    const isVisible = myListingsTable.offsetParent !== null;
-                    if (isVisible) {
-                        this.checkForExpiredListings(myListingsTable);
-                    }
-                }
-            }, 2000); // Check every 2 seconds
-
-            // Store interval for cleanup
-            this.myListingsCheckInterval = checkInterval;
         }
 
         /**
@@ -7178,11 +7163,6 @@ self.onmessage = function (e) {
             if (this.unregisterMyListingsObserver) {
                 this.unregisterMyListingsObserver();
                 this.unregisterMyListingsObserver = null;
-            }
-
-            if (this.myListingsCheckInterval) {
-                clearInterval(this.myListingsCheckInterval);
-                this.myListingsCheckInterval = null;
             }
 
             this.clearDisplays();
@@ -15742,6 +15722,9 @@ self.onmessage = function (e) {
             networthHeaderDisplay.disable();
             networthInventoryDisplay.disable();
 
+            // Clear the enhancement cost cache (character-specific)
+            networthCache.clear();
+
             this.currentData = null;
             this.isActive = false;
         }
@@ -16810,6 +16793,8 @@ self.onmessage = function (e) {
             this.unregisterHandlers.forEach((unregister) => unregister());
             this.unregisterHandlers = [];
 
+            // Clear caches and state
+            this.warnedItems.clear();
             this.currentInventoryElem = null;
             this.isInitialized = false;
         }

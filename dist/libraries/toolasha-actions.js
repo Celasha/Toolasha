@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 1.0.0
+ * Version: 1.1.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -7952,6 +7952,7 @@
             this.sortTimeout = null; // Debounce timer
             this.initialized = false;
             this.timerRegistry = timerRegistry_js.createTimerRegistry();
+            this.handlers = {};
         }
 
         /**
@@ -7963,6 +7964,33 @@
             const pinnedData = await storage.getJSON('pinnedActions', 'settings', []);
             this.pinnedActions = new Set(pinnedData);
             this.initialized = true;
+
+            // Listen for character switch to clear character-specific data
+            if (!this.handlers.characterSwitch) {
+                this.handlers.characterSwitch = () => this.onCharacterSwitch();
+                dataManager.on('character_switching', this.handlers.characterSwitch);
+            }
+        }
+
+        /**
+         * Handle character switch - clear all cached data
+         */
+        async onCharacterSwitch() {
+            this.clearAllPanels();
+            this.pinnedActions.clear();
+            this.initialized = false;
+        }
+
+        /**
+         * Disable - cleanup event listeners
+         */
+        disable() {
+            this.clearAllPanels();
+            if (this.handlers.characterSwitch) {
+                dataManager.off('character_switching', this.handlers.characterSwitch);
+                this.handlers.characterSwitch = null;
+            }
+            this.initialized = false;
         }
 
         /**
@@ -11193,49 +11221,81 @@
      * @param {string} teaHrid - Tea item HRID
      * @returns {string} Human-readable buff description
      */
-    function getTeaBuffDescription(teaHrid) {
+    function getTeaBuffDescription(teaHrid, drinkConcentration = 0) {
         const gameData = dataManager.getInitClientData();
         if (!gameData?.itemDetailMap) return '';
 
         const itemDetails = gameData.itemDetailMap[teaHrid];
         if (!itemDetails?.consumableDetail?.buffs) return '';
 
+        const dcMultiplier = 1 + drinkConcentration;
         const descriptions = [];
+
         for (const buff of itemDetails.consumableDetail.buffs) {
-            const value = buff.flatBoost || 0;
+            const baseValue = buff.flatBoost || 0;
+            const scaledValue = baseValue * dcMultiplier;
+            const dcBonus = baseValue * drinkConcentration;
+
             switch (buff.typeHrid) {
                 case '/buff_types/efficiency':
-                    descriptions.push(`+${(value * 100).toFixed(0)}% efficiency`);
+                    descriptions.push(formatBuffWithDC(scaledValue * 100, dcBonus * 100, '% eff', true));
                     break;
                 case '/buff_types/wisdom':
-                    descriptions.push(`+${(value * 100).toFixed(0)}% XP`);
+                    descriptions.push(formatBuffWithDC(scaledValue * 100, dcBonus * 100, '% XP', true));
                     break;
                 case '/buff_types/gathering':
-                    descriptions.push(`+${(value * 100).toFixed(0)}% gathering`);
+                    descriptions.push(formatBuffWithDC(scaledValue * 100, dcBonus * 100, '% gathering', true));
                     break;
                 case '/buff_types/processing':
-                    descriptions.push(`+${(value * 100).toFixed(0)}% processing`);
+                    descriptions.push(formatBuffWithDC(scaledValue * 100, dcBonus * 100, '% processing', true));
                     break;
                 case '/buff_types/artisan':
-                    descriptions.push(`+${(value * 100).toFixed(0)}% material savings`);
+                    descriptions.push(formatBuffWithDC(scaledValue * 100, dcBonus * 100, '% mat savings', true));
                     break;
                 case '/buff_types/gourmet':
-                    descriptions.push(`+${(value * 100).toFixed(0)}% extra output`);
+                    descriptions.push(formatBuffWithDC(scaledValue * 100, dcBonus * 100, '% extra output', true));
                     break;
                 case '/buff_types/action_level':
-                    descriptions.push(`+${value.toFixed(0)} action level`);
+                    descriptions.push(formatBuffWithDC(scaledValue, dcBonus, ' action lvl', false));
                     break;
                 default:
                     if (buff.typeHrid.endsWith('_level')) {
                         const skill = buff.typeHrid.match(/\/buff_types\/(\w+)_level/)?.[1];
                         if (skill) {
-                            descriptions.push(`+${value.toFixed(0)} ${skill} levels`);
+                            descriptions.push(formatBuffWithDC(scaledValue, dcBonus, ` ${skill}`, false));
                         }
                     }
             }
         }
 
         return descriptions.join(', ');
+    }
+
+    /**
+     * Format a buff value with optional drink concentration bonus
+     * @param {number} scaledValue - Total value including DC
+     * @param {number} dcBonus - Just the DC bonus portion
+     * @param {string} suffix - Unit suffix (e.g., '% eff', ' tailoring')
+     * @param {boolean} isPercent - Whether to format as percentage
+     * @returns {string} Formatted string like "+8.8 tailoring (+.8)"
+     */
+    function formatBuffWithDC(scaledValue, dcBonus, suffix, isPercent) {
+        // Format the main value
+        const mainFormatted = isPercent
+            ? `+${Number.isInteger(scaledValue) ? scaledValue : scaledValue.toFixed(1)}${suffix}`
+            : `+${Number.isInteger(scaledValue) ? scaledValue : scaledValue.toFixed(1)}${suffix}`;
+
+        // If no DC bonus, just return the main value
+        if (dcBonus === 0) {
+            return mainFormatted;
+        }
+
+        // Format the DC bonus (with % suffix if percentage)
+        const dcFormatted = isPercent
+            ? `(+${dcBonus < 1 ? dcBonus.toFixed(1) : dcBonus.toFixed(0)}%)`
+            : `(+${dcBonus < 1 ? dcBonus.toFixed(1) : dcBonus.toFixed(0)})`;
+
+        return `${mainFormatted} ${dcFormatted}`;
     }
 
     /**
@@ -11446,7 +11506,10 @@
         `;
             // Show location name if we're filtering by tab, otherwise show skill name
             const displayName = locationTab || skillName;
-            header.textContent = `Optimal ${goalLabel}/hr for ${displayName}`;
+            // Include drink concentration in header if > 0
+            const dcPercent = result.drinkConcentration ? (result.drinkConcentration * 100).toFixed(2) : 0;
+            const dcSuffix = dcPercent > 0 ? ` (${dcPercent}% DC)` : '';
+            header.textContent = `Optimal ${goalLabel}/hr for ${displayName}${dcSuffix}`;
             header.title = 'Drag to move';
             popup.appendChild(header);
 
@@ -11478,7 +11541,13 @@
                 color: rgba(255, 255, 255, 0.6);
                 font-size: 11px;
             `;
-                teaBuffs.textContent = getTeaBuffDescription(tea.hrid);
+                // Pass drink concentration to get scaled values with DC bonus shown
+                const buffText = getTeaBuffDescription(tea.hrid, result.drinkConcentration || 0);
+                // Style the DC bonus portion in dimmer color
+                teaBuffs.innerHTML = buffText.replace(
+                    /\(([^)]+)\)/g,
+                    '<span style="color: rgba(255, 255, 255, 0.4);">($1)</span>'
+                );
 
                 teaRow.appendChild(teaName);
                 teaRow.appendChild(teaBuffs);
@@ -13496,8 +13565,13 @@ self.onmessage = function (e) {
                     })
                     .join('|');
 
+                // Get selected alchemy tab (Coinify/Decompose/Transmute/etc)
+                const alchemyContainer = document.querySelector('[class*="AlchemyPanel_tabsComponentContainer"]');
+                const selectedTab =
+                    alchemyContainer?.querySelector('[role="tab"][aria-selected="true"]')?.textContent?.trim() || '';
+
                 // Don't include infoText - it contains our profit display which causes update loops
-                return `${successRate}:${consumables}:${catalyst}:${requirements}`;
+                return `${selectedTab}:${successRate}:${consumables}:${catalyst}:${requirements}`;
             } catch {
                 return '';
             }
@@ -14545,10 +14619,11 @@ self.onmessage = function (e) {
         constructor() {
             this.isActive = false;
             this.unregisterObserver = null;
+            this.contentObserver = null;
+            this.tabObserver = null;
             this.displayElement = null;
             this.updateTimeout = null;
             this.lastFingerprint = null;
-            this.pollInterval = null;
             this.isInitialized = false;
             this.timerRegistry = timerRegistry_js.createTimerRegistry();
         }
@@ -14578,20 +14653,96 @@ self.onmessage = function (e) {
             this.unregisterObserver = domObserver.onClass(
                 'AlchemyProfitDisplay',
                 'SkillActionDetail_alchemyComponent',
-                (_alchemyComponent) => {
+                (alchemyComponent) => {
                     this.checkAndUpdateDisplay();
+                    // Setup content observer when alchemy component appears
+                    this.setupContentObserver(alchemyComponent);
                 }
             );
 
             // Initial check for existing panel
-            this.checkAndUpdateDisplay();
-
-            // Polling interval to check DOM state (like enhancement-ui.js does)
-            // This catches state changes that the observer might miss
-            this.pollInterval = setInterval(() => {
+            const existingComponent = document.querySelector('[class*="SkillActionDetail_alchemyComponent"]');
+            if (existingComponent) {
                 this.checkAndUpdateDisplay();
-            }, 200); // Check 5× per second for responsive updates
-            this.timerRegistry.registerInterval(this.pollInterval);
+                this.setupContentObserver(existingComponent);
+            }
+        }
+
+        /**
+         * Setup observer for content changes within alchemy component
+         * Watches for tab switches and item selection changes
+         * @param {HTMLElement} alchemyComponent - The alchemy component container
+         */
+        setupContentObserver(alchemyComponent) {
+            // Don't create duplicate observers
+            if (this.contentObserver) {
+                this.contentObserver.disconnect();
+            }
+            if (this.tabObserver) {
+                this.tabObserver.disconnect();
+            }
+
+            // Debounce timer for update calls
+            let debounceTimer = null;
+
+            const triggerUpdate = () => {
+                if (debounceTimer) {
+                    clearTimeout(debounceTimer);
+                }
+                debounceTimer = setTimeout(() => {
+                    this.checkAndUpdateDisplay();
+                }, 50);
+            };
+
+            // Observer for tab switches - observe the tab container separately
+            const tabContainer = document.querySelector('[class*="AlchemyPanel_tabsComponentContainer"]');
+            if (tabContainer) {
+                this.tabObserver = new MutationObserver((mutations) => {
+                    for (const mutation of mutations) {
+                        if (mutation.type === 'attributes' && mutation.attributeName === 'aria-selected') {
+                            if (mutation.target.getAttribute('aria-selected') === 'true') {
+                                triggerUpdate();
+                                return;
+                            }
+                        }
+                    }
+                });
+
+                this.tabObserver.observe(tabContainer, {
+                    attributes: true,
+                    attributeFilter: ['aria-selected'],
+                    subtree: true,
+                });
+            }
+
+            // Observer for content changes (item selection)
+            this.contentObserver = new MutationObserver((mutations) => {
+                for (const mutation of mutations) {
+                    if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+                        for (const node of mutation.addedNodes) {
+                            if (node.nodeType === Node.ELEMENT_NODE) {
+                                const className = node.className || '';
+                                if (
+                                    typeof className === 'string' &&
+                                    (className.includes('SkillActionDetail_itemRequirements') ||
+                                        className.includes('SkillActionDetail_alchemyOutput') ||
+                                        className.includes('SkillActionDetail_primaryItemSelectorContainer') ||
+                                        className.includes('SkillActionDetail_instructions'))
+                                ) {
+                                    triggerUpdate();
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            // Observe the alchemy component for content changes
+            this.contentObserver.observe(alchemyComponent, {
+                childList: true,
+                subtree: true,
+            });
         }
 
         /**
@@ -15351,9 +15502,14 @@ self.onmessage = function (e) {
                 this.updateTimeout = null;
             }
 
-            if (this.pollInterval) {
-                clearInterval(this.pollInterval);
-                this.pollInterval = null;
+            if (this.contentObserver) {
+                this.contentObserver.disconnect();
+                this.contentObserver = null;
+            }
+
+            if (this.tabObserver) {
+                this.tabObserver.disconnect();
+                this.tabObserver = null;
             }
 
             this.timerRegistry.clearAll();

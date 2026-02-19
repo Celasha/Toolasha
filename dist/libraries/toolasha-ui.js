@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 1.0.0
+ * Version: 1.1.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1418,6 +1418,291 @@
             }
         },
     };
+
+    /**
+     * Mention Tracker
+     * Tracks @mentions across all chat channels and displays badge counts on chat tabs
+     */
+
+
+    class MentionTracker {
+        constructor() {
+            this.initialized = false;
+            this.mentionCounts = new Map(); // channel -> count
+            this.characterName = null;
+            this.handlers = {};
+            this.unregisterObserver = null;
+            this.tabClickHandlers = new Map(); // button element -> handler
+        }
+
+        /**
+         * Initialize the mention tracker
+         */
+        async initialize() {
+            if (this.initialized) return;
+
+            if (!config.getSetting('chat_mentionTracker')) {
+                return;
+            }
+
+            this.initialized = true;
+
+            // Get character name
+            this.characterName = dataManager.getCurrentCharacterName();
+            if (!this.characterName) {
+                return;
+            }
+
+            // Listen for chat messages
+            this.handlers.chatMessage = (data) => this.onChatMessage(data);
+            webSocketHook.on('chat_message_received', this.handlers.chatMessage);
+
+            // Observe chat tabs to inject badges and add click handlers
+            this.unregisterObserver = domObserver.onClass(
+                'MentionTracker',
+                'Chat_tabsComponentContainer',
+                (tabsContainer) => {
+                    this.setupTabBadges(tabsContainer);
+                }
+            );
+
+            // Check for existing tabs
+            const existingTabs = document.querySelector('.Chat_tabsComponentContainer__3ZoKe');
+            if (existingTabs) {
+                this.setupTabBadges(existingTabs);
+            }
+        }
+
+        /**
+         * Handle incoming chat message
+         * @param {Object} data - WebSocket message data
+         */
+        onChatMessage(data) {
+            const message = data.message;
+            if (!message) return;
+
+            // Skip system messages
+            if (message.isSystemMessage || !message.sName) return;
+
+            const text = message.m || '';
+            const channel = message.chan || '';
+
+            if (this.isMentioned(text)) {
+                const currentCount = this.mentionCounts.get(channel) || 0;
+                this.mentionCounts.set(channel, currentCount + 1);
+                this.updateBadge(channel);
+            }
+        }
+
+        /**
+         * Check if the message mentions the current player
+         * @param {string} text - Message text
+         * @returns {boolean} True if mentioned
+         */
+        isMentioned(text) {
+            if (!text || !this.characterName) return false;
+
+            // Check for @CharacterName (case insensitive)
+            const escapedName = this.escapeRegex(this.characterName);
+            const mentionPattern = new RegExp(`@${escapedName}\\b`, 'i');
+            return mentionPattern.test(text);
+        }
+
+        /**
+         * Escape special regex characters
+         * @param {string} str - String to escape
+         * @returns {string} Escaped string
+         */
+        escapeRegex(str) {
+            return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        }
+
+        /**
+         * Get display name for a channel
+         * @param {string} channel - Channel HRID
+         * @returns {string} Display name
+         */
+        getChannelDisplayName(channel) {
+            const channelMap = {
+                '/chat_channel_types/party': 'Party',
+                '/chat_channel_types/guild': 'Guild',
+                '/chat_channel_types/local': 'Local',
+                '/chat_channel_types/whisper': 'Whisper',
+                '/chat_channel_types/global': 'Global',
+            };
+            return channelMap[channel] || channel;
+        }
+
+        /**
+         * Setup badges and click handlers on chat tabs
+         * @param {HTMLElement} tabsContainer - The tabs container element
+         */
+        setupTabBadges(tabsContainer) {
+            const tabButtons = tabsContainer.querySelectorAll('.MuiButtonBase-root');
+
+            for (const button of tabButtons) {
+                const tabName = button.textContent?.trim();
+                if (!tabName) continue;
+
+                // Find matching channel for this tab
+                const channel = this.getChannelFromTabName(tabName);
+                if (!channel) continue;
+
+                // Store reference to button for this channel
+                button.dataset.mentionChannel = channel;
+
+                // Add click handler to clear mentions (if not already added)
+                if (!this.tabClickHandlers.has(button)) {
+                    const handler = () => this.clearMentions(channel);
+                    button.addEventListener('click', handler);
+                    this.tabClickHandlers.set(button, handler);
+                }
+
+                // Ensure button has relative positioning for badge
+                if (getComputedStyle(button).position === 'static') {
+                    button.style.position = 'relative';
+                }
+
+                // Update badge for this channel
+                this.updateBadgeForButton(button, channel);
+            }
+        }
+
+        /**
+         * Get channel HRID from tab display name
+         * @param {string} tabName - Tab display name (may have number suffix like "General2")
+         * @returns {string|null} Channel HRID
+         */
+        getChannelFromTabName(tabName) {
+            // Strip trailing numbers (unread counts) from tab name
+            const cleanName = tabName.replace(/\d+$/, '');
+
+            const nameMap = {
+                Party: '/chat_channel_types/party',
+                Guild: '/chat_channel_types/guild',
+                Local: '/chat_channel_types/local',
+                Whisper: '/chat_channel_types/whisper',
+                Global: '/chat_channel_types/global',
+                General: '/chat_channel_types/general',
+                Trade: '/chat_channel_types/trade',
+                Beginner: '/chat_channel_types/beginner',
+                Recruit: '/chat_channel_types/recruit',
+                Ironcow: '/chat_channel_types/ironcow',
+                Mod: '/chat_channel_types/mod',
+            };
+            return nameMap[cleanName] || null;
+        }
+
+        /**
+         * Update badge display for a channel
+         * @param {string} channel - Channel HRID
+         */
+        updateBadge(channel) {
+            const selector = `.Chat_tabsComponentContainer__3ZoKe .MuiButtonBase-root[data-mention-channel="${channel}"]`;
+            const button = document.querySelector(selector);
+
+            if (button) {
+                this.updateBadgeForButton(button, channel);
+            }
+        }
+
+        /**
+         * Update badge on a specific button
+         * @param {HTMLElement} button - Tab button element
+         * @param {string} channel - Channel HRID
+         */
+        updateBadgeForButton(button, channel) {
+            const count = this.mentionCounts.get(channel) || 0;
+
+            // Find or create badge
+            let badge = button.querySelector('.mwi-mention-badge');
+
+            if (count === 0) {
+                if (badge) {
+                    badge.remove();
+                }
+                return;
+            }
+
+            if (!badge) {
+                badge = document.createElement('span');
+                badge.className = 'mwi-mention-badge';
+                // Match MUI badge styling exactly, but on left side
+                badge.style.cssText = `
+                position: absolute;
+                box-sizing: border-box;
+                font-family: Roboto, Helvetica, Arial, sans-serif;
+                font-weight: 500;
+                font-size: 0.75rem;
+                line-height: 1;
+                z-index: 1;
+                top: 0;
+                left: 0;
+                transform: scale(1) translate(-50%, -50%);
+                transform-origin: 0% 0%;
+                margin-top: 2px;
+                margin-left: 4px;
+                height: 1rem;
+                min-width: 1rem;
+                border-radius: 0.5rem;
+                padding: 0 0.25rem;
+                display: flex;
+                flex-wrap: wrap;
+                justify-content: center;
+                align-content: center;
+                align-items: center;
+                background-color: #d32f2f;
+                color: #e7e7e7;
+            `;
+                button.appendChild(badge);
+            }
+
+            // Update count display
+            badge.textContent = count > 99 ? '99+' : count.toString();
+        }
+
+        /**
+         * Clear mention count for a channel
+         * @param {string} channel - Channel HRID
+         */
+        clearMentions(channel) {
+            if (this.mentionCounts.has(channel)) {
+                this.mentionCounts.set(channel, 0);
+                this.updateBadge(channel);
+            }
+        }
+
+        /**
+         * Cleanup the mention tracker
+         */
+        disable() {
+            if (this.handlers.chatMessage) {
+                webSocketHook.off('chat_message_received', this.handlers.chatMessage);
+                this.handlers.chatMessage = null;
+            }
+
+            if (this.unregisterObserver) {
+                this.unregisterObserver();
+                this.unregisterObserver = null;
+            }
+
+            // Remove click handlers
+            for (const [button, handler] of this.tabClickHandlers) {
+                button.removeEventListener('click', handler);
+            }
+            this.tabClickHandlers.clear();
+
+            // Remove all badges
+            document.querySelectorAll('.mwi-mention-badge').forEach((el) => el.remove());
+
+            // Clear counts
+            this.mentionCounts.clear();
+
+            this.initialized = false;
+        }
+    }
+
+    const mentionTracker = new MentionTracker();
 
     /**
      * Worker Pool Manager
@@ -12122,6 +12407,9 @@ self.onmessage = function (e) {
          * Disable and cleanup
          */
         disable() {
+            // Clear in-memory session data (will be reloaded from storage on next init)
+            this.sessions = {};
+            this.currentSessionId = null;
             this.isInitialized = false;
         }
     }
@@ -12187,7 +12475,8 @@ self.onmessage = function (e) {
             this.updateDebounce = null;
             this.isDragging = false;
             this.unregisterScreenObserver = null;
-            this.pollInterval = null;
+            this.panelRemovalObserver = null;
+            this.settingChangeHandlers = [];
             this.isOnEnhancingScreen = false;
             this.isCollapsed = false; // Track collapsed state
             this.updateInterval = null;
@@ -12244,47 +12533,119 @@ self.onmessage = function (e) {
             }
 
             // Register with centralized DOM observer for enhancing panel detection
-            // Note: Enhancing screen uses EnhancingPanel_enhancingPanel, not SkillActionDetail_enhancingComponent
             this.unregisterScreenObserver = domObserver.onClass(
                 'EnhancementUI-ScreenDetection',
                 'EnhancingPanel_enhancingPanel',
-                (_node) => {
-                    this.checkEnhancingScreen();
+                (panel) => {
+                    this.isOnEnhancingScreen = true;
+                    this.updateVisibility();
+                    // Setup removal observer when panel appears
+                    this.setupPanelRemovalObserver(panel);
                 },
                 { debounce: false }
             );
 
-            // Poll for both setting changes and panel removal
-            this.pollInterval = setInterval(() => {
-                const trackerEnabled = config.getSetting('enhancementTracker');
-                const currentSetting = config.getSetting('enhancementTracker_showOnlyOnEnhancingScreen');
+            // Setup setting change listeners (event-driven, no polling)
+            this.setupSettingChangeListeners();
 
-                // If main tracker is disabled, always hide
-                if (!trackerEnabled) {
-                    if (this.floatingUI && this.floatingUI.style.display !== 'none') {
-                        this.hide();
-                    }
+            // Check if panel already exists and setup removal observer
+            const existingPanel = document.querySelector('[class*="EnhancingPanel_enhancingPanel"]');
+            if (existingPanel) {
+                this.isOnEnhancingScreen = true;
+                this.updateVisibility();
+                this.setupPanelRemovalObserver(existingPanel);
+            }
+        }
+
+        /**
+         * Setup listeners for setting changes (replaces polling)
+         */
+        setupSettingChangeListeners() {
+            // Listen for main tracker toggle
+            const onTrackerChange = (enabled) => {
+                if (!enabled) {
+                    this.hide();
+                } else {
+                    this.updateVisibility();
+                }
+            };
+            config.onSettingChange('enhancementTracker', onTrackerChange);
+            this.settingChangeHandlers.push({ key: 'enhancementTracker', handler: onTrackerChange });
+
+            // Listen for "show only on enhancing screen" toggle
+            const onScreenSettingChange = (enabled) => {
+                if (enabled !== true) {
+                    // Setting disabled - always show (if main tracker enabled)
+                    this.isOnEnhancingScreen = true;
+                } else {
+                    // Setting enabled - check actual screen
+                    this.checkEnhancingScreen();
+                }
+                this.updateVisibility();
+            };
+            config.onSettingChange('enhancementTracker_showOnlyOnEnhancingScreen', onScreenSettingChange);
+            this.settingChangeHandlers.push({
+                key: 'enhancementTracker_showOnlyOnEnhancingScreen',
+                handler: onScreenSettingChange,
+            });
+        }
+
+        /**
+         * Setup observer to detect when enhancing panel is removed from DOM
+         * @param {HTMLElement} panel - The enhancing panel element
+         */
+        setupPanelRemovalObserver(panel) {
+            // Disconnect existing observer if any
+            if (this.panelRemovalObserver) {
+                this.panelRemovalObserver.disconnect();
+            }
+
+            // Find MainPanel_mainPanel (grandparent) - the container itself gets replaced on navigation
+            const subPanelContainer = panel.parentElement;
+            const mainPanel = subPanelContainer?.parentElement;
+
+            if (!mainPanel || !mainPanel.className?.includes?.('MainPanel_mainPanel')) {
+                // Fallback: find by class
+                const fallbackMainPanel = document.querySelector('[class*="MainPanel_mainPanel"]');
+                if (!fallbackMainPanel) {
                     return;
                 }
+                this.observeMainPanelForNavigation(fallbackMainPanel);
+            } else {
+                this.observeMainPanelForNavigation(mainPanel);
+            }
+        }
 
-                if (currentSetting !== true) {
-                    // Setting disabled - always show
-                    if (!this.isOnEnhancingScreen) {
-                        this.isOnEnhancingScreen = true;
-                        this.updateVisibility();
-                    }
-                } else {
-                    // Setting enabled - check if panel exists
-                    const panel = document.querySelector('[class*="EnhancingPanel_enhancingPanel"]');
-                    const shouldBeOnScreen = !!panel;
-
-                    if (this.isOnEnhancingScreen !== shouldBeOnScreen) {
-                        this.isOnEnhancingScreen = shouldBeOnScreen;
-                        this.updateVisibility();
+        /**
+         * Observe MainPanel_mainPanel for navigation (subPanelContainer removal)
+         * @param {HTMLElement} mainPanel - The main panel element to observe
+         */
+        observeMainPanelForNavigation(mainPanel) {
+            this.panelRemovalObserver = new MutationObserver((mutations) => {
+                for (const mutation of mutations) {
+                    if (mutation.type === 'childList' && mutation.removedNodes.length > 0) {
+                        for (const node of mutation.removedNodes) {
+                            // Check if subPanelContainer was removed (contains the enhancing panel)
+                            if (
+                                node.nodeType === Node.ELEMENT_NODE &&
+                                node.className?.includes?.('MainPanel_subPanelContainer')
+                            ) {
+                                // Check if EnhancingPanel was inside the removed container
+                                const hadEnhancingPanel = node.querySelector('[class*="EnhancingPanel_enhancingPanel"]');
+                                if (hadEnhancingPanel) {
+                                    this.isOnEnhancingScreen = false;
+                                    this.updateVisibility();
+                                    return;
+                                }
+                            }
+                        }
                     }
                 }
-            }, 500);
-            this.timerRegistry.registerInterval(this.pollInterval);
+            });
+
+            this.panelRemovalObserver.observe(mainPanel, {
+                childList: true,
+            });
         }
 
         /**
@@ -13183,11 +13544,17 @@ self.onmessage = function (e) {
                 this.updateDebounce = null;
             }
 
-            // Clear poll interval
-            if (this.pollInterval) {
-                clearInterval(this.pollInterval);
-                this.pollInterval = null;
+            // Disconnect panel removal observer
+            if (this.panelRemovalObserver) {
+                this.panelRemovalObserver.disconnect();
+                this.panelRemovalObserver = null;
             }
+
+            // Unregister setting change listeners
+            for (const { key } of this.settingChangeHandlers) {
+                config.offSettingChange(key);
+            }
+            this.settingChangeHandlers = [];
 
             if (this.updateInterval) {
                 clearInterval(this.updateInterval);
@@ -13843,6 +14210,7 @@ self.onmessage = function (e) {
         externalLinks,
         altClickNavigation,
         chatCommands,
+        mentionTracker,
         taskProfitDisplay,
         taskRerollTracker,
         taskSorter,

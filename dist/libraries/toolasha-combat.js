@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 1.0.0
+ * Version: 1.1.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -4405,7 +4405,6 @@
             // Callback references for cleanup
             this.dungeonUpdateHandler = null;
             this.characterSwitchingHandler = null;
-            this.characterSelectObserver = null;
         }
 
         /**
@@ -4471,27 +4470,6 @@
             };
 
             dataManager.on('character_switching', this.characterSwitchingHandler);
-
-            // Watch for character selection screen appearing (when user clicks "Switch Character")
-            if (document.body) {
-                this.characterSelectObserver = domObserverHelpers_js.createMutationWatcher(
-                    document.body,
-                    () => {
-                        // Check if character selection screen is visible
-                        const headings = document.querySelectorAll('h1, h2, h3');
-                        for (const heading of headings) {
-                            if (heading.textContent?.includes('Select Character')) {
-                                this.hide();
-                                break;
-                            }
-                        }
-                    },
-                    {
-                        childList: true,
-                        subtree: true,
-                    }
-                );
-            }
         }
 
         /**
@@ -5081,12 +5059,6 @@
             if (this.characterSwitchingHandler) {
                 dataManager.off('character_switching', this.characterSwitchingHandler);
                 this.characterSwitchingHandler = null;
-            }
-
-            // Disconnect character selection screen observer
-            if (this.characterSelectObserver) {
-                this.characterSelectObserver();
-                this.characterSelectObserver = null;
             }
 
             // Clear update interval

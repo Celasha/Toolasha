@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      1.0.0
+// @version      1.1.0
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -15041,6 +15041,13 @@ return plugin;
                     default: true,
                     help: 'Type /item, /wiki, or /market followed by an item name in chat. Example: /item radiant fiber',
                 },
+                chat_mentionTracker: {
+                    id: 'chat_mentionTracker',
+                    label: 'Show badge when mentioned in chat',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Displays a red badge on chat tabs when someone @mentions you',
+                },
                 altClickNavigation: {
                     id: 'altClickNavigation',
                     label: 'Alt+click items to navigate to crafting/gathering or dictionary',
@@ -19183,68 +19190,54 @@ return plugin;
      */
     function setupCharacterSwitchHandler() {
         // Guard against overlapping switches
-        let isSwitching = false;
+        let cleanupComplete = false;
         let reinitScheduled = false;
-        let reinitTimeoutId = null;
 
         // Handle character_switching event (cleanup phase)
         dataManager$1.on('character_switching', async (_data) => {
-            // Prevent overlapping switches
-            if (isSwitching) {
-                console.warn('[FeatureRegistry] Character switch already in progress - ignoring rapid switch');
-                return;
-            }
+            cleanupComplete = false;
 
-            isSwitching = true;
-
-            // Defer cleanup to next tick to prevent main thread blocking
-            setTimeout(async () => {
-                try {
-                    // Clear config cache to prevent stale settings
-                    if (config$1 && typeof config$1.clearSettingsCache === 'function') {
-                        config$1.clearSettingsCache();
-                    }
-
-                    // Disable all active features (cleanup DOM elements, event listeners, etc.)
-                    // Process all features without awaiting to avoid blocking
-                    const cleanupPromises = [];
-                    for (const feature of featureRegistry$1) {
-                        try {
-                            const featureInstance = getFeatureInstance(feature.key);
-                            if (featureInstance && typeof featureInstance.disable === 'function') {
-                                const result = featureInstance.disable();
-                                // Collect promises but don't await them synchronously
-                                if (result && typeof result.then === 'function') {
-                                    cleanupPromises.push(
-                                        result.catch((error) => {
-                                            console.error(`[FeatureRegistry] Failed to disable ${feature.name}:`, error);
-                                        })
-                                    );
-                                }
-                            }
-                        } catch (error) {
-                            console.error(`[FeatureRegistry] Failed to disable ${feature.name}:`, error);
-                        }
-                    }
-
-                    // Wait for all cleanup in parallel (non-blocking)
-                    if (cleanupPromises.length > 0) {
-                        await Promise.all(cleanupPromises);
-                    }
-                } catch (error) {
-                    console.error('[FeatureRegistry] Error during character switch cleanup:', error);
-                } finally {
-                    // Always reset flag to allow next character switch
-                    isSwitching = false;
+            try {
+                // Clear config cache IMMEDIATELY to prevent stale settings
+                if (config$1 && typeof config$1.clearSettingsCache === 'function') {
+                    config$1.clearSettingsCache();
                 }
-            }, 0);
+
+                // Disable all active features (cleanup DOM elements, event listeners, etc.)
+                const cleanupPromises = [];
+                for (const feature of featureRegistry$1) {
+                    try {
+                        const featureInstance = getFeatureInstance(feature.key);
+                        if (featureInstance && typeof featureInstance.disable === 'function') {
+                            const result = featureInstance.disable();
+                            if (result && typeof result.then === 'function') {
+                                cleanupPromises.push(
+                                    result.catch((error) => {
+                                        console.error(`[FeatureRegistry] Failed to disable ${feature.name}:`, error);
+                                    })
+                                );
+                            }
+                        }
+                    } catch (error) {
+                        console.error(`[FeatureRegistry] Failed to disable ${feature.name}:`, error);
+                    }
+                }
+
+                // Wait for all cleanup in parallel
+                if (cleanupPromises.length > 0) {
+                    await Promise.all(cleanupPromises);
+                }
+            } catch (error) {
+                console.error('[FeatureRegistry] Error during character switch cleanup:', error);
+            } finally {
+                cleanupComplete = true;
+            }
         });
 
         // Handle character_switched event (re-initialization phase)
         dataManager$1.on('character_switched', async (_data) => {
             // Prevent multiple overlapping reinits
             if (reinitScheduled) {
-                console.warn('[FeatureRegistry] Reinit already scheduled - ignoring duplicate');
                 return;
             }
 
@@ -19256,40 +19249,44 @@ return plugin;
                 dungeonTrackerFeature.cleanup();
             }
 
-            // Settings UI manages its own character switch lifecycle via character_initialized event
-            // No need to call settingsUI.initialize() here
-
-            // Re-initialize features
-            const reinit = async () => {
-                try {
-                    // Reload config settings first (settings were cleared during cleanup)
-                    await config$1.loadSettings();
-                    config$1.applyColorSettings();
-
-                    // Now re-initialize all features with fresh settings
-                    await initializeFeatures();
-                } catch (error) {
-                    console.error('[FeatureRegistry] Error during feature reinitialization:', error);
-                } finally {
-                    // Reset flags to allow next switch
-                    isSwitching = false;
-                    reinitScheduled = false;
-                    if (reinitTimeoutId) {
-                        clearTimeout(reinitTimeoutId);
-                        reinitTimeoutId = null;
+            // Wait for cleanup to complete if it hasn't yet
+            const waitForCleanup = () => {
+                return new Promise((resolve) => {
+                    if (cleanupComplete) {
+                        resolve();
+                    } else {
+                        const checkInterval = setInterval(() => {
+                            if (cleanupComplete) {
+                                clearInterval(checkInterval);
+                                resolve();
+                            }
+                        }, 10);
+                        // Safety timeout - proceed after 500ms even if cleanup not marked complete
+                        setTimeout(() => {
+                            clearInterval(checkInterval);
+                            resolve();
+                        }, 500);
                     }
-                }
+                });
             };
 
-            // Use requestIdleCallback for non-blocking re-init
-            if ('requestIdleCallback' in window) {
-                requestIdleCallback(() => reinit(), { timeout: 2000 });
-            } else {
-                // Fallback for browsers without requestIdleCallback
-                if (reinitTimeoutId) {
-                    clearTimeout(reinitTimeoutId);
-                }
-                reinitTimeoutId = setTimeout(() => reinit(), 300); // Longer delay for game to stabilize
+            try {
+                await waitForCleanup();
+
+                // CRITICAL: Load settings BEFORE any feature initialization
+                // This ensures all features see the new character's settings
+                await config$1.loadSettings();
+                config$1.applyColorSettings();
+
+                // Small delay to ensure game state is stable
+                await new Promise((resolve) => setTimeout(resolve, 50));
+
+                // Now re-initialize all features with fresh settings
+                await initializeFeatures();
+            } catch (error) {
+                console.error('[FeatureRegistry] Error during feature reinitialization:', error);
+            } finally {
+                reinitScheduled = false;
             }
         });
     }
@@ -32439,21 +32436,6 @@ self.onmessage = function (e) {
                     this.checkForExpiredListings(container);
                 }
             );
-
-            // Also use polling as fallback - watch for visible table
-            const checkInterval = setInterval(() => {
-                const myListingsTable = document.querySelector('.MarketplacePanel_myListingsTableContainer__2s6pm');
-                if (myListingsTable) {
-                    // Check if the table is actually visible (not display:none)
-                    const isVisible = myListingsTable.offsetParent !== null;
-                    if (isVisible) {
-                        this.checkForExpiredListings(myListingsTable);
-                    }
-                }
-            }, 2000); // Check every 2 seconds
-
-            // Store interval for cleanup
-            this.myListingsCheckInterval = checkInterval;
         }
 
         /**
@@ -33026,11 +33008,6 @@ self.onmessage = function (e) {
             if (this.unregisterMyListingsObserver) {
                 this.unregisterMyListingsObserver();
                 this.unregisterMyListingsObserver = null;
-            }
-
-            if (this.myListingsCheckInterval) {
-                clearInterval(this.myListingsCheckInterval);
-                this.myListingsCheckInterval = null;
             }
 
             this.clearDisplays();
@@ -41659,6 +41636,9 @@ self.onmessage = function (e) {
             networthHeaderDisplay.disable();
             networthInventoryDisplay.disable();
 
+            // Clear the enhancement cost cache (character-specific)
+            networthCache.clear();
+
             this.currentData = null;
             this.isActive = false;
         }
@@ -42727,6 +42707,8 @@ self.onmessage = function (e) {
             this.unregisterHandlers.forEach((unregister) => unregister());
             this.unregisterHandlers = [];
 
+            // Clear caches and state
+            this.warnedItems.clear();
             this.currentInventoryElem = null;
             this.isInitialized = false;
         }
@@ -50237,6 +50219,7 @@ self.onmessage = function (e) {
             this.sortTimeout = null; // Debounce timer
             this.initialized = false;
             this.timerRegistry = createTimerRegistry();
+            this.handlers = {};
         }
 
         /**
@@ -50248,6 +50231,33 @@ self.onmessage = function (e) {
             const pinnedData = await storage$1.getJSON('pinnedActions', 'settings', []);
             this.pinnedActions = new Set(pinnedData);
             this.initialized = true;
+
+            // Listen for character switch to clear character-specific data
+            if (!this.handlers.characterSwitch) {
+                this.handlers.characterSwitch = () => this.onCharacterSwitch();
+                dataManager$1.on('character_switching', this.handlers.characterSwitch);
+            }
+        }
+
+        /**
+         * Handle character switch - clear all cached data
+         */
+        async onCharacterSwitch() {
+            this.clearAllPanels();
+            this.pinnedActions.clear();
+            this.initialized = false;
+        }
+
+        /**
+         * Disable - cleanup event listeners
+         */
+        disable() {
+            this.clearAllPanels();
+            if (this.handlers.characterSwitch) {
+                dataManager$1.off('character_switching', this.handlers.characterSwitch);
+                this.handlers.characterSwitch = null;
+            }
+            this.initialized = false;
         }
 
         /**
@@ -53478,49 +53488,81 @@ self.onmessage = function (e) {
      * @param {string} teaHrid - Tea item HRID
      * @returns {string} Human-readable buff description
      */
-    function getTeaBuffDescription(teaHrid) {
+    function getTeaBuffDescription(teaHrid, drinkConcentration = 0) {
         const gameData = dataManager$1.getInitClientData();
         if (!gameData?.itemDetailMap) return '';
 
         const itemDetails = gameData.itemDetailMap[teaHrid];
         if (!itemDetails?.consumableDetail?.buffs) return '';
 
+        const dcMultiplier = 1 + drinkConcentration;
         const descriptions = [];
+
         for (const buff of itemDetails.consumableDetail.buffs) {
-            const value = buff.flatBoost || 0;
+            const baseValue = buff.flatBoost || 0;
+            const scaledValue = baseValue * dcMultiplier;
+            const dcBonus = baseValue * drinkConcentration;
+
             switch (buff.typeHrid) {
                 case '/buff_types/efficiency':
-                    descriptions.push(`+${(value * 100).toFixed(0)}% efficiency`);
+                    descriptions.push(formatBuffWithDC(scaledValue * 100, dcBonus * 100, '% eff', true));
                     break;
                 case '/buff_types/wisdom':
-                    descriptions.push(`+${(value * 100).toFixed(0)}% XP`);
+                    descriptions.push(formatBuffWithDC(scaledValue * 100, dcBonus * 100, '% XP', true));
                     break;
                 case '/buff_types/gathering':
-                    descriptions.push(`+${(value * 100).toFixed(0)}% gathering`);
+                    descriptions.push(formatBuffWithDC(scaledValue * 100, dcBonus * 100, '% gathering', true));
                     break;
                 case '/buff_types/processing':
-                    descriptions.push(`+${(value * 100).toFixed(0)}% processing`);
+                    descriptions.push(formatBuffWithDC(scaledValue * 100, dcBonus * 100, '% processing', true));
                     break;
                 case '/buff_types/artisan':
-                    descriptions.push(`+${(value * 100).toFixed(0)}% material savings`);
+                    descriptions.push(formatBuffWithDC(scaledValue * 100, dcBonus * 100, '% mat savings', true));
                     break;
                 case '/buff_types/gourmet':
-                    descriptions.push(`+${(value * 100).toFixed(0)}% extra output`);
+                    descriptions.push(formatBuffWithDC(scaledValue * 100, dcBonus * 100, '% extra output', true));
                     break;
                 case '/buff_types/action_level':
-                    descriptions.push(`+${value.toFixed(0)} action level`);
+                    descriptions.push(formatBuffWithDC(scaledValue, dcBonus, ' action lvl', false));
                     break;
                 default:
                     if (buff.typeHrid.endsWith('_level')) {
                         const skill = buff.typeHrid.match(/\/buff_types\/(\w+)_level/)?.[1];
                         if (skill) {
-                            descriptions.push(`+${value.toFixed(0)} ${skill} levels`);
+                            descriptions.push(formatBuffWithDC(scaledValue, dcBonus, ` ${skill}`, false));
                         }
                     }
             }
         }
 
         return descriptions.join(', ');
+    }
+
+    /**
+     * Format a buff value with optional drink concentration bonus
+     * @param {number} scaledValue - Total value including DC
+     * @param {number} dcBonus - Just the DC bonus portion
+     * @param {string} suffix - Unit suffix (e.g., '% eff', ' tailoring')
+     * @param {boolean} isPercent - Whether to format as percentage
+     * @returns {string} Formatted string like "+8.8 tailoring (+.8)"
+     */
+    function formatBuffWithDC(scaledValue, dcBonus, suffix, isPercent) {
+        // Format the main value
+        const mainFormatted = isPercent
+            ? `+${Number.isInteger(scaledValue) ? scaledValue : scaledValue.toFixed(1)}${suffix}`
+            : `+${Number.isInteger(scaledValue) ? scaledValue : scaledValue.toFixed(1)}${suffix}`;
+
+        // If no DC bonus, just return the main value
+        if (dcBonus === 0) {
+            return mainFormatted;
+        }
+
+        // Format the DC bonus (with % suffix if percentage)
+        const dcFormatted = isPercent
+            ? `(+${dcBonus < 1 ? dcBonus.toFixed(1) : dcBonus.toFixed(0)}%)`
+            : `(+${dcBonus < 1 ? dcBonus.toFixed(1) : dcBonus.toFixed(0)})`;
+
+        return `${mainFormatted} ${dcFormatted}`;
     }
 
     /**
@@ -53731,7 +53773,10 @@ self.onmessage = function (e) {
         `;
             // Show location name if we're filtering by tab, otherwise show skill name
             const displayName = locationTab || skillName;
-            header.textContent = `Optimal ${goalLabel}/hr for ${displayName}`;
+            // Include drink concentration in header if > 0
+            const dcPercent = result.drinkConcentration ? (result.drinkConcentration * 100).toFixed(2) : 0;
+            const dcSuffix = dcPercent > 0 ? ` (${dcPercent}% DC)` : '';
+            header.textContent = `Optimal ${goalLabel}/hr for ${displayName}${dcSuffix}`;
             header.title = 'Drag to move';
             popup.appendChild(header);
 
@@ -53763,7 +53808,13 @@ self.onmessage = function (e) {
                 color: rgba(255, 255, 255, 0.6);
                 font-size: 11px;
             `;
-                teaBuffs.textContent = getTeaBuffDescription(tea.hrid);
+                // Pass drink concentration to get scaled values with DC bonus shown
+                const buffText = getTeaBuffDescription(tea.hrid, result.drinkConcentration || 0);
+                // Style the DC bonus portion in dimmer color
+                teaBuffs.innerHTML = buffText.replace(
+                    /\(([^)]+)\)/g,
+                    '<span style="color: rgba(255, 255, 255, 0.4);">($1)</span>'
+                );
 
                 teaRow.appendChild(teaName);
                 teaRow.appendChild(teaBuffs);
@@ -55023,8 +55074,13 @@ self.onmessage = function (e) {
                     })
                     .join('|');
 
+                // Get selected alchemy tab (Coinify/Decompose/Transmute/etc)
+                const alchemyContainer = document.querySelector('[class*="AlchemyPanel_tabsComponentContainer"]');
+                const selectedTab =
+                    alchemyContainer?.querySelector('[role="tab"][aria-selected="true"]')?.textContent?.trim() || '';
+
                 // Don't include infoText - it contains our profit display which causes update loops
-                return `${successRate}:${consumables}:${catalyst}:${requirements}`;
+                return `${selectedTab}:${successRate}:${consumables}:${catalyst}:${requirements}`;
             } catch {
                 return '';
             }
@@ -55043,10 +55099,11 @@ self.onmessage = function (e) {
         constructor() {
             this.isActive = false;
             this.unregisterObserver = null;
+            this.contentObserver = null;
+            this.tabObserver = null;
             this.displayElement = null;
             this.updateTimeout = null;
             this.lastFingerprint = null;
-            this.pollInterval = null;
             this.isInitialized = false;
             this.timerRegistry = createTimerRegistry();
         }
@@ -55076,20 +55133,96 @@ self.onmessage = function (e) {
             this.unregisterObserver = domObserver$1.onClass(
                 'AlchemyProfitDisplay',
                 'SkillActionDetail_alchemyComponent',
-                (_alchemyComponent) => {
+                (alchemyComponent) => {
                     this.checkAndUpdateDisplay();
+                    // Setup content observer when alchemy component appears
+                    this.setupContentObserver(alchemyComponent);
                 }
             );
 
             // Initial check for existing panel
-            this.checkAndUpdateDisplay();
-
-            // Polling interval to check DOM state (like enhancement-ui.js does)
-            // This catches state changes that the observer might miss
-            this.pollInterval = setInterval(() => {
+            const existingComponent = document.querySelector('[class*="SkillActionDetail_alchemyComponent"]');
+            if (existingComponent) {
                 this.checkAndUpdateDisplay();
-            }, 200); // Check 5× per second for responsive updates
-            this.timerRegistry.registerInterval(this.pollInterval);
+                this.setupContentObserver(existingComponent);
+            }
+        }
+
+        /**
+         * Setup observer for content changes within alchemy component
+         * Watches for tab switches and item selection changes
+         * @param {HTMLElement} alchemyComponent - The alchemy component container
+         */
+        setupContentObserver(alchemyComponent) {
+            // Don't create duplicate observers
+            if (this.contentObserver) {
+                this.contentObserver.disconnect();
+            }
+            if (this.tabObserver) {
+                this.tabObserver.disconnect();
+            }
+
+            // Debounce timer for update calls
+            let debounceTimer = null;
+
+            const triggerUpdate = () => {
+                if (debounceTimer) {
+                    clearTimeout(debounceTimer);
+                }
+                debounceTimer = setTimeout(() => {
+                    this.checkAndUpdateDisplay();
+                }, 50);
+            };
+
+            // Observer for tab switches - observe the tab container separately
+            const tabContainer = document.querySelector('[class*="AlchemyPanel_tabsComponentContainer"]');
+            if (tabContainer) {
+                this.tabObserver = new MutationObserver((mutations) => {
+                    for (const mutation of mutations) {
+                        if (mutation.type === 'attributes' && mutation.attributeName === 'aria-selected') {
+                            if (mutation.target.getAttribute('aria-selected') === 'true') {
+                                triggerUpdate();
+                                return;
+                            }
+                        }
+                    }
+                });
+
+                this.tabObserver.observe(tabContainer, {
+                    attributes: true,
+                    attributeFilter: ['aria-selected'],
+                    subtree: true,
+                });
+            }
+
+            // Observer for content changes (item selection)
+            this.contentObserver = new MutationObserver((mutations) => {
+                for (const mutation of mutations) {
+                    if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+                        for (const node of mutation.addedNodes) {
+                            if (node.nodeType === Node.ELEMENT_NODE) {
+                                const className = node.className || '';
+                                if (
+                                    typeof className === 'string' &&
+                                    (className.includes('SkillActionDetail_itemRequirements') ||
+                                        className.includes('SkillActionDetail_alchemyOutput') ||
+                                        className.includes('SkillActionDetail_primaryItemSelectorContainer') ||
+                                        className.includes('SkillActionDetail_instructions'))
+                                ) {
+                                    triggerUpdate();
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            // Observe the alchemy component for content changes
+            this.contentObserver.observe(alchemyComponent, {
+                childList: true,
+                subtree: true,
+            });
         }
 
         /**
@@ -55849,9 +55982,14 @@ self.onmessage = function (e) {
                 this.updateTimeout = null;
             }
 
-            if (this.pollInterval) {
-                clearInterval(this.pollInterval);
-                this.pollInterval = null;
+            if (this.contentObserver) {
+                this.contentObserver.disconnect();
+                this.contentObserver = null;
+            }
+
+            if (this.tabObserver) {
+                this.tabObserver.disconnect();
+                this.tabObserver = null;
             }
 
             this.timerRegistry.clearAll();
@@ -60296,7 +60434,6 @@ self.onmessage = function (e) {
             // Callback references for cleanup
             this.dungeonUpdateHandler = null;
             this.characterSwitchingHandler = null;
-            this.characterSelectObserver = null;
         }
 
         /**
@@ -60362,27 +60499,6 @@ self.onmessage = function (e) {
             };
 
             dataManager$1.on('character_switching', this.characterSwitchingHandler);
-
-            // Watch for character selection screen appearing (when user clicks "Switch Character")
-            if (document.body) {
-                this.characterSelectObserver = createMutationWatcher(
-                    document.body,
-                    () => {
-                        // Check if character selection screen is visible
-                        const headings = document.querySelectorAll('h1, h2, h3');
-                        for (const heading of headings) {
-                            if (heading.textContent?.includes('Select Character')) {
-                                this.hide();
-                                break;
-                            }
-                        }
-                    },
-                    {
-                        childList: true,
-                        subtree: true,
-                    }
-                );
-            }
         }
 
         /**
@@ -60972,12 +61088,6 @@ self.onmessage = function (e) {
             if (this.characterSwitchingHandler) {
                 dataManager$1.off('character_switching', this.characterSwitchingHandler);
                 this.characterSwitchingHandler = null;
-            }
-
-            // Disconnect character selection screen observer
-            if (this.characterSelectObserver) {
-                this.characterSelectObserver();
-                this.characterSelectObserver = null;
             }
 
             // Clear update interval
@@ -69223,6 +69333,291 @@ self.onmessage = function (e) {
     };
 
     /**
+     * Mention Tracker
+     * Tracks @mentions across all chat channels and displays badge counts on chat tabs
+     */
+
+
+    class MentionTracker {
+        constructor() {
+            this.initialized = false;
+            this.mentionCounts = new Map(); // channel -> count
+            this.characterName = null;
+            this.handlers = {};
+            this.unregisterObserver = null;
+            this.tabClickHandlers = new Map(); // button element -> handler
+        }
+
+        /**
+         * Initialize the mention tracker
+         */
+        async initialize() {
+            if (this.initialized) return;
+
+            if (!config$1.getSetting('chat_mentionTracker')) {
+                return;
+            }
+
+            this.initialized = true;
+
+            // Get character name
+            this.characterName = dataManager$1.getCurrentCharacterName();
+            if (!this.characterName) {
+                return;
+            }
+
+            // Listen for chat messages
+            this.handlers.chatMessage = (data) => this.onChatMessage(data);
+            webSocketHook$1.on('chat_message_received', this.handlers.chatMessage);
+
+            // Observe chat tabs to inject badges and add click handlers
+            this.unregisterObserver = domObserver$1.onClass(
+                'MentionTracker',
+                'Chat_tabsComponentContainer',
+                (tabsContainer) => {
+                    this.setupTabBadges(tabsContainer);
+                }
+            );
+
+            // Check for existing tabs
+            const existingTabs = document.querySelector('.Chat_tabsComponentContainer__3ZoKe');
+            if (existingTabs) {
+                this.setupTabBadges(existingTabs);
+            }
+        }
+
+        /**
+         * Handle incoming chat message
+         * @param {Object} data - WebSocket message data
+         */
+        onChatMessage(data) {
+            const message = data.message;
+            if (!message) return;
+
+            // Skip system messages
+            if (message.isSystemMessage || !message.sName) return;
+
+            const text = message.m || '';
+            const channel = message.chan || '';
+
+            if (this.isMentioned(text)) {
+                const currentCount = this.mentionCounts.get(channel) || 0;
+                this.mentionCounts.set(channel, currentCount + 1);
+                this.updateBadge(channel);
+            }
+        }
+
+        /**
+         * Check if the message mentions the current player
+         * @param {string} text - Message text
+         * @returns {boolean} True if mentioned
+         */
+        isMentioned(text) {
+            if (!text || !this.characterName) return false;
+
+            // Check for @CharacterName (case insensitive)
+            const escapedName = this.escapeRegex(this.characterName);
+            const mentionPattern = new RegExp(`@${escapedName}\\b`, 'i');
+            return mentionPattern.test(text);
+        }
+
+        /**
+         * Escape special regex characters
+         * @param {string} str - String to escape
+         * @returns {string} Escaped string
+         */
+        escapeRegex(str) {
+            return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        }
+
+        /**
+         * Get display name for a channel
+         * @param {string} channel - Channel HRID
+         * @returns {string} Display name
+         */
+        getChannelDisplayName(channel) {
+            const channelMap = {
+                '/chat_channel_types/party': 'Party',
+                '/chat_channel_types/guild': 'Guild',
+                '/chat_channel_types/local': 'Local',
+                '/chat_channel_types/whisper': 'Whisper',
+                '/chat_channel_types/global': 'Global',
+            };
+            return channelMap[channel] || channel;
+        }
+
+        /**
+         * Setup badges and click handlers on chat tabs
+         * @param {HTMLElement} tabsContainer - The tabs container element
+         */
+        setupTabBadges(tabsContainer) {
+            const tabButtons = tabsContainer.querySelectorAll('.MuiButtonBase-root');
+
+            for (const button of tabButtons) {
+                const tabName = button.textContent?.trim();
+                if (!tabName) continue;
+
+                // Find matching channel for this tab
+                const channel = this.getChannelFromTabName(tabName);
+                if (!channel) continue;
+
+                // Store reference to button for this channel
+                button.dataset.mentionChannel = channel;
+
+                // Add click handler to clear mentions (if not already added)
+                if (!this.tabClickHandlers.has(button)) {
+                    const handler = () => this.clearMentions(channel);
+                    button.addEventListener('click', handler);
+                    this.tabClickHandlers.set(button, handler);
+                }
+
+                // Ensure button has relative positioning for badge
+                if (getComputedStyle(button).position === 'static') {
+                    button.style.position = 'relative';
+                }
+
+                // Update badge for this channel
+                this.updateBadgeForButton(button, channel);
+            }
+        }
+
+        /**
+         * Get channel HRID from tab display name
+         * @param {string} tabName - Tab display name (may have number suffix like "General2")
+         * @returns {string|null} Channel HRID
+         */
+        getChannelFromTabName(tabName) {
+            // Strip trailing numbers (unread counts) from tab name
+            const cleanName = tabName.replace(/\d+$/, '');
+
+            const nameMap = {
+                Party: '/chat_channel_types/party',
+                Guild: '/chat_channel_types/guild',
+                Local: '/chat_channel_types/local',
+                Whisper: '/chat_channel_types/whisper',
+                Global: '/chat_channel_types/global',
+                General: '/chat_channel_types/general',
+                Trade: '/chat_channel_types/trade',
+                Beginner: '/chat_channel_types/beginner',
+                Recruit: '/chat_channel_types/recruit',
+                Ironcow: '/chat_channel_types/ironcow',
+                Mod: '/chat_channel_types/mod',
+            };
+            return nameMap[cleanName] || null;
+        }
+
+        /**
+         * Update badge display for a channel
+         * @param {string} channel - Channel HRID
+         */
+        updateBadge(channel) {
+            const selector = `.Chat_tabsComponentContainer__3ZoKe .MuiButtonBase-root[data-mention-channel="${channel}"]`;
+            const button = document.querySelector(selector);
+
+            if (button) {
+                this.updateBadgeForButton(button, channel);
+            }
+        }
+
+        /**
+         * Update badge on a specific button
+         * @param {HTMLElement} button - Tab button element
+         * @param {string} channel - Channel HRID
+         */
+        updateBadgeForButton(button, channel) {
+            const count = this.mentionCounts.get(channel) || 0;
+
+            // Find or create badge
+            let badge = button.querySelector('.mwi-mention-badge');
+
+            if (count === 0) {
+                if (badge) {
+                    badge.remove();
+                }
+                return;
+            }
+
+            if (!badge) {
+                badge = document.createElement('span');
+                badge.className = 'mwi-mention-badge';
+                // Match MUI badge styling exactly, but on left side
+                badge.style.cssText = `
+                position: absolute;
+                box-sizing: border-box;
+                font-family: Roboto, Helvetica, Arial, sans-serif;
+                font-weight: 500;
+                font-size: 0.75rem;
+                line-height: 1;
+                z-index: 1;
+                top: 0;
+                left: 0;
+                transform: scale(1) translate(-50%, -50%);
+                transform-origin: 0% 0%;
+                margin-top: 2px;
+                margin-left: 4px;
+                height: 1rem;
+                min-width: 1rem;
+                border-radius: 0.5rem;
+                padding: 0 0.25rem;
+                display: flex;
+                flex-wrap: wrap;
+                justify-content: center;
+                align-content: center;
+                align-items: center;
+                background-color: #d32f2f;
+                color: #e7e7e7;
+            `;
+                button.appendChild(badge);
+            }
+
+            // Update count display
+            badge.textContent = count > 99 ? '99+' : count.toString();
+        }
+
+        /**
+         * Clear mention count for a channel
+         * @param {string} channel - Channel HRID
+         */
+        clearMentions(channel) {
+            if (this.mentionCounts.has(channel)) {
+                this.mentionCounts.set(channel, 0);
+                this.updateBadge(channel);
+            }
+        }
+
+        /**
+         * Cleanup the mention tracker
+         */
+        disable() {
+            if (this.handlers.chatMessage) {
+                webSocketHook$1.off('chat_message_received', this.handlers.chatMessage);
+                this.handlers.chatMessage = null;
+            }
+
+            if (this.unregisterObserver) {
+                this.unregisterObserver();
+                this.unregisterObserver = null;
+            }
+
+            // Remove click handlers
+            for (const [button, handler] of this.tabClickHandlers) {
+                button.removeEventListener('click', handler);
+            }
+            this.tabClickHandlers.clear();
+
+            // Remove all badges
+            document.querySelectorAll('.mwi-mention-badge').forEach((el) => el.remove());
+
+            // Clear counts
+            this.mentionCounts.clear();
+
+            this.initialized = false;
+        }
+    }
+
+    const mentionTracker = new MentionTracker();
+
+    /**
      * Task Profit Display
      * Shows profit calculation on task cards
      * Expandable breakdown on click
@@ -77407,6 +77802,9 @@ self.onmessage = function (e) {
          * Disable and cleanup
          */
         disable() {
+            // Clear in-memory session data (will be reloaded from storage on next init)
+            this.sessions = {};
+            this.currentSessionId = null;
             this.isInitialized = false;
         }
     }
@@ -77472,7 +77870,8 @@ self.onmessage = function (e) {
             this.updateDebounce = null;
             this.isDragging = false;
             this.unregisterScreenObserver = null;
-            this.pollInterval = null;
+            this.panelRemovalObserver = null;
+            this.settingChangeHandlers = [];
             this.isOnEnhancingScreen = false;
             this.isCollapsed = false; // Track collapsed state
             this.updateInterval = null;
@@ -77529,47 +77928,119 @@ self.onmessage = function (e) {
             }
 
             // Register with centralized DOM observer for enhancing panel detection
-            // Note: Enhancing screen uses EnhancingPanel_enhancingPanel, not SkillActionDetail_enhancingComponent
             this.unregisterScreenObserver = domObserver$1.onClass(
                 'EnhancementUI-ScreenDetection',
                 'EnhancingPanel_enhancingPanel',
-                (_node) => {
-                    this.checkEnhancingScreen();
+                (panel) => {
+                    this.isOnEnhancingScreen = true;
+                    this.updateVisibility();
+                    // Setup removal observer when panel appears
+                    this.setupPanelRemovalObserver(panel);
                 },
                 { debounce: false }
             );
 
-            // Poll for both setting changes and panel removal
-            this.pollInterval = setInterval(() => {
-                const trackerEnabled = config$1.getSetting('enhancementTracker');
-                const currentSetting = config$1.getSetting('enhancementTracker_showOnlyOnEnhancingScreen');
+            // Setup setting change listeners (event-driven, no polling)
+            this.setupSettingChangeListeners();
 
-                // If main tracker is disabled, always hide
-                if (!trackerEnabled) {
-                    if (this.floatingUI && this.floatingUI.style.display !== 'none') {
-                        this.hide();
-                    }
+            // Check if panel already exists and setup removal observer
+            const existingPanel = document.querySelector('[class*="EnhancingPanel_enhancingPanel"]');
+            if (existingPanel) {
+                this.isOnEnhancingScreen = true;
+                this.updateVisibility();
+                this.setupPanelRemovalObserver(existingPanel);
+            }
+        }
+
+        /**
+         * Setup listeners for setting changes (replaces polling)
+         */
+        setupSettingChangeListeners() {
+            // Listen for main tracker toggle
+            const onTrackerChange = (enabled) => {
+                if (!enabled) {
+                    this.hide();
+                } else {
+                    this.updateVisibility();
+                }
+            };
+            config$1.onSettingChange('enhancementTracker', onTrackerChange);
+            this.settingChangeHandlers.push({ key: 'enhancementTracker', handler: onTrackerChange });
+
+            // Listen for "show only on enhancing screen" toggle
+            const onScreenSettingChange = (enabled) => {
+                if (enabled !== true) {
+                    // Setting disabled - always show (if main tracker enabled)
+                    this.isOnEnhancingScreen = true;
+                } else {
+                    // Setting enabled - check actual screen
+                    this.checkEnhancingScreen();
+                }
+                this.updateVisibility();
+            };
+            config$1.onSettingChange('enhancementTracker_showOnlyOnEnhancingScreen', onScreenSettingChange);
+            this.settingChangeHandlers.push({
+                key: 'enhancementTracker_showOnlyOnEnhancingScreen',
+                handler: onScreenSettingChange,
+            });
+        }
+
+        /**
+         * Setup observer to detect when enhancing panel is removed from DOM
+         * @param {HTMLElement} panel - The enhancing panel element
+         */
+        setupPanelRemovalObserver(panel) {
+            // Disconnect existing observer if any
+            if (this.panelRemovalObserver) {
+                this.panelRemovalObserver.disconnect();
+            }
+
+            // Find MainPanel_mainPanel (grandparent) - the container itself gets replaced on navigation
+            const subPanelContainer = panel.parentElement;
+            const mainPanel = subPanelContainer?.parentElement;
+
+            if (!mainPanel || !mainPanel.className?.includes?.('MainPanel_mainPanel')) {
+                // Fallback: find by class
+                const fallbackMainPanel = document.querySelector('[class*="MainPanel_mainPanel"]');
+                if (!fallbackMainPanel) {
                     return;
                 }
+                this.observeMainPanelForNavigation(fallbackMainPanel);
+            } else {
+                this.observeMainPanelForNavigation(mainPanel);
+            }
+        }
 
-                if (currentSetting !== true) {
-                    // Setting disabled - always show
-                    if (!this.isOnEnhancingScreen) {
-                        this.isOnEnhancingScreen = true;
-                        this.updateVisibility();
-                    }
-                } else {
-                    // Setting enabled - check if panel exists
-                    const panel = document.querySelector('[class*="EnhancingPanel_enhancingPanel"]');
-                    const shouldBeOnScreen = !!panel;
-
-                    if (this.isOnEnhancingScreen !== shouldBeOnScreen) {
-                        this.isOnEnhancingScreen = shouldBeOnScreen;
-                        this.updateVisibility();
+        /**
+         * Observe MainPanel_mainPanel for navigation (subPanelContainer removal)
+         * @param {HTMLElement} mainPanel - The main panel element to observe
+         */
+        observeMainPanelForNavigation(mainPanel) {
+            this.panelRemovalObserver = new MutationObserver((mutations) => {
+                for (const mutation of mutations) {
+                    if (mutation.type === 'childList' && mutation.removedNodes.length > 0) {
+                        for (const node of mutation.removedNodes) {
+                            // Check if subPanelContainer was removed (contains the enhancing panel)
+                            if (
+                                node.nodeType === Node.ELEMENT_NODE &&
+                                node.className?.includes?.('MainPanel_subPanelContainer')
+                            ) {
+                                // Check if EnhancingPanel was inside the removed container
+                                const hadEnhancingPanel = node.querySelector('[class*="EnhancingPanel_enhancingPanel"]');
+                                if (hadEnhancingPanel) {
+                                    this.isOnEnhancingScreen = false;
+                                    this.updateVisibility();
+                                    return;
+                                }
+                            }
+                        }
                     }
                 }
-            }, 500);
-            this.timerRegistry.registerInterval(this.pollInterval);
+            });
+
+            this.panelRemovalObserver.observe(mainPanel, {
+                childList: true,
+            });
         }
 
         /**
@@ -78468,11 +78939,17 @@ self.onmessage = function (e) {
                 this.updateDebounce = null;
             }
 
-            // Clear poll interval
-            if (this.pollInterval) {
-                clearInterval(this.pollInterval);
-                this.pollInterval = null;
+            // Disconnect panel removal observer
+            if (this.panelRemovalObserver) {
+                this.panelRemovalObserver.disconnect();
+                this.panelRemovalObserver = null;
             }
+
+            // Unregister setting change listeners
+            for (const { key } of this.settingChangeHandlers) {
+                config$1.offSettingChange(key);
+            }
+            this.settingChangeHandlers = [];
 
             if (this.updateInterval) {
                 clearInterval(this.updateInterval);
@@ -79128,6 +79605,7 @@ self.onmessage = function (e) {
         externalLinks,
         altClickNavigation,
         chatCommands,
+        mentionTracker,
         taskProfitDisplay,
         taskRerollTracker,
         taskSorter,
@@ -79473,6 +79951,7 @@ self.onmessage = function (e) {
                 async: false,
             },
             { key: 'chatCommands', name: 'Chat Commands', category: 'Chat', module: UI.chatCommands, async: true },
+            { key: 'mentionTracker', name: 'Mention Tracker', category: 'Chat', module: UI.mentionTracker, async: true },
             {
                 key: 'taskProfitDisplay',
                 name: 'Task Profit Display',
