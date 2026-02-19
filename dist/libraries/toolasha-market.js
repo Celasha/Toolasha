@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 0.39.1
+ * Version: 1.0.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -320,6 +320,7 @@
                 gourmetBonus, // Gourmet bonus item chance
                 processingBonus, // Processing conversion chance
                 drinkConcentration, // Drink Concentration stat
+                teaSkillLevelBonus, // Tea skill level bonus (e.g., +8 from Ultra Cheesesmithing Tea)
                 efficiencyMultiplier,
                 equipmentSpeedBonus,
                 skillLevel,
@@ -3240,6 +3241,7 @@ self.onmessage = function (e) {
             const baseRevenuePerAction = baseItemsPerAction * resolvedRawPrice;
             const baseRevenueLine = baseItemsPerHour * resolvedRawPrice;
             baseRevenuePerHour += baseRevenueLine;
+
             baseOutputs.push({
                 name: rawItemName,
                 itemsPerHour: baseItemsPerHour,

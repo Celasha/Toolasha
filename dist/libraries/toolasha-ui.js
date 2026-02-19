@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 0.39.1
+ * Version: 1.0.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2432,6 +2432,7 @@ self.onmessage = function (e) {
             const baseRevenuePerAction = baseItemsPerAction * resolvedRawPrice;
             const baseRevenueLine = baseItemsPerHour * resolvedRawPrice;
             baseRevenuePerHour += baseRevenueLine;
+
             baseOutputs.push({
                 name: rawItemName,
                 itemsPerHour: baseItemsPerHour,
@@ -2912,6 +2913,7 @@ self.onmessage = function (e) {
                 gourmetBonus, // Gourmet bonus item chance
                 processingBonus, // Processing conversion chance
                 drinkConcentration, // Drink Concentration stat
+                teaSkillLevelBonus, // Tea skill level bonus (e.g., +8 from Ultra Cheesesmithing Tea)
                 efficiencyMultiplier,
                 equipmentSpeedBonus,
                 skillLevel,
