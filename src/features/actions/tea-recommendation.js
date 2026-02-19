@@ -212,7 +212,10 @@ class TeaRecommendation {
         `;
         // Show location name if we're filtering by tab, otherwise show skill name
         const displayName = locationTab || skillName;
-        header.textContent = `Optimal ${goalLabel}/hr for ${displayName}`;
+        // Include drink concentration in header if > 0
+        const dcPercent = result.drinkConcentration ? (result.drinkConcentration * 100).toFixed(2) : 0;
+        const dcSuffix = dcPercent > 0 ? ` (${dcPercent}% DC)` : '';
+        header.textContent = `Optimal ${goalLabel}/hr for ${displayName}${dcSuffix}`;
         header.title = 'Drag to move';
         popup.appendChild(header);
 
@@ -244,7 +247,13 @@ class TeaRecommendation {
                 color: rgba(255, 255, 255, 0.6);
                 font-size: 11px;
             `;
-            teaBuffs.textContent = getTeaBuffDescription(tea.hrid);
+            // Pass drink concentration to get scaled values with DC bonus shown
+            const buffText = getTeaBuffDescription(tea.hrid, result.drinkConcentration || 0);
+            // Style the DC bonus portion in dimmer color
+            teaBuffs.innerHTML = buffText.replace(
+                /\(([^)]+)\)/g,
+                '<span style="color: rgba(255, 255, 255, 0.4);">($1)</span>'
+            );
 
             teaRow.appendChild(teaName);
             teaRow.appendChild(teaBuffs);

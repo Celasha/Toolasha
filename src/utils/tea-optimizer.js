@@ -859,49 +859,81 @@ export function findOptimalTeas(skillName, goal, locationName = null) {
  * @param {string} teaHrid - Tea item HRID
  * @returns {string} Human-readable buff description
  */
-export function getTeaBuffDescription(teaHrid) {
+export function getTeaBuffDescription(teaHrid, drinkConcentration = 0) {
     const gameData = dataManager.getInitClientData();
     if (!gameData?.itemDetailMap) return '';
 
     const itemDetails = gameData.itemDetailMap[teaHrid];
     if (!itemDetails?.consumableDetail?.buffs) return '';
 
+    const dcMultiplier = 1 + drinkConcentration;
     const descriptions = [];
+
     for (const buff of itemDetails.consumableDetail.buffs) {
-        const value = buff.flatBoost || 0;
+        const baseValue = buff.flatBoost || 0;
+        const scaledValue = baseValue * dcMultiplier;
+        const dcBonus = baseValue * drinkConcentration;
+
         switch (buff.typeHrid) {
             case '/buff_types/efficiency':
-                descriptions.push(`+${(value * 100).toFixed(0)}% efficiency`);
+                descriptions.push(formatBuffWithDC(scaledValue * 100, dcBonus * 100, '% eff', true));
                 break;
             case '/buff_types/wisdom':
-                descriptions.push(`+${(value * 100).toFixed(0)}% XP`);
+                descriptions.push(formatBuffWithDC(scaledValue * 100, dcBonus * 100, '% XP', true));
                 break;
             case '/buff_types/gathering':
-                descriptions.push(`+${(value * 100).toFixed(0)}% gathering`);
+                descriptions.push(formatBuffWithDC(scaledValue * 100, dcBonus * 100, '% gathering', true));
                 break;
             case '/buff_types/processing':
-                descriptions.push(`+${(value * 100).toFixed(0)}% processing`);
+                descriptions.push(formatBuffWithDC(scaledValue * 100, dcBonus * 100, '% processing', true));
                 break;
             case '/buff_types/artisan':
-                descriptions.push(`+${(value * 100).toFixed(0)}% material savings`);
+                descriptions.push(formatBuffWithDC(scaledValue * 100, dcBonus * 100, '% mat savings', true));
                 break;
             case '/buff_types/gourmet':
-                descriptions.push(`+${(value * 100).toFixed(0)}% extra output`);
+                descriptions.push(formatBuffWithDC(scaledValue * 100, dcBonus * 100, '% extra output', true));
                 break;
             case '/buff_types/action_level':
-                descriptions.push(`+${value.toFixed(0)} action level`);
+                descriptions.push(formatBuffWithDC(scaledValue, dcBonus, ' action lvl', false));
                 break;
             default:
                 if (buff.typeHrid.endsWith('_level')) {
                     const skill = buff.typeHrid.match(/\/buff_types\/(\w+)_level/)?.[1];
                     if (skill) {
-                        descriptions.push(`+${value.toFixed(0)} ${skill} levels`);
+                        descriptions.push(formatBuffWithDC(scaledValue, dcBonus, ` ${skill}`, false));
                     }
                 }
         }
     }
 
     return descriptions.join(', ');
+}
+
+/**
+ * Format a buff value with optional drink concentration bonus
+ * @param {number} scaledValue - Total value including DC
+ * @param {number} dcBonus - Just the DC bonus portion
+ * @param {string} suffix - Unit suffix (e.g., '% eff', ' tailoring')
+ * @param {boolean} isPercent - Whether to format as percentage
+ * @returns {string} Formatted string like "+8.8 tailoring (+.8)"
+ */
+function formatBuffWithDC(scaledValue, dcBonus, suffix, isPercent) {
+    // Format the main value
+    const mainFormatted = isPercent
+        ? `+${Number.isInteger(scaledValue) ? scaledValue : scaledValue.toFixed(1)}${suffix}`
+        : `+${Number.isInteger(scaledValue) ? scaledValue : scaledValue.toFixed(1)}${suffix}`;
+
+    // If no DC bonus, just return the main value
+    if (dcBonus === 0) {
+        return mainFormatted;
+    }
+
+    // Format the DC bonus (with % suffix if percentage)
+    const dcFormatted = isPercent
+        ? `(+${dcBonus < 1 ? dcBonus.toFixed(1) : dcBonus.toFixed(0)}%)`
+        : `(+${dcBonus < 1 ? dcBonus.toFixed(1) : dcBonus.toFixed(0)})`;
+
+    return `${mainFormatted} ${dcFormatted}`;
 }
 
 export default {
