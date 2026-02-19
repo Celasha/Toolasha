@@ -21,12 +21,12 @@
 // @require      https://cdnjs.cloudflare.com/ajax/libs/mathjs/12.4.2/math.js
 // @require      https://cdn.jsdelivr.net/npm/chart.js@3.7.0/dist/chart.min.js
 // @require      https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0/dist/chartjs-plugin-datalabels.min.js
-// @require      https://UPDATE-THIS-URL/toolasha-core.js
-// @require      https://UPDATE-THIS-URL/toolasha-utils.js
-// @require      https://UPDATE-THIS-URL/toolasha-market.js
-// @require      https://UPDATE-THIS-URL/toolasha-actions.js
-// @require      https://UPDATE-THIS-URL/toolasha-combat.js
-// @require      https://UPDATE-THIS-URL/toolasha-ui.js
+// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@8a1c6ea72786a87fbd717a21b28a70abe7e21b4e/dist/libraries/toolasha-core.js
+// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@8a1c6ea72786a87fbd717a21b28a70abe7e21b4e/dist/libraries/toolasha-utils.js
+// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@8a1c6ea72786a87fbd717a21b28a70abe7e21b4e/dist/libraries/toolasha-market.js
+// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@8a1c6ea72786a87fbd717a21b28a70abe7e21b4e/dist/libraries/toolasha-actions.js
+// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@8a1c6ea72786a87fbd717a21b28a70abe7e21b4e/dist/libraries/toolasha-combat.js
+// @require      https://cdn.jsdelivr.net/gh/Celasha/Toolasha@8a1c6ea72786a87fbd717a21b28a70abe7e21b4e/dist/libraries/toolasha-ui.js
 // ==/UserScript==
 // Note: Combat Sim auto-import requires Tampermonkey for cross-domain storage. Not available on Steam (use manual clipboard copy/paste instead).
 
