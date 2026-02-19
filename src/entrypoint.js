@@ -327,6 +327,7 @@ function registerFeatures() {
             async: false,
         },
         { key: 'chatCommands', name: 'Chat Commands', category: 'Chat', module: UI.chatCommands, async: true },
+        { key: 'mentionTracker', name: 'Mention Tracker', category: 'Chat', module: UI.mentionTracker, async: true },
         {
             key: 'taskProfitDisplay',
             name: 'Task Profit Display',

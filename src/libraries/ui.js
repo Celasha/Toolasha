@@ -16,6 +16,7 @@ import altClickNavigation from '../features/navigation/alt-click-navigation.js';
 
 // Chat features
 import chatCommands from '../features/chat/chat-commands.js';
+import mentionTracker from '../features/chat/mention-tracker.js';
 
 // Task features
 import taskProfitDisplay from '../features/tasks/task-profit-display.js';
@@ -58,6 +59,7 @@ toolashaRoot.UI = {
     externalLinks,
     altClickNavigation,
     chatCommands,
+    mentionTracker,
     taskProfitDisplay,
     taskRerollTracker,
     taskSorter,

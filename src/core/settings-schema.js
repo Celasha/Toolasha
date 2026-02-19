@@ -21,6 +21,13 @@ export const settingsGroups = {
                 default: true,
                 help: 'Type /item, /wiki, or /market followed by an item name in chat. Example: /item radiant fiber',
             },
+            chat_mentionTracker: {
+                id: 'chat_mentionTracker',
+                label: 'Show badge when mentioned in chat',
+                type: 'checkbox',
+                default: true,
+                help: 'Displays a red badge on chat tabs when someone @mentions you',
+            },
             altClickNavigation: {
                 id: 'altClickNavigation',
                 label: 'Alt+click items to navigate to crafting/gathering or dictionary',
