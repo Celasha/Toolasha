@@ -16,10 +16,11 @@ class AlchemyProfitDisplay {
     constructor() {
         this.isActive = false;
         this.unregisterObserver = null;
+        this.contentObserver = null;
+        this.tabObserver = null;
         this.displayElement = null;
         this.updateTimeout = null;
         this.lastFingerprint = null;
-        this.pollInterval = null;
         this.isInitialized = false;
         this.timerRegistry = createTimerRegistry();
     }
@@ -49,20 +50,96 @@ class AlchemyProfitDisplay {
         this.unregisterObserver = domObserver.onClass(
             'AlchemyProfitDisplay',
             'SkillActionDetail_alchemyComponent',
-            (_alchemyComponent) => {
+            (alchemyComponent) => {
                 this.checkAndUpdateDisplay();
+                // Setup content observer when alchemy component appears
+                this.setupContentObserver(alchemyComponent);
             }
         );
 
         // Initial check for existing panel
-        this.checkAndUpdateDisplay();
-
-        // Polling interval to check DOM state (like enhancement-ui.js does)
-        // This catches state changes that the observer might miss
-        this.pollInterval = setInterval(() => {
+        const existingComponent = document.querySelector('[class*="SkillActionDetail_alchemyComponent"]');
+        if (existingComponent) {
             this.checkAndUpdateDisplay();
-        }, 200); // Check 5× per second for responsive updates
-        this.timerRegistry.registerInterval(this.pollInterval);
+            this.setupContentObserver(existingComponent);
+        }
+    }
+
+    /**
+     * Setup observer for content changes within alchemy component
+     * Watches for tab switches and item selection changes
+     * @param {HTMLElement} alchemyComponent - The alchemy component container
+     */
+    setupContentObserver(alchemyComponent) {
+        // Don't create duplicate observers
+        if (this.contentObserver) {
+            this.contentObserver.disconnect();
+        }
+        if (this.tabObserver) {
+            this.tabObserver.disconnect();
+        }
+
+        // Debounce timer for update calls
+        let debounceTimer = null;
+
+        const triggerUpdate = () => {
+            if (debounceTimer) {
+                clearTimeout(debounceTimer);
+            }
+            debounceTimer = setTimeout(() => {
+                this.checkAndUpdateDisplay();
+            }, 50);
+        };
+
+        // Observer for tab switches - observe the tab container separately
+        const tabContainer = document.querySelector('[class*="AlchemyPanel_tabsComponentContainer"]');
+        if (tabContainer) {
+            this.tabObserver = new MutationObserver((mutations) => {
+                for (const mutation of mutations) {
+                    if (mutation.type === 'attributes' && mutation.attributeName === 'aria-selected') {
+                        if (mutation.target.getAttribute('aria-selected') === 'true') {
+                            triggerUpdate();
+                            return;
+                        }
+                    }
+                }
+            });
+
+            this.tabObserver.observe(tabContainer, {
+                attributes: true,
+                attributeFilter: ['aria-selected'],
+                subtree: true,
+            });
+        }
+
+        // Observer for content changes (item selection)
+        this.contentObserver = new MutationObserver((mutations) => {
+            for (const mutation of mutations) {
+                if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+                    for (const node of mutation.addedNodes) {
+                        if (node.nodeType === Node.ELEMENT_NODE) {
+                            const className = node.className || '';
+                            if (
+                                typeof className === 'string' &&
+                                (className.includes('SkillActionDetail_itemRequirements') ||
+                                    className.includes('SkillActionDetail_alchemyOutput') ||
+                                    className.includes('SkillActionDetail_primaryItemSelectorContainer') ||
+                                    className.includes('SkillActionDetail_instructions'))
+                            ) {
+                                triggerUpdate();
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        // Observe the alchemy component for content changes
+        this.contentObserver.observe(alchemyComponent, {
+            childList: true,
+            subtree: true,
+        });
     }
 
     /**
@@ -822,9 +899,14 @@ class AlchemyProfitDisplay {
             this.updateTimeout = null;
         }
 
-        if (this.pollInterval) {
-            clearInterval(this.pollInterval);
-            this.pollInterval = null;
+        if (this.contentObserver) {
+            this.contentObserver.disconnect();
+            this.contentObserver = null;
+        }
+
+        if (this.tabObserver) {
+            this.tabObserver.disconnect();
+            this.tabObserver = null;
         }
 
         this.timerRegistry.clearAll();

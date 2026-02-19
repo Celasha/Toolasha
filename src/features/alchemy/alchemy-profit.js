@@ -918,8 +918,13 @@ class AlchemyProfit {
                 })
                 .join('|');
 
+            // Get selected alchemy tab (Coinify/Decompose/Transmute/etc)
+            const alchemyContainer = document.querySelector('[class*="AlchemyPanel_tabsComponentContainer"]');
+            const selectedTab =
+                alchemyContainer?.querySelector('[role="tab"][aria-selected="true"]')?.textContent?.trim() || '';
+
             // Don't include infoText - it contains our profit display which causes update loops
-            return `${successRate}:${consumables}:${catalyst}:${requirements}`;
+            return `${selectedTab}:${successRate}:${consumables}:${catalyst}:${requirements}`;
         } catch {
             return '';
         }
