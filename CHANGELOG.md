@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.3.0](https://github.com/Celasha/Toolasha/compare/v1.2.0...v1.3.0) (2026-02-20)
+
+### Features
+
+- add Socko's Combat Tracker to external links ([11531b4](https://github.com/Celasha/Toolasha/commit/11531b45da808b98317704eab40358463a151c75))
+
+### Miscellaneous Chores
+
+- commit standalone enhancement library for GreasyFork compatibility ([acc85a4](https://github.com/Celasha/Toolasha/commit/acc85a49d9af65aea80410f0a15be205c22e6ddc))
+
 ## [1.2.0](https://github.com/Celasha/Toolasha/compare/v1.1.1...v1.2.0) (2026-02-20)
 
 ### Features
