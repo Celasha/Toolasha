@@ -75,6 +75,10 @@ class ExternalLinks {
                 label: 'Milkonomy',
                 url: 'https://milkonomy.pages.dev/#/dashboard',
             },
+            {
+                label: "Socko's Combat Tracker",
+                url: 'https://sockosnewcombattracker.pages.dev/',
+            },
         ];
 
         // Add each link (in reverse order so they appear in correct order when prepended)
