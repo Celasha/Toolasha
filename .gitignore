@@ -1,5 +1,7 @@
 node_modules/
 dist/
+# Exception: Allow standalone enhancement library for external tools (GreasyFork compatibility)
+!dist/libraries/toolasha-enhancement-standalone.js
 *.log
 .DS_Store
 .vscode/
