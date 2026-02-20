@@ -225,6 +225,7 @@ class GatheringStats {
 
         // Store profit value for sorting and update shared sort manager
         data.profitPerHour = profitPerHour;
+        data.expPerHour = expPerHour;
         actionPanelSort.updateProfit(actionPanel, profitPerHour);
 
         // Check if we should hide actions with negative profit (unless pinned)
@@ -299,8 +300,105 @@ class GatheringStats {
         // Wait for all updates to complete
         await Promise.all(updatePromises);
 
+        // Find best actions and add indicators
+        this.addBestActionIndicators();
+
         // Trigger sort via shared manager
         actionPanelSort.triggerSort();
+    }
+
+    /**
+     * Find best actions and add visual indicators
+     */
+    addBestActionIndicators() {
+        let bestProfit = null;
+        let bestExp = null;
+        let bestOverall = null;
+        let bestProfitPanels = [];
+        let bestExpPanels = [];
+        let bestOverallPanels = [];
+
+        // First pass: find the best values
+        for (const [actionPanel, data] of this.actionElements.entries()) {
+            if (!document.body.contains(actionPanel) || !data.displayElement) {
+                continue;
+            }
+
+            const { profitPerHour, expPerHour } = data;
+
+            // Find best profit/hr
+            if (profitPerHour !== null && profitPerHour > 0) {
+                if (bestProfit === null || profitPerHour > bestProfit) {
+                    bestProfit = profitPerHour;
+                    bestProfitPanels = [actionPanel];
+                } else if (profitPerHour === bestProfit) {
+                    bestProfitPanels.push(actionPanel);
+                }
+            }
+
+            // Find best exp/hr
+            if (expPerHour !== null && expPerHour > 0) {
+                if (bestExp === null || expPerHour > bestExp) {
+                    bestExp = expPerHour;
+                    bestExpPanels = [actionPanel];
+                } else if (expPerHour === bestExp) {
+                    bestExpPanels.push(actionPanel);
+                }
+            }
+
+            // Find best overall (profit × exp product)
+            if (profitPerHour !== null && profitPerHour > 0 && expPerHour !== null && expPerHour > 0) {
+                const overallValue = profitPerHour * expPerHour;
+                if (bestOverall === null || overallValue > bestOverall) {
+                    bestOverall = overallValue;
+                    bestOverallPanels = [actionPanel];
+                } else if (overallValue === bestOverall) {
+                    bestOverallPanels.push(actionPanel);
+                }
+            }
+        }
+
+        // Second pass: update HTML with indicators
+        for (const [actionPanel, data] of this.actionElements.entries()) {
+            if (!document.body.contains(actionPanel) || !data.displayElement) {
+                continue;
+            }
+
+            const { profitPerHour, expPerHour } = data;
+            const isBestProfit = bestProfitPanels.includes(actionPanel);
+            const isBestExp = bestExpPanels.includes(actionPanel);
+            const isBestOverall = bestOverallPanels.includes(actionPanel);
+
+            // Rebuild HTML with indicators
+            let html = '';
+
+            // Add profit/hr line with indicator
+            if (profitPerHour !== null) {
+                const profitColor = profitPerHour >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
+                const profitSign = profitPerHour >= 0 ? '' : '-';
+                const profitIndicator = isBestProfit ? ' 💰' : '';
+                html += `<span style="color: ${profitColor};">Profit/hr: ${profitSign}${formatKMB(Math.abs(profitPerHour))}${profitIndicator}</span>`;
+            }
+
+            // Add exp/hr line with indicator
+            if (expPerHour !== null && expPerHour > 0) {
+                if (html) html += '<br>';
+                const expIndicator = isBestExp ? ' 🎓' : '';
+                html += `<span style="color: #fff;">Exp/hr: ${formatKMB(expPerHour)}${expIndicator}</span>`;
+            }
+
+            // Add coins/xp efficiency metric with indicator
+            if (profitPerHour !== null && expPerHour !== null && expPerHour > 0) {
+                const coinsPerXp = profitPerHour / expPerHour;
+                const efficiencyColor = coinsPerXp >= 0 ? config.COLOR_INFO : config.COLOR_WARNING;
+                const efficiencySign = coinsPerXp >= 0 ? '' : '-';
+                const overallIndicator = isBestOverall ? ' 🏆' : '';
+                if (html) html += '<br>';
+                html += `<span style="color: ${efficiencyColor};">Coins/XP: ${efficiencySign}${formatKMB(Math.abs(coinsPerXp))}${overallIndicator}</span>`;
+            }
+
+            data.displayElement.innerHTML = html;
+        }
     }
 
     /**

@@ -433,6 +433,12 @@ class MaxProduceable {
         // Build display HTML
         let html = `<span style="color: ${canProduceColor};">Can produce: ${maxCrafts.toLocaleString()}</span>`;
 
+        // Store metrics for best action comparison
+        data.maxCrafts = maxCrafts;
+        data.profitPerHour = resolvedProfitPerHour;
+        data.expPerHour = expPerHour;
+        data.hasMissingPrices = hasMissingPrices;
+
         // Add profit/hr line if available
         if (hasMissingPrices) {
             html += `<br><span style="color: ${config.SCRIPT_COLOR_ALERT};">Profit/hr: -- ⚠</span>`;
@@ -507,8 +513,121 @@ class MaxProduceable {
         // Wait for all updates to complete
         await Promise.all(updatePromises);
 
+        // Find best actions and add indicators
+        this.addBestActionIndicators();
+
         // Trigger sort via shared manager
         actionPanelSort.triggerSort();
+    }
+
+    /**
+     * Find best actions and add visual indicators
+     */
+    addBestActionIndicators() {
+        let bestProfit = null;
+        let bestExp = null;
+        let bestOverall = null;
+        let bestProfitPanels = [];
+        let bestExpPanels = [];
+        let bestOverallPanels = [];
+
+        // First pass: find the best values
+        for (const [actionPanel, data] of this.actionElements.entries()) {
+            if (!document.body.contains(actionPanel) || !data.displayElement) {
+                continue;
+            }
+
+            const { profitPerHour, expPerHour, hasMissingPrices } = data;
+
+            // Skip actions with missing prices for profit comparison
+            if (!hasMissingPrices && profitPerHour !== null && profitPerHour > 0) {
+                if (bestProfit === null || profitPerHour > bestProfit) {
+                    bestProfit = profitPerHour;
+                    bestProfitPanels = [actionPanel];
+                } else if (profitPerHour === bestProfit) {
+                    bestProfitPanels.push(actionPanel);
+                }
+            }
+
+            // Find best exp/hr
+            if (expPerHour !== null && expPerHour > 0) {
+                if (bestExp === null || expPerHour > bestExp) {
+                    bestExp = expPerHour;
+                    bestExpPanels = [actionPanel];
+                } else if (expPerHour === bestExp) {
+                    bestExpPanels.push(actionPanel);
+                }
+            }
+
+            // Find best overall (profit × exp product)
+            if (
+                !hasMissingPrices &&
+                profitPerHour !== null &&
+                profitPerHour > 0 &&
+                expPerHour !== null &&
+                expPerHour > 0
+            ) {
+                const overallValue = profitPerHour * expPerHour;
+                if (bestOverall === null || overallValue > bestOverall) {
+                    bestOverall = overallValue;
+                    bestOverallPanels = [actionPanel];
+                } else if (overallValue === bestOverall) {
+                    bestOverallPanels.push(actionPanel);
+                }
+            }
+        }
+
+        // Second pass: update HTML with indicators
+        for (const [actionPanel, data] of this.actionElements.entries()) {
+            if (!document.body.contains(actionPanel) || !data.displayElement) {
+                continue;
+            }
+
+            const { profitPerHour, expPerHour, hasMissingPrices } = data;
+            const isBestProfit = bestProfitPanels.includes(actionPanel);
+            const isBestExp = bestExpPanels.includes(actionPanel);
+            const isBestOverall = bestOverallPanels.includes(actionPanel);
+
+            // Rebuild HTML with indicators
+            const maxCrafts = data.maxCrafts || 0;
+            let canProduceColor;
+            if (maxCrafts === 0) {
+                canProduceColor = config.COLOR_LOSS;
+            } else if (maxCrafts < 5) {
+                canProduceColor = config.COLOR_WARNING;
+            } else {
+                canProduceColor = config.COLOR_PROFIT;
+            }
+
+            let html = `<span style="color: ${canProduceColor};">Can produce: ${maxCrafts.toLocaleString()}</span>`;
+
+            // Add profit/hr line with indicator
+            if (hasMissingPrices) {
+                html += `<br><span style="color: ${config.SCRIPT_COLOR_ALERT};">Profit/hr: -- ⚠</span>`;
+            } else if (profitPerHour !== null) {
+                const profitColor = profitPerHour >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
+                const profitSign = profitPerHour >= 0 ? '' : '-';
+                const profitIndicator = isBestProfit ? ' 💰' : '';
+                html += `<br><span style="color: ${profitColor};">Profit/hr: ${profitSign}${formatKMB(Math.abs(profitPerHour))}${profitIndicator}</span>`;
+            }
+
+            // Add exp/hr line with indicator
+            if (expPerHour !== null && expPerHour > 0) {
+                const expIndicator = isBestExp ? ' 🎓' : '';
+                html += `<br><span style="color: #fff;">Exp/hr: ${formatKMB(expPerHour)}${expIndicator}</span>`;
+            }
+
+            // Add coins/xp efficiency metric with indicator
+            if (!hasMissingPrices && profitPerHour !== null && expPerHour !== null && expPerHour > 0) {
+                const coinsPerXp = profitPerHour / expPerHour;
+                const efficiencyColor = coinsPerXp >= 0 ? config.COLOR_INFO : config.COLOR_WARNING;
+                const efficiencySign = coinsPerXp >= 0 ? '' : '-';
+                const overallIndicator = isBestOverall ? ' 🏆' : '';
+                html += `<br><span style="color: ${efficiencyColor};">Coins/XP: ${efficiencySign}${formatKMB(Math.abs(coinsPerXp))}${overallIndicator}</span>`;
+            }
+
+            data.displayElement.innerHTML = html;
+        }
     }
 
     /**
