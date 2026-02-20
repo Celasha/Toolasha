@@ -319,7 +319,7 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
     // Efficiency breakdown
     const effParts = [];
     if (profitData.details.levelEfficiency > 0) {
-        effParts.push(`${profitData.details.levelEfficiency}% level`);
+        effParts.push(`${profitData.details.levelEfficiency.toFixed(1)}% level`);
     }
     if (profitData.details.houseEfficiency > 0) {
         effParts.push(`${profitData.details.houseEfficiency.toFixed(1)}% house`);
@@ -329,6 +329,9 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
     }
     if (profitData.details.equipmentEfficiency > 0) {
         effParts.push(`${profitData.details.equipmentEfficiency.toFixed(1)}% equip`);
+    }
+    if (profitData.details.communityEfficiency > 0) {
+        effParts.push(`${profitData.details.communityEfficiency.toFixed(1)}% community`);
     }
     if (profitData.details.achievementEfficiency > 0) {
         effParts.push(`${profitData.details.achievementEfficiency.toFixed(1)}% achievement`);
@@ -397,6 +400,24 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
         ? 'Net Profit: -- ⚠'
         : `Net Profit: ${formatLargeNumber(profit)}/hr, ${formatLargeNumber(profitPerDay)}/day`;
     topLevelContent.appendChild(netProfitLine);
+
+    // Add pricing mode label
+    const pricingMode = profitData.pricingMode || 'hybrid';
+    const modeLabel =
+        {
+            conservative: 'Conservative',
+            hybrid: 'Hybrid',
+            optimistic: 'Optimistic',
+        }[pricingMode] || 'Hybrid';
+
+    const modeDiv = document.createElement('div');
+    modeDiv.style.cssText = `
+        margin-bottom: 8px;
+        color: #888;
+        font-size: 0.85em;
+    `;
+    modeDiv.textContent = `Pricing Mode: ${modeLabel}`;
+    topLevelContent.appendChild(modeDiv);
 
     const detailedBreakdownSection = createCollapsibleSection(
         '📊',
@@ -885,6 +906,24 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
         ? 'Net Profit: -- ⚠'
         : `Net Profit: ${formatLargeNumber(profit)}/hr, ${formatLargeNumber(profitPerDay)}/day`;
     topLevelContent.appendChild(netProfitLine);
+
+    // Add pricing mode label
+    const pricingMode = profitData.pricingMode || 'hybrid';
+    const modeLabel =
+        {
+            conservative: 'Conservative',
+            hybrid: 'Hybrid',
+            optimistic: 'Optimistic',
+        }[pricingMode] || 'Hybrid';
+
+    const modeDiv = document.createElement('div');
+    modeDiv.style.cssText = `
+        margin-bottom: 8px;
+        color: #888;
+        font-size: 0.85em;
+    `;
+    modeDiv.textContent = `Pricing Mode: ${modeLabel}`;
+    topLevelContent.appendChild(modeDiv);
 
     const detailedBreakdownSection = createCollapsibleSection(
         '📊',
