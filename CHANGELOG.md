@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.0](https://github.com/Celasha/Toolasha/compare/v1.1.1...v1.2.0) (2026-02-20)
+
+### Features
+
+- add standalone enhancement calculator library for external tools ([b7e9b49](https://github.com/Celasha/Toolasha/commit/b7e9b490b1b68fb717da2de6a9a67a6a82ba4c9f))
+
+### Continuous Integration
+
+- build standalone enhancement library in release workflow ([0b7b921](https://github.com/Celasha/Toolasha/commit/0b7b92195b53b0de561640632985afc8bcdbc92a))
+
 ## [1.1.1](https://github.com/Celasha/Toolasha/compare/v1.1.0...v1.1.1) (2026-02-20)
 
 ### Bug Fixes
