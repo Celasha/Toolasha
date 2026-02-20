@@ -7,17 +7,27 @@ import { dirname, join } from 'path';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Userscript header for standalone enhancement library
-const standaloneHeader = `// ==UserScript==
-// @name         Toolasha Enhancement Calculator (Standalone)
-// @namespace    https://github.com/Celasha/Toolasha
-// @version      1.0.0
-// @description  Pure math library for MWI enhancement calculations. No game data dependencies.
-// @author       Celasha
-// @license      MIT
-// @match        *://*/*
-// @grant        none
-// ==/UserScript==
+// Library header for standalone enhancement library (no userscript metadata)
+const standaloneHeader = `/**
+ * Toolasha Enhancement Calculator - Standalone Math Library
+ *
+ * Pure math library for MWI enhancement calculations. No game data dependencies.
+ * Uses Markov Chain matrix math to calculate exact expected values.
+ *
+ * @version 1.0.0
+ * @author Celasha
+ * @license MIT
+ * @repository https://github.com/Celasha/Toolasha
+ *
+ * Usage:
+ *   const result = window.ToolashaEnhancement.calculate({
+ *       baseItemPrice: 720000000,
+ *       materialCostPerAttempt: 8979591,
+ *       protectionPrice: 11500000,
+ *       successRates: [0.55, 0.495, 0.495, ...],
+ *       targetLevel: 9
+ *   });
+ */
 `;
 
 // Custom plugin to inject mathjs after header
