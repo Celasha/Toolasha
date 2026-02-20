@@ -73,15 +73,22 @@ export function calculateEnhancementPath(itemHrid, currentEnhancementLevel, conf
         allResults.push(resultsForLevel);
     }
 
-    // Step 2: Build target_costs array (minimum cost for each level)
+    // Step 2: Build target_costs and target_times arrays (minimum cost/time for each level)
     // Like Enhancelator line 451-453
     const targetCosts = new Array(currentEnhancementLevel + 1);
+    const targetTimes = new Array(currentEnhancementLevel + 1);
+    const targetAttempts = new Array(currentEnhancementLevel + 1);
     targetCosts[0] = getRealisticBaseItemPrice(itemHrid); // Level 0: base item
+    targetTimes[0] = 0; // Level 0: no time needed
+    targetAttempts[0] = 0; // Level 0: no attempts needed
 
     for (let level = 1; level <= currentEnhancementLevel; level++) {
         const resultsForLevel = allResults[level - 1];
-        const minCost = Math.min(...resultsForLevel.map((r) => r.totalCost));
-        targetCosts[level] = minCost;
+        // Find the result with minimum cost
+        const minResult = resultsForLevel.reduce((best, curr) => (curr.totalCost < best.totalCost ? curr : best));
+        targetCosts[level] = minResult.totalCost;
+        targetTimes[level] = minResult.totalTime;
+        targetAttempts[level] = minResult.expectedAttempts;
     }
 
     // Step 3: Apply Philosopher's Mirror optimization (single pass, in-place)
@@ -121,6 +128,8 @@ export function calculateEnhancementPath(itemHrid, currentEnhancementLevel, conf
             currentEnhancementLevel,
             mirrorStartLevel,
             targetCosts,
+            targetTimes,
+            targetAttempts,
             optimalTraditional,
             mirrorPrice,
             config
@@ -200,6 +209,8 @@ function buildMirrorOptimizedResult(
     targetLevel,
     mirrorStartLevel,
     targetCosts,
+    targetTimes,
+    targetAttempts,
     optimalTraditional,
     mirrorPrice,
     _config
@@ -220,10 +231,26 @@ function buildMirrorOptimizedResult(
     const costLowerTier = targetCosts[lowerTierLevel];
     const costUpperTier = targetCosts[upperTierLevel];
 
+    // Get time to make one item at each level from targetTimes
+    const timeLowerTier = targetTimes[lowerTierLevel];
+    const timeUpperTier = targetTimes[upperTierLevel];
+
+    // Get attempts to make one item at each level from targetAttempts
+    const attemptsLowerTier = targetAttempts[lowerTierLevel];
+    const attemptsUpperTier = targetAttempts[upperTierLevel];
+
     // Calculate total costs for consumed items and mirrors
     const totalLowerTierCost = numLowerTier * costLowerTier;
     const totalUpperTierCost = numUpperTier * costUpperTier;
     const totalMirrorsCost = numMirrors * mirrorPrice;
+
+    // Calculate total time for mirror strategy
+    // Time = (numLowerTier × time per lower tier) + (numUpperTier × time per upper tier)
+    // Mirror combinations are instant (no additional time)
+    const totalTime = numLowerTier * timeLowerTier + numUpperTier * timeUpperTier;
+
+    // Calculate total attempts for mirror strategy
+    const totalAttempts = numLowerTier * attemptsLowerTier + numUpperTier * attemptsUpperTier;
 
     // Build consumed items array for display
     const consumedItems = [
@@ -248,8 +275,8 @@ function buildMirrorOptimizedResult(
     return {
         protectFrom: optimalTraditional.protectFrom,
         label: optimalTraditional.protectFrom === 0 ? 'Never' : `From +${optimalTraditional.protectFrom}`,
-        expectedAttempts: optimalTraditional.expectedAttempts,
-        totalTime: optimalTraditional.totalTime,
+        expectedAttempts: totalAttempts,
+        totalTime: totalTime,
         baseCost: 0, // Not applicable for mirror phase
         materialCost: 0, // Not applicable for mirror phase
         protectionCost: 0, // Not applicable for mirror phase
