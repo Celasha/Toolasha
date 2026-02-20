@@ -46,6 +46,10 @@ jobs:
               if: ${{ steps.release.outputs.release_created }}
               run: npm run build:steam
 
+            - name: Build (Standalone enhancement library)
+              if: ${{ steps.release.outputs.release_created }}
+              run: npm run build:enhancement
+
             - name: Commit built files to releases branch
               if: ${{ steps.release.outputs.release_created }}
               run: |
