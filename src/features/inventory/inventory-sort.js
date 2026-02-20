@@ -26,6 +26,8 @@ class InventorySort {
         this.isInitialized = false;
         this.itemsUpdatedHandler = null;
         this.itemsUpdatedDebounceTimer = null; // Debounce timer for items_updated events
+        this.priceUpdateHandler = null; // Handler for market price updates
+        this.priceUpdateDebounceTimer = null; // Debounce timer for price updates
         this.DEBOUNCE_DELAY = 300; // 300ms debounce for event handlers
         this.timerRegistry = createTimerRegistry();
     }
@@ -64,6 +66,13 @@ class InventorySort {
         // Load persisted settings
         await this.loadSettings();
 
+        // Register with badge manager for coordinated rendering (MUST BE BEFORE checking existing inventory)
+        inventoryBadgeManager.registerProvider(
+            'inventory-stack-price',
+            (itemElem) => this.renderBadgesForItem(itemElem),
+            50 // Priority: render before bid/ask badges (lower = earlier)
+        );
+
         // Check if inventory is already open
         const existingInv = document.querySelector('[class*="Inventory_items"]');
         if (existingInv) {
@@ -79,13 +88,6 @@ class InventorySort {
             this.applyCurrentSort();
         });
         this.unregisterHandlers.push(unregister);
-
-        // Register with badge manager for coordinated rendering
-        inventoryBadgeManager.registerProvider(
-            'inventory-stack-price',
-            (itemElem) => this.renderBadgesForItem(itemElem),
-            50 // Priority: render before bid/ask badges (lower = earlier)
-        );
 
         // Store handler reference for cleanup with debouncing
         this.itemsUpdatedHandler = () => {
@@ -110,6 +112,23 @@ class InventorySort {
      * Setup listener for market data updates
      */
     setupMarketDataListener() {
+        // Listen for market price updates
+        const priceUpdateHandler = () => {
+            // Debounce price updates to avoid excessive recalculation
+            clearTimeout(this.priceUpdateDebounceTimer);
+            this.priceUpdateDebounceTimer = setTimeout(() => {
+                if (this.currentInventoryElem && this.isInitialized) {
+                    console.log('[InventorySort] Market prices updated, refreshing badges');
+                    this.applyCurrentSort();
+                }
+            }, 500); // 500ms debounce for price updates
+        };
+
+        marketAPI.on(priceUpdateHandler);
+
+        // Store handler for cleanup
+        this.priceUpdateHandler = priceUpdateHandler;
+
         // If market data isn't loaded yet, retry periodically
         if (!marketAPI.isLoaded()) {
             let retryCount = 0;
@@ -457,13 +476,20 @@ class InventorySort {
      * Disable and cleanup
      */
     disable() {
-        // Clear debounce timer
+        // Clear debounce timers
         clearTimeout(this.itemsUpdatedDebounceTimer);
         this.itemsUpdatedDebounceTimer = null;
+        clearTimeout(this.priceUpdateDebounceTimer);
+        this.priceUpdateDebounceTimer = null;
 
         if (this.itemsUpdatedHandler) {
             dataManager.off('items_updated', this.itemsUpdatedHandler);
             this.itemsUpdatedHandler = null;
+        }
+
+        if (this.priceUpdateHandler) {
+            marketAPI.off(this.priceUpdateHandler);
+            this.priceUpdateHandler = null;
         }
 
         this.timerRegistry.clearAll();

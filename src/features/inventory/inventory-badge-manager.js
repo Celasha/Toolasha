@@ -28,6 +28,9 @@ class InventoryBadgeManager {
         this.isCalculating = false; // Guard flag to prevent recursive calls
         this.lastCalculationTime = 0; // Timestamp of last calculation
         this.CALCULATION_COOLDOWN = 250; // 250ms minimum between calculations
+        this.isRendering = false; // Guard flag for renderAllBadges
+        this.lastRenderTime = 0; // Timestamp of last render
+        this.RENDER_COOLDOWN = 100; // 100ms minimum between render calls
         this.inventoryLookupCache = null; // Cached inventory lookup map
         this.inventoryLookupCacheTime = 0; // Timestamp when cache was built
         this.INVENTORY_CACHE_TTL = 500; // 500ms cache lifetime
@@ -56,17 +59,12 @@ class InventoryBadgeManager {
         });
         this.unregisterHandlers.push(unregister);
 
-        // Watch for DOM changes to refresh badges
-        const badgeRefreshUnregister = domObserver.register(
-            'InventoryBadgeManager-Refresh',
-            () => {
-                if (this.currentInventoryElem) {
-                    this.renderAllBadges();
-                }
-            },
-            { debounce: true, debounceDelay: 150 } // 150ms debounce to reduce calculation frequency
-        );
-        this.unregisterHandlers.push(badgeRefreshUnregister);
+        // Note: We don't use a general DOM observer here because it creates infinite loops
+        // (adding badges triggers the observer, which adds badges, etc.)
+        // Instead, we rely on:
+        // 1. Explicit calls from inventory-sort when sort mode changes
+        // 2. dataManager events when items actually change
+        // 3. Direct calls from other features when needed
     }
 
     /**
@@ -77,6 +75,10 @@ class InventoryBadgeManager {
      */
     registerProvider(name, renderFn, priority = 100) {
         this.providers.set(name, { renderFn, priority });
+
+        // Clear processed tracking when new provider registers
+        // This ensures items get re-rendered with all providers
+        this.clearProcessedTracking();
     }
 
     /**
@@ -99,6 +101,20 @@ class InventoryBadgeManager {
      */
     async renderAllBadges() {
         if (!this.currentInventoryElem) return;
+
+        // Cooldown check for renderAllBadges
+        const now = Date.now();
+        const timeSinceLastRender = now - this.lastRenderTime;
+        if (timeSinceLastRender < this.RENDER_COOLDOWN) {
+            return;
+        }
+        this.lastRenderTime = now;
+
+        // Prevent concurrent renders
+        if (this.isRendering) {
+            return;
+        }
+        this.isRendering = true;
 
         // Calculate prices for all items
         await this.calculatePricesForAllItems();
@@ -131,6 +147,9 @@ class InventoryBadgeManager {
             // Mark as processed
             this.processedItems.add(itemElem);
         }
+
+        // Clear rendering guard
+        this.isRendering = false;
     }
 
     /**
@@ -140,11 +159,14 @@ class InventoryBadgeManager {
         if (!this.currentInventoryElem) return;
 
         // Prevent recursive calls
-        if (this.isCalculating) return;
+        if (this.isCalculating) {
+            return;
+        }
 
         // Cooldown check - prevent spamming during rapid events
         const now = Date.now();
-        if (now - this.lastCalculationTime < this.CALCULATION_COOLDOWN) {
+        const timeSinceLastCalc = now - this.lastCalculationTime;
+        if (timeSinceLastCalc < this.CALCULATION_COOLDOWN) {
             return;
         }
         this.lastCalculationTime = now;

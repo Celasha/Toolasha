@@ -5,6 +5,8 @@
 
 import config from '../../core/config.js';
 import connectionState from '../../core/connection-state.js';
+import dataManager from '../../core/data-manager.js';
+import marketAPI from '../../api/marketplace.js';
 import { calculateNetworth } from './networth-calculator.js';
 import { networthHeaderDisplay, networthInventoryDisplay } from './networth-display.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
@@ -14,10 +16,13 @@ import networthCache from './networth-cache.js';
 class NetworthFeature {
     constructor() {
         this.isActive = false;
-        this.updateInterval = null;
         this.currentData = null;
         this.timerRegistry = createTimerRegistry();
         this.pauseRegistry = null;
+        this.priceUpdateHandler = null;
+        this.itemsUpdateHandler = null;
+        this.priceUpdateDebounceTimer = null;
+        this.itemsUpdateDebounceTimer = null;
     }
 
     /**
@@ -42,16 +47,14 @@ class NetworthFeature {
         if (!this.pauseRegistry) {
             this.pauseRegistry = createPauseRegistry();
             this.pauseRegistry.register(
-                'networth-update-interval',
-                () => this.stopAutoRefresh(),
-                () => this.resumeAutoRefresh()
+                'networth-event-listeners',
+                () => this.pauseListeners(),
+                () => this.resumeListeners()
             );
         }
 
-        // Start update interval (every 30 seconds)
-        if (connectionState.isConnected()) {
-            this.startAutoRefresh();
-        }
+        // Set up event-driven updates instead of polling
+        this.setupEventListeners();
 
         // Initial calculation
         if (connectionState.isConnected()) {
@@ -59,6 +62,57 @@ class NetworthFeature {
         }
 
         this.isActive = true;
+    }
+
+    /**
+     * Set up event listeners for automatic updates
+     */
+    setupEventListeners() {
+        // Listen for market price updates
+        this.priceUpdateHandler = () => {
+            // Debounce price updates to avoid excessive recalculation
+            clearTimeout(this.priceUpdateDebounceTimer);
+            this.priceUpdateDebounceTimer = setTimeout(() => {
+                if (this.isActive && connectionState.isConnected()) {
+                    console.log('[Networth] Market prices updated, recalculating');
+                    this.recalculate();
+                }
+            }, 1000); // 1 second debounce for price updates
+        };
+
+        marketAPI.on(this.priceUpdateHandler);
+
+        // Listen for inventory changes
+        this.itemsUpdateHandler = () => {
+            // Debounce item updates
+            clearTimeout(this.itemsUpdateDebounceTimer);
+            this.itemsUpdateDebounceTimer = setTimeout(() => {
+                if (this.isActive && connectionState.isConnected()) {
+                    this.recalculate();
+                }
+            }, 500); // 500ms debounce for inventory changes
+        };
+
+        dataManager.on('items_updated', this.itemsUpdateHandler);
+    }
+
+    /**
+     * Pause event listeners (called when tab is hidden)
+     */
+    pauseListeners() {
+        // Clear any pending debounce timers
+        clearTimeout(this.priceUpdateDebounceTimer);
+        clearTimeout(this.itemsUpdateDebounceTimer);
+    }
+
+    /**
+     * Resume event listeners (called when tab is visible)
+     */
+    resumeListeners() {
+        // Recalculate immediately when resuming
+        if (this.isActive && connectionState.isConnected()) {
+            this.recalculate();
+        }
     }
 
     /**
@@ -91,15 +145,25 @@ class NetworthFeature {
      * Disable the feature
      */
     disable() {
-        if (this.pauseRegistry) {
-            this.pauseRegistry.unregister('networth-update-interval');
-            this.pauseRegistry.cleanup();
-            this.pauseRegistry = null;
+        // Clear debounce timers
+        clearTimeout(this.priceUpdateDebounceTimer);
+        clearTimeout(this.itemsUpdateDebounceTimer);
+
+        // Unregister event listeners
+        if (this.priceUpdateHandler) {
+            marketAPI.off(this.priceUpdateHandler);
+            this.priceUpdateHandler = null;
         }
 
-        if (this.updateInterval) {
-            clearInterval(this.updateInterval);
-            this.updateInterval = null;
+        if (this.itemsUpdateHandler) {
+            dataManager.off('items_updated', this.itemsUpdateHandler);
+            this.itemsUpdateHandler = null;
+        }
+
+        if (this.pauseRegistry) {
+            this.pauseRegistry.unregister('networth-event-listeners');
+            this.pauseRegistry.cleanup();
+            this.pauseRegistry = null;
         }
 
         this.timerRegistry.clearAll();
@@ -112,29 +176,6 @@ class NetworthFeature {
 
         this.currentData = null;
         this.isActive = false;
-    }
-
-    startAutoRefresh() {
-        if (this.updateInterval) {
-            return;
-        }
-
-        this.updateInterval = setInterval(() => this.recalculate(), 30000);
-        this.timerRegistry.registerInterval(this.updateInterval);
-    }
-
-    stopAutoRefresh() {
-        if (!this.updateInterval) {
-            return;
-        }
-
-        clearInterval(this.updateInterval);
-        this.updateInterval = null;
-    }
-
-    resumeAutoRefresh() {
-        this.startAutoRefresh();
-        this.recalculate();
     }
 }
 

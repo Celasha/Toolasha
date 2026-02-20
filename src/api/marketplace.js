@@ -31,6 +31,9 @@ class MarketAPI {
         // Price patches from order book data (fresher than API)
         // Structure: { "itemHrid:enhLevel": { a: ask, b: bid, timestamp: ms } }
         this.pricePatchs = {};
+
+        // Event listeners for price updates
+        this.listeners = [];
     }
 
     /**
@@ -50,6 +53,8 @@ class MarketAPI {
                 await this.loadPatches();
                 // Hide alert on successful cache load
                 networkAlert.hide();
+                // Notify listeners (initial load)
+                this.notifyListeners();
                 return this.marketData;
             }
         }
@@ -84,6 +89,8 @@ class MarketAPI {
                 await this.loadPatches();
                 // Hide alert on successful fetch
                 networkAlert.hide();
+                // Notify listeners of price update
+                this.notifyListeners();
                 return this.marketData;
             }
         } catch (error) {
@@ -338,6 +345,9 @@ class MarketAPI {
 
         // Save patches to storage (debounced via storage module)
         this.savePatches();
+
+        // Notify listeners of price update
+        this.notifyListeners();
     }
 
     /**
@@ -426,6 +436,35 @@ class MarketAPI {
 
         // Force fresh fetch
         return await this.fetch(true);
+    }
+
+    /**
+     * Register a listener for price updates
+     * @param {Function} callback - Called when prices update
+     */
+    on(callback) {
+        this.listeners.push(callback);
+    }
+
+    /**
+     * Unregister a listener
+     * @param {Function} callback - The callback to remove
+     */
+    off(callback) {
+        this.listeners = this.listeners.filter((cb) => cb !== callback);
+    }
+
+    /**
+     * Notify all listeners that prices have been updated
+     */
+    notifyListeners() {
+        for (const callback of this.listeners) {
+            try {
+                callback();
+            } catch (error) {
+                console.error('[MarketAPI] Listener error:', error);
+            }
+        }
     }
 }
 
