@@ -196,12 +196,14 @@ class MaxProduceable {
                 bottom: -65px;
                 left: 0;
                 right: 0;
-                font-size: 0.85em;
+                font-size: 0.55em;
                 padding: 4px 8px;
                 text-align: center;
                 background: rgba(0, 0, 0, 0.7);
                 border-top: 1px solid var(--border-color, ${config.COLOR_BORDER});
                 z-index: 10;
+                line-height: 1.3;
+                overflow: hidden;
             `;
 
             // Append stats display to action panel with absolute positioning
@@ -599,22 +601,26 @@ class MaxProduceable {
                 canProduceColor = config.COLOR_PROFIT;
             }
 
-            let html = `<span style="color: ${canProduceColor};">Can produce: ${maxCrafts.toLocaleString()}</span>`;
+            let html = `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
+            html += `<span style="color: ${canProduceColor};">Can produce: ${maxCrafts.toLocaleString()}</span></div>`;
 
             // Add profit/hr line with indicator
             if (hasMissingPrices) {
-                html += `<br><span style="color: ${config.SCRIPT_COLOR_ALERT};">Profit/hr: -- ⚠</span>`;
+                html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
+                html += `<span style="color: ${config.SCRIPT_COLOR_ALERT};">Profit/hr: -- ⚠</span></div>`;
             } else if (profitPerHour !== null) {
                 const profitColor = profitPerHour >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
                 const profitSign = profitPerHour >= 0 ? '' : '-';
                 const profitIndicator = isBestProfit ? ' 💰' : '';
-                html += `<br><span style="color: ${profitColor};">Profit/hr: ${profitSign}${formatKMB(Math.abs(profitPerHour))}${profitIndicator}</span>`;
+                html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
+                html += `<span style="color: ${profitColor};">Profit/hr: ${profitSign}${formatKMB(Math.abs(profitPerHour))}${profitIndicator}</span></div>`;
             }
 
             // Add exp/hr line with indicator
             if (expPerHour !== null && expPerHour > 0) {
-                const expIndicator = isBestExp ? ' 🎓' : '';
-                html += `<br><span style="color: #fff;">Exp/hr: ${formatKMB(expPerHour)}${expIndicator}</span>`;
+                const expIndicator = isBestExp ? ' 🧠' : '';
+                html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
+                html += `<span style="color: #fff;">Exp/hr: ${formatKMB(expPerHour)}${expIndicator}</span></div>`;
             }
 
             // Add coins/xp efficiency metric with indicator
@@ -623,11 +629,65 @@ class MaxProduceable {
                 const efficiencyColor = coinsPerXp >= 0 ? config.COLOR_INFO : config.COLOR_WARNING;
                 const efficiencySign = coinsPerXp >= 0 ? '' : '-';
                 const overallIndicator = isBestOverall ? ' 🏆' : '';
-                html += `<br><span style="color: ${efficiencyColor};">Coins/XP: ${efficiencySign}${formatKMB(Math.abs(coinsPerXp))}${overallIndicator}</span>`;
+                html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
+                html += `<span style="color: ${efficiencyColor};">Coins/XP: ${efficiencySign}${formatKMB(Math.abs(coinsPerXp))}${overallIndicator}</span></div>`;
             }
 
             data.displayElement.innerHTML = html;
+            this.fitLineFontSizes(actionPanel, data.displayElement);
         }
+    }
+
+    /**
+     * Fit each stat line to the action panel width
+     * @param {HTMLElement} actionPanel - Action panel container
+     * @param {HTMLElement} displayElement - Stats container
+     */
+    fitLineFontSizes(actionPanel, displayElement, retries = 4) {
+        requestAnimationFrame(() => {
+            const panelWidth = actionPanel.getBoundingClientRect().width;
+            const fallbackWidth = displayElement.getBoundingClientRect().width;
+            const rawWidth = panelWidth || fallbackWidth;
+            const availableWidth = Math.max(0, rawWidth - 16);
+            if (!availableWidth) {
+                if (retries > 0) {
+                    setTimeout(() => this.fitLineFontSizes(actionPanel, displayElement, retries - 1), 60);
+                }
+                return;
+            }
+
+            const baseFontSize = 11;
+            const minFontSize = 5;
+            const lines = displayElement.querySelectorAll('.mwi-action-stat-line');
+
+            lines.forEach((line) => {
+                const textSpan = line.querySelector('span');
+                if (!textSpan) {
+                    return;
+                }
+
+                textSpan.style.setProperty('display', 'inline-block');
+                textSpan.style.setProperty('transform-origin', 'left center');
+                textSpan.style.setProperty('transform', 'scaleX(1)');
+
+                let fontSize = baseFontSize;
+                textSpan.style.setProperty('font-size', `${fontSize}px`, 'important');
+                let textWidth = textSpan.getBoundingClientRect().width;
+                let iterations = 0;
+
+                while (textWidth > availableWidth && fontSize > minFontSize && iterations < 20) {
+                    fontSize -= 1;
+                    textSpan.style.setProperty('font-size', `${fontSize}px`, 'important');
+                    textWidth = textSpan.getBoundingClientRect().width;
+                    iterations += 1;
+                }
+
+                if (textWidth > availableWidth) {
+                    const scaleX = Math.max(0.6, availableWidth / textWidth);
+                    textSpan.style.setProperty('transform', `scaleX(${scaleX})`);
+                }
+            });
+        });
     }
 
     /**
