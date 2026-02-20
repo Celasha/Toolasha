@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      1.2.0
+// @version      1.3.0
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -50660,12 +50660,14 @@ self.onmessage = function (e) {
                 bottom: -65px;
                 left: 0;
                 right: 0;
-                font-size: 0.85em;
+                font-size: 0.55em;
                 padding: 4px 8px;
                 text-align: center;
                 background: rgba(0, 0, 0, 0.7);
                 border-top: 1px solid var(--border-color, ${config$1.COLOR_BORDER});
                 z-index: 10;
+                line-height: 1.3;
+                overflow: hidden;
             `;
 
                 // Append stats display to action panel with absolute positioning
@@ -50897,6 +50899,12 @@ self.onmessage = function (e) {
             // Build display HTML
             let html = `<span style="color: ${canProduceColor};">Can produce: ${maxCrafts.toLocaleString()}</span>`;
 
+            // Store metrics for best action comparison
+            data.maxCrafts = maxCrafts;
+            data.profitPerHour = resolvedProfitPerHour;
+            data.expPerHour = expPerHour;
+            data.hasMissingPrices = hasMissingPrices;
+
             // Add profit/hr line if available
             if (hasMissingPrices) {
                 html += `<br><span style="color: ${config$1.SCRIPT_COLOR_ALERT};">Profit/hr: -- ⚠</span>`;
@@ -50971,8 +50979,179 @@ self.onmessage = function (e) {
             // Wait for all updates to complete
             await Promise.all(updatePromises);
 
+            // Find best actions and add indicators
+            this.addBestActionIndicators();
+
             // Trigger sort via shared manager
             actionPanelSort.triggerSort();
+        }
+
+        /**
+         * Find best actions and add visual indicators
+         */
+        addBestActionIndicators() {
+            let bestProfit = null;
+            let bestExp = null;
+            let bestOverall = null;
+            let bestProfitPanels = [];
+            let bestExpPanels = [];
+            let bestOverallPanels = [];
+
+            // First pass: find the best values
+            for (const [actionPanel, data] of this.actionElements.entries()) {
+                if (!document.body.contains(actionPanel) || !data.displayElement) {
+                    continue;
+                }
+
+                const { profitPerHour, expPerHour, hasMissingPrices } = data;
+
+                // Skip actions with missing prices for profit comparison
+                if (!hasMissingPrices && profitPerHour !== null && profitPerHour > 0) {
+                    if (bestProfit === null || profitPerHour > bestProfit) {
+                        bestProfit = profitPerHour;
+                        bestProfitPanels = [actionPanel];
+                    } else if (profitPerHour === bestProfit) {
+                        bestProfitPanels.push(actionPanel);
+                    }
+                }
+
+                // Find best exp/hr
+                if (expPerHour !== null && expPerHour > 0) {
+                    if (bestExp === null || expPerHour > bestExp) {
+                        bestExp = expPerHour;
+                        bestExpPanels = [actionPanel];
+                    } else if (expPerHour === bestExp) {
+                        bestExpPanels.push(actionPanel);
+                    }
+                }
+
+                // Find best overall (profit × exp product)
+                if (
+                    !hasMissingPrices &&
+                    profitPerHour !== null &&
+                    profitPerHour > 0 &&
+                    expPerHour !== null &&
+                    expPerHour > 0
+                ) {
+                    const overallValue = profitPerHour * expPerHour;
+                    if (bestOverall === null || overallValue > bestOverall) {
+                        bestOverall = overallValue;
+                        bestOverallPanels = [actionPanel];
+                    } else if (overallValue === bestOverall) {
+                        bestOverallPanels.push(actionPanel);
+                    }
+                }
+            }
+
+            // Second pass: update HTML with indicators
+            for (const [actionPanel, data] of this.actionElements.entries()) {
+                if (!document.body.contains(actionPanel) || !data.displayElement) {
+                    continue;
+                }
+
+                const { profitPerHour, expPerHour, hasMissingPrices } = data;
+                const isBestProfit = bestProfitPanels.includes(actionPanel);
+                const isBestExp = bestExpPanels.includes(actionPanel);
+                const isBestOverall = bestOverallPanels.includes(actionPanel);
+
+                // Rebuild HTML with indicators
+                const maxCrafts = data.maxCrafts || 0;
+                let canProduceColor;
+                if (maxCrafts === 0) {
+                    canProduceColor = config$1.COLOR_LOSS;
+                } else if (maxCrafts < 5) {
+                    canProduceColor = config$1.COLOR_WARNING;
+                } else {
+                    canProduceColor = config$1.COLOR_PROFIT;
+                }
+
+                let html = `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
+                html += `<span style="color: ${canProduceColor};">Can produce: ${maxCrafts.toLocaleString()}</span></div>`;
+
+                // Add profit/hr line with indicator
+                if (hasMissingPrices) {
+                    html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
+                    html += `<span style="color: ${config$1.SCRIPT_COLOR_ALERT};">Profit/hr: -- ⚠</span></div>`;
+                } else if (profitPerHour !== null) {
+                    const profitColor = profitPerHour >= 0 ? config$1.COLOR_PROFIT : config$1.COLOR_LOSS;
+                    const profitSign = profitPerHour >= 0 ? '' : '-';
+                    const profitIndicator = isBestProfit ? ' 💰' : '';
+                    html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
+                    html += `<span style="color: ${profitColor};">Profit/hr: ${profitSign}${formatKMB(Math.abs(profitPerHour))}${profitIndicator}</span></div>`;
+                }
+
+                // Add exp/hr line with indicator
+                if (expPerHour !== null && expPerHour > 0) {
+                    const expIndicator = isBestExp ? ' 🧠' : '';
+                    html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
+                    html += `<span style="color: #fff;">Exp/hr: ${formatKMB(expPerHour)}${expIndicator}</span></div>`;
+                }
+
+                // Add coins/xp efficiency metric with indicator
+                if (!hasMissingPrices && profitPerHour !== null && expPerHour !== null && expPerHour > 0) {
+                    const coinsPerXp = profitPerHour / expPerHour;
+                    const efficiencyColor = coinsPerXp >= 0 ? config$1.COLOR_INFO : config$1.COLOR_WARNING;
+                    const efficiencySign = coinsPerXp >= 0 ? '' : '-';
+                    const overallIndicator = isBestOverall ? ' 🏆' : '';
+                    html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
+                    html += `<span style="color: ${efficiencyColor};">Coins/XP: ${efficiencySign}${formatKMB(Math.abs(coinsPerXp))}${overallIndicator}</span></div>`;
+                }
+
+                data.displayElement.innerHTML = html;
+                this.fitLineFontSizes(actionPanel, data.displayElement);
+            }
+        }
+
+        /**
+         * Fit each stat line to the action panel width
+         * @param {HTMLElement} actionPanel - Action panel container
+         * @param {HTMLElement} displayElement - Stats container
+         */
+        fitLineFontSizes(actionPanel, displayElement, retries = 4) {
+            requestAnimationFrame(() => {
+                const panelWidth = actionPanel.getBoundingClientRect().width;
+                const fallbackWidth = displayElement.getBoundingClientRect().width;
+                const rawWidth = panelWidth || fallbackWidth;
+                const availableWidth = Math.max(0, rawWidth - 16);
+                if (!availableWidth) {
+                    if (retries > 0) {
+                        setTimeout(() => this.fitLineFontSizes(actionPanel, displayElement, retries - 1), 60);
+                    }
+                    return;
+                }
+
+                const baseFontSize = 11;
+                const minFontSize = 5;
+                const lines = displayElement.querySelectorAll('.mwi-action-stat-line');
+
+                lines.forEach((line) => {
+                    const textSpan = line.querySelector('span');
+                    if (!textSpan) {
+                        return;
+                    }
+
+                    textSpan.style.setProperty('display', 'inline-block');
+                    textSpan.style.setProperty('transform-origin', 'left center');
+                    textSpan.style.setProperty('transform', 'scaleX(1)');
+
+                    let fontSize = baseFontSize;
+                    textSpan.style.setProperty('font-size', `${fontSize}px`, 'important');
+                    let textWidth = textSpan.getBoundingClientRect().width;
+                    let iterations = 0;
+
+                    while (textWidth > availableWidth && fontSize > minFontSize && iterations < 20) {
+                        fontSize -= 1;
+                        textSpan.style.setProperty('font-size', `${fontSize}px`, 'important');
+                        textWidth = textSpan.getBoundingClientRect().width;
+                        iterations += 1;
+                    }
+
+                    if (textWidth > availableWidth) {
+                        const scaleX = Math.max(0.6, availableWidth / textWidth);
+                        textSpan.style.setProperty('transform', `scaleX(${scaleX})`);
+                    }
+                });
+            });
         }
 
         /**
@@ -51216,8 +51395,8 @@ self.onmessage = function (e) {
                     actionHrid: actionHrid,
                     displayElement: existingDisplay,
                 });
-                // Update with fresh data
-                this.updateStats(actionPanel);
+                // Update with fresh data (skip render; indicators handle output)
+                this.updateStats(actionPanel, { skipRender: true });
                 // Register with shared sort manager
                 actionPanelSort.registerPanel(actionPanel, actionHrid);
                 // Trigger sort
@@ -51233,12 +51412,14 @@ self.onmessage = function (e) {
             top: 100%;
             left: 0;
             right: 0;
-            font-size: 0.85em;
+            font-size: 0.55em;
             padding: 4px 8px;
             text-align: center;
             background: rgba(0, 0, 0, 0.7);
             border-top: 1px solid var(--border-color, ${config$1.COLOR_BORDER});
             z-index: 10;
+            line-height: 1.3;
+            overflow: hidden;
         `;
 
             // Make sure the action panel has relative positioning and extra bottom margin
@@ -51259,8 +51440,8 @@ self.onmessage = function (e) {
             // Register with shared sort manager
             actionPanelSort.registerPanel(actionPanel, actionHrid);
 
-            // Initial update
-            this.updateStats(actionPanel);
+            // Initial update (skip render; indicators handle output)
+            this.updateStats(actionPanel, { skipRender: true });
 
             // Trigger sort
             actionPanelSort.triggerSort();
@@ -51299,13 +51480,17 @@ self.onmessage = function (e) {
         /**
          * Update stats display for a single action panel
          * @param {HTMLElement} actionPanel - The action panel element
+         * @param {Object} [options] - Optional flags
+         * @param {boolean} [options.skipRender=false] - Skip DOM rendering
          */
-        async updateStats(actionPanel) {
+        async updateStats(actionPanel, options = {}) {
             const data = this.actionElements.get(actionPanel);
 
             if (!data) {
                 return;
             }
+
+            const { skipRender = false } = options;
 
             // Calculate profit/hr
             const profitData = await calculateGatheringProfit(data.actionHrid);
@@ -51317,6 +51502,7 @@ self.onmessage = function (e) {
 
             // Store profit value for sorting and update shared sort manager
             data.profitPerHour = profitPerHour;
+            data.expPerHour = expPerHour;
             actionPanelSort.updateProfit(actionPanel, profitPerHour);
 
             // Check if we should hide actions with negative profit (unless pinned)
@@ -51337,33 +51523,11 @@ self.onmessage = function (e) {
                 actionPanel.style.display = '';
             }
 
-            // Build display HTML
-            let html = '';
-
-            // Add profit/hr line if available
-            if (profitPerHour !== null) {
-                const profitColor = profitPerHour >= 0 ? config$1.COLOR_PROFIT : config$1.COLOR_LOSS;
-                const profitSign = profitPerHour >= 0 ? '' : '-';
-                html += `<span style="color: ${profitColor};">Profit/hr: ${profitSign}${formatKMB(Math.abs(profitPerHour))}</span>`;
+            if (skipRender) {
+                return;
             }
 
-            // Add exp/hr line if available
-            if (expPerHour !== null && expPerHour > 0) {
-                if (html) html += '<br>';
-                html += `<span style="color: #fff;">Exp/hr: ${formatKMB(expPerHour)}</span>`;
-            }
-
-            // Add coins/xp efficiency metric if both profit and exp are available
-            if (profitPerHour !== null && expPerHour !== null && expPerHour > 0) {
-                const coinsPerXp = profitPerHour / expPerHour;
-                const efficiencyColor = coinsPerXp >= 0 ? config$1.COLOR_INFO : config$1.COLOR_WARNING;
-                const efficiencySign = coinsPerXp >= 0 ? '' : '-';
-                if (html) html += '<br>';
-                html += `<span style="color: ${efficiencyColor};">Coins/XP: ${efficiencySign}${formatKMB(Math.abs(coinsPerXp))}</span>`;
-            }
-
-            data.displayElement.style.display = 'block';
-            data.displayElement.innerHTML = html;
+            this.renderIndicators(actionPanel, data);
         }
 
         /**
@@ -51374,7 +51538,7 @@ self.onmessage = function (e) {
             const updatePromises = [];
             for (const actionPanel of [...this.actionElements.keys()]) {
                 if (document.body.contains(actionPanel)) {
-                    updatePromises.push(this.updateStats(actionPanel));
+                    updatePromises.push(this.updateStats(actionPanel, { skipRender: true }));
                 } else {
                     // Panel no longer in DOM - remove injected elements BEFORE deleting from Map
                     const data = this.actionElements.get(actionPanel);
@@ -51391,8 +51555,167 @@ self.onmessage = function (e) {
             // Wait for all updates to complete
             await Promise.all(updatePromises);
 
+            // Find best actions and add indicators
+            this.addBestActionIndicators();
+
             // Trigger sort via shared manager
             actionPanelSort.triggerSort();
+        }
+
+        /**
+         * Find best actions and add visual indicators
+         */
+        addBestActionIndicators() {
+            let bestProfit = null;
+            let bestExp = null;
+            let bestOverall = null;
+            let bestProfitPanels = [];
+            let bestExpPanels = [];
+            let bestOverallPanels = [];
+
+            // First pass: find the best values
+            for (const [actionPanel, data] of this.actionElements.entries()) {
+                if (!document.body.contains(actionPanel) || !data.displayElement) {
+                    continue;
+                }
+
+                const { profitPerHour, expPerHour } = data;
+
+                // Find best profit/hr (allow negative to still mark highest)
+                if (profitPerHour !== null) {
+                    if (bestProfit === null || profitPerHour > bestProfit) {
+                        bestProfit = profitPerHour;
+                        bestProfitPanels = [actionPanel];
+                    } else if (profitPerHour === bestProfit) {
+                        bestProfitPanels.push(actionPanel);
+                    }
+                }
+
+                // Find best exp/hr
+                if (expPerHour !== null && expPerHour > 0) {
+                    if (bestExp === null || expPerHour > bestExp) {
+                        bestExp = expPerHour;
+                        bestExpPanels = [actionPanel];
+                    } else if (expPerHour === bestExp) {
+                        bestExpPanels.push(actionPanel);
+                    }
+                }
+
+                // Find best overall (profit × exp product)
+                if (profitPerHour !== null && expPerHour !== null && expPerHour > 0) {
+                    const overallValue = profitPerHour * expPerHour;
+                    if (bestOverall === null || overallValue > bestOverall) {
+                        bestOverall = overallValue;
+                        bestOverallPanels = [actionPanel];
+                    } else if (overallValue === bestOverall) {
+                        bestOverallPanels.push(actionPanel);
+                    }
+                }
+            }
+
+            // Second pass: update HTML with indicators
+            for (const [actionPanel, data] of this.actionElements.entries()) {
+                if (!document.body.contains(actionPanel) || !data.displayElement) {
+                    continue;
+                }
+
+                this.renderIndicators(actionPanel, data, {
+                    isBestProfit: bestProfitPanels.includes(actionPanel),
+                    isBestExp: bestExpPanels.includes(actionPanel),
+                    isBestOverall: bestOverallPanels.includes(actionPanel),
+                });
+            }
+        }
+
+        /**
+         * Render stat lines with optional best indicators
+         * @param {HTMLElement} actionPanel - Action panel container
+         * @param {Object} data - Stored action data
+         * @param {Object} [bestFlags] - Best indicator flags
+         */
+        renderIndicators(actionPanel, data, bestFlags = {}) {
+            const { profitPerHour, expPerHour } = data;
+            const { isBestProfit = false, isBestExp = false, isBestOverall = false } = bestFlags;
+            let html = '';
+
+            if (profitPerHour !== null) {
+                const profitColor = profitPerHour >= 0 ? config$1.COLOR_PROFIT : config$1.COLOR_LOSS;
+                const profitSign = profitPerHour >= 0 ? '' : '-';
+                const profitIndicator = isBestProfit ? ' 💰' : '';
+                html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
+                html += `<span style="color: ${profitColor};">Profit/hr: ${profitSign}${formatKMB(Math.abs(profitPerHour))}${profitIndicator}</span></div>`;
+            }
+
+            if (expPerHour !== null && expPerHour > 0) {
+                const expIndicator = isBestExp ? ' 🧠' : '';
+                html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
+                html += `<span style="color: #fff;">Exp/hr: ${formatKMB(expPerHour)}${expIndicator}</span></div>`;
+            }
+
+            if (profitPerHour !== null && expPerHour !== null && expPerHour > 0) {
+                const coinsPerXp = profitPerHour / expPerHour;
+                const efficiencyColor = coinsPerXp >= 0 ? config$1.COLOR_INFO : config$1.COLOR_WARNING;
+                const efficiencySign = coinsPerXp >= 0 ? '' : '-';
+                const overallIndicator = isBestOverall ? ' 🏆' : '';
+                html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
+                html += `<span style="color: ${efficiencyColor};">Coins/XP: ${efficiencySign}${formatKMB(Math.abs(coinsPerXp))}${overallIndicator}</span></div>`;
+            }
+
+            data.displayElement.innerHTML = html;
+            data.displayElement.style.display = 'block';
+            this.fitLineFontSizes(actionPanel, data.displayElement);
+        }
+
+        /**
+         * Fit each stat line to the action panel width
+         * @param {HTMLElement} actionPanel - Action panel container
+         * @param {HTMLElement} displayElement - Stats container
+         */
+        fitLineFontSizes(actionPanel, displayElement, retries = 4) {
+            requestAnimationFrame(() => {
+                const panelWidth = actionPanel.getBoundingClientRect().width;
+                const fallbackWidth = displayElement.getBoundingClientRect().width;
+                const rawWidth = panelWidth || fallbackWidth;
+                const availableWidth = Math.max(0, rawWidth - 16);
+                if (!availableWidth) {
+                    if (retries > 0) {
+                        setTimeout(() => this.fitLineFontSizes(actionPanel, displayElement, retries - 1), 60);
+                    }
+                    return;
+                }
+
+                const baseFontSize = 11;
+                const minFontSize = 5;
+                const lines = displayElement.querySelectorAll('.mwi-action-stat-line');
+
+                lines.forEach((line) => {
+                    const textSpan = line.querySelector('span');
+                    if (!textSpan) {
+                        return;
+                    }
+
+                    textSpan.style.setProperty('display', 'inline-block');
+                    textSpan.style.setProperty('transform-origin', 'left center');
+                    textSpan.style.setProperty('transform', 'scaleX(1)');
+
+                    let fontSize = baseFontSize;
+                    textSpan.style.setProperty('font-size', `${fontSize}px`, 'important');
+                    let textWidth = textSpan.getBoundingClientRect().width;
+                    let iterations = 0;
+
+                    while (textWidth > availableWidth && fontSize > minFontSize && iterations < 20) {
+                        fontSize -= 1;
+                        textSpan.style.setProperty('font-size', `${fontSize}px`, 'important');
+                        textWidth = textSpan.getBoundingClientRect().width;
+                        iterations += 1;
+                    }
+
+                    if (textWidth > availableWidth) {
+                        const scaleX = Math.max(0.6, availableWidth / textWidth);
+                        textSpan.style.setProperty('transform', `scaleX(${scaleX})`);
+                    }
+                });
+            });
         }
 
         /**
@@ -68617,6 +68940,10 @@ self.onmessage = function (e) {
                 {
                     label: 'Milkonomy',
                     url: 'https://milkonomy.pages.dev/#/dashboard',
+                },
+                {
+                    label: "Socko's Combat Tracker",
+                    url: 'https://sockosnewcombattracker.pages.dev/',
                 },
             ];
 

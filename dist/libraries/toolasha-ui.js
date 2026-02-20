@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 1.2.0
+ * Version: 1.3.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -695,6 +695,10 @@
                 {
                     label: 'Milkonomy',
                     url: 'https://milkonomy.pages.dev/#/dashboard',
+                },
+                {
+                    label: "Socko's Combat Tracker",
+                    url: 'https://sockosnewcombattracker.pages.dev/',
                 },
             ];
 
