@@ -330,7 +330,9 @@ class WebSocketHook {
             messageType === 'market_listings_updated' ||
             messageType === 'profile_shared' ||
             messageType === 'battle_consumable_ability_updated' ||
-            messageType === 'battle_unit_fetched';
+            messageType === 'battle_unit_fetched' ||
+            messageType === 'action_type_consumable_slots_updated' ||
+            messageType === 'consumable_buffs_updated';
 
         if (!skipDedup) {
             // Deduplicate by message content to prevent 4x JSON.parse on same message

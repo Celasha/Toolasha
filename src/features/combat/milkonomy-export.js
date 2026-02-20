@@ -5,6 +5,7 @@
 
 import dataManager from '../../core/data-manager.js';
 import webSocketHook from '../../core/websocket.js';
+import { getCurrentProfile } from '../../core/profile-manager.js';
 
 // Detect if we're running on Tampermonkey or Steam
 const hasScriptManager = typeof GM_info !== 'undefined';
@@ -35,6 +36,20 @@ async function getCharacterData() {
     } catch (error) {
         console.error('[Milkonomy Export] Failed to get character data:', error);
         return null;
+    }
+}
+
+/**
+ * Get profile list from storage (for looking up external profiles)
+ * @returns {Promise<Array>} List of saved profiles
+ */
+async function getProfileList() {
+    try {
+        const profileListJson = await webSocketHook.loadFromStorage('toolasha_profile_list', '[]');
+        return JSON.parse(profileListJson);
+    } catch (error) {
+        console.error('[Milkonomy Export] Failed to get profile list:', error);
+        return [];
     }
 }
 
@@ -230,6 +245,92 @@ function getActiveTeas(actionType) {
 }
 
 /**
+ * Get equipment from profile's wearableItemMap for a specific slot type
+ * @param {Object} wearableItemMap - Profile's equipped items
+ * @param {Object} gameData - Game data
+ * @param {string} slotType - Equipment slot type (e.g., '/equipment_types/milking_tool')
+ * @returns {Object} Equipment object or empty object with just type
+ */
+function getProfileEquipment(wearableItemMap, gameData, slotType) {
+    if (!wearableItemMap) return { type: mapSlotType(slotType) };
+
+    // wearableItemMap keys are item location HRIDs (e.g., '/item_locations/milking_tool')
+    for (const [locationHrid, item] of Object.entries(wearableItemMap)) {
+        const itemSlotType = locationToSlotType(locationHrid);
+
+        if (itemSlotType === slotType) {
+            const equipment = {
+                type: mapSlotType(slotType),
+                hrid: item.itemHrid,
+            };
+
+            if (typeof item.enhancementLevel === 'number' && item.enhancementLevel > 0) {
+                equipment.enhanceLevel = item.enhancementLevel;
+            }
+
+            return equipment;
+        }
+    }
+
+    return { type: mapSlotType(slotType) };
+}
+
+/**
+ * Get house level from profile's characterHouseRoomMap
+ * @param {Object} houseRoomMap - Profile's house room map
+ * @param {string} actionType - Action type HRID
+ * @returns {number} House room level or 0
+ */
+function getProfileHouseLevel(houseRoomMap, actionType) {
+    const roomMapping = {
+        '/action_types/milking': '/house_rooms/dairy_barn',
+        '/action_types/foraging': '/house_rooms/garden',
+        '/action_types/woodcutting': '/house_rooms/log_shed',
+        '/action_types/cheesesmithing': '/house_rooms/forge',
+        '/action_types/crafting': '/house_rooms/workshop',
+        '/action_types/tailoring': '/house_rooms/sewing_parlor',
+        '/action_types/cooking': '/house_rooms/kitchen',
+        '/action_types/brewing': '/house_rooms/brewery',
+        '/action_types/alchemy': '/house_rooms/laboratory',
+        '/action_types/enhancing': '/house_rooms/observatory',
+    };
+
+    const roomHrid = roomMapping[actionType];
+    if (!roomHrid || !houseRoomMap) return 0;
+
+    const room = houseRoomMap[roomHrid];
+    return room?.level || 0;
+}
+
+/**
+ * Construct action config from profile data (for external profiles)
+ * @param {string} skillName - Skill name (e.g., 'milking')
+ * @param {Array} skills - Character skills array from profile
+ * @param {Object} wearableItemMap - Profile's equipped items
+ * @param {Object} houseRoomMap - Profile's house room map
+ * @param {Object} gameData - Game data
+ * @returns {Object} Action config object
+ */
+function constructActionConfigFromProfile(skillName, skills, wearableItemMap, houseRoomMap, gameData) {
+    const actionType = `/action_types/${skillName}`;
+    const toolType = `/equipment_types/${skillName}_tool`;
+    const legsType = '/equipment_types/legs';
+    const bodyType = '/equipment_types/body';
+    const charmType = '/equipment_types/charm';
+
+    return {
+        action: skillName,
+        playerLevel: getSkillLevel(skills, actionType),
+        tool: getProfileEquipment(wearableItemMap, gameData, toolType),
+        legs: getProfileEquipment(wearableItemMap, gameData, legsType),
+        body: getProfileEquipment(wearableItemMap, gameData, bodyType),
+        charm: getProfileEquipment(wearableItemMap, gameData, charmType),
+        houseLevel: getProfileHouseLevel(houseRoomMap, actionType),
+        tea: [], // Not available from profile
+    };
+}
+
+/**
  * Construct action config for a skill
  * @param {string} skillName - Skill name (e.g., 'milking')
  * @param {Object} skills - Character skills array
@@ -315,35 +416,12 @@ export async function constructMilkonomyExport(externalProfileId = null) {
             return null;
         }
 
-        // Milkonomy export is only for your own character (no external profiles)
-        if (externalProfileId) {
-            console.error('[Milkonomy Export] External profile export not supported');
-            alert(
-                'Milkonomy export is only available for your own profile.\n\nTo export another player:\n1. Use Combat Sim Export instead\n2. Or copy their profile link and open it separately'
-            );
-            return null;
-        }
-
-        const skills = characterData.characterSkills || [];
-        const inventory = dataManager.getInventory();
-        const equipmentMap = dataManager.getEquipment();
         const gameData = dataManager.getInitClientData();
-
-        if (!inventory) {
-            console.error('[Milkonomy Export] No inventory data available');
-            return null;
-        }
-
         if (!gameData) {
             console.error('[Milkonomy Export] No game data available');
             return null;
         }
 
-        // Character name and color
-        const name = characterData.name || 'Player';
-        const color = '#90ee90'; // Default color (light green)
-
-        // Build action config map for all 10 skills
         const skillNames = [
             'milking',
             'foraging',
@@ -357,14 +435,6 @@ export async function constructMilkonomyExport(externalProfileId = null) {
             'enhancing',
         ];
 
-        const actionConfigMap = {};
-        for (const skillName of skillNames) {
-            actionConfigMap[skillName] = constructActionConfig(skillName, skills, inventory, gameData);
-        }
-
-        // Build special equipment map (non-skill-specific equipment)
-        // Use currently equipped items for these slots
-        const specialEquipmentMap = {};
         const specialSlots = [
             '/equipment_types/off_hand',
             '/equipment_types/head',
@@ -376,6 +446,94 @@ export async function constructMilkonomyExport(externalProfileId = null) {
             '/equipment_types/pouch',
         ];
 
+        // Check if exporting another player's profile
+        if (externalProfileId && externalProfileId !== characterData.character?.id) {
+            // Try to find profile in GM storage first, then fall back to memory cache
+            const profileList = await getProfileList();
+            let profile = profileList.find((p) => p.characterID === externalProfileId);
+
+            // If not found in GM storage, check memory cache (works on Steam)
+            const cachedProfile = getCurrentProfile();
+            if (!profile && cachedProfile && cachedProfile.characterID === externalProfileId) {
+                profile = cachedProfile;
+            }
+
+            if (!profile) {
+                console.error('[Milkonomy Export] Profile not found for:', externalProfileId);
+                return null;
+            }
+
+            // Build export from profile data
+            const profileSkills = profile.profile?.characterSkills || [];
+            const wearableItemMap = profile.profile?.wearableItemMap || {};
+            const houseRoomMap = profile.profile?.characterHouseRoomMap || {};
+            const name = profile.characterName || 'Player';
+            const color = '#90ee90';
+
+            // Build action config map from profile
+            const actionConfigMap = {};
+            for (const skillName of skillNames) {
+                actionConfigMap[skillName] = constructActionConfigFromProfile(
+                    skillName,
+                    profileSkills,
+                    wearableItemMap,
+                    houseRoomMap,
+                    gameData
+                );
+            }
+
+            // Build special equipment map from profile
+            const specialEquipmentMap = {};
+            for (const slotType of specialSlots) {
+                const slotName = mapSlotType(slotType);
+                const equipment = getProfileEquipment(wearableItemMap, gameData, slotType);
+                specialEquipmentMap[slotName] = equipment.hrid ? equipment : { type: slotName };
+            }
+
+            // Community buffs are global, use current values
+            const communityBuffMap = {};
+            const buffTypes = ['experience', 'gathering_quantity', 'production_efficiency', 'enhancing_speed'];
+            for (const buffType of buffTypes) {
+                const buffHrid = `/community_buff_types/${buffType}`;
+                const level = dataManager.getCommunityBuffLevel(buffHrid) || 0;
+                communityBuffMap[buffType] = {
+                    type: buffType,
+                    hrid: buffHrid,
+                    level: level,
+                };
+            }
+
+            return {
+                name,
+                color,
+                actionConfigMap,
+                specialEquimentMap: specialEquipmentMap,
+                communityBuffMap,
+            };
+        }
+
+        // Export own character data
+        const skills = characterData.characterSkills || [];
+        const inventory = dataManager.getInventory();
+        const equipmentMap = dataManager.getEquipment();
+
+        if (!inventory) {
+            console.error('[Milkonomy Export] No inventory data available');
+            return null;
+        }
+
+        // Character name and color
+        const name = characterData.name || 'Player';
+        const color = '#90ee90'; // Default color (light green)
+
+        // Build action config map for all 10 skills
+        const actionConfigMap = {};
+        for (const skillName of skillNames) {
+            actionConfigMap[skillName] = constructActionConfig(skillName, skills, inventory, gameData);
+        }
+
+        // Build special equipment map (non-skill-specific equipment)
+        const specialEquipmentMap = {};
         for (const slotType of specialSlots) {
             const slotName = mapSlotType(slotType);
             const equipment = getEquippedItem(equipmentMap, gameData, slotType);
