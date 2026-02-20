@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 1.1.0
+ * Version: 1.1.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -4549,49 +4549,49 @@
      * Re-initializes all features when character switches
      */
     function setupCharacterSwitchHandler() {
-        // Guard against overlapping switches
-        let cleanupComplete = false;
+        // Promise that resolves when cleanup is complete
+        let cleanupPromise = null;
         let reinitScheduled = false;
 
         // Handle character_switching event (cleanup phase)
         dataManager.on('character_switching', async (_data) => {
-            cleanupComplete = false;
-
-            try {
-                // Clear config cache IMMEDIATELY to prevent stale settings
-                if (config && typeof config.clearSettingsCache === 'function') {
-                    config.clearSettingsCache();
-                }
-
-                // Disable all active features (cleanup DOM elements, event listeners, etc.)
-                const cleanupPromises = [];
-                for (const feature of featureRegistry) {
-                    try {
-                        const featureInstance = getFeatureInstance(feature.key);
-                        if (featureInstance && typeof featureInstance.disable === 'function') {
-                            const result = featureInstance.disable();
-                            if (result && typeof result.then === 'function') {
-                                cleanupPromises.push(
-                                    result.catch((error) => {
-                                        console.error(`[FeatureRegistry] Failed to disable ${feature.name}:`, error);
-                                    })
-                                );
-                            }
-                        }
-                    } catch (error) {
-                        console.error(`[FeatureRegistry] Failed to disable ${feature.name}:`, error);
+            cleanupPromise = (async () => {
+                try {
+                    // Clear config cache IMMEDIATELY to prevent stale settings
+                    if (config && typeof config.clearSettingsCache === 'function') {
+                        config.clearSettingsCache();
                     }
-                }
 
-                // Wait for all cleanup in parallel
-                if (cleanupPromises.length > 0) {
-                    await Promise.all(cleanupPromises);
+                    // Disable all active features (cleanup DOM elements, event listeners, etc.)
+                    const cleanupPromises = [];
+                    for (const feature of featureRegistry) {
+                        try {
+                            const featureInstance = getFeatureInstance(feature.key);
+                            if (featureInstance && typeof featureInstance.disable === 'function') {
+                                const result = featureInstance.disable();
+                                if (result && typeof result.then === 'function') {
+                                    cleanupPromises.push(
+                                        result.catch((error) => {
+                                            console.error(`[FeatureRegistry] Failed to disable ${feature.name}:`, error);
+                                        })
+                                    );
+                                }
+                            }
+                        } catch (error) {
+                            console.error(`[FeatureRegistry] Failed to disable ${feature.name}:`, error);
+                        }
+                    }
+
+                    // Wait for all cleanup in parallel
+                    if (cleanupPromises.length > 0) {
+                        await Promise.all(cleanupPromises);
+                    }
+                } catch (error) {
+                    console.error('[FeatureRegistry] Error during character switch cleanup:', error);
                 }
-            } catch (error) {
-                console.error('[FeatureRegistry] Error during character switch cleanup:', error);
-            } finally {
-                cleanupComplete = true;
-            }
+            })();
+
+            await cleanupPromise;
         });
 
         // Handle character_switched event (re-initialization phase)
@@ -4609,29 +4609,11 @@
                 dungeonTrackerFeature.cleanup();
             }
 
-            // Wait for cleanup to complete if it hasn't yet
-            const waitForCleanup = () => {
-                return new Promise((resolve) => {
-                    if (cleanupComplete) {
-                        resolve();
-                    } else {
-                        const checkInterval = setInterval(() => {
-                            if (cleanupComplete) {
-                                clearInterval(checkInterval);
-                                resolve();
-                            }
-                        }, 10);
-                        // Safety timeout - proceed after 500ms even if cleanup not marked complete
-                        setTimeout(() => {
-                            clearInterval(checkInterval);
-                            resolve();
-                        }, 500);
-                    }
-                });
-            };
-
             try {
-                await waitForCleanup();
+                // Wait for cleanup to complete (with safety timeout)
+                if (cleanupPromise) {
+                    await Promise.race([cleanupPromise, new Promise((resolve) => setTimeout(resolve, 500))]);
+                }
 
                 // CRITICAL: Load settings BEFORE any feature initialization
                 // This ensures all features see the new character's settings

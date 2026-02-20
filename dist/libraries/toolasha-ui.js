@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 1.1.0
+ * Version: 1.1.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1614,8 +1614,12 @@
         updateBadgeForButton(button, channel) {
             const count = this.mentionCounts.get(channel) || 0;
 
+            // Find the MuiBadge-root wrapper inside the button (where game puts its badge)
+            const badgeRoot = button.querySelector('.MuiBadge-root');
+            const container = badgeRoot || button;
+
             // Find or create badge
-            let badge = button.querySelector('.mwi-mention-badge');
+            let badge = container.querySelector('.mwi-mention-badge');
 
             if (count === 0) {
                 if (badge) {
@@ -1630,31 +1634,24 @@
                 // Match MUI badge styling exactly, but on left side
                 badge.style.cssText = `
                 position: absolute;
-                box-sizing: border-box;
-                font-family: Roboto, Helvetica, Arial, sans-serif;
-                font-weight: 500;
-                font-size: 0.75rem;
-                line-height: 1;
-                z-index: 1;
                 top: 0;
                 left: 0;
-                transform: scale(1) translate(-50%, -50%);
-                transform-origin: 0% 0%;
-                margin-top: 2px;
-                margin-left: 4px;
-                height: 1rem;
-                min-width: 1rem;
-                border-radius: 0.5rem;
-                padding: 0 0.25rem;
-                display: flex;
-                flex-wrap: wrap;
-                justify-content: center;
-                align-content: center;
-                align-items: center;
+                transform: translate(-6px, -6px);
+                min-width: 12px;
+                height: 12px;
+                padding: 0 3px;
+                border-radius: 6px;
+                font-family: Roboto, Helvetica, Arial, sans-serif;
+                font-size: 9px;
+                font-weight: 500;
+                line-height: 12px;
+                text-align: center;
+                box-sizing: border-box;
+                z-index: 1;
                 background-color: #d32f2f;
                 color: #e7e7e7;
             `;
-                button.appendChild(badge);
+                container.appendChild(badge);
             }
 
             // Update count display
