@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.1.1](https://github.com/Celasha/Toolasha/compare/v1.1.0...v1.1.1) (2026-02-20)
+
+### Bug Fixes
+
+- calculate correct time for Philosopher's Mirror enhancement strategy ([0c95e51](https://github.com/Celasha/Toolasha/commit/0c95e519f0f7ec9290786ecd427cdfa45bf5606a))
+- correct mention badge positioning to match game UI ([acb6cd0](https://github.com/Celasha/Toolasha/commit/acb6cd05ea4bea683a0981771ff3067ba991fb2b))
+
+### Performance Improvements
+
+- replace 10ms polling with Promise for character switch cleanup ([0512733](https://github.com/Celasha/Toolasha/commit/0512733e4116e825543ba5961dfe4b2c5295302c))
+
 ## [1.1.0](https://github.com/Celasha/Toolasha/compare/v1.0.0...v1.1.0) (2026-02-19)
 
 ### Features
