@@ -679,10 +679,15 @@ export function findOptimalTeas(skillName, goal, locationName = null) {
 
     // Filter to specific location if provided (using game data category)
     if (locationName && gameData.actionCategoryDetailMap) {
-        // Find the category HRID that matches this location name
+        // Find the category HRID that matches this location name AND skill
+        // Multiple skills can have categories with the same name (e.g., "Material" exists for both Tailoring and Cheesesmithing)
+        // So we need to match the skill-specific category path
         let targetCategoryHrid = null;
+        const skillPrefix = `/action_categories/${normalizedSkill}/`;
+
         for (const [categoryHrid, categoryDetail] of Object.entries(gameData.actionCategoryDetailMap)) {
-            if (categoryDetail.name === locationName) {
+            // Match both the category name AND ensure it's for the correct skill
+            if (categoryDetail.name === locationName && categoryHrid.startsWith(skillPrefix)) {
                 targetCategoryHrid = categoryHrid;
                 break;
             }
@@ -698,9 +703,17 @@ export function findOptimalTeas(skillName, goal, locationName = null) {
         }
     }
 
-    if (actions.length === 0 && excludedActions.length === 0) {
+    // Check if there are no available actions (even if there are excluded ones)
+    if (actions.length === 0) {
         const locationSuffix = locationName ? ` at ${locationName}` : '';
-        return { error: `No actions available for ${skillName}${locationSuffix} at level ${playerLevel}` };
+        if (excludedActions.length > 0) {
+            const lowestLevel = Math.min(...excludedActions.map((item) => item.requiredLevel));
+            return {
+                error: `No actions available for ${skillName}${locationSuffix} at level ${playerLevel}. All actions require level ${lowestLevel}+.`,
+            };
+        } else {
+            return { error: `No actions available for ${skillName}${locationSuffix} at level ${playerLevel}` };
+        }
     }
 
     // Get other efficiency sources
