@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      1.4.1
+// @version      1.4.2
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -29424,6 +29424,54 @@ self.onmessage = function (e) {
     }
 
     /**
+     * Number Parser Utility
+     * Shared utilities for parsing numeric values from text, including item counts
+     */
+
+    /**
+     * Parse item count from text
+     * Handles various formats including:
+     * - Plain numbers: "100", "1000"
+     * - K/M suffixes: "1.5K", "2M"
+     * - International formats with separators: "1,000", "1 000"
+     * - Prefixed formats: "x5", "Amount: 1000", "Amount: 1 000"
+     *
+     * @param {string} text - Text containing a number
+     * @param {number} defaultValue - Value to return if parsing fails (default: 1)
+     * @returns {number} Parsed numeric value
+     */
+    function parseItemCount(text, defaultValue = 1) {
+        if (!text) {
+            return defaultValue;
+        }
+
+        // Convert to string and normalize
+        text = String(text).toLowerCase().trim();
+
+        // Extract number from common patterns like "x5", "Amount: 1000"
+        const prefixMatch = text.match(/x([\d,\s.kmb]+)|amount:\s*([\d,\s.kmb]+)/i);
+        if (prefixMatch) {
+            text = prefixMatch[1] || prefixMatch[2];
+        }
+
+        // Remove all whitespace and comma separators (handles international formats)
+        text = text.replace(/[\s,]/g, '');
+
+        // Handle K/M/B suffixes
+        if (text.includes('k')) {
+            return parseFloat(text.replace('k', '')) * 1000;
+        } else if (text.includes('m')) {
+            return parseFloat(text.replace('m', '')) * 1000000;
+        } else if (text.includes('b')) {
+            return parseFloat(text.replace('b', '')) * 1000000000;
+        }
+
+        // Parse plain number
+        const parsed = parseFloat(text);
+        return isNaN(parsed) ? defaultValue : parsed;
+    }
+
+    /**
      * Market Tooltip Prices Feature
      * Adds market prices to item tooltips
      */
@@ -29432,8 +29480,6 @@ self.onmessage = function (e) {
     // Compiled regex patterns (created once, reused for performance)
     const REGEX_ENHANCEMENT_LEVEL = /\+(\d+)$/;
     const REGEX_ENHANCEMENT_STRIP = /\s*\+\d+$/;
-    const REGEX_AMOUNT = /x([\d,]+)|Amount:\s*([\d,]+)/i;
-    const REGEX_COMMA = /,/g;
 
     /**
      * Format price for tooltip display based on user setting
@@ -29787,17 +29833,8 @@ self.onmessage = function (e) {
          * @returns {number} Item amount (default 1)
          */
         extractItemAmount(tooltipElement) {
-            // Look for amount text in tooltip (e.g., "x5", "Amount: 5", "Amount: 4,900")
             const text = tooltipElement.textContent;
-            const match = text.match(REGEX_AMOUNT);
-
-            if (match) {
-                // Strip commas before parsing
-                const amountStr = (match[1] || match[2]).replace(REGEX_COMMA, '');
-                return parseInt(amountStr, 10);
-            }
-
-            return 1; // Default to 1 if not found
+            return parseItemCount(text, 1);
         }
 
         /**
@@ -42167,8 +42204,7 @@ self.onmessage = function (e) {
                 const countElem = itemElem.querySelector('[class*="Item_count"]');
                 if (!countElem) continue;
 
-                let itemCount = countElem.textContent;
-                itemCount = this.parseItemCount(itemCount);
+                const itemCount = parseItemCount(countElem.textContent, 0);
 
                 // Get item details (reused throughout)
                 const itemDetails = gameData.itemDetailMap[itemHrid];
@@ -42409,26 +42445,6 @@ self.onmessage = function (e) {
 
             // O(1) lookup
             return this.nameToHridMap.get(itemName) || null;
-        }
-
-        /**
-         * Parse item count from text (handles K, M suffixes and international number formats)
-         * @param {string} text - Count text
-         * @returns {number} Numeric count
-         */
-        parseItemCount(text) {
-            text = text.toLowerCase().trim();
-
-            // Remove all whitespace characters (handles international formats like "27 115" or "1 000")
-            text = text.replace(/\s/g, '');
-
-            if (text.includes('k')) {
-                return parseFloat(text.replace('k', '')) * 1000;
-            } else if (text.includes('m')) {
-                return parseFloat(text.replace('m', '')) * 1000000;
-            } else {
-                return parseFloat(text) || 0;
-            }
         }
 
         /**
