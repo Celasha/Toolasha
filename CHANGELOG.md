@@ -2,10 +2,9 @@
 
 ## [1.6.1](https://github.com/Celasha/Toolasha/compare/v1.6.0...v1.6.1) (2026-02-21)
 
-
 ### Bug Fixes
 
-* correct alchemy calculator tab detection to use ARIA role selector ([49f40f9](https://github.com/Celasha/Toolasha/commit/49f40f9f1b2c3c85991971637b7de05f79f12e09))
+- correct alchemy calculator tab detection to use ARIA role selector ([49f40f9](https://github.com/Celasha/Toolasha/commit/49f40f9f1b2c3c85991971637b7de05f79f12e09))
 
 ## [1.6.0](https://github.com/Celasha/Toolasha/compare/v1.5.0...v1.6.0) (2026-02-21)
 
