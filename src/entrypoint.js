@@ -183,6 +183,13 @@ function registerFeatures() {
             module: Market.inventoryBadgePrices,
             async: false,
         },
+        {
+            key: 'autoAllButton',
+            name: 'Auto All Button',
+            category: 'Inventory',
+            module: Market.autoAllButton,
+            async: false,
+        },
     ];
 
     // Actions Features

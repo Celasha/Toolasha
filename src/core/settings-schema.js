@@ -479,6 +479,13 @@ export const settingsGroups = {
                 default: false,
                 help: 'Move ability books from Fixed Assets to Current Assets inventory value. Useful if you plan to sell them.',
             },
+            autoAllButton: {
+                id: 'autoAllButton',
+                label: 'Auto-click "All" button when opening loot boxes',
+                type: 'checkbox',
+                default: true,
+                help: 'Automatically clicks the "All" button when opening openable containers (crates, chests, caches)',
+            },
         },
     },
 

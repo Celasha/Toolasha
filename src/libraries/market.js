@@ -34,6 +34,7 @@ import inventoryBadgeManager from '../features/inventory/inventory-badge-manager
 import inventorySort from '../features/inventory/inventory-sort.js';
 import inventoryBadgePrices from '../features/inventory/inventory-badge-prices.js';
 import dungeonTokenTooltips from '../features/inventory/dungeon-token-tooltips.js';
+import autoAllButton from '../features/inventory/auto-all-button.js';
 
 // Export to global namespace
 const toolashaRoot = window.Toolasha || {};
@@ -68,6 +69,7 @@ toolashaRoot.Market = {
     inventorySort,
     inventoryBadgePrices,
     dungeonTokenTooltips,
+    autoAllButton,
 };
 
 console.log('[Toolasha] Market library loaded');
