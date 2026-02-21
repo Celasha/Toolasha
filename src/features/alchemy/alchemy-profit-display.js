@@ -247,10 +247,9 @@ class AlchemyProfitDisplay {
                 isDecompose = actionHrid === '/actions/alchemy/decompose';
             } else {
                 // Not actively performing - check which tab is selected in the DOM
-                const selectedTab = document.querySelector(
-                    '[class*="AlchemyPanel_tabButton"][aria-selected="true"], ' +
-                        '[class*="AlchemyPanel_tab"][aria-selected="true"]'
-                );
+                // Use [role="tab"] selector which reliably matches MUI tab elements
+                const tabContainer = document.querySelector('[class*="AlchemyPanel_tabsComponentContainer"]');
+                const selectedTab = tabContainer?.querySelector('[role="tab"][aria-selected="true"]');
                 const tabText = selectedTab?.textContent?.trim()?.toLowerCase() || '';
 
                 if (tabText.includes('coinify')) {
