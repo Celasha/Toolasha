@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      1.5.0
+// @version      1.6.0
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -51859,6 +51859,7 @@ self.onmessage = function (e) {
             this.itemsUpdatedDebounceTimer = null; // Debounce timer for items_updated events
             this.actionCompletedDebounceTimer = null; // Debounce timer for action_completed events
             this.consumablesUpdatedDebounceTimer = null; // Debounce timer for consumables_updated events
+            this.indicatorUpdateDebounceTimer = null; // Debounce timer for indicator rendering
             this.DEBOUNCE_DELAY = 300; // 300ms debounce for event handlers
         }
 
@@ -51958,7 +51959,9 @@ self.onmessage = function (e) {
                     displayElement: existingDisplay,
                 });
                 // Update with fresh data (skip render; indicators handle output)
-                this.updateStats(actionPanel, { skipRender: true });
+                this.updateStats(actionPanel, { skipRender: true }).then(() => {
+                    this.scheduleIndicatorUpdate();
+                });
                 // Register with shared sort manager
                 actionPanelSort.registerPanel(actionPanel, actionHrid);
                 // Trigger sort
@@ -52003,7 +52006,9 @@ self.onmessage = function (e) {
             actionPanelSort.registerPanel(actionPanel, actionHrid);
 
             // Initial update (skip render; indicators handle output)
-            this.updateStats(actionPanel, { skipRender: true });
+            this.updateStats(actionPanel, { skipRender: true }).then(() => {
+                this.scheduleIndicatorUpdate();
+            });
 
             // Trigger sort
             actionPanelSort.triggerSort();
@@ -52118,10 +52123,20 @@ self.onmessage = function (e) {
             await Promise.all(updatePromises);
 
             // Find best actions and add indicators
-            this.addBestActionIndicators();
+            this.scheduleIndicatorUpdate();
 
             // Trigger sort via shared manager
             actionPanelSort.triggerSort();
+        }
+
+        /**
+         * Debounce indicator rendering to batch panel updates
+         */
+        scheduleIndicatorUpdate() {
+            clearTimeout(this.indicatorUpdateDebounceTimer);
+            this.indicatorUpdateDebounceTimer = setTimeout(() => {
+                this.addBestActionIndicators();
+            }, this.DEBOUNCE_DELAY);
         }
 
         /**
@@ -52284,6 +52299,8 @@ self.onmessage = function (e) {
          * Clear all DOM references to prevent memory leaks during character switch
          */
         clearAllReferences() {
+            clearTimeout(this.indicatorUpdateDebounceTimer);
+            this.indicatorUpdateDebounceTimer = null;
             // CRITICAL: Remove injected DOM elements BEFORE clearing Maps
             // This prevents detached SVG elements from accumulating
             // Note: .remove() is safe to call even if element is already detached
@@ -52310,9 +52327,11 @@ self.onmessage = function (e) {
             clearTimeout(this.itemsUpdatedDebounceTimer);
             clearTimeout(this.actionCompletedDebounceTimer);
             clearTimeout(this.consumablesUpdatedDebounceTimer);
+            clearTimeout(this.indicatorUpdateDebounceTimer);
             this.itemsUpdatedDebounceTimer = null;
             this.actionCompletedDebounceTimer = null;
             this.consumablesUpdatedDebounceTimer = null;
+            this.indicatorUpdateDebounceTimer = null;
 
             if (this.itemsUpdatedHandler) {
                 dataManager$1.off('items_updated', this.itemsUpdatedHandler);
@@ -54567,9 +54586,12 @@ self.onmessage = function (e) {
             const xpButton = this.createButton('XP', 'xp', config$1.COLOR_INFO);
             // Create Gold button
             const goldButton = this.createButton('Gold', 'gold', config$1.COLOR_PROFIT);
+            // Create Both button
+            const bothButton = this.createButton('Both', 'both', config$1.COLOR_ACCENT);
 
             buttonContainer.appendChild(xpButton);
             buttonContainer.appendChild(goldButton);
+            buttonContainer.appendChild(bothButton);
 
             // Make label a flex container and append buttons
             labelElement.style.display = 'inline-flex';
@@ -54624,7 +54646,7 @@ self.onmessage = function (e) {
 
         /**
          * Show tea recommendation popup
-         * @param {string} goal - 'xp' or 'gold'
+         * @param {string} goal - 'xp', 'gold', or 'both'
          * @param {HTMLElement} anchorButton - Button that was clicked
          */
         showRecommendation(goal, anchorButton) {
@@ -54640,6 +54662,12 @@ self.onmessage = function (e) {
 
             // Get current location tab (if any)
             const locationTab = getCurrentLocationTab();
+
+            // Handle 'both' mode - show dual results
+            if (goal === 'both') {
+                this.showBothRecommendation(anchorButton, skillName, locationTab);
+                return;
+            }
 
             // Calculate optimal teas (pass location name to filter by category)
             const result = findOptimalTeas(skillName, goal, locationTab);
@@ -54965,6 +54993,173 @@ self.onmessage = function (e) {
         }
 
         /**
+         * Show both XP and Gold recommendations side by side
+         * @param {HTMLElement} anchorButton - Button that was clicked
+         * @param {string} skillName - Current skill name
+         * @param {string|null} locationTab - Current location tab
+         */
+        showBothRecommendation(anchorButton, skillName, locationTab) {
+            const xpResult = findOptimalTeas(skillName, 'xp', locationTab);
+            const goldResult = findOptimalTeas(skillName, 'gold', locationTab);
+
+            if (xpResult.error && goldResult.error) {
+                this.showError(anchorButton, xpResult.error);
+                return;
+            }
+
+            // Create popup
+            const popup = document.createElement('div');
+            popup.className = 'mwi-tea-recommendation-popup';
+            popup.style.cssText = `
+            position: absolute;
+            z-index: 10000;
+            background: #1a1a1a;
+            border: 1px solid ${config$1.COLOR_BORDER};
+            border-radius: 8px;
+            padding: 16px;
+            min-width: 320px;
+            max-width: 420px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+            cursor: default;
+        `;
+
+            // Header
+            const displayName = locationTab || skillName;
+            const header = document.createElement('div');
+            header.style.cssText = `
+            font-size: 14px;
+            font-weight: 600;
+            color: #fff;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid ${config$1.COLOR_BORDER};
+            cursor: grab;
+            user-select: none;
+        `;
+            header.textContent = `Optimal Teas for ${displayName}`;
+            header.title = 'Drag to move';
+            popup.appendChild(header);
+
+            this.makeDraggable(popup, header);
+
+            // Two-column container
+            const columns = document.createElement('div');
+            columns.style.cssText = `
+            display: flex;
+            gap: 16px;
+        `;
+
+            // XP Column
+            if (!xpResult.error && xpResult.optimal) {
+                const xpCol = document.createElement('div');
+                xpCol.style.cssText = 'flex: 1;';
+
+                const xpHeader = document.createElement('div');
+                xpHeader.style.cssText = `
+                font-size: 12px;
+                font-weight: 600;
+                color: ${config$1.COLOR_INFO};
+                margin-bottom: 8px;
+            `;
+                xpHeader.textContent = `XP/hr: ${formatKMB(xpResult.optimal.avgScore)}`;
+                xpCol.appendChild(xpHeader);
+
+                for (const tea of xpResult.optimal.teas) {
+                    const teaRow = document.createElement('div');
+                    teaRow.style.cssText = `
+                    font-size: 11px;
+                    color: rgba(255, 255, 255, 0.8);
+                    padding: 2px 0;
+                `;
+                    teaRow.textContent = tea.name;
+                    xpCol.appendChild(teaRow);
+                }
+
+                columns.appendChild(xpCol);
+            }
+
+            // Gold Column
+            if (!goldResult.error && goldResult.optimal) {
+                const goldCol = document.createElement('div');
+                goldCol.style.cssText = 'flex: 1;';
+
+                const goldHeader = document.createElement('div');
+                goldHeader.style.cssText = `
+                font-size: 12px;
+                font-weight: 600;
+                color: ${config$1.COLOR_PROFIT};
+                margin-bottom: 8px;
+            `;
+                goldHeader.textContent = `Gold/hr: ${formatKMB(goldResult.optimal.avgScore)}`;
+                goldCol.appendChild(goldHeader);
+
+                for (const tea of goldResult.optimal.teas) {
+                    const teaRow = document.createElement('div');
+                    teaRow.style.cssText = `
+                    font-size: 11px;
+                    color: rgba(255, 255, 255, 0.8);
+                    padding: 2px 0;
+                `;
+                    teaRow.textContent = tea.name;
+                    goldCol.appendChild(teaRow);
+                }
+
+                columns.appendChild(goldCol);
+            }
+
+            popup.appendChild(columns);
+
+            // Close button
+            const closeBtn = document.createElement('button');
+            closeBtn.style.cssText = `
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: transparent;
+            border: none;
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 16px;
+            cursor: pointer;
+            padding: 4px;
+            line-height: 1;
+        `;
+            closeBtn.innerHTML = '&times;';
+            closeBtn.addEventListener('click', () => this.closePopup());
+            popup.appendChild(closeBtn);
+
+            // Position popup
+            document.body.appendChild(popup);
+            const buttonRect = anchorButton.getBoundingClientRect();
+            const popupRect = popup.getBoundingClientRect();
+
+            let top = buttonRect.bottom + 8;
+            let left = buttonRect.left;
+
+            if (left + popupRect.width > window.innerWidth - 16) {
+                left = window.innerWidth - popupRect.width - 16;
+            }
+            if (top + popupRect.height > window.innerHeight - 16) {
+                top = buttonRect.top - popupRect.height - 8;
+            }
+
+            popup.style.top = `${top}px`;
+            popup.style.left = `${left}px`;
+
+            this.currentPopup = popup;
+
+            // Close on click outside
+            const closeHandler = (e) => {
+                if (!popup.contains(e.target) && e.target !== anchorButton) {
+                    this.closePopup();
+                    document.removeEventListener('click', closeHandler);
+                }
+            };
+            setTimeout(() => {
+                document.addEventListener('click', closeHandler);
+            }, 100);
+        }
+
+        /**
          * Show error message
          * @param {HTMLElement} anchorButton - Button that was clicked
          * @param {string} message - Error message
@@ -55017,10 +55212,12 @@ self.onmessage = function (e) {
          */
         makeDraggable(element, handle) {
             let isDragging = false;
+            let hasDragged = false;
             let startX, startY, initialX, initialY;
 
             handle.addEventListener('mousedown', (e) => {
                 isDragging = true;
+                hasDragged = false;
                 startX = e.clientX;
                 startY = e.clientY;
                 initialX = element.offsetLeft;
@@ -55032,6 +55229,7 @@ self.onmessage = function (e) {
             document.addEventListener('mousemove', (e) => {
                 if (!isDragging) return;
 
+                hasDragged = true;
                 const dx = e.clientX - startX;
                 const dy = e.clientY - startY;
 
@@ -55043,6 +55241,14 @@ self.onmessage = function (e) {
                 if (isDragging) {
                     isDragging = false;
                     handle.style.cursor = 'grab';
+                    // Suppress the click event that follows drag
+                    if (hasDragged) {
+                        const suppressClick = (e) => {
+                            e.stopPropagation();
+                            document.removeEventListener('click', suppressClick, true);
+                        };
+                        document.addEventListener('click', suppressClick, true);
+                    }
                 }
             });
         }
