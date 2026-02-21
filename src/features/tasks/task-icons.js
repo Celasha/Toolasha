@@ -64,6 +64,9 @@ class TaskIcons {
         this.fetchedSprites = {
             monsters: null,
         };
+
+        // Track if we've shown the sprite warning
+        this.spriteWarningShown = false;
     }
 
     /**
@@ -163,6 +166,9 @@ class TaskIcons {
                     // Cache the URL so we don't lose it
                     this.cachedSpriteUrls.monsters = url;
 
+                    // Remove sprite warning since sprites are now loaded
+                    this.removeSpriteWarning();
+
                     // Sprite just loaded, refresh all icons
                     this.clearAllProcessedMarkers();
                     this.processAllTaskCards();
@@ -203,6 +209,82 @@ class TaskIcons {
     }
 
     /**
+     * Check if combat sprites are loaded and show warning if not
+     */
+    checkAndShowSpriteWarning() {
+        // Only check if we haven't shown the warning yet
+        if (this.spriteWarningShown) {
+            return;
+        }
+
+        // Check if monster sprites are loaded
+        const monsterSpriteUrl = this.cachedSpriteUrls.monsters;
+        if (monsterSpriteUrl) {
+            // Sprites are loaded, remove warning if it exists
+            this.removeSpriteWarning();
+            return;
+        }
+
+        // Check if there are any combat tasks that would need the sprites
+        const taskCards = document.querySelectorAll(GAME.TASK_CARD);
+        let hasCombatTasks = false;
+
+        for (const taskCard of taskCards) {
+            const taskInfo = this.parseTaskCard(taskCard);
+            if (taskInfo && taskInfo.isCombatTask) {
+                hasCombatTasks = true;
+                break;
+            }
+        }
+
+        // Only show warning if there are combat tasks
+        if (hasCombatTasks) {
+            this.showSpriteWarning();
+        }
+    }
+
+    /**
+     * Show warning notification in Tasks panel title
+     */
+    showSpriteWarning() {
+        const titleElement = document.querySelector('h1.TasksPanel_title__6_y-9');
+        if (!titleElement) {
+            return;
+        }
+
+        // Check if warning already exists
+        if (document.getElementById('mwi-sprite-warning')) {
+            return;
+        }
+
+        // Create warning element
+        const warning = document.createElement('div');
+        warning.id = 'mwi-sprite-warning';
+        warning.style.cssText = `
+            color: #ef4444;
+            font-size: 0.75em;
+            font-weight: 500;
+            margin-top: 4px;
+        `;
+        warning.textContent = '⚠ Combat icons unavailable - visit Combat to load sprites';
+        warning.title = 'Combat monster sprites need to be loaded. Visit the Combat panel to load them.';
+
+        titleElement.appendChild(warning);
+        this.spriteWarningShown = true;
+    }
+
+    /**
+     * Remove sprite warning notification
+     */
+    removeSpriteWarning() {
+        const warning = document.getElementById('mwi-sprite-warning');
+        if (warning) {
+            warning.remove();
+            this.spriteWarningShown = false;
+        }
+    }
+
+    /**
      * Process all task cards in the DOM
      */
     processAllTaskCards() {
@@ -218,6 +300,9 @@ class TaskIcons {
                 return;
             }
         }
+
+        // Check if combat sprites are loaded and show warning if needed
+        this.checkAndShowSpriteWarning();
 
         const taskCards = taskList.querySelectorAll(GAME.TASK_CARD);
 
@@ -816,6 +901,9 @@ class TaskIcons {
     cleanup() {
         this.observers.forEach((unregister) => unregister());
         this.observers = [];
+
+        // Remove sprite warning
+        this.removeSpriteWarning();
 
         // Remove all icons and data attributes
         document.querySelectorAll('.mwi-task-icon').forEach((icon) => icon.remove());
