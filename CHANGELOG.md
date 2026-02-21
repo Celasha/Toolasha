@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.3](https://github.com/Celasha/Toolasha/compare/v1.4.2...v1.4.3) (2026-02-21)
+
+
+### Code Refactoring
+
+* remove settings parent-child nesting system ([6445730](https://github.com/Celasha/Toolasha/commit/64457309a581631c00ba22b4f64e7f7ecb8c9791))
+
 ## [1.4.2](https://github.com/Celasha/Toolasha/compare/v1.4.1...v1.4.2) (2026-02-21)
 
 ### Code Refactoring
