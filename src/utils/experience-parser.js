@@ -144,6 +144,28 @@ export function parseCommunityBuffWisdom() {
 }
 
 /**
+ * Parse MooPass wisdom bonus
+ * MooPass provides a flat 5% wisdom boost
+ * @returns {number} Wisdom percentage from MooPass (5% if active, 0 if not)
+ */
+export function parseMooPassWisdom() {
+    const mooPassBuffs = dataManager.getMooPassBuffs();
+    if (!mooPassBuffs || mooPassBuffs.length === 0) {
+        return 0;
+    }
+
+    // Check for wisdom buff from MooPass
+    const wisdomBuff = mooPassBuffs.find((buff) => buff.typeHrid === '/buff_types/wisdom');
+
+    if (!wisdomBuff || !wisdomBuff.flatBoost) {
+        return 0;
+    }
+
+    // Convert to percentage (0.05 → 5%)
+    return wisdomBuff.flatBoost * 100;
+}
+
+/**
  * Parse wisdom from active consumables (Wisdom Tea/Coffee)
  * @param {Array} drinkSlots - Active drink slots for the action type
  * @param {Object} itemDetailMap - Item details from game data
@@ -206,8 +228,10 @@ export function calculateExperienceMultiplier(skillHrid, actionTypeHrid) {
     const communityWisdom = parseCommunityBuffWisdom();
     const consumableWisdom = parseConsumableWisdom(activeDrinks, itemDetailMap, drinkConcentration);
     const achievementWisdom = dataManager.getAchievementBuffFlatBoost(actionTypeHrid, '/buff_types/wisdom') * 100;
+    const mooPassWisdom = parseMooPassWisdom();
 
-    const totalWisdom = equipmentWisdom + houseWisdom + communityWisdom + consumableWisdom + achievementWisdom;
+    const totalWisdom =
+        equipmentWisdom + houseWisdom + communityWisdom + consumableWisdom + achievementWisdom + mooPassWisdom;
 
     // Parse charm experience (skill-specific) - now returns object with total and breakdown
     const charmData = parseCharmExperience(equipment, skillHrid, itemDetailMap);
@@ -228,6 +252,7 @@ export function calculateExperienceMultiplier(skillHrid, actionTypeHrid) {
             communityWisdom,
             consumableWisdom,
             achievementWisdom,
+            mooPassWisdom,
             charmExperience,
         },
     };
@@ -276,6 +301,7 @@ export default {
     parseCharmExperience,
     parseHouseRoomWisdom,
     parseCommunityBuffWisdom,
+    parseMooPassWisdom,
     parseConsumableWisdom,
     calculateExperienceMultiplier,
 };

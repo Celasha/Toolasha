@@ -526,6 +526,19 @@ class ActionTimeDisplay {
         const skills = dataManager.getSkills();
         const itemDetailMap = dataManager.getInitClientData()?.itemDetailMap || {};
 
+        // For alchemy actions, use item level for efficiency calculation (not action requirement)
+        let levelRequirementOverride = undefined;
+        if (actionDetails.type === '/action_types/alchemy' && action.primaryItemHash) {
+            const parts = action.primaryItemHash.split('::');
+            if (parts.length >= 3) {
+                const itemHrid = parts[2];
+                const itemDetails = itemDetailMap[itemHrid];
+                if (itemDetails && itemDetails.itemLevel) {
+                    levelRequirementOverride = itemDetails.itemLevel;
+                }
+            }
+        }
+
         // Use shared calculator
         const stats = calculateActionStats(actionDetails, {
             skills,
@@ -535,6 +548,7 @@ class ActionTimeDisplay {
             includeCommunityBuff: true,
             includeBreakdown: false,
             floorActionLevel: true,
+            levelRequirementOverride,
         });
 
         if (!stats) {

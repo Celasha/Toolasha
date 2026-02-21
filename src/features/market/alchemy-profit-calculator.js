@@ -18,8 +18,13 @@ import { getDrinkConcentration } from '../../utils/tea-parser.js';
 import { getItemPrice } from '../../utils/market-data.js';
 import { SECONDS_PER_HOUR } from '../../utils/profit-constants.js';
 import { getAlchemySuccessBonus } from '../../utils/buff-parser.js';
+import {
+    parseEquipmentSpeedBonuses,
+    debugEquipmentSpeedBonuses,
+    parseEssenceFindBonus,
+    parseRareFindBonus,
+} from '../../utils/equipment-parser.js';
 import { calculateActionStats } from '../../utils/action-calculator.js';
-import { parseEssenceFindBonus, parseRareFindBonus } from '../../utils/equipment-parser.js';
 import { calculateHouseRareFind } from '../../utils/house-efficiency.js';
 import marketAPI from '../../api/marketplace.js';
 import expectedValueCalculator from './expected-value-calculator.js';
@@ -257,8 +262,34 @@ class AlchemyProfitCalculator {
 
             const { actionTime, totalEfficiency, efficiencyBreakdown } = actionStats;
 
-            // Get equipment for drink concentration calculation
+            // Get equipment for drink concentration and speed calculation
             const equipment = dataManager.getEquipment();
+
+            // Calculate action speed breakdown with details
+            const _baseTime = actionDetails.baseTimeCost / 1e9;
+            const speedBonus = parseEquipmentSpeedBonuses(equipment, actionDetails.type, gameData.itemDetailMap);
+
+            // Get detailed equipment speed breakdown
+            const allSpeedBonuses = debugEquipmentSpeedBonuses(equipment, gameData.itemDetailMap);
+            const skillName = actionDetails.type.replace('/action_types/', '');
+            const skillSpecificSpeed = skillName + 'Speed';
+            const relevantSpeeds = allSpeedBonuses.filter((item) => {
+                return item.speedType === skillSpecificSpeed || item.speedType === 'skillingSpeed';
+            });
+
+            // TODO: Add tea speed bonuses when tea-parser supports it
+            const teaSpeed = 0;
+            const actionSpeedBreakdown = {
+                total: speedBonus + teaSpeed,
+                equipment: speedBonus,
+                tea: teaSpeed,
+                equipmentDetails: relevantSpeeds.map((item) => ({
+                    name: item.itemName,
+                    enhancementLevel: item.enhancementLevel,
+                    speedBonus: item.scaledBonus,
+                })),
+                teaDetails: [], // TODO: Add when tea speed is supported
+            };
 
             // Get drink concentration separately (not in breakdown from calculateActionStats)
             const drinkConcentration = getDrinkConcentration(equipment, gameData.itemDetailMap);
@@ -434,6 +465,7 @@ class AlchemyProfitCalculator {
                 // Modifier breakdowns
                 successRateBreakdown,
                 efficiencyBreakdown,
+                actionSpeedBreakdown,
                 rareFindBreakdown: alchemyBonus.rareFindBreakdown,
                 essenceFindBreakdown: alchemyBonus.essenceFindBreakdown,
 
@@ -501,8 +533,34 @@ class AlchemyProfitCalculator {
 
             const { actionTime, totalEfficiency, efficiencyBreakdown } = actionStats;
 
-            // Get equipment for drink concentration calculation
+            // Get equipment for drink concentration and speed calculation
             const equipment = dataManager.getEquipment();
+
+            // Calculate action speed breakdown with details
+            const _baseTime = actionDetails.baseTimeCost / 1e9;
+            const speedBonus = parseEquipmentSpeedBonuses(equipment, actionDetails.type, gameData.itemDetailMap);
+
+            // Get detailed equipment speed breakdown
+            const allSpeedBonuses = debugEquipmentSpeedBonuses(equipment, gameData.itemDetailMap);
+            const skillName = actionDetails.type.replace('/action_types/', '');
+            const skillSpecificSpeed = skillName + 'Speed';
+            const relevantSpeeds = allSpeedBonuses.filter((item) => {
+                return item.speedType === skillSpecificSpeed || item.speedType === 'skillingSpeed';
+            });
+
+            // TODO: Add tea speed bonuses when tea-parser supports it
+            const teaSpeed = 0;
+            const actionSpeedBreakdown = {
+                total: speedBonus + teaSpeed,
+                equipment: speedBonus,
+                tea: teaSpeed,
+                equipmentDetails: relevantSpeeds.map((item) => ({
+                    name: item.itemName,
+                    enhancementLevel: item.enhancementLevel,
+                    speedBonus: item.scaledBonus,
+                })),
+                teaDetails: [], // TODO: Add when tea speed is supported
+            };
             const drinkConcentration = getDrinkConcentration(equipment, gameData.itemDetailMap);
 
             // Calculate success rate with breakdown
@@ -706,6 +764,7 @@ class AlchemyProfitCalculator {
                 // Modifier breakdowns
                 successRateBreakdown,
                 efficiencyBreakdown,
+                actionSpeedBreakdown,
                 rareFindBreakdown: alchemyBonus.rareFindBreakdown,
                 essenceFindBreakdown: alchemyBonus.essenceFindBreakdown,
 
@@ -778,8 +837,34 @@ class AlchemyProfitCalculator {
 
             const { actionTime, totalEfficiency, efficiencyBreakdown } = actionStats;
 
-            // Get equipment for drink concentration calculation
+            // Get equipment for drink concentration and speed calculation
             const equipment = dataManager.getEquipment();
+
+            // Calculate action speed breakdown with details
+            const _baseTime = actionDetails.baseTimeCost / 1e9;
+            const speedBonus = parseEquipmentSpeedBonuses(equipment, actionDetails.type, gameData.itemDetailMap);
+
+            // Get detailed equipment speed breakdown
+            const allSpeedBonuses = debugEquipmentSpeedBonuses(equipment, gameData.itemDetailMap);
+            const skillName = actionDetails.type.replace('/action_types/', '');
+            const skillSpecificSpeed = skillName + 'Speed';
+            const relevantSpeeds = allSpeedBonuses.filter((item) => {
+                return item.speedType === skillSpecificSpeed || item.speedType === 'skillingSpeed';
+            });
+
+            // TODO: Add tea speed bonuses when tea-parser supports it
+            const teaSpeed = 0;
+            const actionSpeedBreakdown = {
+                total: speedBonus + teaSpeed,
+                equipment: speedBonus,
+                tea: teaSpeed,
+                equipmentDetails: relevantSpeeds.map((item) => ({
+                    name: item.itemName,
+                    enhancementLevel: item.enhancementLevel,
+                    speedBonus: item.scaledBonus,
+                })),
+                teaDetails: [], // TODO: Add when tea speed is supported
+            };
             const drinkConcentration = getDrinkConcentration(equipment, gameData.itemDetailMap);
 
             // Calculate success rate with breakdown
@@ -995,6 +1080,7 @@ class AlchemyProfitCalculator {
                 // Modifier breakdowns
                 successRateBreakdown,
                 efficiencyBreakdown,
+                actionSpeedBreakdown,
                 rareFindBreakdown: alchemyBonus.rareFindBreakdown,
                 essenceFindBreakdown: alchemyBonus.essenceFindBreakdown,
 

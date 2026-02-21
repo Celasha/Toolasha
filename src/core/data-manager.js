@@ -526,6 +526,14 @@ class DataManager {
     }
 
     /**
+     * Get MooPass buffs
+     * @returns {Array} MooPass buffs array (empty if no MooPass)
+     */
+    getMooPassBuffs() {
+        return this.characterData?.mooPassBuffs || [];
+    }
+
+    /**
      * Get player's house rooms
      * @returns {Map} House room map (room HRID -> {houseRoomHrid, level})
      */
