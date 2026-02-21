@@ -65,14 +65,12 @@ export const settingsGroups = {
                 label: 'Action panel: Quick input buttons (hours, count presets, Max)',
                 type: 'checkbox',
                 default: true,
-                dependencies: ['actionPanel_totalTime'],
             },
             actionPanel_foragingTotal: {
                 id: 'actionPanel_foragingTotal',
                 label: 'Action panel: Overall profit for multi-outcome foraging',
                 type: 'checkbox',
                 default: true,
-                dependencies: ['actionPanel_totalTime'],
             },
             actionQueue: {
                 id: 'actionQueue',
@@ -89,7 +87,6 @@ export const settingsGroups = {
                     { value: 'profit', label: 'Total Profit (revenue - all costs)' },
                     { value: 'estimated_value', label: 'Estimated Value (revenue after tax)' },
                 ],
-                dependencies: ['actionQueue'],
                 help: 'Choose how to calculate the total value for queued actions. Profit shows net earnings after materials and drinks. Estimated Value shows gross revenue after market tax (always positive).',
             },
             actionPanel_outputTotals: {
@@ -118,7 +115,6 @@ export const settingsGroups = {
                 label: 'Action panel: Hide actions with negative profit',
                 type: 'checkbox',
                 default: false,
-                dependencies: ['actionPanel_maxProduceable', 'actionPanel_gatheringStats'],
                 help: 'Hides action panels that would result in a loss (negative profit/hr)',
             },
             actionPanel_sortByProfit: {
@@ -126,7 +122,6 @@ export const settingsGroups = {
                 label: 'Action panel: Sort actions by profit/hr (highest first)',
                 type: 'checkbox',
                 default: false,
-                dependencies: ['actionPanel_maxProduceable', 'actionPanel_gatheringStats'],
                 help: 'Sorts action tiles by profit/hr in descending order. Actions without profit data appear at the end.',
             },
             requiredMaterials: {
@@ -155,7 +150,6 @@ export const settingsGroups = {
                 label: 'Ignore queued actions when calculating missing materials',
                 type: 'checkbox',
                 default: false,
-                dependencies: ['actions_missingMaterialsButton'],
                 help: 'When enabled, missing materials calculation only considers current action request, ignoring materials already reserved by queued actions. Default (off) accounts for queue.',
             },
         },
@@ -176,14 +170,12 @@ export const settingsGroups = {
                 label: 'Show production cost and profit',
                 type: 'checkbox',
                 default: true,
-                dependencies: ['itemTooltip_prices'],
             },
             itemTooltip_detailedProfit: {
                 id: 'itemTooltip_detailedProfit',
                 label: 'Show detailed materials breakdown in profit display',
                 type: 'checkbox',
                 default: false,
-                dependencies: ['itemTooltip_profit'],
                 help: 'Shows material costs table with Ask/Bid prices, actions/hour, and profit breakdown',
             },
             itemTooltip_multiActionProfit: {
@@ -191,7 +183,6 @@ export const settingsGroups = {
                 label: 'Show profit comparison for all item actions',
                 type: 'checkbox',
                 default: false,
-                dependencies: ['itemTooltip_prices'],
                 help: 'Displays best profit/hr highlighted, with other profitable actions (craft, coinify, decompose, transmute) summarized below',
             },
             itemTooltip_expectedValue: {
@@ -199,7 +190,6 @@ export const settingsGroups = {
                 label: 'Show expected value for openable containers',
                 type: 'checkbox',
                 default: true,
-                dependencies: ['itemTooltip_prices'],
             },
             expectedValue_showDrops: {
                 id: 'expectedValue_showDrops',
@@ -212,14 +202,12 @@ export const settingsGroups = {
                     { value: 'All', label: 'All Drops' },
                     { value: 'None', label: 'Summary Only' },
                 ],
-                dependencies: ['itemTooltip_expectedValue'],
             },
             expectedValue_respectPricingMode: {
                 id: 'expectedValue_respectPricingMode',
                 label: 'Use pricing mode for expected value calculations',
                 type: 'checkbox',
                 default: true,
-                dependencies: ['itemTooltip_expectedValue'],
             },
             showConsumTips: {
                 id: 'showConsumTips',
@@ -245,14 +233,12 @@ export const settingsGroups = {
                 type: 'checkbox',
                 default: false,
                 help: "When enabled, shows base/materials/protection breakdown for each consumed item in Philosopher's Mirror calculations",
-                dependencies: ['enhanceSim'],
             },
             itemTooltip_gathering: {
                 id: 'itemTooltip_gathering',
                 label: 'Show gathering sources and profit',
                 type: 'checkbox',
                 default: true,
-                dependencies: ['itemTooltip_profit'],
                 help: 'Shows gathering actions that produce this item (foraging, woodcutting, milking)',
             },
             itemTooltip_gatheringRareDrops: {
@@ -260,7 +246,6 @@ export const settingsGroups = {
                 label: 'Show rare drops from gathering',
                 type: 'checkbox',
                 default: true,
-                dependencies: ['itemTooltip_gathering'],
                 help: 'Shows rare find drops from gathering zones (e.g., Thread of Expertise from Asteroid Belt)',
             },
             itemTooltip_abilityStatus: {
@@ -268,7 +253,6 @@ export const settingsGroups = {
                 label: 'Show ability book status',
                 type: 'checkbox',
                 default: true,
-                dependencies: ['itemTooltip_prices'],
                 help: 'Shows whether ability is learned and current level/progress on ability book tooltips',
             },
         },
@@ -380,7 +364,6 @@ export const settingsGroups = {
                 label: 'Show tracker only on Enhancing screen',
                 type: 'checkbox',
                 default: false,
-                dependencies: ['enhancementTracker'],
                 help: 'Hide tracker when not on the Enhancing screen',
             },
         },
@@ -402,21 +385,18 @@ export const settingsGroups = {
                 label: 'Below inventory: Show inventory summary',
                 type: 'checkbox',
                 default: true,
-                dependencies: ['networth'],
             },
             invSort: {
                 id: 'invSort',
                 label: 'Sort inventory items by value',
                 type: 'checkbox',
                 default: true,
-                dependencies: ['networth'],
             },
             invSort_showBadges: {
                 id: 'invSort_showBadges',
                 label: 'Show stack value badges when sorting by Ask/Bid',
                 type: 'checkbox',
                 default: false,
-                dependencies: ['invSort'],
             },
             invSort_badgesOnNone: {
                 id: 'invSort_badgesOnNone',
@@ -424,14 +404,12 @@ export const settingsGroups = {
                 type: 'select',
                 default: 'None',
                 options: ['None', 'Ask', 'Bid'],
-                dependencies: ['invSort'],
             },
             invSort_sortEquipment: {
                 id: 'invSort_sortEquipment',
                 label: 'Enable sorting for Equipment category',
                 type: 'checkbox',
                 default: false,
-                dependencies: ['invSort'],
             },
             invBadgePrices: {
                 id: 'invBadgePrices',
@@ -446,7 +424,6 @@ export const settingsGroups = {
                 type: 'select',
                 default: 'Ask',
                 options: ['None', 'Ask', 'Bid'],
-                dependencies: ['invBadgePrices'],
                 help: 'Ask (instant-buy price), Bid (instant-sell price), or None',
             },
             profitCalc_pricingMode: {
@@ -465,7 +442,6 @@ export const settingsGroups = {
                 label: 'Use enhancement cost for highly enhanced items',
                 type: 'checkbox',
                 default: true,
-                dependencies: ['networth'],
                 help: 'Market prices are unreliable for highly enhanced items (+13 and above). Use calculated enhancement cost instead.',
             },
             networth_highEnhancementMinLevel: {
@@ -480,7 +456,6 @@ export const settingsGroups = {
                     { value: 13, label: '+13 and above (recommended)' },
                     { value: 15, label: '+15 and above' },
                 ],
-                dependencies: ['networth_highEnhancementUseCost'],
                 help: 'Enhancement level at which to stop trusting market prices',
             },
             networth_includeCowbells: {
@@ -488,7 +463,6 @@ export const settingsGroups = {
                 label: 'Include cowbells in net worth',
                 type: 'checkbox',
                 default: false,
-                dependencies: ['networth'],
                 help: 'Cowbells are not tradeable, but they have a value based on Bag of 10 Cowbells market price',
             },
             networth_includeTaskTokens: {
@@ -496,7 +470,6 @@ export const settingsGroups = {
                 label: 'Include task tokens in net worth',
                 type: 'checkbox',
                 default: true,
-                dependencies: ['networth'],
                 help: 'Value task tokens based on expected value from Task Shop chests. Disable to exclude them from net worth.',
             },
             networth_abilityBooksAsInventory: {
@@ -504,7 +477,6 @@ export const settingsGroups = {
                 label: 'Count ability books as inventory (Current Assets)',
                 type: 'checkbox',
                 default: false,
-                dependencies: ['networth'],
                 help: 'Move ability books from Fixed Assets to Current Assets inventory value. Useful if you plan to sell them.',
             },
         },
@@ -526,7 +498,6 @@ export const settingsGroups = {
                 label: 'Remaining XP: Add black text border for better visibility',
                 type: 'checkbox',
                 default: true,
-                dependencies: ['skillRemainingXP'],
                 help: 'Adds a black outline/shadow to the XP text for better readability against progress bars',
             },
             skillbook: {
@@ -571,14 +542,14 @@ export const settingsGroups = {
             },
             dungeonTrackerUI: {
                 id: 'dungeonTrackerUI',
-                label: '  ├─ Show Dungeon Tracker UI panel',
+                label: 'Show Dungeon Tracker UI panel',
                 type: 'checkbox',
                 default: true,
                 help: 'Displays dungeon progress panel with wave counter, run history, and statistics',
             },
             dungeonTrackerChatAnnotations: {
                 id: 'dungeonTrackerChatAnnotations',
-                label: '  └─ Show run time in party chat',
+                label: 'Show run time in party chat',
                 type: 'checkbox',
                 default: true,
                 help: 'Adds colored timer annotations to "Key counts" messages (green if fast, red if slow)',
@@ -658,22 +629,20 @@ export const settingsGroups = {
             },
             taskEfficiencyRatingMode: {
                 id: 'taskEfficiencyRatingMode',
-                label: '  └─ Efficiency algorithm',
+                label: 'Efficiency algorithm',
                 type: 'select',
                 default: 'gold',
                 options: [
                     { value: 'tokens', label: 'Task tokens per hour' },
                     { value: 'gold', label: 'Task profit per hour' },
                 ],
-                dependencies: ['taskEfficiencyRating'],
                 help: 'Choose whether to rate by task token payout or total profit.',
             },
             taskEfficiencyGradient: {
                 id: 'taskEfficiencyGradient',
-                label: '  └─ Use relative gradient colors',
+                label: 'Use relative gradient colors',
                 type: 'checkbox',
                 default: false,
-                dependencies: ['taskEfficiencyRating'],
                 help: 'Colors efficiency ratings relative to visible tasks.',
             },
             taskRerollTracker: {
@@ -701,7 +670,6 @@ export const settingsGroups = {
                 label: 'Show dungeon icons on combat tasks',
                 type: 'checkbox',
                 default: false,
-                dependencies: ['taskIcons'],
                 help: 'Shows which dungeons contain the monster (requires Task Icons enabled)',
             },
             taskSorter_autoSort: {
@@ -756,7 +724,6 @@ export const settingsGroups = {
                 label: 'Bottom left corner of key icons: Show zone index',
                 type: 'checkbox',
                 default: true,
-                dependencies: ['itemIconLevel'],
             },
             mapIndex: {
                 id: 'mapIndex',
@@ -791,14 +758,13 @@ export const settingsGroups = {
             },
             market_autoFillSellStrategy: {
                 id: 'market_autoFillSellStrategy',
-                label: '  └─ Auto-fill sell price strategy',
+                label: 'Auto-fill sell price strategy',
                 type: 'select',
                 default: 'match',
                 options: [
                     { value: 'match', label: 'Match best sell price' },
                     { value: 'undercut', label: 'Undercut by 1 (best sell - 1)' },
                 ],
-                dependencies: ['fillMarketOrderPrice'],
                 help: 'When creating sell listings, choose whether to match or undercut the current best sell price',
             },
             market_autoClickMax: {
@@ -823,7 +789,6 @@ export const settingsGroups = {
                 min: 0,
                 max: 1,
                 step: 0.05,
-                dependencies: ['market_visibleItemCount'],
                 help: 'How transparent item tiles appear when you own zero of that item',
             },
             market_visibleItemCountIncludeEquipped: {
@@ -831,7 +796,6 @@ export const settingsGroups = {
                 label: 'Market: Count equipped items',
                 type: 'checkbox',
                 default: true,
-                dependencies: ['market_visibleItemCount'],
                 help: 'Include currently equipped items in the displayed count',
             },
             market_showListingPrices: {
@@ -857,7 +821,6 @@ export const settingsGroups = {
                     { value: 'instant', label: 'Instant' },
                     { value: 'listing', label: 'Orders' },
                 ],
-                dependencies: ['market_tradeHistory'],
                 help: 'Instant: Compare to instant buy/sell prices. Orders: Compare to buy/sell orders.',
             },
             market_listingPricePrecision: {
@@ -867,7 +830,6 @@ export const settingsGroups = {
                 default: 2,
                 min: 0,
                 max: 4,
-                dependencies: ['market_showListingPrices'],
                 help: 'Number of decimal places to show for listing prices',
             },
             market_showListingAge: {
@@ -875,7 +837,6 @@ export const settingsGroups = {
                 label: 'Market: Show listing age on My Listings',
                 type: 'checkbox',
                 default: false,
-                dependencies: ['market_showListingPrices'],
                 help: 'Display how long ago each listing was created on the My Listings tab (e.g., "3h 45m")',
             },
             market_showTopOrderAge: {
@@ -883,7 +844,6 @@ export const settingsGroups = {
                 label: 'Market: Show top order age on My Listings',
                 type: 'checkbox',
                 default: false,
-                dependencies: ['market_showListingPrices', 'market_showEstimatedListingAge'],
                 help: 'Display estimated age of the top competing order for each of your listings (requires estimated listing age feature to be active)',
             },
             market_showEstimatedListingAge: {
@@ -902,7 +862,6 @@ export const settingsGroups = {
                     { value: 'elapsed', label: 'Elapsed Time (e.g., "3h 45m")' },
                     { value: 'datetime', label: 'Date/Time (e.g., "01-13 14:30")' },
                 ],
-                dependencies: ['market_showEstimatedListingAge'],
                 help: 'Choose how to display listing creation times',
             },
             market_listingTimeFormat: {
@@ -914,7 +873,6 @@ export const settingsGroups = {
                     { value: '24hour', label: '24-hour (14:30)' },
                     { value: '12hour', label: '12-hour (2:30 PM)' },
                 ],
-                dependencies: ['market_showEstimatedListingAge'],
                 help: 'Time format when using Date/Time display (only applies if Date/Time format is selected)',
             },
             market_listingDateFormat: {
@@ -926,7 +884,6 @@ export const settingsGroups = {
                     { value: 'MM-DD', label: 'MM-DD (01-13)' },
                     { value: 'DD-MM', label: 'DD-MM (13-01)' },
                 ],
-                dependencies: ['market_showEstimatedListingAge'],
                 help: 'Date format when using Date/Time display (only applies if Date/Time format is selected)',
             },
             market_showOrderTotals: {
@@ -955,7 +912,6 @@ export const settingsGroups = {
                 label: 'Market: Show queue length estimates',
                 type: 'checkbox',
                 default: true,
-                dependencies: ['market_showEstimatedListingAge'],
                 help: 'Displays total quantity at best price below Buy/Sell buttons. Estimated values (20+ orders at same price) are shown in a different color.',
             },
             itemDictionary_transmuteRates: {
@@ -970,7 +926,6 @@ export const settingsGroups = {
                 label: 'Item Dictionary: Include base success rate in transmutation percentages',
                 type: 'checkbox',
                 default: true,
-                dependencies: ['itemDictionary_transmuteRates'],
                 help: 'When enabled, shows total probability (base rate × drop rate). When disabled, shows conditional probability (drop rate only, matching "Transmutes Into" section)',
             },
         },

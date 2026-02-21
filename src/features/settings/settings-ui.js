@@ -8,7 +8,6 @@ import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import { settingsGroups } from '../../core/settings-schema.js';
 import settingsStorage from '../../core/settings-storage.js';
-import storage from '../../core/storage.js';
 import settingsCSS from './settings-styles.css?raw';
 import marketAPI from '../../api/marketplace.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
@@ -364,168 +363,18 @@ class SettingsUI {
             groupContainer.appendChild(content);
             container.appendChild(groupContainer);
         }
-
-        // After all settings are created, set up collapse functionality for parent settings
-        this.setupParentCollapseIcons(container);
-
-        // Restore collapse states from IndexedDB storage
-        this.restoreCollapseStates(container);
     }
 
     /**
      * Setup collapse icons for parent settings (settings that have dependents)
      * @param {HTMLElement} container - Settings container
      */
-    setupParentCollapseIcons(container) {
-        const allSettings = container.querySelectorAll('.toolasha-setting');
-
-        allSettings.forEach((setting) => {
-            const settingId = setting.dataset.settingId;
-
-            // Find all dependents of this setting
-            const dependents = Array.from(allSettings).filter(
-                (s) => s.dataset.dependencies && s.dataset.dependencies.split(',').includes(settingId)
-            );
-
-            if (dependents.length > 0) {
-                // This setting has dependents - show collapse icon
-                const collapseIcon = setting.querySelector('.setting-collapse-icon');
-                if (collapseIcon) {
-                    collapseIcon.style.display = 'inline-block';
-
-                    // Add click handler to toggle dependents - bind to preserve this context
-                    const labelContainer = setting.querySelector('.toolasha-setting-label-container');
-                    labelContainer.style.cursor = 'pointer';
-                    labelContainer.addEventListener('click', (e) => {
-                        // Don't toggle if clicking the input itself
-                        if (e.target.closest('.toolasha-setting-input')) return;
-
-                        this.toggleDependents(setting, dependents);
-                    });
-                }
-            }
-        });
-    }
-
     /**
      * Toggle group collapse/expand
      * @param {HTMLElement} groupContainer - Group container element
      */
     toggleGroup(groupContainer) {
         groupContainer.classList.toggle('collapsed');
-
-        // Save collapse state to IndexedDB storage
-        const groupKey = groupContainer.dataset.group;
-        const isCollapsed = groupContainer.classList.contains('collapsed');
-        this.saveCollapseState('group', groupKey, isCollapsed);
-    }
-
-    /**
-     * Toggle dependent settings visibility
-     * @param {HTMLElement} parentSetting - Parent setting element
-     * @param {HTMLElement[]} dependents - Array of dependent setting elements
-     */
-    toggleDependents(parentSetting, dependents) {
-        const collapseIcon = parentSetting.querySelector('.setting-collapse-icon');
-        const isCollapsed = parentSetting.classList.contains('dependents-collapsed');
-
-        if (isCollapsed) {
-            // Expand
-            parentSetting.classList.remove('dependents-collapsed');
-            collapseIcon.style.transform = 'rotate(0deg)';
-            dependents.forEach((dep) => (dep.style.display = 'flex'));
-        } else {
-            // Collapse
-            parentSetting.classList.add('dependents-collapsed');
-            collapseIcon.style.transform = 'rotate(-90deg)';
-            dependents.forEach((dep) => (dep.style.display = 'none'));
-        }
-
-        // Save collapse state to IndexedDB storage
-        const settingId = parentSetting.dataset.settingId;
-        const newState = !isCollapsed; // Inverted because we just toggled
-        this.saveCollapseState('setting', settingId, newState);
-    }
-
-    /**
-     * Save collapse state to IndexedDB
-     * @param {string} type - 'group' or 'setting'
-     * @param {string} key - Group key or setting ID
-     * @param {boolean} isCollapsed - Whether collapsed
-     */
-    async saveCollapseState(type, key, isCollapsed) {
-        try {
-            const states = await storage.getJSON('collapse-states', 'settings', {});
-
-            if (!states[type]) {
-                states[type] = {};
-            }
-            states[type][key] = isCollapsed;
-
-            await storage.setJSON('collapse-states', states, 'settings');
-        } catch (e) {
-            console.warn('[Toolasha Settings] Failed to save collapse states:', e);
-        }
-    }
-
-    /**
-     * Load collapse state from IndexedDB
-     * @param {string} type - 'group' or 'setting'
-     * @param {string} key - Group key or setting ID
-     * @returns {Promise<boolean|null>} Collapse state or null if not found
-     */
-    async loadCollapseState(type, key) {
-        try {
-            const states = await storage.getJSON('collapse-states', 'settings', {});
-            return states[type]?.[key] ?? null;
-        } catch (e) {
-            console.warn('[Toolasha Settings] Failed to load collapse states:', e);
-            return null;
-        }
-    }
-
-    /**
-     * Restore collapse states from IndexedDB
-     * @param {HTMLElement} container - Settings container
-     */
-    async restoreCollapseStates(container) {
-        try {
-            // Restore group collapse states
-            const groups = container.querySelectorAll('.toolasha-settings-group');
-            for (const group of groups) {
-                const groupKey = group.dataset.group;
-                const isCollapsed = await this.loadCollapseState('group', groupKey);
-                if (isCollapsed === true) {
-                    group.classList.add('collapsed');
-                }
-            }
-
-            // Restore setting collapse states
-            const settings = container.querySelectorAll('.toolasha-setting');
-            for (const setting of settings) {
-                const settingId = setting.dataset.settingId;
-                const isCollapsed = await this.loadCollapseState('setting', settingId);
-
-                if (isCollapsed === true) {
-                    setting.classList.add('dependents-collapsed');
-
-                    // Update collapse icon rotation
-                    const collapseIcon = setting.querySelector('.setting-collapse-icon');
-                    if (collapseIcon) {
-                        collapseIcon.style.transform = 'rotate(-90deg)';
-                    }
-
-                    // Hide dependents
-                    const allSettings = container.querySelectorAll('.toolasha-setting');
-                    const dependents = Array.from(allSettings).filter(
-                        (s) => s.dataset.dependencies && s.dataset.dependencies.split(',').includes(settingId)
-                    );
-                    dependents.forEach((dep) => (dep.style.display = 'none'));
-                }
-            }
-        } catch (e) {
-            console.warn('[Toolasha Settings] Failed to restore collapse states:', e);
-        }
     }
 
     /**
@@ -540,43 +389,18 @@ class SettingsUI {
         div.dataset.settingId = settingId;
         div.dataset.type = settingDef.type || 'checkbox';
 
-        // Add dependency class and store dependency info
-        if (settingDef.dependencies) {
-            div.classList.add('has-dependency');
-
-            // Handle both array format (legacy, AND logic) and object format (supports OR logic)
-            if (Array.isArray(settingDef.dependencies)) {
-                // Legacy format: ['dep1', 'dep2'] means AND logic
-                div.dataset.dependencies = settingDef.dependencies.join(',');
-                div.dataset.dependencyMode = 'all'; // AND logic
-            } else if (typeof settingDef.dependencies === 'object') {
-                // New format: {mode: 'any', settings: ['dep1', 'dep2']}
-                div.dataset.dependencies = settingDef.dependencies.settings.join(',');
-                div.dataset.dependencyMode = settingDef.dependencies.mode || 'all'; // 'any' = OR, 'all' = AND
-            }
-        }
-
         // Add not-implemented class for red text
         if (settingDef.notImplemented) {
             div.classList.add('not-implemented');
         }
 
-        // Create label container (clickable for collapse if has dependents)
+        // Create label container
         const labelContainer = document.createElement('div');
         labelContainer.className = 'toolasha-setting-label-container';
         labelContainer.style.display = 'flex';
         labelContainer.style.alignItems = 'center';
         labelContainer.style.flex = '1';
         labelContainer.style.gap = '6px';
-
-        // Add collapse icon if this setting has dependents (will be populated by checkDependents)
-        const collapseIcon = document.createElement('span');
-        collapseIcon.className = 'setting-collapse-icon';
-        collapseIcon.textContent = '▼';
-        collapseIcon.style.display = 'none'; // Hidden by default, shown if dependents exist
-        collapseIcon.style.cursor = 'pointer';
-        collapseIcon.style.fontSize = '10px';
-        collapseIcon.style.transition = 'transform 0.2s ease';
 
         // Create label
         const label = document.createElement('span');
@@ -591,7 +415,6 @@ class SettingsUI {
             label.appendChild(help);
         }
 
-        labelContainer.appendChild(collapseIcon);
         labelContainer.appendChild(label);
 
         // Create input
@@ -1022,50 +845,6 @@ class SettingsUI {
         if (type === 'color') {
             this.config.applyColorSettings();
         }
-
-        // Update dependencies
-        this.updateDependencies();
-    }
-
-    /**
-     * Update dependency states (enable/disable dependent settings)
-     */
-    updateDependencies() {
-        const settings = document.querySelectorAll('.toolasha-setting[data-dependencies]');
-
-        settings.forEach((settingEl) => {
-            const dependencies = settingEl.dataset.dependencies.split(',');
-            const mode = settingEl.dataset.dependencyMode || 'all'; // 'all' = AND, 'any' = OR
-            let enabled = false;
-
-            if (mode === 'any') {
-                // OR logic: at least one dependency must be met
-                for (const depId of dependencies) {
-                    const depInput = document.getElementById(depId);
-                    if (depInput && depInput.type === 'checkbox' && depInput.checked) {
-                        enabled = true;
-                        break; // Found at least one enabled, that's enough
-                    }
-                }
-            } else {
-                // AND logic (default): all dependencies must be met
-                enabled = true; // Assume enabled, then check all
-                for (const depId of dependencies) {
-                    const depInput = document.getElementById(depId);
-                    if (depInput && depInput.type === 'checkbox' && !depInput.checked) {
-                        enabled = false;
-                        break; // Found one disabled, no need to check rest
-                    }
-                }
-            }
-
-            // Enable or disable
-            if (enabled) {
-                settingEl.classList.remove('disabled');
-            } else {
-                settingEl.classList.add('disabled');
-            }
-        });
     }
 
     /**

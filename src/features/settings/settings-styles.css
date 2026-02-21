@@ -143,7 +143,7 @@
 }
 
 .toolasha-setting.disabled {
-    opacity: 0.3;
+    /* Visual darkening removed - dependencies still functional but not visually indicated */
     pointer-events: none;
 }
 
