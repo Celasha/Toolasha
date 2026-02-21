@@ -2,10 +2,9 @@
 
 ## [1.4.1](https://github.com/Celasha/Toolasha/compare/v1.4.0...v1.4.1) (2026-02-21)
 
-
 ### Bug Fixes
 
-* handle international number formats in inventory badge count parsing ([13b03a4](https://github.com/Celasha/Toolasha/commit/13b03a4a76e75e2f8a82dc9115a4e48d1bb89db9))
+- handle international number formats in inventory badge count parsing ([13b03a4](https://github.com/Celasha/Toolasha/commit/13b03a4a76e75e2f8a82dc9115a4e48d1bb89db9))
 
 ## [1.4.0](https://github.com/Celasha/Toolasha/compare/v1.3.1...v1.4.0) (2026-02-21)
 
