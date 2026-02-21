@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 1.3.1
+ * Version: 1.4.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2148,7 +2148,9 @@
                 messageType === 'market_listings_updated' ||
                 messageType === 'profile_shared' ||
                 messageType === 'battle_consumable_ability_updated' ||
-                messageType === 'battle_unit_fetched';
+                messageType === 'battle_unit_fetched' ||
+                messageType === 'action_type_consumable_slots_updated' ||
+                messageType === 'consumable_buffs_updated';
 
             if (!skipDedup) {
                 // Deduplicate by message content to prevent 4x JSON.parse on same message
@@ -3134,6 +3136,14 @@
          */
         getEquipment() {
             return new Map(this.characterEquipment);
+        }
+
+        /**
+         * Get MooPass buffs
+         * @returns {Array} MooPass buffs array (empty if no MooPass)
+         */
+        getMooPassBuffs() {
+            return this.characterData?.mooPassBuffs || [];
         }
 
         /**
@@ -4854,6 +4864,9 @@
             // Price patches from order book data (fresher than API)
             // Structure: { "itemHrid:enhLevel": { a: ask, b: bid, timestamp: ms } }
             this.pricePatchs = {};
+
+            // Event listeners for price updates
+            this.listeners = [];
         }
 
         /**
@@ -4873,6 +4886,8 @@
                     await this.loadPatches();
                     // Hide alert on successful cache load
                     networkAlert.hide();
+                    // Notify listeners (initial load)
+                    this.notifyListeners();
                     return this.marketData;
                 }
             }
@@ -4907,6 +4922,8 @@
                     await this.loadPatches();
                     // Hide alert on successful fetch
                     networkAlert.hide();
+                    // Notify listeners of price update
+                    this.notifyListeners();
                     return this.marketData;
                 }
             } catch (error) {
@@ -5161,6 +5178,9 @@
 
             // Save patches to storage (debounced via storage module)
             this.savePatches();
+
+            // Notify listeners of price update
+            this.notifyListeners();
         }
 
         /**
@@ -5249,6 +5269,35 @@
 
             // Force fresh fetch
             return await this.fetch(true);
+        }
+
+        /**
+         * Register a listener for price updates
+         * @param {Function} callback - Called when prices update
+         */
+        on(callback) {
+            this.listeners.push(callback);
+        }
+
+        /**
+         * Unregister a listener
+         * @param {Function} callback - The callback to remove
+         */
+        off(callback) {
+            this.listeners = this.listeners.filter((cb) => cb !== callback);
+        }
+
+        /**
+         * Notify all listeners that prices have been updated
+         */
+        notifyListeners() {
+            for (const callback of this.listeners) {
+                try {
+                    callback();
+                } catch (error) {
+                    console.error('[MarketAPI] Listener error:', error);
+                }
+            }
         }
     }
 

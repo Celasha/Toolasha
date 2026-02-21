@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 1.3.1
+ * Version: 1.4.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -3763,6 +3763,28 @@ self.onmessage = function (e) {
     }
 
     /**
+     * Parse MooPass wisdom bonus
+     * MooPass provides a flat 5% wisdom boost
+     * @returns {number} Wisdom percentage from MooPass (5% if active, 0 if not)
+     */
+    function parseMooPassWisdom() {
+        const mooPassBuffs = dataManager.getMooPassBuffs();
+        if (!mooPassBuffs || mooPassBuffs.length === 0) {
+            return 0;
+        }
+
+        // Check for wisdom buff from MooPass
+        const wisdomBuff = mooPassBuffs.find((buff) => buff.typeHrid === '/buff_types/wisdom');
+
+        if (!wisdomBuff || !wisdomBuff.flatBoost) {
+            return 0;
+        }
+
+        // Convert to percentage (0.05 → 5%)
+        return wisdomBuff.flatBoost * 100;
+    }
+
+    /**
      * Parse wisdom from active consumables (Wisdom Tea/Coffee)
      * @param {Array} drinkSlots - Active drink slots for the action type
      * @param {Object} itemDetailMap - Item details from game data
@@ -3825,8 +3847,10 @@ self.onmessage = function (e) {
         const communityWisdom = parseCommunityBuffWisdom();
         const consumableWisdom = parseConsumableWisdom(activeDrinks, itemDetailMap, drinkConcentration);
         const achievementWisdom = dataManager.getAchievementBuffFlatBoost(actionTypeHrid, '/buff_types/wisdom') * 100;
+        const mooPassWisdom = parseMooPassWisdom();
 
-        const totalWisdom = equipmentWisdom + houseWisdom + communityWisdom + consumableWisdom + achievementWisdom;
+        const totalWisdom =
+            equipmentWisdom + houseWisdom + communityWisdom + consumableWisdom + achievementWisdom + mooPassWisdom;
 
         // Parse charm experience (skill-specific) - now returns object with total and breakdown
         const charmData = parseCharmExperience(equipment, skillHrid, itemDetailMap);
@@ -3847,6 +3871,7 @@ self.onmessage = function (e) {
                 communityWisdom,
                 consumableWisdom,
                 achievementWisdom,
+                mooPassWisdom,
                 charmExperience,
             },
         };
@@ -3895,6 +3920,7 @@ self.onmessage = function (e) {
         parseCharmExperience,
         parseHouseRoomWisdom,
         parseCommunityBuffWisdom,
+        parseMooPassWisdom,
         parseConsumableWisdom,
         calculateExperienceMultiplier,
     };
@@ -3907,7 +3933,8 @@ self.onmessage = function (e) {
         parseCommunityBuffWisdom: parseCommunityBuffWisdom,
         parseConsumableWisdom: parseConsumableWisdom,
         parseEquipmentWisdom: parseEquipmentWisdom,
-        parseHouseRoomWisdom: parseHouseRoomWisdom
+        parseHouseRoomWisdom: parseHouseRoomWisdom,
+        parseMooPassWisdom: parseMooPassWisdom
     });
 
     /**

@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 1.3.1
+ * Version: 1.4.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1544,8 +1544,34 @@ self.onmessage = function (e) {
 
                 const { actionTime, totalEfficiency, efficiencyBreakdown } = actionStats;
 
-                // Get equipment for drink concentration calculation
+                // Get equipment for drink concentration and speed calculation
                 const equipment = dataManager.getEquipment();
+
+                // Calculate action speed breakdown with details
+                const _baseTime = actionDetails.baseTimeCost / 1e9;
+                const speedBonus = equipmentParser_js.parseEquipmentSpeedBonuses(equipment, actionDetails.type, gameData.itemDetailMap);
+
+                // Get detailed equipment speed breakdown
+                const allSpeedBonuses = equipmentParser_js.debugEquipmentSpeedBonuses(equipment, gameData.itemDetailMap);
+                const skillName = actionDetails.type.replace('/action_types/', '');
+                const skillSpecificSpeed = skillName + 'Speed';
+                const relevantSpeeds = allSpeedBonuses.filter((item) => {
+                    return item.speedType === skillSpecificSpeed || item.speedType === 'skillingSpeed';
+                });
+
+                // TODO: Add tea speed bonuses when tea-parser supports it
+                const teaSpeed = 0;
+                const actionSpeedBreakdown = {
+                    total: speedBonus + teaSpeed,
+                    equipment: speedBonus,
+                    tea: teaSpeed,
+                    equipmentDetails: relevantSpeeds.map((item) => ({
+                        name: item.itemName,
+                        enhancementLevel: item.enhancementLevel,
+                        speedBonus: item.scaledBonus,
+                    })),
+                    teaDetails: [], // TODO: Add when tea speed is supported
+                };
 
                 // Get drink concentration separately (not in breakdown from calculateActionStats)
                 const drinkConcentration = teaParser_js.getDrinkConcentration(equipment, gameData.itemDetailMap);
@@ -1721,6 +1747,7 @@ self.onmessage = function (e) {
                     // Modifier breakdowns
                     successRateBreakdown,
                     efficiencyBreakdown,
+                    actionSpeedBreakdown,
                     rareFindBreakdown: alchemyBonus.rareFindBreakdown,
                     essenceFindBreakdown: alchemyBonus.essenceFindBreakdown,
 
@@ -1788,8 +1815,34 @@ self.onmessage = function (e) {
 
                 const { actionTime, totalEfficiency, efficiencyBreakdown } = actionStats;
 
-                // Get equipment for drink concentration calculation
+                // Get equipment for drink concentration and speed calculation
                 const equipment = dataManager.getEquipment();
+
+                // Calculate action speed breakdown with details
+                const _baseTime = actionDetails.baseTimeCost / 1e9;
+                const speedBonus = equipmentParser_js.parseEquipmentSpeedBonuses(equipment, actionDetails.type, gameData.itemDetailMap);
+
+                // Get detailed equipment speed breakdown
+                const allSpeedBonuses = equipmentParser_js.debugEquipmentSpeedBonuses(equipment, gameData.itemDetailMap);
+                const skillName = actionDetails.type.replace('/action_types/', '');
+                const skillSpecificSpeed = skillName + 'Speed';
+                const relevantSpeeds = allSpeedBonuses.filter((item) => {
+                    return item.speedType === skillSpecificSpeed || item.speedType === 'skillingSpeed';
+                });
+
+                // TODO: Add tea speed bonuses when tea-parser supports it
+                const teaSpeed = 0;
+                const actionSpeedBreakdown = {
+                    total: speedBonus + teaSpeed,
+                    equipment: speedBonus,
+                    tea: teaSpeed,
+                    equipmentDetails: relevantSpeeds.map((item) => ({
+                        name: item.itemName,
+                        enhancementLevel: item.enhancementLevel,
+                        speedBonus: item.scaledBonus,
+                    })),
+                    teaDetails: [], // TODO: Add when tea speed is supported
+                };
                 const drinkConcentration = teaParser_js.getDrinkConcentration(equipment, gameData.itemDetailMap);
 
                 // Calculate success rate with breakdown
@@ -1993,6 +2046,7 @@ self.onmessage = function (e) {
                     // Modifier breakdowns
                     successRateBreakdown,
                     efficiencyBreakdown,
+                    actionSpeedBreakdown,
                     rareFindBreakdown: alchemyBonus.rareFindBreakdown,
                     essenceFindBreakdown: alchemyBonus.essenceFindBreakdown,
 
@@ -2065,8 +2119,34 @@ self.onmessage = function (e) {
 
                 const { actionTime, totalEfficiency, efficiencyBreakdown } = actionStats;
 
-                // Get equipment for drink concentration calculation
+                // Get equipment for drink concentration and speed calculation
                 const equipment = dataManager.getEquipment();
+
+                // Calculate action speed breakdown with details
+                const _baseTime = actionDetails.baseTimeCost / 1e9;
+                const speedBonus = equipmentParser_js.parseEquipmentSpeedBonuses(equipment, actionDetails.type, gameData.itemDetailMap);
+
+                // Get detailed equipment speed breakdown
+                const allSpeedBonuses = equipmentParser_js.debugEquipmentSpeedBonuses(equipment, gameData.itemDetailMap);
+                const skillName = actionDetails.type.replace('/action_types/', '');
+                const skillSpecificSpeed = skillName + 'Speed';
+                const relevantSpeeds = allSpeedBonuses.filter((item) => {
+                    return item.speedType === skillSpecificSpeed || item.speedType === 'skillingSpeed';
+                });
+
+                // TODO: Add tea speed bonuses when tea-parser supports it
+                const teaSpeed = 0;
+                const actionSpeedBreakdown = {
+                    total: speedBonus + teaSpeed,
+                    equipment: speedBonus,
+                    tea: teaSpeed,
+                    equipmentDetails: relevantSpeeds.map((item) => ({
+                        name: item.itemName,
+                        enhancementLevel: item.enhancementLevel,
+                        speedBonus: item.scaledBonus,
+                    })),
+                    teaDetails: [], // TODO: Add when tea speed is supported
+                };
                 const drinkConcentration = teaParser_js.getDrinkConcentration(equipment, gameData.itemDetailMap);
 
                 // Calculate success rate with breakdown
@@ -2282,6 +2362,7 @@ self.onmessage = function (e) {
                     // Modifier breakdowns
                     successRateBreakdown,
                     efficiencyBreakdown,
+                    actionSpeedBreakdown,
                     rareFindBreakdown: alchemyBonus.rareFindBreakdown,
                     essenceFindBreakdown: alchemyBonus.essenceFindBreakdown,
 
@@ -15656,10 +15737,13 @@ self.onmessage = function (e) {
     class NetworthFeature {
         constructor() {
             this.isActive = false;
-            this.updateInterval = null;
             this.currentData = null;
             this.timerRegistry = timerRegistry_js.createTimerRegistry();
             this.pauseRegistry = null;
+            this.priceUpdateHandler = null;
+            this.itemsUpdateHandler = null;
+            this.priceUpdateDebounceTimer = null;
+            this.itemsUpdateDebounceTimer = null;
         }
 
         /**
@@ -15684,16 +15768,14 @@ self.onmessage = function (e) {
             if (!this.pauseRegistry) {
                 this.pauseRegistry = createPauseRegistry();
                 this.pauseRegistry.register(
-                    'networth-update-interval',
-                    () => this.stopAutoRefresh(),
-                    () => this.resumeAutoRefresh()
+                    'networth-event-listeners',
+                    () => this.pauseListeners(),
+                    () => this.resumeListeners()
                 );
             }
 
-            // Start update interval (every 30 seconds)
-            if (connectionState.isConnected()) {
-                this.startAutoRefresh();
-            }
+            // Set up event-driven updates instead of polling
+            this.setupEventListeners();
 
             // Initial calculation
             if (connectionState.isConnected()) {
@@ -15701,6 +15783,57 @@ self.onmessage = function (e) {
             }
 
             this.isActive = true;
+        }
+
+        /**
+         * Set up event listeners for automatic updates
+         */
+        setupEventListeners() {
+            // Listen for market price updates
+            this.priceUpdateHandler = () => {
+                // Debounce price updates to avoid excessive recalculation
+                clearTimeout(this.priceUpdateDebounceTimer);
+                this.priceUpdateDebounceTimer = setTimeout(() => {
+                    if (this.isActive && connectionState.isConnected()) {
+                        console.log('[Networth] Market prices updated, recalculating');
+                        this.recalculate();
+                    }
+                }, 1000); // 1 second debounce for price updates
+            };
+
+            marketAPI.on(this.priceUpdateHandler);
+
+            // Listen for inventory changes
+            this.itemsUpdateHandler = () => {
+                // Debounce item updates
+                clearTimeout(this.itemsUpdateDebounceTimer);
+                this.itemsUpdateDebounceTimer = setTimeout(() => {
+                    if (this.isActive && connectionState.isConnected()) {
+                        this.recalculate();
+                    }
+                }, 500); // 500ms debounce for inventory changes
+            };
+
+            dataManager.on('items_updated', this.itemsUpdateHandler);
+        }
+
+        /**
+         * Pause event listeners (called when tab is hidden)
+         */
+        pauseListeners() {
+            // Clear any pending debounce timers
+            clearTimeout(this.priceUpdateDebounceTimer);
+            clearTimeout(this.itemsUpdateDebounceTimer);
+        }
+
+        /**
+         * Resume event listeners (called when tab is visible)
+         */
+        resumeListeners() {
+            // Recalculate immediately when resuming
+            if (this.isActive && connectionState.isConnected()) {
+                this.recalculate();
+            }
         }
 
         /**
@@ -15733,15 +15866,25 @@ self.onmessage = function (e) {
          * Disable the feature
          */
         disable() {
-            if (this.pauseRegistry) {
-                this.pauseRegistry.unregister('networth-update-interval');
-                this.pauseRegistry.cleanup();
-                this.pauseRegistry = null;
+            // Clear debounce timers
+            clearTimeout(this.priceUpdateDebounceTimer);
+            clearTimeout(this.itemsUpdateDebounceTimer);
+
+            // Unregister event listeners
+            if (this.priceUpdateHandler) {
+                marketAPI.off(this.priceUpdateHandler);
+                this.priceUpdateHandler = null;
             }
 
-            if (this.updateInterval) {
-                clearInterval(this.updateInterval);
-                this.updateInterval = null;
+            if (this.itemsUpdateHandler) {
+                dataManager.off('items_updated', this.itemsUpdateHandler);
+                this.itemsUpdateHandler = null;
+            }
+
+            if (this.pauseRegistry) {
+                this.pauseRegistry.unregister('networth-event-listeners');
+                this.pauseRegistry.cleanup();
+                this.pauseRegistry = null;
             }
 
             this.timerRegistry.clearAll();
@@ -15754,29 +15897,6 @@ self.onmessage = function (e) {
 
             this.currentData = null;
             this.isActive = false;
-        }
-
-        startAutoRefresh() {
-            if (this.updateInterval) {
-                return;
-            }
-
-            this.updateInterval = setInterval(() => this.recalculate(), 30000);
-            this.timerRegistry.registerInterval(this.updateInterval);
-        }
-
-        stopAutoRefresh() {
-            if (!this.updateInterval) {
-                return;
-            }
-
-            clearInterval(this.updateInterval);
-            this.updateInterval = null;
-        }
-
-        resumeAutoRefresh() {
-            this.startAutoRefresh();
-            this.recalculate();
         }
     }
 
@@ -15803,6 +15923,9 @@ self.onmessage = function (e) {
             this.isCalculating = false; // Guard flag to prevent recursive calls
             this.lastCalculationTime = 0; // Timestamp of last calculation
             this.CALCULATION_COOLDOWN = 250; // 250ms minimum between calculations
+            this.isRendering = false; // Guard flag for renderAllBadges
+            this.lastRenderTime = 0; // Timestamp of last render
+            this.RENDER_COOLDOWN = 100; // 100ms minimum between render calls
             this.inventoryLookupCache = null; // Cached inventory lookup map
             this.inventoryLookupCacheTime = 0; // Timestamp when cache was built
             this.INVENTORY_CACHE_TTL = 500; // 500ms cache lifetime
@@ -15831,17 +15954,12 @@ self.onmessage = function (e) {
             });
             this.unregisterHandlers.push(unregister);
 
-            // Watch for DOM changes to refresh badges
-            const badgeRefreshUnregister = domObserver.register(
-                'InventoryBadgeManager-Refresh',
-                () => {
-                    if (this.currentInventoryElem) {
-                        this.renderAllBadges();
-                    }
-                },
-                { debounce: true, debounceDelay: 150 } // 150ms debounce to reduce calculation frequency
-            );
-            this.unregisterHandlers.push(badgeRefreshUnregister);
+            // Note: We don't use a general DOM observer here because it creates infinite loops
+            // (adding badges triggers the observer, which adds badges, etc.)
+            // Instead, we rely on:
+            // 1. Explicit calls from inventory-sort when sort mode changes
+            // 2. dataManager events when items actually change
+            // 3. Direct calls from other features when needed
         }
 
         /**
@@ -15852,6 +15970,10 @@ self.onmessage = function (e) {
          */
         registerProvider(name, renderFn, priority = 100) {
             this.providers.set(name, { renderFn, priority });
+
+            // Clear processed tracking when new provider registers
+            // This ensures items get re-rendered with all providers
+            this.clearProcessedTracking();
         }
 
         /**
@@ -15874,6 +15996,20 @@ self.onmessage = function (e) {
          */
         async renderAllBadges() {
             if (!this.currentInventoryElem) return;
+
+            // Cooldown check for renderAllBadges
+            const now = Date.now();
+            const timeSinceLastRender = now - this.lastRenderTime;
+            if (timeSinceLastRender < this.RENDER_COOLDOWN) {
+                return;
+            }
+            this.lastRenderTime = now;
+
+            // Prevent concurrent renders
+            if (this.isRendering) {
+                return;
+            }
+            this.isRendering = true;
 
             // Calculate prices for all items
             await this.calculatePricesForAllItems();
@@ -15906,6 +16042,9 @@ self.onmessage = function (e) {
                 // Mark as processed
                 this.processedItems.add(itemElem);
             }
+
+            // Clear rendering guard
+            this.isRendering = false;
         }
 
         /**
@@ -15915,11 +16054,14 @@ self.onmessage = function (e) {
             if (!this.currentInventoryElem) return;
 
             // Prevent recursive calls
-            if (this.isCalculating) return;
+            if (this.isCalculating) {
+                return;
+            }
 
             // Cooldown check - prevent spamming during rapid events
             const now = Date.now();
-            if (now - this.lastCalculationTime < this.CALCULATION_COOLDOWN) {
+            const timeSinceLastCalc = now - this.lastCalculationTime;
+            if (timeSinceLastCalc < this.CALCULATION_COOLDOWN) {
                 return;
             }
             this.lastCalculationTime = now;
@@ -16362,6 +16504,8 @@ self.onmessage = function (e) {
             this.isInitialized = false;
             this.itemsUpdatedHandler = null;
             this.itemsUpdatedDebounceTimer = null; // Debounce timer for items_updated events
+            this.priceUpdateHandler = null; // Handler for market price updates
+            this.priceUpdateDebounceTimer = null; // Debounce timer for price updates
             this.DEBOUNCE_DELAY = 300; // 300ms debounce for event handlers
             this.timerRegistry = timerRegistry_js.createTimerRegistry();
         }
@@ -16400,6 +16544,13 @@ self.onmessage = function (e) {
             // Load persisted settings
             await this.loadSettings();
 
+            // Register with badge manager for coordinated rendering (MUST BE BEFORE checking existing inventory)
+            inventoryBadgeManager.registerProvider(
+                'inventory-stack-price',
+                (itemElem) => this.renderBadgesForItem(itemElem),
+                50 // Priority: render before bid/ask badges (lower = earlier)
+            );
+
             // Check if inventory is already open
             const existingInv = document.querySelector('[class*="Inventory_items"]');
             if (existingInv) {
@@ -16415,13 +16566,6 @@ self.onmessage = function (e) {
                 this.applyCurrentSort();
             });
             this.unregisterHandlers.push(unregister);
-
-            // Register with badge manager for coordinated rendering
-            inventoryBadgeManager.registerProvider(
-                'inventory-stack-price',
-                (itemElem) => this.renderBadgesForItem(itemElem),
-                50 // Priority: render before bid/ask badges (lower = earlier)
-            );
 
             // Store handler reference for cleanup with debouncing
             this.itemsUpdatedHandler = () => {
@@ -16446,6 +16590,23 @@ self.onmessage = function (e) {
          * Setup listener for market data updates
          */
         setupMarketDataListener() {
+            // Listen for market price updates
+            const priceUpdateHandler = () => {
+                // Debounce price updates to avoid excessive recalculation
+                clearTimeout(this.priceUpdateDebounceTimer);
+                this.priceUpdateDebounceTimer = setTimeout(() => {
+                    if (this.currentInventoryElem && this.isInitialized) {
+                        console.log('[InventorySort] Market prices updated, refreshing badges');
+                        this.applyCurrentSort();
+                    }
+                }, 500); // 500ms debounce for price updates
+            };
+
+            marketAPI.on(priceUpdateHandler);
+
+            // Store handler for cleanup
+            this.priceUpdateHandler = priceUpdateHandler;
+
             // If market data isn't loaded yet, retry periodically
             if (!marketAPI.isLoaded()) {
                 let retryCount = 0;
@@ -16793,13 +16954,20 @@ self.onmessage = function (e) {
          * Disable and cleanup
          */
         disable() {
-            // Clear debounce timer
+            // Clear debounce timers
             clearTimeout(this.itemsUpdatedDebounceTimer);
             this.itemsUpdatedDebounceTimer = null;
+            clearTimeout(this.priceUpdateDebounceTimer);
+            this.priceUpdateDebounceTimer = null;
 
             if (this.itemsUpdatedHandler) {
                 dataManager.off('items_updated', this.itemsUpdatedHandler);
                 this.itemsUpdatedHandler = null;
+            }
+
+            if (this.priceUpdateHandler) {
+                marketAPI.off(this.priceUpdateHandler);
+                this.priceUpdateHandler = null;
             }
 
             this.timerRegistry.clearAll();
