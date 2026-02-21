@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      1.6.0
+// @version      1.6.1
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -56441,10 +56441,9 @@ self.onmessage = function (e) {
                     isDecompose = actionHrid === '/actions/alchemy/decompose';
                 } else {
                     // Not actively performing - check which tab is selected in the DOM
-                    const selectedTab = document.querySelector(
-                        '[class*="AlchemyPanel_tabButton"][aria-selected="true"], ' +
-                            '[class*="AlchemyPanel_tab"][aria-selected="true"]'
-                    );
+                    // Use [role="tab"] selector which reliably matches MUI tab elements
+                    const tabContainer = document.querySelector('[class*="AlchemyPanel_tabsComponentContainer"]');
+                    const selectedTab = tabContainer?.querySelector('[role="tab"][aria-selected="true"]');
                     const tabText = selectedTab?.textContent?.trim()?.toLowerCase() || '';
 
                     if (tabText.includes('coinify')) {
