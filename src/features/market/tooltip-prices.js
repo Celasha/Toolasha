@@ -17,12 +17,11 @@ import { numberFormatter, formatKMB, networthFormatter, formatPercentage } from 
 import { getItemPrices } from '../../utils/market-data.js';
 import { calculateActionsPerHour } from '../../utils/profit-helpers.js';
 import dom from '../../utils/dom.js';
+import { parseItemCount } from '../../utils/number-parser.js';
 
 // Compiled regex patterns (created once, reused for performance)
 const REGEX_ENHANCEMENT_LEVEL = /\+(\d+)$/;
 const REGEX_ENHANCEMENT_STRIP = /\s*\+\d+$/;
-const REGEX_AMOUNT = /x([\d,]+)|Amount:\s*([\d,]+)/i;
-const REGEX_COMMA = /,/g;
 
 /**
  * Format price for tooltip display based on user setting
@@ -376,17 +375,8 @@ class TooltipPrices {
      * @returns {number} Item amount (default 1)
      */
     extractItemAmount(tooltipElement) {
-        // Look for amount text in tooltip (e.g., "x5", "Amount: 5", "Amount: 4,900")
         const text = tooltipElement.textContent;
-        const match = text.match(REGEX_AMOUNT);
-
-        if (match) {
-            // Strip commas before parsing
-            const amountStr = (match[1] || match[2]).replace(REGEX_COMMA, '');
-            return parseInt(amountStr, 10);
-        }
-
-        return 1; // Default to 1 if not found
+        return parseItemCount(text, 1);
     }
 
     /**

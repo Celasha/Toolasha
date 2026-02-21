@@ -13,6 +13,7 @@ import { getEnhancingParams } from '../../utils/enhancement-config.js';
 import networthCache from '../networth/networth-cache.js';
 import expectedValueCalculator from '../market/expected-value-calculator.js';
 import { getItemPrice } from '../../utils/market-data.js';
+import { parseItemCount } from '../../utils/number-parser.js';
 
 /**
  * InventoryBadgeManager class manages all inventory item badges from multiple features
@@ -300,8 +301,7 @@ class InventoryBadgeManager {
             const countElem = itemElem.querySelector('[class*="Item_count"]');
             if (!countElem) continue;
 
-            let itemCount = countElem.textContent;
-            itemCount = this.parseItemCount(itemCount);
+            const itemCount = parseItemCount(countElem.textContent, 0);
 
             // Get item details (reused throughout)
             const itemDetails = gameData.itemDetailMap[itemHrid];
@@ -542,26 +542,6 @@ class InventoryBadgeManager {
 
         // O(1) lookup
         return this.nameToHridMap.get(itemName) || null;
-    }
-
-    /**
-     * Parse item count from text (handles K, M suffixes and international number formats)
-     * @param {string} text - Count text
-     * @returns {number} Numeric count
-     */
-    parseItemCount(text) {
-        text = text.toLowerCase().trim();
-
-        // Remove all whitespace characters (handles international formats like "27 115" or "1 000")
-        text = text.replace(/\s/g, '');
-
-        if (text.includes('k')) {
-            return parseFloat(text.replace('k', '')) * 1000;
-        } else if (text.includes('m')) {
-            return parseFloat(text.replace('m', '')) * 1000000;
-        } else {
-            return parseFloat(text) || 0;
-        }
     }
 
     /**
