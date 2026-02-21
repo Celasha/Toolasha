@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      1.4.3
+// @version      1.5.0
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -15499,6 +15499,13 @@ return plugin;
                     default: false,
                     help: 'Move ability books from Fixed Assets to Current Assets inventory value. Useful if you plan to sell them.',
                 },
+                autoAllButton: {
+                    id: 'autoAllButton',
+                    label: 'Auto-click "All" button when opening loot boxes',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Automatically clicks the "All" button when opening openable containers (crates, chests, caches)',
+                },
             },
         },
 
@@ -19304,6 +19311,120 @@ return plugin;
     };
 
     /**
+     * Tooltip Observer
+     * Centralized observer for tooltip/popper appearances
+     * Any feature can subscribe to be notified when tooltips appear
+     */
+
+
+    class TooltipObserver {
+        constructor() {
+            this.subscribers = new Map(); // name -> callback
+            this.unregisterObserver = null;
+            this.isInitialized = false;
+        }
+
+        /**
+         * Initialize the observer (call once)
+         */
+        initialize() {
+            if (this.isInitialized) {
+                return;
+            }
+
+            this.isInitialized = true;
+
+            // Watch for tooltip/popper elements appearing
+            // These are the common classes used by MUI tooltips/poppers
+            this.unregisterObserver = domObserver$1.onClass('TooltipObserver', ['MuiPopper', 'MuiTooltip'], (element) => {
+                this.notifySubscribers(element);
+            });
+        }
+
+        /**
+         * Subscribe to tooltip appearance events
+         * @param {string} name - Unique subscriber name
+         * @param {Function} callback - Function(element) to call when tooltip appears
+         */
+        subscribe(name, callback) {
+            this.subscribers.set(name, callback);
+
+            // Auto-initialize if first subscriber
+            if (!this.isInitialized) {
+                this.initialize();
+            }
+        }
+
+        /**
+         * Unsubscribe from tooltip events
+         * @param {string} name - Subscriber name
+         */
+        unsubscribe(name) {
+            this.subscribers.delete(name);
+
+            // If no subscribers left, could optionally stop observing
+            // For now, keep observer active for simplicity
+        }
+
+        /**
+         * Notify all subscribers that a tooltip appeared
+         * @param {Element} element - The tooltip/popper element
+         * @private
+         */
+        notifySubscribers(element) {
+            // Set up observer to detect when this specific tooltip is removed
+            const removalObserver = new MutationObserver((mutations) => {
+                for (const mutation of mutations) {
+                    for (const removedNode of mutation.removedNodes) {
+                        if (removedNode === element) {
+                            // Notify subscribers that tooltip closed
+                            for (const [name, callback] of this.subscribers.entries()) {
+                                try {
+                                    callback(element, 'closed');
+                                } catch (error) {
+                                    console.error(`[TooltipObserver] Error in subscriber "${name}" (close):`, error);
+                                }
+                            }
+                            removalObserver.disconnect();
+                            return;
+                        }
+                    }
+                }
+            });
+
+            // Watch the parent for removal of this tooltip
+            if (element.parentNode) {
+                removalObserver.observe(element.parentNode, {
+                    childList: true,
+                });
+            }
+
+            // Notify subscribers that tooltip opened
+            for (const [name, callback] of this.subscribers.entries()) {
+                try {
+                    callback(element, 'opened');
+                } catch (error) {
+                    console.error(`[TooltipObserver] Error in subscriber "${name}" (open):`, error);
+                }
+            }
+        }
+
+        /**
+         * Cleanup and disable
+         */
+        disable() {
+            if (this.unregisterObserver) {
+                this.unregisterObserver();
+                this.unregisterObserver = null;
+            }
+            this.subscribers.clear();
+            this.isInitialized = false;
+        }
+    }
+
+    const tooltipObserver = new TooltipObserver();
+
+    /**
      * Network Alert Display
      * Shows a warning message when market data cannot be fetched
      */
@@ -19923,6 +20044,7 @@ return plugin;
         featureRegistry: featureRegistry$2,
         settingsStorage,
         settingsGroups,
+        tooltipObserver,
         profileManager: {
             setCurrentProfile,
             getCurrentProfile,
@@ -41918,12 +42040,26 @@ self.onmessage = function (e) {
             });
             this.unregisterHandlers.push(unregister);
 
+            // Subscribe to tooltip appearances to restore badges when React clears them
+            // When user clicks an item, React re-renders the container and removes our badges
+            // This subscription ensures badges are immediately restored when tooltip closes
+            tooltipObserver.subscribe('inventory-badge-manager', (element, eventType) => {
+                // Only restore badges when tooltip CLOSES (that's when React clears them)
+                if (eventType === 'closed') {
+                    // Small delay to let React finish its re-render
+                    setTimeout(() => {
+                        this.renderAllBadges();
+                    }, 50);
+                }
+            });
+
             // Note: We don't use a general DOM observer here because it creates infinite loops
             // (adding badges triggers the observer, which adds badges, etc.)
             // Instead, we rely on:
-            // 1. Explicit calls from inventory-sort when sort mode changes
-            // 2. dataManager events when items actually change
-            // 3. Direct calls from other features when needed
+            // 1. Tooltip appearances (when clicking items that clear badges)
+            // 2. Explicit calls from inventory-sort when sort mode changes
+            // 3. dataManager events when items actually change
+            // 4. Direct calls from other features when needed
         }
 
         /**
@@ -42419,6 +42555,7 @@ self.onmessage = function (e) {
          * Disable and cleanup
          */
         disable() {
+            tooltipObserver.unsubscribe('inventory-badge-manager');
             this.unregisterHandlers.forEach((unregister) => unregister());
             this.unregisterHandlers = [];
             this.providers.clear();
@@ -43477,6 +43614,159 @@ self.onmessage = function (e) {
     };
 
     /**
+     * Auto All Button Feature
+     * Automatically clicks the "All" button when opening loot boxes/containers
+     */
+
+
+    class AutoAllButton {
+        constructor() {
+            this.processedContainers = new WeakSet();
+            this.itemNameToHridCache = null;
+        }
+
+        /**
+         * Initialize the feature
+         */
+        initialize() {
+            if (!config$1.getSetting('autoAllButton')) {
+                return;
+            }
+
+            // Subscribe to tooltip appearances
+            tooltipObserver.subscribe('auto-all-button', (element, eventType) => {
+                // Only process when tooltip opens
+                if (eventType === 'opened') {
+                    this.handleContainer(element);
+                }
+            });
+        }
+
+        /**
+         * Handle container appearance (tooltip/popper)
+         * @param {Element} container - Container element
+         */
+        handleContainer(container) {
+            // Skip if already processed
+            if (this.processedContainers.has(container)) {
+                return;
+            }
+
+            // Mark as processed immediately
+            this.processedContainers.add(container);
+
+            // Small delay to let content fully render
+            setTimeout(() => {
+                try {
+                    this.processContainer(container);
+                } catch (error) {
+                    console.error('[AutoAllButton] Error processing container:', error);
+                }
+            }, 50);
+        }
+
+        /**
+         * Process the container - check if it's for a loot box and click All button
+         * @param {Element} container - Container element
+         */
+        processContainer(container) {
+            // Find item name
+            let itemName = null;
+
+            // Method 1: Look for span with Item_name class
+            const nameSpan = container.querySelector('[class*="Item_name"]');
+            if (nameSpan) {
+                itemName = nameSpan.textContent.trim();
+            }
+
+            // Method 2: Try SVG aria-label (fallback for other UI types)
+            if (!itemName) {
+                const svg = container.querySelector('svg[aria-label]');
+                if (svg) {
+                    itemName = svg.getAttribute('aria-label');
+                }
+            }
+
+            if (!itemName) {
+                return;
+            }
+
+            // Get game data
+            const gameData = dataManager$1.getInitClientData();
+            if (!gameData || !gameData.itemDetailMap) {
+                return;
+            }
+
+            // Find item HRID from name
+            const itemHrid = this.findItemHrid(itemName, gameData);
+            if (!itemHrid) {
+                return;
+            }
+
+            // Check if item is openable - exit early if not
+            const itemDetails = gameData.itemDetailMap[itemHrid];
+            if (!itemDetails || !itemDetails.isOpenable) {
+                return;
+            }
+
+            // Item IS openable - find and click the "All" button
+            this.clickAllButton(container);
+        }
+
+        /**
+         * Find and click the "All" button in the container
+         * @param {Element} container - Container element
+         */
+        clickAllButton(container) {
+            const buttons = container.querySelectorAll('button');
+
+            for (const button of buttons) {
+                if (button.textContent.trim() === 'All' && !button.disabled) {
+                    button.click();
+                    break;
+                }
+            }
+        }
+
+        /**
+         * Find item HRID by name
+         * @param {string} itemName - Item name
+         * @param {Object} gameData - Game data
+         * @returns {string|null} Item HRID or null if not found
+         */
+        findItemHrid(itemName, gameData) {
+            // Build cache on first use
+            if (!this.itemNameToHridCache) {
+                this.itemNameToHridCache = new Map();
+                for (const [hrid, item] of Object.entries(gameData.itemDetailMap)) {
+                    if (item.name) {
+                        this.itemNameToHridCache.set(item.name, hrid);
+                    }
+                }
+            }
+
+            return this.itemNameToHridCache.get(itemName) || null;
+        }
+
+        /**
+         * Disable the feature
+         */
+        disable() {
+            tooltipObserver.unsubscribe('auto-all-button');
+            this.processedContainers = new WeakSet();
+            this.itemNameToHridCache = null;
+        }
+    }
+
+    const autoAllButton = new AutoAllButton();
+
+    var autoAllButton$1 = {
+        name: 'Auto All Button',
+        initialize: () => autoAllButton.initialize(),
+        cleanup: () => autoAllButton.disable(),
+    };
+
+    /**
      * Market Library
      * Market, inventory, and economy features
      *
@@ -43517,6 +43807,7 @@ self.onmessage = function (e) {
         inventorySort,
         inventoryBadgePrices,
         dungeonTokenTooltips: dungeonTokenTooltips$1,
+        autoAllButton: autoAllButton$1,
     };
 
     console.log('[Toolasha] Market library loaded');
@@ -80817,6 +81108,13 @@ self.onmessage = function (e) {
                 name: 'Inventory Badge Prices',
                 category: 'Inventory',
                 module: Market.inventoryBadgePrices,
+                async: false,
+            },
+            {
+                key: 'autoAllButton',
+                name: 'Auto All Button',
+                category: 'Inventory',
+                module: Market.autoAllButton,
                 async: false,
             },
         ];
