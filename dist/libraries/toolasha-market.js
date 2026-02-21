@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 1.4.0
+ * Version: 1.4.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -16440,12 +16440,15 @@ self.onmessage = function (e) {
         }
 
         /**
-         * Parse item count from text (handles K, M suffixes)
+         * Parse item count from text (handles K, M suffixes and international number formats)
          * @param {string} text - Count text
          * @returns {number} Numeric count
          */
         parseItemCount(text) {
             text = text.toLowerCase().trim();
+
+            // Remove all whitespace characters (handles international formats like "27 115" or "1 000")
+            text = text.replace(/\s/g, '');
 
             if (text.includes('k')) {
                 return parseFloat(text.replace('k', '')) * 1000;
