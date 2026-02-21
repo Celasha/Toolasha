@@ -315,15 +315,25 @@ function calculateGatheringGoldPerHour(actionDetails, buffs, playerLevel, otherE
         // Apply gathering bonus to quantity
         const avgAmountPerAction = avgCount * gatheringBonus;
 
+        // Get item details and check if tradeable
+        // Tradeable items have isTradable: true, non-tradeable items don't have this property
+        const dropItemDetails = gameData.itemDetailMap[drop.itemHrid];
+        const isTradeable = dropItemDetails?.isTradable === true;
+
         // Get item price (use 'sell' side for output items to match tile calculation)
-        const rawPrice = getItemPrice(drop.itemHrid, { context: 'profit', side: 'sell' }) || 0;
+        // Non-tradeable items have no market value
+        const rawPrice = isTradeable ? getItemPrice(drop.itemHrid, { context: 'profit', side: 'sell' }) || 0 : 0;
 
         // Check for processing conversion
-        if (buffs.processing > 0) {
+        if (buffs.processing > 0 && isTradeable) {
             const processedData = findProcessingConversion(drop.itemHrid, gameData);
             if (processedData) {
-                const processedPrice =
-                    getItemPrice(processedData.outputItemHrid, { context: 'profit', side: 'sell' }) || 0;
+                // Check if processed item is also tradeable
+                const processedItemDetails = gameData.itemDetailMap[processedData.outputItemHrid];
+                const processedIsTradeable = processedItemDetails?.isTradable === true;
+                const processedPrice = processedIsTradeable
+                    ? getItemPrice(processedData.outputItemHrid, { context: 'profit', side: 'sell' }) || 0
+                    : 0;
                 const conversionRatio = processedData.conversionRatio;
 
                 // Processing Tea check happens per action:
@@ -441,8 +451,15 @@ function calculateProductionGoldPerHour(actionDetails, buffs, playerLevel, other
     const isCookingOrBrewing =
         actionDetails.type === '/action_types/cooking' || actionDetails.type === '/action_types/brewing';
     const gourmetBonus = isCookingOrBrewing ? 1 + buffs.gourmet : 1;
+
     for (const output of actionDetails.outputItems || []) {
-        const price = getItemPrice(output.itemHrid, { context: 'profit', side: 'sell' }) || 0;
+        // Check if output item is tradeable - non-tradeable items have no market value
+        // Tradeable items have isTradable: true, non-tradeable items don't have this property
+        const outputItemDetails = gameData.itemDetailMap[output.itemHrid];
+        const isTradeable = outputItemDetails?.isTradable === true;
+
+        const price = isTradeable ? getItemPrice(output.itemHrid, { context: 'profit', side: 'sell' }) || 0 : 0;
+
         const effectiveCount = output.count * gourmetBonus;
         outputRevenue += price * effectiveCount;
     }
@@ -640,6 +657,14 @@ function getOtherEfficiencySources(actionType) {
  * @returns {Object} Optimization result
  */
 export function findOptimalTeas(skillName, goal, locationName = null) {
+    // DEBUG: Log when findOptimalTeas is called
+    console.log(`[TEA-DEBUG] ========================================`);
+    console.log(`[TEA-DEBUG] findOptimalTeas called:`);
+    console.log(`[TEA-DEBUG]   skillName: ${skillName}`);
+    console.log(`[TEA-DEBUG]   goal: ${goal}`);
+    console.log(`[TEA-DEBUG]   locationName: ${locationName}`);
+    console.log(`[TEA-DEBUG] ========================================`);
+
     const normalizedSkill = skillName.toLowerCase();
     const isGathering = GATHERING_SKILLS.includes(normalizedSkill);
     const isProduction = PRODUCTION_SKILLS.includes(normalizedSkill);
@@ -729,6 +754,15 @@ export function findOptimalTeas(skillName, goal, locationName = null) {
         itemDetailMap: gameData.itemDetailMap,
     };
 
+    // DEBUG: Log actions being evaluated
+    console.log(`[TEA-DEBUG] Actions to evaluate (${actions.length}):`);
+    actions.forEach((a, i) => {
+        console.log(`[TEA-DEBUG]   ${i}: ${a.name} (${a.hrid})`);
+        if (a.outputItems) {
+            a.outputItems.forEach((o) => console.log(`[TEA-DEBUG]      output: ${o.itemHrid}`));
+        }
+    });
+
     for (const combo of combinations) {
         const buffs = parseTeaBuffs(combo, gameData.itemDetailMap, drinkConcentration);
 
@@ -738,6 +772,12 @@ export function findOptimalTeas(skillName, goal, locationName = null) {
         let totalScore = 0;
         let profitableCount = 0;
         const actionScores = [];
+
+        // DEBUG: Only log detailed action processing for first combo to reduce spam
+        const isFirstCombo = combo === combinations[0];
+        if (isFirstCombo && goal === 'gold') {
+            console.log(`[TEA-DEBUG] Processing first tea combo: ${combo.join(', ')}`);
+        }
 
         for (const action of actions) {
             let score;
@@ -761,6 +801,10 @@ export function findOptimalTeas(skillName, goal, locationName = null) {
                     profitableCount++;
                 }
             } else {
+                // DEBUG: Only log for first combo
+                if (isFirstCombo) {
+                    console.log(`[TEA-DEBUG] --- Calling calculateProductionGoldPerHour for: ${action.name} ---`);
+                }
                 score = calculateProductionGoldPerHour(
                     action,
                     buffs,
@@ -771,6 +815,12 @@ export function findOptimalTeas(skillName, goal, locationName = null) {
                 );
                 // Deduct tea costs from gold score
                 score -= teaCostPerHour;
+
+                // DEBUG: Log score for first combo
+                if (isFirstCombo) {
+                    console.log(`[TEA-DEBUG]   Final score for ${action.name}: ${score}`);
+                }
+
                 // Only include profitable actions in gold calculations
                 if (score > 0) {
                     totalScore += score;
@@ -779,6 +829,13 @@ export function findOptimalTeas(skillName, goal, locationName = null) {
             }
 
             actionScores.push({ action: action.name, score });
+        }
+
+        // DEBUG: Log summary for first combo
+        if (isFirstCombo && goal === 'gold') {
+            console.log(`[TEA-DEBUG] First combo summary:`);
+            console.log(`[TEA-DEBUG]   totalScore: ${totalScore}`);
+            console.log(`[TEA-DEBUG]   profitableCount: ${profitableCount}`);
         }
 
         // For gold, average across profitable actions only; for XP, average across all
