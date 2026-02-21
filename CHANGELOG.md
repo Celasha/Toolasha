@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.4.2](https://github.com/Celasha/Toolasha/compare/v1.4.1...v1.4.2) (2026-02-21)
+
+### Code Refactoring
+
+- consolidate item count parsing into shared utility ([e7d7f9c](https://github.com/Celasha/Toolasha/commit/e7d7f9c3f06ec1e55fdcb5f324a2330f5653cb15))
+
 ## [1.4.1](https://github.com/Celasha/Toolasha/compare/v1.4.0...v1.4.1) (2026-02-21)
 
 ### Bug Fixes
