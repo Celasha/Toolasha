@@ -125,7 +125,9 @@ class GatheringStats {
                 displayElement: existingDisplay,
             });
             // Update with fresh data (skip render; indicators handle output)
-            this.updateStats(actionPanel, { skipRender: true });
+            this.updateStats(actionPanel, { skipRender: true }).then(() => {
+                this.addBestActionIndicators();
+            });
             // Register with shared sort manager
             actionPanelSort.registerPanel(actionPanel, actionHrid);
             // Trigger sort
@@ -170,7 +172,9 @@ class GatheringStats {
         actionPanelSort.registerPanel(actionPanel, actionHrid);
 
         // Initial update (skip render; indicators handle output)
-        this.updateStats(actionPanel, { skipRender: true });
+        this.updateStats(actionPanel, { skipRender: true }).then(() => {
+            this.addBestActionIndicators();
+        });
 
         // Trigger sort
         actionPanelSort.triggerSort();
