@@ -15,6 +15,7 @@ import featureRegistry from '../core/feature-registry.js';
 import settingsStorage from '../core/settings-storage.js';
 import { settingsGroups } from '../core/settings-schema.js';
 import { setCurrentProfile, getCurrentProfile, clearCurrentProfile } from '../core/profile-manager.js';
+import tooltipObserver from '../core/tooltip-observer.js';
 
 // API modules
 import marketAPI from '../api/marketplace.js';
@@ -36,6 +37,7 @@ toolashaRoot.Core = {
     featureRegistry,
     settingsStorage,
     settingsGroups,
+    tooltipObserver,
     profileManager: {
         setCurrentProfile,
         getCurrentProfile,

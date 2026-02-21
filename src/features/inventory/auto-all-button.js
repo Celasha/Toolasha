@@ -5,11 +5,10 @@
 
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
-import domObserver from '../../core/dom-observer.js';
+import tooltipObserver from '../../core/tooltip-observer.js';
 
 class AutoAllButton {
     constructor() {
-        this.unregisterObserver = null;
         this.processedContainers = new WeakSet();
         this.itemNameToHridCache = null;
     }
@@ -22,14 +21,11 @@ class AutoAllButton {
             return;
         }
 
-        // Watch for tooltip/popper containers appearing (when clicking items)
-        this.unregisterObserver = domObserver.register('AutoAllButton', (node) => {
-            // Check if this is a tooltip/popper container
-            const isTooltip = node.getAttribute && node.getAttribute('role') === 'tooltip';
-            const isPopper = node.className && typeof node.className === 'string' && node.className.includes('Popper');
-
-            if (isTooltip || isPopper) {
-                this.handleContainer(node);
+        // Subscribe to tooltip appearances
+        tooltipObserver.subscribe('auto-all-button', (element, eventType) => {
+            // Only process when tooltip opens
+            if (eventType === 'opened') {
+                this.handleContainer(element);
             }
         });
     }
@@ -144,10 +140,7 @@ class AutoAllButton {
      * Disable the feature
      */
     disable() {
-        if (this.unregisterObserver) {
-            this.unregisterObserver();
-            this.unregisterObserver = null;
-        }
+        tooltipObserver.unsubscribe('auto-all-button');
         this.processedContainers = new WeakSet();
         this.itemNameToHridCache = null;
     }
