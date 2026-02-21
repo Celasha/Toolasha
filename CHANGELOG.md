@@ -2,22 +2,19 @@
 
 ## [1.4.0](https://github.com/Celasha/Toolasha/compare/v1.3.1...v1.4.0) (2026-02-21)
 
-
 ### Features
 
-* add external profile support to Milkonomy export and update credits ([fdc2f79](https://github.com/Celasha/Toolasha/commit/fdc2f7903fc5f18391faf2ef6abd405129eab150))
-* add Level Progress and Action Speed sections to alchemy with MooPass support ([b68b337](https://github.com/Celasha/Toolasha/commit/b68b33709959d0e2e9b75305da9edbcc90d7a217))
-* add pricing mode display and fix efficiency decimal precision in action panels ([8464946](https://github.com/Celasha/Toolasha/commit/8464946fdd7df55c09f409b9e392b7b8ab11361a))
-
+- add external profile support to Milkonomy export and update credits ([fdc2f79](https://github.com/Celasha/Toolasha/commit/fdc2f7903fc5f18391faf2ef6abd405129eab150))
+- add Level Progress and Action Speed sections to alchemy with MooPass support ([b68b337](https://github.com/Celasha/Toolasha/commit/b68b33709959d0e2e9b75305da9edbcc90d7a217))
+- add pricing mode display and fix efficiency decimal precision in action panels ([8464946](https://github.com/Celasha/Toolasha/commit/8464946fdd7df55c09f409b9e392b7b8ab11361a))
 
 ### Bug Fixes
 
-* resolve tea optimizer category filtering and NaN display issues ([30fcb58](https://github.com/Celasha/Toolasha/commit/30fcb586c89a33cadff53b395a6c5524ba583b38))
-
+- resolve tea optimizer category filtering and NaN display issues ([30fcb58](https://github.com/Celasha/Toolasha/commit/30fcb586c89a33cadff53b395a6c5524ba583b38))
 
 ### Performance Improvements
 
-* convert features to event-driven updates and fix infinite loop ([94355e4](https://github.com/Celasha/Toolasha/commit/94355e48136411408d4ee7e4a570e8f46da3ad9a))
+- convert features to event-driven updates and fix infinite loop ([94355e4](https://github.com/Celasha/Toolasha/commit/94355e48136411408d4ee7e4a570e8f46da3ad9a))
 
 ## [1.3.1](https://github.com/Celasha/Toolasha/compare/v1.3.0...v1.3.1) (2026-02-20)
 
