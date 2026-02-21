@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.1](https://github.com/Celasha/Toolasha/compare/v1.5.0...v1.5.1) (2026-02-21)
+
+
+### Bug Fixes
+
+* revert gathering stats to simpler rendering and exclude non-tradeable items from gold calc ([f16b319](https://github.com/Celasha/Toolasha/commit/f16b319c9bdb91a84b6ce65f25e32b099ee53231))
+
 ## [1.5.0](https://github.com/Celasha/Toolasha/compare/v1.4.3...v1.5.0) (2026-02-21)
 
 ### Features
