@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.5.0](https://github.com/Celasha/Toolasha/compare/v1.4.3...v1.5.0) (2026-02-21)
+
+### Features
+
+- add auto-click "All" button feature for loot boxes ([bec9df9](https://github.com/Celasha/Toolasha/commit/bec9df9f69b012539bc470946a9be41c0a214007))
+
+### Bug Fixes
+
+- restore inventory badges when clicking items via shared tooltip observer ([55271d9](https://github.com/Celasha/Toolasha/commit/55271d9fd865c5d95756c4ea176abda21cd24a45))
+
 ## [1.4.3](https://github.com/Celasha/Toolasha/compare/v1.4.2...v1.4.3) (2026-02-21)
 
 ### Code Refactoring
