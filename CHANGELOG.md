@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.6.0](https://github.com/Celasha/Toolasha/compare/v1.5.0...v1.6.0) (2026-02-21)
+
+### Features
+
+- add Both button to tea optimizer and fix drag-close bug ([9b1c1e1](https://github.com/Celasha/Toolasha/commit/9b1c1e1283eda57df1c8367988833ab93d47696b))
+
+### Bug Fixes
+
+- debounce gathering indicator rendering ([62d8044](https://github.com/Celasha/Toolasha/commit/62d8044681faf4041fd0eab16e2c85a63659d2ab))
+- render gathering indicators after initial update ([8a0ae83](https://github.com/Celasha/Toolasha/commit/8a0ae8304b097e37bbf914722c01bca52c0341a1))
+
 ## [1.5.0](https://github.com/Celasha/Toolasha/compare/v1.4.3...v1.5.0) (2026-02-21)
 
 ### Features
