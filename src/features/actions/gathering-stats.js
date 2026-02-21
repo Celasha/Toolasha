@@ -26,6 +26,7 @@ class GatheringStats {
         this.itemsUpdatedDebounceTimer = null; // Debounce timer for items_updated events
         this.actionCompletedDebounceTimer = null; // Debounce timer for action_completed events
         this.consumablesUpdatedDebounceTimer = null; // Debounce timer for consumables_updated events
+        this.indicatorUpdateDebounceTimer = null; // Debounce timer for indicator rendering
         this.DEBOUNCE_DELAY = 300; // 300ms debounce for event handlers
     }
 
@@ -125,7 +126,9 @@ class GatheringStats {
                 displayElement: existingDisplay,
             });
             // Update with fresh data (skip render; indicators handle output)
-            this.updateStats(actionPanel, { skipRender: true });
+            this.updateStats(actionPanel, { skipRender: true }).then(() => {
+                this.scheduleIndicatorUpdate();
+            });
             // Register with shared sort manager
             actionPanelSort.registerPanel(actionPanel, actionHrid);
             // Trigger sort
@@ -170,7 +173,9 @@ class GatheringStats {
         actionPanelSort.registerPanel(actionPanel, actionHrid);
 
         // Initial update (skip render; indicators handle output)
-        this.updateStats(actionPanel, { skipRender: true });
+        this.updateStats(actionPanel, { skipRender: true }).then(() => {
+            this.scheduleIndicatorUpdate();
+        });
 
         // Trigger sort
         actionPanelSort.triggerSort();
@@ -285,10 +290,20 @@ class GatheringStats {
         await Promise.all(updatePromises);
 
         // Find best actions and add indicators
-        this.addBestActionIndicators();
+        this.scheduleIndicatorUpdate();
 
         // Trigger sort via shared manager
         actionPanelSort.triggerSort();
+    }
+
+    /**
+     * Debounce indicator rendering to batch panel updates
+     */
+    scheduleIndicatorUpdate() {
+        clearTimeout(this.indicatorUpdateDebounceTimer);
+        this.indicatorUpdateDebounceTimer = setTimeout(() => {
+            this.addBestActionIndicators();
+        }, this.DEBOUNCE_DELAY);
     }
 
     /**
@@ -451,6 +466,8 @@ class GatheringStats {
      * Clear all DOM references to prevent memory leaks during character switch
      */
     clearAllReferences() {
+        clearTimeout(this.indicatorUpdateDebounceTimer);
+        this.indicatorUpdateDebounceTimer = null;
         // CRITICAL: Remove injected DOM elements BEFORE clearing Maps
         // This prevents detached SVG elements from accumulating
         // Note: .remove() is safe to call even if element is already detached
@@ -477,9 +494,11 @@ class GatheringStats {
         clearTimeout(this.itemsUpdatedDebounceTimer);
         clearTimeout(this.actionCompletedDebounceTimer);
         clearTimeout(this.consumablesUpdatedDebounceTimer);
+        clearTimeout(this.indicatorUpdateDebounceTimer);
         this.itemsUpdatedDebounceTimer = null;
         this.actionCompletedDebounceTimer = null;
         this.consumablesUpdatedDebounceTimer = null;
+        this.indicatorUpdateDebounceTimer = null;
 
         if (this.itemsUpdatedHandler) {
             dataManager.off('items_updated', this.itemsUpdatedHandler);
