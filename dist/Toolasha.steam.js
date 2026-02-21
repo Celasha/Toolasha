@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      1.4.2
+// @version      1.4.3
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -15085,14 +15085,12 @@ return plugin;
                     label: 'Action panel: Quick input buttons (hours, count presets, Max)',
                     type: 'checkbox',
                     default: true,
-                    dependencies: ['actionPanel_totalTime'],
                 },
                 actionPanel_foragingTotal: {
                     id: 'actionPanel_foragingTotal',
                     label: 'Action panel: Overall profit for multi-outcome foraging',
                     type: 'checkbox',
                     default: true,
-                    dependencies: ['actionPanel_totalTime'],
                 },
                 actionQueue: {
                     id: 'actionQueue',
@@ -15109,7 +15107,6 @@ return plugin;
                         { value: 'profit', label: 'Total Profit (revenue - all costs)' },
                         { value: 'estimated_value', label: 'Estimated Value (revenue after tax)' },
                     ],
-                    dependencies: ['actionQueue'],
                     help: 'Choose how to calculate the total value for queued actions. Profit shows net earnings after materials and drinks. Estimated Value shows gross revenue after market tax (always positive).',
                 },
                 actionPanel_outputTotals: {
@@ -15138,7 +15135,6 @@ return plugin;
                     label: 'Action panel: Hide actions with negative profit',
                     type: 'checkbox',
                     default: false,
-                    dependencies: ['actionPanel_maxProduceable', 'actionPanel_gatheringStats'],
                     help: 'Hides action panels that would result in a loss (negative profit/hr)',
                 },
                 actionPanel_sortByProfit: {
@@ -15146,7 +15142,6 @@ return plugin;
                     label: 'Action panel: Sort actions by profit/hr (highest first)',
                     type: 'checkbox',
                     default: false,
-                    dependencies: ['actionPanel_maxProduceable', 'actionPanel_gatheringStats'],
                     help: 'Sorts action tiles by profit/hr in descending order. Actions without profit data appear at the end.',
                 },
                 requiredMaterials: {
@@ -15175,7 +15170,6 @@ return plugin;
                     label: 'Ignore queued actions when calculating missing materials',
                     type: 'checkbox',
                     default: false,
-                    dependencies: ['actions_missingMaterialsButton'],
                     help: 'When enabled, missing materials calculation only considers current action request, ignoring materials already reserved by queued actions. Default (off) accounts for queue.',
                 },
             },
@@ -15196,14 +15190,12 @@ return plugin;
                     label: 'Show production cost and profit',
                     type: 'checkbox',
                     default: true,
-                    dependencies: ['itemTooltip_prices'],
                 },
                 itemTooltip_detailedProfit: {
                     id: 'itemTooltip_detailedProfit',
                     label: 'Show detailed materials breakdown in profit display',
                     type: 'checkbox',
                     default: false,
-                    dependencies: ['itemTooltip_profit'],
                     help: 'Shows material costs table with Ask/Bid prices, actions/hour, and profit breakdown',
                 },
                 itemTooltip_multiActionProfit: {
@@ -15211,7 +15203,6 @@ return plugin;
                     label: 'Show profit comparison for all item actions',
                     type: 'checkbox',
                     default: false,
-                    dependencies: ['itemTooltip_prices'],
                     help: 'Displays best profit/hr highlighted, with other profitable actions (craft, coinify, decompose, transmute) summarized below',
                 },
                 itemTooltip_expectedValue: {
@@ -15219,7 +15210,6 @@ return plugin;
                     label: 'Show expected value for openable containers',
                     type: 'checkbox',
                     default: true,
-                    dependencies: ['itemTooltip_prices'],
                 },
                 expectedValue_showDrops: {
                     id: 'expectedValue_showDrops',
@@ -15232,14 +15222,12 @@ return plugin;
                         { value: 'All', label: 'All Drops' },
                         { value: 'None', label: 'Summary Only' },
                     ],
-                    dependencies: ['itemTooltip_expectedValue'],
                 },
                 expectedValue_respectPricingMode: {
                     id: 'expectedValue_respectPricingMode',
                     label: 'Use pricing mode for expected value calculations',
                     type: 'checkbox',
                     default: true,
-                    dependencies: ['itemTooltip_expectedValue'],
                 },
                 showConsumTips: {
                     id: 'showConsumTips',
@@ -15265,14 +15253,12 @@ return plugin;
                     type: 'checkbox',
                     default: false,
                     help: "When enabled, shows base/materials/protection breakdown for each consumed item in Philosopher's Mirror calculations",
-                    dependencies: ['enhanceSim'],
                 },
                 itemTooltip_gathering: {
                     id: 'itemTooltip_gathering',
                     label: 'Show gathering sources and profit',
                     type: 'checkbox',
                     default: true,
-                    dependencies: ['itemTooltip_profit'],
                     help: 'Shows gathering actions that produce this item (foraging, woodcutting, milking)',
                 },
                 itemTooltip_gatheringRareDrops: {
@@ -15280,7 +15266,6 @@ return plugin;
                     label: 'Show rare drops from gathering',
                     type: 'checkbox',
                     default: true,
-                    dependencies: ['itemTooltip_gathering'],
                     help: 'Shows rare find drops from gathering zones (e.g., Thread of Expertise from Asteroid Belt)',
                 },
                 itemTooltip_abilityStatus: {
@@ -15288,7 +15273,6 @@ return plugin;
                     label: 'Show ability book status',
                     type: 'checkbox',
                     default: true,
-                    dependencies: ['itemTooltip_prices'],
                     help: 'Shows whether ability is learned and current level/progress on ability book tooltips',
                 },
             },
@@ -15400,7 +15384,6 @@ return plugin;
                     label: 'Show tracker only on Enhancing screen',
                     type: 'checkbox',
                     default: false,
-                    dependencies: ['enhancementTracker'],
                     help: 'Hide tracker when not on the Enhancing screen',
                 },
             },
@@ -15422,21 +15405,18 @@ return plugin;
                     label: 'Below inventory: Show inventory summary',
                     type: 'checkbox',
                     default: true,
-                    dependencies: ['networth'],
                 },
                 invSort: {
                     id: 'invSort',
                     label: 'Sort inventory items by value',
                     type: 'checkbox',
                     default: true,
-                    dependencies: ['networth'],
                 },
                 invSort_showBadges: {
                     id: 'invSort_showBadges',
                     label: 'Show stack value badges when sorting by Ask/Bid',
                     type: 'checkbox',
                     default: false,
-                    dependencies: ['invSort'],
                 },
                 invSort_badgesOnNone: {
                     id: 'invSort_badgesOnNone',
@@ -15444,14 +15424,12 @@ return plugin;
                     type: 'select',
                     default: 'None',
                     options: ['None', 'Ask', 'Bid'],
-                    dependencies: ['invSort'],
                 },
                 invSort_sortEquipment: {
                     id: 'invSort_sortEquipment',
                     label: 'Enable sorting for Equipment category',
                     type: 'checkbox',
                     default: false,
-                    dependencies: ['invSort'],
                 },
                 invBadgePrices: {
                     id: 'invBadgePrices',
@@ -15466,7 +15444,6 @@ return plugin;
                     type: 'select',
                     default: 'Ask',
                     options: ['None', 'Ask', 'Bid'],
-                    dependencies: ['invBadgePrices'],
                     help: 'Ask (instant-buy price), Bid (instant-sell price), or None',
                 },
                 profitCalc_pricingMode: {
@@ -15485,7 +15462,6 @@ return plugin;
                     label: 'Use enhancement cost for highly enhanced items',
                     type: 'checkbox',
                     default: true,
-                    dependencies: ['networth'],
                     help: 'Market prices are unreliable for highly enhanced items (+13 and above). Use calculated enhancement cost instead.',
                 },
                 networth_highEnhancementMinLevel: {
@@ -15500,7 +15476,6 @@ return plugin;
                         { value: 13, label: '+13 and above (recommended)' },
                         { value: 15, label: '+15 and above' },
                     ],
-                    dependencies: ['networth_highEnhancementUseCost'],
                     help: 'Enhancement level at which to stop trusting market prices',
                 },
                 networth_includeCowbells: {
@@ -15508,7 +15483,6 @@ return plugin;
                     label: 'Include cowbells in net worth',
                     type: 'checkbox',
                     default: false,
-                    dependencies: ['networth'],
                     help: 'Cowbells are not tradeable, but they have a value based on Bag of 10 Cowbells market price',
                 },
                 networth_includeTaskTokens: {
@@ -15516,7 +15490,6 @@ return plugin;
                     label: 'Include task tokens in net worth',
                     type: 'checkbox',
                     default: true,
-                    dependencies: ['networth'],
                     help: 'Value task tokens based on expected value from Task Shop chests. Disable to exclude them from net worth.',
                 },
                 networth_abilityBooksAsInventory: {
@@ -15524,7 +15497,6 @@ return plugin;
                     label: 'Count ability books as inventory (Current Assets)',
                     type: 'checkbox',
                     default: false,
-                    dependencies: ['networth'],
                     help: 'Move ability books from Fixed Assets to Current Assets inventory value. Useful if you plan to sell them.',
                 },
             },
@@ -15546,7 +15518,6 @@ return plugin;
                     label: 'Remaining XP: Add black text border for better visibility',
                     type: 'checkbox',
                     default: true,
-                    dependencies: ['skillRemainingXP'],
                     help: 'Adds a black outline/shadow to the XP text for better readability against progress bars',
                 },
                 skillbook: {
@@ -15591,14 +15562,14 @@ return plugin;
                 },
                 dungeonTrackerUI: {
                     id: 'dungeonTrackerUI',
-                    label: '  ├─ Show Dungeon Tracker UI panel',
+                    label: 'Show Dungeon Tracker UI panel',
                     type: 'checkbox',
                     default: true,
                     help: 'Displays dungeon progress panel with wave counter, run history, and statistics',
                 },
                 dungeonTrackerChatAnnotations: {
                     id: 'dungeonTrackerChatAnnotations',
-                    label: '  └─ Show run time in party chat',
+                    label: 'Show run time in party chat',
                     type: 'checkbox',
                     default: true,
                     help: 'Adds colored timer annotations to "Key counts" messages (green if fast, red if slow)',
@@ -15678,22 +15649,20 @@ return plugin;
                 },
                 taskEfficiencyRatingMode: {
                     id: 'taskEfficiencyRatingMode',
-                    label: '  └─ Efficiency algorithm',
+                    label: 'Efficiency algorithm',
                     type: 'select',
                     default: 'gold',
                     options: [
                         { value: 'tokens', label: 'Task tokens per hour' },
                         { value: 'gold', label: 'Task profit per hour' },
                     ],
-                    dependencies: ['taskEfficiencyRating'],
                     help: 'Choose whether to rate by task token payout or total profit.',
                 },
                 taskEfficiencyGradient: {
                     id: 'taskEfficiencyGradient',
-                    label: '  └─ Use relative gradient colors',
+                    label: 'Use relative gradient colors',
                     type: 'checkbox',
                     default: false,
-                    dependencies: ['taskEfficiencyRating'],
                     help: 'Colors efficiency ratings relative to visible tasks.',
                 },
                 taskRerollTracker: {
@@ -15721,7 +15690,6 @@ return plugin;
                     label: 'Show dungeon icons on combat tasks',
                     type: 'checkbox',
                     default: false,
-                    dependencies: ['taskIcons'],
                     help: 'Shows which dungeons contain the monster (requires Task Icons enabled)',
                 },
                 taskSorter_autoSort: {
@@ -15776,7 +15744,6 @@ return plugin;
                     label: 'Bottom left corner of key icons: Show zone index',
                     type: 'checkbox',
                     default: true,
-                    dependencies: ['itemIconLevel'],
                 },
                 mapIndex: {
                     id: 'mapIndex',
@@ -15811,14 +15778,13 @@ return plugin;
                 },
                 market_autoFillSellStrategy: {
                     id: 'market_autoFillSellStrategy',
-                    label: '  └─ Auto-fill sell price strategy',
+                    label: 'Auto-fill sell price strategy',
                     type: 'select',
                     default: 'match',
                     options: [
                         { value: 'match', label: 'Match best sell price' },
                         { value: 'undercut', label: 'Undercut by 1 (best sell - 1)' },
                     ],
-                    dependencies: ['fillMarketOrderPrice'],
                     help: 'When creating sell listings, choose whether to match or undercut the current best sell price',
                 },
                 market_autoClickMax: {
@@ -15843,7 +15809,6 @@ return plugin;
                     min: 0,
                     max: 1,
                     step: 0.05,
-                    dependencies: ['market_visibleItemCount'],
                     help: 'How transparent item tiles appear when you own zero of that item',
                 },
                 market_visibleItemCountIncludeEquipped: {
@@ -15851,7 +15816,6 @@ return plugin;
                     label: 'Market: Count equipped items',
                     type: 'checkbox',
                     default: true,
-                    dependencies: ['market_visibleItemCount'],
                     help: 'Include currently equipped items in the displayed count',
                 },
                 market_showListingPrices: {
@@ -15877,7 +15841,6 @@ return plugin;
                         { value: 'instant', label: 'Instant' },
                         { value: 'listing', label: 'Orders' },
                     ],
-                    dependencies: ['market_tradeHistory'],
                     help: 'Instant: Compare to instant buy/sell prices. Orders: Compare to buy/sell orders.',
                 },
                 market_listingPricePrecision: {
@@ -15887,7 +15850,6 @@ return plugin;
                     default: 2,
                     min: 0,
                     max: 4,
-                    dependencies: ['market_showListingPrices'],
                     help: 'Number of decimal places to show for listing prices',
                 },
                 market_showListingAge: {
@@ -15895,7 +15857,6 @@ return plugin;
                     label: 'Market: Show listing age on My Listings',
                     type: 'checkbox',
                     default: false,
-                    dependencies: ['market_showListingPrices'],
                     help: 'Display how long ago each listing was created on the My Listings tab (e.g., "3h 45m")',
                 },
                 market_showTopOrderAge: {
@@ -15903,7 +15864,6 @@ return plugin;
                     label: 'Market: Show top order age on My Listings',
                     type: 'checkbox',
                     default: false,
-                    dependencies: ['market_showListingPrices', 'market_showEstimatedListingAge'],
                     help: 'Display estimated age of the top competing order for each of your listings (requires estimated listing age feature to be active)',
                 },
                 market_showEstimatedListingAge: {
@@ -15922,7 +15882,6 @@ return plugin;
                         { value: 'elapsed', label: 'Elapsed Time (e.g., "3h 45m")' },
                         { value: 'datetime', label: 'Date/Time (e.g., "01-13 14:30")' },
                     ],
-                    dependencies: ['market_showEstimatedListingAge'],
                     help: 'Choose how to display listing creation times',
                 },
                 market_listingTimeFormat: {
@@ -15934,7 +15893,6 @@ return plugin;
                         { value: '24hour', label: '24-hour (14:30)' },
                         { value: '12hour', label: '12-hour (2:30 PM)' },
                     ],
-                    dependencies: ['market_showEstimatedListingAge'],
                     help: 'Time format when using Date/Time display (only applies if Date/Time format is selected)',
                 },
                 market_listingDateFormat: {
@@ -15946,7 +15904,6 @@ return plugin;
                         { value: 'MM-DD', label: 'MM-DD (01-13)' },
                         { value: 'DD-MM', label: 'DD-MM (13-01)' },
                     ],
-                    dependencies: ['market_showEstimatedListingAge'],
                     help: 'Date format when using Date/Time display (only applies if Date/Time format is selected)',
                 },
                 market_showOrderTotals: {
@@ -15975,7 +15932,6 @@ return plugin;
                     label: 'Market: Show queue length estimates',
                     type: 'checkbox',
                     default: true,
-                    dependencies: ['market_showEstimatedListingAge'],
                     help: 'Displays total quantity at best price below Buy/Sell buttons. Estimated values (20+ orders at same price) are shown in a different color.',
                 },
                 itemDictionary_transmuteRates: {
@@ -15990,7 +15946,6 @@ return plugin;
                     label: 'Item Dictionary: Include base success rate in transmutation percentages',
                     type: 'checkbox',
                     default: true,
-                    dependencies: ['itemDictionary_transmuteRates'],
                     help: 'When enabled, shows total probability (base rate × drop rate). When disabled, shows conditional probability (drop rate only, matching "Transmutes Into" section)',
                 },
             },
@@ -75992,7 +75947,7 @@ self.onmessage = function (e) {
 
     const housePanelObserver = new HousePanelObserver();
 
-    var settingsCSS = "/* Toolasha Settings UI Styles\n * Modern, compact design\n */\n\n/* CSS Variables */\n:root {\n    --toolasha-accent: #5b8def;\n    --toolasha-accent-hover: #7aa3f3;\n    --toolasha-accent-dim: rgba(91, 141, 239, 0.15);\n    --toolasha-secondary: #8A2BE2;\n    --toolasha-text: rgba(255, 255, 255, 0.9);\n    --toolasha-text-dim: rgba(255, 255, 255, 0.5);\n    --toolasha-bg: rgba(20, 25, 35, 0.6);\n    --toolasha-border: rgba(91, 141, 239, 0.2);\n    --toolasha-toggle-off: rgba(100, 100, 120, 0.4);\n    --toolasha-toggle-on: var(--toolasha-accent);\n}\n\n/* Settings Card Container */\n.toolasha-settings-card {\n    display: flex;\n    flex-direction: column;\n    padding: 12px 16px;\n    font-size: 12px;\n    line-height: 1.3;\n    color: var(--toolasha-text);\n    position: relative;\n    overflow-y: auto;\n    gap: 6px;\n    max-height: calc(100vh - 250px);\n}\n\n/* Top gradient line */\n.toolasha-settings-card::before {\n    display: none;\n}\n\n/* Scrollbar styling */\n.toolasha-settings-card::-webkit-scrollbar {\n    width: 6px;\n}\n\n.toolasha-settings-card::-webkit-scrollbar-track {\n    background: transparent;\n}\n\n.toolasha-settings-card::-webkit-scrollbar-thumb {\n    background: var(--toolasha-accent);\n    border-radius: 3px;\n    opacity: 0.5;\n}\n\n.toolasha-settings-card::-webkit-scrollbar-thumb:hover {\n    opacity: 1;\n}\n\n/* Collapsible Settings Groups */\n.toolasha-settings-group {\n    margin-bottom: 8px;\n}\n\n.toolasha-settings-group-header {\n    cursor: pointer;\n    user-select: none;\n    margin: 10px 0 4px 0;\n    color: var(--toolasha-accent);\n    font-weight: 600;\n    font-size: 13px;\n    display: flex;\n    align-items: center;\n    gap: 6px;\n    border-bottom: 1px solid var(--toolasha-border);\n    padding-bottom: 3px;\n    text-transform: uppercase;\n    letter-spacing: 0.5px;\n    transition: color 0.2s ease;\n}\n\n.toolasha-settings-group-header:hover {\n    color: var(--toolasha-accent-hover);\n}\n\n.toolasha-settings-group-header .collapse-icon {\n    font-size: 10px;\n    transition: transform 0.2s ease;\n}\n\n.toolasha-settings-group.collapsed .collapse-icon {\n    transform: rotate(-90deg);\n}\n\n.toolasha-settings-group-content {\n    max-height: 5000px;\n    overflow: hidden;\n    transition: max-height 0.3s ease-out;\n}\n\n.toolasha-settings-group.collapsed .toolasha-settings-group-content {\n    max-height: 0;\n}\n\n/* Section Headers */\n.toolasha-settings-card h3 {\n    margin: 10px 0 4px 0;\n    color: var(--toolasha-accent);\n    font-weight: 600;\n    font-size: 13px;\n    display: flex;\n    align-items: center;\n    gap: 6px;\n    border-bottom: 1px solid var(--toolasha-border);\n    padding-bottom: 3px;\n    text-transform: uppercase;\n    letter-spacing: 0.5px;\n}\n\n.toolasha-settings-card h3:first-child {\n    margin-top: 0;\n}\n\n.toolasha-settings-card h3 .icon {\n    font-size: 14px;\n}\n\n/* Individual Setting Row */\n.toolasha-setting {\n    display: flex;\n    align-items: center;\n    justify-content: space-between;\n    gap: 10px;\n    margin: 0;\n    padding: 6px 8px;\n    background: var(--toolasha-bg);\n    border: 1px solid var(--toolasha-border);\n    border-radius: 4px;\n    min-height: unset;\n    transition: all 0.2s ease;\n}\n\n.toolasha-setting:hover {\n    background: rgba(30, 35, 45, 0.7);\n    border-color: var(--toolasha-accent);\n}\n\n.toolasha-setting.disabled {\n    opacity: 0.3;\n    pointer-events: none;\n}\n\n.toolasha-setting.not-implemented .toolasha-setting-label {\n    color: #ff6b6b;\n}\n\n.toolasha-setting.not-implemented .toolasha-setting-help {\n    color: rgba(255, 107, 107, 0.7);\n}\n\n.toolasha-setting-label {\n    text-align: left;\n    flex: 1;\n    margin-right: 10px;\n    line-height: 1.3;\n    font-size: 12px;\n}\n\n.toolasha-setting-help {\n    display: block;\n    font-size: 10px;\n    color: var(--toolasha-text-dim);\n    margin-top: 2px;\n    font-style: italic;\n}\n\n.toolasha-setting-input {\n    flex-shrink: 0;\n}\n\n/* Modern Toggle Switch */\n.toolasha-switch {\n    position: relative;\n    width: 38px;\n    height: 20px;\n    flex-shrink: 0;\n    display: inline-block;\n}\n\n.toolasha-switch input {\n    opacity: 0;\n    width: 0;\n    height: 0;\n    position: absolute;\n}\n\n.toolasha-slider {\n    position: absolute;\n    top: 0;\n    left: 0;\n    right: 0;\n    bottom: 0;\n    background: var(--toolasha-toggle-off);\n    border-radius: 20px;\n    cursor: pointer;\n    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);\n    border: 2px solid transparent;\n}\n\n.toolasha-slider:before {\n    content: \"\";\n    position: absolute;\n    height: 12px;\n    width: 12px;\n    left: 2px;\n    bottom: 2px;\n    background: white;\n    border-radius: 50%;\n    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);\n    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);\n}\n\n.toolasha-switch input:checked + .toolasha-slider {\n    background: var(--toolasha-toggle-on);\n    border-color: var(--toolasha-accent-hover);\n    box-shadow: 0 0 6px var(--toolasha-accent-dim);\n}\n\n.toolasha-switch input:checked + .toolasha-slider:before {\n    transform: translateX(18px);\n}\n\n.toolasha-switch:hover .toolasha-slider {\n    border-color: var(--toolasha-accent);\n}\n\n/* Text Input */\n.toolasha-text-input {\n    padding: 5px 8px;\n    border: 1px solid var(--toolasha-border);\n    border-radius: 3px;\n    background: rgba(0, 0, 0, 0.3);\n    color: var(--toolasha-text);\n    min-width: 100px;\n    font-size: 12px;\n    transition: all 0.2s ease;\n}\n\n.toolasha-text-input:focus {\n    outline: none;\n    border-color: var(--toolasha-accent);\n    box-shadow: 0 0 0 2px var(--toolasha-accent-dim);\n}\n\n/* Number Input */\n.toolasha-number-input {\n    padding: 5px 8px;\n    border: 1px solid var(--toolasha-border);\n    border-radius: 3px;\n    background: rgba(0, 0, 0, 0.3);\n    color: var(--toolasha-text);\n    min-width: 80px;\n    font-size: 12px;\n    transition: all 0.2s ease;\n}\n\n.toolasha-number-input:focus {\n    outline: none;\n    border-color: var(--toolasha-accent);\n    box-shadow: 0 0 0 2px var(--toolasha-accent-dim);\n}\n\n/* Select Dropdown */\n.toolasha-select-input {\n    padding: 5px 8px;\n    border: 1px solid var(--toolasha-border);\n    border-radius: 3px;\n    background: rgba(0, 0, 0, 0.3);\n    color: var(--toolasha-accent);\n    font-weight: 600;\n    min-width: 150px;\n    cursor: pointer;\n    font-size: 12px;\n    -webkit-appearance: none;\n    -moz-appearance: none;\n    appearance: none;\n    background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20width%3D%2220%22%20height%3D%2220%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cpath%20d%3D%22M5%207l5%205%205-5z%22%20fill%3D%22%235b8def%22%2F%3E%3C%2Fsvg%3E');\n    background-repeat: no-repeat;\n    background-position: right 6px center;\n    background-size: 14px;\n    padding-right: 28px;\n    transition: all 0.2s ease;\n}\n\n.toolasha-select-input:focus {\n    outline: none;\n    border-color: var(--toolasha-accent);\n    box-shadow: 0 0 0 2px var(--toolasha-accent-dim);\n}\n\n.toolasha-select-input option {\n    background: #1a1a2e;\n    color: var(--toolasha-text);\n    padding: 8px;\n}\n\n/* Utility Buttons Container */\n.toolasha-utility-buttons {\n    display: flex;\n    gap: 8px;\n    margin-top: 12px;\n    padding-top: 10px;\n    border-top: 1px solid var(--toolasha-border);\n    flex-wrap: wrap;\n}\n\n.toolasha-utility-button {\n    background: linear-gradient(135deg, var(--toolasha-secondary), #6A1B9A);\n    border: 1px solid rgba(138, 43, 226, 0.4);\n    color: #ffffff;\n    padding: 6px 12px;\n    border-radius: 4px;\n    font-size: 11px;\n    font-weight: 600;\n    cursor: pointer;\n    transition: all 0.2s ease;\n    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);\n}\n\n.toolasha-utility-button:hover {\n    background: linear-gradient(135deg, #9A4BCF, var(--toolasha-secondary));\n    box-shadow: 0 0 10px rgba(138, 43, 226, 0.3);\n    transform: translateY(-1px);\n}\n\n.toolasha-utility-button:active {\n    transform: translateY(0);\n}\n\n/* Sync button - special styling for prominence */\n.toolasha-sync-button {\n    background: linear-gradient(135deg, #047857, #059669) !important;\n    border: 1px solid rgba(4, 120, 87, 0.4) !important;\n    flex: 1 1 auto; /* Allow it to grow and take more space */\n    min-width: 200px; /* Ensure it's wide enough for the text */\n}\n\n.toolasha-sync-button:hover {\n    background: linear-gradient(135deg, #059669, #10b981) !important;\n    box-shadow: 0 0 10px rgba(16, 185, 129, 0.3) !important;\n}\n\n/* Refresh Notice */\n.toolasha-refresh-notice {\n    background: rgba(255, 152, 0, 0.1);\n    border: 1px solid rgba(255, 152, 0, 0.3);\n    border-radius: 4px;\n    padding: 8px 12px;\n    margin-top: 10px;\n    color: #ffa726;\n    font-size: 11px;\n    display: flex;\n    align-items: center;\n    gap: 8px;\n}\n\n.toolasha-refresh-notice::before {\n    content: \"⚠️\";\n    font-size: 14px;\n}\n\n/* Dependency Indicator */\n.toolasha-setting.has-dependency::before {\n    content: \"↳\";\n    position: absolute;\n    left: -4px;\n    color: var(--toolasha-accent);\n    font-size: 14px;\n    opacity: 0.5;\n}\n\n.toolasha-setting.has-dependency {\n    margin-left: 16px;\n    position: relative;\n}\n\n/* Nested setting collapse icons */\n.setting-collapse-icon {\n    flex-shrink: 0;\n    color: var(--toolasha-accent);\n    opacity: 0.7;\n}\n\n.toolasha-setting.dependents-collapsed .setting-collapse-icon {\n    opacity: 1;\n}\n\n.toolasha-setting-label-container:hover .setting-collapse-icon {\n    opacity: 1;\n}\n\n/* Tab Panel Override (for game's settings panel) */\n.TabPanel_tabPanel__tXMJF#toolasha-settings {\n    display: block !important;\n}\n\n.TabPanel_tabPanel__tXMJF#toolasha-settings.TabPanel_hidden__26UM3 {\n    display: none !important;\n}\n";
+    var settingsCSS = "/* Toolasha Settings UI Styles\n * Modern, compact design\n */\n\n/* CSS Variables */\n:root {\n    --toolasha-accent: #5b8def;\n    --toolasha-accent-hover: #7aa3f3;\n    --toolasha-accent-dim: rgba(91, 141, 239, 0.15);\n    --toolasha-secondary: #8A2BE2;\n    --toolasha-text: rgba(255, 255, 255, 0.9);\n    --toolasha-text-dim: rgba(255, 255, 255, 0.5);\n    --toolasha-bg: rgba(20, 25, 35, 0.6);\n    --toolasha-border: rgba(91, 141, 239, 0.2);\n    --toolasha-toggle-off: rgba(100, 100, 120, 0.4);\n    --toolasha-toggle-on: var(--toolasha-accent);\n}\n\n/* Settings Card Container */\n.toolasha-settings-card {\n    display: flex;\n    flex-direction: column;\n    padding: 12px 16px;\n    font-size: 12px;\n    line-height: 1.3;\n    color: var(--toolasha-text);\n    position: relative;\n    overflow-y: auto;\n    gap: 6px;\n    max-height: calc(100vh - 250px);\n}\n\n/* Top gradient line */\n.toolasha-settings-card::before {\n    display: none;\n}\n\n/* Scrollbar styling */\n.toolasha-settings-card::-webkit-scrollbar {\n    width: 6px;\n}\n\n.toolasha-settings-card::-webkit-scrollbar-track {\n    background: transparent;\n}\n\n.toolasha-settings-card::-webkit-scrollbar-thumb {\n    background: var(--toolasha-accent);\n    border-radius: 3px;\n    opacity: 0.5;\n}\n\n.toolasha-settings-card::-webkit-scrollbar-thumb:hover {\n    opacity: 1;\n}\n\n/* Collapsible Settings Groups */\n.toolasha-settings-group {\n    margin-bottom: 8px;\n}\n\n.toolasha-settings-group-header {\n    cursor: pointer;\n    user-select: none;\n    margin: 10px 0 4px 0;\n    color: var(--toolasha-accent);\n    font-weight: 600;\n    font-size: 13px;\n    display: flex;\n    align-items: center;\n    gap: 6px;\n    border-bottom: 1px solid var(--toolasha-border);\n    padding-bottom: 3px;\n    text-transform: uppercase;\n    letter-spacing: 0.5px;\n    transition: color 0.2s ease;\n}\n\n.toolasha-settings-group-header:hover {\n    color: var(--toolasha-accent-hover);\n}\n\n.toolasha-settings-group-header .collapse-icon {\n    font-size: 10px;\n    transition: transform 0.2s ease;\n}\n\n.toolasha-settings-group.collapsed .collapse-icon {\n    transform: rotate(-90deg);\n}\n\n.toolasha-settings-group-content {\n    max-height: 5000px;\n    overflow: hidden;\n    transition: max-height 0.3s ease-out;\n}\n\n.toolasha-settings-group.collapsed .toolasha-settings-group-content {\n    max-height: 0;\n}\n\n/* Section Headers */\n.toolasha-settings-card h3 {\n    margin: 10px 0 4px 0;\n    color: var(--toolasha-accent);\n    font-weight: 600;\n    font-size: 13px;\n    display: flex;\n    align-items: center;\n    gap: 6px;\n    border-bottom: 1px solid var(--toolasha-border);\n    padding-bottom: 3px;\n    text-transform: uppercase;\n    letter-spacing: 0.5px;\n}\n\n.toolasha-settings-card h3:first-child {\n    margin-top: 0;\n}\n\n.toolasha-settings-card h3 .icon {\n    font-size: 14px;\n}\n\n/* Individual Setting Row */\n.toolasha-setting {\n    display: flex;\n    align-items: center;\n    justify-content: space-between;\n    gap: 10px;\n    margin: 0;\n    padding: 6px 8px;\n    background: var(--toolasha-bg);\n    border: 1px solid var(--toolasha-border);\n    border-radius: 4px;\n    min-height: unset;\n    transition: all 0.2s ease;\n}\n\n.toolasha-setting:hover {\n    background: rgba(30, 35, 45, 0.7);\n    border-color: var(--toolasha-accent);\n}\n\n.toolasha-setting.disabled {\n    /* Visual darkening removed - dependencies still functional but not visually indicated */\n    pointer-events: none;\n}\n\n.toolasha-setting.not-implemented .toolasha-setting-label {\n    color: #ff6b6b;\n}\n\n.toolasha-setting.not-implemented .toolasha-setting-help {\n    color: rgba(255, 107, 107, 0.7);\n}\n\n.toolasha-setting-label {\n    text-align: left;\n    flex: 1;\n    margin-right: 10px;\n    line-height: 1.3;\n    font-size: 12px;\n}\n\n.toolasha-setting-help {\n    display: block;\n    font-size: 10px;\n    color: var(--toolasha-text-dim);\n    margin-top: 2px;\n    font-style: italic;\n}\n\n.toolasha-setting-input {\n    flex-shrink: 0;\n}\n\n/* Modern Toggle Switch */\n.toolasha-switch {\n    position: relative;\n    width: 38px;\n    height: 20px;\n    flex-shrink: 0;\n    display: inline-block;\n}\n\n.toolasha-switch input {\n    opacity: 0;\n    width: 0;\n    height: 0;\n    position: absolute;\n}\n\n.toolasha-slider {\n    position: absolute;\n    top: 0;\n    left: 0;\n    right: 0;\n    bottom: 0;\n    background: var(--toolasha-toggle-off);\n    border-radius: 20px;\n    cursor: pointer;\n    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);\n    border: 2px solid transparent;\n}\n\n.toolasha-slider:before {\n    content: \"\";\n    position: absolute;\n    height: 12px;\n    width: 12px;\n    left: 2px;\n    bottom: 2px;\n    background: white;\n    border-radius: 50%;\n    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);\n    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);\n}\n\n.toolasha-switch input:checked + .toolasha-slider {\n    background: var(--toolasha-toggle-on);\n    border-color: var(--toolasha-accent-hover);\n    box-shadow: 0 0 6px var(--toolasha-accent-dim);\n}\n\n.toolasha-switch input:checked + .toolasha-slider:before {\n    transform: translateX(18px);\n}\n\n.toolasha-switch:hover .toolasha-slider {\n    border-color: var(--toolasha-accent);\n}\n\n/* Text Input */\n.toolasha-text-input {\n    padding: 5px 8px;\n    border: 1px solid var(--toolasha-border);\n    border-radius: 3px;\n    background: rgba(0, 0, 0, 0.3);\n    color: var(--toolasha-text);\n    min-width: 100px;\n    font-size: 12px;\n    transition: all 0.2s ease;\n}\n\n.toolasha-text-input:focus {\n    outline: none;\n    border-color: var(--toolasha-accent);\n    box-shadow: 0 0 0 2px var(--toolasha-accent-dim);\n}\n\n/* Number Input */\n.toolasha-number-input {\n    padding: 5px 8px;\n    border: 1px solid var(--toolasha-border);\n    border-radius: 3px;\n    background: rgba(0, 0, 0, 0.3);\n    color: var(--toolasha-text);\n    min-width: 80px;\n    font-size: 12px;\n    transition: all 0.2s ease;\n}\n\n.toolasha-number-input:focus {\n    outline: none;\n    border-color: var(--toolasha-accent);\n    box-shadow: 0 0 0 2px var(--toolasha-accent-dim);\n}\n\n/* Select Dropdown */\n.toolasha-select-input {\n    padding: 5px 8px;\n    border: 1px solid var(--toolasha-border);\n    border-radius: 3px;\n    background: rgba(0, 0, 0, 0.3);\n    color: var(--toolasha-accent);\n    font-weight: 600;\n    min-width: 150px;\n    cursor: pointer;\n    font-size: 12px;\n    -webkit-appearance: none;\n    -moz-appearance: none;\n    appearance: none;\n    background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20width%3D%2220%22%20height%3D%2220%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cpath%20d%3D%22M5%207l5%205%205-5z%22%20fill%3D%22%235b8def%22%2F%3E%3C%2Fsvg%3E');\n    background-repeat: no-repeat;\n    background-position: right 6px center;\n    background-size: 14px;\n    padding-right: 28px;\n    transition: all 0.2s ease;\n}\n\n.toolasha-select-input:focus {\n    outline: none;\n    border-color: var(--toolasha-accent);\n    box-shadow: 0 0 0 2px var(--toolasha-accent-dim);\n}\n\n.toolasha-select-input option {\n    background: #1a1a2e;\n    color: var(--toolasha-text);\n    padding: 8px;\n}\n\n/* Utility Buttons Container */\n.toolasha-utility-buttons {\n    display: flex;\n    gap: 8px;\n    margin-top: 12px;\n    padding-top: 10px;\n    border-top: 1px solid var(--toolasha-border);\n    flex-wrap: wrap;\n}\n\n.toolasha-utility-button {\n    background: linear-gradient(135deg, var(--toolasha-secondary), #6A1B9A);\n    border: 1px solid rgba(138, 43, 226, 0.4);\n    color: #ffffff;\n    padding: 6px 12px;\n    border-radius: 4px;\n    font-size: 11px;\n    font-weight: 600;\n    cursor: pointer;\n    transition: all 0.2s ease;\n    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);\n}\n\n.toolasha-utility-button:hover {\n    background: linear-gradient(135deg, #9A4BCF, var(--toolasha-secondary));\n    box-shadow: 0 0 10px rgba(138, 43, 226, 0.3);\n    transform: translateY(-1px);\n}\n\n.toolasha-utility-button:active {\n    transform: translateY(0);\n}\n\n/* Sync button - special styling for prominence */\n.toolasha-sync-button {\n    background: linear-gradient(135deg, #047857, #059669) !important;\n    border: 1px solid rgba(4, 120, 87, 0.4) !important;\n    flex: 1 1 auto; /* Allow it to grow and take more space */\n    min-width: 200px; /* Ensure it's wide enough for the text */\n}\n\n.toolasha-sync-button:hover {\n    background: linear-gradient(135deg, #059669, #10b981) !important;\n    box-shadow: 0 0 10px rgba(16, 185, 129, 0.3) !important;\n}\n\n/* Refresh Notice */\n.toolasha-refresh-notice {\n    background: rgba(255, 152, 0, 0.1);\n    border: 1px solid rgba(255, 152, 0, 0.3);\n    border-radius: 4px;\n    padding: 8px 12px;\n    margin-top: 10px;\n    color: #ffa726;\n    font-size: 11px;\n    display: flex;\n    align-items: center;\n    gap: 8px;\n}\n\n.toolasha-refresh-notice::before {\n    content: \"⚠️\";\n    font-size: 14px;\n}\n\n/* Dependency Indicator */\n.toolasha-setting.has-dependency::before {\n    content: \"↳\";\n    position: absolute;\n    left: -4px;\n    color: var(--toolasha-accent);\n    font-size: 14px;\n    opacity: 0.5;\n}\n\n.toolasha-setting.has-dependency {\n    margin-left: 16px;\n    position: relative;\n}\n\n/* Nested setting collapse icons */\n.setting-collapse-icon {\n    flex-shrink: 0;\n    color: var(--toolasha-accent);\n    opacity: 0.7;\n}\n\n.toolasha-setting.dependents-collapsed .setting-collapse-icon {\n    opacity: 1;\n}\n\n.toolasha-setting-label-container:hover .setting-collapse-icon {\n    opacity: 1;\n}\n\n/* Tab Panel Override (for game's settings panel) */\n.TabPanel_tabPanel__tXMJF#toolasha-settings {\n    display: block !important;\n}\n\n.TabPanel_tabPanel__tXMJF#toolasha-settings.TabPanel_hidden__26UM3 {\n    display: none !important;\n}\n";
 
     /**
      * Settings UI Module
@@ -76351,168 +76306,18 @@ self.onmessage = function (e) {
                 groupContainer.appendChild(content);
                 container.appendChild(groupContainer);
             }
-
-            // After all settings are created, set up collapse functionality for parent settings
-            this.setupParentCollapseIcons(container);
-
-            // Restore collapse states from IndexedDB storage
-            this.restoreCollapseStates(container);
         }
 
         /**
          * Setup collapse icons for parent settings (settings that have dependents)
          * @param {HTMLElement} container - Settings container
          */
-        setupParentCollapseIcons(container) {
-            const allSettings = container.querySelectorAll('.toolasha-setting');
-
-            allSettings.forEach((setting) => {
-                const settingId = setting.dataset.settingId;
-
-                // Find all dependents of this setting
-                const dependents = Array.from(allSettings).filter(
-                    (s) => s.dataset.dependencies && s.dataset.dependencies.split(',').includes(settingId)
-                );
-
-                if (dependents.length > 0) {
-                    // This setting has dependents - show collapse icon
-                    const collapseIcon = setting.querySelector('.setting-collapse-icon');
-                    if (collapseIcon) {
-                        collapseIcon.style.display = 'inline-block';
-
-                        // Add click handler to toggle dependents - bind to preserve this context
-                        const labelContainer = setting.querySelector('.toolasha-setting-label-container');
-                        labelContainer.style.cursor = 'pointer';
-                        labelContainer.addEventListener('click', (e) => {
-                            // Don't toggle if clicking the input itself
-                            if (e.target.closest('.toolasha-setting-input')) return;
-
-                            this.toggleDependents(setting, dependents);
-                        });
-                    }
-                }
-            });
-        }
-
         /**
          * Toggle group collapse/expand
          * @param {HTMLElement} groupContainer - Group container element
          */
         toggleGroup(groupContainer) {
             groupContainer.classList.toggle('collapsed');
-
-            // Save collapse state to IndexedDB storage
-            const groupKey = groupContainer.dataset.group;
-            const isCollapsed = groupContainer.classList.contains('collapsed');
-            this.saveCollapseState('group', groupKey, isCollapsed);
-        }
-
-        /**
-         * Toggle dependent settings visibility
-         * @param {HTMLElement} parentSetting - Parent setting element
-         * @param {HTMLElement[]} dependents - Array of dependent setting elements
-         */
-        toggleDependents(parentSetting, dependents) {
-            const collapseIcon = parentSetting.querySelector('.setting-collapse-icon');
-            const isCollapsed = parentSetting.classList.contains('dependents-collapsed');
-
-            if (isCollapsed) {
-                // Expand
-                parentSetting.classList.remove('dependents-collapsed');
-                collapseIcon.style.transform = 'rotate(0deg)';
-                dependents.forEach((dep) => (dep.style.display = 'flex'));
-            } else {
-                // Collapse
-                parentSetting.classList.add('dependents-collapsed');
-                collapseIcon.style.transform = 'rotate(-90deg)';
-                dependents.forEach((dep) => (dep.style.display = 'none'));
-            }
-
-            // Save collapse state to IndexedDB storage
-            const settingId = parentSetting.dataset.settingId;
-            const newState = !isCollapsed; // Inverted because we just toggled
-            this.saveCollapseState('setting', settingId, newState);
-        }
-
-        /**
-         * Save collapse state to IndexedDB
-         * @param {string} type - 'group' or 'setting'
-         * @param {string} key - Group key or setting ID
-         * @param {boolean} isCollapsed - Whether collapsed
-         */
-        async saveCollapseState(type, key, isCollapsed) {
-            try {
-                const states = await storage$1.getJSON('collapse-states', 'settings', {});
-
-                if (!states[type]) {
-                    states[type] = {};
-                }
-                states[type][key] = isCollapsed;
-
-                await storage$1.setJSON('collapse-states', states, 'settings');
-            } catch (e) {
-                console.warn('[Toolasha Settings] Failed to save collapse states:', e);
-            }
-        }
-
-        /**
-         * Load collapse state from IndexedDB
-         * @param {string} type - 'group' or 'setting'
-         * @param {string} key - Group key or setting ID
-         * @returns {Promise<boolean|null>} Collapse state or null if not found
-         */
-        async loadCollapseState(type, key) {
-            try {
-                const states = await storage$1.getJSON('collapse-states', 'settings', {});
-                return states[type]?.[key] ?? null;
-            } catch (e) {
-                console.warn('[Toolasha Settings] Failed to load collapse states:', e);
-                return null;
-            }
-        }
-
-        /**
-         * Restore collapse states from IndexedDB
-         * @param {HTMLElement} container - Settings container
-         */
-        async restoreCollapseStates(container) {
-            try {
-                // Restore group collapse states
-                const groups = container.querySelectorAll('.toolasha-settings-group');
-                for (const group of groups) {
-                    const groupKey = group.dataset.group;
-                    const isCollapsed = await this.loadCollapseState('group', groupKey);
-                    if (isCollapsed === true) {
-                        group.classList.add('collapsed');
-                    }
-                }
-
-                // Restore setting collapse states
-                const settings = container.querySelectorAll('.toolasha-setting');
-                for (const setting of settings) {
-                    const settingId = setting.dataset.settingId;
-                    const isCollapsed = await this.loadCollapseState('setting', settingId);
-
-                    if (isCollapsed === true) {
-                        setting.classList.add('dependents-collapsed');
-
-                        // Update collapse icon rotation
-                        const collapseIcon = setting.querySelector('.setting-collapse-icon');
-                        if (collapseIcon) {
-                            collapseIcon.style.transform = 'rotate(-90deg)';
-                        }
-
-                        // Hide dependents
-                        const allSettings = container.querySelectorAll('.toolasha-setting');
-                        const dependents = Array.from(allSettings).filter(
-                            (s) => s.dataset.dependencies && s.dataset.dependencies.split(',').includes(settingId)
-                        );
-                        dependents.forEach((dep) => (dep.style.display = 'none'));
-                    }
-                }
-            } catch (e) {
-                console.warn('[Toolasha Settings] Failed to restore collapse states:', e);
-            }
         }
 
         /**
@@ -76527,43 +76332,18 @@ self.onmessage = function (e) {
             div.dataset.settingId = settingId;
             div.dataset.type = settingDef.type || 'checkbox';
 
-            // Add dependency class and store dependency info
-            if (settingDef.dependencies) {
-                div.classList.add('has-dependency');
-
-                // Handle both array format (legacy, AND logic) and object format (supports OR logic)
-                if (Array.isArray(settingDef.dependencies)) {
-                    // Legacy format: ['dep1', 'dep2'] means AND logic
-                    div.dataset.dependencies = settingDef.dependencies.join(',');
-                    div.dataset.dependencyMode = 'all'; // AND logic
-                } else if (typeof settingDef.dependencies === 'object') {
-                    // New format: {mode: 'any', settings: ['dep1', 'dep2']}
-                    div.dataset.dependencies = settingDef.dependencies.settings.join(',');
-                    div.dataset.dependencyMode = settingDef.dependencies.mode || 'all'; // 'any' = OR, 'all' = AND
-                }
-            }
-
             // Add not-implemented class for red text
             if (settingDef.notImplemented) {
                 div.classList.add('not-implemented');
             }
 
-            // Create label container (clickable for collapse if has dependents)
+            // Create label container
             const labelContainer = document.createElement('div');
             labelContainer.className = 'toolasha-setting-label-container';
             labelContainer.style.display = 'flex';
             labelContainer.style.alignItems = 'center';
             labelContainer.style.flex = '1';
             labelContainer.style.gap = '6px';
-
-            // Add collapse icon if this setting has dependents (will be populated by checkDependents)
-            const collapseIcon = document.createElement('span');
-            collapseIcon.className = 'setting-collapse-icon';
-            collapseIcon.textContent = '▼';
-            collapseIcon.style.display = 'none'; // Hidden by default, shown if dependents exist
-            collapseIcon.style.cursor = 'pointer';
-            collapseIcon.style.fontSize = '10px';
-            collapseIcon.style.transition = 'transform 0.2s ease';
 
             // Create label
             const label = document.createElement('span');
@@ -76578,7 +76358,6 @@ self.onmessage = function (e) {
                 label.appendChild(help);
             }
 
-            labelContainer.appendChild(collapseIcon);
             labelContainer.appendChild(label);
 
             // Create input
@@ -77009,50 +76788,6 @@ self.onmessage = function (e) {
             if (type === 'color') {
                 this.config.applyColorSettings();
             }
-
-            // Update dependencies
-            this.updateDependencies();
-        }
-
-        /**
-         * Update dependency states (enable/disable dependent settings)
-         */
-        updateDependencies() {
-            const settings = document.querySelectorAll('.toolasha-setting[data-dependencies]');
-
-            settings.forEach((settingEl) => {
-                const dependencies = settingEl.dataset.dependencies.split(',');
-                const mode = settingEl.dataset.dependencyMode || 'all'; // 'all' = AND, 'any' = OR
-                let enabled = false;
-
-                if (mode === 'any') {
-                    // OR logic: at least one dependency must be met
-                    for (const depId of dependencies) {
-                        const depInput = document.getElementById(depId);
-                        if (depInput && depInput.type === 'checkbox' && depInput.checked) {
-                            enabled = true;
-                            break; // Found at least one enabled, that's enough
-                        }
-                    }
-                } else {
-                    // AND logic (default): all dependencies must be met
-                    enabled = true; // Assume enabled, then check all
-                    for (const depId of dependencies) {
-                        const depInput = document.getElementById(depId);
-                        if (depInput && depInput.type === 'checkbox' && !depInput.checked) {
-                            enabled = false;
-                            break; // Found one disabled, no need to check rest
-                        }
-                    }
-                }
-
-                // Enable or disable
-                if (enabled) {
-                    settingEl.classList.remove('disabled');
-                } else {
-                    settingEl.classList.add('disabled');
-                }
-            });
         }
 
         /**
