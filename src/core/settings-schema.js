@@ -159,6 +159,13 @@ export const settingsGroups = {
                 default: false,
                 help: 'When enabled, missing materials calculation only considers current action request, ignoring materials already reserved by queued actions. Default (off) accounts for queue.',
             },
+            lootLogStats: {
+                id: 'lootLogStats',
+                label: 'Loot Log Statistics',
+                type: 'checkbox',
+                default: true,
+                help: 'Display total value, average time, and daily output in loot logs',
+            },
         },
     },
 

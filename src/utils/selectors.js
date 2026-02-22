@@ -46,6 +46,10 @@ export const GAME = {
     HOUSE_COSTS: '[class*="HousePanel_costs"]',
     HOUSE_ITEM_REQUIREMENTS: '[class*="HousePanel_itemRequirements"]',
 
+    // Loot Log
+    LOOT_LOG_CONTAINER: '.LootLogPanel_actionLoots__3oTid',
+    LOOT_LOG_ENTRY: '.LootLogPanel_actionLoot__32gl_',
+
     // Inventory
     INVENTORY_ITEMS: '[class*="Inventory_items"]',
     INVENTORY_CATEGORY_BUTTON: '.Inventory_categoryButton__35s1x',

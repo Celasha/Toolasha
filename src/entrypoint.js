@@ -251,6 +251,13 @@ function registerFeatures() {
             module: Actions.teaRecommendation,
             async: false,
         },
+        {
+            key: 'lootLogStats',
+            name: 'Loot Log Statistics',
+            category: 'Actions',
+            module: UI.lootLogStats,
+            async: false,
+        },
     ];
 
     // Combat Features
