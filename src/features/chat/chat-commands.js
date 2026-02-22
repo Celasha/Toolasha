@@ -364,7 +364,7 @@ class ChatCommands {
      */
     openItemDictionary(itemHrid) {
         if (!this.gameCore?.handleOpenItemDictionary) {
-            this.showError('Unable to open Item Dictionary (game core not accessible)');
+            this.showError('Feature unavailable after 2/21/26 game update');
             return;
         }
 
@@ -382,7 +382,7 @@ class ChatCommands {
      */
     openMarketplace(itemHrid) {
         if (!this.gameCore?.handleGoToMarketplace) {
-            this.showError('Unable to open marketplace (game core not accessible)');
+            this.showError('Feature unavailable after 2/21/26 game update');
             return;
         }
 

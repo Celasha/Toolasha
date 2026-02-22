@@ -134,6 +134,7 @@ class AlchemyProfitDisplay {
         // Observer for content changes (item selection)
         this.contentObserver = new MutationObserver((mutations) => {
             for (const mutation of mutations) {
+                // Watch for childList changes (sections being added/removed)
                 if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
                     for (const node of mutation.addedNodes) {
                         if (node.nodeType === Node.ELEMENT_NODE) {
@@ -151,6 +152,16 @@ class AlchemyProfitDisplay {
                         }
                     }
                 }
+
+                // Watch for attribute changes (SVG href changes when item selected)
+                if (mutation.type === 'attributes') {
+                    const target = mutation.target;
+                    if (target.tagName === 'use' && mutation.attributeName === 'href') {
+                        // SVG use element href changed - item was selected
+                        triggerUpdate();
+                        return;
+                    }
+                }
             }
         });
 
@@ -158,6 +169,8 @@ class AlchemyProfitDisplay {
         this.contentObserver.observe(alchemyComponent, {
             childList: true,
             subtree: true,
+            attributes: true,
+            attributeFilter: ['href'],
         });
     }
 

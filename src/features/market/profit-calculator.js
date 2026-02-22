@@ -3,6 +3,7 @@
  * Calculates production costs and profit for crafted items
  */
 
+import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import marketAPI from '../../api/marketplace.js';
 import { parseEquipmentSpeedBonuses, parseEquipmentEfficiencyBonuses } from '../../utils/equipment-parser.js';
@@ -294,6 +295,8 @@ class ProfitCalculator {
         // Profit per item (for display)
         const profitPerItem = profitPerHour / totalItemsPerHour;
 
+        const pricingMode = config.getSettingValue('profitCalc_pricingMode', 'hybrid');
+
         return {
             itemName: itemDetails.name,
             itemHrid,
@@ -340,6 +343,7 @@ class ProfitCalculator {
             effectiveRequirement, // Requirement after Action Level bonus
             requiredLevel: effectiveRequirement, // For backwards compatibility
             timeBreakdown,
+            pricingMode, // Pricing mode for display
         };
     }
 

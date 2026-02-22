@@ -191,13 +191,17 @@ export function setupMarketplaceCleanupObserver(onCleanup, tabsArray) {
  * @returns {Object|null} Game component instance
  */
 function getGameObject() {
-    const gamePageEl = document.querySelector('[class^="GamePage"]');
-    if (!gamePageEl) return null;
+    const rootEl = document.getElementById('root');
+    const rootFiber = rootEl?._reactRootContainer?.current || rootEl?._reactRootContainer?._internalRoot?.current;
+    if (!rootFiber) return null;
 
-    const fiberKey = Object.keys(gamePageEl).find((k) => k.startsWith('__reactFiber$'));
-    if (!fiberKey) return null;
+    function find(fiber) {
+        if (!fiber) return null;
+        if (fiber.stateNode?.handleGoToMarketplace) return fiber.stateNode;
+        return find(fiber.child) || find(fiber.sibling);
+    }
 
-    return gamePageEl[fiberKey]?.return?.stateNode;
+    return find(rootFiber);
 }
 
 /**
@@ -209,7 +213,6 @@ export function navigateToMarketplace(itemHrid, enhancementLevel = 0) {
     const game = getGameObject();
     if (game?.handleGoToMarketplace) {
         game.handleGoToMarketplace(itemHrid, enhancementLevel);
-    } else {
-        console.error('[MarketplaceTabs] Game API not available');
     }
+    // Silently fail if game API unavailable - feature still provides value without auto-navigation
 }

@@ -98,6 +98,9 @@ export function formatProfitDisplay(profitData) {
         teaCosts: profitData.teaCosts,
         totalTeaCost: Math.round(profitData.totalTeaCostPerHour),
 
+        // Pricing mode
+        pricingMode: profitData.pricingMode,
+
         // Efficiency breakdown
         details: {
             levelEfficiency: profitData.levelEfficiency,

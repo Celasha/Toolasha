@@ -170,16 +170,21 @@ export function getPricingMode(context, side = 'sell') {
             // Conservative: Ask/Bid (instant buy materials, instant sell output)
             // Hybrid: Ask/Ask (instant buy materials, patient sell output)
             // Optimistic: Bid/Ask (patient buy materials, patient sell output)
+            let selectedPriceType;
             switch (profitMode) {
                 case 'conservative':
-                    return side === 'buy' ? 'ask' : 'bid';
+                    selectedPriceType = side === 'buy' ? 'ask' : 'bid';
+                    break;
                 case 'hybrid':
-                    return 'ask'; // Ask for both buy and sell
+                    selectedPriceType = 'ask'; // Ask for both buy and sell
+                    break;
                 case 'optimistic':
-                    return side === 'buy' ? 'bid' : 'ask';
+                    selectedPriceType = side === 'buy' ? 'bid' : 'ask';
+                    break;
                 default:
-                    return 'ask';
+                    selectedPriceType = 'ask';
             }
+            return selectedPriceType;
         }
         default: {
             const warningKey = `context:${context}`;
