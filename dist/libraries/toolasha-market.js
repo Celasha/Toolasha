@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 1.8.1
+ * Version: 1.9.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -144,10 +144,14 @@
             const artisanBonus = teaParser_js.parseArtisanBonus(activeDrinks, itemDetailMap, drinkConcentration);
 
             // Calculate gourmet bonus (Brewing/Cooking extra items)
-            const gourmetBonus = teaParser_js.parseGourmetBonus(activeDrinks, itemDetailMap, drinkConcentration);
+            const gourmetBonus =
+                teaParser_js.parseGourmetBonus(activeDrinks, itemDetailMap, drinkConcentration) +
+                dataManager.getPersonalBuffFlatBoost(actionDetails.type, '/buff_types/gourmet');
 
             // Calculate processing bonus (Milking/Foraging/Woodcutting conversions)
-            const processingBonus = teaParser_js.parseProcessingBonus(activeDrinks, itemDetailMap, drinkConcentration);
+            const processingBonus =
+                teaParser_js.parseProcessingBonus(activeDrinks, itemDetailMap, drinkConcentration) +
+                dataManager.getPersonalBuffFlatBoost(actionDetails.type, '/buff_types/processing');
 
             // Get community buff bonus (Production Efficiency)
             const communityBuffLevel = dataManager.getCommunityBuffLevel('/community_buff_types/production_efficiency');
@@ -162,12 +166,20 @@
                 actionDetails.type,
                 itemDetailMap
             );
+            const equipmentEfficiencyItems = equipmentParser_js.parseEquipmentEfficiencyBreakdown(
+                characterEquipment,
+                actionDetails.type,
+                itemDetailMap
+            );
 
             // Calculate tea efficiency bonus
             const teaEfficiency = teaParser_js.parseTeaEfficiency(actionDetails.type, activeDrinks, itemDetailMap, drinkConcentration);
 
             const achievementEfficiency =
                 dataManager.getAchievementBuffFlatBoost(actionDetails.type, '/buff_types/efficiency') * 100;
+
+            const personalEfficiency =
+                dataManager.getPersonalBuffFlatBoost(actionDetails.type, '/buff_types/efficiency') * 100;
 
             const efficiencyBreakdown = efficiency_js.calculateEfficiencyBreakdown({
                 requiredLevel: baseRequirement,
@@ -179,6 +191,7 @@
                 teaEfficiency,
                 communityEfficiency,
                 achievementEfficiency,
+                personalEfficiency,
             });
 
             const totalEfficiency = efficiencyBreakdown.totalEfficiency;
@@ -187,15 +200,16 @@
 
             // Calculate equipment speed bonus
             const equipmentSpeedBonus = equipmentParser_js.parseEquipmentSpeedBonuses(characterEquipment, actionDetails.type, itemDetailMap);
+            const personalSpeedBonus = dataManager.getPersonalBuffFlatBoost(actionDetails.type, '/buff_types/action_speed');
 
             // Calculate action time with ONLY speed bonuses
             // Efficiency does NOT reduce time - it gives bonus actions
             // Formula: baseTime / (1 + speedBonus)
             // Example: 60s / (1 + 0.15) = 52.17s
-            const actionTime = baseTime / (1 + equipmentSpeedBonus);
+            const actionTime = baseTime / (1 + equipmentSpeedBonus + personalSpeedBonus);
 
             // Build time breakdown for display
-            const timeBreakdown = this.calculateTimeBreakdown(baseTime, equipmentSpeedBonus);
+            const timeBreakdown = this.calculateTimeBreakdown(baseTime, equipmentSpeedBonus + personalSpeedBonus);
 
             // Actions per hour (base rate without efficiency)
             const actionsPerHour = profitHelpers_js.calculateActionsPerHour(actionTime);
@@ -314,9 +328,11 @@
                 levelEfficiency, // Level advantage efficiency
                 houseEfficiency, // House room efficiency
                 equipmentEfficiency, // Equipment efficiency
+                equipmentEfficiencyItems, // Per-item equipment efficiency breakdown
                 teaEfficiency, // Tea buff efficiency
                 communityEfficiency, // Community buff efficiency
                 achievementEfficiency, // Achievement buff efficiency
+                personalEfficiency, // Personal buff (seal) efficiency
                 actionLevelBonus, // Action Level bonus from teas (e.g., Artisan Tea)
                 artisanBonus, // Artisan material cost reduction
                 gourmetBonus, // Gourmet bonus item chance
@@ -325,6 +341,7 @@
                 teaSkillLevelBonus, // Tea skill level bonus (e.g., +8 from Ultra Cheesesmithing Tea)
                 efficiencyMultiplier,
                 equipmentSpeedBonus,
+                personalSpeedBonus, // Personal buff (seal) speed bonus
                 skillLevel,
                 baseRequirement, // Base requirement level
                 effectiveRequirement, // Requirement after Action Level bonus
@@ -3202,8 +3219,9 @@ self.onmessage = function (e) {
         // Calculate action time per action (with speed bonuses)
         const baseTimePerActionSec = actionDetail.baseTimeCost / 1000000000;
         const speedBonus = equipmentParser_js.parseEquipmentSpeedBonuses(equipment, actionDetail.type, gameData.itemDetailMap);
+        const personalSpeedBonus = dataManager.getPersonalBuffFlatBoost(actionDetail.type, '/buff_types/action_speed');
         // speedBonus is already a decimal (e.g., 0.15 for 15%), don't divide by 100
-        const actualTimePerActionSec = baseTimePerActionSec / (1 + speedBonus);
+        const actualTimePerActionSec = baseTimePerActionSec / (1 + speedBonus + personalSpeedBonus);
 
         // Calculate actions per hour
         const actionsPerHour = profitHelpers_js.calculateActionsPerHour(actualTimePerActionSec);
@@ -3220,13 +3238,15 @@ self.onmessage = function (e) {
         // Gourmet Tea only applies to production skills (Brewing, Cooking, Cheesesmithing, Crafting, Tailoring)
         // NOT gathering skills (Foraging, Woodcutting, Milking)
         const gourmetBonus = profitConstants_js.PRODUCTION_TYPES.includes(actionDetail.type)
-            ? teaParser_js.parseGourmetBonus(drinkSlots, gameData.itemDetailMap, drinkConcentration)
+            ? teaParser_js.parseGourmetBonus(drinkSlots, gameData.itemDetailMap, drinkConcentration) +
+              dataManager.getPersonalBuffFlatBoost(actionDetail.type, '/buff_types/gourmet')
             : 0;
 
         // Processing Tea: 15% base chance to convert raw → processed (Cotton → Cotton Fabric, etc.)
         // Only applies to gathering skills (Foraging, Woodcutting, Milking)
         const processingBonus = profitConstants_js.GATHERING_TYPES.includes(actionDetail.type)
-            ? teaParser_js.parseProcessingBonus(drinkSlots, gameData.itemDetailMap, drinkConcentration)
+            ? teaParser_js.parseProcessingBonus(drinkSlots, gameData.itemDetailMap, drinkConcentration) +
+              dataManager.getPersonalBuffFlatBoost(actionDetail.type, '/buff_types/processing')
             : 0;
 
         // Gathering Quantity: Increases item drop amounts (min/max)
@@ -3236,6 +3256,7 @@ self.onmessage = function (e) {
         let gatheringTea = 0;
         let communityGathering = 0;
         let achievementGathering = 0;
+        let personalGathering = 0;
         if (profitConstants_js.GATHERING_TYPES.includes(actionDetail.type)) {
             // Parse Gathering Tea bonus
             gatheringTea = teaParser_js.parseGatheringBonus(drinkSlots, gameData.itemDetailMap, drinkConcentration);
@@ -3247,8 +3268,11 @@ self.onmessage = function (e) {
             // Get Achievement buffs for this action type (Beginner tier: +2% Gathering Quantity)
             achievementGathering = dataManager.getAchievementBuffFlatBoost(actionDetail.type, '/buff_types/gathering');
 
+            // Get personal buff (Seal of Gathering)
+            personalGathering = dataManager.getPersonalBuffFlatBoost(actionDetail.type, '/buff_types/gathering');
+
             // Stack all bonuses additively
-            totalGathering = gatheringTea + communityGathering + achievementGathering;
+            totalGathering = gatheringTea + communityGathering + achievementGathering + personalGathering;
         }
 
         const teaCostData = profitHelpers_js.calculateTeaCostsPerHour({
@@ -3296,8 +3320,14 @@ self.onmessage = function (e) {
 
         // Calculate equipment efficiency bonus (uses equipment-parser utility)
         const equipmentEfficiency = equipmentParser_js.parseEquipmentEfficiencyBonuses(equipment, actionDetail.type, gameData.itemDetailMap);
+        const equipmentEfficiencyItems = equipmentParser_js.parseEquipmentEfficiencyBreakdown(
+            equipment,
+            actionDetail.type,
+            gameData.itemDetailMap
+        );
         const achievementEfficiency =
             dataManager.getAchievementBuffFlatBoost(actionDetail.type, '/buff_types/efficiency') * 100;
+        const personalEfficiency = dataManager.getPersonalBuffFlatBoost(actionDetail.type, '/buff_types/efficiency') * 100;
 
         const efficiencyBreakdown = efficiency_js.calculateEfficiencyBreakdown({
             requiredLevel,
@@ -3307,6 +3337,7 @@ self.onmessage = function (e) {
             teaEfficiency,
             equipmentEfficiency,
             achievementEfficiency,
+            personalEfficiency,
         });
         const totalEfficiency = efficiencyBreakdown.totalEfficiency;
         const levelEfficiency = efficiencyBreakdown.levelEfficiency;
@@ -3508,17 +3539,26 @@ self.onmessage = function (e) {
             gourmetRevenueBonus, // Gourmet bonus revenue per hour
             gourmetRevenueBonusPerAction, // Gourmet bonus revenue per action
             gatheringQuantity: totalGathering, // Total gathering quantity bonus (as decimal) - renamed for display consistency
+            totalGathering, // Alias used by formatProfitDisplay
             hasMissingPrices,
+            // Top-level gathering breakdown for formatProfitDisplay
+            gatheringTea,
+            communityGathering,
+            achievementGathering,
+            personalGathering,
             details: {
                 levelEfficiency,
                 houseEfficiency,
                 teaEfficiency,
                 equipmentEfficiency,
+                equipmentEfficiencyItems,
                 achievementEfficiency,
+                personalEfficiency,
                 gourmetBonus,
                 communityBuffQuantity: communityGathering, // Community Buff component (as decimal)
                 gatheringTeaBonus: gatheringTea, // Gathering Tea component (as decimal)
                 achievementGathering: achievementGathering, // Achievement Tier component (as decimal)
+                personalGathering: personalGathering, // Personal buff (seal) component (as decimal)
             },
         };
     }

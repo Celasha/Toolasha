@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 1.8.1
+ * Version: 1.9.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -543,6 +543,13 @@
                     type: 'checkbox',
                     default: false,
                     help: 'When enabled, missing materials calculation only considers current action request, ignoring materials already reserved by queued actions. Default (off) accounts for queue.',
+                },
+                lootLogStats: {
+                    id: 'lootLogStats',
+                    label: 'Loot Log Statistics',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Display total value, average time, and daily output in loot logs',
                 },
             },
         },
@@ -2635,6 +2642,9 @@
                 byActionType: new Map(),
             };
 
+            // Personal buffs from seals (personal_buffs_updated WebSocket message)
+            this.personalActionTypeBuffsMap = {};
+
             // Retry interval for loading static game data
             this.loadRetryInterval = null;
             this.fallbackInterval = null;
@@ -2804,6 +2814,7 @@
                     this.characterEquipment.clear();
                     this.characterHouseRooms.clear();
                     this.actionTypeDrinkSlotsMap.clear();
+                    this.personalActionTypeBuffsMap = {};
                     this.battleData = null;
 
                     // Reset switching flag (cleanup complete, ready for re-init)
@@ -2835,6 +2846,11 @@
 
                 // Build drink slots map (tea buffs)
                 this.updateDrinkSlotsMap(data.actionTypeDrinkSlotsMap);
+
+                // Load personal buffs (seal buffs from Labyrinth, may be present on login)
+                if (data.personalActionTypeBuffsMap) {
+                    this.personalActionTypeBuffsMap = data.personalActionTypeBuffsMap;
+                }
 
                 // Clear switching flag
                 this.isCharacterSwitching = false;
@@ -2977,6 +2993,14 @@
             this.webSocketHook.on('consumable_buffs_updated', (data) => {
                 // Buffs updated - next hover will show updated values
                 this.emit('buffs_updated', data);
+            });
+
+            // Handle personal_buffs_updated (seal buffs from Labyrinth)
+            this.webSocketHook.on('personal_buffs_updated', (data) => {
+                if (data.personalActionTypeBuffsMap) {
+                    this.personalActionTypeBuffsMap = data.personalActionTypeBuffsMap;
+                }
+                this.emit('personal_buffs_updated', data);
             });
 
             // Handle house_rooms_updated (when user upgrades house rooms)
@@ -3262,6 +3286,22 @@
             actionCache.set(buffTypeHrid, flatBoost);
             this.achievementBuffCache.byActionType.set(actionTypeHrid, actionCache);
             return flatBoost;
+        }
+
+        /**
+         * Get personal buff flat boost for an action type and buff type (seal buffs from Labyrinth)
+         * @param {string} actionTypeHrid - Action type HRID (e.g., "/action_types/foraging")
+         * @param {string} buffTypeHrid - Buff type HRID (e.g., "/buff_types/efficiency")
+         * @returns {number} Flat boost value (decimal) or 0 if not found
+         */
+        getPersonalBuffFlatBoost(actionTypeHrid, buffTypeHrid) {
+            const personalBuffs = this.personalActionTypeBuffsMap[actionTypeHrid];
+            if (!Array.isArray(personalBuffs)) {
+                return 0;
+            }
+
+            const buff = personalBuffs.find((entry) => entry?.typeHrid === buffTypeHrid);
+            return buff?.flatBoost || 0;
         }
 
         /**

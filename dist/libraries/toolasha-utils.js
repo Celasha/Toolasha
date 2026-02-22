@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 1.8.1
+ * Version: 1.9.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -501,6 +501,7 @@
      * @param {number} [params.teaEfficiency=0] - Tea efficiency bonus
      * @param {number} [params.communityEfficiency=0] - Community buff efficiency bonus
      * @param {number} [params.achievementEfficiency=0] - Achievement efficiency bonus
+     * @param {number} [params.personalEfficiency=0] - Personal buff (seal) efficiency bonus
      * @returns {Object} Efficiency breakdown
      */
     function calculateEfficiencyBreakdown({
@@ -513,6 +514,7 @@
         teaEfficiency = 0,
         communityEfficiency = 0,
         achievementEfficiency = 0,
+        personalEfficiency = 0,
     }) {
         const effectiveRequirement = (requiredLevel || 0) + actionLevelBonus;
         const baseSkillLevel = Math.max(skillLevel || 0, requiredLevel || 0);
@@ -524,7 +526,8 @@
             equipmentEfficiency,
             teaEfficiency,
             communityEfficiency,
-            achievementEfficiency
+            achievementEfficiency,
+            personalEfficiency
         );
 
         return {
@@ -538,6 +541,7 @@
                 teaEfficiency,
                 communityEfficiency,
                 achievementEfficiency,
+                personalEfficiency,
                 actionLevelBonus,
                 teaSkillLevelBonus,
             },
@@ -3204,6 +3208,84 @@ self.onmessage = function (e) {
     }
 
     /**
+     * Generic per-item equipment stat breakdown
+     * @param {Map} characterEquipment - Equipment map
+     * @param {Object} itemDetailMap - Item details
+     * @param {string|null} skillSpecificField - e.g. "foragingEfficiency"
+     * @param {string|null} genericField - e.g. "skillingEfficiency"
+     * @param {boolean} returnAsPercentage - Multiply by 100
+     * @returns {Array<{name, enhancementLevel, value}>}
+     */
+    function parseEquipmentStatBreakdown(
+        characterEquipment,
+        itemDetailMap,
+        skillSpecificField,
+        genericField,
+        returnAsPercentage
+    ) {
+        if (!characterEquipment || characterEquipment.size === 0) return [];
+        if (!itemDetailMap) return [];
+
+        const items = [];
+
+        for (const [slotHrid, equippedItem] of characterEquipment) {
+            const itemDetails = itemDetailMap[equippedItem.itemHrid];
+            if (!itemDetails?.equipmentDetail?.noncombatStats) continue;
+
+            const noncombatStats = itemDetails.equipmentDetail.noncombatStats;
+            const enhancementLevel = equippedItem.enhancementLevel || 0;
+            let value = 0;
+
+            if (skillSpecificField) {
+                const base = noncombatStats[skillSpecificField];
+                if (base > 0) value += calculateEnhancementScaling(base, enhancementLevel, slotHrid);
+            }
+            if (genericField) {
+                const base = noncombatStats[genericField];
+                if (base > 0) value += calculateEnhancementScaling(base, enhancementLevel, slotHrid);
+            }
+
+            if (value > 0) {
+                items.push({
+                    name: itemDetails.name,
+                    enhancementLevel,
+                    value: value * 100 ,
+                });
+            }
+        }
+
+        return items;
+    }
+
+    /**
+     * Get per-item efficiency bonus breakdown for an action type
+     * @param {Map} characterEquipment - Equipment map
+     * @param {string} actionTypeHrid - Action type HRID
+     * @param {Object} itemDetailMap - Item details
+     * @returns {Array<{name, enhancementLevel, value}>}
+     */
+    function parseEquipmentEfficiencyBreakdown(characterEquipment, actionTypeHrid, itemDetailMap) {
+        const skillSpecificField = getFieldForActionType(actionTypeHrid, 'Efficiency', VALID_EFFICIENCY_FIELDS);
+        return parseEquipmentStatBreakdown(
+            characterEquipment,
+            itemDetailMap,
+            skillSpecificField,
+            'skillingEfficiency');
+    }
+
+    /**
+     * Get per-item rare find bonus breakdown for an action type
+     * @param {Map} characterEquipment - Equipment map
+     * @param {string} actionTypeHrid - Action type HRID
+     * @param {Object} itemDetailMap - Item details
+     * @returns {Array<{name, enhancementLevel, value}>}
+     */
+    function parseRareFindBreakdown(characterEquipment, actionTypeHrid, itemDetailMap) {
+        const skillSpecificField = getFieldForActionType(actionTypeHrid, 'RareFind', VALID_RARE_FIND_FIELDS);
+        return parseEquipmentStatBreakdown(characterEquipment, itemDetailMap, skillSpecificField, 'skillingRareFind');
+    }
+
+    /**
      * Get all speed bonuses for debugging
      * @param {Map} characterEquipment - Equipment map
      * @param {Object} itemDetailMap - Item details
@@ -3255,9 +3337,11 @@ self.onmessage = function (e) {
         __proto__: null,
         debugEquipmentSpeedBonuses: debugEquipmentSpeedBonuses,
         parseEquipmentEfficiencyBonuses: parseEquipmentEfficiencyBonuses,
+        parseEquipmentEfficiencyBreakdown: parseEquipmentEfficiencyBreakdown,
         parseEquipmentSpeedBonuses: parseEquipmentSpeedBonuses,
         parseEssenceFindBonus: parseEssenceFindBonus,
-        parseRareFindBonus: parseRareFindBonus
+        parseRareFindBonus: parseRareFindBonus,
+        parseRareFindBreakdown: parseRareFindBreakdown
     });
 
     /**
@@ -3411,11 +3495,17 @@ self.onmessage = function (e) {
         const houseRareFindBonus = calculateHouseRareFind();
         const achievementRareFindBonus =
             dataManager.getAchievementBuffFlatBoost(actionDetails.type, '/buff_types/rare_find') * 100;
-        const rareFindBonus = equipmentRareFindBonus + houseRareFindBonus + achievementRareFindBonus;
+        const personalRareFindBonus =
+            dataManager.getPersonalBuffFlatBoost(actionDetails.type, '/buff_types/rare_find') * 100;
+        const rareFindBonus =
+            equipmentRareFindBonus + houseRareFindBonus + achievementRareFindBonus + personalRareFindBonus;
+        const equipmentRareFindItems = parseRareFindBreakdown(characterEquipment, actionDetails.type, itemDetailMap);
         const rareFindBreakdown = {
             equipment: equipmentRareFindBonus,
+            equipmentItems: equipmentRareFindItems,
             house: houseRareFindBonus,
             achievement: achievementRareFindBonus,
+            personal: personalRareFindBonus,
         };
 
         const bonusDrops = [];
@@ -3853,9 +3943,16 @@ self.onmessage = function (e) {
         const consumableWisdom = parseConsumableWisdom(activeDrinks, itemDetailMap, drinkConcentration);
         const achievementWisdom = dataManager.getAchievementBuffFlatBoost(actionTypeHrid, '/buff_types/wisdom') * 100;
         const mooPassWisdom = parseMooPassWisdom();
+        const personalWisdom = dataManager.getPersonalBuffFlatBoost(actionTypeHrid, '/buff_types/wisdom') * 100;
 
         const totalWisdom =
-            equipmentWisdom + houseWisdom + communityWisdom + consumableWisdom + achievementWisdom + mooPassWisdom;
+            equipmentWisdom +
+            houseWisdom +
+            communityWisdom +
+            consumableWisdom +
+            achievementWisdom +
+            mooPassWisdom +
+            personalWisdom;
 
         // Parse charm experience (skill-specific) - now returns object with total and breakdown
         const charmData = parseCharmExperience(equipment, skillHrid, itemDetailMap);
@@ -3877,6 +3974,7 @@ self.onmessage = function (e) {
                 consumableWisdom,
                 achievementWisdom,
                 mooPassWisdom,
+                personalWisdom,
                 charmExperience,
             },
         };
@@ -4497,9 +4595,10 @@ self.onmessage = function (e) {
 
             // Get equipment speed bonus
             const speedBonus = parseEquipmentSpeedBonuses(equipment, actionDetails.type, itemDetailMap);
+            const personalSpeedBonus = dataManager.getPersonalBuffFlatBoost(actionDetails.type, '/buff_types/action_speed');
 
             // Calculate action time with equipment speed
-            let actionTime = baseTime / (1 + speedBonus);
+            let actionTime = baseTime / (1 + speedBonus + personalSpeedBonus);
 
             // Apply task speed multiplicatively (if action is an active task)
             if (actionHrid && dataManager.isTaskAction(actionHrid)) {
@@ -4549,6 +4648,8 @@ self.onmessage = function (e) {
             const equipmentEfficiency = parseEquipmentEfficiencyBonuses(equipment, actionDetails.type, itemDetailMap);
             const achievementEfficiency =
                 dataManager.getAchievementBuffFlatBoost(actionDetails.type, '/buff_types/efficiency') * 100;
+            const personalEfficiency =
+                dataManager.getPersonalBuffFlatBoost(actionDetails.type, '/buff_types/efficiency') * 100;
 
             // Calculate tea efficiency
             let teaEfficiency;
@@ -4595,7 +4696,8 @@ self.onmessage = function (e) {
                 equipmentEfficiency,
                 teaEfficiency,
                 communityEfficiency,
-                achievementEfficiency
+                achievementEfficiency,
+                personalEfficiency
             );
 
             // Build result object
@@ -4614,6 +4716,7 @@ self.onmessage = function (e) {
                     teaBreakdown,
                     communityEfficiency,
                     achievementEfficiency,
+                    personalEfficiency,
                     skillLevel,
                     baseRequirement,
                     actionLevelBonus,
@@ -4823,6 +4926,10 @@ self.onmessage = function (e) {
         HOUSE_HEADER: '[class*="HousePanel_header"]',
         HOUSE_COSTS: '[class*="HousePanel_costs"]',
         HOUSE_ITEM_REQUIREMENTS: '[class*="HousePanel_itemRequirements"]',
+
+        // Loot Log
+        LOOT_LOG_CONTAINER: '.LootLogPanel_actionLoots__3oTid',
+        LOOT_LOG_ENTRY: '.LootLogPanel_actionLoot__32gl_',
 
         // Inventory
         INVENTORY_ITEMS: '[class*="Inventory_items"]',

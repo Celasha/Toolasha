@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 1.8.1
+ * Version: 1.9.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2570,8 +2570,9 @@ self.onmessage = function (e) {
         // Calculate action time per action (with speed bonuses)
         const baseTimePerActionSec = actionDetail.baseTimeCost / 1000000000;
         const speedBonus = equipmentParser_js.parseEquipmentSpeedBonuses(equipment, actionDetail.type, gameData.itemDetailMap);
+        const personalSpeedBonus = dataManager.getPersonalBuffFlatBoost(actionDetail.type, '/buff_types/action_speed');
         // speedBonus is already a decimal (e.g., 0.15 for 15%), don't divide by 100
-        const actualTimePerActionSec = baseTimePerActionSec / (1 + speedBonus);
+        const actualTimePerActionSec = baseTimePerActionSec / (1 + speedBonus + personalSpeedBonus);
 
         // Calculate actions per hour
         const actionsPerHour = profitHelpers_js.calculateActionsPerHour(actualTimePerActionSec);
@@ -2588,13 +2589,15 @@ self.onmessage = function (e) {
         // Gourmet Tea only applies to production skills (Brewing, Cooking, Cheesesmithing, Crafting, Tailoring)
         // NOT gathering skills (Foraging, Woodcutting, Milking)
         const gourmetBonus = profitConstants_js.PRODUCTION_TYPES.includes(actionDetail.type)
-            ? teaParser_js.parseGourmetBonus(drinkSlots, gameData.itemDetailMap, drinkConcentration)
+            ? teaParser_js.parseGourmetBonus(drinkSlots, gameData.itemDetailMap, drinkConcentration) +
+              dataManager.getPersonalBuffFlatBoost(actionDetail.type, '/buff_types/gourmet')
             : 0;
 
         // Processing Tea: 15% base chance to convert raw → processed (Cotton → Cotton Fabric, etc.)
         // Only applies to gathering skills (Foraging, Woodcutting, Milking)
         const processingBonus = profitConstants_js.GATHERING_TYPES.includes(actionDetail.type)
-            ? teaParser_js.parseProcessingBonus(drinkSlots, gameData.itemDetailMap, drinkConcentration)
+            ? teaParser_js.parseProcessingBonus(drinkSlots, gameData.itemDetailMap, drinkConcentration) +
+              dataManager.getPersonalBuffFlatBoost(actionDetail.type, '/buff_types/processing')
             : 0;
 
         // Gathering Quantity: Increases item drop amounts (min/max)
@@ -2604,6 +2607,7 @@ self.onmessage = function (e) {
         let gatheringTea = 0;
         let communityGathering = 0;
         let achievementGathering = 0;
+        let personalGathering = 0;
         if (profitConstants_js.GATHERING_TYPES.includes(actionDetail.type)) {
             // Parse Gathering Tea bonus
             gatheringTea = teaParser_js.parseGatheringBonus(drinkSlots, gameData.itemDetailMap, drinkConcentration);
@@ -2615,8 +2619,11 @@ self.onmessage = function (e) {
             // Get Achievement buffs for this action type (Beginner tier: +2% Gathering Quantity)
             achievementGathering = dataManager.getAchievementBuffFlatBoost(actionDetail.type, '/buff_types/gathering');
 
+            // Get personal buff (Seal of Gathering)
+            personalGathering = dataManager.getPersonalBuffFlatBoost(actionDetail.type, '/buff_types/gathering');
+
             // Stack all bonuses additively
-            totalGathering = gatheringTea + communityGathering + achievementGathering;
+            totalGathering = gatheringTea + communityGathering + achievementGathering + personalGathering;
         }
 
         const teaCostData = profitHelpers_js.calculateTeaCostsPerHour({
@@ -2664,8 +2671,14 @@ self.onmessage = function (e) {
 
         // Calculate equipment efficiency bonus (uses equipment-parser utility)
         const equipmentEfficiency = equipmentParser_js.parseEquipmentEfficiencyBonuses(equipment, actionDetail.type, gameData.itemDetailMap);
+        const equipmentEfficiencyItems = equipmentParser_js.parseEquipmentEfficiencyBreakdown(
+            equipment,
+            actionDetail.type,
+            gameData.itemDetailMap
+        );
         const achievementEfficiency =
             dataManager.getAchievementBuffFlatBoost(actionDetail.type, '/buff_types/efficiency') * 100;
+        const personalEfficiency = dataManager.getPersonalBuffFlatBoost(actionDetail.type, '/buff_types/efficiency') * 100;
 
         const efficiencyBreakdown = efficiency_js.calculateEfficiencyBreakdown({
             requiredLevel,
@@ -2675,6 +2688,7 @@ self.onmessage = function (e) {
             teaEfficiency,
             equipmentEfficiency,
             achievementEfficiency,
+            personalEfficiency,
         });
         const totalEfficiency = efficiencyBreakdown.totalEfficiency;
         const levelEfficiency = efficiencyBreakdown.levelEfficiency;
@@ -2876,17 +2890,26 @@ self.onmessage = function (e) {
             gourmetRevenueBonus, // Gourmet bonus revenue per hour
             gourmetRevenueBonusPerAction, // Gourmet bonus revenue per action
             gatheringQuantity: totalGathering, // Total gathering quantity bonus (as decimal) - renamed for display consistency
+            totalGathering, // Alias used by formatProfitDisplay
             hasMissingPrices,
+            // Top-level gathering breakdown for formatProfitDisplay
+            gatheringTea,
+            communityGathering,
+            achievementGathering,
+            personalGathering,
             details: {
                 levelEfficiency,
                 houseEfficiency,
                 teaEfficiency,
                 equipmentEfficiency,
+                equipmentEfficiencyItems,
                 achievementEfficiency,
+                personalEfficiency,
                 gourmetBonus,
                 communityBuffQuantity: communityGathering, // Community Buff component (as decimal)
                 gatheringTeaBonus: gatheringTea, // Gathering Tea component (as decimal)
                 achievementGathering: achievementGathering, // Achievement Tier component (as decimal)
+                personalGathering: personalGathering, // Personal buff (seal) component (as decimal)
             },
         };
     }
@@ -3025,10 +3048,14 @@ self.onmessage = function (e) {
             const artisanBonus = teaParser_js.parseArtisanBonus(activeDrinks, itemDetailMap, drinkConcentration);
 
             // Calculate gourmet bonus (Brewing/Cooking extra items)
-            const gourmetBonus = teaParser_js.parseGourmetBonus(activeDrinks, itemDetailMap, drinkConcentration);
+            const gourmetBonus =
+                teaParser_js.parseGourmetBonus(activeDrinks, itemDetailMap, drinkConcentration) +
+                dataManager.getPersonalBuffFlatBoost(actionDetails.type, '/buff_types/gourmet');
 
             // Calculate processing bonus (Milking/Foraging/Woodcutting conversions)
-            const processingBonus = teaParser_js.parseProcessingBonus(activeDrinks, itemDetailMap, drinkConcentration);
+            const processingBonus =
+                teaParser_js.parseProcessingBonus(activeDrinks, itemDetailMap, drinkConcentration) +
+                dataManager.getPersonalBuffFlatBoost(actionDetails.type, '/buff_types/processing');
 
             // Get community buff bonus (Production Efficiency)
             const communityBuffLevel = dataManager.getCommunityBuffLevel('/community_buff_types/production_efficiency');
@@ -3043,12 +3070,20 @@ self.onmessage = function (e) {
                 actionDetails.type,
                 itemDetailMap
             );
+            const equipmentEfficiencyItems = equipmentParser_js.parseEquipmentEfficiencyBreakdown(
+                characterEquipment,
+                actionDetails.type,
+                itemDetailMap
+            );
 
             // Calculate tea efficiency bonus
             const teaEfficiency = teaParser_js.parseTeaEfficiency(actionDetails.type, activeDrinks, itemDetailMap, drinkConcentration);
 
             const achievementEfficiency =
                 dataManager.getAchievementBuffFlatBoost(actionDetails.type, '/buff_types/efficiency') * 100;
+
+            const personalEfficiency =
+                dataManager.getPersonalBuffFlatBoost(actionDetails.type, '/buff_types/efficiency') * 100;
 
             const efficiencyBreakdown = efficiency_js.calculateEfficiencyBreakdown({
                 requiredLevel: baseRequirement,
@@ -3060,6 +3095,7 @@ self.onmessage = function (e) {
                 teaEfficiency,
                 communityEfficiency,
                 achievementEfficiency,
+                personalEfficiency,
             });
 
             const totalEfficiency = efficiencyBreakdown.totalEfficiency;
@@ -3068,15 +3104,16 @@ self.onmessage = function (e) {
 
             // Calculate equipment speed bonus
             const equipmentSpeedBonus = equipmentParser_js.parseEquipmentSpeedBonuses(characterEquipment, actionDetails.type, itemDetailMap);
+            const personalSpeedBonus = dataManager.getPersonalBuffFlatBoost(actionDetails.type, '/buff_types/action_speed');
 
             // Calculate action time with ONLY speed bonuses
             // Efficiency does NOT reduce time - it gives bonus actions
             // Formula: baseTime / (1 + speedBonus)
             // Example: 60s / (1 + 0.15) = 52.17s
-            const actionTime = baseTime / (1 + equipmentSpeedBonus);
+            const actionTime = baseTime / (1 + equipmentSpeedBonus + personalSpeedBonus);
 
             // Build time breakdown for display
-            const timeBreakdown = this.calculateTimeBreakdown(baseTime, equipmentSpeedBonus);
+            const timeBreakdown = this.calculateTimeBreakdown(baseTime, equipmentSpeedBonus + personalSpeedBonus);
 
             // Actions per hour (base rate without efficiency)
             const actionsPerHour = profitHelpers_js.calculateActionsPerHour(actionTime);
@@ -3195,9 +3232,11 @@ self.onmessage = function (e) {
                 levelEfficiency, // Level advantage efficiency
                 houseEfficiency, // House room efficiency
                 equipmentEfficiency, // Equipment efficiency
+                equipmentEfficiencyItems, // Per-item equipment efficiency breakdown
                 teaEfficiency, // Tea buff efficiency
                 communityEfficiency, // Community buff efficiency
                 achievementEfficiency, // Achievement buff efficiency
+                personalEfficiency, // Personal buff (seal) efficiency
                 actionLevelBonus, // Action Level bonus from teas (e.g., Artisan Tea)
                 artisanBonus, // Artisan material cost reduction
                 gourmetBonus, // Gourmet bonus item chance
@@ -3206,6 +3245,7 @@ self.onmessage = function (e) {
                 teaSkillLevelBonus, // Tea skill level bonus (e.g., +8 from Ultra Cheesesmithing Tea)
                 efficiencyMultiplier,
                 equipmentSpeedBonus,
+                personalSpeedBonus, // Personal buff (seal) speed bonus
                 skillLevel,
                 baseRequirement, // Base requirement level
                 effectiveRequirement, // Requirement after Action Level bonus
@@ -8585,6 +8625,371 @@ self.onmessage = function (e) {
     }
 
     const remainingXP = new RemainingXP();
+
+    /**
+     * Loot Log Statistics Module
+     * Adds total value, average time, and daily output statistics to loot logs
+     * Port of Edible Tools loot tracker feature, integrated into Toolasha architecture
+     */
+
+
+    class LootLogStats {
+        constructor() {
+            this.unregisterHandlers = [];
+            this.initialized = false;
+            this.timerRegistry = timerRegistry_js.createTimerRegistry();
+            this.processedLogs = new WeakSet();
+            this.currentLootLogData = null;
+        }
+
+        /**
+         * Initialize loot log statistics feature
+         */
+        async initialize() {
+            if (this.initialized) return;
+
+            const enabled = config.getSetting('lootLogStats');
+            if (!enabled) return;
+
+            // Listen for loot_log_updated messages from WebSocket
+            const wsHandler = (data) => this.handleLootLogUpdate(data);
+            webSocketHook.on('loot_log_updated', wsHandler);
+            this.unregisterHandlers.push(() => {
+                webSocketHook.off('loot_log_updated', wsHandler);
+            });
+
+            // Watch for loot log elements in DOM
+            const unregisterObserver = domObserver.onClass('LootLogStats', 'LootLogPanel_actionLoot__32gl_', (element) =>
+                this.processLootLogElement(element)
+            );
+            this.unregisterHandlers.push(unregisterObserver);
+
+            this.initialized = true;
+        }
+
+        /**
+         * Handle loot_log_updated WebSocket message
+         * @param {Object} data - WebSocket message data
+         */
+        handleLootLogUpdate(data) {
+            if (!data || !Array.isArray(data.lootLog)) return;
+
+            // Store loot log data for matching with DOM elements
+            this.currentLootLogData = data.lootLog;
+
+            // Process existing loot log elements after short delay
+            const timeout = setTimeout(() => {
+                const lootLogElements = document.querySelectorAll('.LootLogPanel_actionLoot__32gl_');
+                lootLogElements.forEach((element) => this.processLootLogElement(element));
+            }, 200);
+
+            this.timerRegistry.registerTimeout(timeout);
+        }
+
+        /**
+         * Process a single loot log DOM element
+         * @param {HTMLElement} lootElem - Loot log element
+         */
+        processLootLogElement(lootElem) {
+            // Skip if already processed
+            if (this.processedLogs.has(lootElem)) return;
+
+            // Mark as processed
+            this.processedLogs.add(lootElem);
+
+            // Extract divs
+            const divs = lootElem.querySelectorAll('div');
+            if (divs.length < 3) return;
+
+            const secondDiv = divs[1]; // Timestamps
+            const thirdDiv = divs[2]; // Duration
+
+            // Extract log data
+            const logData = this.extractLogData(lootElem, secondDiv);
+            if (!logData) return;
+
+            // Skip enhancement actions
+            if (logData.actionHrid === '/actions/enhancing/enhance') return;
+
+            // Calculate and inject total value
+            this.injectTotalValue(secondDiv, logData);
+
+            // Calculate and inject average time and daily output
+            this.injectTimeAndDailyOutput(thirdDiv, logData);
+        }
+
+        /**
+         * Extract log data from DOM element
+         * @param {HTMLElement} lootElem - Loot log element
+         * @param {HTMLElement} secondDiv - Second div containing timestamps
+         * @returns {Object|null} Log data object or null if extraction fails
+         */
+        extractLogData(lootElem, secondDiv) {
+            if (!this.currentLootLogData || !Array.isArray(this.currentLootLogData)) {
+                return null;
+            }
+
+            // Extract start time from DOM
+            const textContent = secondDiv.textContent;
+            let utcISOString = '';
+
+            // Try multiple date formats
+            const matchCN = textContent.match(/(\d{4}\/\d{1,2}\/\d{1,2} \d{1,2}:\d{2}:\d{2})/);
+            const matchEN = textContent.match(/(\d{1,2}\/\d{1,2}\/\d{4}, \d{1,2}:\d{2}:\d{2} (AM|PM))/i);
+            const matchDE = textContent.match(/(\d{1,2}\.\d{1,2}\.\d{4}, \d{1,2}:\d{2}:\d{2})/);
+
+            if (matchCN) {
+                const localTimeStr = matchCN[1].trim();
+                const [y, m, d, h, min, s] = localTimeStr.match(/\d+/g).map(Number);
+                const localDate = new Date(y, m - 1, d, h, min, s);
+                utcISOString = localDate.toISOString().slice(0, 19);
+            } else if (matchEN) {
+                const localTimeStr = matchEN[1].trim();
+                const localDate = new Date(localTimeStr);
+                if (!isNaN(localDate)) {
+                    utcISOString = localDate.toISOString().slice(0, 19);
+                } else {
+                    return null;
+                }
+            } else if (matchDE) {
+                const localTimeStr = matchDE[1].trim();
+                const [datePart, timePart] = localTimeStr.split(', ');
+                const [day, month, year] = datePart.split('.').map(Number);
+                const [hours, minutes, seconds] = timePart.split(':').map(Number);
+                const localDate = new Date(year, month - 1, day, hours, minutes, seconds);
+                utcISOString = localDate.toISOString().slice(0, 19);
+            } else {
+                return null;
+            }
+
+            // Find matching log data
+            const getLogStartTimeSec = (logObj) => {
+                return logObj && logObj.startTime ? logObj.startTime.slice(0, 19) : '';
+            };
+
+            let log = null;
+            for (const logObj of this.currentLootLogData) {
+                if (getLogStartTimeSec(logObj) === utcISOString) {
+                    log = logObj;
+                    break;
+                }
+            }
+
+            return log;
+        }
+
+        /**
+         * Calculate total value of drops
+         * @param {Object} drops - Drops object { [itemHrid]: count, ... }
+         * @returns {Object} { askTotal, bidTotal }
+         */
+        calculateTotalValue(drops) {
+            let askTotal = 0;
+            let bidTotal = 0;
+
+            if (!drops) return { askTotal, bidTotal };
+
+            for (const [hrid, count] of Object.entries(drops)) {
+                // Strip enhancement level from HRID
+                const baseHrid = hrid.replace(/::\d+$/, '');
+
+                // Get market prices
+                const prices = marketData_js.getItemPrices(baseHrid, 0);
+                if (!prices) continue;
+
+                const ask = prices.ask || 0;
+                const bid = prices.bid || 0;
+
+                askTotal += ask * count;
+                bidTotal += bid * count;
+            }
+
+            return { askTotal, bidTotal };
+        }
+
+        /**
+         * Calculate average time per action
+         * @param {string} startTime - ISO start time
+         * @param {string} endTime - ISO end time
+         * @param {number} actionCount - Number of actions
+         * @returns {number} Average time in seconds, or 0 if invalid
+         */
+        calculateAverageTime(startTime, endTime, actionCount) {
+            if (!startTime || !endTime || !actionCount || actionCount === 0) {
+                return 0;
+            }
+
+            const duration = (new Date(endTime) - new Date(startTime)) / 1000;
+            if (duration <= 0) return 0;
+
+            return duration / actionCount;
+        }
+
+        /**
+         * Calculate daily output value
+         * @param {number} totalValue - Total value
+         * @param {number} durationSeconds - Duration in seconds
+         * @returns {number} Daily output value, or 0 if invalid
+         */
+        calculateDailyOutput(totalValue, durationSeconds) {
+            if (!totalValue || !durationSeconds || durationSeconds === 0) {
+                return 0;
+            }
+
+            return (totalValue * 86400) / durationSeconds;
+        }
+
+        /**
+         * Format duration for display
+         * @param {number} seconds - Duration in seconds
+         * @returns {string} Formatted duration string
+         */
+        formatDuration(seconds) {
+            if (seconds === 0 || !seconds) return '—';
+            if (seconds < 60) return `${seconds.toFixed(2)}s`;
+
+            const h = Math.floor(seconds / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            const s = Math.round(seconds % 60);
+
+            let str = '';
+            if (h > 0) str += `${h}h`;
+            if (m > 0 || h > 0) str += `${m}m`;
+            str += `${s}s`;
+
+            return str;
+        }
+
+        /**
+         * Inject total value into second div
+         * @param {HTMLElement} secondDiv - Second div element
+         * @param {Object} logData - Log data object
+         */
+        injectTotalValue(secondDiv, logData) {
+            // Remove existing value span
+            const oldValue = secondDiv.querySelector('.mwi-loot-log-value');
+            if (oldValue) oldValue.remove();
+
+            if (!logData || !logData.drops) return;
+
+            // Calculate total value
+            const { askTotal, bidTotal } = this.calculateTotalValue(logData.drops);
+
+            // Create value span
+            const valueSpan = document.createElement('span');
+            valueSpan.className = 'mwi-loot-log-value';
+
+            if (askTotal === 0 && bidTotal === 0) {
+                valueSpan.textContent = 'Total Value: —';
+            } else {
+                valueSpan.textContent = `Total Value: ${formatters_js.formatKMB(askTotal)}/${formatters_js.formatKMB(bidTotal)}`;
+            }
+
+            valueSpan.style.float = 'right';
+            valueSpan.style.color = config.COLOR_GOLD;
+            valueSpan.style.fontWeight = 'bold';
+            valueSpan.style.marginLeft = '8px';
+
+            secondDiv.appendChild(valueSpan);
+        }
+
+        /**
+         * Inject average time and daily output into third div
+         * @param {HTMLElement} thirdDiv - Third div element
+         * @param {Object} logData - Log data object
+         */
+        injectTimeAndDailyOutput(thirdDiv, logData) {
+            // Remove existing spans
+            const oldAvgTime = thirdDiv.querySelector('.mwi-loot-log-avgtime');
+            if (oldAvgTime) oldAvgTime.remove();
+            const oldDayValue = thirdDiv.querySelector('.mwi-loot-log-day-value');
+            if (oldDayValue) oldDayValue.remove();
+
+            if (!logData) return;
+
+            // Calculate duration
+            let duration = 0;
+            if (logData.startTime && logData.endTime) {
+                duration = (new Date(logData.endTime) - new Date(logData.startTime)) / 1000;
+            }
+
+            // Calculate average time
+            const avgTime = this.calculateAverageTime(logData.startTime, logData.endTime, logData.actionCount);
+
+            // Create average time span
+            const avgTimeSpan = document.createElement('span');
+            avgTimeSpan.className = 'mwi-loot-log-avgtime';
+            avgTimeSpan.textContent = `⏱${this.formatDuration(avgTime)}`;
+            avgTimeSpan.style.marginRight = '16px';
+            avgTimeSpan.style.marginLeft = '2ch';
+            avgTimeSpan.style.color = config.COLOR_INFO;
+            avgTimeSpan.style.fontWeight = 'bold';
+            thirdDiv.appendChild(avgTimeSpan);
+
+            // Calculate total value for daily output
+            const { askTotal, bidTotal } = this.calculateTotalValue(logData.drops);
+            const dayValueAsk = this.calculateDailyOutput(askTotal, duration);
+            const dayValueBid = this.calculateDailyOutput(bidTotal, duration);
+
+            // Create daily output span
+            const dayValueSpan = document.createElement('span');
+            dayValueSpan.className = 'mwi-loot-log-day-value';
+
+            if (dayValueAsk === 0 && dayValueBid === 0) {
+                dayValueSpan.textContent = 'Daily Output: —';
+            } else {
+                dayValueSpan.textContent = `Daily Output: ${formatters_js.formatKMB(dayValueAsk)}/${formatters_js.formatKMB(dayValueBid)}`;
+            }
+
+            dayValueSpan.style.float = 'right';
+            dayValueSpan.style.color = config.COLOR_GOLD;
+            dayValueSpan.style.fontWeight = 'bold';
+            dayValueSpan.style.marginLeft = '8px';
+            thirdDiv.appendChild(dayValueSpan);
+        }
+
+        /**
+         * Cleanup when disabling feature
+         */
+        cleanup() {
+            // Remove all injected spans
+            const valueSpans = document.querySelectorAll('.mwi-loot-log-value');
+            valueSpans.forEach((span) => span.remove());
+
+            const avgTimeSpans = document.querySelectorAll('.mwi-loot-log-avgtime');
+            avgTimeSpans.forEach((span) => span.remove());
+
+            const dayValueSpans = document.querySelectorAll('.mwi-loot-log-day-value');
+            dayValueSpans.forEach((span) => span.remove());
+
+            // Unregister all handlers
+            this.unregisterHandlers.forEach((fn) => fn());
+            this.unregisterHandlers = [];
+
+            // Clear timers
+            this.timerRegistry.clearAll();
+
+            // Reset state
+            this.processedLogs = new WeakSet();
+            this.currentLootLogData = null;
+            this.initialized = false;
+        }
+    }
+
+    // Export as feature module
+    var lootLogStats = {
+        name: 'Loot Log Statistics',
+        initialize: async () => {
+            const lootLogStats = new LootLogStats();
+            await lootLogStats.initialize();
+            return lootLogStats;
+        },
+        cleanup: (instance) => {
+            if (instance) {
+                instance.cleanup();
+            }
+        },
+    };
 
     /**
      * House Upgrade Cost Calculator
@@ -14766,6 +15171,7 @@ self.onmessage = function (e) {
         taskInventoryHighlighter,
         taskStatistics,
         remainingXP,
+        lootLogStats,
         housePanelObserver,
         settingsUI,
         transmuteRates,

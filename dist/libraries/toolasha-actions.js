@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 1.8.1
+ * Version: 1.9.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1100,8 +1100,9 @@
         // Calculate action time per action (with speed bonuses)
         const baseTimePerActionSec = actionDetail.baseTimeCost / 1000000000;
         const speedBonus = equipmentParser_js.parseEquipmentSpeedBonuses(equipment, actionDetail.type, gameData.itemDetailMap);
+        const personalSpeedBonus = dataManager.getPersonalBuffFlatBoost(actionDetail.type, '/buff_types/action_speed');
         // speedBonus is already a decimal (e.g., 0.15 for 15%), don't divide by 100
-        const actualTimePerActionSec = baseTimePerActionSec / (1 + speedBonus);
+        const actualTimePerActionSec = baseTimePerActionSec / (1 + speedBonus + personalSpeedBonus);
 
         // Calculate actions per hour
         const actionsPerHour = profitHelpers_js.calculateActionsPerHour(actualTimePerActionSec);
@@ -1118,13 +1119,15 @@
         // Gourmet Tea only applies to production skills (Brewing, Cooking, Cheesesmithing, Crafting, Tailoring)
         // NOT gathering skills (Foraging, Woodcutting, Milking)
         const gourmetBonus = profitConstants_js.PRODUCTION_TYPES.includes(actionDetail.type)
-            ? teaParser_js.parseGourmetBonus(drinkSlots, gameData.itemDetailMap, drinkConcentration)
+            ? teaParser_js.parseGourmetBonus(drinkSlots, gameData.itemDetailMap, drinkConcentration) +
+              dataManager.getPersonalBuffFlatBoost(actionDetail.type, '/buff_types/gourmet')
             : 0;
 
         // Processing Tea: 15% base chance to convert raw → processed (Cotton → Cotton Fabric, etc.)
         // Only applies to gathering skills (Foraging, Woodcutting, Milking)
         const processingBonus = profitConstants_js.GATHERING_TYPES.includes(actionDetail.type)
-            ? teaParser_js.parseProcessingBonus(drinkSlots, gameData.itemDetailMap, drinkConcentration)
+            ? teaParser_js.parseProcessingBonus(drinkSlots, gameData.itemDetailMap, drinkConcentration) +
+              dataManager.getPersonalBuffFlatBoost(actionDetail.type, '/buff_types/processing')
             : 0;
 
         // Gathering Quantity: Increases item drop amounts (min/max)
@@ -1134,6 +1137,7 @@
         let gatheringTea = 0;
         let communityGathering = 0;
         let achievementGathering = 0;
+        let personalGathering = 0;
         if (profitConstants_js.GATHERING_TYPES.includes(actionDetail.type)) {
             // Parse Gathering Tea bonus
             gatheringTea = teaParser_js.parseGatheringBonus(drinkSlots, gameData.itemDetailMap, drinkConcentration);
@@ -1145,8 +1149,11 @@
             // Get Achievement buffs for this action type (Beginner tier: +2% Gathering Quantity)
             achievementGathering = dataManager.getAchievementBuffFlatBoost(actionDetail.type, '/buff_types/gathering');
 
+            // Get personal buff (Seal of Gathering)
+            personalGathering = dataManager.getPersonalBuffFlatBoost(actionDetail.type, '/buff_types/gathering');
+
             // Stack all bonuses additively
-            totalGathering = gatheringTea + communityGathering + achievementGathering;
+            totalGathering = gatheringTea + communityGathering + achievementGathering + personalGathering;
         }
 
         const teaCostData = profitHelpers_js.calculateTeaCostsPerHour({
@@ -1194,8 +1201,14 @@
 
         // Calculate equipment efficiency bonus (uses equipment-parser utility)
         const equipmentEfficiency = equipmentParser_js.parseEquipmentEfficiencyBonuses(equipment, actionDetail.type, gameData.itemDetailMap);
+        const equipmentEfficiencyItems = equipmentParser_js.parseEquipmentEfficiencyBreakdown(
+            equipment,
+            actionDetail.type,
+            gameData.itemDetailMap
+        );
         const achievementEfficiency =
             dataManager.getAchievementBuffFlatBoost(actionDetail.type, '/buff_types/efficiency') * 100;
+        const personalEfficiency = dataManager.getPersonalBuffFlatBoost(actionDetail.type, '/buff_types/efficiency') * 100;
 
         const efficiencyBreakdown = efficiency_js.calculateEfficiencyBreakdown({
             requiredLevel,
@@ -1205,6 +1218,7 @@
             teaEfficiency,
             equipmentEfficiency,
             achievementEfficiency,
+            personalEfficiency,
         });
         const totalEfficiency = efficiencyBreakdown.totalEfficiency;
         const levelEfficiency = efficiencyBreakdown.levelEfficiency;
@@ -1406,17 +1420,26 @@
             gourmetRevenueBonus, // Gourmet bonus revenue per hour
             gourmetRevenueBonusPerAction, // Gourmet bonus revenue per action
             gatheringQuantity: totalGathering, // Total gathering quantity bonus (as decimal) - renamed for display consistency
+            totalGathering, // Alias used by formatProfitDisplay
             hasMissingPrices,
+            // Top-level gathering breakdown for formatProfitDisplay
+            gatheringTea,
+            communityGathering,
+            achievementGathering,
+            personalGathering,
             details: {
                 levelEfficiency,
                 houseEfficiency,
                 teaEfficiency,
                 equipmentEfficiency,
+                equipmentEfficiencyItems,
                 achievementEfficiency,
+                personalEfficiency,
                 gourmetBonus,
                 communityBuffQuantity: communityGathering, // Community Buff component (as decimal)
                 gatheringTeaBonus: gatheringTea, // Gathering Tea component (as decimal)
                 achievementGathering: achievementGathering, // Achievement Tier component (as decimal)
+                personalGathering: personalGathering, // Personal buff (seal) component (as decimal)
             },
         };
     }
@@ -1555,10 +1578,14 @@
             const artisanBonus = teaParser_js.parseArtisanBonus(activeDrinks, itemDetailMap, drinkConcentration);
 
             // Calculate gourmet bonus (Brewing/Cooking extra items)
-            const gourmetBonus = teaParser_js.parseGourmetBonus(activeDrinks, itemDetailMap, drinkConcentration);
+            const gourmetBonus =
+                teaParser_js.parseGourmetBonus(activeDrinks, itemDetailMap, drinkConcentration) +
+                dataManager.getPersonalBuffFlatBoost(actionDetails.type, '/buff_types/gourmet');
 
             // Calculate processing bonus (Milking/Foraging/Woodcutting conversions)
-            const processingBonus = teaParser_js.parseProcessingBonus(activeDrinks, itemDetailMap, drinkConcentration);
+            const processingBonus =
+                teaParser_js.parseProcessingBonus(activeDrinks, itemDetailMap, drinkConcentration) +
+                dataManager.getPersonalBuffFlatBoost(actionDetails.type, '/buff_types/processing');
 
             // Get community buff bonus (Production Efficiency)
             const communityBuffLevel = dataManager.getCommunityBuffLevel('/community_buff_types/production_efficiency');
@@ -1573,12 +1600,20 @@
                 actionDetails.type,
                 itemDetailMap
             );
+            const equipmentEfficiencyItems = equipmentParser_js.parseEquipmentEfficiencyBreakdown(
+                characterEquipment,
+                actionDetails.type,
+                itemDetailMap
+            );
 
             // Calculate tea efficiency bonus
             const teaEfficiency = teaParser_js.parseTeaEfficiency(actionDetails.type, activeDrinks, itemDetailMap, drinkConcentration);
 
             const achievementEfficiency =
                 dataManager.getAchievementBuffFlatBoost(actionDetails.type, '/buff_types/efficiency') * 100;
+
+            const personalEfficiency =
+                dataManager.getPersonalBuffFlatBoost(actionDetails.type, '/buff_types/efficiency') * 100;
 
             const efficiencyBreakdown = efficiency_js.calculateEfficiencyBreakdown({
                 requiredLevel: baseRequirement,
@@ -1590,6 +1625,7 @@
                 teaEfficiency,
                 communityEfficiency,
                 achievementEfficiency,
+                personalEfficiency,
             });
 
             const totalEfficiency = efficiencyBreakdown.totalEfficiency;
@@ -1598,15 +1634,16 @@
 
             // Calculate equipment speed bonus
             const equipmentSpeedBonus = equipmentParser_js.parseEquipmentSpeedBonuses(characterEquipment, actionDetails.type, itemDetailMap);
+            const personalSpeedBonus = dataManager.getPersonalBuffFlatBoost(actionDetails.type, '/buff_types/action_speed');
 
             // Calculate action time with ONLY speed bonuses
             // Efficiency does NOT reduce time - it gives bonus actions
             // Formula: baseTime / (1 + speedBonus)
             // Example: 60s / (1 + 0.15) = 52.17s
-            const actionTime = baseTime / (1 + equipmentSpeedBonus);
+            const actionTime = baseTime / (1 + equipmentSpeedBonus + personalSpeedBonus);
 
             // Build time breakdown for display
-            const timeBreakdown = this.calculateTimeBreakdown(baseTime, equipmentSpeedBonus);
+            const timeBreakdown = this.calculateTimeBreakdown(baseTime, equipmentSpeedBonus + personalSpeedBonus);
 
             // Actions per hour (base rate without efficiency)
             const actionsPerHour = profitHelpers_js.calculateActionsPerHour(actionTime);
@@ -1725,9 +1762,11 @@
                 levelEfficiency, // Level advantage efficiency
                 houseEfficiency, // House room efficiency
                 equipmentEfficiency, // Equipment efficiency
+                equipmentEfficiencyItems, // Per-item equipment efficiency breakdown
                 teaEfficiency, // Tea buff efficiency
                 communityEfficiency, // Community buff efficiency
                 achievementEfficiency, // Achievement buff efficiency
+                personalEfficiency, // Personal buff (seal) efficiency
                 actionLevelBonus, // Action Level bonus from teas (e.g., Artisan Tea)
                 artisanBonus, // Artisan material cost reduction
                 gourmetBonus, // Gourmet bonus item chance
@@ -1736,6 +1775,7 @@
                 teaSkillLevelBonus, // Tea skill level bonus (e.g., +8 from Ultra Cheesesmithing Tea)
                 efficiencyMultiplier,
                 equipmentSpeedBonus,
+                personalSpeedBonus, // Personal buff (seal) speed bonus
                 skillLevel,
                 baseRequirement, // Base requirement level
                 effectiveRequirement, // Requirement after Action Level bonus
@@ -2046,23 +2086,6 @@
         return `${rareFindBonus.toFixed(1)}% rare find`;
     };
 
-    const getRareFindBreakdownParts = (bonusRevenue) => {
-        const breakdown = bonusRevenue?.rareFindBreakdown || {};
-        const parts = [];
-
-        if (breakdown.equipment > 0) {
-            parts.push(`${breakdown.equipment.toFixed(1)}% equip`);
-        }
-        if (breakdown.house > 0) {
-            parts.push(`${breakdown.house.toFixed(1)}% house`);
-        }
-        if (breakdown.achievement > 0) {
-            parts.push(`${breakdown.achievement.toFixed(1)}% achievement`);
-        }
-
-        return parts;
-    };
-
     /**
      * Display gathering profit calculation in panel
      * @param {HTMLElement} panel - Action panel element
@@ -2317,80 +2340,117 @@
 
         costsDiv.appendChild(marketTaxSection);
 
-        // Modifiers Section
-        const modifiersDiv = document.createElement('div');
-        modifiersDiv.style.cssText = `
-        margin-top: 12px;
-        color: var(--text-color-secondary, ${config.COLOR_TEXT_SECONDARY});
-    `;
+        // Modifiers Section — collapsible, with each modifier as a nested collapsible
+        const modifierSummaryParts = [];
+        const modifierSubSections = [];
 
-        const modifierLines = [];
+        // Helper: build a sub-collapsible for a modifier
+        const makeModifierSection = (title, total, rows) => {
+            const content = document.createElement('div');
+            for (const row of rows) {
+                const line = document.createElement('div');
+                line.textContent = row;
+                content.appendChild(line);
+            }
+            return uiComponents_js.createCollapsibleSection(null, `${title}: +${total}`, null, content, false, 1);
+        };
 
-        // Efficiency breakdown
-        const effParts = [];
+        // Efficiency
+        const effRows = [];
         if (profitData.details.levelEfficiency > 0) {
-            effParts.push(`${profitData.details.levelEfficiency.toFixed(1)}% level`);
+            effRows.push(`+${profitData.details.levelEfficiency.toFixed(1)}% Level advantage`);
         }
         if (profitData.details.houseEfficiency > 0) {
-            effParts.push(`${profitData.details.houseEfficiency.toFixed(1)}% house`);
+            effRows.push(`+${profitData.details.houseEfficiency.toFixed(1)}% House room`);
         }
         if (profitData.details.teaEfficiency > 0) {
-            effParts.push(`${profitData.details.teaEfficiency.toFixed(1)}% tea`);
+            effRows.push(`+${profitData.details.teaEfficiency.toFixed(1)}% Tea`);
         }
-        if (profitData.details.equipmentEfficiency > 0) {
-            effParts.push(`${profitData.details.equipmentEfficiency.toFixed(1)}% equip`);
+        if ((profitData.details.equipmentEfficiencyItems || []).length > 0) {
+            for (const item of profitData.details.equipmentEfficiencyItems) {
+                const enh = item.enhancementLevel > 0 ? ` +${item.enhancementLevel}` : '';
+                effRows.push(`+${item.value.toFixed(1)}% ${item.name}${enh}`);
+            }
+        } else if (profitData.details.equipmentEfficiency > 0) {
+            effRows.push(`+${profitData.details.equipmentEfficiency.toFixed(1)}% Equipment`);
         }
         if (profitData.details.communityEfficiency > 0) {
-            effParts.push(`${profitData.details.communityEfficiency.toFixed(1)}% community`);
+            effRows.push(`+${profitData.details.communityEfficiency.toFixed(1)}% Community buff`);
         }
         if (profitData.details.achievementEfficiency > 0) {
-            effParts.push(`${profitData.details.achievementEfficiency.toFixed(1)}% achievement`);
+            effRows.push(`+${profitData.details.achievementEfficiency.toFixed(1)}% Achievement`);
         }
-
-        if (effParts.length > 0) {
-            modifierLines.push(
-                `<div style="font-weight: 500; color: var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY});">Modifiers:</div>`
-            );
-            modifierLines.push(
-                `<div style="margin-left: 8px;">• Efficiency: +${profitData.totalEfficiency.toFixed(1)}% (${effParts.join(', ')})</div>`
+        if (profitData.details.personalEfficiency > 0) {
+            effRows.push(`+${profitData.details.personalEfficiency.toFixed(1)}% Seal of Efficiency`);
+        }
+        if (effRows.length > 0) {
+            modifierSummaryParts.push(`+${profitData.totalEfficiency.toFixed(1)}% eff`);
+            modifierSubSections.push(
+                makeModifierSection('Efficiency', `${profitData.totalEfficiency.toFixed(1)}%`, effRows)
             );
         }
 
         // Gathering Quantity
         if (profitData.gatheringQuantity > 0) {
-            const gatheringParts = [];
+            const gatherRows = [];
             if (profitData.details.communityBuffQuantity > 0) {
-                gatheringParts.push(`${(profitData.details.communityBuffQuantity * 100).toFixed(1)}% community`);
+                gatherRows.push(`+${(profitData.details.communityBuffQuantity * 100).toFixed(1)}% Community buff`);
             }
             if (profitData.details.gatheringTeaBonus > 0) {
-                gatheringParts.push(`${(profitData.details.gatheringTeaBonus * 100).toFixed(1)}% tea`);
+                gatherRows.push(`+${(profitData.details.gatheringTeaBonus * 100).toFixed(1)}% Tea`);
             }
             if (profitData.details.achievementGathering > 0) {
-                gatheringParts.push(`${(profitData.details.achievementGathering * 100).toFixed(1)}% achievement`);
+                gatherRows.push(`+${(profitData.details.achievementGathering * 100).toFixed(1)}% Achievement`);
             }
-            modifierLines.push(
-                `<div style="margin-left: 8px;">• Gathering Quantity: +${(profitData.gatheringQuantity * 100).toFixed(1)}% (${gatheringParts.join(', ')})</div>`
-            );
+            if (profitData.details.personalGathering > 0) {
+                gatherRows.push(`+${(profitData.details.personalGathering * 100).toFixed(1)}% Seal of Gathering`);
+            }
+            const gatherTotal = `${(profitData.gatheringQuantity * 100).toFixed(1)}%`;
+            modifierSummaryParts.push(`+${(profitData.gatheringQuantity * 100).toFixed(1)}% gather`);
+            modifierSubSections.push(makeModifierSection('Gathering Quantity', gatherTotal, gatherRows));
         }
 
-        const gatheringRareFindParts = getRareFindBreakdownParts(profitData.bonusRevenue);
-        if (gatheringRareFindParts.length > 0) {
-            if (modifierLines.length === 0) {
-                modifierLines.push(
-                    `<div style="font-weight: 500; color: var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY});">Modifiers:</div>`
-                );
+        // Rare Find
+        const rareFindBonus = profitData.bonusRevenue?.rareFindBonus || 0;
+        const rareFindBreakdown = profitData.bonusRevenue?.rareFindBreakdown || {};
+        if (rareFindBonus > 0) {
+            const rareRows = [];
+            for (const item of rareFindBreakdown.equipmentItems || []) {
+                const enh = item.enhancementLevel > 0 ? ` +${item.enhancementLevel}` : '';
+                rareRows.push(`+${item.value.toFixed(1)}% ${item.name}${enh}`);
             }
-            modifierLines.push(
-                `<div style="margin-left: 8px;">• Rare Find: +${(profitData.bonusRevenue?.rareFindBonus || 0).toFixed(1)}% (${gatheringRareFindParts.join(', ')})</div>`
-            );
+            if (rareFindBreakdown.house > 0) {
+                rareRows.push(`+${rareFindBreakdown.house.toFixed(1)}% House rooms`);
+            }
+            if (rareFindBreakdown.achievement > 0) {
+                rareRows.push(`+${rareFindBreakdown.achievement.toFixed(1)}% Achievement`);
+            }
+            if (rareFindBreakdown.personal > 0) {
+                rareRows.push(`+${rareFindBreakdown.personal.toFixed(1)}% Seal of Rare Find`);
+            }
+            modifierSummaryParts.push(`+${rareFindBonus.toFixed(1)}% rare`);
+            modifierSubSections.push(makeModifierSection('Rare Find', `${rareFindBonus.toFixed(1)}%`, rareRows));
         }
-
-        modifiersDiv.innerHTML = modifierLines.join('');
 
         // Assemble Detailed Breakdown (WITHOUT net profit - that goes in top level)
         detailsContent.appendChild(revenueDiv);
         detailsContent.appendChild(costsDiv);
-        detailsContent.appendChild(modifiersDiv);
+
+        if (modifierSubSections.length > 0) {
+            const modifierContent = document.createElement('div');
+            for (const sub of modifierSubSections) {
+                modifierContent.appendChild(sub);
+            }
+            const modifiersSection = uiComponents_js.createCollapsibleSection(
+                '⚙️',
+                'Modifiers',
+                modifierSummaryParts.join(' | '),
+                modifierContent,
+                false,
+                0
+            );
+            detailsContent.appendChild(modifiersSection);
+        }
 
         // Create "Detailed Breakdown" collapsible
         const topLevelContent = document.createElement('div');
@@ -2820,88 +2880,132 @@
 
         costsDiv.appendChild(marketTaxSection);
 
-        // Modifiers Section
-        const modifiersDiv = document.createElement('div');
-        modifiersDiv.style.cssText = `
-        margin-top: 12px;
-        color: var(--text-color-secondary, ${config.COLOR_TEXT_SECONDARY});
-    `;
+        // Modifiers Section — collapsible, with each modifier as a nested collapsible
+        const modifierSummaryParts = [];
+        const modifierSubSections = [];
 
-        const modifierLines = [];
+        // Helper reused from gathering section (defined per-function scope)
+        const makeModifierSectionProd = (title, total, rows) => {
+            const content = document.createElement('div');
+            for (const row of rows) {
+                const line = document.createElement('div');
+                line.textContent = row;
+                content.appendChild(line);
+            }
+            return uiComponents_js.createCollapsibleSection(null, `${title}: +${total}`, null, content, false, 1);
+        };
 
-        // Efficiency breakdown
-        const effParts = [];
+        // Efficiency
+        const effRows = [];
         if (profitData.levelEfficiency > 0) {
-            effParts.push(`${profitData.levelEfficiency}% level`);
+            effRows.push(`+${profitData.levelEfficiency}% Level advantage`);
         }
         if (profitData.houseEfficiency > 0) {
-            effParts.push(`${profitData.houseEfficiency.toFixed(1)}% house`);
+            effRows.push(`+${profitData.houseEfficiency.toFixed(1)}% House room`);
         }
         if (profitData.teaEfficiency > 0) {
-            effParts.push(`${profitData.teaEfficiency.toFixed(1)}% tea`);
+            effRows.push(`+${profitData.teaEfficiency.toFixed(1)}% Tea`);
         }
-        if (profitData.equipmentEfficiency > 0) {
-            effParts.push(`${profitData.equipmentEfficiency.toFixed(1)}% equip`);
+        if ((profitData.equipmentEfficiencyItems || []).length > 0) {
+            for (const item of profitData.equipmentEfficiencyItems) {
+                const enh = item.enhancementLevel > 0 ? ` +${item.enhancementLevel}` : '';
+                effRows.push(`+${item.value.toFixed(1)}% ${item.name}${enh}`);
+            }
+        } else if (profitData.equipmentEfficiency > 0) {
+            effRows.push(`+${profitData.equipmentEfficiency.toFixed(1)}% Equipment`);
         }
         if (profitData.communityEfficiency > 0) {
-            effParts.push(`${profitData.communityEfficiency.toFixed(1)}% community`);
+            effRows.push(`+${profitData.communityEfficiency.toFixed(1)}% Community buff`);
         }
         if (profitData.achievementEfficiency > 0) {
-            effParts.push(`${profitData.achievementEfficiency.toFixed(1)}% achievement`);
+            effRows.push(`+${profitData.achievementEfficiency.toFixed(1)}% Achievement`);
+        }
+        if (profitData.personalEfficiency > 0) {
+            effRows.push(`+${profitData.personalEfficiency.toFixed(1)}% Seal of Efficiency`);
+        }
+        if (effRows.length > 0) {
+            modifierSummaryParts.push(`+${profitData.totalEfficiency.toFixed(1)}% eff`);
+            modifierSubSections.push(
+                makeModifierSectionProd('Efficiency', `${profitData.totalEfficiency.toFixed(1)}%`, effRows)
+            );
         }
 
-        if (effParts.length > 0) {
-            modifierLines.push(
-                `<div style="font-weight: 500; color: var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY});">Modifiers:</div>`
-            );
-            modifierLines.push(
-                `<div style="margin-left: 8px;">• Efficiency: +${profitData.totalEfficiency.toFixed(1)}% (${effParts.join(', ')})</div>`
-            );
-        }
-
-        const productionRareFindParts = getRareFindBreakdownParts(profitData.bonusRevenue);
-        if (productionRareFindParts.length > 0) {
-            if (modifierLines.length === 0) {
-                modifierLines.push(
-                    `<div style="font-weight: 500; color: var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY});">Modifiers:</div>`
-                );
+        // Rare Find
+        const productionRareFindBonus = profitData.bonusRevenue?.rareFindBonus || 0;
+        const productionRareFindBreakdown = profitData.bonusRevenue?.rareFindBreakdown || {};
+        if (productionRareFindBonus > 0) {
+            const rareRows = [];
+            for (const item of productionRareFindBreakdown.equipmentItems || []) {
+                const enh = item.enhancementLevel > 0 ? ` +${item.enhancementLevel}` : '';
+                rareRows.push(`+${item.value.toFixed(1)}% ${item.name}${enh}`);
             }
-            modifierLines.push(
-                `<div style="margin-left: 8px;">• Rare Find: +${(profitData.bonusRevenue?.rareFindBonus || 0).toFixed(1)}% (${productionRareFindParts.join(', ')})</div>`
+            if (productionRareFindBreakdown.house > 0) {
+                rareRows.push(`+${productionRareFindBreakdown.house.toFixed(1)}% House rooms`);
+            }
+            if (productionRareFindBreakdown.achievement > 0) {
+                rareRows.push(`+${productionRareFindBreakdown.achievement.toFixed(1)}% Achievement`);
+            }
+            if (productionRareFindBreakdown.personal > 0) {
+                rareRows.push(`+${productionRareFindBreakdown.personal.toFixed(1)}% Seal of Rare Find`);
+            }
+            modifierSummaryParts.push(`+${productionRareFindBonus.toFixed(1)}% rare`);
+            modifierSubSections.push(
+                makeModifierSectionProd('Rare Find', `${productionRareFindBonus.toFixed(1)}%`, rareRows)
             );
         }
 
-        // Artisan Bonus (still shown here for reference, also embedded in materials)
+        // Artisan Bonus (no sub-breakdown needed — single source)
         if (profitData.artisanBonus > 0) {
-            if (modifierLines.length === 0) {
-                modifierLines.push(
-                    `<div style="font-weight: 500; color: var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY});">Modifiers:</div>`
-                );
-            }
-            modifierLines.push(
-                `<div style="margin-left: 8px;">• Artisan: -${formatters_js.formatPercentage(profitData.artisanBonus, 1)} material requirement</div>`
+            const artisanContent = document.createElement('div');
+            artisanContent.textContent = `-${formatters_js.formatPercentage(profitData.artisanBonus, 1)} material requirement from Artisan Tea`;
+            modifierSummaryParts.push(`-${formatters_js.formatPercentage(profitData.artisanBonus, 1)} artisan`);
+            modifierSubSections.push(
+                uiComponents_js.createCollapsibleSection(
+                    null,
+                    `Artisan: -${formatters_js.formatPercentage(profitData.artisanBonus, 1)}`,
+                    null,
+                    artisanContent,
+                    false,
+                    1
+                )
             );
         }
 
-        // Gourmet Bonus
+        // Gourmet Bonus (no sub-breakdown needed — single source)
         if (profitData.gourmetBonus > 0) {
-            if (modifierLines.length === 0) {
-                modifierLines.push(
-                    `<div style="font-weight: 500; color: var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY});">Modifiers:</div>`
-                );
-            }
-            modifierLines.push(
-                `<div style="margin-left: 8px;">• Gourmet: +${formatters_js.formatPercentage(profitData.gourmetBonus, 1)} bonus items</div>`
+            const gourmetContent = document.createElement('div');
+            gourmetContent.textContent = `+${formatters_js.formatPercentage(profitData.gourmetBonus, 1)} bonus items from Gourmet Tea`;
+            modifierSummaryParts.push(`+${formatters_js.formatPercentage(profitData.gourmetBonus, 1)} gourmet`);
+            modifierSubSections.push(
+                uiComponents_js.createCollapsibleSection(
+                    null,
+                    `Gourmet: +${formatters_js.formatPercentage(profitData.gourmetBonus, 1)}`,
+                    null,
+                    gourmetContent,
+                    false,
+                    1
+                )
             );
         }
-
-        modifiersDiv.innerHTML = modifierLines.join('');
 
         // Assemble Detailed Breakdown (WITHOUT net profit - that goes in top level)
         detailsContent.appendChild(revenueDiv);
         detailsContent.appendChild(costsDiv);
-        if (modifierLines.length > 0) {
-            detailsContent.appendChild(modifiersDiv);
+
+        if (modifierSubSections.length > 0) {
+            const modifierContent = document.createElement('div');
+            for (const sub of modifierSubSections) {
+                modifierContent.appendChild(sub);
+            }
+            const modifiersSection = uiComponents_js.createCollapsibleSection(
+                '⚙️',
+                'Modifiers',
+                modifierSummaryParts.join(' | '),
+                modifierContent,
+                false,
+                0
+            );
+            detailsContent.appendChild(modifiersSection);
         }
 
         // Create "Detailed Breakdown" collapsible
@@ -6517,7 +6621,12 @@
 
                 // Calculate speed breakdown
                 const baseTime = actionDetails.baseTimeCost / 1e9;
-                const speedBonus = equipmentParser_js.parseEquipmentSpeedBonuses(equipment, actionDetails.type, itemDetailMap);
+                const equipmentSpeedBonus = equipmentParser_js.parseEquipmentSpeedBonuses(equipment, actionDetails.type, itemDetailMap);
+                const personalSpeedBonus = dataManager.getPersonalBuffFlatBoost(
+                    actionDetails.type,
+                    '/buff_types/action_speed'
+                );
+                const speedBonus = equipmentSpeedBonus + personalSpeedBonus;
 
                 let speedSection = null;
 
@@ -6569,6 +6678,11 @@
                                     ? ` (${item.baseSpeed.toFixed(1)}% × ${(1 + item.drinkConcentration / 100).toFixed(2)})`
                                     : '';
                             speedLines.push(`  - ${item.name}: +${item.speed.toFixed(1)}%${detailText}`);
+                        }
+
+                        // Personal buff (Seal of Action Speed)
+                        if (personalSpeedBonus > 0) {
+                            speedLines.push(`  - Seal of Action Speed: +${formatters_js.formatPercentage(personalSpeedBonus, 1)}`);
                         }
                     }
 
@@ -6680,6 +6794,9 @@
                         speedLines.push(
                             `  - Community: +${efficiencyBreakdown.communityEfficiency.toFixed(1)}% (Production Efficiency T${communityBuffLevel})`
                         );
+                    }
+                    if (efficiencyBreakdown.personalEfficiency > 0) {
+                        speedLines.push(`  - Seal: +${efficiencyBreakdown.personalEfficiency.toFixed(1)}%`);
                     }
 
                     // Total time (dynamic)
@@ -7509,6 +7626,11 @@
                     // Achievement wisdom
                     if (xpData.breakdown.achievementWisdom > 0) {
                         lines.push(`    • Achievement: +${xpData.breakdown.achievementWisdom.toFixed(1)}%`);
+                    }
+
+                    // Personal buff (Seal of Wisdom)
+                    if (xpData.breakdown.personalWisdom > 0) {
+                        lines.push(`    • Seal of Wisdom: +${xpData.breakdown.personalWisdom.toFixed(1)}%`);
                     }
                 }
 
