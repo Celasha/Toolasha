@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.1](https://github.com/Celasha/Toolasha/compare/v1.8.0...v1.8.1) (2026-02-22)
+
+
+### Bug Fixes
+
+* extend auto-click max to all sells and correct actions/hr display ([1298257](https://github.com/Celasha/Toolasha/commit/12982579056890f8e86c32e3220ac78367ca1325))
+
 ## [1.8.0](https://github.com/Celasha/Toolasha/compare/v1.7.0...v1.8.0) (2026-02-22)
 
 ### Features
