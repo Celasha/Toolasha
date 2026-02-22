@@ -542,19 +542,20 @@ class QuickInputButtons {
             } // End hasNormalXP check - queueContent only created for non-combat
 
             // Insert sections into DOM
+            const hideActionStats = config.getSetting('actionPanel_hideActionStats');
             if (queueContent) {
                 // Non-combat: Insert queueContent first
                 inputContainer.insertAdjacentElement('afterend', queueContent);
 
-                if (speedSection) {
+                if (speedSection && !hideActionStats) {
                     queueContent.insertAdjacentElement('afterend', speedSection);
                     if (levelProgressSection) {
                         speedSection.insertAdjacentElement('afterend', levelProgressSection);
                     }
-                } else if (levelProgressSection) {
+                } else if (levelProgressSection && !hideActionStats) {
                     queueContent.insertAdjacentElement('afterend', levelProgressSection);
                 }
-            } else if (levelProgressSection) {
+            } else if (levelProgressSection && !hideActionStats) {
                 // Combat: Insert levelProgressSection directly after inputContainer
                 inputContainer.insertAdjacentElement('afterend', levelProgressSection);
             }

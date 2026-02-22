@@ -483,37 +483,26 @@ class AlchemyProfit {
      */
     extractTeaDuration() {
         try {
-            const container = document.querySelector('[class*="SkillActionDetail_alchemyComponent"]');
-            if (!container || !container._reactProps) {
-                return 300;
+            const rootEl = document.getElementById('root');
+            const rootFiber =
+                rootEl?._reactRootContainer?.current || rootEl?._reactRootContainer?._internalRoot?.current;
+            if (!rootFiber) return 300;
+
+            function find(fiber) {
+                if (!fiber) return null;
+                if (fiber.memoizedProps?.actionBuffs) return fiber;
+                return find(fiber.child) || find(fiber.sibling);
             }
 
-            let fiber = container._reactProps;
-            for (const key in fiber) {
-                if (key.startsWith('__reactFiber') || key.startsWith('__reactInternalInstance')) {
-                    fiber = fiber[key];
-                    break;
+            const fiberNode = find(rootFiber);
+            if (!fiberNode) return 300;
+
+            const buffs = fiberNode.memoizedProps.actionBuffs;
+            for (const buff of buffs) {
+                if (buff.uniqueHrid && buff.uniqueHrid.endsWith('tea')) {
+                    const duration = buff.duration || 0;
+                    return duration / 1e9; // Convert nanoseconds to seconds
                 }
-            }
-
-            let current = fiber;
-            let depth = 0;
-
-            while (current && depth < 20) {
-                if (current.memoizedProps?.actionBuffs) {
-                    const buffs = current.memoizedProps.actionBuffs;
-
-                    for (const buff of buffs) {
-                        if (buff.uniqueHrid && buff.uniqueHrid.endsWith('tea')) {
-                            const duration = buff.duration || 0;
-                            return duration / 1e9; // Convert nanoseconds to seconds
-                        }
-                    }
-                    break;
-                }
-
-                current = current.return;
-                depth++;
             }
 
             return 300; // Default 5 minutes

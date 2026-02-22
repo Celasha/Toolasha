@@ -420,6 +420,11 @@ class AlchemyProfitDisplay {
         // Remove any existing display
         this.removeDisplay();
 
+        // Check global hide setting
+        if (config.getSetting('actionPanel_hideActionStats')) {
+            return;
+        }
+
         // Validate required data
         if (
             !profitData ||
@@ -933,6 +938,7 @@ class AlchemyProfitDisplay {
         const profitSection = createCollapsibleSection('💰', 'Profitability', summary, topLevelContent, false, 0);
         profitSection.id = 'mwi-alchemy-profit';
         profitSection.classList.add('mwi-alchemy-profit');
+        profitSection.setAttribute('data-mwi-profit-display', 'true');
 
         // Append to container
         container.appendChild(profitSection);
@@ -956,6 +962,7 @@ class AlchemyProfitDisplay {
             if (speedTimeSection) {
                 speedTimeSection.id = 'mwi-alchemy-speed-time';
                 speedTimeSection.classList.add('mwi-alchemy-speed-time');
+                speedTimeSection.setAttribute('data-mwi-profit-display', 'true');
                 container.appendChild(speedTimeSection);
             }
         }
@@ -966,6 +973,7 @@ class AlchemyProfitDisplay {
             if (levelProgressSection) {
                 levelProgressSection.id = 'mwi-alchemy-level-progress';
                 levelProgressSection.classList.add('mwi-alchemy-level-progress');
+                levelProgressSection.setAttribute('data-mwi-profit-display', 'true');
                 container.appendChild(levelProgressSection);
             }
         }

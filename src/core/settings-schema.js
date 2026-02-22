@@ -110,6 +110,13 @@ export const settingsGroups = {
                 default: true,
                 help: 'Displays profit/hr and exp/hr on gathering tiles (foraging, woodcutting, milking)',
             },
+            actionPanel_hideActionStats: {
+                id: 'actionPanel_hideActionStats',
+                label: 'Action panel: Hide all profit/efficiency displays',
+                type: 'checkbox',
+                default: false,
+                help: 'Hides Profitability, Action Speed & Time, and Level Progress sections in gathering, production, and alchemy panels',
+            },
             actionPanel_hideNegativeProfit: {
                 id: 'actionPanel_hideNegativeProfit',
                 label: 'Action panel: Hide actions with negative profit',

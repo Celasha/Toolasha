@@ -65,6 +65,11 @@ const getRareFindBreakdownParts = (bonusRevenue) => {
  * @param {string} dropTableSelector - CSS selector for drop table element
  */
 export async function displayGatheringProfit(panel, actionHrid, dropTableSelector) {
+    // Check global hide setting
+    if (config.getSetting('actionPanel_hideActionStats')) {
+        return;
+    }
+
     // Calculate profit
     const profitData = await calculateGatheringProfit(actionHrid);
     if (!profitData) {
@@ -460,6 +465,7 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
     // Create main profit section
     const profitSection = createCollapsibleSection('💰', 'Profitability', summary, topLevelContent, false, 0);
     profitSection.id = 'mwi-foraging-profit';
+    profitSection.setAttribute('data-mwi-profit-display', 'true');
 
     // Get the summary div to update it dynamically
     const profitSummaryDiv = profitSection.querySelector('.mwi-section-header + div');
@@ -533,6 +539,11 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
  * @param {string} dropTableSelector - CSS selector for drop table element
  */
 export async function displayProductionProfit(panel, actionHrid, dropTableSelector) {
+    // Check global hide setting
+    if (config.getSetting('actionPanel_hideActionStats')) {
+        return;
+    }
+
     // Calculate profit
     const profitData = await calculateProductionProfit(actionHrid);
     if (!profitData) {
@@ -966,8 +977,7 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
     // Create main profit section
     const profitSection = createCollapsibleSection('💰', 'Profitability', summary, topLevelContent, false, 0);
     profitSection.id = 'mwi-production-profit';
-
-    // Get the summary div to update it dynamically
+    profitSection.setAttribute('data-mwi-profit-display', 'true');
     const profitSummaryDiv = profitSection.querySelector('.mwi-section-header + div');
 
     // Set up listener to update summary with total profit when input changes

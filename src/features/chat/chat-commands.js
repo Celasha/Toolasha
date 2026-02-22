@@ -87,24 +87,22 @@ class ChatCommands {
     }
 
     /**
-     * Setup game core access via React Fiber traversal
+     * Setup game core access via React Fiber tree traversal
      */
     setupGameCore() {
         try {
-            const el = document.querySelector('[class*="GamePage_gamePage"]');
-            if (!el) return;
+            const rootEl = document.getElementById('root');
+            const rootFiber =
+                rootEl?._reactRootContainer?.current || rootEl?._reactRootContainer?._internalRoot?.current;
+            if (!rootFiber) return;
 
-            const k = Object.keys(el).find((k) => k.startsWith('__reactFiber$'));
-            if (!k) return;
-
-            let f = el[k];
-            while (f) {
-                if (f.stateNode?.sendPing) {
-                    this.gameCore = f.stateNode;
-                    return;
-                }
-                f = f.return;
+            function find(fiber) {
+                if (!fiber) return null;
+                if (fiber.stateNode?.sendPing) return fiber.stateNode;
+                return find(fiber.child) || find(fiber.sibling);
             }
+
+            this.gameCore = find(rootFiber);
         } catch (error) {
             console.error('[Chat Commands] Error accessing game core:', error);
         }
