@@ -901,8 +901,9 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
 
     // Create "Detailed Breakdown" collapsible
     const topLevelContent = document.createElement('div');
+    const effectiveActionsPerHour = profitData.actionsPerHour * profitData.efficiencyMultiplier;
     topLevelContent.innerHTML = `
-        <div style="margin-bottom: 4px;">Actions: ${profitData.actionsPerHour.toFixed(1)}/hr</div>
+        <div style="margin-bottom: 4px;">Actions: ${effectiveActionsPerHour.toFixed(1)}/hr</div>
     `;
 
     // Add Net Profit line at top level (always visible when Profitability is expanded)
