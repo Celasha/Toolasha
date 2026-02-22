@@ -162,7 +162,12 @@ class QuickInputButtons {
 
             // Calculate speed breakdown
             const baseTime = actionDetails.baseTimeCost / 1e9;
-            const speedBonus = parseEquipmentSpeedBonuses(equipment, actionDetails.type, itemDetailMap);
+            const equipmentSpeedBonus = parseEquipmentSpeedBonuses(equipment, actionDetails.type, itemDetailMap);
+            const personalSpeedBonus = dataManager.getPersonalBuffFlatBoost(
+                actionDetails.type,
+                '/buff_types/action_speed'
+            );
+            const speedBonus = equipmentSpeedBonus + personalSpeedBonus;
 
             let speedSection = null;
 
@@ -214,6 +219,11 @@ class QuickInputButtons {
                                 ? ` (${item.baseSpeed.toFixed(1)}% × ${(1 + item.drinkConcentration / 100).toFixed(2)})`
                                 : '';
                         speedLines.push(`  - ${item.name}: +${item.speed.toFixed(1)}%${detailText}`);
+                    }
+
+                    // Personal buff (Seal of Action Speed)
+                    if (personalSpeedBonus > 0) {
+                        speedLines.push(`  - Seal of Action Speed: +${formatPercentage(personalSpeedBonus, 1)}`);
                     }
                 }
 
@@ -325,6 +335,9 @@ class QuickInputButtons {
                     speedLines.push(
                         `  - Community: +${efficiencyBreakdown.communityEfficiency.toFixed(1)}% (Production Efficiency T${communityBuffLevel})`
                     );
+                }
+                if (efficiencyBreakdown.personalEfficiency > 0) {
+                    speedLines.push(`  - Seal: +${efficiencyBreakdown.personalEfficiency.toFixed(1)}%`);
                 }
 
                 // Total time (dynamic)
@@ -1154,6 +1167,11 @@ class QuickInputButtons {
                 // Achievement wisdom
                 if (xpData.breakdown.achievementWisdom > 0) {
                     lines.push(`    • Achievement: +${xpData.breakdown.achievementWisdom.toFixed(1)}%`);
+                }
+
+                // Personal buff (Seal of Wisdom)
+                if (xpData.breakdown.personalWisdom > 0) {
+                    lines.push(`    • Seal of Wisdom: +${xpData.breakdown.personalWisdom.toFixed(1)}%`);
                 }
             }
 

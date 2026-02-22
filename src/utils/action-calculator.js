@@ -49,9 +49,10 @@ export function calculateActionStats(actionDetails, options = {}) {
 
         // Get equipment speed bonus
         const speedBonus = parseEquipmentSpeedBonuses(equipment, actionDetails.type, itemDetailMap);
+        const personalSpeedBonus = dataManager.getPersonalBuffFlatBoost(actionDetails.type, '/buff_types/action_speed');
 
         // Calculate action time with equipment speed
-        let actionTime = baseTime / (1 + speedBonus);
+        let actionTime = baseTime / (1 + speedBonus + personalSpeedBonus);
 
         // Apply task speed multiplicatively (if action is an active task)
         if (actionHrid && dataManager.isTaskAction(actionHrid)) {
@@ -101,6 +102,8 @@ export function calculateActionStats(actionDetails, options = {}) {
         const equipmentEfficiency = parseEquipmentEfficiencyBonuses(equipment, actionDetails.type, itemDetailMap);
         const achievementEfficiency =
             dataManager.getAchievementBuffFlatBoost(actionDetails.type, '/buff_types/efficiency') * 100;
+        const personalEfficiency =
+            dataManager.getPersonalBuffFlatBoost(actionDetails.type, '/buff_types/efficiency') * 100;
 
         // Calculate tea efficiency
         let teaEfficiency;
@@ -147,7 +150,8 @@ export function calculateActionStats(actionDetails, options = {}) {
             equipmentEfficiency,
             teaEfficiency,
             communityEfficiency,
-            achievementEfficiency
+            achievementEfficiency,
+            personalEfficiency
         );
 
         // Build result object
@@ -166,6 +170,7 @@ export function calculateActionStats(actionDetails, options = {}) {
                 teaBreakdown,
                 communityEfficiency,
                 achievementEfficiency,
+                personalEfficiency,
                 skillLevel,
                 baseRequirement,
                 actionLevelBonus,

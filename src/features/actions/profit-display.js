@@ -41,23 +41,6 @@ const formatRareFindBonusSummary = (bonusRevenue) => {
     return `${rareFindBonus.toFixed(1)}% rare find`;
 };
 
-const getRareFindBreakdownParts = (bonusRevenue) => {
-    const breakdown = bonusRevenue?.rareFindBreakdown || {};
-    const parts = [];
-
-    if (breakdown.equipment > 0) {
-        parts.push(`${breakdown.equipment.toFixed(1)}% equip`);
-    }
-    if (breakdown.house > 0) {
-        parts.push(`${breakdown.house.toFixed(1)}% house`);
-    }
-    if (breakdown.achievement > 0) {
-        parts.push(`${breakdown.achievement.toFixed(1)}% achievement`);
-    }
-
-    return parts;
-};
-
 /**
  * Display gathering profit calculation in panel
  * @param {HTMLElement} panel - Action panel element
@@ -312,80 +295,117 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
 
     costsDiv.appendChild(marketTaxSection);
 
-    // Modifiers Section
-    const modifiersDiv = document.createElement('div');
-    modifiersDiv.style.cssText = `
-        margin-top: 12px;
-        color: var(--text-color-secondary, ${config.COLOR_TEXT_SECONDARY});
-    `;
+    // Modifiers Section — collapsible, with each modifier as a nested collapsible
+    const modifierSummaryParts = [];
+    const modifierSubSections = [];
 
-    const modifierLines = [];
+    // Helper: build a sub-collapsible for a modifier
+    const makeModifierSection = (title, total, rows) => {
+        const content = document.createElement('div');
+        for (const row of rows) {
+            const line = document.createElement('div');
+            line.textContent = row;
+            content.appendChild(line);
+        }
+        return createCollapsibleSection(null, `${title}: +${total}`, null, content, false, 1);
+    };
 
-    // Efficiency breakdown
-    const effParts = [];
+    // Efficiency
+    const effRows = [];
     if (profitData.details.levelEfficiency > 0) {
-        effParts.push(`${profitData.details.levelEfficiency.toFixed(1)}% level`);
+        effRows.push(`+${profitData.details.levelEfficiency.toFixed(1)}% Level advantage`);
     }
     if (profitData.details.houseEfficiency > 0) {
-        effParts.push(`${profitData.details.houseEfficiency.toFixed(1)}% house`);
+        effRows.push(`+${profitData.details.houseEfficiency.toFixed(1)}% House room`);
     }
     if (profitData.details.teaEfficiency > 0) {
-        effParts.push(`${profitData.details.teaEfficiency.toFixed(1)}% tea`);
+        effRows.push(`+${profitData.details.teaEfficiency.toFixed(1)}% Tea`);
     }
-    if (profitData.details.equipmentEfficiency > 0) {
-        effParts.push(`${profitData.details.equipmentEfficiency.toFixed(1)}% equip`);
+    if ((profitData.details.equipmentEfficiencyItems || []).length > 0) {
+        for (const item of profitData.details.equipmentEfficiencyItems) {
+            const enh = item.enhancementLevel > 0 ? ` +${item.enhancementLevel}` : '';
+            effRows.push(`+${item.value.toFixed(1)}% ${item.name}${enh}`);
+        }
+    } else if (profitData.details.equipmentEfficiency > 0) {
+        effRows.push(`+${profitData.details.equipmentEfficiency.toFixed(1)}% Equipment`);
     }
     if (profitData.details.communityEfficiency > 0) {
-        effParts.push(`${profitData.details.communityEfficiency.toFixed(1)}% community`);
+        effRows.push(`+${profitData.details.communityEfficiency.toFixed(1)}% Community buff`);
     }
     if (profitData.details.achievementEfficiency > 0) {
-        effParts.push(`${profitData.details.achievementEfficiency.toFixed(1)}% achievement`);
+        effRows.push(`+${profitData.details.achievementEfficiency.toFixed(1)}% Achievement`);
     }
-
-    if (effParts.length > 0) {
-        modifierLines.push(
-            `<div style="font-weight: 500; color: var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY});">Modifiers:</div>`
-        );
-        modifierLines.push(
-            `<div style="margin-left: 8px;">• Efficiency: +${profitData.totalEfficiency.toFixed(1)}% (${effParts.join(', ')})</div>`
+    if (profitData.details.personalEfficiency > 0) {
+        effRows.push(`+${profitData.details.personalEfficiency.toFixed(1)}% Seal of Efficiency`);
+    }
+    if (effRows.length > 0) {
+        modifierSummaryParts.push(`+${profitData.totalEfficiency.toFixed(1)}% eff`);
+        modifierSubSections.push(
+            makeModifierSection('Efficiency', `${profitData.totalEfficiency.toFixed(1)}%`, effRows)
         );
     }
 
     // Gathering Quantity
     if (profitData.gatheringQuantity > 0) {
-        const gatheringParts = [];
+        const gatherRows = [];
         if (profitData.details.communityBuffQuantity > 0) {
-            gatheringParts.push(`${(profitData.details.communityBuffQuantity * 100).toFixed(1)}% community`);
+            gatherRows.push(`+${(profitData.details.communityBuffQuantity * 100).toFixed(1)}% Community buff`);
         }
         if (profitData.details.gatheringTeaBonus > 0) {
-            gatheringParts.push(`${(profitData.details.gatheringTeaBonus * 100).toFixed(1)}% tea`);
+            gatherRows.push(`+${(profitData.details.gatheringTeaBonus * 100).toFixed(1)}% Tea`);
         }
         if (profitData.details.achievementGathering > 0) {
-            gatheringParts.push(`${(profitData.details.achievementGathering * 100).toFixed(1)}% achievement`);
+            gatherRows.push(`+${(profitData.details.achievementGathering * 100).toFixed(1)}% Achievement`);
         }
-        modifierLines.push(
-            `<div style="margin-left: 8px;">• Gathering Quantity: +${(profitData.gatheringQuantity * 100).toFixed(1)}% (${gatheringParts.join(', ')})</div>`
-        );
+        if (profitData.details.personalGathering > 0) {
+            gatherRows.push(`+${(profitData.details.personalGathering * 100).toFixed(1)}% Seal of Gathering`);
+        }
+        const gatherTotal = `${(profitData.gatheringQuantity * 100).toFixed(1)}%`;
+        modifierSummaryParts.push(`+${(profitData.gatheringQuantity * 100).toFixed(1)}% gather`);
+        modifierSubSections.push(makeModifierSection('Gathering Quantity', gatherTotal, gatherRows));
     }
 
-    const gatheringRareFindParts = getRareFindBreakdownParts(profitData.bonusRevenue);
-    if (gatheringRareFindParts.length > 0) {
-        if (modifierLines.length === 0) {
-            modifierLines.push(
-                `<div style="font-weight: 500; color: var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY});">Modifiers:</div>`
-            );
+    // Rare Find
+    const rareFindBonus = profitData.bonusRevenue?.rareFindBonus || 0;
+    const rareFindBreakdown = profitData.bonusRevenue?.rareFindBreakdown || {};
+    if (rareFindBonus > 0) {
+        const rareRows = [];
+        for (const item of rareFindBreakdown.equipmentItems || []) {
+            const enh = item.enhancementLevel > 0 ? ` +${item.enhancementLevel}` : '';
+            rareRows.push(`+${item.value.toFixed(1)}% ${item.name}${enh}`);
         }
-        modifierLines.push(
-            `<div style="margin-left: 8px;">• Rare Find: +${(profitData.bonusRevenue?.rareFindBonus || 0).toFixed(1)}% (${gatheringRareFindParts.join(', ')})</div>`
-        );
+        if (rareFindBreakdown.house > 0) {
+            rareRows.push(`+${rareFindBreakdown.house.toFixed(1)}% House rooms`);
+        }
+        if (rareFindBreakdown.achievement > 0) {
+            rareRows.push(`+${rareFindBreakdown.achievement.toFixed(1)}% Achievement`);
+        }
+        if (rareFindBreakdown.personal > 0) {
+            rareRows.push(`+${rareFindBreakdown.personal.toFixed(1)}% Seal of Rare Find`);
+        }
+        modifierSummaryParts.push(`+${rareFindBonus.toFixed(1)}% rare`);
+        modifierSubSections.push(makeModifierSection('Rare Find', `${rareFindBonus.toFixed(1)}%`, rareRows));
     }
-
-    modifiersDiv.innerHTML = modifierLines.join('');
 
     // Assemble Detailed Breakdown (WITHOUT net profit - that goes in top level)
     detailsContent.appendChild(revenueDiv);
     detailsContent.appendChild(costsDiv);
-    detailsContent.appendChild(modifiersDiv);
+
+    if (modifierSubSections.length > 0) {
+        const modifierContent = document.createElement('div');
+        for (const sub of modifierSubSections) {
+            modifierContent.appendChild(sub);
+        }
+        const modifiersSection = createCollapsibleSection(
+            '⚙️',
+            'Modifiers',
+            modifierSummaryParts.join(' | '),
+            modifierContent,
+            false,
+            0
+        );
+        detailsContent.appendChild(modifiersSection);
+    }
 
     // Create "Detailed Breakdown" collapsible
     const topLevelContent = document.createElement('div');
@@ -815,88 +835,132 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
 
     costsDiv.appendChild(marketTaxSection);
 
-    // Modifiers Section
-    const modifiersDiv = document.createElement('div');
-    modifiersDiv.style.cssText = `
-        margin-top: 12px;
-        color: var(--text-color-secondary, ${config.COLOR_TEXT_SECONDARY});
-    `;
+    // Modifiers Section — collapsible, with each modifier as a nested collapsible
+    const modifierSummaryParts = [];
+    const modifierSubSections = [];
 
-    const modifierLines = [];
+    // Helper reused from gathering section (defined per-function scope)
+    const makeModifierSectionProd = (title, total, rows) => {
+        const content = document.createElement('div');
+        for (const row of rows) {
+            const line = document.createElement('div');
+            line.textContent = row;
+            content.appendChild(line);
+        }
+        return createCollapsibleSection(null, `${title}: +${total}`, null, content, false, 1);
+    };
 
-    // Efficiency breakdown
-    const effParts = [];
+    // Efficiency
+    const effRows = [];
     if (profitData.levelEfficiency > 0) {
-        effParts.push(`${profitData.levelEfficiency}% level`);
+        effRows.push(`+${profitData.levelEfficiency}% Level advantage`);
     }
     if (profitData.houseEfficiency > 0) {
-        effParts.push(`${profitData.houseEfficiency.toFixed(1)}% house`);
+        effRows.push(`+${profitData.houseEfficiency.toFixed(1)}% House room`);
     }
     if (profitData.teaEfficiency > 0) {
-        effParts.push(`${profitData.teaEfficiency.toFixed(1)}% tea`);
+        effRows.push(`+${profitData.teaEfficiency.toFixed(1)}% Tea`);
     }
-    if (profitData.equipmentEfficiency > 0) {
-        effParts.push(`${profitData.equipmentEfficiency.toFixed(1)}% equip`);
+    if ((profitData.equipmentEfficiencyItems || []).length > 0) {
+        for (const item of profitData.equipmentEfficiencyItems) {
+            const enh = item.enhancementLevel > 0 ? ` +${item.enhancementLevel}` : '';
+            effRows.push(`+${item.value.toFixed(1)}% ${item.name}${enh}`);
+        }
+    } else if (profitData.equipmentEfficiency > 0) {
+        effRows.push(`+${profitData.equipmentEfficiency.toFixed(1)}% Equipment`);
     }
     if (profitData.communityEfficiency > 0) {
-        effParts.push(`${profitData.communityEfficiency.toFixed(1)}% community`);
+        effRows.push(`+${profitData.communityEfficiency.toFixed(1)}% Community buff`);
     }
     if (profitData.achievementEfficiency > 0) {
-        effParts.push(`${profitData.achievementEfficiency.toFixed(1)}% achievement`);
+        effRows.push(`+${profitData.achievementEfficiency.toFixed(1)}% Achievement`);
+    }
+    if (profitData.personalEfficiency > 0) {
+        effRows.push(`+${profitData.personalEfficiency.toFixed(1)}% Seal of Efficiency`);
+    }
+    if (effRows.length > 0) {
+        modifierSummaryParts.push(`+${profitData.totalEfficiency.toFixed(1)}% eff`);
+        modifierSubSections.push(
+            makeModifierSectionProd('Efficiency', `${profitData.totalEfficiency.toFixed(1)}%`, effRows)
+        );
     }
 
-    if (effParts.length > 0) {
-        modifierLines.push(
-            `<div style="font-weight: 500; color: var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY});">Modifiers:</div>`
-        );
-        modifierLines.push(
-            `<div style="margin-left: 8px;">• Efficiency: +${profitData.totalEfficiency.toFixed(1)}% (${effParts.join(', ')})</div>`
-        );
-    }
-
-    const productionRareFindParts = getRareFindBreakdownParts(profitData.bonusRevenue);
-    if (productionRareFindParts.length > 0) {
-        if (modifierLines.length === 0) {
-            modifierLines.push(
-                `<div style="font-weight: 500; color: var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY});">Modifiers:</div>`
-            );
+    // Rare Find
+    const productionRareFindBonus = profitData.bonusRevenue?.rareFindBonus || 0;
+    const productionRareFindBreakdown = profitData.bonusRevenue?.rareFindBreakdown || {};
+    if (productionRareFindBonus > 0) {
+        const rareRows = [];
+        for (const item of productionRareFindBreakdown.equipmentItems || []) {
+            const enh = item.enhancementLevel > 0 ? ` +${item.enhancementLevel}` : '';
+            rareRows.push(`+${item.value.toFixed(1)}% ${item.name}${enh}`);
         }
-        modifierLines.push(
-            `<div style="margin-left: 8px;">• Rare Find: +${(profitData.bonusRevenue?.rareFindBonus || 0).toFixed(1)}% (${productionRareFindParts.join(', ')})</div>`
+        if (productionRareFindBreakdown.house > 0) {
+            rareRows.push(`+${productionRareFindBreakdown.house.toFixed(1)}% House rooms`);
+        }
+        if (productionRareFindBreakdown.achievement > 0) {
+            rareRows.push(`+${productionRareFindBreakdown.achievement.toFixed(1)}% Achievement`);
+        }
+        if (productionRareFindBreakdown.personal > 0) {
+            rareRows.push(`+${productionRareFindBreakdown.personal.toFixed(1)}% Seal of Rare Find`);
+        }
+        modifierSummaryParts.push(`+${productionRareFindBonus.toFixed(1)}% rare`);
+        modifierSubSections.push(
+            makeModifierSectionProd('Rare Find', `${productionRareFindBonus.toFixed(1)}%`, rareRows)
         );
     }
 
-    // Artisan Bonus (still shown here for reference, also embedded in materials)
+    // Artisan Bonus (no sub-breakdown needed — single source)
     if (profitData.artisanBonus > 0) {
-        if (modifierLines.length === 0) {
-            modifierLines.push(
-                `<div style="font-weight: 500; color: var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY});">Modifiers:</div>`
-            );
-        }
-        modifierLines.push(
-            `<div style="margin-left: 8px;">• Artisan: -${formatPercentage(profitData.artisanBonus, 1)} material requirement</div>`
+        const artisanContent = document.createElement('div');
+        artisanContent.textContent = `-${formatPercentage(profitData.artisanBonus, 1)} material requirement from Artisan Tea`;
+        modifierSummaryParts.push(`-${formatPercentage(profitData.artisanBonus, 1)} artisan`);
+        modifierSubSections.push(
+            createCollapsibleSection(
+                null,
+                `Artisan: -${formatPercentage(profitData.artisanBonus, 1)}`,
+                null,
+                artisanContent,
+                false,
+                1
+            )
         );
     }
 
-    // Gourmet Bonus
+    // Gourmet Bonus (no sub-breakdown needed — single source)
     if (profitData.gourmetBonus > 0) {
-        if (modifierLines.length === 0) {
-            modifierLines.push(
-                `<div style="font-weight: 500; color: var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY});">Modifiers:</div>`
-            );
-        }
-        modifierLines.push(
-            `<div style="margin-left: 8px;">• Gourmet: +${formatPercentage(profitData.gourmetBonus, 1)} bonus items</div>`
+        const gourmetContent = document.createElement('div');
+        gourmetContent.textContent = `+${formatPercentage(profitData.gourmetBonus, 1)} bonus items from Gourmet Tea`;
+        modifierSummaryParts.push(`+${formatPercentage(profitData.gourmetBonus, 1)} gourmet`);
+        modifierSubSections.push(
+            createCollapsibleSection(
+                null,
+                `Gourmet: +${formatPercentage(profitData.gourmetBonus, 1)}`,
+                null,
+                gourmetContent,
+                false,
+                1
+            )
         );
     }
-
-    modifiersDiv.innerHTML = modifierLines.join('');
 
     // Assemble Detailed Breakdown (WITHOUT net profit - that goes in top level)
     detailsContent.appendChild(revenueDiv);
     detailsContent.appendChild(costsDiv);
-    if (modifierLines.length > 0) {
-        detailsContent.appendChild(modifiersDiv);
+
+    if (modifierSubSections.length > 0) {
+        const modifierContent = document.createElement('div');
+        for (const sub of modifierSubSections) {
+            modifierContent.appendChild(sub);
+        }
+        const modifiersSection = createCollapsibleSection(
+            '⚙️',
+            'Modifiers',
+            modifierSummaryParts.join(' | '),
+            modifierContent,
+            false,
+            0
+        );
+        detailsContent.appendChild(modifiersSection);
     }
 
     // Create "Detailed Breakdown" collapsible

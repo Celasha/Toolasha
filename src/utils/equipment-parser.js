@@ -336,6 +336,86 @@ export function parseRareFindBonus(characterEquipment, actionTypeHrid, itemDetai
 }
 
 /**
+ * Generic per-item equipment stat breakdown
+ * @param {Map} characterEquipment - Equipment map
+ * @param {Object} itemDetailMap - Item details
+ * @param {string|null} skillSpecificField - e.g. "foragingEfficiency"
+ * @param {string|null} genericField - e.g. "skillingEfficiency"
+ * @param {boolean} returnAsPercentage - Multiply by 100
+ * @returns {Array<{name, enhancementLevel, value}>}
+ */
+function parseEquipmentStatBreakdown(
+    characterEquipment,
+    itemDetailMap,
+    skillSpecificField,
+    genericField,
+    returnAsPercentage
+) {
+    if (!characterEquipment || characterEquipment.size === 0) return [];
+    if (!itemDetailMap) return [];
+
+    const items = [];
+
+    for (const [slotHrid, equippedItem] of characterEquipment) {
+        const itemDetails = itemDetailMap[equippedItem.itemHrid];
+        if (!itemDetails?.equipmentDetail?.noncombatStats) continue;
+
+        const noncombatStats = itemDetails.equipmentDetail.noncombatStats;
+        const enhancementLevel = equippedItem.enhancementLevel || 0;
+        let value = 0;
+
+        if (skillSpecificField) {
+            const base = noncombatStats[skillSpecificField];
+            if (base > 0) value += calculateEnhancementScaling(base, enhancementLevel, slotHrid);
+        }
+        if (genericField) {
+            const base = noncombatStats[genericField];
+            if (base > 0) value += calculateEnhancementScaling(base, enhancementLevel, slotHrid);
+        }
+
+        if (value > 0) {
+            items.push({
+                name: itemDetails.name,
+                enhancementLevel,
+                value: returnAsPercentage ? value * 100 : value,
+            });
+        }
+    }
+
+    return items;
+}
+
+/**
+ * Get per-item efficiency bonus breakdown for an action type
+ * @param {Map} characterEquipment - Equipment map
+ * @param {string} actionTypeHrid - Action type HRID
+ * @param {Object} itemDetailMap - Item details
+ * @returns {Array<{name, enhancementLevel, value}>}
+ */
+export function parseEquipmentEfficiencyBreakdown(characterEquipment, actionTypeHrid, itemDetailMap) {
+    const skillSpecificField = getFieldForActionType(actionTypeHrid, 'Efficiency', VALID_EFFICIENCY_FIELDS);
+    return parseEquipmentStatBreakdown(
+        characterEquipment,
+        itemDetailMap,
+        skillSpecificField,
+        'skillingEfficiency',
+        true
+    );
+}
+
+/**
+ * Get per-item rare find bonus breakdown for an action type
+ * @param {Map} characterEquipment - Equipment map
+ * @param {string} actionTypeHrid - Action type HRID
+ * @param {Object} itemDetailMap - Item details
+ * @returns {Array<{name, enhancementLevel, value}>}
+ */
+export function parseRareFindBreakdown(characterEquipment, actionTypeHrid, itemDetailMap) {
+    const skillSpecificField = getFieldForActionType(actionTypeHrid, 'RareFind', VALID_RARE_FIND_FIELDS);
+    return parseEquipmentStatBreakdown(characterEquipment, itemDetailMap, skillSpecificField, 'skillingRareFind', true);
+}
+
+/**
  * Get all speed bonuses for debugging
  * @param {Map} characterEquipment - Equipment map
  * @param {Object} itemDetailMap - Item details

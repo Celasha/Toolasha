@@ -45,6 +45,7 @@ export function calculateEfficiencyMultiplier(efficiencyPercent) {
  * @param {number} [params.teaEfficiency=0] - Tea efficiency bonus
  * @param {number} [params.communityEfficiency=0] - Community buff efficiency bonus
  * @param {number} [params.achievementEfficiency=0] - Achievement efficiency bonus
+ * @param {number} [params.personalEfficiency=0] - Personal buff (seal) efficiency bonus
  * @returns {Object} Efficiency breakdown
  */
 export function calculateEfficiencyBreakdown({
@@ -57,6 +58,7 @@ export function calculateEfficiencyBreakdown({
     teaEfficiency = 0,
     communityEfficiency = 0,
     achievementEfficiency = 0,
+    personalEfficiency = 0,
 }) {
     const effectiveRequirement = (requiredLevel || 0) + actionLevelBonus;
     const baseSkillLevel = Math.max(skillLevel || 0, requiredLevel || 0);
@@ -68,7 +70,8 @@ export function calculateEfficiencyBreakdown({
         equipmentEfficiency,
         teaEfficiency,
         communityEfficiency,
-        achievementEfficiency
+        achievementEfficiency,
+        personalEfficiency
     );
 
     return {
@@ -82,6 +85,7 @@ export function calculateEfficiencyBreakdown({
             teaEfficiency,
             communityEfficiency,
             achievementEfficiency,
+            personalEfficiency,
             actionLevelBonus,
             teaSkillLevelBonus,
         },

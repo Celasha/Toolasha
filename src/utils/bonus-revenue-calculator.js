@@ -7,7 +7,7 @@
 import marketAPI from '../api/marketplace.js';
 import expectedValueCalculator from '../features/market/expected-value-calculator.js';
 import dataManager from '../core/data-manager.js';
-import { parseEssenceFindBonus, parseRareFindBonus } from './equipment-parser.js';
+import { parseEssenceFindBonus, parseRareFindBonus, parseRareFindBreakdown } from './equipment-parser.js';
 import { calculateHouseRareFind } from './house-efficiency.js';
 
 /**
@@ -27,11 +27,17 @@ export function calculateBonusRevenue(actionDetails, actionsPerHour, characterEq
     const houseRareFindBonus = calculateHouseRareFind();
     const achievementRareFindBonus =
         dataManager.getAchievementBuffFlatBoost(actionDetails.type, '/buff_types/rare_find') * 100;
-    const rareFindBonus = equipmentRareFindBonus + houseRareFindBonus + achievementRareFindBonus;
+    const personalRareFindBonus =
+        dataManager.getPersonalBuffFlatBoost(actionDetails.type, '/buff_types/rare_find') * 100;
+    const rareFindBonus =
+        equipmentRareFindBonus + houseRareFindBonus + achievementRareFindBonus + personalRareFindBonus;
+    const equipmentRareFindItems = parseRareFindBreakdown(characterEquipment, actionDetails.type, itemDetailMap);
     const rareFindBreakdown = {
         equipment: equipmentRareFindBonus,
+        equipmentItems: equipmentRareFindItems,
         house: houseRareFindBonus,
         achievement: achievementRareFindBonus,
+        personal: personalRareFindBonus,
     };
 
     const bonusDrops = [];

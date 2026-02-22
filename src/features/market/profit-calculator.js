@@ -6,7 +6,11 @@
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import marketAPI from '../../api/marketplace.js';
-import { parseEquipmentSpeedBonuses, parseEquipmentEfficiencyBonuses } from '../../utils/equipment-parser.js';
+import {
+    parseEquipmentSpeedBonuses,
+    parseEquipmentEfficiencyBonuses,
+    parseEquipmentEfficiencyBreakdown,
+} from '../../utils/equipment-parser.js';
 import { calculateHouseEfficiency } from '../../utils/house-efficiency.js';
 import { calculateEfficiencyBreakdown, calculateEfficiencyMultiplier } from '../../utils/efficiency.js';
 import {
@@ -157,10 +161,14 @@ class ProfitCalculator {
         const artisanBonus = parseArtisanBonus(activeDrinks, itemDetailMap, drinkConcentration);
 
         // Calculate gourmet bonus (Brewing/Cooking extra items)
-        const gourmetBonus = parseGourmetBonus(activeDrinks, itemDetailMap, drinkConcentration);
+        const gourmetBonus =
+            parseGourmetBonus(activeDrinks, itemDetailMap, drinkConcentration) +
+            dataManager.getPersonalBuffFlatBoost(actionDetails.type, '/buff_types/gourmet');
 
         // Calculate processing bonus (Milking/Foraging/Woodcutting conversions)
-        const processingBonus = parseProcessingBonus(activeDrinks, itemDetailMap, drinkConcentration);
+        const processingBonus =
+            parseProcessingBonus(activeDrinks, itemDetailMap, drinkConcentration) +
+            dataManager.getPersonalBuffFlatBoost(actionDetails.type, '/buff_types/processing');
 
         // Get community buff bonus (Production Efficiency)
         const communityBuffLevel = dataManager.getCommunityBuffLevel('/community_buff_types/production_efficiency');
@@ -175,12 +183,20 @@ class ProfitCalculator {
             actionDetails.type,
             itemDetailMap
         );
+        const equipmentEfficiencyItems = parseEquipmentEfficiencyBreakdown(
+            characterEquipment,
+            actionDetails.type,
+            itemDetailMap
+        );
 
         // Calculate tea efficiency bonus
         const teaEfficiency = parseTeaEfficiency(actionDetails.type, activeDrinks, itemDetailMap, drinkConcentration);
 
         const achievementEfficiency =
             dataManager.getAchievementBuffFlatBoost(actionDetails.type, '/buff_types/efficiency') * 100;
+
+        const personalEfficiency =
+            dataManager.getPersonalBuffFlatBoost(actionDetails.type, '/buff_types/efficiency') * 100;
 
         const efficiencyBreakdown = calculateEfficiencyBreakdown({
             requiredLevel: baseRequirement,
@@ -192,6 +208,7 @@ class ProfitCalculator {
             teaEfficiency,
             communityEfficiency,
             achievementEfficiency,
+            personalEfficiency,
         });
 
         const totalEfficiency = efficiencyBreakdown.totalEfficiency;
@@ -200,15 +217,16 @@ class ProfitCalculator {
 
         // Calculate equipment speed bonus
         const equipmentSpeedBonus = parseEquipmentSpeedBonuses(characterEquipment, actionDetails.type, itemDetailMap);
+        const personalSpeedBonus = dataManager.getPersonalBuffFlatBoost(actionDetails.type, '/buff_types/action_speed');
 
         // Calculate action time with ONLY speed bonuses
         // Efficiency does NOT reduce time - it gives bonus actions
         // Formula: baseTime / (1 + speedBonus)
         // Example: 60s / (1 + 0.15) = 52.17s
-        const actionTime = baseTime / (1 + equipmentSpeedBonus);
+        const actionTime = baseTime / (1 + equipmentSpeedBonus + personalSpeedBonus);
 
         // Build time breakdown for display
-        const timeBreakdown = this.calculateTimeBreakdown(baseTime, equipmentSpeedBonus);
+        const timeBreakdown = this.calculateTimeBreakdown(baseTime, equipmentSpeedBonus + personalSpeedBonus);
 
         // Actions per hour (base rate without efficiency)
         const actionsPerHour = calculateActionsPerHour(actionTime);
@@ -327,9 +345,11 @@ class ProfitCalculator {
             levelEfficiency, // Level advantage efficiency
             houseEfficiency, // House room efficiency
             equipmentEfficiency, // Equipment efficiency
+            equipmentEfficiencyItems, // Per-item equipment efficiency breakdown
             teaEfficiency, // Tea buff efficiency
             communityEfficiency, // Community buff efficiency
             achievementEfficiency, // Achievement buff efficiency
+            personalEfficiency, // Personal buff (seal) efficiency
             actionLevelBonus, // Action Level bonus from teas (e.g., Artisan Tea)
             artisanBonus, // Artisan material cost reduction
             gourmetBonus, // Gourmet bonus item chance
@@ -338,6 +358,7 @@ class ProfitCalculator {
             teaSkillLevelBonus, // Tea skill level bonus (e.g., +8 from Ultra Cheesesmithing Tea)
             efficiencyMultiplier,
             equipmentSpeedBonus,
+            personalSpeedBonus, // Personal buff (seal) speed bonus
             skillLevel,
             baseRequirement, // Base requirement level
             effectiveRequirement, // Requirement after Action Level bonus

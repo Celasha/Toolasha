@@ -11,7 +11,11 @@
  */
 
 import dataManager from '../../core/data-manager.js';
-import { parseEquipmentSpeedBonuses, parseEquipmentEfficiencyBonuses } from '../../utils/equipment-parser.js';
+import {
+    parseEquipmentSpeedBonuses,
+    parseEquipmentEfficiencyBonuses,
+    parseEquipmentEfficiencyBreakdown,
+} from '../../utils/equipment-parser.js';
 import {
     parseTeaEfficiency,
     parseGourmetBonus,
@@ -125,8 +129,9 @@ export async function calculateGatheringProfit(actionHrid) {
     // Calculate action time per action (with speed bonuses)
     const baseTimePerActionSec = actionDetail.baseTimeCost / 1000000000;
     const speedBonus = parseEquipmentSpeedBonuses(equipment, actionDetail.type, gameData.itemDetailMap);
+    const personalSpeedBonus = dataManager.getPersonalBuffFlatBoost(actionDetail.type, '/buff_types/action_speed');
     // speedBonus is already a decimal (e.g., 0.15 for 15%), don't divide by 100
-    const actualTimePerActionSec = baseTimePerActionSec / (1 + speedBonus);
+    const actualTimePerActionSec = baseTimePerActionSec / (1 + speedBonus + personalSpeedBonus);
 
     // Calculate actions per hour
     const actionsPerHour = calculateActionsPerHour(actualTimePerActionSec);
@@ -143,13 +148,15 @@ export async function calculateGatheringProfit(actionHrid) {
     // Gourmet Tea only applies to production skills (Brewing, Cooking, Cheesesmithing, Crafting, Tailoring)
     // NOT gathering skills (Foraging, Woodcutting, Milking)
     const gourmetBonus = PRODUCTION_TYPES.includes(actionDetail.type)
-        ? parseGourmetBonus(drinkSlots, gameData.itemDetailMap, drinkConcentration)
+        ? parseGourmetBonus(drinkSlots, gameData.itemDetailMap, drinkConcentration) +
+          dataManager.getPersonalBuffFlatBoost(actionDetail.type, '/buff_types/gourmet')
         : 0;
 
     // Processing Tea: 15% base chance to convert raw → processed (Cotton → Cotton Fabric, etc.)
     // Only applies to gathering skills (Foraging, Woodcutting, Milking)
     const processingBonus = GATHERING_TYPES.includes(actionDetail.type)
-        ? parseProcessingBonus(drinkSlots, gameData.itemDetailMap, drinkConcentration)
+        ? parseProcessingBonus(drinkSlots, gameData.itemDetailMap, drinkConcentration) +
+          dataManager.getPersonalBuffFlatBoost(actionDetail.type, '/buff_types/processing')
         : 0;
 
     // Gathering Quantity: Increases item drop amounts (min/max)
@@ -159,6 +166,7 @@ export async function calculateGatheringProfit(actionHrid) {
     let gatheringTea = 0;
     let communityGathering = 0;
     let achievementGathering = 0;
+    let personalGathering = 0;
     if (GATHERING_TYPES.includes(actionDetail.type)) {
         // Parse Gathering Tea bonus
         gatheringTea = parseGatheringBonus(drinkSlots, gameData.itemDetailMap, drinkConcentration);
@@ -170,8 +178,11 @@ export async function calculateGatheringProfit(actionHrid) {
         // Get Achievement buffs for this action type (Beginner tier: +2% Gathering Quantity)
         achievementGathering = dataManager.getAchievementBuffFlatBoost(actionDetail.type, '/buff_types/gathering');
 
+        // Get personal buff (Seal of Gathering)
+        personalGathering = dataManager.getPersonalBuffFlatBoost(actionDetail.type, '/buff_types/gathering');
+
         // Stack all bonuses additively
-        totalGathering = gatheringTea + communityGathering + achievementGathering;
+        totalGathering = gatheringTea + communityGathering + achievementGathering + personalGathering;
     }
 
     const teaCostData = calculateTeaCostsPerHour({
@@ -219,8 +230,14 @@ export async function calculateGatheringProfit(actionHrid) {
 
     // Calculate equipment efficiency bonus (uses equipment-parser utility)
     const equipmentEfficiency = parseEquipmentEfficiencyBonuses(equipment, actionDetail.type, gameData.itemDetailMap);
+    const equipmentEfficiencyItems = parseEquipmentEfficiencyBreakdown(
+        equipment,
+        actionDetail.type,
+        gameData.itemDetailMap
+    );
     const achievementEfficiency =
         dataManager.getAchievementBuffFlatBoost(actionDetail.type, '/buff_types/efficiency') * 100;
+    const personalEfficiency = dataManager.getPersonalBuffFlatBoost(actionDetail.type, '/buff_types/efficiency') * 100;
 
     const efficiencyBreakdown = calculateEfficiencyBreakdown({
         requiredLevel,
@@ -230,6 +247,7 @@ export async function calculateGatheringProfit(actionHrid) {
         teaEfficiency,
         equipmentEfficiency,
         achievementEfficiency,
+        personalEfficiency,
     });
     const totalEfficiency = efficiencyBreakdown.totalEfficiency;
     const levelEfficiency = efficiencyBreakdown.levelEfficiency;
@@ -431,17 +449,26 @@ export async function calculateGatheringProfit(actionHrid) {
         gourmetRevenueBonus, // Gourmet bonus revenue per hour
         gourmetRevenueBonusPerAction, // Gourmet bonus revenue per action
         gatheringQuantity: totalGathering, // Total gathering quantity bonus (as decimal) - renamed for display consistency
+        totalGathering, // Alias used by formatProfitDisplay
         hasMissingPrices,
+        // Top-level gathering breakdown for formatProfitDisplay
+        gatheringTea,
+        communityGathering,
+        achievementGathering,
+        personalGathering,
         details: {
             levelEfficiency,
             houseEfficiency,
             teaEfficiency,
             equipmentEfficiency,
+            equipmentEfficiencyItems,
             achievementEfficiency,
+            personalEfficiency,
             gourmetBonus,
             communityBuffQuantity: communityGathering, // Community Buff component (as decimal)
             gatheringTeaBonus: gatheringTea, // Gathering Tea component (as decimal)
             achievementGathering: achievementGathering, // Achievement Tier component (as decimal)
+            personalGathering: personalGathering, // Personal buff (seal) component (as decimal)
         },
     };
 }
@@ -485,6 +512,9 @@ export function formatProfitDisplay(profitData) {
     }
     if (profitData.details.achievementEfficiency > 0) {
         effParts.push(`${profitData.details.achievementEfficiency.toFixed(1)}% achievement`);
+    }
+    if (profitData.details.personalEfficiency > 0) {
+        effParts.push(`${profitData.details.personalEfficiency.toFixed(1)}% seal`);
     }
     if (profitData.details.gourmetBonus > 0) {
         effParts.push(`${profitData.details.gourmetBonus.toFixed(1)}% gourmet`);
@@ -624,6 +654,9 @@ export function formatProfitDisplay(profitData) {
         }
         if (profitData.achievementGathering > 0) {
             gatheringParts.push(`${formatPercentage(profitData.achievementGathering, 1)} achievement`);
+        }
+        if (profitData.personalGathering > 0) {
+            gatheringParts.push(`${formatPercentage(profitData.personalGathering, 1)} seal`);
         }
 
         lines.push(`<br>Gathering: +${formatPercentage(profitData.totalGathering, 1)} quantity`);

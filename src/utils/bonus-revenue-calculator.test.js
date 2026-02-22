@@ -2,7 +2,7 @@ import { describe, test, expect, vi, beforeEach } from 'vitest';
 
 import marketAPI from '../api/marketplace.js';
 import expectedValueCalculator from '../features/market/expected-value-calculator.js';
-import { parseEssenceFindBonus, parseRareFindBonus } from './equipment-parser.js';
+import { parseEssenceFindBonus, parseRareFindBonus, parseRareFindBreakdown } from './equipment-parser.js';
 import { calculateHouseRareFind } from './house-efficiency.js';
 import { calculateBonusRevenue } from './bonus-revenue-calculator.js';
 
@@ -21,6 +21,7 @@ vi.mock('../features/market/expected-value-calculator.js', () => ({
 vi.mock('./equipment-parser.js', () => ({
     parseEssenceFindBonus: vi.fn(),
     parseRareFindBonus: vi.fn(),
+    parseRareFindBreakdown: vi.fn(),
 }));
 
 vi.mock('./house-efficiency.js', () => ({
@@ -32,6 +33,7 @@ describe('calculateBonusRevenue', () => {
         vi.clearAllMocks();
         parseEssenceFindBonus.mockReturnValue(0);
         parseRareFindBonus.mockReturnValue(0);
+        parseRareFindBreakdown.mockReturnValue([]);
         calculateHouseRareFind.mockReturnValue(0);
         marketAPI.getPrice.mockReturnValue({ bid: 50 });
         expectedValueCalculator.getCachedValue.mockReturnValue(200);
