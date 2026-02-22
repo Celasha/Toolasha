@@ -414,6 +414,30 @@ class DataManager {
             // Store battle data (includes party consumables)
             this.battleData = data;
         });
+
+        // Handle character_info_updated (task slot changes, cooldown timestamps, etc.)
+        this.webSocketHook.on('character_info_updated', (data) => {
+            if (this.characterData && data.characterInfo) {
+                this.characterData.characterInfo = data.characterInfo;
+            }
+            this.emit('character_info_updated', data);
+        });
+
+        // Handle quests_updated (keep characterQuests in sync mid-session)
+        this.webSocketHook.on('quests_updated', (data) => {
+            if (data.endCharacterQuests && Array.isArray(data.endCharacterQuests)) {
+                for (const updatedQuest of data.endCharacterQuests) {
+                    const index = this.characterQuests.findIndex((q) => q.id === updatedQuest.id);
+                    if (index !== -1) {
+                        this.characterQuests[index] = updatedQuest;
+                    } else {
+                        this.characterQuests.push(updatedQuest);
+                    }
+                }
+                // Remove claimed quests
+                this.characterQuests = this.characterQuests.filter((q) => q.status !== '/quest_status/claimed');
+            }
+        });
     }
 
     /**

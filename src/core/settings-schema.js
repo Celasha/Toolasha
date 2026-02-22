@@ -693,6 +693,13 @@ export const settingsGroups = {
                 default: true,
                 help: 'Adds a button to dim inventory items not needed for your current non-combat tasks',
             },
+            taskStatistics: {
+                id: 'taskStatistics',
+                label: 'Show task statistics button on Tasks panel',
+                type: 'checkbox',
+                default: true,
+                help: 'Adds a Statistics button to the Tasks panel showing overflow time, expected rewards, and completion estimates',
+            },
         },
     },
 

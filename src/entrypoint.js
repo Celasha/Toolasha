@@ -358,6 +358,13 @@ function registerFeatures() {
             module: UI.taskInventoryHighlighter,
             async: false,
         },
+        {
+            key: 'taskStatistics',
+            name: 'Task Statistics',
+            category: 'Tasks',
+            module: UI.taskStatistics,
+            async: false,
+        },
         { key: 'skillRemainingXP', name: 'Remaining XP', category: 'Skills', module: UI.remainingXP, async: false },
         {
             key: 'housePanelObserver',
