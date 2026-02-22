@@ -2,15 +2,13 @@
 
 ## [1.8.0](https://github.com/Celasha/Toolasha/compare/v1.7.0...v1.8.0) (2026-02-22)
 
-
 ### Features
 
-* add hide action stats setting and fix React fiber navigation ([047baba](https://github.com/Celasha/Toolasha/commit/047baba6e24d9d812891bc9a2e76f6cb2fd36158))
-
+- add hide action stats setting and fix React fiber navigation ([047baba](https://github.com/Celasha/Toolasha/commit/047baba6e24d9d812891bc9a2e76f6cb2fd36158))
 
 ### Bug Fixes
 
-* resolve multiple production/alchemy profit display and navigation issues ([872cf9a](https://github.com/Celasha/Toolasha/commit/872cf9aa2da2276da663c5e39b430c14e853585e))
+- resolve multiple production/alchemy profit display and navigation issues ([872cf9a](https://github.com/Celasha/Toolasha/commit/872cf9aa2da2276da663c5e39b430c14e853585e))
 
 ## [1.7.0](https://github.com/Celasha/Toolasha/compare/v1.6.1...v1.7.0) (2026-02-22)
 
