@@ -2,17 +2,15 @@
 
 ## [1.7.0](https://github.com/Celasha/Toolasha/compare/v1.6.1...v1.7.0) (2026-02-22)
 
-
 ### Features
 
-* add task statistics button to Tasks panel ([07dfd46](https://github.com/Celasha/Toolasha/commit/07dfd46c2f5f2b0de8fad99e3cb3cc44010f75aa))
-* add warning notification when combat sprites are not loaded ([00e99d7](https://github.com/Celasha/Toolasha/commit/00e99d732569e8fee17884e12b4d937a9f945ab4))
-
+- add task statistics button to Tasks panel ([07dfd46](https://github.com/Celasha/Toolasha/commit/07dfd46c2f5f2b0de8fad99e3cb3cc44010f75aa))
+- add warning notification when combat sprites are not loaded ([00e99d7](https://github.com/Celasha/Toolasha/commit/00e99d732569e8fee17884e12b4d937a9f945ab4))
 
 ### Bug Fixes
 
-* correct task statistics action profit calculation ([ff68785](https://github.com/Celasha/Toolasha/commit/ff68785719515b35468ebe1d64664ecec305079c))
-* scope tea optimizer tab detection to current skill panel ([c5805ca](https://github.com/Celasha/Toolasha/commit/c5805cabaaf030cc282efc3b90d9de9df531d665))
+- correct task statistics action profit calculation ([ff68785](https://github.com/Celasha/Toolasha/commit/ff68785719515b35468ebe1d64664ecec305079c))
+- scope tea optimizer tab detection to current skill panel ([c5805ca](https://github.com/Celasha/Toolasha/commit/c5805cabaaf030cc282efc3b90d9de9df531d665))
 
 ## [1.6.1](https://github.com/Celasha/Toolasha/compare/v1.6.0...v1.6.1) (2026-02-21)
 
