@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.9.0](https://github.com/Celasha/Toolasha/compare/v1.8.1...v1.9.0) (2026-02-22)
+
+
+### Features
+
+* add loot log statistics feature (untested) ([d11aed1](https://github.com/Celasha/Toolasha/commit/d11aed11cfcc6eb05af4a20b116d09b94905230a))
+* add seal buff support and collapsible per-source modifier breakdown ([4756a3c](https://github.com/Celasha/Toolasha/commit/4756a3c26aa32d8e15ae1ab24992ef8b076b1d3f))
+* register loot log statistics feature ([7663976](https://github.com/Celasha/Toolasha/commit/76639767153a9b49801ab547e84268f5f523275f))
+
 ## [1.8.1](https://github.com/Celasha/Toolasha/compare/v1.8.0...v1.8.1) (2026-02-22)
 
 ### Bug Fixes
