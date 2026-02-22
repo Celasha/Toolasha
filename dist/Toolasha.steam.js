@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      1.7.0
+// @version      1.8.0
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -15130,6 +15130,13 @@ return plugin;
                     default: true,
                     help: 'Displays profit/hr and exp/hr on gathering tiles (foraging, woodcutting, milking)',
                 },
+                actionPanel_hideActionStats: {
+                    id: 'actionPanel_hideActionStats',
+                    label: 'Action panel: Hide all profit/efficiency displays',
+                    type: 'checkbox',
+                    default: false,
+                    help: 'Hides Profitability, Action Speed & Time, and Level Progress sections in gathering, production, and alchemy panels',
+                },
                 actionPanel_hideNegativeProfit: {
                     id: 'actionPanel_hideNegativeProfit',
                     label: 'Action panel: Hide actions with negative profit',
@@ -22111,16 +22118,21 @@ return plugin;
                 // Conservative: Ask/Bid (instant buy materials, instant sell output)
                 // Hybrid: Ask/Ask (instant buy materials, patient sell output)
                 // Optimistic: Bid/Ask (patient buy materials, patient sell output)
+                let selectedPriceType;
                 switch (profitMode) {
                     case 'conservative':
-                        return side === 'buy' ? 'ask' : 'bid';
+                        selectedPriceType = side === 'buy' ? 'ask' : 'bid';
+                        break;
                     case 'hybrid':
-                        return 'ask'; // Ask for both buy and sell
+                        selectedPriceType = 'ask'; // Ask for both buy and sell
+                        break;
                     case 'optimistic':
-                        return side === 'buy' ? 'bid' : 'ask';
+                        selectedPriceType = side === 'buy' ? 'bid' : 'ask';
+                        break;
                     default:
-                        return 'ask';
+                        selectedPriceType = 'ask';
                 }
+                return selectedPriceType;
             }
             default: {
                 const warningKey = `context:${context}`;
@@ -27054,6 +27066,8 @@ self.onmessage = function (e) {
             // Profit per item (for display)
             const profitPerItem = profitPerHour / totalItemsPerHour;
 
+            const pricingMode = config$1.getSettingValue('profitCalc_pricingMode', 'hybrid');
+
             return {
                 itemName: itemDetails.name,
                 itemHrid,
@@ -27100,6 +27114,7 @@ self.onmessage = function (e) {
                 effectiveRequirement, // Requirement after Action Level bonus
                 requiredLevel: effectiveRequirement, // For backwards compatibility
                 timeBreakdown,
+                pricingMode, // Pricing mode for display
             };
         }
 
@@ -44886,6 +44901,11 @@ self.onmessage = function (e) {
      * @param {string} dropTableSelector - CSS selector for drop table element
      */
     async function displayGatheringProfit(panel, actionHrid, dropTableSelector) {
+        // Check global hide setting
+        if (config$1.getSetting('actionPanel_hideActionStats')) {
+            return;
+        }
+
         // Calculate profit
         const profitData = await calculateGatheringProfit(actionHrid);
         if (!profitData) {
@@ -45281,6 +45301,7 @@ self.onmessage = function (e) {
         // Create main profit section
         const profitSection = createCollapsibleSection('💰', 'Profitability', summary, topLevelContent, false, 0);
         profitSection.id = 'mwi-foraging-profit';
+        profitSection.setAttribute('data-mwi-profit-display', 'true');
 
         // Get the summary div to update it dynamically
         const profitSummaryDiv = profitSection.querySelector('.mwi-section-header + div');
@@ -45354,6 +45375,11 @@ self.onmessage = function (e) {
      * @param {string} dropTableSelector - CSS selector for drop table element
      */
     async function displayProductionProfit(panel, actionHrid, dropTableSelector) {
+        // Check global hide setting
+        if (config$1.getSetting('actionPanel_hideActionStats')) {
+            return;
+        }
+
         // Calculate profit
         const profitData = await calculateProductionProfit(actionHrid);
         if (!profitData) {
@@ -45787,8 +45813,7 @@ self.onmessage = function (e) {
         // Create main profit section
         const profitSection = createCollapsibleSection('💰', 'Profitability', summary, topLevelContent, false, 0);
         profitSection.id = 'mwi-production-profit';
-
-        // Get the summary div to update it dynamically
+        profitSection.setAttribute('data-mwi-profit-display', 'true');
         const profitSummaryDiv = profitSection.querySelector('.mwi-section-header + div');
 
         // Set up listener to update summary with total profit when input changes
@@ -49702,19 +49727,20 @@ self.onmessage = function (e) {
                 } // End hasNormalXP check - queueContent only created for non-combat
 
                 // Insert sections into DOM
+                const hideActionStats = config$1.getSetting('actionPanel_hideActionStats');
                 if (queueContent) {
                     // Non-combat: Insert queueContent first
                     inputContainer.insertAdjacentElement('afterend', queueContent);
 
-                    if (speedSection) {
+                    if (speedSection && !hideActionStats) {
                         queueContent.insertAdjacentElement('afterend', speedSection);
                         if (levelProgressSection) {
                             speedSection.insertAdjacentElement('afterend', levelProgressSection);
                         }
-                    } else if (levelProgressSection) {
+                    } else if (levelProgressSection && !hideActionStats) {
                         queueContent.insertAdjacentElement('afterend', levelProgressSection);
                     }
-                } else if (levelProgressSection) {
+                } else if (levelProgressSection && !hideActionStats) {
                     // Combat: Insert levelProgressSection directly after inputContainer
                     inputContainer.insertAdjacentElement('afterend', levelProgressSection);
                 }
@@ -53012,13 +53038,17 @@ self.onmessage = function (e) {
      * @returns {Object|null} Game component instance
      */
     function getGameObject$1() {
-        const gamePageEl = document.querySelector('[class^="GamePage"]');
-        if (!gamePageEl) return null;
+        const rootEl = document.getElementById('root');
+        const rootFiber = rootEl?._reactRootContainer?.current || rootEl?._reactRootContainer?._internalRoot?.current;
+        if (!rootFiber) return null;
 
-        const fiberKey = Object.keys(gamePageEl).find((k) => k.startsWith('__reactFiber$'));
-        if (!fiberKey) return null;
+        function find(fiber) {
+            if (!fiber) return null;
+            if (fiber.stateNode?.handleGoToMarketplace) return fiber.stateNode;
+            return find(fiber.child) || find(fiber.sibling);
+        }
 
-        return gamePageEl[fiberKey]?.return?.stateNode;
+        return find(rootFiber);
     }
 
     /**
@@ -53030,9 +53060,8 @@ self.onmessage = function (e) {
         const game = getGameObject$1();
         if (game?.handleGoToMarketplace) {
             game.handleGoToMarketplace(itemHrid, enhancementLevel);
-        } else {
-            console.error('[MarketplaceTabs] Game API not available');
         }
+        // Silently fail if game API unavailable - feature still provides value without auto-navigation
     }
 
     /**
@@ -55790,37 +55819,26 @@ self.onmessage = function (e) {
          */
         extractTeaDuration() {
             try {
-                const container = document.querySelector('[class*="SkillActionDetail_alchemyComponent"]');
-                if (!container || !container._reactProps) {
-                    return 300;
+                const rootEl = document.getElementById('root');
+                const rootFiber =
+                    rootEl?._reactRootContainer?.current || rootEl?._reactRootContainer?._internalRoot?.current;
+                if (!rootFiber) return 300;
+
+                function find(fiber) {
+                    if (!fiber) return null;
+                    if (fiber.memoizedProps?.actionBuffs) return fiber;
+                    return find(fiber.child) || find(fiber.sibling);
                 }
 
-                let fiber = container._reactProps;
-                for (const key in fiber) {
-                    if (key.startsWith('__reactFiber') || key.startsWith('__reactInternalInstance')) {
-                        fiber = fiber[key];
-                        break;
+                const fiberNode = find(rootFiber);
+                if (!fiberNode) return 300;
+
+                const buffs = fiberNode.memoizedProps.actionBuffs;
+                for (const buff of buffs) {
+                    if (buff.uniqueHrid && buff.uniqueHrid.endsWith('tea')) {
+                        const duration = buff.duration || 0;
+                        return duration / 1e9; // Convert nanoseconds to seconds
                     }
-                }
-
-                let current = fiber;
-                let depth = 0;
-
-                while (current && depth < 20) {
-                    if (current.memoizedProps?.actionBuffs) {
-                        const buffs = current.memoizedProps.actionBuffs;
-
-                        for (const buff of buffs) {
-                            if (buff.uniqueHrid && buff.uniqueHrid.endsWith('tea')) {
-                                const duration = buff.duration || 0;
-                                return duration / 1e9; // Convert nanoseconds to seconds
-                            }
-                        }
-                        break;
-                    }
-
-                    current = current.return;
-                    depth++;
                 }
 
                 return 300; // Default 5 minutes
@@ -56366,6 +56384,7 @@ self.onmessage = function (e) {
             // Observer for content changes (item selection)
             this.contentObserver = new MutationObserver((mutations) => {
                 for (const mutation of mutations) {
+                    // Watch for childList changes (sections being added/removed)
                     if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
                         for (const node of mutation.addedNodes) {
                             if (node.nodeType === Node.ELEMENT_NODE) {
@@ -56383,6 +56402,16 @@ self.onmessage = function (e) {
                             }
                         }
                     }
+
+                    // Watch for attribute changes (SVG href changes when item selected)
+                    if (mutation.type === 'attributes') {
+                        const target = mutation.target;
+                        if (target.tagName === 'use' && mutation.attributeName === 'href') {
+                            // SVG use element href changed - item was selected
+                            triggerUpdate();
+                            return;
+                        }
+                    }
                 }
             });
 
@@ -56390,6 +56419,8 @@ self.onmessage = function (e) {
             this.contentObserver.observe(alchemyComponent, {
                 childList: true,
                 subtree: true,
+                attributes: true,
+                attributeFilter: ['href'],
             });
         }
 
@@ -56638,6 +56669,11 @@ self.onmessage = function (e) {
         createDisplay(container, profitData, actionType, itemHrid) {
             // Remove any existing display
             this.removeDisplay();
+
+            // Check global hide setting
+            if (config$1.getSetting('actionPanel_hideActionStats')) {
+                return;
+            }
 
             // Validate required data
             if (
@@ -57152,6 +57188,7 @@ self.onmessage = function (e) {
             const profitSection = createCollapsibleSection('💰', 'Profitability', summary, topLevelContent, false, 0);
             profitSection.id = 'mwi-alchemy-profit';
             profitSection.classList.add('mwi-alchemy-profit');
+            profitSection.setAttribute('data-mwi-profit-display', 'true');
 
             // Append to container
             container.appendChild(profitSection);
@@ -57175,6 +57212,7 @@ self.onmessage = function (e) {
                 if (speedTimeSection) {
                     speedTimeSection.id = 'mwi-alchemy-speed-time';
                     speedTimeSection.classList.add('mwi-alchemy-speed-time');
+                    speedTimeSection.setAttribute('data-mwi-profit-display', 'true');
                     container.appendChild(speedTimeSection);
                 }
             }
@@ -57185,6 +57223,7 @@ self.onmessage = function (e) {
                 if (levelProgressSection) {
                     levelProgressSection.id = 'mwi-alchemy-level-progress';
                     levelProgressSection.classList.add('mwi-alchemy-level-progress');
+                    levelProgressSection.setAttribute('data-mwi-profit-display', 'true');
                     container.appendChild(levelProgressSection);
                 }
             }
@@ -70444,17 +70483,21 @@ self.onmessage = function (e) {
 
 
     /**
-     * Get game object via React fiber
+     * Get game object via React fiber tree traversal
      * @returns {Object|null} Game component instance
      */
     function getGameObject() {
-        const gamePageEl = document.querySelector('[class^="GamePage"]');
-        if (!gamePageEl) return null;
+        const rootEl = document.getElementById('root');
+        const rootFiber = rootEl?._reactRootContainer?.current || rootEl?._reactRootContainer?._internalRoot?.current;
+        if (!rootFiber) return null;
 
-        const fiberKey = Object.keys(gamePageEl).find((k) => k.startsWith('__reactFiber$'));
-        if (!fiberKey) return null;
+        function find(fiber) {
+            if (!fiber) return null;
+            if (fiber.stateNode?.handleGoToMarketplace) return fiber.stateNode;
+            return find(fiber.child) || find(fiber.sibling);
+        }
 
-        return gamePageEl[fiberKey]?.return?.stateNode;
+        return find(rootFiber);
     }
 
     /**
@@ -70767,24 +70810,22 @@ self.onmessage = function (e) {
         }
 
         /**
-         * Setup game core access via React Fiber traversal
+         * Setup game core access via React Fiber tree traversal
          */
         setupGameCore() {
             try {
-                const el = document.querySelector('[class*="GamePage_gamePage"]');
-                if (!el) return;
+                const rootEl = document.getElementById('root');
+                const rootFiber =
+                    rootEl?._reactRootContainer?.current || rootEl?._reactRootContainer?._internalRoot?.current;
+                if (!rootFiber) return;
 
-                const k = Object.keys(el).find((k) => k.startsWith('__reactFiber$'));
-                if (!k) return;
-
-                let f = el[k];
-                while (f) {
-                    if (f.stateNode?.sendPing) {
-                        this.gameCore = f.stateNode;
-                        return;
-                    }
-                    f = f.return;
+                function find(fiber) {
+                    if (!fiber) return null;
+                    if (fiber.stateNode?.sendPing) return fiber.stateNode;
+                    return find(fiber.child) || find(fiber.sibling);
                 }
+
+                this.gameCore = find(rootFiber);
             } catch (error) {
                 console.error('[Chat Commands] Error accessing game core:', error);
             }
@@ -71044,7 +71085,7 @@ self.onmessage = function (e) {
          */
         openItemDictionary(itemHrid) {
             if (!this.gameCore?.handleOpenItemDictionary) {
-                this.showError('Unable to open Item Dictionary (game core not accessible)');
+                this.showError('Feature unavailable after 2/21/26 game update');
                 return;
             }
 
@@ -71062,7 +71103,7 @@ self.onmessage = function (e) {
          */
         openMarketplace(itemHrid) {
             if (!this.gameCore?.handleGoToMarketplace) {
-                this.showError('Unable to open marketplace (game core not accessible)');
+                this.showError('Feature unavailable after 2/21/26 game update');
                 return;
             }
 

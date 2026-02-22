@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 1.7.0
+ * Version: 1.8.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -282,6 +282,8 @@
             // Profit per item (for display)
             const profitPerItem = profitPerHour / totalItemsPerHour;
 
+            const pricingMode = config.getSettingValue('profitCalc_pricingMode', 'hybrid');
+
             return {
                 itemName: itemDetails.name,
                 itemHrid,
@@ -328,6 +330,7 @@
                 effectiveRequirement, // Requirement after Action Level bonus
                 requiredLevel: effectiveRequirement, // For backwards compatibility
                 timeBreakdown,
+                pricingMode, // Pricing mode for display
             };
         }
 

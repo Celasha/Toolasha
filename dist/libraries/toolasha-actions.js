@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 1.7.0
+ * Version: 1.8.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1693,6 +1693,8 @@
             // Profit per item (for display)
             const profitPerItem = profitPerHour / totalItemsPerHour;
 
+            const pricingMode = config.getSettingValue('profitCalc_pricingMode', 'hybrid');
+
             return {
                 itemName: itemDetails.name,
                 itemHrid,
@@ -1739,6 +1741,7 @@
                 effectiveRequirement, // Requirement after Action Level bonus
                 requiredLevel: effectiveRequirement, // For backwards compatibility
                 timeBreakdown,
+                pricingMode, // Pricing mode for display
             };
         }
 
@@ -2067,6 +2070,11 @@
      * @param {string} dropTableSelector - CSS selector for drop table element
      */
     async function displayGatheringProfit(panel, actionHrid, dropTableSelector) {
+        // Check global hide setting
+        if (config.getSetting('actionPanel_hideActionStats')) {
+            return;
+        }
+
         // Calculate profit
         const profitData = await calculateGatheringProfit(actionHrid);
         if (!profitData) {
@@ -2462,6 +2470,7 @@
         // Create main profit section
         const profitSection = uiComponents_js.createCollapsibleSection('💰', 'Profitability', summary, topLevelContent, false, 0);
         profitSection.id = 'mwi-foraging-profit';
+        profitSection.setAttribute('data-mwi-profit-display', 'true');
 
         // Get the summary div to update it dynamically
         const profitSummaryDiv = profitSection.querySelector('.mwi-section-header + div');
@@ -2535,6 +2544,11 @@
      * @param {string} dropTableSelector - CSS selector for drop table element
      */
     async function displayProductionProfit(panel, actionHrid, dropTableSelector) {
+        // Check global hide setting
+        if (config.getSetting('actionPanel_hideActionStats')) {
+            return;
+        }
+
         // Calculate profit
         const profitData = await calculateProductionProfit(actionHrid);
         if (!profitData) {
@@ -2968,8 +2982,7 @@
         // Create main profit section
         const profitSection = uiComponents_js.createCollapsibleSection('💰', 'Profitability', summary, topLevelContent, false, 0);
         profitSection.id = 'mwi-production-profit';
-
-        // Get the summary div to update it dynamically
+        profitSection.setAttribute('data-mwi-profit-display', 'true');
         const profitSummaryDiv = profitSection.querySelector('.mwi-section-header + div');
 
         // Set up listener to update summary with total profit when input changes
@@ -6883,19 +6896,20 @@
                 } // End hasNormalXP check - queueContent only created for non-combat
 
                 // Insert sections into DOM
+                const hideActionStats = config.getSetting('actionPanel_hideActionStats');
                 if (queueContent) {
                     // Non-combat: Insert queueContent first
                     inputContainer.insertAdjacentElement('afterend', queueContent);
 
-                    if (speedSection) {
+                    if (speedSection && !hideActionStats) {
                         queueContent.insertAdjacentElement('afterend', speedSection);
                         if (levelProgressSection) {
                             speedSection.insertAdjacentElement('afterend', levelProgressSection);
                         }
-                    } else if (levelProgressSection) {
+                    } else if (levelProgressSection && !hideActionStats) {
                         queueContent.insertAdjacentElement('afterend', levelProgressSection);
                     }
-                } else if (levelProgressSection) {
+                } else if (levelProgressSection && !hideActionStats) {
                     // Combat: Insert levelProgressSection directly after inputContainer
                     inputContainer.insertAdjacentElement('afterend', levelProgressSection);
                 }
@@ -10193,13 +10207,17 @@
      * @returns {Object|null} Game component instance
      */
     function getGameObject() {
-        const gamePageEl = document.querySelector('[class^="GamePage"]');
-        if (!gamePageEl) return null;
+        const rootEl = document.getElementById('root');
+        const rootFiber = rootEl?._reactRootContainer?.current || rootEl?._reactRootContainer?._internalRoot?.current;
+        if (!rootFiber) return null;
 
-        const fiberKey = Object.keys(gamePageEl).find((k) => k.startsWith('__reactFiber$'));
-        if (!fiberKey) return null;
+        function find(fiber) {
+            if (!fiber) return null;
+            if (fiber.stateNode?.handleGoToMarketplace) return fiber.stateNode;
+            return find(fiber.child) || find(fiber.sibling);
+        }
 
-        return gamePageEl[fiberKey]?.return?.stateNode;
+        return find(rootFiber);
     }
 
     /**
@@ -10211,9 +10229,8 @@
         const game = getGameObject();
         if (game?.handleGoToMarketplace) {
             game.handleGoToMarketplace(itemHrid, enhancementLevel);
-        } else {
-            console.error('[MarketplaceTabs] Game API not available');
         }
+        // Silently fail if game API unavailable - feature still provides value without auto-navigation
     }
 
     /**
@@ -13729,37 +13746,26 @@ self.onmessage = function (e) {
          */
         extractTeaDuration() {
             try {
-                const container = document.querySelector('[class*="SkillActionDetail_alchemyComponent"]');
-                if (!container || !container._reactProps) {
-                    return 300;
+                const rootEl = document.getElementById('root');
+                const rootFiber =
+                    rootEl?._reactRootContainer?.current || rootEl?._reactRootContainer?._internalRoot?.current;
+                if (!rootFiber) return 300;
+
+                function find(fiber) {
+                    if (!fiber) return null;
+                    if (fiber.memoizedProps?.actionBuffs) return fiber;
+                    return find(fiber.child) || find(fiber.sibling);
                 }
 
-                let fiber = container._reactProps;
-                for (const key in fiber) {
-                    if (key.startsWith('__reactFiber') || key.startsWith('__reactInternalInstance')) {
-                        fiber = fiber[key];
-                        break;
+                const fiberNode = find(rootFiber);
+                if (!fiberNode) return 300;
+
+                const buffs = fiberNode.memoizedProps.actionBuffs;
+                for (const buff of buffs) {
+                    if (buff.uniqueHrid && buff.uniqueHrid.endsWith('tea')) {
+                        const duration = buff.duration || 0;
+                        return duration / 1e9; // Convert nanoseconds to seconds
                     }
-                }
-
-                let current = fiber;
-                let depth = 0;
-
-                while (current && depth < 20) {
-                    if (current.memoizedProps?.actionBuffs) {
-                        const buffs = current.memoizedProps.actionBuffs;
-
-                        for (const buff of buffs) {
-                            if (buff.uniqueHrid && buff.uniqueHrid.endsWith('tea')) {
-                                const duration = buff.duration || 0;
-                                return duration / 1e9; // Convert nanoseconds to seconds
-                            }
-                        }
-                        break;
-                    }
-
-                    current = current.return;
-                    depth++;
                 }
 
                 return 300; // Default 5 minutes
@@ -15415,6 +15421,7 @@ self.onmessage = function (e) {
             // Observer for content changes (item selection)
             this.contentObserver = new MutationObserver((mutations) => {
                 for (const mutation of mutations) {
+                    // Watch for childList changes (sections being added/removed)
                     if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
                         for (const node of mutation.addedNodes) {
                             if (node.nodeType === Node.ELEMENT_NODE) {
@@ -15432,6 +15439,16 @@ self.onmessage = function (e) {
                             }
                         }
                     }
+
+                    // Watch for attribute changes (SVG href changes when item selected)
+                    if (mutation.type === 'attributes') {
+                        const target = mutation.target;
+                        if (target.tagName === 'use' && mutation.attributeName === 'href') {
+                            // SVG use element href changed - item was selected
+                            triggerUpdate();
+                            return;
+                        }
+                    }
                 }
             });
 
@@ -15439,6 +15456,8 @@ self.onmessage = function (e) {
             this.contentObserver.observe(alchemyComponent, {
                 childList: true,
                 subtree: true,
+                attributes: true,
+                attributeFilter: ['href'],
             });
         }
 
@@ -15687,6 +15706,11 @@ self.onmessage = function (e) {
         createDisplay(container, profitData, actionType, itemHrid) {
             // Remove any existing display
             this.removeDisplay();
+
+            // Check global hide setting
+            if (config.getSetting('actionPanel_hideActionStats')) {
+                return;
+            }
 
             // Validate required data
             if (
@@ -16201,6 +16225,7 @@ self.onmessage = function (e) {
             const profitSection = uiComponents_js.createCollapsibleSection('💰', 'Profitability', summary, topLevelContent, false, 0);
             profitSection.id = 'mwi-alchemy-profit';
             profitSection.classList.add('mwi-alchemy-profit');
+            profitSection.setAttribute('data-mwi-profit-display', 'true');
 
             // Append to container
             container.appendChild(profitSection);
@@ -16224,6 +16249,7 @@ self.onmessage = function (e) {
                 if (speedTimeSection) {
                     speedTimeSection.id = 'mwi-alchemy-speed-time';
                     speedTimeSection.classList.add('mwi-alchemy-speed-time');
+                    speedTimeSection.setAttribute('data-mwi-profit-display', 'true');
                     container.appendChild(speedTimeSection);
                 }
             }
@@ -16234,6 +16260,7 @@ self.onmessage = function (e) {
                 if (levelProgressSection) {
                     levelProgressSection.id = 'mwi-alchemy-level-progress';
                     levelProgressSection.classList.add('mwi-alchemy-level-progress');
+                    levelProgressSection.setAttribute('data-mwi-profit-display', 'true');
                     container.appendChild(levelProgressSection);
                 }
             }

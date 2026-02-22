@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 1.7.0
+ * Version: 1.8.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -766,17 +766,21 @@
 
 
     /**
-     * Get game object via React fiber
+     * Get game object via React fiber tree traversal
      * @returns {Object|null} Game component instance
      */
     function getGameObject$1() {
-        const gamePageEl = document.querySelector('[class^="GamePage"]');
-        if (!gamePageEl) return null;
+        const rootEl = document.getElementById('root');
+        const rootFiber = rootEl?._reactRootContainer?.current || rootEl?._reactRootContainer?._internalRoot?.current;
+        if (!rootFiber) return null;
 
-        const fiberKey = Object.keys(gamePageEl).find((k) => k.startsWith('__reactFiber$'));
-        if (!fiberKey) return null;
+        function find(fiber) {
+            if (!fiber) return null;
+            if (fiber.stateNode?.handleGoToMarketplace) return fiber.stateNode;
+            return find(fiber.child) || find(fiber.sibling);
+        }
 
-        return gamePageEl[fiberKey]?.return?.stateNode;
+        return find(rootFiber);
     }
 
     /**
@@ -1089,24 +1093,22 @@
         }
 
         /**
-         * Setup game core access via React Fiber traversal
+         * Setup game core access via React Fiber tree traversal
          */
         setupGameCore() {
             try {
-                const el = document.querySelector('[class*="GamePage_gamePage"]');
-                if (!el) return;
+                const rootEl = document.getElementById('root');
+                const rootFiber =
+                    rootEl?._reactRootContainer?.current || rootEl?._reactRootContainer?._internalRoot?.current;
+                if (!rootFiber) return;
 
-                const k = Object.keys(el).find((k) => k.startsWith('__reactFiber$'));
-                if (!k) return;
-
-                let f = el[k];
-                while (f) {
-                    if (f.stateNode?.sendPing) {
-                        this.gameCore = f.stateNode;
-                        return;
-                    }
-                    f = f.return;
+                function find(fiber) {
+                    if (!fiber) return null;
+                    if (fiber.stateNode?.sendPing) return fiber.stateNode;
+                    return find(fiber.child) || find(fiber.sibling);
                 }
+
+                this.gameCore = find(rootFiber);
             } catch (error) {
                 console.error('[Chat Commands] Error accessing game core:', error);
             }
@@ -1366,7 +1368,7 @@
          */
         openItemDictionary(itemHrid) {
             if (!this.gameCore?.handleOpenItemDictionary) {
-                this.showError('Unable to open Item Dictionary (game core not accessible)');
+                this.showError('Feature unavailable after 2/21/26 game update');
                 return;
             }
 
@@ -1384,7 +1386,7 @@
          */
         openMarketplace(itemHrid) {
             if (!this.gameCore?.handleGoToMarketplace) {
-                this.showError('Unable to open marketplace (game core not accessible)');
+                this.showError('Feature unavailable after 2/21/26 game update');
                 return;
             }
 
@@ -3161,6 +3163,8 @@ self.onmessage = function (e) {
             // Profit per item (for display)
             const profitPerItem = profitPerHour / totalItemsPerHour;
 
+            const pricingMode = config.getSettingValue('profitCalc_pricingMode', 'hybrid');
+
             return {
                 itemName: itemDetails.name,
                 itemHrid,
@@ -3207,6 +3211,7 @@ self.onmessage = function (e) {
                 effectiveRequirement, // Requirement after Action Level bonus
                 requiredLevel: effectiveRequirement, // For backwards compatibility
                 timeBreakdown,
+                pricingMode, // Pricing mode for display
             };
         }
 
@@ -9147,13 +9152,17 @@ self.onmessage = function (e) {
      * @returns {Object|null} Game component instance
      */
     function getGameObject() {
-        const gamePageEl = document.querySelector('[class^="GamePage"]');
-        if (!gamePageEl) return null;
+        const rootEl = document.getElementById('root');
+        const rootFiber = rootEl?._reactRootContainer?.current || rootEl?._reactRootContainer?._internalRoot?.current;
+        if (!rootFiber) return null;
 
-        const fiberKey = Object.keys(gamePageEl).find((k) => k.startsWith('__reactFiber$'));
-        if (!fiberKey) return null;
+        function find(fiber) {
+            if (!fiber) return null;
+            if (fiber.stateNode?.handleGoToMarketplace) return fiber.stateNode;
+            return find(fiber.child) || find(fiber.sibling);
+        }
 
-        return gamePageEl[fiberKey]?.return?.stateNode;
+        return find(rootFiber);
     }
 
     /**
@@ -9165,9 +9174,8 @@ self.onmessage = function (e) {
         const game = getGameObject();
         if (game?.handleGoToMarketplace) {
             game.handleGoToMarketplace(itemHrid, enhancementLevel);
-        } else {
-            console.error('[MarketplaceTabs] Game API not available');
         }
+        // Silently fail if game API unavailable - feature still provides value without auto-navigation
     }
 
     /**

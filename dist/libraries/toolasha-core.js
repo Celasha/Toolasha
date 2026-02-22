@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 1.7.0
+ * Version: 1.8.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -494,6 +494,13 @@
                     type: 'checkbox',
                     default: true,
                     help: 'Displays profit/hr and exp/hr on gathering tiles (foraging, woodcutting, milking)',
+                },
+                actionPanel_hideActionStats: {
+                    id: 'actionPanel_hideActionStats',
+                    label: 'Action panel: Hide all profit/efficiency displays',
+                    type: 'checkbox',
+                    default: false,
+                    help: 'Hides Profitability, Action Speed & Time, and Level Progress sections in gathering, production, and alchemy panels',
                 },
                 actionPanel_hideNegativeProfit: {
                     id: 'actionPanel_hideNegativeProfit',
