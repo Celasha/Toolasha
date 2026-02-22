@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 1.8.0
+ * Version: 1.8.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -6056,7 +6056,7 @@ self.onmessage = function (e) {
                 return;
             }
 
-            // Check if this is a Buy/Sell listing modal (not Instant Buy/Sell)
+            // Check if this is a market modal
             const header = modal.querySelector('div[class*="MarketplacePanel_header"]');
             if (!header) {
                 return;
@@ -6064,33 +6064,25 @@ self.onmessage = function (e) {
 
             const headerText = header.textContent;
 
-            // Skip Instant Buy/Sell modals (they don't have Max button for quantity)
-            if (headerText.includes('Now')) {
+            // Skip all buy modals (Buy Listing, Buy Now)
+            if (headerText.includes('Buy')) {
                 return;
             }
 
-            // Only process Buy Listing or Sell Listing modals
-            if (!headerText.includes('Listing')) {
+            // Only process sell modals (Sell Listing, Sell Now)
+            if (!headerText.includes('Sell')) {
                 return;
-            }
-
-            // Determine if this is a sell order by checking header text
-            // Only auto-click Max for sell orders (not buy orders)
-            const isSellOrder = headerText.includes('Sell Listing');
-
-            if (!isSellOrder) {
-                return; // Skip buy orders
             }
 
             // Mark as processed
             this.processedModals.add(modal);
 
-            // Click the Max button
+            // Click the Max/All button
             this.findAndClickMaxButton(modal);
         }
 
         /**
-         * Find and click the Max button in the modal
+         * Find and click the Max or All button in the modal
          * @param {HTMLElement} modal - Modal container element
          */
         findAndClickMaxButton(modal) {
@@ -6098,11 +6090,11 @@ self.onmessage = function (e) {
                 return;
             }
 
-            // Strategy 1: Find Max button by text content
+            // Find Max button (Sell Listing) or All button (Sell Now)
             const allButtons = modal.querySelectorAll('button');
             const maxButton = Array.from(allButtons).find((btn) => {
                 const text = btn.textContent.trim();
-                return text === 'Max';
+                return text === 'Max' || text === 'All';
             });
 
             if (!maxButton) {
@@ -6114,11 +6106,11 @@ self.onmessage = function (e) {
                 return;
             }
 
-            // Click the Max button
+            // Click the Max/All button
             try {
                 maxButton.click();
             } catch (error) {
-                console.error('[AutoClickMax] Failed to click Max button:', error);
+                console.error('[AutoClickMax] Failed to click Max/All button:', error);
             }
         }
 
