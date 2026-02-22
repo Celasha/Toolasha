@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 1.6.1
+ * Version: 1.7.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -4852,6 +4852,8 @@ self.onmessage = function (e) {
         // Task features
         TASK_PROFIT: '.mwi-task-profit',
         REROLL_COST_DISPLAY: '.mwi-reroll-cost-display',
+        TASK_STATS_BTN: '.toolasha-task-stats-btn',
+        TASK_STATS_OVERLAY: '.toolasha-task-stats-overlay',
 
         // Action features
         QUEUE_TOTAL_TIME: '#mwi-queue-total-time',

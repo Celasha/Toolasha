@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 1.6.1
+ * Version: 1.7.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1078,6 +1078,13 @@
                     default: true,
                     help: 'Adds a button to dim inventory items not needed for your current non-combat tasks',
                 },
+                taskStatistics: {
+                    id: 'taskStatistics',
+                    label: 'Show task statistics button on Tasks panel',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Adds a Statistics button to the Tasks panel showing overflow time, expected rewards, and completion estimates',
+                },
             },
         },
 
@@ -2112,7 +2119,8 @@
                 messageType === 'battle_consumable_ability_updated' ||
                 messageType === 'battle_unit_fetched' ||
                 messageType === 'action_type_consumable_slots_updated' ||
-                messageType === 'consumable_buffs_updated';
+                messageType === 'consumable_buffs_updated' ||
+                messageType === 'character_info_updated';
 
             if (!skipDedup) {
                 // Deduplicate by message content to prevent 4x JSON.parse on same message
@@ -2988,6 +2996,30 @@
             this.webSocketHook.on('new_battle', (data) => {
                 // Store battle data (includes party consumables)
                 this.battleData = data;
+            });
+
+            // Handle character_info_updated (task slot changes, cooldown timestamps, etc.)
+            this.webSocketHook.on('character_info_updated', (data) => {
+                if (this.characterData && data.characterInfo) {
+                    this.characterData.characterInfo = data.characterInfo;
+                }
+                this.emit('character_info_updated', data);
+            });
+
+            // Handle quests_updated (keep characterQuests in sync mid-session)
+            this.webSocketHook.on('quests_updated', (data) => {
+                if (data.endCharacterQuests && Array.isArray(data.endCharacterQuests)) {
+                    for (const updatedQuest of data.endCharacterQuests) {
+                        const index = this.characterQuests.findIndex((q) => q.id === updatedQuest.id);
+                        if (index !== -1) {
+                            this.characterQuests[index] = updatedQuest;
+                        } else {
+                            this.characterQuests.push(updatedQuest);
+                        }
+                    }
+                    // Remove claimed quests
+                    this.characterQuests = this.characterQuests.filter((q) => q.status !== '/quest_status/claimed');
+                }
             });
         }
 

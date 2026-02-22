@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 1.6.1
+ * Version: 1.7.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -11714,17 +11714,21 @@
 
     /**
      * Get the currently selected location tab name
-     * @returns {string|null} Location name or null if on "All" or can't detect
+     * @returns {string|null} Location name or null if no location tabs exist
      */
     function getCurrentLocationTab() {
-        // Look for the tab container with location tabs
-        const tabButtons = document.querySelectorAll('button[role="tab"]');
+        // Only search within the current skill panel to avoid picking up tabs from other panels (e.g., Market)
+        const skillPanel = document.querySelector('[class*="GatheringProductionSkillPanel_"]');
+        if (!skillPanel) return null;
+
+        // Look for location tabs within the skill panel only
+        const tabButtons = skillPanel.querySelectorAll('button[role="tab"]');
 
         for (const button of tabButtons) {
             // Check if this tab is selected
             if (button.getAttribute('aria-selected') === 'true') {
                 const text = button.textContent?.trim();
-                // Skip if it's a skill-level tab like "Foraging" or special tabs
+                // Skip special tabs that aren't locations
                 if (text && !['Enhance', 'Current Action', 'Decompose', 'Transmute'].includes(text)) {
                     return text;
                 }
