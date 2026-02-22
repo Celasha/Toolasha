@@ -255,17 +255,29 @@ class TaskStatistics {
 
             if (!isCombat && actionHrid) {
                 try {
-                    const taskData = {
-                        description: taskName,
-                        coinReward,
-                        taskTokenReward: tokenReward,
-                        quantity: quest.goalCount,
-                        currentProgress: quest.currentCount || 0,
-                    };
-                    const profitData = await calculateTaskProfit(taskData);
-                    if (profitData && profitData.action) {
-                        actionProfit = profitData.action.totalValue || profitData.action.totalProfit || 0;
-                        completionSeconds = calculateTaskCompletionSeconds(profitData);
+                    // Get action details to build proper task description
+                    const actionDetails = dataManager.getInitClientData()?.actionDetailMap?.[actionHrid];
+                    if (actionDetails) {
+                        // Build description in format "Skill - Action Name"
+                        // Extract skill name from type field like '/action_types/foraging'
+                        const skillName = actionDetails.type?.split('/').pop() || '';
+                        const formattedSkill =
+                            skillName.charAt(0).toUpperCase() + skillName.slice(1).replace(/_/g, ' ');
+                        const actionName = actionDetails.name;
+                        const description = `${formattedSkill} - ${actionName}`;
+
+                        const taskData = {
+                            description,
+                            coinReward,
+                            taskTokenReward: tokenReward,
+                            quantity: quest.goalCount,
+                            currentProgress: quest.currentCount || 0,
+                        };
+                        const profitData = await calculateTaskProfit(taskData);
+                        if (profitData && profitData.action) {
+                            actionProfit = profitData.action.totalValue || profitData.action.totalProfit || 0;
+                            completionSeconds = calculateTaskCompletionSeconds(profitData);
+                        }
                     }
                 } catch (error) {
                     console.error('[TaskStatistics] Failed to calculate profit for task:', taskName, error);
