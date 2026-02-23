@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.11.0](https://github.com/Celasha/Toolasha/compare/v1.10.0...v1.11.0) (2026-02-23)
+
+
+### Features
+
+* add inventory count display on action tiles and detail panels ([9582eee](https://github.com/Celasha/Toolasha/commit/9582eeed3dff1dabb2b705e0428cca5f9600ed84))
+
 ## [1.10.0](https://github.com/Celasha/Toolasha/compare/v1.9.0...v1.10.0) (2026-02-23)
 
 ### Features
