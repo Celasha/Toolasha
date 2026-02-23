@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 1.11.1
+ * Version: 1.12.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -8516,7 +8516,7 @@ self.onmessage = function (e) {
                 // Create the remaining XP display
                 const xpDisplay = document.createElement('span');
                 xpDisplay.className = 'mwi-remaining-xp';
-                xpDisplay.textContent = `${formatters_js.numberFormatter(remainingXP)} XP left`;
+                xpDisplay.textContent = `${formatters_js.formatLargeNumber(remainingXP)} XP left`;
 
                 // Build style with optional text shadow
                 const useBlackBorder = config.getSetting('skillRemainingXP_blackBorder', true);

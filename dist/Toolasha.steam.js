@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      1.11.1
+// @version      1.12.0
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -76680,7 +76680,7 @@ self.onmessage = function (e) {
                 // Create the remaining XP display
                 const xpDisplay = document.createElement('span');
                 xpDisplay.className = 'mwi-remaining-xp';
-                xpDisplay.textContent = `${numberFormatter(remainingXP)} XP left`;
+                xpDisplay.textContent = `${formatLargeNumber(remainingXP)} XP left`;
 
                 // Build style with optional text shadow
                 const useBlackBorder = config$1.getSetting('skillRemainingXP_blackBorder', true);
