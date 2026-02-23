@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 1.11.0
+ * Version: 1.11.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -52,13 +52,46 @@
                 const request = indexedDB.open(this.dbName, this.dbVersion);
 
                 request.onerror = () => {
-                    console.error('[Storage] Failed to open IndexedDB');
+                    console.error('[Storage] Failed to open IndexedDB', request.error);
                     reject(request.error);
                 };
 
                 request.onsuccess = () => {
                     this.db = request.result;
+                    // Handle connection being closed unexpectedly (e.g. version upgrade from another tab)
+                    this.db.onversionchange = () => {
+                        this.db.close();
+                        this.db = null;
+                        console.warn('[Storage] DB version changed, connection closed. Reload the page.');
+                    };
                     resolve();
+                };
+
+                request.onblocked = () => {
+                    console.warn('[Storage] IndexedDB open blocked by existing connection — retrying after close');
+                    // Attempt to close any stale connection and retry once
+                    if (this.db) {
+                        this.db.close();
+                        this.db = null;
+                    }
+                    const retry = indexedDB.open(this.dbName, this.dbVersion);
+                    retry.onerror = () => {
+                        console.error('[Storage] Retry failed to open IndexedDB', retry.error);
+                        reject(retry.error);
+                    };
+                    retry.onsuccess = () => {
+                        this.db = retry.result;
+                        this.db.onversionchange = () => {
+                            this.db.close();
+                            this.db = null;
+                        };
+                        resolve();
+                    };
+                    retry.onupgradeneeded = request.onupgradeneeded;
+                    retry.onblocked = () => {
+                        console.error('[Storage] IndexedDB still blocked after retry — DB unavailable');
+                        reject(new Error('IndexedDB blocked'));
+                    };
                 };
 
                 request.onupgradeneeded = (event) => {
