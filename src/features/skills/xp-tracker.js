@@ -318,21 +318,31 @@ class XPTracker {
                 white-space: nowrap;
             `;
 
-            // Prefer placing inline with the "XP left" span if it exists
-            const remainingXPEl = navEl.querySelector('.mwi-remaining-xp');
-            if (remainingXPEl) {
-                remainingXPEl.style.display = 'flex';
-                remainingXPEl.style.justifyContent = 'center';
-                remainingXPEl.style.gap = '6px';
-                remainingXPEl.appendChild(rateSpan);
-            } else {
-                // Fallback: inject as its own block line after the label
-                rateSpan.style.display = 'block';
-                rateSpan.style.textAlign = 'center';
-                rateSpan.style.width = '100%';
-                rateSpan.style.marginTop = '-4px';
-                labelEl.insertAdjacentElement('afterend', rateSpan);
+            // Always place inline in a flex row — create the container if XP Left feature is off
+            let remainingXPEl = navEl.querySelector('.mwi-remaining-xp');
+            if (!remainingXPEl) {
+                const progressContainer = navEl.querySelector('[class*="NavigationBar_currentExperience"]')?.parentNode;
+                if (!progressContainer) return;
+                remainingXPEl = document.createElement('span');
+                remainingXPEl.className = 'mwi-remaining-xp';
+                remainingXPEl.dataset.xpTrackerOwned = '1';
+                remainingXPEl.style.cssText = `
+                    font-size: 11px;
+                    display: block;
+                    margin-top: -8px;
+                    text-align: center;
+                    width: 100%;
+                    pointer-events: none;
+                `;
+                progressContainer.insertBefore(
+                    remainingXPEl,
+                    progressContainer.querySelector('[class*="NavigationBar_currentExperience"]')?.nextSibling ?? null
+                );
             }
+            remainingXPEl.style.display = 'flex';
+            remainingXPEl.style.justifyContent = 'center';
+            remainingXPEl.style.gap = '6px';
+            remainingXPEl.appendChild(rateSpan);
         });
     }
 
@@ -402,6 +412,7 @@ class XPTracker {
 
         document.querySelectorAll('.mwi-xp-rate').forEach((el) => el.remove());
         document.querySelectorAll('.mwi-xp-time-left').forEach((el) => el.remove());
+        document.querySelectorAll('.mwi-remaining-xp[data-xp-tracker-owned]').forEach((el) => el.remove());
 
         this.initialized = false;
     }
