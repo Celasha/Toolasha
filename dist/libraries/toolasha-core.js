@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 1.10.0
+ * Version: 1.11.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -555,6 +555,13 @@
                     type: 'checkbox',
                     default: true,
                     help: 'Display total value, average time, and daily output in loot logs',
+                },
+                inventoryCountDisplay: {
+                    id: 'inventoryCountDisplay',
+                    label: 'Action panels: Show current inventory count of output item',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Shows how many of the output item you currently own, on action tiles and in the action detail panel',
                 },
             },
         },
@@ -1504,6 +1511,13 @@
                     label: 'XP/hr Rate Text',
                     type: 'color',
                     default: '#ffffff',
+                },
+                color_inv_count: {
+                    id: 'color_inv_count',
+                    label: 'Inventory Count Text',
+                    type: 'color',
+                    default: '#ffffff',
+                    help: 'Color for inventory count shown on action tiles and in the action detail panel',
                 },
                 color_invBadge_ask: {
                     id: 'color_invBadge_ask',
@@ -3604,6 +3618,7 @@
             this.COLOR_ACCENT = '#22c55e'; // Script accent color (green)
             this.COLOR_REMAINING_XP = '#FFFFFF'; // Remaining XP text color
             this.COLOR_XP_RATE = '#ffffff'; // XP/hr rate text color
+            this.COLOR_INV_COUNT = '#ffffff'; // Inventory count display color
 
             // Legacy color constants (mapped to COLOR_ACCENT)
             this.SCRIPT_COLOR_MAIN = this.COLOR_ACCENT;
@@ -4177,6 +4192,7 @@
             this.COLOR_ACCENT = this.getSettingValue('color_accent', '#22c55e');
             this.COLOR_REMAINING_XP = this.getSettingValue('color_remaining_xp', '#FFFFFF');
             this.COLOR_XP_RATE = this.getSettingValue('color_xp_rate', '#ffffff');
+            this.COLOR_INV_COUNT = this.getSettingValue('color_inv_count', '#ffffff');
             this.COLOR_INVBADGE_ASK = this.getSettingValue('color_invBadge_ask', '#047857');
             this.COLOR_INVBADGE_BID = this.getSettingValue('color_invBadge_bid', '#60a5fa');
             this.COLOR_TRANSMUTE = this.getSettingValue('color_transmute', '#ffffff');

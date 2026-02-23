@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 1.10.0
+ * Version: 1.11.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2009,7 +2009,7 @@
     /**
      * Action types for production skills (5 skills)
      */
-    const PRODUCTION_TYPES$3 = [
+    const PRODUCTION_TYPES$4 = [
         '/action_types/brewing',
         '/action_types/cooking',
         '/action_types/cheesesmithing',
@@ -2031,7 +2031,7 @@
         }
 
         // Only process production actions with outputs
-        if (!PRODUCTION_TYPES$3.includes(actionDetail.type)) {
+        if (!PRODUCTION_TYPES$4.includes(actionDetail.type)) {
             return null;
         }
 
@@ -4113,12 +4113,12 @@
     /**
      * Action types for gathering skills (3 skills)
      */
-    const GATHERING_TYPES$1 = ['/action_types/foraging', '/action_types/woodcutting', '/action_types/milking'];
+    const GATHERING_TYPES$2 = ['/action_types/foraging', '/action_types/woodcutting', '/action_types/milking'];
 
     /**
      * Action types for production skills (5 skills)
      */
-    const PRODUCTION_TYPES$2 = [
+    const PRODUCTION_TYPES$3 = [
         '/action_types/brewing',
         '/action_types/cooking',
         '/action_types/cheesesmithing',
@@ -4417,7 +4417,7 @@
         }
 
         // Check if this is a gathering action
-        if (GATHERING_TYPES$1.includes(actionDetail.type)) {
+        if (GATHERING_TYPES$2.includes(actionDetail.type)) {
             const dropTableElement = panel.querySelector(SELECTORS.DROP_TABLE);
             if (dropTableElement) {
                 await displayGatheringProfit(panel, actionHrid, SELECTORS.DROP_TABLE);
@@ -4425,7 +4425,7 @@
         }
 
         // Check if this is a production action
-        if (PRODUCTION_TYPES$2.includes(actionDetail.type)) {
+        if (PRODUCTION_TYPES$3.includes(actionDetail.type)) {
             const dropTableElement = panel.querySelector(SELECTORS.DROP_TABLE);
             if (dropTableElement) {
                 await displayProductionProfit(panel, actionHrid, SELECTORS.DROP_TABLE);
@@ -8403,8 +8403,8 @@
     /**
      * Action type constants for classification
      */
-    const GATHERING_TYPES = ['/action_types/foraging', '/action_types/woodcutting', '/action_types/milking'];
-    const PRODUCTION_TYPES$1 = [
+    const GATHERING_TYPES$1 = ['/action_types/foraging', '/action_types/woodcutting', '/action_types/milking'];
+    const PRODUCTION_TYPES$2 = [
         '/action_types/brewing',
         '/action_types/cooking',
         '/action_types/cheesesmithing',
@@ -8757,11 +8757,11 @@
             const actionDetails = dataManager.getActionDetails(data.actionHrid);
 
             if (actionDetails) {
-                if (GATHERING_TYPES.includes(actionDetails.type)) {
+                if (GATHERING_TYPES$1.includes(actionDetails.type)) {
                     const profitData = await calculateGatheringProfit(data.actionHrid);
                     profitPerHour = profitData?.profitPerHour || null;
                     hasMissingPrices = profitData?.hasMissingPrices || false;
-                } else if (PRODUCTION_TYPES$1.includes(actionDetails.type)) {
+                } else if (PRODUCTION_TYPES$2.includes(actionDetails.type)) {
                     const profitData = await calculateProductionProfit(data.actionHrid);
                     profitPerHour = profitData?.profitPerHour || null;
                     hasMissingPrices = profitData?.hasMissingPrices || false;
@@ -10378,7 +10378,7 @@
     /**
      * Production action types (where button should appear)
      */
-    const PRODUCTION_TYPES = [
+    const PRODUCTION_TYPES$1 = [
         '/action_types/brewing',
         '/action_types/cooking',
         '/action_types/cheesesmithing',
@@ -10498,7 +10498,7 @@
         }
 
         // Verify this is a production action
-        if (!PRODUCTION_TYPES.includes(actionDetail.type)) {
+        if (!PRODUCTION_TYPES$1.includes(actionDetail.type)) {
             return;
         }
 
@@ -12632,6 +12632,287 @@
     }
 
     const teaRecommendation = new TeaRecommendation();
+
+    /**
+     * Inventory Count Display
+     * Shows how many of the output item you currently own on:
+     *  - Skill action tiles (SkillAction_skillAction) — bottom-center overlay on the tile
+     *  - Action detail panels (SkillActionDetail_regularComponent) — inline after the action name heading
+     */
+
+
+    const GATHERING_TYPES = ['/action_types/foraging', '/action_types/woodcutting', '/action_types/milking'];
+    const PRODUCTION_TYPES = [
+        '/action_types/brewing',
+        '/action_types/cooking',
+        '/action_types/cheesesmithing',
+        '/action_types/crafting',
+        '/action_types/tailoring',
+        '/action_types/alchemy',
+    ];
+
+    /**
+     * Build an itemHrid → count map from the current inventory.
+     * @returns {Map<string, number>}
+     */
+    function buildCountMap() {
+        const inventory = dataManager.getInventory();
+        const map = new Map();
+        if (!Array.isArray(inventory)) return map;
+
+        for (const item of inventory) {
+            if (item.itemLocationHrid !== '/item_locations/inventory') continue;
+            const count = item.count || 0;
+            if (!count) continue;
+            map.set(item.itemHrid, (map.get(item.itemHrid) || 0) + count);
+        }
+        return map;
+    }
+
+    /**
+     * Return the primary output itemHrid for an action, or null if not applicable.
+     * Gathering: first entry of dropTable (the main resource, not rare drops).
+     * Production: first entry of outputItems.
+     * @param {object} actionDetails
+     * @returns {string|null}
+     */
+    function getPrimaryOutputHrid(actionDetails) {
+        if (!actionDetails) return null;
+
+        if (GATHERING_TYPES.includes(actionDetails.type)) {
+            return actionDetails.dropTable?.[0]?.itemHrid ?? null;
+        }
+
+        if (PRODUCTION_TYPES.includes(actionDetails.type)) {
+            return actionDetails.outputItems?.[0]?.itemHrid ?? null;
+        }
+
+        return null;
+    }
+
+    /**
+     * @param {number} count
+     * @returns {string}
+     */
+    function formatCount(count) {
+        return formatters_js.numberFormatter(count, 0);
+    }
+
+    class InventoryCountDisplay {
+        constructor() {
+            this.tileElements = new Map(); // actionPanel → { outputHrid, span }
+            this.detailPanels = new Set();
+            this.unregisterObservers = [];
+            this.itemsUpdatedHandler = null;
+            this.actionCompletedHandler = null;
+            this.isInitialized = false;
+            this.DEBOUNCE_DELAY = 300;
+            this.debounceTimer = null;
+        }
+
+        initialize() {
+            if (this.isInitialized) return;
+            if (!config.getSetting('inventoryCountDisplay', true)) return;
+
+            this.isInitialized = true;
+
+            this._setupTileObserver();
+            this._setupDetailObserver();
+
+            this.itemsUpdatedHandler = () => {
+                clearTimeout(this.debounceTimer);
+                this.debounceTimer = setTimeout(() => this._refreshAll(), this.DEBOUNCE_DELAY);
+            };
+
+            this.actionCompletedHandler = () => {
+                clearTimeout(this.debounceTimer);
+                this.debounceTimer = setTimeout(() => this._refreshAll(), this.DEBOUNCE_DELAY);
+            };
+
+            dataManager.on('items_updated', this.itemsUpdatedHandler);
+            dataManager.on('action_completed', this.actionCompletedHandler);
+
+            this.unregisterObservers.push(() => {
+                dataManager.off('items_updated', this.itemsUpdatedHandler);
+                dataManager.off('action_completed', this.actionCompletedHandler);
+            });
+        }
+
+        // ─── Tile observer ────────────────────────────────────────────────────────
+
+        _setupTileObserver() {
+            const unregister = domObserver.onClass('InventoryCountDisplay-Tile', 'SkillAction_skillAction', (actionPanel) =>
+                this._injectTile(actionPanel)
+            );
+            this.unregisterObservers.push(unregister);
+
+            document.querySelectorAll('[class*="SkillAction_skillAction"]').forEach((panel) => {
+                this._injectTile(panel);
+            });
+        }
+
+        /**
+         * Inject a bottom-center count overlay directly onto the tile element.
+         * Never touches the name div — same pattern as gathering-stats / max-produceable.
+         * @param {HTMLElement} actionPanel
+         */
+        _injectTile(actionPanel) {
+            const actionHrid = this._getActionHridFromTile(actionPanel);
+            if (!actionHrid) return;
+
+            const actionDetails = dataManager.getActionDetails(actionHrid);
+            const outputHrid = getPrimaryOutputHrid(actionDetails);
+            if (!outputHrid) return;
+
+            let span = actionPanel.querySelector('.mwi-inv-count-tile');
+            if (!span) {
+                span = document.createElement('span');
+                span.className = 'mwi-inv-count-tile';
+                span.style.cssText = `
+                position: absolute;
+                top: 28px;
+                left: 0;
+                right: 0;
+                text-align: center;
+                font-size: 0.7em;
+                color: ${config.COLOR_INV_COUNT};
+                font-weight: 600;
+                pointer-events: none;
+                z-index: 5;
+                line-height: 1;
+            `;
+                if (actionPanel.style.position !== 'relative' && actionPanel.style.position !== 'absolute') {
+                    actionPanel.style.position = 'relative';
+                }
+                actionPanel.appendChild(span);
+            }
+
+            this.tileElements.set(actionPanel, { outputHrid, span });
+            this._updateTileSpan(span, outputHrid, buildCountMap());
+        }
+
+        _updateTileSpan(span, outputHrid, countMap) {
+            const count = countMap.get(outputHrid) || 0;
+            span.textContent = count > 0 ? formatCount(count) : '';
+            span.style.color = config.COLOR_INV_COUNT;
+        }
+
+        // ─── Detail panel observer ────────────────────────────────────────────────
+
+        _setupDetailObserver() {
+            const unregister = domObserver.onClass(
+                'InventoryCountDisplay-Detail',
+                'SkillActionDetail_regularComponent',
+                (panel) => this._injectDetail(panel)
+            );
+            this.unregisterObservers.push(unregister);
+
+            document.querySelectorAll('[class*="SkillActionDetail_regularComponent"]').forEach((panel) => {
+                this._injectDetail(panel);
+            });
+        }
+
+        /**
+         * Inject count inline after the action name heading in the detail panel.
+         * Reads textContent before injecting so the name lookup is always clean.
+         * @param {HTMLElement} panel
+         */
+        _injectDetail(panel) {
+            const nameEl = panel.querySelector('[class*="SkillActionDetail_name"]');
+            if (!nameEl) return;
+
+            const actionName = nameEl.textContent.trim();
+            const actionHrid = this._getActionHridFromName(actionName);
+            if (!actionHrid) return;
+
+            const actionDetails = dataManager.getActionDetails(actionHrid);
+            const outputHrid = getPrimaryOutputHrid(actionDetails);
+            if (!outputHrid) return;
+
+            panel.querySelector('.mwi-inv-count-detail')?.remove();
+
+            const count = buildCountMap().get(outputHrid) || 0;
+
+            const span = document.createElement('span');
+            span.className = 'mwi-inv-count-detail';
+            span.dataset.outputHrid = outputHrid;
+            span.style.cssText = `
+            font-size: 0.75em;
+            color: ${config.COLOR_INV_COUNT};
+            font-weight: 600;
+            margin-left: 8px;
+            vertical-align: middle;
+            pointer-events: none;
+        `;
+            span.textContent = count > 0 ? `(${formatCount(count)} in inventory)` : '';
+
+            nameEl.appendChild(span);
+            this.detailPanels.add(panel);
+        }
+
+        // ─── Refresh ──────────────────────────────────────────────────────────────
+
+        _refreshAll() {
+            const countMap = buildCountMap();
+
+            for (const [actionPanel, { outputHrid, span }] of this.tileElements) {
+                if (!document.body.contains(actionPanel)) {
+                    this.tileElements.delete(actionPanel);
+                    continue;
+                }
+                this._updateTileSpan(span, outputHrid, countMap);
+            }
+
+            for (const panel of this.detailPanels) {
+                if (!document.body.contains(panel)) {
+                    this.detailPanels.delete(panel);
+                    continue;
+                }
+                const span = panel.querySelector('.mwi-inv-count-detail');
+                if (!span || !span.dataset.outputHrid) continue;
+                const count = countMap.get(span.dataset.outputHrid) || 0;
+                span.style.color = config.COLOR_INV_COUNT;
+                span.textContent = count > 0 ? `(${formatCount(count)} in inventory)` : '';
+            }
+        }
+
+        // ─── Helpers ──────────────────────────────────────────────────────────────
+
+        _getActionHridFromTile(actionPanel) {
+            const nameEl = actionPanel.querySelector('[class*="SkillAction_name"]');
+            if (!nameEl) return null;
+            return this._getActionHridFromName(nameEl.textContent.trim());
+        }
+
+        _getActionHridFromName(name) {
+            const initData = dataManager.getInitClientData();
+            if (!initData) return null;
+            for (const [hrid, action] of Object.entries(initData.actionDetailMap)) {
+                if (action.name === name) return hrid;
+            }
+            return null;
+        }
+
+        disable() {
+            this.unregisterObservers.forEach((fn) => fn());
+            this.unregisterObservers = [];
+
+            document.querySelectorAll('.mwi-inv-count-tile').forEach((el) => el.remove());
+            document.querySelectorAll('.mwi-inv-count-detail').forEach((el) => el.remove());
+
+            this.tileElements.clear();
+            this.detailPanels.clear();
+            this.isInitialized = false;
+        }
+    }
+
+    const inventoryCountDisplay = new InventoryCountDisplay();
+
+    var inventoryCountDisplay$1 = {
+        name: 'Inventory Count Display',
+        initialize: () => inventoryCountDisplay.initialize(),
+        cleanup: () => inventoryCountDisplay.disable(),
+    };
 
     /**
      * Worker Pool Manager
@@ -16842,6 +17123,7 @@ self.onmessage = function (e) {
         missingMaterialsButton,
         alchemyProfitDisplay,
         teaRecommendation,
+        inventoryCountDisplay: inventoryCountDisplay$1,
     };
 
     console.log('[Toolasha] Actions library loaded');
