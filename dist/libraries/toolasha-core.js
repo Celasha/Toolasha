@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 1.9.0
+ * Version: 1.10.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -21,7 +21,7 @@
             this.db = null;
             this.available = false;
             this.dbName = 'ToolashaDB';
-            this.dbVersion = 8; // Bumped for combatStats store
+            this.dbVersion = 9; // Bumped for xpHistory store
             this.saveDebounceTimers = new Map(); // Per-key debounce timers
             this.pendingWrites = new Map(); // Per-key pending write data: {value, storeName}
             this.SAVE_DEBOUNCE_DELAY = 3000; // 3 seconds
@@ -102,6 +102,11 @@
                     // Create combatStats store if it doesn't exist (for combat statistics feature)
                     if (!db.objectStoreNames.contains('combatStats')) {
                         db.createObjectStore('combatStats');
+                    }
+
+                    // Create xpHistory store if it doesn't exist (for XP/hr tracker)
+                    if (!db.objectStoreNames.contains('xpHistory')) {
+                        db.createObjectStore('xpHistory');
                     }
                 };
             });
@@ -892,6 +897,20 @@
             title: 'Skills',
             icon: '📚',
             settings: {
+                xpTracker: {
+                    id: 'xpTracker',
+                    label: 'Left sidebar: Show XP/hr rate on skill bars',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Displays live XP/hr rate under each skill bar in the navigation panel',
+                },
+                xpTracker_timeTillLevel: {
+                    id: 'xpTracker_timeTillLevel',
+                    label: 'Skill tooltip: Show time till next level',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Shows estimated time remaining until the next level in the skill hover tooltip (based on current XP/hr)',
+                },
                 skillRemainingXP: {
                     id: 'skillRemainingXP',
                     label: 'Left sidebar: Show remaining XP to next level',
@@ -1479,6 +1498,12 @@
                     type: 'color',
                     default: '#FFFFFF',
                     help: 'Color for remaining XP text below skill bars in left navigation',
+                },
+                color_xp_rate: {
+                    id: 'color_xp_rate',
+                    label: 'XP/hr Rate Text',
+                    type: 'color',
+                    default: '#ffffff',
                 },
                 color_invBadge_ask: {
                     id: 'color_invBadge_ask',
@@ -3578,6 +3603,7 @@
             this.COLOR_GOLD = '#ffa500'; // Gold/currency color
             this.COLOR_ACCENT = '#22c55e'; // Script accent color (green)
             this.COLOR_REMAINING_XP = '#FFFFFF'; // Remaining XP text color
+            this.COLOR_XP_RATE = '#ffffff'; // XP/hr rate text color
 
             // Legacy color constants (mapped to COLOR_ACCENT)
             this.SCRIPT_COLOR_MAIN = this.COLOR_ACCENT;
@@ -4150,6 +4176,7 @@
             this.COLOR_GOLD = this.getSettingValue('color_gold', '#ffa500');
             this.COLOR_ACCENT = this.getSettingValue('color_accent', '#22c55e');
             this.COLOR_REMAINING_XP = this.getSettingValue('color_remaining_xp', '#FFFFFF');
+            this.COLOR_XP_RATE = this.getSettingValue('color_xp_rate', '#ffffff');
             this.COLOR_INVBADGE_ASK = this.getSettingValue('color_invBadge_ask', '#047857');
             this.COLOR_INVBADGE_BID = this.getSettingValue('color_invBadge_bid', '#60a5fa');
             this.COLOR_TRANSMUTE = this.getSettingValue('color_transmute', '#ffffff');
