@@ -2,10 +2,9 @@
 
 ## [1.12.0](https://github.com/Celasha/Toolasha/compare/v1.11.1...v1.12.0) (2026-02-23)
 
-
 ### Features
 
-* apply KMB formatting to remaining XP display on skill bars ([a9570c9](https://github.com/Celasha/Toolasha/commit/a9570c9013e2e6badeaf10c00c1d3483bbe98282))
+- apply KMB formatting to remaining XP display on skill bars ([a9570c9](https://github.com/Celasha/Toolasha/commit/a9570c9013e2e6badeaf10c00c1d3483bbe98282))
 
 ## [1.11.1](https://github.com/Celasha/Toolasha/compare/v1.11.0...v1.11.1) (2026-02-23)
 
