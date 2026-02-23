@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.11.1](https://github.com/Celasha/Toolasha/compare/v1.11.0...v1.11.1) (2026-02-23)
+
+### Bug Fixes
+
+- handle IndexedDB blocked state and stale connections in storage ([0349229](https://github.com/Celasha/Toolasha/commit/0349229903ef4f5dc50a0c241e8c63ef56a9acba))
+
 ## [1.11.0](https://github.com/Celasha/Toolasha/compare/v1.10.0...v1.11.0) (2026-02-23)
 
 ### Features
