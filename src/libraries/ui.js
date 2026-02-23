@@ -28,6 +28,7 @@ import taskStatistics from '../features/tasks/task-statistics.js';
 
 // Skills
 import remainingXP from '../features/skills/remaining-xp.js';
+import xpTracker from '../features/skills/xp-tracker.js';
 
 // Action features
 import lootLogStats from '../features/actions/loot-log-stats.js';
@@ -71,6 +72,7 @@ toolashaRoot.UI = {
     taskInventoryHighlighter,
     taskStatistics,
     remainingXP,
+    xpTracker,
     lootLogStats,
     housePanelObserver,
     settingsUI,

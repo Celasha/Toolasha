@@ -9,7 +9,7 @@ class Storage {
         this.db = null;
         this.available = false;
         this.dbName = 'ToolashaDB';
-        this.dbVersion = 8; // Bumped for combatStats store
+        this.dbVersion = 9; // Bumped for xpHistory store
         this.saveDebounceTimers = new Map(); // Per-key debounce timers
         this.pendingWrites = new Map(); // Per-key pending write data: {value, storeName}
         this.SAVE_DEBOUNCE_DELAY = 3000; // 3 seconds
@@ -90,6 +90,11 @@ class Storage {
                 // Create combatStats store if it doesn't exist (for combat statistics feature)
                 if (!db.objectStoreNames.contains('combatStats')) {
                     db.createObjectStore('combatStats');
+                }
+
+                // Create xpHistory store if it doesn't exist (for XP/hr tracker)
+                if (!db.objectStoreNames.contains('xpHistory')) {
+                    db.createObjectStore('xpHistory');
                 }
             };
         });

@@ -373,6 +373,7 @@ function registerFeatures() {
             async: false,
         },
         { key: 'skillRemainingXP', name: 'Remaining XP', category: 'Skills', module: UI.remainingXP, async: false },
+        { key: 'xpTracker', name: 'XP/hr Tracker', category: 'Skills', module: UI.xpTracker, async: false },
         {
             key: 'housePanelObserver',
             name: 'House Panel Observer',

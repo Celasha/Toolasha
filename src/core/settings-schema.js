@@ -507,6 +507,20 @@ export const settingsGroups = {
         title: 'Skills',
         icon: '📚',
         settings: {
+            xpTracker: {
+                id: 'xpTracker',
+                label: 'Left sidebar: Show XP/hr rate on skill bars',
+                type: 'checkbox',
+                default: true,
+                help: 'Displays live XP/hr rate under each skill bar in the navigation panel',
+            },
+            xpTracker_timeTillLevel: {
+                id: 'xpTracker_timeTillLevel',
+                label: 'Skill tooltip: Show time till next level',
+                type: 'checkbox',
+                default: true,
+                help: 'Shows estimated time remaining until the next level in the skill hover tooltip (based on current XP/hr)',
+            },
             skillRemainingXP: {
                 id: 'skillRemainingXP',
                 label: 'Left sidebar: Show remaining XP to next level',
@@ -1094,6 +1108,12 @@ export const settingsGroups = {
                 type: 'color',
                 default: '#FFFFFF',
                 help: 'Color for remaining XP text below skill bars in left navigation',
+            },
+            color_xp_rate: {
+                id: 'color_xp_rate',
+                label: 'XP/hr Rate Text',
+                type: 'color',
+                default: '#ffffff',
             },
             color_invBadge_ask: {
                 id: 'color_invBadge_ask',
