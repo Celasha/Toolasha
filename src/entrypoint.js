@@ -258,6 +258,13 @@ function registerFeatures() {
             module: UI.lootLogStats,
             async: false,
         },
+        {
+            key: 'inventoryCountDisplay',
+            name: 'Inventory Count Display',
+            category: 'Actions',
+            module: Actions.inventoryCountDisplay,
+            async: false,
+        },
     ];
 
     // Combat Features

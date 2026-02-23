@@ -40,6 +40,7 @@ class Config {
         this.COLOR_ACCENT = '#22c55e'; // Script accent color (green)
         this.COLOR_REMAINING_XP = '#FFFFFF'; // Remaining XP text color
         this.COLOR_XP_RATE = '#ffffff'; // XP/hr rate text color
+        this.COLOR_INV_COUNT = '#ffffff'; // Inventory count display color
 
         // Legacy color constants (mapped to COLOR_ACCENT)
         this.SCRIPT_COLOR_MAIN = this.COLOR_ACCENT;
@@ -613,6 +614,7 @@ class Config {
         this.COLOR_ACCENT = this.getSettingValue('color_accent', '#22c55e');
         this.COLOR_REMAINING_XP = this.getSettingValue('color_remaining_xp', '#FFFFFF');
         this.COLOR_XP_RATE = this.getSettingValue('color_xp_rate', '#ffffff');
+        this.COLOR_INV_COUNT = this.getSettingValue('color_inv_count', '#ffffff');
         this.COLOR_INVBADGE_ASK = this.getSettingValue('color_invBadge_ask', '#047857');
         this.COLOR_INVBADGE_BID = this.getSettingValue('color_invBadge_bid', '#60a5fa');
         this.COLOR_TRANSMUTE = this.getSettingValue('color_transmute', '#ffffff');

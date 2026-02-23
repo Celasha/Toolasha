@@ -166,6 +166,13 @@ export const settingsGroups = {
                 default: true,
                 help: 'Display total value, average time, and daily output in loot logs',
             },
+            inventoryCountDisplay: {
+                id: 'inventoryCountDisplay',
+                label: 'Action panels: Show current inventory count of output item',
+                type: 'checkbox',
+                default: true,
+                help: 'Shows how many of the output item you currently own, on action tiles and in the action detail panel',
+            },
         },
     },
 
@@ -1114,6 +1121,13 @@ export const settingsGroups = {
                 label: 'XP/hr Rate Text',
                 type: 'color',
                 default: '#ffffff',
+            },
+            color_inv_count: {
+                id: 'color_inv_count',
+                label: 'Inventory Count Text',
+                type: 'color',
+                default: '#ffffff',
+                help: 'Color for inventory count shown on action tiles and in the action detail panel',
             },
             color_invBadge_ask: {
                 id: 'color_invBadge_ask',
