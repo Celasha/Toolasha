@@ -2,10 +2,9 @@
 
 ## [1.10.0](https://github.com/Celasha/Toolasha/compare/v1.9.0...v1.10.0) (2026-02-23)
 
-
 ### Features
 
-* add XP/hr tracker with time-to-level and customizable color ([0480f46](https://github.com/Celasha/Toolasha/commit/0480f46cb2a68af7c87a45583bb6c85c6abefbcd))
+- add XP/hr tracker with time-to-level and customizable color ([0480f46](https://github.com/Celasha/Toolasha/commit/0480f46cb2a68af7c87a45583bb6c85c6abefbcd))
 
 ## [1.9.0](https://github.com/Celasha/Toolasha/compare/v1.8.1...v1.9.0) (2026-02-22)
 
