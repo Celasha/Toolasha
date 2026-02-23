@@ -2,10 +2,9 @@
 
 ## [1.12.1](https://github.com/Celasha/Toolasha/compare/v1.12.0...v1.12.1) (2026-02-23)
 
-
 ### Bug Fixes
 
-* always show XP/hr in flex row regardless of XP Left setting ([ffb3188](https://github.com/Celasha/Toolasha/commit/ffb3188f59e6604fd08185d9894ac4089daacc90))
+- always show XP/hr in flex row regardless of XP Left setting ([ffb3188](https://github.com/Celasha/Toolasha/commit/ffb3188f59e6604fd08185d9894ac4089daacc90))
 
 ## [1.12.0](https://github.com/Celasha/Toolasha/compare/v1.11.1...v1.12.0) (2026-02-23)
 
