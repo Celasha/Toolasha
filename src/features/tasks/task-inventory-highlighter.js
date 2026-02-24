@@ -7,6 +7,7 @@ import domObserver from '../../core/dom-observer.js';
 import { calculateTaskProfit } from './task-profit-calculator.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { GAME } from '../../utils/selectors.js';
+import { parseItemCount } from '../../utils/number-parser.js';
 
 class TaskInventoryHighlighter {
     constructor() {
@@ -320,12 +321,12 @@ class TaskInventoryHighlighter {
             if (href.includes('coin')) {
                 const countNode = container.querySelector(GAME.ITEM_COUNT);
                 if (countNode) {
-                    coinReward = this.parseItemCount(countNode.textContent);
+                    coinReward = parseItemCount(countNode.textContent, 0);
                 }
             } else if (href.includes('task_token')) {
                 const countNode = container.querySelector(GAME.ITEM_COUNT);
                 if (countNode) {
-                    taskTokenReward = this.parseItemCount(countNode.textContent);
+                    taskTokenReward = parseItemCount(countNode.textContent, 0);
                 }
             }
         }
@@ -338,23 +339,6 @@ class TaskInventoryHighlighter {
             currentProgress,
             isCombat,
         };
-    }
-
-    /**
-     * Parse item count from text (handles K/M suffixes)
-     * @param {string} text - Count text (e.g., "1.5K")
-     * @returns {number} Parsed count
-     */
-    parseItemCount(text) {
-        text = text.trim();
-
-        if (text.includes('K')) {
-            return parseFloat(text.replace('K', '')) * 1000;
-        } else if (text.includes('M')) {
-            return parseFloat(text.replace('M', '')) * 1000000;
-        }
-
-        return parseFloat(text) || 0;
     }
 
     /**

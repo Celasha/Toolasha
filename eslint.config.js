@@ -119,6 +119,29 @@ export default [
             'no-undef': 'error',
         },
     },
+    {
+        // Test files
+        files: ['src/**/*.test.js'],
+        languageOptions: {
+            ecmaVersion: 2022,
+            sourceType: 'module',
+            globals: {
+                ...globals.browser,
+                describe: 'readonly',
+                test: 'readonly',
+                expect: 'readonly',
+                beforeEach: 'readonly',
+                afterEach: 'readonly',
+                beforeAll: 'readonly',
+                afterAll: 'readonly',
+                vi: 'readonly',
+            },
+        },
+        rules: {
+            'no-undef': 'error',
+            'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+        },
+    },
     // Disable formatting rules that conflict with Prettier
     prettier,
 ];
