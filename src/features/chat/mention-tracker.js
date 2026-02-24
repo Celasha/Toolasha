@@ -7,15 +7,15 @@ import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import webSocketHook from '../../core/websocket.js';
 import domObserver from '../../core/dom-observer.js';
+import mentionPopup from './mention-popup.js';
 
 class MentionTracker {
     constructor() {
         this.initialized = false;
-        this.mentionCounts = new Map(); // channel -> count
+        this.mentionLog = new Map(); // channel -> Array<{ sName, m, t }>
         this.characterName = null;
         this.handlers = {};
         this.unregisterObserver = null;
-        this.tabClickHandlers = new Map(); // button element -> handler
     }
 
     /**
@@ -71,8 +71,9 @@ class MentionTracker {
         const channel = message.chan || '';
 
         if (this.isMentioned(text)) {
-            const currentCount = this.mentionCounts.get(channel) || 0;
-            this.mentionCounts.set(channel, currentCount + 1);
+            const log = this.mentionLog.get(channel) || [];
+            log.push({ sName: message.sName, m: text, t: message.t });
+            this.mentionLog.set(channel, log);
             this.updateBadge(channel);
         }
     }
@@ -134,13 +135,6 @@ class MentionTracker {
             // Store reference to button for this channel
             button.dataset.mentionChannel = channel;
 
-            // Add click handler to clear mentions (if not already added)
-            if (!this.tabClickHandlers.has(button)) {
-                const handler = () => this.clearMentions(channel);
-                button.addEventListener('click', handler);
-                this.tabClickHandlers.set(button, handler);
-            }
-
             // Ensure button has relative positioning for badge
             if (getComputedStyle(button).position === 'static') {
                 button.style.position = 'relative';
@@ -195,7 +189,7 @@ class MentionTracker {
      * @param {string} channel - Channel HRID
      */
     updateBadgeForButton(button, channel) {
-        const count = this.mentionCounts.get(channel) || 0;
+        const count = (this.mentionLog.get(channel) || []).length;
 
         // Find the MuiBadge-root wrapper inside the button (where game puts its badge)
         const badgeRoot = button.querySelector('.MuiBadge-root');
@@ -214,7 +208,6 @@ class MentionTracker {
         if (!badge) {
             badge = document.createElement('span');
             badge.className = 'mwi-mention-badge';
-            // Match MUI badge styling exactly, but on left side
             badge.style.cssText = `
                 position: absolute;
                 top: 0;
@@ -233,7 +226,14 @@ class MentionTracker {
                 z-index: 1;
                 background-color: #d32f2f;
                 color: #e7e7e7;
+                cursor: pointer;
             `;
+            badge.addEventListener('click', (e) => {
+                e.stopPropagation(); // Prevent tab switch
+                const mentions = this.mentionLog.get(channel) || [];
+                const displayName = this.getChannelDisplayName(channel);
+                mentionPopup.open(channel, mentions, displayName, () => this.clearMentions(channel));
+            });
             container.appendChild(badge);
         }
 
@@ -246,8 +246,8 @@ class MentionTracker {
      * @param {string} channel - Channel HRID
      */
     clearMentions(channel) {
-        if (this.mentionCounts.has(channel)) {
-            this.mentionCounts.set(channel, 0);
+        if (this.mentionLog.has(channel)) {
+            this.mentionLog.set(channel, []);
             this.updateBadge(channel);
         }
     }
@@ -266,17 +266,14 @@ class MentionTracker {
             this.unregisterObserver = null;
         }
 
-        // Remove click handlers
-        for (const [button, handler] of this.tabClickHandlers) {
-            button.removeEventListener('click', handler);
-        }
-        this.tabClickHandlers.clear();
+        // Close popup if open
+        mentionPopup.close();
 
         // Remove all badges
         document.querySelectorAll('.mwi-mention-badge').forEach((el) => el.remove());
 
-        // Clear counts
-        this.mentionCounts.clear();
+        // Clear log
+        this.mentionLog.clear();
 
         this.initialized = false;
     }
