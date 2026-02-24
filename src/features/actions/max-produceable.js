@@ -442,39 +442,45 @@ class MaxProduceable {
             canProduceColor = config.COLOR_PROFIT; // Green - plenty of materials
         }
 
-        // Build display HTML
-        let html = `<span style="color: ${canProduceColor};">Can produce: ${maxCrafts.toLocaleString()}</span>`;
-
         // Store metrics for best action comparison
         data.maxCrafts = maxCrafts;
         data.profitPerHour = resolvedProfitPerHour;
         data.expPerHour = expPerHour;
         data.hasMissingPrices = hasMissingPrices;
 
-        // Add profit/hr line if available
+        // Build display HTML using .mwi-action-stat-line divs so fitLineFontSizes
+        // can size each line immediately — avoids the multi-second flash of tiny
+        // unsized text that occurred when sizing was deferred to addBestActionIndicators.
+        let html = `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
+        html += `<span style="color: ${canProduceColor};">Can produce: ${maxCrafts.toLocaleString()}</span></div>`;
+
         if (hasMissingPrices) {
-            html += `<br><span style="color: ${config.SCRIPT_COLOR_ALERT};">Profit/hr: -- ⚠</span>`;
+            html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
+            html += `<span data-stat="profit" style="color: ${config.SCRIPT_COLOR_ALERT};">Profit/hr: -- ⚠</span></div>`;
         } else if (resolvedProfitPerHour !== null) {
             const profitColor = resolvedProfitPerHour >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
             const profitSign = resolvedProfitPerHour >= 0 ? '' : '-';
-            html += `<br><span style="color: ${profitColor};">Profit/hr: ${profitSign}${formatKMB(Math.abs(resolvedProfitPerHour))}</span>`;
+            html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
+            html += `<span data-stat="profit" style="color: ${profitColor};">Profit/hr: ${profitSign}${formatKMB(Math.abs(resolvedProfitPerHour))}</span></div>`;
         }
 
-        // Add exp/hr line if available
         if (expPerHour !== null && expPerHour > 0) {
-            html += `<br><span style="color: #fff;">Exp/hr: ${formatKMB(expPerHour)}</span>`;
+            html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
+            html += `<span data-stat="exp" style="color: #fff;">Exp/hr: ${formatKMB(expPerHour)}</span></div>`;
         }
 
-        // Add coins/xp efficiency metric if both profit and exp are available
         if (!hasMissingPrices && resolvedProfitPerHour !== null && expPerHour !== null && expPerHour > 0) {
             const coinsPerXp = resolvedProfitPerHour / expPerHour;
             const efficiencyColor = coinsPerXp >= 0 ? config.COLOR_INFO : config.COLOR_WARNING;
             const efficiencySign = coinsPerXp >= 0 ? '' : '-';
-            html += `<br><span style="color: ${efficiencyColor};">Coins/XP: ${efficiencySign}${formatKMB(Math.abs(coinsPerXp))}</span>`;
+            html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
+            html += `<span data-stat="overall" style="color: ${efficiencyColor};">Coins/XP: ${efficiencySign}${formatKMB(Math.abs(coinsPerXp))}</span></div>`;
         }
 
         data.displayElement.style.display = 'block';
+        data.displayElement.style.visibility = 'hidden';
         data.displayElement.innerHTML = html;
+        this.fitLineFontSizes(actionPanel, data.displayElement);
     }
 
     /**
@@ -589,62 +595,38 @@ class MaxProduceable {
             }
         }
 
-        // Second pass: update HTML with indicators
+        // Second pass: update emoji indicators in-place on existing spans.
+        // Avoids rewriting innerHTML (which would cause a flash + re-size).
+        const EMOJIS = [' 💰', ' 🧠', ' 🏆'];
+        const stripEmoji = (text) => {
+            let t = text;
+            for (const e of EMOJIS) t = t.replace(e, '');
+            return t;
+        };
+
         for (const [actionPanel, data] of this.actionElements.entries()) {
             if (!document.body.contains(actionPanel) || !data.displayElement) {
                 continue;
             }
 
-            const { profitPerHour, expPerHour, hasMissingPrices } = data;
             const isBestProfit = bestProfitPanels.includes(actionPanel);
             const isBestExp = bestExpPanels.includes(actionPanel);
             const isBestOverall = bestOverallPanels.includes(actionPanel);
 
-            // Rebuild HTML with indicators
-            const maxCrafts = data.maxCrafts || 0;
-            let canProduceColor;
-            if (maxCrafts === 0) {
-                canProduceColor = config.COLOR_LOSS;
-            } else if (maxCrafts < 5) {
-                canProduceColor = config.COLOR_WARNING;
-            } else {
-                canProduceColor = config.COLOR_PROFIT;
+            const profitSpan = data.displayElement.querySelector('[data-stat="profit"]');
+            if (profitSpan) {
+                profitSpan.textContent = stripEmoji(profitSpan.textContent) + (isBestProfit ? ' 💰' : '');
             }
 
-            let html = `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
-            html += `<span style="color: ${canProduceColor};">Can produce: ${maxCrafts.toLocaleString()}</span></div>`;
-
-            // Add profit/hr line with indicator
-            if (hasMissingPrices) {
-                html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
-                html += `<span style="color: ${config.SCRIPT_COLOR_ALERT};">Profit/hr: -- ⚠</span></div>`;
-            } else if (profitPerHour !== null) {
-                const profitColor = profitPerHour >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
-                const profitSign = profitPerHour >= 0 ? '' : '-';
-                const profitIndicator = isBestProfit ? ' 💰' : '';
-                html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
-                html += `<span style="color: ${profitColor};">Profit/hr: ${profitSign}${formatKMB(Math.abs(profitPerHour))}${profitIndicator}</span></div>`;
+            const expSpan = data.displayElement.querySelector('[data-stat="exp"]');
+            if (expSpan) {
+                expSpan.textContent = stripEmoji(expSpan.textContent) + (isBestExp ? ' 🧠' : '');
             }
 
-            // Add exp/hr line with indicator
-            if (expPerHour !== null && expPerHour > 0) {
-                const expIndicator = isBestExp ? ' 🧠' : '';
-                html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
-                html += `<span style="color: #fff;">Exp/hr: ${formatKMB(expPerHour)}${expIndicator}</span></div>`;
+            const overallSpan = data.displayElement.querySelector('[data-stat="overall"]');
+            if (overallSpan) {
+                overallSpan.textContent = stripEmoji(overallSpan.textContent) + (isBestOverall ? ' 🏆' : '');
             }
-
-            // Add coins/xp efficiency metric with indicator
-            if (!hasMissingPrices && profitPerHour !== null && expPerHour !== null && expPerHour > 0) {
-                const coinsPerXp = profitPerHour / expPerHour;
-                const efficiencyColor = coinsPerXp >= 0 ? config.COLOR_INFO : config.COLOR_WARNING;
-                const efficiencySign = coinsPerXp >= 0 ? '' : '-';
-                const overallIndicator = isBestOverall ? ' 🏆' : '';
-                html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
-                html += `<span style="color: ${efficiencyColor};">Coins/XP: ${efficiencySign}${formatKMB(Math.abs(coinsPerXp))}${overallIndicator}</span></div>`;
-            }
-
-            data.displayElement.innerHTML = html;
-            this.fitLineFontSizes(actionPanel, data.displayElement);
         }
     }
 
@@ -662,6 +644,9 @@ class MaxProduceable {
             if (!availableWidth) {
                 if (retries > 0) {
                     setTimeout(() => this.fitLineFontSizes(actionPanel, displayElement, retries - 1), 60);
+                } else {
+                    // Out of retries — reveal anyway so it's never permanently hidden.
+                    displayElement.style.visibility = '';
                 }
                 return;
             }
@@ -697,6 +682,9 @@ class MaxProduceable {
                     textSpan.style.setProperty('transform', `scaleX(${scaleX})`);
                 }
             });
+
+            // Reveal now that sizing is complete.
+            displayElement.style.visibility = '';
 
             // Keep marginBottom in sync with the bar's actual rendered height.
             const h = displayElement.offsetHeight;
