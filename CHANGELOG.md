@@ -2,10 +2,9 @@
 
 ## [1.12.3](https://github.com/Celasha/Toolasha/compare/v1.12.2...v1.12.3) (2026-02-24)
 
-
 ### Bug Fixes
 
-* restore inventory badges immediately on item click using popperInteractive observer ([51d8adf](https://github.com/Celasha/Toolasha/commit/51d8adf84ba2813d5bed55df1b650f8c96512cf1))
+- restore inventory badges immediately on item click using popperInteractive observer ([51d8adf](https://github.com/Celasha/Toolasha/commit/51d8adf84ba2813d5bed55df1b650f8c96512cf1))
 
 ## [1.12.2](https://github.com/Celasha/Toolasha/compare/v1.12.1...v1.12.2) (2026-02-24)
 
