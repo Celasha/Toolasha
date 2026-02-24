@@ -186,14 +186,14 @@ class MaxProduceable {
 
         // Only create max produceable display for production actions
         if (isProductionAction) {
-            actionPanel.style.marginBottom = '70px';
+            actionPanel.style.alignSelf = 'flex-start';
+            actionPanel.style.overflow = 'visible';
 
-            // Create display element
             display = document.createElement('div');
             display.className = 'mwi-max-produceable';
             display.style.cssText = `
                 position: absolute;
-                bottom: -65px;
+                top: 100%;
                 left: 0;
                 right: 0;
                 font-size: 0.55em;
@@ -206,8 +206,14 @@ class MaxProduceable {
                 overflow: hidden;
             `;
 
-            // Append stats display to action panel with absolute positioning
             actionPanel.appendChild(display);
+
+            // Set marginBottom to the bar's actual rendered height so the grid row
+            // reserves exactly the right amount of space below the tile.
+            requestAnimationFrame(() => {
+                const h = display.offsetHeight;
+                if (h > 0) actionPanel.style.marginBottom = `${h}px`;
+            });
         }
 
         // Create pin icon (for ALL actions - gathering and production)
@@ -278,7 +284,11 @@ class MaxProduceable {
             return null;
         }
 
-        const actionName = nameElement.textContent.trim();
+        const actionName = Array.from(nameElement.childNodes)
+            .filter((n) => n.nodeType === Node.TEXT_NODE)
+            .map((n) => n.textContent)
+            .join('')
+            .trim();
 
         // Build reverse lookup cache on first use (name → hrid)
         if (!this.actionNameToHridCache) {
@@ -687,6 +697,10 @@ class MaxProduceable {
                     textSpan.style.setProperty('transform', `scaleX(${scaleX})`);
                 }
             });
+
+            // Keep marginBottom in sync with the bar's actual rendered height.
+            const h = displayElement.offsetHeight;
+            if (h > 0) actionPanel.style.marginBottom = `${h}px`;
         });
     }
 
@@ -739,7 +753,7 @@ class MaxProduceable {
         // CRITICAL: Remove injected DOM elements BEFORE clearing Maps
         // This prevents detached SVG elements from accumulating
         // Note: .remove() is safe to call even if element is already detached
-        for (const [_actionPanel, data] of this.actionElements.entries()) {
+        for (const [actionPanel, data] of this.actionElements.entries()) {
             if (data.displayElement) {
                 data.displayElement.innerHTML = ''; // Clear innerHTML to break event listener references
                 data.displayElement.remove();
@@ -750,6 +764,8 @@ class MaxProduceable {
                 data.pinElement.remove();
                 data.pinElement = null; // Null out reference for GC
             }
+            actionPanel.style.marginBottom = '';
+            actionPanel.style.overflow = '';
         }
 
         // Clear all action element references (prevents detached DOM memory leak)
