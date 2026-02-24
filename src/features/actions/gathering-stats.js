@@ -120,12 +120,13 @@ class GatheringStats {
         // Check if already injected
         const existingDisplay = actionPanel.querySelector('.mwi-gathering-stats');
         if (existingDisplay) {
-            // Re-register existing display (DOM elements may be reused across navigation)
+            // Re-register existing display (DOM elements may be reused across navigation).
+            // Use skipRender so we don't wipe innerHTML (which would erase the emoji
+            // set by addBestActionIndicators and cause a visible blink).
             this.actionElements.set(actionPanel, {
                 actionHrid: actionHrid,
                 displayElement: existingDisplay,
             });
-            // Update with fresh data (skip render; indicators handle output)
             this.updateStats(actionPanel, { skipRender: true }).then(() => {
                 this.scheduleIndicatorUpdate();
             });
@@ -158,10 +159,18 @@ class GatheringStats {
         if (actionPanel.style.position !== 'relative' && actionPanel.style.position !== 'absolute') {
             actionPanel.style.position = 'relative';
         }
-        actionPanel.style.marginBottom = '55px';
+        actionPanel.style.alignSelf = 'flex-start';
+        actionPanel.style.overflow = 'visible';
 
         // Append directly to action panel with absolute positioning
         actionPanel.appendChild(display);
+
+        // Set marginBottom to the bar's actual rendered height so the grid row
+        // reserves exactly the right amount of space below the tile.
+        requestAnimationFrame(() => {
+            const h = display.offsetHeight;
+            if (h > 0) actionPanel.style.marginBottom = `${h}px`;
+        });
 
         // Store reference
         this.actionElements.set(actionPanel, {
@@ -172,8 +181,7 @@ class GatheringStats {
         // Register with shared sort manager
         actionPanelSort.registerPanel(actionPanel, actionHrid);
 
-        // Initial update (skip render; indicators handle output)
-        this.updateStats(actionPanel, { skipRender: true }).then(() => {
+        this.updateStats(actionPanel).then(() => {
             this.scheduleIndicatorUpdate();
         });
 
@@ -194,7 +202,11 @@ class GatheringStats {
             return null;
         }
 
-        const actionName = nameElement.textContent.trim();
+        const actionName = Array.from(nameElement.childNodes)
+            .filter((n) => n.nodeType === Node.TEXT_NODE)
+            .map((n) => n.textContent)
+            .join('')
+            .trim();
 
         // Look up action by name in game data
         const initData = dataManager.getInitClientData();
@@ -272,6 +284,8 @@ class GatheringStats {
         const updatePromises = [];
         for (const actionPanel of [...this.actionElements.keys()]) {
             if (document.body.contains(actionPanel)) {
+                // skipRender: bulk updates go through addBestActionIndicators
+                // which updates spans in-place — avoids double render + flash.
                 updatePromises.push(this.updateStats(actionPanel, { skipRender: true }));
             } else {
                 // Panel no longer in DOM - remove injected elements BEFORE deleting from Map
@@ -357,56 +371,73 @@ class GatheringStats {
             }
         }
 
-        // Second pass: update HTML with indicators
+        // Second pass: update emoji indicators in-place on existing spans.
+        // Avoids rewriting innerHTML (which would cause a flash + re-size).
+        const EMOJIS = [' 💰', ' 🧠', ' 🏆'];
+        const stripEmoji = (text) => {
+            let t = text;
+            for (const e of EMOJIS) t = t.replace(e, '');
+            return t;
+        };
+
         for (const [actionPanel, data] of this.actionElements.entries()) {
             if (!document.body.contains(actionPanel) || !data.displayElement) {
                 continue;
             }
 
-            this.renderIndicators(actionPanel, data, {
-                isBestProfit: bestProfitPanels.includes(actionPanel),
-                isBestExp: bestExpPanels.includes(actionPanel),
-                isBestOverall: bestOverallPanels.includes(actionPanel),
-            });
+            const isBestProfit = bestProfitPanels.includes(actionPanel);
+            const isBestExp = bestExpPanels.includes(actionPanel);
+            const isBestOverall = bestOverallPanels.includes(actionPanel);
+
+            const profitSpan = data.displayElement.querySelector('[data-stat="profit"]');
+            if (profitSpan) {
+                profitSpan.textContent = stripEmoji(profitSpan.textContent) + (isBestProfit ? ' 💰' : '');
+            }
+
+            const expSpan = data.displayElement.querySelector('[data-stat="exp"]');
+            if (expSpan) {
+                expSpan.textContent = stripEmoji(expSpan.textContent) + (isBestExp ? ' 🧠' : '');
+            }
+
+            const overallSpan = data.displayElement.querySelector('[data-stat="overall"]');
+            if (overallSpan) {
+                overallSpan.textContent = stripEmoji(overallSpan.textContent) + (isBestOverall ? ' 🏆' : '');
+            }
         }
     }
 
     /**
-     * Render stat lines with optional best indicators
+     * Render stat lines into the display element and size them to fit.
      * @param {HTMLElement} actionPanel - Action panel container
      * @param {Object} data - Stored action data
-     * @param {Object} [bestFlags] - Best indicator flags
      */
-    renderIndicators(actionPanel, data, bestFlags = {}) {
+    renderIndicators(actionPanel, data) {
         const { profitPerHour, expPerHour } = data;
-        const { isBestProfit = false, isBestExp = false, isBestOverall = false } = bestFlags;
         let html = '';
 
         if (profitPerHour !== null) {
             const profitColor = profitPerHour >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
             const profitSign = profitPerHour >= 0 ? '' : '-';
-            const profitIndicator = isBestProfit ? ' 💰' : '';
             html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
-            html += `<span style="color: ${profitColor};">Profit/hr: ${profitSign}${formatKMB(Math.abs(profitPerHour))}${profitIndicator}</span></div>`;
+            html += `<span data-stat="profit" style="color: ${profitColor};">Profit/hr: ${profitSign}${formatKMB(Math.abs(profitPerHour))}</span></div>`;
         }
 
         if (expPerHour !== null && expPerHour > 0) {
-            const expIndicator = isBestExp ? ' 🧠' : '';
             html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
-            html += `<span style="color: #fff;">Exp/hr: ${formatKMB(expPerHour)}${expIndicator}</span></div>`;
+            html += `<span data-stat="exp" style="color: #fff;">Exp/hr: ${formatKMB(expPerHour)}</span></div>`;
         }
 
         if (profitPerHour !== null && expPerHour !== null && expPerHour > 0) {
             const coinsPerXp = profitPerHour / expPerHour;
             const efficiencyColor = coinsPerXp >= 0 ? config.COLOR_INFO : config.COLOR_WARNING;
             const efficiencySign = coinsPerXp >= 0 ? '' : '-';
-            const overallIndicator = isBestOverall ? ' 🏆' : '';
             html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
-            html += `<span style="color: ${efficiencyColor};">Coins/XP: ${efficiencySign}${formatKMB(Math.abs(coinsPerXp))}${overallIndicator}</span></div>`;
+            html += `<span data-stat="overall" style="color: ${efficiencyColor};">Coins/XP: ${efficiencySign}${formatKMB(Math.abs(coinsPerXp))}</span></div>`;
         }
 
         data.displayElement.innerHTML = html;
         data.displayElement.style.display = 'block';
+        data.displayElement.style.visibility = 'hidden';
         this.fitLineFontSizes(actionPanel, data.displayElement);
     }
 
@@ -424,6 +455,9 @@ class GatheringStats {
             if (!availableWidth) {
                 if (retries > 0) {
                     setTimeout(() => this.fitLineFontSizes(actionPanel, displayElement, retries - 1), 60);
+                } else {
+                    // Out of retries — reveal anyway so it's never permanently hidden.
+                    displayElement.style.visibility = '';
                 }
                 return;
             }
@@ -459,6 +493,13 @@ class GatheringStats {
                     textSpan.style.setProperty('transform', `scaleX(${scaleX})`);
                 }
             });
+
+            // Reveal now that sizing is complete.
+            displayElement.style.visibility = '';
+
+            // Keep marginBottom in sync with the bar's actual rendered height.
+            const h = displayElement.offsetHeight;
+            if (h > 0) actionPanel.style.marginBottom = `${h}px`;
         });
     }
 
@@ -471,12 +512,14 @@ class GatheringStats {
         // CRITICAL: Remove injected DOM elements BEFORE clearing Maps
         // This prevents detached SVG elements from accumulating
         // Note: .remove() is safe to call even if element is already detached
-        for (const [_actionPanel, data] of this.actionElements.entries()) {
+        for (const [actionPanel, data] of this.actionElements.entries()) {
             if (data.displayElement) {
                 data.displayElement.innerHTML = ''; // Clear innerHTML to break event listener references
                 data.displayElement.remove();
                 data.displayElement = null; // Null out reference for GC
             }
+            actionPanel.style.marginBottom = '';
+            actionPanel.style.overflow = '';
         }
 
         // Clear all action element references (prevents detached DOM memory leak)

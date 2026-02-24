@@ -8,7 +8,7 @@
 import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
 import config from '../../core/config.js';
-import { numberFormatter } from '../../utils/formatters.js';
+import { formatKMB } from '../../utils/formatters.js';
 
 const GATHERING_TYPES = ['/action_types/foraging', '/action_types/woodcutting', '/action_types/milking'];
 const PRODUCTION_TYPES = [
@@ -64,7 +64,7 @@ function getPrimaryOutputHrid(actionDetails) {
  * @returns {string}
  */
 function formatCount(count) {
-    return numberFormatter(count, 0);
+    return formatKMB(count);
 }
 
 class InventoryCountDisplay {
@@ -121,8 +121,9 @@ class InventoryCountDisplay {
     }
 
     /**
-     * Inject a bottom-center count overlay directly onto the tile element.
-     * Never touches the name div — same pattern as gathering-stats / max-produceable.
+     * Inject a count strip just below the tile using the same pattern as
+     * gathering-stats / max-produceable: position absolute at top:100% with
+     * marginBottom on the panel so the grid row makes room for it.
      * @param {HTMLElement} actionPanel
      */
     _injectTile(actionPanel) {
@@ -134,25 +135,43 @@ class InventoryCountDisplay {
         if (!outputHrid) return;
 
         let span = actionPanel.querySelector('.mwi-inv-count-tile');
+        if (span && span.dataset.outputHrid !== outputHrid) {
+            // Output changed — clean up stale span
+            span.remove();
+            span = null;
+        }
         if (!span) {
+            const nameEl = actionPanel.querySelector('[class*="SkillAction_name"]');
+            if (!nameEl) return;
+
             span = document.createElement('span');
             span.className = 'mwi-inv-count-tile';
-            span.style.cssText = `
-                position: absolute;
-                top: 28px;
-                left: 0;
-                right: 0;
-                text-align: center;
-                font-size: 0.7em;
-                color: ${config.COLOR_INV_COUNT};
-                font-weight: 600;
-                pointer-events: none;
-                z-index: 5;
-                line-height: 1;
-            `;
+            span.dataset.outputHrid = outputHrid;
+
             if (actionPanel.style.position !== 'relative' && actionPanel.style.position !== 'absolute') {
                 actionPanel.style.position = 'relative';
             }
+
+            // z-index:12 places the count above the icon container which fills the tile.
+            // bottom:4px sits inside the tile above the profit bar (which is at top:100%).
+            // background + padding give the number a readable pill against the sprite.
+            span.style.cssText = `
+                position: absolute;
+                bottom: 4px;
+                left: 50%;
+                transform: translateX(-50%);
+                text-align: center;
+                font-size: 0.75em;
+                color: ${config.COLOR_INV_COUNT};
+                font-weight: 600;
+                pointer-events: none;
+                line-height: 1.4;
+                z-index: 12;
+                background: rgba(0, 0, 0, 0.55);
+                border-radius: 3px;
+                padding: 0 4px;
+                white-space: nowrap;
+            `;
             actionPanel.appendChild(span);
         }
 
@@ -206,16 +225,20 @@ class InventoryCountDisplay {
         span.className = 'mwi-inv-count-detail';
         span.dataset.outputHrid = outputHrid;
         span.style.cssText = `
+            display: block;
             font-size: 0.75em;
             color: ${config.COLOR_INV_COUNT};
             font-weight: 600;
-            margin-left: 8px;
-            vertical-align: middle;
+            margin-top: 2px;
             pointer-events: none;
         `;
         span.textContent = count > 0 ? `(${formatCount(count)} in inventory)` : '';
 
-        nameEl.appendChild(span);
+        // Insert after the info container (nameEl's parent) so it sits on its own
+        // line below the action name row. Inserting after nameEl itself puts the span
+        // inside the flex info row and causes overlap.
+        const infoContainer = nameEl.closest('[class*="SkillActionDetail_info"]') ?? nameEl.parentElement;
+        infoContainer.after(span);
         this.detailPanels.add(panel);
     }
 
@@ -250,7 +273,12 @@ class InventoryCountDisplay {
     _getActionHridFromTile(actionPanel) {
         const nameEl = actionPanel.querySelector('[class*="SkillAction_name"]');
         if (!nameEl) return null;
-        return this._getActionHridFromName(nameEl.textContent.trim());
+        const name = Array.from(nameEl.childNodes)
+            .filter((n) => n.nodeType === Node.TEXT_NODE)
+            .map((n) => n.textContent)
+            .join('')
+            .trim();
+        return this._getActionHridFromName(name);
     }
 
     _getActionHridFromName(name) {
