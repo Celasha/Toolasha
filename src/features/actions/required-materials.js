@@ -207,7 +207,13 @@ class RequiredMaterials {
             return null;
         }
 
-        const actionName = actionNameElement.textContent.trim();
+        // Read only direct text nodes to avoid picking up injected child spans
+        // (e.g. inventory count display appends "(20 in inventory)" as a child span)
+        const actionName = Array.from(actionNameElement.childNodes)
+            .filter((node) => node.nodeType === Node.TEXT_NODE)
+            .map((node) => node.textContent)
+            .join('')
+            .trim();
         return this.getActionHridFromName(actionName);
     }
 
