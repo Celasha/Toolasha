@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      1.12.2
+// @version      1.12.3
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -42388,26 +42388,29 @@ self.onmessage = function (e) {
             });
             this.unregisterHandlers.push(unregister);
 
-            // Subscribe to tooltip appearances to restore badges when React clears them
-            // When user clicks an item, React re-renders the container and removes our badges
-            // This subscription ensures badges are immediately restored when tooltip closes
-            tooltipObserver.subscribe('inventory-badge-manager', (element, eventType) => {
-                // Only restore badges when tooltip CLOSES (that's when React clears them)
-                if (eventType === 'closed') {
-                    // Small delay to let React finish its re-render
-                    setTimeout(() => {
-                        this.renderAllBadges();
-                    }, 50);
+            // Watch for MuiTooltip-popperInteractive closing (item click popup) and re-render badges.
+            // When an inventory item is clicked, the game shows an interactive popper.
+            // When that popper closes, React may have re-rendered the item container, wiping badges.
+            const interactivePopperObserver = new MutationObserver((mutations) => {
+                for (const mutation of mutations) {
+                    for (const node of mutation.addedNodes) {
+                        if (node.nodeType !== Node.ELEMENT_NODE) continue;
+                        if (node.classList?.contains('MuiTooltip-popperInteractive')) {
+                            setTimeout(() => this.renderAllBadges(), 50);
+                            return;
+                        }
+                    }
+                    for (const node of mutation.removedNodes) {
+                        if (node.nodeType !== Node.ELEMENT_NODE) continue;
+                        if (node.classList?.contains('MuiTooltip-popperInteractive')) {
+                            setTimeout(() => this.renderAllBadges(), 50);
+                            return;
+                        }
+                    }
                 }
             });
-
-            // Note: We don't use a general DOM observer here because it creates infinite loops
-            // (adding badges triggers the observer, which adds badges, etc.)
-            // Instead, we rely on:
-            // 1. Tooltip appearances (when clicking items that clear badges)
-            // 2. Explicit calls from inventory-sort when sort mode changes
-            // 3. dataManager events when items actually change
-            // 4. Direct calls from other features when needed
+            interactivePopperObserver.observe(document.body, { childList: true });
+            this.unregisterHandlers.push(() => interactivePopperObserver.disconnect());
         }
 
         /**
@@ -42903,7 +42906,6 @@ self.onmessage = function (e) {
          * Disable and cleanup
          */
         disable() {
-            tooltipObserver.unsubscribe('inventory-badge-manager');
             this.unregisterHandlers.forEach((unregister) => unregister());
             this.unregisterHandlers = [];
             this.providers.clear();
