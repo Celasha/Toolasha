@@ -407,14 +407,12 @@ class GatheringStats {
     }
 
     /**
-     * Render stat lines with optional best indicators
+     * Render stat lines into the display element and size them to fit.
      * @param {HTMLElement} actionPanel - Action panel container
      * @param {Object} data - Stored action data
-     * @param {Object} [bestFlags] - Best indicator flags
      */
-    renderIndicators(actionPanel, data, bestFlags = {}) {
+    renderIndicators(actionPanel, data) {
         const { profitPerHour, expPerHour } = data;
-        const { isBestProfit = false, isBestExp = false, isBestOverall = false } = bestFlags;
         let html = '';
 
         if (profitPerHour !== null) {
