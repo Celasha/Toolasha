@@ -8,7 +8,7 @@
 import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
 import config from '../../core/config.js';
-import { numberFormatter } from '../../utils/formatters.js';
+import { formatKMB } from '../../utils/formatters.js';
 
 const GATHERING_TYPES = ['/action_types/foraging', '/action_types/woodcutting', '/action_types/milking'];
 const PRODUCTION_TYPES = [
@@ -64,7 +64,7 @@ function getPrimaryOutputHrid(actionDetails) {
  * @returns {string}
  */
 function formatCount(count) {
-    return numberFormatter(count, 0);
+    return formatKMB(count);
 }
 
 class InventoryCountDisplay {
