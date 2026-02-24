@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.12.2](https://github.com/Celasha/Toolasha/compare/v1.12.1...v1.12.2) (2026-02-24)
+
+
+### Bug Fixes
+
+* handle period as thousands separator in parseItemCount and remove local duplicate ([c4dd693](https://github.com/Celasha/Toolasha/commit/c4dd693f2e22790cdc0d417a7d0e3f6fe6ec60e1))
+
 ## [1.12.1](https://github.com/Celasha/Toolasha/compare/v1.12.0...v1.12.1) (2026-02-23)
 
 ### Bug Fixes
