@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      1.12.3
+// @version      1.13.0
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -51656,14 +51656,14 @@ self.onmessage = function (e) {
 
             // Only create max produceable display for production actions
             if (isProductionAction) {
-                actionPanel.style.marginBottom = '70px';
+                actionPanel.style.alignSelf = 'flex-start';
+                actionPanel.style.overflow = 'visible';
 
-                // Create display element
                 display = document.createElement('div');
                 display.className = 'mwi-max-produceable';
                 display.style.cssText = `
                 position: absolute;
-                bottom: -65px;
+                top: 100%;
                 left: 0;
                 right: 0;
                 font-size: 0.55em;
@@ -51676,8 +51676,14 @@ self.onmessage = function (e) {
                 overflow: hidden;
             `;
 
-                // Append stats display to action panel with absolute positioning
                 actionPanel.appendChild(display);
+
+                // Set marginBottom to the bar's actual rendered height so the grid row
+                // reserves exactly the right amount of space below the tile.
+                requestAnimationFrame(() => {
+                    const h = display.offsetHeight;
+                    if (h > 0) actionPanel.style.marginBottom = `${h}px`;
+                });
             }
 
             // Create pin icon (for ALL actions - gathering and production)
@@ -51748,7 +51754,11 @@ self.onmessage = function (e) {
                 return null;
             }
 
-            const actionName = nameElement.textContent.trim();
+            const actionName = Array.from(nameElement.childNodes)
+                .filter((n) => n.nodeType === Node.TEXT_NODE)
+                .map((n) => n.textContent)
+                .join('')
+                .trim();
 
             // Build reverse lookup cache on first use (name → hrid)
             if (!this.actionNameToHridCache) {
@@ -51902,39 +51912,45 @@ self.onmessage = function (e) {
                 canProduceColor = config$1.COLOR_PROFIT; // Green - plenty of materials
             }
 
-            // Build display HTML
-            let html = `<span style="color: ${canProduceColor};">Can produce: ${maxCrafts.toLocaleString()}</span>`;
-
             // Store metrics for best action comparison
             data.maxCrafts = maxCrafts;
             data.profitPerHour = resolvedProfitPerHour;
             data.expPerHour = expPerHour;
             data.hasMissingPrices = hasMissingPrices;
 
-            // Add profit/hr line if available
+            // Build display HTML using .mwi-action-stat-line divs so fitLineFontSizes
+            // can size each line immediately — avoids the multi-second flash of tiny
+            // unsized text that occurred when sizing was deferred to addBestActionIndicators.
+            let html = `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
+            html += `<span style="color: ${canProduceColor};">Can produce: ${maxCrafts.toLocaleString()}</span></div>`;
+
             if (hasMissingPrices) {
-                html += `<br><span style="color: ${config$1.SCRIPT_COLOR_ALERT};">Profit/hr: -- ⚠</span>`;
+                html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
+                html += `<span data-stat="profit" style="color: ${config$1.SCRIPT_COLOR_ALERT};">Profit/hr: -- ⚠</span></div>`;
             } else if (resolvedProfitPerHour !== null) {
                 const profitColor = resolvedProfitPerHour >= 0 ? config$1.COLOR_PROFIT : config$1.COLOR_LOSS;
                 const profitSign = resolvedProfitPerHour >= 0 ? '' : '-';
-                html += `<br><span style="color: ${profitColor};">Profit/hr: ${profitSign}${formatKMB(Math.abs(resolvedProfitPerHour))}</span>`;
+                html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
+                html += `<span data-stat="profit" style="color: ${profitColor};">Profit/hr: ${profitSign}${formatKMB(Math.abs(resolvedProfitPerHour))}</span></div>`;
             }
 
-            // Add exp/hr line if available
             if (expPerHour !== null && expPerHour > 0) {
-                html += `<br><span style="color: #fff;">Exp/hr: ${formatKMB(expPerHour)}</span>`;
+                html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
+                html += `<span data-stat="exp" style="color: #fff;">Exp/hr: ${formatKMB(expPerHour)}</span></div>`;
             }
 
-            // Add coins/xp efficiency metric if both profit and exp are available
             if (!hasMissingPrices && resolvedProfitPerHour !== null && expPerHour !== null && expPerHour > 0) {
                 const coinsPerXp = resolvedProfitPerHour / expPerHour;
                 const efficiencyColor = coinsPerXp >= 0 ? config$1.COLOR_INFO : config$1.COLOR_WARNING;
                 const efficiencySign = coinsPerXp >= 0 ? '' : '-';
-                html += `<br><span style="color: ${efficiencyColor};">Coins/XP: ${efficiencySign}${formatKMB(Math.abs(coinsPerXp))}</span>`;
+                html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
+                html += `<span data-stat="overall" style="color: ${efficiencyColor};">Coins/XP: ${efficiencySign}${formatKMB(Math.abs(coinsPerXp))}</span></div>`;
             }
 
             data.displayElement.style.display = 'block';
+            data.displayElement.style.visibility = 'hidden';
             data.displayElement.innerHTML = html;
+            this.fitLineFontSizes(actionPanel, data.displayElement);
         }
 
         /**
@@ -52049,62 +52065,38 @@ self.onmessage = function (e) {
                 }
             }
 
-            // Second pass: update HTML with indicators
+            // Second pass: update emoji indicators in-place on existing spans.
+            // Avoids rewriting innerHTML (which would cause a flash + re-size).
+            const EMOJIS = [' 💰', ' 🧠', ' 🏆'];
+            const stripEmoji = (text) => {
+                let t = text;
+                for (const e of EMOJIS) t = t.replace(e, '');
+                return t;
+            };
+
             for (const [actionPanel, data] of this.actionElements.entries()) {
                 if (!document.body.contains(actionPanel) || !data.displayElement) {
                     continue;
                 }
 
-                const { profitPerHour, expPerHour, hasMissingPrices } = data;
                 const isBestProfit = bestProfitPanels.includes(actionPanel);
                 const isBestExp = bestExpPanels.includes(actionPanel);
                 const isBestOverall = bestOverallPanels.includes(actionPanel);
 
-                // Rebuild HTML with indicators
-                const maxCrafts = data.maxCrafts || 0;
-                let canProduceColor;
-                if (maxCrafts === 0) {
-                    canProduceColor = config$1.COLOR_LOSS;
-                } else if (maxCrafts < 5) {
-                    canProduceColor = config$1.COLOR_WARNING;
-                } else {
-                    canProduceColor = config$1.COLOR_PROFIT;
+                const profitSpan = data.displayElement.querySelector('[data-stat="profit"]');
+                if (profitSpan) {
+                    profitSpan.textContent = stripEmoji(profitSpan.textContent) + (isBestProfit ? ' 💰' : '');
                 }
 
-                let html = `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
-                html += `<span style="color: ${canProduceColor};">Can produce: ${maxCrafts.toLocaleString()}</span></div>`;
-
-                // Add profit/hr line with indicator
-                if (hasMissingPrices) {
-                    html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
-                    html += `<span style="color: ${config$1.SCRIPT_COLOR_ALERT};">Profit/hr: -- ⚠</span></div>`;
-                } else if (profitPerHour !== null) {
-                    const profitColor = profitPerHour >= 0 ? config$1.COLOR_PROFIT : config$1.COLOR_LOSS;
-                    const profitSign = profitPerHour >= 0 ? '' : '-';
-                    const profitIndicator = isBestProfit ? ' 💰' : '';
-                    html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
-                    html += `<span style="color: ${profitColor};">Profit/hr: ${profitSign}${formatKMB(Math.abs(profitPerHour))}${profitIndicator}</span></div>`;
+                const expSpan = data.displayElement.querySelector('[data-stat="exp"]');
+                if (expSpan) {
+                    expSpan.textContent = stripEmoji(expSpan.textContent) + (isBestExp ? ' 🧠' : '');
                 }
 
-                // Add exp/hr line with indicator
-                if (expPerHour !== null && expPerHour > 0) {
-                    const expIndicator = isBestExp ? ' 🧠' : '';
-                    html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
-                    html += `<span style="color: #fff;">Exp/hr: ${formatKMB(expPerHour)}${expIndicator}</span></div>`;
+                const overallSpan = data.displayElement.querySelector('[data-stat="overall"]');
+                if (overallSpan) {
+                    overallSpan.textContent = stripEmoji(overallSpan.textContent) + (isBestOverall ? ' 🏆' : '');
                 }
-
-                // Add coins/xp efficiency metric with indicator
-                if (!hasMissingPrices && profitPerHour !== null && expPerHour !== null && expPerHour > 0) {
-                    const coinsPerXp = profitPerHour / expPerHour;
-                    const efficiencyColor = coinsPerXp >= 0 ? config$1.COLOR_INFO : config$1.COLOR_WARNING;
-                    const efficiencySign = coinsPerXp >= 0 ? '' : '-';
-                    const overallIndicator = isBestOverall ? ' 🏆' : '';
-                    html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
-                    html += `<span style="color: ${efficiencyColor};">Coins/XP: ${efficiencySign}${formatKMB(Math.abs(coinsPerXp))}${overallIndicator}</span></div>`;
-                }
-
-                data.displayElement.innerHTML = html;
-                this.fitLineFontSizes(actionPanel, data.displayElement);
             }
         }
 
@@ -52122,6 +52114,9 @@ self.onmessage = function (e) {
                 if (!availableWidth) {
                     if (retries > 0) {
                         setTimeout(() => this.fitLineFontSizes(actionPanel, displayElement, retries - 1), 60);
+                    } else {
+                        // Out of retries — reveal anyway so it's never permanently hidden.
+                        displayElement.style.visibility = '';
                     }
                     return;
                 }
@@ -52157,6 +52152,13 @@ self.onmessage = function (e) {
                         textSpan.style.setProperty('transform', `scaleX(${scaleX})`);
                     }
                 });
+
+                // Reveal now that sizing is complete.
+                displayElement.style.visibility = '';
+
+                // Keep marginBottom in sync with the bar's actual rendered height.
+                const h = displayElement.offsetHeight;
+                if (h > 0) actionPanel.style.marginBottom = `${h}px`;
             });
         }
 
@@ -52209,7 +52211,7 @@ self.onmessage = function (e) {
             // CRITICAL: Remove injected DOM elements BEFORE clearing Maps
             // This prevents detached SVG elements from accumulating
             // Note: .remove() is safe to call even if element is already detached
-            for (const [_actionPanel, data] of this.actionElements.entries()) {
+            for (const [actionPanel, data] of this.actionElements.entries()) {
                 if (data.displayElement) {
                     data.displayElement.innerHTML = ''; // Clear innerHTML to break event listener references
                     data.displayElement.remove();
@@ -52220,6 +52222,8 @@ self.onmessage = function (e) {
                     data.pinElement.remove();
                     data.pinElement = null; // Null out reference for GC
                 }
+                actionPanel.style.marginBottom = '';
+                actionPanel.style.overflow = '';
             }
 
             // Clear all action element references (prevents detached DOM memory leak)
@@ -52397,12 +52401,13 @@ self.onmessage = function (e) {
             // Check if already injected
             const existingDisplay = actionPanel.querySelector('.mwi-gathering-stats');
             if (existingDisplay) {
-                // Re-register existing display (DOM elements may be reused across navigation)
+                // Re-register existing display (DOM elements may be reused across navigation).
+                // Use skipRender so we don't wipe innerHTML (which would erase the emoji
+                // set by addBestActionIndicators and cause a visible blink).
                 this.actionElements.set(actionPanel, {
                     actionHrid: actionHrid,
                     displayElement: existingDisplay,
                 });
-                // Update with fresh data (skip render; indicators handle output)
                 this.updateStats(actionPanel, { skipRender: true }).then(() => {
                     this.scheduleIndicatorUpdate();
                 });
@@ -52435,10 +52440,18 @@ self.onmessage = function (e) {
             if (actionPanel.style.position !== 'relative' && actionPanel.style.position !== 'absolute') {
                 actionPanel.style.position = 'relative';
             }
-            actionPanel.style.marginBottom = '55px';
+            actionPanel.style.alignSelf = 'flex-start';
+            actionPanel.style.overflow = 'visible';
 
             // Append directly to action panel with absolute positioning
             actionPanel.appendChild(display);
+
+            // Set marginBottom to the bar's actual rendered height so the grid row
+            // reserves exactly the right amount of space below the tile.
+            requestAnimationFrame(() => {
+                const h = display.offsetHeight;
+                if (h > 0) actionPanel.style.marginBottom = `${h}px`;
+            });
 
             // Store reference
             this.actionElements.set(actionPanel, {
@@ -52449,8 +52462,7 @@ self.onmessage = function (e) {
             // Register with shared sort manager
             actionPanelSort.registerPanel(actionPanel, actionHrid);
 
-            // Initial update (skip render; indicators handle output)
-            this.updateStats(actionPanel, { skipRender: true }).then(() => {
+            this.updateStats(actionPanel).then(() => {
                 this.scheduleIndicatorUpdate();
             });
 
@@ -52471,7 +52483,11 @@ self.onmessage = function (e) {
                 return null;
             }
 
-            const actionName = nameElement.textContent.trim();
+            const actionName = Array.from(nameElement.childNodes)
+                .filter((n) => n.nodeType === Node.TEXT_NODE)
+                .map((n) => n.textContent)
+                .join('')
+                .trim();
 
             // Look up action by name in game data
             const initData = dataManager$1.getInitClientData();
@@ -52549,6 +52565,8 @@ self.onmessage = function (e) {
             const updatePromises = [];
             for (const actionPanel of [...this.actionElements.keys()]) {
                 if (document.body.contains(actionPanel)) {
+                    // skipRender: bulk updates go through addBestActionIndicators
+                    // which updates spans in-place — avoids double render + flash.
                     updatePromises.push(this.updateStats(actionPanel, { skipRender: true }));
                 } else {
                     // Panel no longer in DOM - remove injected elements BEFORE deleting from Map
@@ -52634,56 +52652,73 @@ self.onmessage = function (e) {
                 }
             }
 
-            // Second pass: update HTML with indicators
+            // Second pass: update emoji indicators in-place on existing spans.
+            // Avoids rewriting innerHTML (which would cause a flash + re-size).
+            const EMOJIS = [' 💰', ' 🧠', ' 🏆'];
+            const stripEmoji = (text) => {
+                let t = text;
+                for (const e of EMOJIS) t = t.replace(e, '');
+                return t;
+            };
+
             for (const [actionPanel, data] of this.actionElements.entries()) {
                 if (!document.body.contains(actionPanel) || !data.displayElement) {
                     continue;
                 }
 
-                this.renderIndicators(actionPanel, data, {
-                    isBestProfit: bestProfitPanels.includes(actionPanel),
-                    isBestExp: bestExpPanels.includes(actionPanel),
-                    isBestOverall: bestOverallPanels.includes(actionPanel),
-                });
+                const isBestProfit = bestProfitPanels.includes(actionPanel);
+                const isBestExp = bestExpPanels.includes(actionPanel);
+                const isBestOverall = bestOverallPanels.includes(actionPanel);
+
+                const profitSpan = data.displayElement.querySelector('[data-stat="profit"]');
+                if (profitSpan) {
+                    profitSpan.textContent = stripEmoji(profitSpan.textContent) + (isBestProfit ? ' 💰' : '');
+                }
+
+                const expSpan = data.displayElement.querySelector('[data-stat="exp"]');
+                if (expSpan) {
+                    expSpan.textContent = stripEmoji(expSpan.textContent) + (isBestExp ? ' 🧠' : '');
+                }
+
+                const overallSpan = data.displayElement.querySelector('[data-stat="overall"]');
+                if (overallSpan) {
+                    overallSpan.textContent = stripEmoji(overallSpan.textContent) + (isBestOverall ? ' 🏆' : '');
+                }
             }
         }
 
         /**
-         * Render stat lines with optional best indicators
+         * Render stat lines into the display element and size them to fit.
          * @param {HTMLElement} actionPanel - Action panel container
          * @param {Object} data - Stored action data
-         * @param {Object} [bestFlags] - Best indicator flags
          */
-        renderIndicators(actionPanel, data, bestFlags = {}) {
+        renderIndicators(actionPanel, data) {
             const { profitPerHour, expPerHour } = data;
-            const { isBestProfit = false, isBestExp = false, isBestOverall = false } = bestFlags;
             let html = '';
 
             if (profitPerHour !== null) {
                 const profitColor = profitPerHour >= 0 ? config$1.COLOR_PROFIT : config$1.COLOR_LOSS;
                 const profitSign = profitPerHour >= 0 ? '' : '-';
-                const profitIndicator = isBestProfit ? ' 💰' : '';
                 html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
-                html += `<span style="color: ${profitColor};">Profit/hr: ${profitSign}${formatKMB(Math.abs(profitPerHour))}${profitIndicator}</span></div>`;
+                html += `<span data-stat="profit" style="color: ${profitColor};">Profit/hr: ${profitSign}${formatKMB(Math.abs(profitPerHour))}</span></div>`;
             }
 
             if (expPerHour !== null && expPerHour > 0) {
-                const expIndicator = isBestExp ? ' 🧠' : '';
                 html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
-                html += `<span style="color: #fff;">Exp/hr: ${formatKMB(expPerHour)}${expIndicator}</span></div>`;
+                html += `<span data-stat="exp" style="color: #fff;">Exp/hr: ${formatKMB(expPerHour)}</span></div>`;
             }
 
             if (profitPerHour !== null && expPerHour !== null && expPerHour > 0) {
                 const coinsPerXp = profitPerHour / expPerHour;
                 const efficiencyColor = coinsPerXp >= 0 ? config$1.COLOR_INFO : config$1.COLOR_WARNING;
                 const efficiencySign = coinsPerXp >= 0 ? '' : '-';
-                const overallIndicator = isBestOverall ? ' 🏆' : '';
                 html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
-                html += `<span style="color: ${efficiencyColor};">Coins/XP: ${efficiencySign}${formatKMB(Math.abs(coinsPerXp))}${overallIndicator}</span></div>`;
+                html += `<span data-stat="overall" style="color: ${efficiencyColor};">Coins/XP: ${efficiencySign}${formatKMB(Math.abs(coinsPerXp))}</span></div>`;
             }
 
             data.displayElement.innerHTML = html;
             data.displayElement.style.display = 'block';
+            data.displayElement.style.visibility = 'hidden';
             this.fitLineFontSizes(actionPanel, data.displayElement);
         }
 
@@ -52701,6 +52736,9 @@ self.onmessage = function (e) {
                 if (!availableWidth) {
                     if (retries > 0) {
                         setTimeout(() => this.fitLineFontSizes(actionPanel, displayElement, retries - 1), 60);
+                    } else {
+                        // Out of retries — reveal anyway so it's never permanently hidden.
+                        displayElement.style.visibility = '';
                     }
                     return;
                 }
@@ -52736,6 +52774,13 @@ self.onmessage = function (e) {
                         textSpan.style.setProperty('transform', `scaleX(${scaleX})`);
                     }
                 });
+
+                // Reveal now that sizing is complete.
+                displayElement.style.visibility = '';
+
+                // Keep marginBottom in sync with the bar's actual rendered height.
+                const h = displayElement.offsetHeight;
+                if (h > 0) actionPanel.style.marginBottom = `${h}px`;
             });
         }
 
@@ -52748,12 +52793,14 @@ self.onmessage = function (e) {
             // CRITICAL: Remove injected DOM elements BEFORE clearing Maps
             // This prevents detached SVG elements from accumulating
             // Note: .remove() is safe to call even if element is already detached
-            for (const [_actionPanel, data] of this.actionElements.entries()) {
+            for (const [actionPanel, data] of this.actionElements.entries()) {
                 if (data.displayElement) {
                     data.displayElement.innerHTML = ''; // Clear innerHTML to break event listener references
                     data.displayElement.remove();
                     data.displayElement = null; // Null out reference for GC
                 }
+                actionPanel.style.marginBottom = '';
+                actionPanel.style.overflow = '';
             }
 
             // Clear all action element references (prevents detached DOM memory leak)
@@ -53016,7 +53063,13 @@ self.onmessage = function (e) {
                 return null;
             }
 
-            const actionName = actionNameElement.textContent.trim();
+            // Read only direct text nodes to avoid picking up injected child spans
+            // (e.g. inventory count display appends "(20 in inventory)" as a child span)
+            const actionName = Array.from(actionNameElement.childNodes)
+                .filter((node) => node.nodeType === Node.TEXT_NODE)
+                .map((node) => node.textContent)
+                .join('')
+                .trim();
             return this.getActionHridFromName(actionName);
         }
 
@@ -53636,7 +53689,13 @@ self.onmessage = function (e) {
             return null;
         }
 
-        const actionName = actionNameElement.textContent.trim();
+        // Read only direct text nodes to avoid picking up injected child spans
+        // (e.g. inventory count display appends "(20 in inventory)" as a child span)
+        const actionName = Array.from(actionNameElement.childNodes)
+            .filter((node) => node.nodeType === Node.TEXT_NODE)
+            .map((node) => node.textContent)
+            .join('')
+            .trim();
         return getActionHridFromName(actionName);
     }
 
@@ -55787,7 +55846,7 @@ self.onmessage = function (e) {
      * @returns {string}
      */
     function formatCount(count) {
-        return numberFormatter(count, 0);
+        return formatKMB(count);
     }
 
     class InventoryCountDisplay {
@@ -55844,8 +55903,9 @@ self.onmessage = function (e) {
         }
 
         /**
-         * Inject a bottom-center count overlay directly onto the tile element.
-         * Never touches the name div — same pattern as gathering-stats / max-produceable.
+         * Inject a count strip just below the tile using the same pattern as
+         * gathering-stats / max-produceable: position absolute at top:100% with
+         * marginBottom on the panel so the grid row makes room for it.
          * @param {HTMLElement} actionPanel
          */
         _injectTile(actionPanel) {
@@ -55857,25 +55917,43 @@ self.onmessage = function (e) {
             if (!outputHrid) return;
 
             let span = actionPanel.querySelector('.mwi-inv-count-tile');
+            if (span && span.dataset.outputHrid !== outputHrid) {
+                // Output changed — clean up stale span
+                span.remove();
+                span = null;
+            }
             if (!span) {
+                const nameEl = actionPanel.querySelector('[class*="SkillAction_name"]');
+                if (!nameEl) return;
+
                 span = document.createElement('span');
                 span.className = 'mwi-inv-count-tile';
-                span.style.cssText = `
-                position: absolute;
-                top: 28px;
-                left: 0;
-                right: 0;
-                text-align: center;
-                font-size: 0.7em;
-                color: ${config$1.COLOR_INV_COUNT};
-                font-weight: 600;
-                pointer-events: none;
-                z-index: 5;
-                line-height: 1;
-            `;
+                span.dataset.outputHrid = outputHrid;
+
                 if (actionPanel.style.position !== 'relative' && actionPanel.style.position !== 'absolute') {
                     actionPanel.style.position = 'relative';
                 }
+
+                // z-index:12 places the count above the icon container which fills the tile.
+                // bottom:4px sits inside the tile above the profit bar (which is at top:100%).
+                // background + padding give the number a readable pill against the sprite.
+                span.style.cssText = `
+                position: absolute;
+                bottom: 4px;
+                left: 50%;
+                transform: translateX(-50%);
+                text-align: center;
+                font-size: 0.75em;
+                color: ${config$1.COLOR_INV_COUNT};
+                font-weight: 600;
+                pointer-events: none;
+                line-height: 1.4;
+                z-index: 12;
+                background: rgba(0, 0, 0, 0.55);
+                border-radius: 3px;
+                padding: 0 4px;
+                white-space: nowrap;
+            `;
                 actionPanel.appendChild(span);
             }
 
@@ -55929,16 +56007,20 @@ self.onmessage = function (e) {
             span.className = 'mwi-inv-count-detail';
             span.dataset.outputHrid = outputHrid;
             span.style.cssText = `
+            display: block;
             font-size: 0.75em;
             color: ${config$1.COLOR_INV_COUNT};
             font-weight: 600;
-            margin-left: 8px;
-            vertical-align: middle;
+            margin-top: 2px;
             pointer-events: none;
         `;
             span.textContent = count > 0 ? `(${formatCount(count)} in inventory)` : '';
 
-            nameEl.appendChild(span);
+            // Insert after the info container (nameEl's parent) so it sits on its own
+            // line below the action name row. Inserting after nameEl itself puts the span
+            // inside the flex info row and causes overlap.
+            const infoContainer = nameEl.closest('[class*="SkillActionDetail_info"]') ?? nameEl.parentElement;
+            infoContainer.after(span);
             this.detailPanels.add(panel);
         }
 
@@ -55973,7 +56055,12 @@ self.onmessage = function (e) {
         _getActionHridFromTile(actionPanel) {
             const nameEl = actionPanel.querySelector('[class*="SkillAction_name"]');
             if (!nameEl) return null;
-            return this._getActionHridFromName(nameEl.textContent.trim());
+            const name = Array.from(nameEl.childNodes)
+                .filter((n) => n.nodeType === Node.TEXT_NODE)
+                .map((n) => n.textContent)
+                .join('')
+                .trim();
+            return this._getActionHridFromName(name);
         }
 
         _getActionHridFromName(name) {
@@ -71809,6 +71896,316 @@ self.onmessage = function (e) {
     };
 
     /**
+     * Mention Popup
+     * Draggable popup showing all @mention messages for a chat channel
+     */
+
+
+    class MentionPopup {
+        constructor() {
+            this.container = null;
+            this.currentChannel = null;
+            this.onCloseFn = null;
+
+            // Dragging state
+            this.isDragging = false;
+            this.dragOffset = { x: 0, y: 0 };
+            this.dragMoveHandler = null;
+            this.dragUpHandler = null;
+        }
+
+        /**
+         * Format a UTC ISO timestamp string using the user's market date/time settings
+         * @param {string} isoString - ISO 8601 timestamp (e.g. "2026-02-24T16:59:59.046Z")
+         * @returns {string} Formatted date/time string
+         */
+        formatTimestamp(isoString) {
+            if (!isoString) return '';
+
+            const timeFormat = config$1.getSettingValue('market_listingTimeFormat', '24hour');
+            const dateFormat = config$1.getSettingValue('market_listingDateFormat', 'MM-DD');
+            const use12Hour = timeFormat === '12hour';
+
+            const date = new Date(isoString);
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            const datePart = dateFormat === 'DD-MM' ? `${day}-${month}` : `${month}-${day}`;
+
+            const timePart = date
+                .toLocaleString('en-US', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                    hour12: use12Hour,
+                })
+                .trim();
+
+            return `${datePart} ${timePart}`;
+        }
+
+        /**
+         * Open (or replace) the popup for a given channel
+         * @param {string} channel - Channel HRID
+         * @param {Array<{sName: string, m: string, t: string}>} mentions - Mention list
+         * @param {string} channelDisplayName - Human-readable channel name
+         * @param {Function} onClose - Callback when popup is closed (to clear mentions)
+         */
+        open(channel, mentions, channelDisplayName, onClose) {
+            this.currentChannel = channel;
+            this.onCloseFn = onClose;
+
+            if (this.container) {
+                // Already open — replace content for new channel
+                this._updateContent(mentions, channelDisplayName);
+                return;
+            }
+
+            this._build(mentions, channelDisplayName);
+        }
+
+        /**
+         * Close the popup and invoke the onClose callback
+         */
+        close() {
+            if (this.onCloseFn) {
+                this.onCloseFn();
+                this.onCloseFn = null;
+            }
+
+            this._teardown();
+        }
+
+        /**
+         * Build and insert the popup DOM
+         * @param {Array} mentions
+         * @param {string} channelDisplayName
+         */
+        _build(mentions, channelDisplayName) {
+            this.container = document.createElement('div');
+            this.container.id = 'mwi-mention-popup';
+            this.container.style.cssText = `
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 9999;
+            min-width: 420px;
+            max-width: 600px;
+            background: rgba(0, 0, 0, 0.92);
+            border: 2px solid ${config$1.COLOR_ACCENT};
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.7);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: #fff;
+            user-select: none;
+        `;
+
+            // Header
+            const header = document.createElement('div');
+            header.id = 'mwi-mention-popup-header';
+            header.style.cssText = `
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 14px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            cursor: grab;
+            border-radius: 6px 6px 0 0;
+            background: rgba(255,255,255,0.05);
+        `;
+
+            const title = document.createElement('span');
+            title.id = 'mwi-mention-popup-title';
+            title.style.cssText = `
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: ${config$1.COLOR_ACCENT};
+        `;
+            title.textContent = `Mentions — ${channelDisplayName}`;
+
+            const closeBtn = document.createElement('button');
+            closeBtn.textContent = '×';
+            closeBtn.style.cssText = `
+            background: none;
+            border: none;
+            color: #aaa;
+            font-size: 1.2rem;
+            line-height: 1;
+            cursor: pointer;
+            padding: 0 2px;
+        `;
+            closeBtn.addEventListener('mouseenter', () => (closeBtn.style.color = '#fff'));
+            closeBtn.addEventListener('mouseleave', () => (closeBtn.style.color = '#aaa'));
+            closeBtn.addEventListener('click', () => this.close());
+
+            header.appendChild(title);
+            header.appendChild(closeBtn);
+
+            // Body
+            const body = document.createElement('div');
+            body.id = 'mwi-mention-popup-body';
+            body.style.cssText = `
+            max-height: 400px;
+            overflow-y: auto;
+            padding: 8px 0;
+        `;
+
+            this._renderMentions(body, mentions);
+
+            this.container.appendChild(header);
+            this.container.appendChild(body);
+            document.body.appendChild(this.container);
+
+            this._setupDragging(header);
+        }
+
+        /**
+         * Update title and body content without rebuilding the whole popup
+         * @param {Array} mentions
+         * @param {string} channelDisplayName
+         */
+        _updateContent(mentions, channelDisplayName) {
+            const title = this.container.querySelector('#mwi-mention-popup-title');
+            if (title) title.textContent = `Mentions — ${channelDisplayName}`;
+
+            const body = this.container.querySelector('#mwi-mention-popup-body');
+            if (body) {
+                body.innerHTML = '';
+                this._renderMentions(body, mentions);
+            }
+        }
+
+        /**
+         * Render mention rows into the body element
+         * @param {HTMLElement} body
+         * @param {Array<{sName: string, m: string, t: string}>} mentions
+         */
+        _renderMentions(body, mentions) {
+            if (!mentions || mentions.length === 0) {
+                const empty = document.createElement('div');
+                empty.style.cssText = `
+                padding: 16px 14px;
+                color: #888;
+                font-size: 0.85rem;
+                text-align: center;
+            `;
+                empty.textContent = 'No mentions';
+                body.appendChild(empty);
+                return;
+            }
+
+            for (const mention of mentions) {
+                const row = document.createElement('div');
+                row.style.cssText = `
+                padding: 7px 14px;
+                border-bottom: 1px solid rgba(255,255,255,0.06);
+                font-size: 0.85rem;
+                line-height: 1.4;
+                user-select: text;
+            `;
+                row.style.cursor = 'default';
+
+                const timestamp = document.createElement('span');
+                timestamp.style.cssText = `
+                color: #888;
+                font-size: 0.78rem;
+                margin-right: 8px;
+                white-space: nowrap;
+            `;
+                timestamp.textContent = this.formatTimestamp(mention.t);
+
+                const sender = document.createElement('span');
+                sender.style.cssText = `
+                color: ${config$1.COLOR_ACCENT};
+                font-weight: 600;
+                margin-right: 6px;
+            `;
+                sender.textContent = mention.sName;
+
+                const msg = document.createElement('span');
+                msg.style.cssText = `color: #e7e7e7;`;
+                msg.textContent = mention.m;
+
+                row.appendChild(timestamp);
+                row.appendChild(sender);
+                row.appendChild(msg);
+                body.appendChild(row);
+            }
+        }
+
+        /**
+         * Set up drag behaviour on the header element
+         * @param {HTMLElement} header
+         */
+        _setupDragging(header) {
+            header.addEventListener('mousedown', (e) => {
+                if (e.target.tagName === 'BUTTON') return;
+                this.isDragging = true;
+
+                // Switch from transform-based centering to explicit coordinates
+                const rect = this.container.getBoundingClientRect();
+                this.container.style.transform = 'none';
+                this.container.style.top = `${rect.top}px`;
+                this.container.style.left = `${rect.left}px`;
+
+                this.dragOffset = {
+                    x: e.clientX - rect.left,
+                    y: e.clientY - rect.top,
+                };
+                header.style.cursor = 'grabbing';
+                e.preventDefault();
+            });
+
+            this.dragMoveHandler = (e) => {
+                if (!this.isDragging) return;
+
+                let x = e.clientX - this.dragOffset.x;
+                let y = e.clientY - this.dragOffset.y;
+
+                const minVisible = 80;
+                y = Math.max(0, Math.min(y, window.innerHeight - minVisible));
+                x = Math.max(-this.container.offsetWidth + minVisible, Math.min(x, window.innerWidth - minVisible));
+
+                this.container.style.top = `${y}px`;
+                this.container.style.left = `${x}px`;
+            };
+
+            this.dragUpHandler = () => {
+                if (!this.isDragging) return;
+                this.isDragging = false;
+                header.style.cursor = 'grab';
+            };
+
+            document.addEventListener('mousemove', this.dragMoveHandler);
+            document.addEventListener('mouseup', this.dragUpHandler);
+        }
+
+        /**
+         * Remove popup from DOM and clean up event listeners
+         */
+        _teardown() {
+            if (this.dragMoveHandler) {
+                document.removeEventListener('mousemove', this.dragMoveHandler);
+                this.dragMoveHandler = null;
+            }
+            if (this.dragUpHandler) {
+                document.removeEventListener('mouseup', this.dragUpHandler);
+                this.dragUpHandler = null;
+            }
+
+            if (this.container) {
+                this.container.remove();
+                this.container = null;
+            }
+
+            this.currentChannel = null;
+            this.isDragging = false;
+        }
+    }
+
+    const mentionPopup = new MentionPopup();
+
+    /**
      * Mention Tracker
      * Tracks @mentions across all chat channels and displays badge counts on chat tabs
      */
@@ -71817,11 +72214,10 @@ self.onmessage = function (e) {
     class MentionTracker {
         constructor() {
             this.initialized = false;
-            this.mentionCounts = new Map(); // channel -> count
+            this.mentionLog = new Map(); // channel -> Array<{ sName, m, t }>
             this.characterName = null;
             this.handlers = {};
             this.unregisterObserver = null;
-            this.tabClickHandlers = new Map(); // button element -> handler
         }
 
         /**
@@ -71877,8 +72273,9 @@ self.onmessage = function (e) {
             const channel = message.chan || '';
 
             if (this.isMentioned(text)) {
-                const currentCount = this.mentionCounts.get(channel) || 0;
-                this.mentionCounts.set(channel, currentCount + 1);
+                const log = this.mentionLog.get(channel) || [];
+                log.push({ sName: message.sName, m: text, t: message.t });
+                this.mentionLog.set(channel, log);
                 this.updateBadge(channel);
             }
         }
@@ -71940,13 +72337,6 @@ self.onmessage = function (e) {
                 // Store reference to button for this channel
                 button.dataset.mentionChannel = channel;
 
-                // Add click handler to clear mentions (if not already added)
-                if (!this.tabClickHandlers.has(button)) {
-                    const handler = () => this.clearMentions(channel);
-                    button.addEventListener('click', handler);
-                    this.tabClickHandlers.set(button, handler);
-                }
-
                 // Ensure button has relative positioning for badge
                 if (getComputedStyle(button).position === 'static') {
                     button.style.position = 'relative';
@@ -72001,7 +72391,7 @@ self.onmessage = function (e) {
          * @param {string} channel - Channel HRID
          */
         updateBadgeForButton(button, channel) {
-            const count = this.mentionCounts.get(channel) || 0;
+            const count = (this.mentionLog.get(channel) || []).length;
 
             // Find the MuiBadge-root wrapper inside the button (where game puts its badge)
             const badgeRoot = button.querySelector('.MuiBadge-root');
@@ -72020,7 +72410,6 @@ self.onmessage = function (e) {
             if (!badge) {
                 badge = document.createElement('span');
                 badge.className = 'mwi-mention-badge';
-                // Match MUI badge styling exactly, but on left side
                 badge.style.cssText = `
                 position: absolute;
                 top: 0;
@@ -72039,7 +72428,14 @@ self.onmessage = function (e) {
                 z-index: 1;
                 background-color: #d32f2f;
                 color: #e7e7e7;
+                cursor: pointer;
             `;
+                badge.addEventListener('click', (e) => {
+                    e.stopPropagation(); // Prevent tab switch
+                    const mentions = this.mentionLog.get(channel) || [];
+                    const displayName = this.getChannelDisplayName(channel);
+                    mentionPopup.open(channel, mentions, displayName, () => this.clearMentions(channel));
+                });
                 container.appendChild(badge);
             }
 
@@ -72052,8 +72448,8 @@ self.onmessage = function (e) {
          * @param {string} channel - Channel HRID
          */
         clearMentions(channel) {
-            if (this.mentionCounts.has(channel)) {
-                this.mentionCounts.set(channel, 0);
+            if (this.mentionLog.has(channel)) {
+                this.mentionLog.set(channel, []);
                 this.updateBadge(channel);
             }
         }
@@ -72072,17 +72468,14 @@ self.onmessage = function (e) {
                 this.unregisterObserver = null;
             }
 
-            // Remove click handlers
-            for (const [button, handler] of this.tabClickHandlers) {
-                button.removeEventListener('click', handler);
-            }
-            this.tabClickHandlers.clear();
+            // Close popup if open
+            mentionPopup.close();
 
             // Remove all badges
             document.querySelectorAll('.mwi-mention-badge').forEach((el) => el.remove());
 
-            // Clear counts
-            this.mentionCounts.clear();
+            // Clear log
+            this.mentionLog.clear();
 
             this.initialized = false;
         }

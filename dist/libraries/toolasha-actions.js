@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 1.12.3
+ * Version: 1.13.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -8564,14 +8564,14 @@
 
             // Only create max produceable display for production actions
             if (isProductionAction) {
-                actionPanel.style.marginBottom = '70px';
+                actionPanel.style.alignSelf = 'flex-start';
+                actionPanel.style.overflow = 'visible';
 
-                // Create display element
                 display = document.createElement('div');
                 display.className = 'mwi-max-produceable';
                 display.style.cssText = `
                 position: absolute;
-                bottom: -65px;
+                top: 100%;
                 left: 0;
                 right: 0;
                 font-size: 0.55em;
@@ -8584,8 +8584,14 @@
                 overflow: hidden;
             `;
 
-                // Append stats display to action panel with absolute positioning
                 actionPanel.appendChild(display);
+
+                // Set marginBottom to the bar's actual rendered height so the grid row
+                // reserves exactly the right amount of space below the tile.
+                requestAnimationFrame(() => {
+                    const h = display.offsetHeight;
+                    if (h > 0) actionPanel.style.marginBottom = `${h}px`;
+                });
             }
 
             // Create pin icon (for ALL actions - gathering and production)
@@ -8656,7 +8662,11 @@
                 return null;
             }
 
-            const actionName = nameElement.textContent.trim();
+            const actionName = Array.from(nameElement.childNodes)
+                .filter((n) => n.nodeType === Node.TEXT_NODE)
+                .map((n) => n.textContent)
+                .join('')
+                .trim();
 
             // Build reverse lookup cache on first use (name → hrid)
             if (!this.actionNameToHridCache) {
@@ -8810,39 +8820,45 @@
                 canProduceColor = config.COLOR_PROFIT; // Green - plenty of materials
             }
 
-            // Build display HTML
-            let html = `<span style="color: ${canProduceColor};">Can produce: ${maxCrafts.toLocaleString()}</span>`;
-
             // Store metrics for best action comparison
             data.maxCrafts = maxCrafts;
             data.profitPerHour = resolvedProfitPerHour;
             data.expPerHour = expPerHour;
             data.hasMissingPrices = hasMissingPrices;
 
-            // Add profit/hr line if available
+            // Build display HTML using .mwi-action-stat-line divs so fitLineFontSizes
+            // can size each line immediately — avoids the multi-second flash of tiny
+            // unsized text that occurred when sizing was deferred to addBestActionIndicators.
+            let html = `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
+            html += `<span style="color: ${canProduceColor};">Can produce: ${maxCrafts.toLocaleString()}</span></div>`;
+
             if (hasMissingPrices) {
-                html += `<br><span style="color: ${config.SCRIPT_COLOR_ALERT};">Profit/hr: -- ⚠</span>`;
+                html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
+                html += `<span data-stat="profit" style="color: ${config.SCRIPT_COLOR_ALERT};">Profit/hr: -- ⚠</span></div>`;
             } else if (resolvedProfitPerHour !== null) {
                 const profitColor = resolvedProfitPerHour >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
                 const profitSign = resolvedProfitPerHour >= 0 ? '' : '-';
-                html += `<br><span style="color: ${profitColor};">Profit/hr: ${profitSign}${formatters_js.formatKMB(Math.abs(resolvedProfitPerHour))}</span>`;
+                html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
+                html += `<span data-stat="profit" style="color: ${profitColor};">Profit/hr: ${profitSign}${formatters_js.formatKMB(Math.abs(resolvedProfitPerHour))}</span></div>`;
             }
 
-            // Add exp/hr line if available
             if (expPerHour !== null && expPerHour > 0) {
-                html += `<br><span style="color: #fff;">Exp/hr: ${formatters_js.formatKMB(expPerHour)}</span>`;
+                html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
+                html += `<span data-stat="exp" style="color: #fff;">Exp/hr: ${formatters_js.formatKMB(expPerHour)}</span></div>`;
             }
 
-            // Add coins/xp efficiency metric if both profit and exp are available
             if (!hasMissingPrices && resolvedProfitPerHour !== null && expPerHour !== null && expPerHour > 0) {
                 const coinsPerXp = resolvedProfitPerHour / expPerHour;
                 const efficiencyColor = coinsPerXp >= 0 ? config.COLOR_INFO : config.COLOR_WARNING;
                 const efficiencySign = coinsPerXp >= 0 ? '' : '-';
-                html += `<br><span style="color: ${efficiencyColor};">Coins/XP: ${efficiencySign}${formatters_js.formatKMB(Math.abs(coinsPerXp))}</span>`;
+                html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
+                html += `<span data-stat="overall" style="color: ${efficiencyColor};">Coins/XP: ${efficiencySign}${formatters_js.formatKMB(Math.abs(coinsPerXp))}</span></div>`;
             }
 
             data.displayElement.style.display = 'block';
+            data.displayElement.style.visibility = 'hidden';
             data.displayElement.innerHTML = html;
+            this.fitLineFontSizes(actionPanel, data.displayElement);
         }
 
         /**
@@ -8957,62 +8973,38 @@
                 }
             }
 
-            // Second pass: update HTML with indicators
+            // Second pass: update emoji indicators in-place on existing spans.
+            // Avoids rewriting innerHTML (which would cause a flash + re-size).
+            const EMOJIS = [' 💰', ' 🧠', ' 🏆'];
+            const stripEmoji = (text) => {
+                let t = text;
+                for (const e of EMOJIS) t = t.replace(e, '');
+                return t;
+            };
+
             for (const [actionPanel, data] of this.actionElements.entries()) {
                 if (!document.body.contains(actionPanel) || !data.displayElement) {
                     continue;
                 }
 
-                const { profitPerHour, expPerHour, hasMissingPrices } = data;
                 const isBestProfit = bestProfitPanels.includes(actionPanel);
                 const isBestExp = bestExpPanels.includes(actionPanel);
                 const isBestOverall = bestOverallPanels.includes(actionPanel);
 
-                // Rebuild HTML with indicators
-                const maxCrafts = data.maxCrafts || 0;
-                let canProduceColor;
-                if (maxCrafts === 0) {
-                    canProduceColor = config.COLOR_LOSS;
-                } else if (maxCrafts < 5) {
-                    canProduceColor = config.COLOR_WARNING;
-                } else {
-                    canProduceColor = config.COLOR_PROFIT;
+                const profitSpan = data.displayElement.querySelector('[data-stat="profit"]');
+                if (profitSpan) {
+                    profitSpan.textContent = stripEmoji(profitSpan.textContent) + (isBestProfit ? ' 💰' : '');
                 }
 
-                let html = `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
-                html += `<span style="color: ${canProduceColor};">Can produce: ${maxCrafts.toLocaleString()}</span></div>`;
-
-                // Add profit/hr line with indicator
-                if (hasMissingPrices) {
-                    html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
-                    html += `<span style="color: ${config.SCRIPT_COLOR_ALERT};">Profit/hr: -- ⚠</span></div>`;
-                } else if (profitPerHour !== null) {
-                    const profitColor = profitPerHour >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
-                    const profitSign = profitPerHour >= 0 ? '' : '-';
-                    const profitIndicator = isBestProfit ? ' 💰' : '';
-                    html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
-                    html += `<span style="color: ${profitColor};">Profit/hr: ${profitSign}${formatters_js.formatKMB(Math.abs(profitPerHour))}${profitIndicator}</span></div>`;
+                const expSpan = data.displayElement.querySelector('[data-stat="exp"]');
+                if (expSpan) {
+                    expSpan.textContent = stripEmoji(expSpan.textContent) + (isBestExp ? ' 🧠' : '');
                 }
 
-                // Add exp/hr line with indicator
-                if (expPerHour !== null && expPerHour > 0) {
-                    const expIndicator = isBestExp ? ' 🧠' : '';
-                    html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
-                    html += `<span style="color: #fff;">Exp/hr: ${formatters_js.formatKMB(expPerHour)}${expIndicator}</span></div>`;
+                const overallSpan = data.displayElement.querySelector('[data-stat="overall"]');
+                if (overallSpan) {
+                    overallSpan.textContent = stripEmoji(overallSpan.textContent) + (isBestOverall ? ' 🏆' : '');
                 }
-
-                // Add coins/xp efficiency metric with indicator
-                if (!hasMissingPrices && profitPerHour !== null && expPerHour !== null && expPerHour > 0) {
-                    const coinsPerXp = profitPerHour / expPerHour;
-                    const efficiencyColor = coinsPerXp >= 0 ? config.COLOR_INFO : config.COLOR_WARNING;
-                    const efficiencySign = coinsPerXp >= 0 ? '' : '-';
-                    const overallIndicator = isBestOverall ? ' 🏆' : '';
-                    html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
-                    html += `<span style="color: ${efficiencyColor};">Coins/XP: ${efficiencySign}${formatters_js.formatKMB(Math.abs(coinsPerXp))}${overallIndicator}</span></div>`;
-                }
-
-                data.displayElement.innerHTML = html;
-                this.fitLineFontSizes(actionPanel, data.displayElement);
             }
         }
 
@@ -9030,6 +9022,9 @@
                 if (!availableWidth) {
                     if (retries > 0) {
                         setTimeout(() => this.fitLineFontSizes(actionPanel, displayElement, retries - 1), 60);
+                    } else {
+                        // Out of retries — reveal anyway so it's never permanently hidden.
+                        displayElement.style.visibility = '';
                     }
                     return;
                 }
@@ -9065,6 +9060,13 @@
                         textSpan.style.setProperty('transform', `scaleX(${scaleX})`);
                     }
                 });
+
+                // Reveal now that sizing is complete.
+                displayElement.style.visibility = '';
+
+                // Keep marginBottom in sync with the bar's actual rendered height.
+                const h = displayElement.offsetHeight;
+                if (h > 0) actionPanel.style.marginBottom = `${h}px`;
             });
         }
 
@@ -9117,7 +9119,7 @@
             // CRITICAL: Remove injected DOM elements BEFORE clearing Maps
             // This prevents detached SVG elements from accumulating
             // Note: .remove() is safe to call even if element is already detached
-            for (const [_actionPanel, data] of this.actionElements.entries()) {
+            for (const [actionPanel, data] of this.actionElements.entries()) {
                 if (data.displayElement) {
                     data.displayElement.innerHTML = ''; // Clear innerHTML to break event listener references
                     data.displayElement.remove();
@@ -9128,6 +9130,8 @@
                     data.pinElement.remove();
                     data.pinElement = null; // Null out reference for GC
                 }
+                actionPanel.style.marginBottom = '';
+                actionPanel.style.overflow = '';
             }
 
             // Clear all action element references (prevents detached DOM memory leak)
@@ -9305,12 +9309,13 @@
             // Check if already injected
             const existingDisplay = actionPanel.querySelector('.mwi-gathering-stats');
             if (existingDisplay) {
-                // Re-register existing display (DOM elements may be reused across navigation)
+                // Re-register existing display (DOM elements may be reused across navigation).
+                // Use skipRender so we don't wipe innerHTML (which would erase the emoji
+                // set by addBestActionIndicators and cause a visible blink).
                 this.actionElements.set(actionPanel, {
                     actionHrid: actionHrid,
                     displayElement: existingDisplay,
                 });
-                // Update with fresh data (skip render; indicators handle output)
                 this.updateStats(actionPanel, { skipRender: true }).then(() => {
                     this.scheduleIndicatorUpdate();
                 });
@@ -9343,10 +9348,18 @@
             if (actionPanel.style.position !== 'relative' && actionPanel.style.position !== 'absolute') {
                 actionPanel.style.position = 'relative';
             }
-            actionPanel.style.marginBottom = '55px';
+            actionPanel.style.alignSelf = 'flex-start';
+            actionPanel.style.overflow = 'visible';
 
             // Append directly to action panel with absolute positioning
             actionPanel.appendChild(display);
+
+            // Set marginBottom to the bar's actual rendered height so the grid row
+            // reserves exactly the right amount of space below the tile.
+            requestAnimationFrame(() => {
+                const h = display.offsetHeight;
+                if (h > 0) actionPanel.style.marginBottom = `${h}px`;
+            });
 
             // Store reference
             this.actionElements.set(actionPanel, {
@@ -9357,8 +9370,7 @@
             // Register with shared sort manager
             actionPanelSort.registerPanel(actionPanel, actionHrid);
 
-            // Initial update (skip render; indicators handle output)
-            this.updateStats(actionPanel, { skipRender: true }).then(() => {
+            this.updateStats(actionPanel).then(() => {
                 this.scheduleIndicatorUpdate();
             });
 
@@ -9379,7 +9391,11 @@
                 return null;
             }
 
-            const actionName = nameElement.textContent.trim();
+            const actionName = Array.from(nameElement.childNodes)
+                .filter((n) => n.nodeType === Node.TEXT_NODE)
+                .map((n) => n.textContent)
+                .join('')
+                .trim();
 
             // Look up action by name in game data
             const initData = dataManager.getInitClientData();
@@ -9457,6 +9473,8 @@
             const updatePromises = [];
             for (const actionPanel of [...this.actionElements.keys()]) {
                 if (document.body.contains(actionPanel)) {
+                    // skipRender: bulk updates go through addBestActionIndicators
+                    // which updates spans in-place — avoids double render + flash.
                     updatePromises.push(this.updateStats(actionPanel, { skipRender: true }));
                 } else {
                     // Panel no longer in DOM - remove injected elements BEFORE deleting from Map
@@ -9542,56 +9560,73 @@
                 }
             }
 
-            // Second pass: update HTML with indicators
+            // Second pass: update emoji indicators in-place on existing spans.
+            // Avoids rewriting innerHTML (which would cause a flash + re-size).
+            const EMOJIS = [' 💰', ' 🧠', ' 🏆'];
+            const stripEmoji = (text) => {
+                let t = text;
+                for (const e of EMOJIS) t = t.replace(e, '');
+                return t;
+            };
+
             for (const [actionPanel, data] of this.actionElements.entries()) {
                 if (!document.body.contains(actionPanel) || !data.displayElement) {
                     continue;
                 }
 
-                this.renderIndicators(actionPanel, data, {
-                    isBestProfit: bestProfitPanels.includes(actionPanel),
-                    isBestExp: bestExpPanels.includes(actionPanel),
-                    isBestOverall: bestOverallPanels.includes(actionPanel),
-                });
+                const isBestProfit = bestProfitPanels.includes(actionPanel);
+                const isBestExp = bestExpPanels.includes(actionPanel);
+                const isBestOverall = bestOverallPanels.includes(actionPanel);
+
+                const profitSpan = data.displayElement.querySelector('[data-stat="profit"]');
+                if (profitSpan) {
+                    profitSpan.textContent = stripEmoji(profitSpan.textContent) + (isBestProfit ? ' 💰' : '');
+                }
+
+                const expSpan = data.displayElement.querySelector('[data-stat="exp"]');
+                if (expSpan) {
+                    expSpan.textContent = stripEmoji(expSpan.textContent) + (isBestExp ? ' 🧠' : '');
+                }
+
+                const overallSpan = data.displayElement.querySelector('[data-stat="overall"]');
+                if (overallSpan) {
+                    overallSpan.textContent = stripEmoji(overallSpan.textContent) + (isBestOverall ? ' 🏆' : '');
+                }
             }
         }
 
         /**
-         * Render stat lines with optional best indicators
+         * Render stat lines into the display element and size them to fit.
          * @param {HTMLElement} actionPanel - Action panel container
          * @param {Object} data - Stored action data
-         * @param {Object} [bestFlags] - Best indicator flags
          */
-        renderIndicators(actionPanel, data, bestFlags = {}) {
+        renderIndicators(actionPanel, data) {
             const { profitPerHour, expPerHour } = data;
-            const { isBestProfit = false, isBestExp = false, isBestOverall = false } = bestFlags;
             let html = '';
 
             if (profitPerHour !== null) {
                 const profitColor = profitPerHour >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
                 const profitSign = profitPerHour >= 0 ? '' : '-';
-                const profitIndicator = isBestProfit ? ' 💰' : '';
                 html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
-                html += `<span style="color: ${profitColor};">Profit/hr: ${profitSign}${formatters_js.formatKMB(Math.abs(profitPerHour))}${profitIndicator}</span></div>`;
+                html += `<span data-stat="profit" style="color: ${profitColor};">Profit/hr: ${profitSign}${formatters_js.formatKMB(Math.abs(profitPerHour))}</span></div>`;
             }
 
             if (expPerHour !== null && expPerHour > 0) {
-                const expIndicator = isBestExp ? ' 🧠' : '';
                 html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
-                html += `<span style="color: #fff;">Exp/hr: ${formatters_js.formatKMB(expPerHour)}${expIndicator}</span></div>`;
+                html += `<span data-stat="exp" style="color: #fff;">Exp/hr: ${formatters_js.formatKMB(expPerHour)}</span></div>`;
             }
 
             if (profitPerHour !== null && expPerHour !== null && expPerHour > 0) {
                 const coinsPerXp = profitPerHour / expPerHour;
                 const efficiencyColor = coinsPerXp >= 0 ? config.COLOR_INFO : config.COLOR_WARNING;
                 const efficiencySign = coinsPerXp >= 0 ? '' : '-';
-                const overallIndicator = isBestOverall ? ' 🏆' : '';
                 html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
-                html += `<span style="color: ${efficiencyColor};">Coins/XP: ${efficiencySign}${formatters_js.formatKMB(Math.abs(coinsPerXp))}${overallIndicator}</span></div>`;
+                html += `<span data-stat="overall" style="color: ${efficiencyColor};">Coins/XP: ${efficiencySign}${formatters_js.formatKMB(Math.abs(coinsPerXp))}</span></div>`;
             }
 
             data.displayElement.innerHTML = html;
             data.displayElement.style.display = 'block';
+            data.displayElement.style.visibility = 'hidden';
             this.fitLineFontSizes(actionPanel, data.displayElement);
         }
 
@@ -9609,6 +9644,9 @@
                 if (!availableWidth) {
                     if (retries > 0) {
                         setTimeout(() => this.fitLineFontSizes(actionPanel, displayElement, retries - 1), 60);
+                    } else {
+                        // Out of retries — reveal anyway so it's never permanently hidden.
+                        displayElement.style.visibility = '';
                     }
                     return;
                 }
@@ -9644,6 +9682,13 @@
                         textSpan.style.setProperty('transform', `scaleX(${scaleX})`);
                     }
                 });
+
+                // Reveal now that sizing is complete.
+                displayElement.style.visibility = '';
+
+                // Keep marginBottom in sync with the bar's actual rendered height.
+                const h = displayElement.offsetHeight;
+                if (h > 0) actionPanel.style.marginBottom = `${h}px`;
             });
         }
 
@@ -9656,12 +9701,14 @@
             // CRITICAL: Remove injected DOM elements BEFORE clearing Maps
             // This prevents detached SVG elements from accumulating
             // Note: .remove() is safe to call even if element is already detached
-            for (const [_actionPanel, data] of this.actionElements.entries()) {
+            for (const [actionPanel, data] of this.actionElements.entries()) {
                 if (data.displayElement) {
                     data.displayElement.innerHTML = ''; // Clear innerHTML to break event listener references
                     data.displayElement.remove();
                     data.displayElement = null; // Null out reference for GC
                 }
+                actionPanel.style.marginBottom = '';
+                actionPanel.style.overflow = '';
             }
 
             // Clear all action element references (prevents detached DOM memory leak)
@@ -9924,7 +9971,13 @@
                 return null;
             }
 
-            const actionName = actionNameElement.textContent.trim();
+            // Read only direct text nodes to avoid picking up injected child spans
+            // (e.g. inventory count display appends "(20 in inventory)" as a child span)
+            const actionName = Array.from(actionNameElement.childNodes)
+                .filter((node) => node.nodeType === Node.TEXT_NODE)
+                .map((node) => node.textContent)
+                .join('')
+                .trim();
             return this.getActionHridFromName(actionName);
         }
 
@@ -10544,7 +10597,13 @@
             return null;
         }
 
-        const actionName = actionNameElement.textContent.trim();
+        // Read only direct text nodes to avoid picking up injected child spans
+        // (e.g. inventory count display appends "(20 in inventory)" as a child span)
+        const actionName = Array.from(actionNameElement.childNodes)
+            .filter((node) => node.nodeType === Node.TEXT_NODE)
+            .map((node) => node.textContent)
+            .join('')
+            .trim();
         return getActionHridFromName(actionName);
     }
 
@@ -12695,7 +12754,7 @@
      * @returns {string}
      */
     function formatCount(count) {
-        return formatters_js.numberFormatter(count, 0);
+        return formatters_js.formatKMB(count);
     }
 
     class InventoryCountDisplay {
@@ -12752,8 +12811,9 @@
         }
 
         /**
-         * Inject a bottom-center count overlay directly onto the tile element.
-         * Never touches the name div — same pattern as gathering-stats / max-produceable.
+         * Inject a count strip just below the tile using the same pattern as
+         * gathering-stats / max-produceable: position absolute at top:100% with
+         * marginBottom on the panel so the grid row makes room for it.
          * @param {HTMLElement} actionPanel
          */
         _injectTile(actionPanel) {
@@ -12765,25 +12825,43 @@
             if (!outputHrid) return;
 
             let span = actionPanel.querySelector('.mwi-inv-count-tile');
+            if (span && span.dataset.outputHrid !== outputHrid) {
+                // Output changed — clean up stale span
+                span.remove();
+                span = null;
+            }
             if (!span) {
+                const nameEl = actionPanel.querySelector('[class*="SkillAction_name"]');
+                if (!nameEl) return;
+
                 span = document.createElement('span');
                 span.className = 'mwi-inv-count-tile';
-                span.style.cssText = `
-                position: absolute;
-                top: 28px;
-                left: 0;
-                right: 0;
-                text-align: center;
-                font-size: 0.7em;
-                color: ${config.COLOR_INV_COUNT};
-                font-weight: 600;
-                pointer-events: none;
-                z-index: 5;
-                line-height: 1;
-            `;
+                span.dataset.outputHrid = outputHrid;
+
                 if (actionPanel.style.position !== 'relative' && actionPanel.style.position !== 'absolute') {
                     actionPanel.style.position = 'relative';
                 }
+
+                // z-index:12 places the count above the icon container which fills the tile.
+                // bottom:4px sits inside the tile above the profit bar (which is at top:100%).
+                // background + padding give the number a readable pill against the sprite.
+                span.style.cssText = `
+                position: absolute;
+                bottom: 4px;
+                left: 50%;
+                transform: translateX(-50%);
+                text-align: center;
+                font-size: 0.75em;
+                color: ${config.COLOR_INV_COUNT};
+                font-weight: 600;
+                pointer-events: none;
+                line-height: 1.4;
+                z-index: 12;
+                background: rgba(0, 0, 0, 0.55);
+                border-radius: 3px;
+                padding: 0 4px;
+                white-space: nowrap;
+            `;
                 actionPanel.appendChild(span);
             }
 
@@ -12837,16 +12915,20 @@
             span.className = 'mwi-inv-count-detail';
             span.dataset.outputHrid = outputHrid;
             span.style.cssText = `
+            display: block;
             font-size: 0.75em;
             color: ${config.COLOR_INV_COUNT};
             font-weight: 600;
-            margin-left: 8px;
-            vertical-align: middle;
+            margin-top: 2px;
             pointer-events: none;
         `;
             span.textContent = count > 0 ? `(${formatCount(count)} in inventory)` : '';
 
-            nameEl.appendChild(span);
+            // Insert after the info container (nameEl's parent) so it sits on its own
+            // line below the action name row. Inserting after nameEl itself puts the span
+            // inside the flex info row and causes overlap.
+            const infoContainer = nameEl.closest('[class*="SkillActionDetail_info"]') ?? nameEl.parentElement;
+            infoContainer.after(span);
             this.detailPanels.add(panel);
         }
 
@@ -12881,7 +12963,12 @@
         _getActionHridFromTile(actionPanel) {
             const nameEl = actionPanel.querySelector('[class*="SkillAction_name"]');
             if (!nameEl) return null;
-            return this._getActionHridFromName(nameEl.textContent.trim());
+            const name = Array.from(nameEl.childNodes)
+                .filter((n) => n.nodeType === Node.TEXT_NODE)
+                .map((n) => n.textContent)
+                .join('')
+                .trim();
+            return this._getActionHridFromName(name);
         }
 
         _getActionHridFromName(name) {
