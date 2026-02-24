@@ -2,20 +2,18 @@
 
 ## [1.13.0](https://github.com/Celasha/Toolasha/compare/v1.12.3...v1.13.0) (2026-02-24)
 
-
 ### Features
 
-* add clickable mention badge popup showing full mention history per channel ([38c6ef5](https://github.com/Celasha/Toolasha/commit/38c6ef520ef3fbee551d4c353fd7b4e798f57385))
-* use KMB formatting for inventory count overlay ([3c0a73b](https://github.com/Celasha/Toolasha/commit/3c0a73b64c72d3b18e34cf7c96dcfa43ffedc640))
-
+- add clickable mention badge popup showing full mention history per channel ([38c6ef5](https://github.com/Celasha/Toolasha/commit/38c6ef520ef3fbee551d4c353fd7b4e798f57385))
+- use KMB formatting for inventory count overlay ([3c0a73b](https://github.com/Celasha/Toolasha/commit/3c0a73b64c72d3b18e34cf7c96dcfa43ffedc640))
 
 ### Bug Fixes
 
-* correct inventory count tile positioning and detail panel overlap ([a75c4f7](https://github.com/Celasha/Toolasha/commit/a75c4f7f91f291b60d04496d0e40c6aad2c513e4))
-* correct stat bar positioning and action name text-node reading ([271bfaa](https://github.com/Celasha/Toolasha/commit/271bfaa40c5a3422a8af94eb2ae1b1a339476626))
-* eliminate action stat bar flash and emoji blink on gathering and production panels ([542255c](https://github.com/Celasha/Toolasha/commit/542255c73085d405dec614b599a68f318568d88b))
-* read only text nodes for action name to avoid injected span pollution ([509a6a2](https://github.com/Celasha/Toolasha/commit/509a6a2c27b93eb976521ddc8d562eb79df39865))
-* remove unused bestFlags parameter from renderIndicators ([6ad888c](https://github.com/Celasha/Toolasha/commit/6ad888c6f6d194ae6912a39bf841955a010b2613))
+- correct inventory count tile positioning and detail panel overlap ([a75c4f7](https://github.com/Celasha/Toolasha/commit/a75c4f7f91f291b60d04496d0e40c6aad2c513e4))
+- correct stat bar positioning and action name text-node reading ([271bfaa](https://github.com/Celasha/Toolasha/commit/271bfaa40c5a3422a8af94eb2ae1b1a339476626))
+- eliminate action stat bar flash and emoji blink on gathering and production panels ([542255c](https://github.com/Celasha/Toolasha/commit/542255c73085d405dec614b599a68f318568d88b))
+- read only text nodes for action name to avoid injected span pollution ([509a6a2](https://github.com/Celasha/Toolasha/commit/509a6a2c27b93eb976521ddc8d562eb79df39865))
+- remove unused bestFlags parameter from renderIndicators ([6ad888c](https://github.com/Celasha/Toolasha/commit/6ad888c6f6d194ae6912a39bf841955a010b2613))
 
 ## [1.12.3](https://github.com/Celasha/Toolasha/compare/v1.12.2...v1.12.3) (2026-02-24)
 
