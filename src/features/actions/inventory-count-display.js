@@ -73,7 +73,6 @@ class InventoryCountDisplay {
         this.detailPanels = new Set();
         this.unregisterObservers = [];
         this.itemsUpdatedHandler = null;
-        this.actionCompletedHandler = null;
         this.isInitialized = false;
         this.DEBOUNCE_DELAY = 300;
         this.debounceTimer = null;
@@ -93,17 +92,10 @@ class InventoryCountDisplay {
             this.debounceTimer = setTimeout(() => this._refreshAll(), this.DEBOUNCE_DELAY);
         };
 
-        this.actionCompletedHandler = () => {
-            clearTimeout(this.debounceTimer);
-            this.debounceTimer = setTimeout(() => this._refreshAll(), this.DEBOUNCE_DELAY);
-        };
-
         dataManager.on('items_updated', this.itemsUpdatedHandler);
-        dataManager.on('action_completed', this.actionCompletedHandler);
 
         this.unregisterObservers.push(() => {
             dataManager.off('items_updated', this.itemsUpdatedHandler);
-            dataManager.off('action_completed', this.actionCompletedHandler);
         });
     }
 

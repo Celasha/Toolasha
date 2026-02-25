@@ -28,6 +28,7 @@ class WebSocketHook {
          * Uses message content (first 100 chars) as key since same message can have different event objects
          */
         this.processedMessages = new Map(); // message hash -> timestamp
+        this.recentActionCompleted = new Map(); // message content -> timestamp (50ms TTL dedup)
         this.messageCleanupInterval = null;
         this.isSocketWrapped = false;
         this.originalWebSocket = null;
@@ -349,6 +350,25 @@ class WebSocketHook {
             // Cleanup old entries every 100 messages to prevent memory leak
             if (this.processedMessages.size > 100) {
                 this.cleanupProcessedMessages();
+            }
+        } else if (messageType === 'action_completed') {
+            // action_completed bypasses the content-hash dedup (Gabriel's fix, commit 1007215)
+            // but the WebSocket prototype wrapper can fire two listeners for the same physical
+            // message object. The WeakSet guard catches same-object duplicates, but if two
+            // independent listeners each receive a distinct MessageEvent wrapping the same
+            // payload, both pass the WeakSet check and processMessage is called twice.
+            // Use a short 50ms TTL keyed on full message content to collapse these duplicates.
+            // Two genuine consecutive action_completed messages are always seconds apart.
+            const now = Date.now();
+            if (this.recentActionCompleted.has(message)) {
+                return; // Duplicate from second listener — skip
+            }
+            this.recentActionCompleted.set(message, now);
+            // Prune entries older than 50ms to keep memory bounded
+            for (const [key, ts] of this.recentActionCompleted) {
+                if (now - ts > 50) {
+                    this.recentActionCompleted.delete(key);
+                }
             }
         }
 
