@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 1.13.0
+ * Version: 1.14.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -16465,6 +16465,13 @@ self.onmessage = function (e) {
                         }
                         // Leave values at 0 (no badge will be shown)
                     }
+                }
+
+                // Apply market tax if setting is enabled
+                if (config.getSetting('invSort_netOfTax')) {
+                    const taxRate = itemHrid === profitConstants_js.COWBELL_BAG_HRID ? profitConstants_js.COWBELL_BAG_TAX : profitConstants_js.MARKET_TAX;
+                    askPrice *= 1 - taxRate;
+                    bidPrice *= 1 - taxRate;
                 }
 
                 // Store per-item prices (for badge display)

@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 1.13.0
+ * Version: 1.14.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -573,6 +573,16 @@
     const MARKET_TAX = 0.02;
 
     /**
+     * Bag of 10 Cowbells item HRID (subject to 18% market tax)
+     */
+    const COWBELL_BAG_HRID = '/items/bag_of_10_cowbells';
+
+    /**
+     * Bag of 10 Cowbells market tax rate (18%)
+     */
+    const COWBELL_BAG_TAX = 0.18;
+
+    /**
      * Base drink consumption rate per hour (before Drink Concentration)
      */
     const DRINKS_PER_HOUR_BASE = 12;
@@ -612,6 +622,8 @@
 
     var profitConstants = {
         MARKET_TAX,
+        COWBELL_BAG_HRID,
+        COWBELL_BAG_TAX,
         DRINKS_PER_HOUR_BASE,
         SECONDS_PER_HOUR,
         HOURS_PER_DAY,
@@ -623,6 +635,8 @@
     var profitConstants$1 = /*#__PURE__*/Object.freeze({
         __proto__: null,
         ALL_SKILL_TYPES: ALL_SKILL_TYPES,
+        COWBELL_BAG_HRID: COWBELL_BAG_HRID,
+        COWBELL_BAG_TAX: COWBELL_BAG_TAX,
         DRINKS_PER_HOUR_BASE: DRINKS_PER_HOUR_BASE,
         GATHERING_TYPES: GATHERING_TYPES,
         HOURS_PER_DAY: HOURS_PER_DAY,

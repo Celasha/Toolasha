@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      1.13.0
+// @version      1.14.0
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -15484,6 +15484,12 @@ return plugin;
                     default: 'None',
                     options: ['None', 'Ask', 'Bid'],
                 },
+                invSort_netOfTax: {
+                    id: 'invSort_netOfTax',
+                    label: 'Show badge values net of market tax',
+                    type: 'checkbox',
+                    default: false,
+                },
                 invSort_sortEquipment: {
                     id: 'invSort_sortEquipment',
                     label: 'Enable sorting for Equipment category',
@@ -15496,14 +15502,6 @@ return plugin;
                     type: 'checkbox',
                     default: false,
                     help: 'Displays per-item ask or bid price on inventory items',
-                },
-                invBadgePrices_type: {
-                    id: 'invBadgePrices_type',
-                    label: 'Badge price type to display',
-                    type: 'select',
-                    default: 'Ask',
-                    options: ['None', 'Ask', 'Bid'],
-                    help: 'Ask (instant-buy price), Bid (instant-sell price), or None',
                 },
                 profitCalc_pricingMode: {
                     id: 'profitCalc_pricingMode',
@@ -20773,6 +20771,16 @@ return plugin;
     const MARKET_TAX = 0.02;
 
     /**
+     * Bag of 10 Cowbells item HRID (subject to 18% market tax)
+     */
+    const COWBELL_BAG_HRID = '/items/bag_of_10_cowbells';
+
+    /**
+     * Bag of 10 Cowbells market tax rate (18%)
+     */
+    const COWBELL_BAG_TAX = 0.18;
+
+    /**
      * Base drink consumption rate per hour (before Drink Concentration)
      */
     const DRINKS_PER_HOUR_BASE = 12;
@@ -20812,6 +20820,8 @@ return plugin;
 
     var profitConstants = {
         MARKET_TAX,
+        COWBELL_BAG_HRID,
+        COWBELL_BAG_TAX,
         DRINKS_PER_HOUR_BASE,
         SECONDS_PER_HOUR,
         HOURS_PER_DAY,
@@ -20823,6 +20833,8 @@ return plugin;
     var profitConstants$1 = /*#__PURE__*/Object.freeze({
         __proto__: null,
         ALL_SKILL_TYPES: ALL_SKILL_TYPES,
+        COWBELL_BAG_HRID: COWBELL_BAG_HRID,
+        COWBELL_BAG_TAX: COWBELL_BAG_TAX,
         DRINKS_PER_HOUR_BASE: DRINKS_PER_HOUR_BASE,
         GATHERING_TYPES: GATHERING_TYPES$3,
         HOURS_PER_DAY: HOURS_PER_DAY,
@@ -42785,6 +42797,13 @@ self.onmessage = function (e) {
                     }
                 }
 
+                // Apply market tax if setting is enabled
+                if (config$1.getSetting('invSort_netOfTax')) {
+                    const taxRate = itemHrid === COWBELL_BAG_HRID ? COWBELL_BAG_TAX : MARKET_TAX;
+                    askPrice *= 1 - taxRate;
+                    bidPrice *= 1 - taxRate;
+                }
+
                 // Store per-item prices (for badge display)
                 itemElem.dataset.askPrice = askPrice;
                 itemElem.dataset.bidPrice = bidPrice;
@@ -53534,7 +53553,7 @@ self.onmessage = function (e) {
     /**
      * Initialize missing materials button feature
      */
-    function initialize$2() {
+    function initialize$3() {
         cleanupObserver = setupMarketplaceCleanupObserver(handleMarketplaceCleanup, currentMaterialsTabs);
         autofillManager.initialize();
 
@@ -54050,7 +54069,7 @@ self.onmessage = function (e) {
     }
 
     var missingMaterialsButton = {
-        initialize: initialize$2,
+        initialize: initialize$3,
         cleanup: cleanup$1,
     };
 
@@ -58763,6 +58782,957 @@ self.onmessage = function (e) {
     const zoneIndices = new ZoneIndices();
 
     zoneIndices.setupSettingListener();
+
+    /**
+     * Combat Simulator Export Module
+     * Constructs player data in Shykai Combat Simulator format
+     *
+     * Exports character data for solo or party simulation testing
+     */
+
+
+    // Detect if we're running on Tampermonkey or Steam
+    const hasScriptManager$2 = typeof GM_info !== 'undefined';
+
+    /**
+     * Get saved character data from storage
+     * @returns {Promise<Object|null>} Parsed character data or null
+     */
+    async function getCharacterData$1() {
+        try {
+            // Tampermonkey: Use GM storage (cross-domain, persisted)
+            if (hasScriptManager$2) {
+                const data = await webSocketHook$1.loadFromStorage('toolasha_init_character_data', null);
+                if (!data) {
+                    console.error('[Combat Sim Export] No character data found. Please refresh game page.');
+                    return null;
+                }
+                return JSON.parse(data);
+            }
+
+            // Steam: Use dataManager (which has its own fallback handling)
+            const characterData = dataManager$1.characterData;
+
+            if (!characterData) {
+                console.error('[Combat Sim Export] No character data found. Please refresh game page.');
+                return null;
+            }
+            return characterData;
+        } catch (error) {
+            console.error('[Combat Sim Export] Failed to get character data:', error);
+            return null;
+        }
+    }
+
+    /**
+     * Get saved battle data from storage
+     * @returns {Promise<Object|null>} Parsed battle data or null
+     */
+    async function getBattleData() {
+        try {
+            // Tampermonkey: Use GM storage
+            if (hasScriptManager$2) {
+                const data = await webSocketHook$1.loadFromStorage('toolasha_new_battle', null);
+                if (!data) {
+                    return null; // No battle data (not in combat or solo)
+                }
+                return JSON.parse(data);
+            }
+
+            // Steam: Use dataManager (RAM only, no GM storage available)
+            const battleData = dataManager$1.battleData;
+            if (!battleData) {
+                return null; // No battle data (not in combat or solo)
+            }
+            return battleData;
+        } catch (error) {
+            console.error('[Combat Sim Export] Failed to get battle data:', error);
+            return null;
+        }
+    }
+
+    /**
+     * Get init_client_data from storage
+     * @returns {Promise<Object|null>} Parsed client data or null
+     */
+    async function getClientData() {
+        try {
+            // Tampermonkey: Use GM storage (cross-domain, persisted)
+            if (hasScriptManager$2) {
+                const data = await webSocketHook$1.loadFromStorage('toolasha_init_client_data', null);
+                if (!data) {
+                    console.warn('[Combat Sim Export] No client data found');
+                    return null;
+                }
+                return JSON.parse(data);
+            }
+
+            // Steam: Use dataManager (RAM only, no GM storage available)
+            const clientData = dataManager$1.getInitClientData();
+            if (!clientData) {
+                console.warn('[Combat Sim Export] No client data found');
+                return null;
+            }
+            return clientData;
+        } catch (error) {
+            console.error('[Combat Sim Export] Failed to get client data:', error);
+            return null;
+        }
+    }
+
+    /**
+     * Get profile export list from storage
+     * @returns {Promise<Array>} List of saved profiles
+     */
+    async function getProfileList$1() {
+        try {
+            // Read from GM storage (cross-origin accessible, matches pattern of other combat sim data)
+            const profileListJson = await webSocketHook$1.loadFromStorage('toolasha_profile_list', '[]');
+            return JSON.parse(profileListJson);
+        } catch (error) {
+            console.error('[Combat Sim Export] Failed to get profile list:', error);
+            return [];
+        }
+    }
+
+    /**
+     * Construct player export object from own character data
+     * @param {Object} characterObj - Character data from init_character_data
+     * @param {Object} clientObj - Client data (optional)
+     * @returns {Object} Player export object
+     */
+    function constructSelfPlayer(characterObj, clientObj) {
+        const playerObj = {
+            player: {
+                attackLevel: 1,
+                magicLevel: 1,
+                meleeLevel: 1,
+                rangedLevel: 1,
+                defenseLevel: 1,
+                staminaLevel: 1,
+                intelligenceLevel: 1,
+                equipment: [],
+            },
+            food: { '/action_types/combat': [] },
+            drinks: { '/action_types/combat': [] },
+            abilities: [],
+            triggerMap: {},
+            houseRooms: {},
+        };
+
+        // Extract combat skill levels
+        for (const skill of characterObj.characterSkills || []) {
+            const skillName = skill.skillHrid.split('/').pop();
+            if (skillName && playerObj.player[skillName + 'Level'] !== undefined) {
+                playerObj.player[skillName + 'Level'] = skill.level;
+            }
+        }
+
+        // Extract equipped items - handle both formats
+        if (Array.isArray(characterObj.characterItems)) {
+            // Array format (full inventory list)
+            for (const item of characterObj.characterItems) {
+                if (item.itemLocationHrid && !item.itemLocationHrid.includes('/item_locations/inventory')) {
+                    playerObj.player.equipment.push({
+                        itemLocationHrid: item.itemLocationHrid,
+                        itemHrid: item.itemHrid,
+                        enhancementLevel: item.enhancementLevel || 0,
+                    });
+                }
+            }
+        } else if (characterObj.characterEquipment) {
+            // Object format (just equipped items)
+            for (const key in characterObj.characterEquipment) {
+                const item = characterObj.characterEquipment[key];
+                playerObj.player.equipment.push({
+                    itemLocationHrid: item.itemLocationHrid,
+                    itemHrid: item.itemHrid,
+                    enhancementLevel: item.enhancementLevel || 0,
+                });
+            }
+        }
+
+        // Initialize food and drink slots
+        for (let i = 0; i < 3; i++) {
+            playerObj.food['/action_types/combat'][i] = { itemHrid: '' };
+            playerObj.drinks['/action_types/combat'][i] = { itemHrid: '' };
+        }
+
+        // Extract food slots
+        const foodSlots = characterObj.actionTypeFoodSlotsMap?.['/action_types/combat'];
+        if (Array.isArray(foodSlots)) {
+            foodSlots.forEach((item, i) => {
+                if (i < 3 && item?.itemHrid) {
+                    playerObj.food['/action_types/combat'][i] = { itemHrid: item.itemHrid };
+                }
+            });
+        }
+
+        // Extract drink slots
+        const drinkSlots = characterObj.actionTypeDrinkSlotsMap?.['/action_types/combat'];
+        if (Array.isArray(drinkSlots)) {
+            drinkSlots.forEach((item, i) => {
+                if (i < 3 && item?.itemHrid) {
+                    playerObj.drinks['/action_types/combat'][i] = { itemHrid: item.itemHrid };
+                }
+            });
+        }
+
+        // Initialize abilities (5 slots)
+        for (let i = 0; i < 5; i++) {
+            playerObj.abilities[i] = { abilityHrid: '', level: 1 };
+        }
+
+        // Extract equipped abilities
+        let normalAbilityIndex = 1;
+        const equippedAbilities = characterObj.combatUnit?.combatAbilities || [];
+        for (const ability of equippedAbilities) {
+            if (!ability || !ability.abilityHrid) continue;
+
+            // Check if special ability
+            const isSpecial = clientObj?.abilityDetailMap?.[ability.abilityHrid]?.isSpecialAbility || false;
+
+            if (isSpecial) {
+                // Special ability goes in slot 0
+                playerObj.abilities[0] = {
+                    abilityHrid: ability.abilityHrid,
+                    level: ability.level || 1,
+                };
+            } else if (normalAbilityIndex < 5) {
+                // Normal abilities go in slots 1-4
+                playerObj.abilities[normalAbilityIndex++] = {
+                    abilityHrid: ability.abilityHrid,
+                    level: ability.level || 1,
+                };
+            }
+        }
+
+        // Extract trigger maps
+        playerObj.triggerMap = {
+            ...(characterObj.abilityCombatTriggersMap || {}),
+            ...(characterObj.consumableCombatTriggersMap || {}),
+        };
+
+        // Extract house room levels
+        for (const house of Object.values(characterObj.characterHouseRoomMap || {})) {
+            playerObj.houseRooms[house.houseRoomHrid] = house.level;
+        }
+
+        // Extract completed achievements
+        playerObj.achievements = {};
+        if (characterObj.characterAchievements) {
+            for (const achievement of characterObj.characterAchievements) {
+                if (achievement.achievementHrid && achievement.isCompleted) {
+                    playerObj.achievements[achievement.achievementHrid] = true;
+                }
+            }
+        }
+
+        return playerObj;
+    }
+
+    /**
+     * Construct party member data from profile share
+     * @param {Object} profile - Profile data from profile_shared message
+     * @param {Object} clientObj - Client data (optional)
+     * @param {Object} battleObj - Battle data (optional, for consumables)
+     * @returns {Object} Player export object
+     */
+    function constructPartyPlayer(profile, clientObj, battleObj) {
+        const playerObj = {
+            player: {
+                attackLevel: 1,
+                magicLevel: 1,
+                meleeLevel: 1,
+                rangedLevel: 1,
+                defenseLevel: 1,
+                staminaLevel: 1,
+                intelligenceLevel: 1,
+                equipment: [],
+            },
+            food: { '/action_types/combat': [] },
+            drinks: { '/action_types/combat': [] },
+            abilities: [],
+            triggerMap: {},
+            houseRooms: {},
+        };
+
+        // Extract skill levels from profile
+        for (const skill of profile.profile?.characterSkills || []) {
+            const skillName = skill.skillHrid?.split('/').pop();
+            if (skillName && playerObj.player[skillName + 'Level'] !== undefined) {
+                playerObj.player[skillName + 'Level'] = skill.level || 1;
+            }
+        }
+
+        // Extract equipment from profile
+        if (profile.profile?.wearableItemMap) {
+            for (const key in profile.profile.wearableItemMap) {
+                const item = profile.profile.wearableItemMap[key];
+                playerObj.player.equipment.push({
+                    itemLocationHrid: item.itemLocationHrid,
+                    itemHrid: item.itemHrid,
+                    enhancementLevel: item.enhancementLevel || 0,
+                });
+            }
+        }
+
+        // Initialize food and drink slots
+        for (let i = 0; i < 3; i++) {
+            playerObj.food['/action_types/combat'][i] = { itemHrid: '' };
+            playerObj.drinks['/action_types/combat'][i] = { itemHrid: '' };
+        }
+
+        // Get consumables from battle data if available
+        let battlePlayer = null;
+        if (battleObj?.players) {
+            battlePlayer = battleObj.players.find((p) => p.character?.id === profile.characterID);
+        }
+
+        if (battlePlayer?.combatConsumables) {
+            let foodIndex = 0;
+            let drinkIndex = 0;
+
+            // Intelligently separate food and drinks
+            battlePlayer.combatConsumables.forEach((consumable) => {
+                const itemHrid = consumable.itemHrid;
+
+                // Check if it's a drink
+                const isDrink =
+                    itemHrid.includes('/drinks/') ||
+                    itemHrid.includes('coffee') ||
+                    clientObj?.itemDetailMap?.[itemHrid]?.type === 'drink';
+
+                if (isDrink && drinkIndex < 3) {
+                    playerObj.drinks['/action_types/combat'][drinkIndex++] = { itemHrid: itemHrid };
+                } else if (!isDrink && foodIndex < 3) {
+                    playerObj.food['/action_types/combat'][foodIndex++] = { itemHrid: itemHrid };
+                }
+            });
+        } else {
+            // Fallback: Get consumables from profile trigger map (for non-party members)
+            // The keys of consumableCombatTriggersMap are the equipped consumable HRIDs
+            const consumableHrids = Object.keys(profile.profile?.consumableCombatTriggersMap || {});
+
+            if (consumableHrids.length > 0) {
+                let foodIndex = 0;
+                let drinkIndex = 0;
+
+                consumableHrids.forEach((itemHrid) => {
+                    // Check if it's a drink
+                    const isDrink =
+                        itemHrid.includes('/drinks/') ||
+                        itemHrid.includes('coffee') ||
+                        clientObj?.itemDetailMap?.[itemHrid]?.type === 'drink';
+
+                    if (isDrink && drinkIndex < 3) {
+                        playerObj.drinks['/action_types/combat'][drinkIndex++] = { itemHrid: itemHrid };
+                    } else if (!isDrink && foodIndex < 3) {
+                        playerObj.food['/action_types/combat'][foodIndex++] = { itemHrid: itemHrid };
+                    }
+                });
+            }
+        }
+
+        // Initialize abilities (5 slots)
+        for (let i = 0; i < 5; i++) {
+            playerObj.abilities[i] = { abilityHrid: '', level: 1 };
+        }
+
+        // Extract equipped abilities from profile
+        let normalAbilityIndex = 1;
+        const equippedAbilities = profile.profile?.equippedAbilities || [];
+        for (const ability of equippedAbilities) {
+            if (!ability || !ability.abilityHrid) continue;
+
+            // Check if special ability
+            const isSpecial = clientObj?.abilityDetailMap?.[ability.abilityHrid]?.isSpecialAbility || false;
+
+            if (isSpecial) {
+                // Special ability goes in slot 0
+                playerObj.abilities[0] = {
+                    abilityHrid: ability.abilityHrid,
+                    level: ability.level || 1,
+                };
+            } else if (normalAbilityIndex < 5) {
+                // Normal abilities go in slots 1-4
+                playerObj.abilities[normalAbilityIndex++] = {
+                    abilityHrid: ability.abilityHrid,
+                    level: ability.level || 1,
+                };
+            }
+        }
+
+        // Extract trigger maps (prefer battle data, fallback to profile)
+        playerObj.triggerMap = {
+            ...(battlePlayer?.abilityCombatTriggersMap || profile.profile?.abilityCombatTriggersMap || {}),
+            ...(battlePlayer?.consumableCombatTriggersMap || profile.profile?.consumableCombatTriggersMap || {}),
+        };
+
+        // Extract house room levels from profile
+        if (profile.profile?.characterHouseRoomMap) {
+            for (const house of Object.values(profile.profile.characterHouseRoomMap)) {
+                playerObj.houseRooms[house.houseRoomHrid] = house.level;
+            }
+        }
+
+        // Extract completed achievements from profile
+        playerObj.achievements = {};
+        if (profile.profile?.characterAchievements) {
+            for (const achievement of profile.profile.characterAchievements) {
+                if (achievement.achievementHrid && achievement.isCompleted) {
+                    playerObj.achievements[achievement.achievementHrid] = true;
+                }
+            }
+        }
+
+        return playerObj;
+    }
+
+    /**
+     * Construct full export object (solo or party)
+     * @param {string|null} externalProfileId - Optional profile ID (for viewing other players' profiles)
+     * @param {boolean} singlePlayerFormat - If true, returns player object instead of multi-player format
+     * @returns {Object} Export object with player data, IDs, positions, and zone info
+     */
+    async function constructExportObject(externalProfileId = null, singlePlayerFormat = false) {
+        const characterObj = await getCharacterData$1();
+        if (!characterObj) {
+            return null;
+        }
+
+        const clientObj = await getClientData();
+        const battleObj = await getBattleData();
+        const profileList = await getProfileList$1();
+
+        // Blank player template (as string, like MCS)
+        const BLANK =
+            '{"player":{"attackLevel":1,"magicLevel":1,"meleeLevel":1,"rangedLevel":1,"defenseLevel":1,"staminaLevel":1,"intelligenceLevel":1,"equipment":[]},"food":{"/action_types/combat":[{"itemHrid":""},{"itemHrid":""},{"itemHrid":""}]},"drinks":{"/action_types/combat":[{"itemHrid":""},{"itemHrid":""},{"itemHrid":""}]},"abilities":[{"abilityHrid":"","level":1},{"abilityHrid":"","level":1},{"abilityHrid":"","level":1},{"abilityHrid":"","level":1},{"abilityHrid":"","level":1}],"triggerMap":{},"zone":"/actions/combat/fly","simulationTime":"100","houseRooms":{"/house_rooms/dairy_barn":0,"/house_rooms/garden":0,"/house_rooms/log_shed":0,"/house_rooms/forge":0,"/house_rooms/workshop":0,"/house_rooms/sewing_parlor":0,"/house_rooms/kitchen":0,"/house_rooms/brewery":0,"/house_rooms/laboratory":0,"/house_rooms/observatory":0,"/house_rooms/dining_room":0,"/house_rooms/library":0,"/house_rooms/dojo":0,"/house_rooms/gym":0,"/house_rooms/armory":0,"/house_rooms/archery_range":0,"/house_rooms/mystical_study":0},"achievements":{}}';
+
+        // Check if exporting another player's profile
+        if (externalProfileId && externalProfileId !== characterObj.character.id) {
+            // Try to find profile in GM storage first, then fall back to memory cache
+            let profile = profileList.find((p) => p.characterID === externalProfileId);
+
+            // If not found in GM storage, check memory cache (works on Steam)
+            const cachedProfile = getCurrentProfile();
+            if (!profile && cachedProfile && cachedProfile.characterID === externalProfileId) {
+                profile = cachedProfile;
+            }
+
+            if (!profile) {
+                console.error('[Combat Sim Export] Profile not found for:', externalProfileId);
+                return null; // Profile not in cache
+            }
+
+            // Construct the player object
+            const playerObj = constructPartyPlayer(profile, clientObj, battleObj);
+
+            // If single-player format requested, return player object directly
+            if (singlePlayerFormat) {
+                // Add required fields for solo format
+                playerObj.name = profile.characterName;
+                playerObj.zone = '/actions/combat/fly';
+                playerObj.simulationTime = '100';
+
+                return {
+                    exportObj: playerObj,
+                    playerIDs: [profile.characterName, 'Player 2', 'Player 3', 'Player 4', 'Player 5'],
+                    importedPlayerPositions: [true, false, false, false, false],
+                    zone: '/actions/combat/fly',
+                    isZoneDungeon: false,
+                    difficultyTier: 0,
+                    isParty: false,
+                };
+            }
+
+            // Multi-player format (for auto-import storage)
+            const exportObj = {};
+            exportObj[1] = JSON.stringify(playerObj);
+
+            // Fill other slots with blanks
+            for (let i = 2; i <= 5; i++) {
+                exportObj[i] = BLANK;
+            }
+
+            return {
+                exportObj,
+                playerIDs: [profile.characterName, 'Player 2', 'Player 3', 'Player 4', 'Player 5'],
+                importedPlayerPositions: [true, false, false, false, false],
+                zone: '/actions/combat/fly',
+                isZoneDungeon: false,
+                difficultyTier: 0,
+                isParty: false,
+            };
+        }
+
+        // Export YOUR data (solo or party) - existing logic below
+        const exportObj = {};
+        for (let i = 1; i <= 5; i++) {
+            exportObj[i] = BLANK;
+        }
+
+        const playerIDs = ['Player 1', 'Player 2', 'Player 3', 'Player 4', 'Player 5'];
+        const importedPlayerPositions = [false, false, false, false, false];
+        let zone = '/actions/combat/fly';
+        let isZoneDungeon = false;
+        let difficultyTier = 0;
+        let isParty = false;
+        let yourSlotIndex = 1; // Track which slot contains YOUR data (for party mode)
+
+        // Check if in party
+        const hasParty = characterObj.partyInfo?.partySlotMap;
+
+        if (!hasParty) {
+            exportObj[1] = JSON.stringify(constructSelfPlayer(characterObj, clientObj));
+            playerIDs[0] = characterObj.character?.name || 'Player 1';
+            importedPlayerPositions[0] = true;
+
+            // Get current combat zone and tier
+            for (const action of characterObj.characterActions || []) {
+                if (action && action.actionHrid.includes('/actions/combat/')) {
+                    zone = action.actionHrid;
+                    difficultyTier = action.difficultyTier || 0;
+                    isZoneDungeon = clientObj?.actionDetailMap?.[action.actionHrid]?.combatZoneInfo?.isDungeon || false;
+                    break;
+                }
+            }
+        } else {
+            isParty = true;
+
+            let slotIndex = 1;
+            for (const member of Object.values(characterObj.partyInfo.partySlotMap)) {
+                if (member.characterID) {
+                    if (member.characterID === characterObj.character.id) {
+                        // This is you
+                        yourSlotIndex = slotIndex; // Remember your slot
+                        exportObj[slotIndex] = JSON.stringify(constructSelfPlayer(characterObj, clientObj));
+                        playerIDs[slotIndex - 1] = characterObj.character.name;
+                        importedPlayerPositions[slotIndex - 1] = true;
+                    } else {
+                        // Party member - try to get from profile list
+                        const profile = profileList.find((p) => p.characterID === member.characterID);
+                        if (profile) {
+                            exportObj[slotIndex] = JSON.stringify(constructPartyPlayer(profile, clientObj, battleObj));
+                            playerIDs[slotIndex - 1] = profile.characterName;
+                            importedPlayerPositions[slotIndex - 1] = true;
+                        } else {
+                            console.warn(
+                                '[Combat Sim Export] No profile found for party member',
+                                member.characterID,
+                                '- profiles have:',
+                                profileList.map((p) => p.characterID)
+                            );
+                            playerIDs[slotIndex - 1] = 'Open profile in game';
+                        }
+                    }
+                    slotIndex++;
+                }
+            }
+
+            // Get party zone and tier
+            zone = characterObj.partyInfo?.party?.actionHrid || '/actions/combat/fly';
+            difficultyTier = characterObj.partyInfo?.party?.difficultyTier || 0;
+            isZoneDungeon = clientObj?.actionDetailMap?.[zone]?.combatZoneInfo?.isDungeon || false;
+        }
+
+        // If single-player format requested, return just the player object
+        if (singlePlayerFormat && exportObj[1]) {
+            // In party mode, export YOUR data (not necessarily slot 1)
+            const slotToExport = isParty ? yourSlotIndex : 1;
+
+            // Parse the player JSON string back to an object
+            const playerObj = JSON.parse(exportObj[slotToExport]);
+
+            // Add required fields for solo format
+            playerObj.name = playerIDs[slotToExport - 1];
+            playerObj.zone = zone;
+            playerObj.simulationTime = '100';
+
+            return {
+                exportObj: playerObj, // Single player object instead of multi-player format
+                playerIDs,
+                importedPlayerPositions,
+                zone,
+                isZoneDungeon,
+                difficultyTier,
+                isParty: false, // Single player export is never party format
+            };
+        }
+
+        return {
+            exportObj,
+            playerIDs,
+            importedPlayerPositions,
+            zone,
+            isZoneDungeon,
+            difficultyTier,
+            isParty,
+        };
+    }
+
+    /**
+     * Loadout Export Button Module
+     * Adds "Export to Clipboard" button on the loadouts page
+     *
+     * Scrapes equipment, abilities, and consumables from the selected loadout DOM
+     * and builds a Combat Simulator compatible export object.
+     */
+
+
+    const BUTTON_ID = 'toolasha-loadout-export-button';
+
+    /**
+     * Extract item HRID from an SVG use href attribute
+     * e.g. "items_sprite.9c39e2ec.svg#griffin_bulwark_refined" → "/items/griffin_bulwark_refined"
+     * @param {string} href
+     * @returns {string|null}
+     */
+    function itemHridFromUseHref(href) {
+        if (!href || !href.includes('items_sprite')) return null;
+        const fragment = href.split('#')[1];
+        if (!fragment) return null;
+        return `/items/${fragment}`;
+    }
+
+    /**
+     * Extract ability HRID from an SVG use href attribute
+     * e.g. "abilities_sprite.fdd1b4de.svg#invincible" → "/abilities/invincible"
+     * @param {string} href
+     * @returns {string|null}
+     */
+    function abilityHridFromUseHref(href) {
+        if (!href || !href.includes('abilities_sprite')) return null;
+        const fragment = href.split('#')[1];
+        if (!fragment) return null;
+        return `/abilities/${fragment}`;
+    }
+
+    /**
+     * Build a map of itemHrid → highest enhancementLevel across all character items.
+     * Covers both currently equipped items and inventory items.
+     * @returns {Map<string, number>}
+     */
+    function buildEnhancementLevelMap() {
+        const inventory = dataManager$1.getInventory();
+        const map = new Map();
+        if (!inventory) return map;
+
+        for (const item of inventory) {
+            if (!item.itemHrid || item.count === 0) continue;
+            const existing = map.get(item.itemHrid) ?? 0;
+            const level = item.enhancementLevel ?? 0;
+            if (level > existing) {
+                map.set(item.itemHrid, level);
+            }
+        }
+        return map;
+    }
+
+    // Maps equipmentDetail.type → itemLocationHrid
+    const EQUIPMENT_TYPE_TO_LOCATION = {
+        '/equipment_types/back': '/item_locations/back',
+        '/equipment_types/head': '/item_locations/head',
+        '/equipment_types/trinket': '/item_locations/trinket',
+        '/equipment_types/main_hand': '/item_locations/main_hand',
+        '/equipment_types/two_hand': '/item_locations/main_hand',
+        '/equipment_types/body': '/item_locations/body',
+        '/equipment_types/off_hand': '/item_locations/off_hand',
+        '/equipment_types/hands': '/item_locations/hands',
+        '/equipment_types/legs': '/item_locations/legs',
+        '/equipment_types/pouch': '/item_locations/pouch',
+        '/equipment_types/feet': '/item_locations/feet',
+        '/equipment_types/neck': '/item_locations/neck',
+        '/equipment_types/earrings': '/item_locations/earrings',
+        '/equipment_types/ring': '/item_locations/ring',
+        '/equipment_types/charm': '/item_locations/charm',
+    };
+
+    /**
+     * Determine itemLocationHrid for an equipment item using initClientData
+     * Maps equipmentDetail.type to the corresponding item_locations HRID.
+     * @param {string} itemHrid
+     * @returns {string|null}
+     */
+    function getItemLocationHrid(itemHrid) {
+        const clientData = dataManager$1.getInitClientData();
+        if (!clientData) return null;
+        const detail = clientData.itemDetailMap?.[itemHrid];
+        if (!detail) return null;
+        const equipType = detail.equipmentDetail?.type;
+        if (!equipType) return null;
+        return EQUIPMENT_TYPE_TO_LOCATION[equipType] || null;
+    }
+
+    /**
+     * Scrape equipment items from the selected loadout element
+     * @param {Element} selectedLoadout
+     * @returns {Array<{itemLocationHrid, itemHrid, enhancementLevel}>}
+     */
+    function scrapeEquipment(selectedLoadout) {
+        const equipDiv = selectedLoadout.querySelector('[class*="LoadoutsPanel_equipment"]');
+        if (!equipDiv) return [];
+
+        const enhancementMap = buildEnhancementLevelMap();
+        const equipment = [];
+        const uses = equipDiv.querySelectorAll('use');
+
+        for (const use of uses) {
+            const href = use.getAttribute('href') || use.getAttribute('xlink:href') || '';
+            const itemHrid = itemHridFromUseHref(href);
+            if (!itemHrid) continue;
+
+            const itemLocationHrid = getItemLocationHrid(itemHrid);
+            if (!itemLocationHrid) continue;
+
+            const enhancementLevel = enhancementMap.get(itemHrid) ?? 0;
+            equipment.push({ itemLocationHrid, itemHrid, enhancementLevel });
+        }
+        return equipment;
+    }
+
+    /**
+     * Scrape abilities from the selected loadout element
+     * @param {Element} selectedLoadout
+     * @param {Object} clientData - initClientData for isSpecialAbility lookup
+     * @returns {Array<{abilityHrid, level}>} 5-slot array, slot 0 = special
+     */
+    function scrapeAbilities(selectedLoadout, clientData) {
+        const abilitiesDiv = selectedLoadout.querySelector('[class*="LoadoutsPanel_abilities"]');
+
+        // Build 5-slot array (slot 0 = special, 1-4 = normal)
+        const slots = [
+            { abilityHrid: '', level: 1 },
+            { abilityHrid: '', level: 1 },
+            { abilityHrid: '', level: 1 },
+            { abilityHrid: '', level: 1 },
+            { abilityHrid: '', level: 1 },
+        ];
+
+        if (!abilitiesDiv) return slots;
+
+        // Each ability is a container with an SVG use + level text
+        // Find containers that have an abilities_sprite use element
+        const abilityContainers = abilitiesDiv.querySelectorAll('[class*="Ability_ability"]');
+
+        let normalIndex = 1;
+
+        for (const container of abilityContainers) {
+            const use = container.querySelector('use');
+            if (!use) continue;
+
+            const href = use.getAttribute('href') || use.getAttribute('xlink:href') || '';
+            const abilityHrid = abilityHridFromUseHref(href);
+            if (!abilityHrid) continue;
+
+            // Parse level from ".Ability_level__" element: "Lv.59" → 59
+            const levelEl = container.querySelector('[class*="Ability_level"]');
+            let level = 1;
+            if (levelEl) {
+                const match = levelEl.textContent.trim().match(/\d+/);
+                if (match) level = parseInt(match[0], 10);
+            }
+
+            const isSpecial = clientData?.abilityDetailMap?.[abilityHrid]?.isSpecialAbility || false;
+
+            if (isSpecial) {
+                slots[0] = { abilityHrid, level };
+            } else if (normalIndex < 5) {
+                slots[normalIndex++] = { abilityHrid, level };
+            }
+        }
+
+        return slots;
+    }
+
+    /**
+     * Scrape consumables (food/drinks) from the selected loadout element
+     * @param {Element} selectedLoadout
+     * @param {Object} clientData - initClientData for item type lookup
+     * @returns {{ food: Array, drinks: Array }}
+     */
+    function scrapeConsumables(selectedLoadout, clientData) {
+        const consumablesDiv = selectedLoadout.querySelector('[class*="LoadoutsPanel_consumables"]');
+
+        const food = [{ itemHrid: '' }, { itemHrid: '' }, { itemHrid: '' }];
+        const drinks = [{ itemHrid: '' }, { itemHrid: '' }, { itemHrid: '' }];
+
+        if (!consumablesDiv) return { food, drinks };
+
+        const uses = consumablesDiv.querySelectorAll('use');
+        let foodIndex = 0;
+        let drinkIndex = 0;
+
+        for (const use of uses) {
+            const href = use.getAttribute('href') || use.getAttribute('xlink:href') || '';
+            const itemHrid = itemHridFromUseHref(href);
+            if (!itemHrid) continue;
+
+            const isDrink =
+                itemHrid.includes('/drinks/') ||
+                itemHrid.includes('coffee') ||
+                clientData?.itemDetailMap?.[itemHrid]?.type === 'drink';
+
+            if (isDrink && drinkIndex < 3) {
+                drinks[drinkIndex++] = { itemHrid };
+            } else if (!isDrink && foodIndex < 3) {
+                food[foodIndex++] = { itemHrid };
+            }
+        }
+
+        return { food, drinks };
+    }
+
+    /**
+     * Build a full export object using DOM-scraped loadout data overlaid on character data
+     * @param {Element} selectedLoadout
+     * @returns {Object|null}
+     */
+    async function buildLoadoutExport(selectedLoadout) {
+        // Get the base export using character's own data (for skills, houseRooms, achievements, triggerMap)
+        const baseExport = await constructExportObject(null, true);
+        if (!baseExport) return null;
+
+        const clientData = dataManager$1.getInitClientData();
+        const playerObj = baseExport.exportObj;
+
+        // Override equipment from DOM
+        playerObj.player.equipment = scrapeEquipment(selectedLoadout);
+
+        // Override abilities from DOM
+        playerObj.abilities = scrapeAbilities(selectedLoadout, clientData);
+
+        // Override consumables from DOM
+        const { food, drinks } = scrapeConsumables(selectedLoadout, clientData);
+        playerObj.food = { '/action_types/combat': food };
+        playerObj.drinks = { '/action_types/combat': drinks };
+
+        return playerObj;
+    }
+
+    /**
+     * Inject the export button into the loadout panel buttons container
+     * @param {Element} selectedLoadout
+     */
+    function injectButton(selectedLoadout) {
+        // Guard: don't inject twice
+        if (document.getElementById(BUTTON_ID)) return;
+
+        // Find the buttons container inside the selected loadout
+        const buttonsContainer = selectedLoadout.querySelector('[class*="LoadoutsPanel_buttonsContainer"]');
+        if (!buttonsContainer) return;
+
+        const button = document.createElement('button');
+        button.id = BUTTON_ID;
+        button.textContent = 'Export to Sim';
+        button.style.cssText = `
+        border-radius: 5px;
+        height: 30px;
+        background-color: ${config$1.COLOR_ACCENT};
+        color: black;
+        box-shadow: none;
+        border: 0px;
+        padding: 0 12px;
+        cursor: pointer;
+        font-weight: bold;
+        font-size: 12px;
+        white-space: nowrap;
+    `;
+
+        button.addEventListener('mouseenter', () => {
+            button.style.opacity = '0.8';
+        });
+        button.addEventListener('mouseleave', () => {
+            button.style.opacity = '1';
+        });
+
+        button.addEventListener('click', async () => {
+            await handleExport(button, selectedLoadout);
+        });
+
+        buttonsContainer.appendChild(button);
+    }
+
+    /**
+     * Handle export button click
+     * @param {Element} button
+     * @param {Element} selectedLoadout
+     */
+    async function handleExport(button, selectedLoadout) {
+        button.textContent = 'Exporting...';
+        button.disabled = true;
+
+        try {
+            const playerObj = await buildLoadoutExport(selectedLoadout);
+
+            if (!playerObj) {
+                button.textContent = '✗ No Data';
+                button.style.backgroundColor = '#dc3545';
+                setTimeout(() => resetButton(button), 3000);
+                console.error('[Loadout Export] No character data. Refresh the game page and try again.');
+                alert(
+                    'No character data found.\n\nPlease:\n1. Refresh the game page\n2. Wait for it to fully load\n3. Try again'
+                );
+                return;
+            }
+
+            const exportString = JSON.stringify(playerObj);
+            await navigator.clipboard.writeText(exportString);
+
+            button.textContent = '✓ Copied';
+            button.style.backgroundColor = '#28a745';
+            button.disabled = false;
+            setTimeout(() => resetButton(button), 3000);
+        } catch (error) {
+            console.error('[Loadout Export] Export failed:', error);
+            button.textContent = '✗ Failed';
+            button.style.backgroundColor = '#dc3545';
+            button.disabled = false;
+            setTimeout(() => resetButton(button), 3000);
+
+            if (error.name === 'NotAllowedError') {
+                alert('Clipboard access denied. Please allow clipboard permissions for this site.');
+            } else {
+                alert('Export failed: ' + error.message);
+            }
+        }
+    }
+
+    /**
+     * Reset button to original state
+     * @param {Element} button
+     */
+    function resetButton(button) {
+        button.textContent = 'Export to Sim';
+        button.style.backgroundColor = config$1.COLOR_ACCENT;
+        button.disabled = false;
+    }
+
+    /**
+     * Initialize loadout export button
+     */
+    function initialize$2() {
+        domObserver$1.register(
+            'LoadoutExportButton-Panel',
+            () => {
+                const selectedLoadout = document.querySelector('[class*="LoadoutsPanel_selectedLoadout"]');
+                if (!selectedLoadout) {
+                    // Panel closed — remove stale button reference
+                    const stale = document.getElementById(BUTTON_ID);
+                    if (stale) stale.remove();
+                    return;
+                }
+
+                injectButton(selectedLoadout);
+            },
+            { debounce: true, debounceDelay: 300 }
+        );
+    }
+
+    var loadoutExportButton = {
+        name: 'Loadout Export Button',
+        initialize: initialize$2,
+    };
 
     /**
      * Dungeon Tracker Storage
@@ -63809,594 +64779,6 @@ self.onmessage = function (e) {
     }
 
     const combatSummary = new CombatSummary();
-
-    /**
-     * Combat Simulator Export Module
-     * Constructs player data in Shykai Combat Simulator format
-     *
-     * Exports character data for solo or party simulation testing
-     */
-
-
-    // Detect if we're running on Tampermonkey or Steam
-    const hasScriptManager$2 = typeof GM_info !== 'undefined';
-
-    /**
-     * Get saved character data from storage
-     * @returns {Promise<Object|null>} Parsed character data or null
-     */
-    async function getCharacterData$1() {
-        try {
-            // Tampermonkey: Use GM storage (cross-domain, persisted)
-            if (hasScriptManager$2) {
-                const data = await webSocketHook$1.loadFromStorage('toolasha_init_character_data', null);
-                if (!data) {
-                    console.error('[Combat Sim Export] No character data found. Please refresh game page.');
-                    return null;
-                }
-                return JSON.parse(data);
-            }
-
-            // Steam: Use dataManager (which has its own fallback handling)
-            const characterData = dataManager$1.characterData;
-
-            if (!characterData) {
-                console.error('[Combat Sim Export] No character data found. Please refresh game page.');
-                return null;
-            }
-            return characterData;
-        } catch (error) {
-            console.error('[Combat Sim Export] Failed to get character data:', error);
-            return null;
-        }
-    }
-
-    /**
-     * Get saved battle data from storage
-     * @returns {Promise<Object|null>} Parsed battle data or null
-     */
-    async function getBattleData() {
-        try {
-            // Tampermonkey: Use GM storage
-            if (hasScriptManager$2) {
-                const data = await webSocketHook$1.loadFromStorage('toolasha_new_battle', null);
-                if (!data) {
-                    return null; // No battle data (not in combat or solo)
-                }
-                return JSON.parse(data);
-            }
-
-            // Steam: Use dataManager (RAM only, no GM storage available)
-            const battleData = dataManager$1.battleData;
-            if (!battleData) {
-                return null; // No battle data (not in combat or solo)
-            }
-            return battleData;
-        } catch (error) {
-            console.error('[Combat Sim Export] Failed to get battle data:', error);
-            return null;
-        }
-    }
-
-    /**
-     * Get init_client_data from storage
-     * @returns {Promise<Object|null>} Parsed client data or null
-     */
-    async function getClientData() {
-        try {
-            // Tampermonkey: Use GM storage (cross-domain, persisted)
-            if (hasScriptManager$2) {
-                const data = await webSocketHook$1.loadFromStorage('toolasha_init_client_data', null);
-                if (!data) {
-                    console.warn('[Combat Sim Export] No client data found');
-                    return null;
-                }
-                return JSON.parse(data);
-            }
-
-            // Steam: Use dataManager (RAM only, no GM storage available)
-            const clientData = dataManager$1.getInitClientData();
-            if (!clientData) {
-                console.warn('[Combat Sim Export] No client data found');
-                return null;
-            }
-            return clientData;
-        } catch (error) {
-            console.error('[Combat Sim Export] Failed to get client data:', error);
-            return null;
-        }
-    }
-
-    /**
-     * Get profile export list from storage
-     * @returns {Promise<Array>} List of saved profiles
-     */
-    async function getProfileList$1() {
-        try {
-            // Read from GM storage (cross-origin accessible, matches pattern of other combat sim data)
-            const profileListJson = await webSocketHook$1.loadFromStorage('toolasha_profile_list', '[]');
-            return JSON.parse(profileListJson);
-        } catch (error) {
-            console.error('[Combat Sim Export] Failed to get profile list:', error);
-            return [];
-        }
-    }
-
-    /**
-     * Construct player export object from own character data
-     * @param {Object} characterObj - Character data from init_character_data
-     * @param {Object} clientObj - Client data (optional)
-     * @returns {Object} Player export object
-     */
-    function constructSelfPlayer(characterObj, clientObj) {
-        const playerObj = {
-            player: {
-                attackLevel: 1,
-                magicLevel: 1,
-                meleeLevel: 1,
-                rangedLevel: 1,
-                defenseLevel: 1,
-                staminaLevel: 1,
-                intelligenceLevel: 1,
-                equipment: [],
-            },
-            food: { '/action_types/combat': [] },
-            drinks: { '/action_types/combat': [] },
-            abilities: [],
-            triggerMap: {},
-            houseRooms: {},
-        };
-
-        // Extract combat skill levels
-        for (const skill of characterObj.characterSkills || []) {
-            const skillName = skill.skillHrid.split('/').pop();
-            if (skillName && playerObj.player[skillName + 'Level'] !== undefined) {
-                playerObj.player[skillName + 'Level'] = skill.level;
-            }
-        }
-
-        // Extract equipped items - handle both formats
-        if (Array.isArray(characterObj.characterItems)) {
-            // Array format (full inventory list)
-            for (const item of characterObj.characterItems) {
-                if (item.itemLocationHrid && !item.itemLocationHrid.includes('/item_locations/inventory')) {
-                    playerObj.player.equipment.push({
-                        itemLocationHrid: item.itemLocationHrid,
-                        itemHrid: item.itemHrid,
-                        enhancementLevel: item.enhancementLevel || 0,
-                    });
-                }
-            }
-        } else if (characterObj.characterEquipment) {
-            // Object format (just equipped items)
-            for (const key in characterObj.characterEquipment) {
-                const item = characterObj.characterEquipment[key];
-                playerObj.player.equipment.push({
-                    itemLocationHrid: item.itemLocationHrid,
-                    itemHrid: item.itemHrid,
-                    enhancementLevel: item.enhancementLevel || 0,
-                });
-            }
-        }
-
-        // Initialize food and drink slots
-        for (let i = 0; i < 3; i++) {
-            playerObj.food['/action_types/combat'][i] = { itemHrid: '' };
-            playerObj.drinks['/action_types/combat'][i] = { itemHrid: '' };
-        }
-
-        // Extract food slots
-        const foodSlots = characterObj.actionTypeFoodSlotsMap?.['/action_types/combat'];
-        if (Array.isArray(foodSlots)) {
-            foodSlots.forEach((item, i) => {
-                if (i < 3 && item?.itemHrid) {
-                    playerObj.food['/action_types/combat'][i] = { itemHrid: item.itemHrid };
-                }
-            });
-        }
-
-        // Extract drink slots
-        const drinkSlots = characterObj.actionTypeDrinkSlotsMap?.['/action_types/combat'];
-        if (Array.isArray(drinkSlots)) {
-            drinkSlots.forEach((item, i) => {
-                if (i < 3 && item?.itemHrid) {
-                    playerObj.drinks['/action_types/combat'][i] = { itemHrid: item.itemHrid };
-                }
-            });
-        }
-
-        // Initialize abilities (5 slots)
-        for (let i = 0; i < 5; i++) {
-            playerObj.abilities[i] = { abilityHrid: '', level: 1 };
-        }
-
-        // Extract equipped abilities
-        let normalAbilityIndex = 1;
-        const equippedAbilities = characterObj.combatUnit?.combatAbilities || [];
-        for (const ability of equippedAbilities) {
-            if (!ability || !ability.abilityHrid) continue;
-
-            // Check if special ability
-            const isSpecial = clientObj?.abilityDetailMap?.[ability.abilityHrid]?.isSpecialAbility || false;
-
-            if (isSpecial) {
-                // Special ability goes in slot 0
-                playerObj.abilities[0] = {
-                    abilityHrid: ability.abilityHrid,
-                    level: ability.level || 1,
-                };
-            } else if (normalAbilityIndex < 5) {
-                // Normal abilities go in slots 1-4
-                playerObj.abilities[normalAbilityIndex++] = {
-                    abilityHrid: ability.abilityHrid,
-                    level: ability.level || 1,
-                };
-            }
-        }
-
-        // Extract trigger maps
-        playerObj.triggerMap = {
-            ...(characterObj.abilityCombatTriggersMap || {}),
-            ...(characterObj.consumableCombatTriggersMap || {}),
-        };
-
-        // Extract house room levels
-        for (const house of Object.values(characterObj.characterHouseRoomMap || {})) {
-            playerObj.houseRooms[house.houseRoomHrid] = house.level;
-        }
-
-        // Extract completed achievements
-        playerObj.achievements = {};
-        if (characterObj.characterAchievements) {
-            for (const achievement of characterObj.characterAchievements) {
-                if (achievement.achievementHrid && achievement.isCompleted) {
-                    playerObj.achievements[achievement.achievementHrid] = true;
-                }
-            }
-        }
-
-        return playerObj;
-    }
-
-    /**
-     * Construct party member data from profile share
-     * @param {Object} profile - Profile data from profile_shared message
-     * @param {Object} clientObj - Client data (optional)
-     * @param {Object} battleObj - Battle data (optional, for consumables)
-     * @returns {Object} Player export object
-     */
-    function constructPartyPlayer(profile, clientObj, battleObj) {
-        const playerObj = {
-            player: {
-                attackLevel: 1,
-                magicLevel: 1,
-                meleeLevel: 1,
-                rangedLevel: 1,
-                defenseLevel: 1,
-                staminaLevel: 1,
-                intelligenceLevel: 1,
-                equipment: [],
-            },
-            food: { '/action_types/combat': [] },
-            drinks: { '/action_types/combat': [] },
-            abilities: [],
-            triggerMap: {},
-            houseRooms: {},
-        };
-
-        // Extract skill levels from profile
-        for (const skill of profile.profile?.characterSkills || []) {
-            const skillName = skill.skillHrid?.split('/').pop();
-            if (skillName && playerObj.player[skillName + 'Level'] !== undefined) {
-                playerObj.player[skillName + 'Level'] = skill.level || 1;
-            }
-        }
-
-        // Extract equipment from profile
-        if (profile.profile?.wearableItemMap) {
-            for (const key in profile.profile.wearableItemMap) {
-                const item = profile.profile.wearableItemMap[key];
-                playerObj.player.equipment.push({
-                    itemLocationHrid: item.itemLocationHrid,
-                    itemHrid: item.itemHrid,
-                    enhancementLevel: item.enhancementLevel || 0,
-                });
-            }
-        }
-
-        // Initialize food and drink slots
-        for (let i = 0; i < 3; i++) {
-            playerObj.food['/action_types/combat'][i] = { itemHrid: '' };
-            playerObj.drinks['/action_types/combat'][i] = { itemHrid: '' };
-        }
-
-        // Get consumables from battle data if available
-        let battlePlayer = null;
-        if (battleObj?.players) {
-            battlePlayer = battleObj.players.find((p) => p.character?.id === profile.characterID);
-        }
-
-        if (battlePlayer?.combatConsumables) {
-            let foodIndex = 0;
-            let drinkIndex = 0;
-
-            // Intelligently separate food and drinks
-            battlePlayer.combatConsumables.forEach((consumable) => {
-                const itemHrid = consumable.itemHrid;
-
-                // Check if it's a drink
-                const isDrink =
-                    itemHrid.includes('/drinks/') ||
-                    itemHrid.includes('coffee') ||
-                    clientObj?.itemDetailMap?.[itemHrid]?.type === 'drink';
-
-                if (isDrink && drinkIndex < 3) {
-                    playerObj.drinks['/action_types/combat'][drinkIndex++] = { itemHrid: itemHrid };
-                } else if (!isDrink && foodIndex < 3) {
-                    playerObj.food['/action_types/combat'][foodIndex++] = { itemHrid: itemHrid };
-                }
-            });
-        } else {
-            // Fallback: Get consumables from profile trigger map (for non-party members)
-            // The keys of consumableCombatTriggersMap are the equipped consumable HRIDs
-            const consumableHrids = Object.keys(profile.profile?.consumableCombatTriggersMap || {});
-
-            if (consumableHrids.length > 0) {
-                let foodIndex = 0;
-                let drinkIndex = 0;
-
-                consumableHrids.forEach((itemHrid) => {
-                    // Check if it's a drink
-                    const isDrink =
-                        itemHrid.includes('/drinks/') ||
-                        itemHrid.includes('coffee') ||
-                        clientObj?.itemDetailMap?.[itemHrid]?.type === 'drink';
-
-                    if (isDrink && drinkIndex < 3) {
-                        playerObj.drinks['/action_types/combat'][drinkIndex++] = { itemHrid: itemHrid };
-                    } else if (!isDrink && foodIndex < 3) {
-                        playerObj.food['/action_types/combat'][foodIndex++] = { itemHrid: itemHrid };
-                    }
-                });
-            }
-        }
-
-        // Initialize abilities (5 slots)
-        for (let i = 0; i < 5; i++) {
-            playerObj.abilities[i] = { abilityHrid: '', level: 1 };
-        }
-
-        // Extract equipped abilities from profile
-        let normalAbilityIndex = 1;
-        const equippedAbilities = profile.profile?.equippedAbilities || [];
-        for (const ability of equippedAbilities) {
-            if (!ability || !ability.abilityHrid) continue;
-
-            // Check if special ability
-            const isSpecial = clientObj?.abilityDetailMap?.[ability.abilityHrid]?.isSpecialAbility || false;
-
-            if (isSpecial) {
-                // Special ability goes in slot 0
-                playerObj.abilities[0] = {
-                    abilityHrid: ability.abilityHrid,
-                    level: ability.level || 1,
-                };
-            } else if (normalAbilityIndex < 5) {
-                // Normal abilities go in slots 1-4
-                playerObj.abilities[normalAbilityIndex++] = {
-                    abilityHrid: ability.abilityHrid,
-                    level: ability.level || 1,
-                };
-            }
-        }
-
-        // Extract trigger maps (prefer battle data, fallback to profile)
-        playerObj.triggerMap = {
-            ...(battlePlayer?.abilityCombatTriggersMap || profile.profile?.abilityCombatTriggersMap || {}),
-            ...(battlePlayer?.consumableCombatTriggersMap || profile.profile?.consumableCombatTriggersMap || {}),
-        };
-
-        // Extract house room levels from profile
-        if (profile.profile?.characterHouseRoomMap) {
-            for (const house of Object.values(profile.profile.characterHouseRoomMap)) {
-                playerObj.houseRooms[house.houseRoomHrid] = house.level;
-            }
-        }
-
-        // Extract completed achievements from profile
-        playerObj.achievements = {};
-        if (profile.profile?.characterAchievements) {
-            for (const achievement of profile.profile.characterAchievements) {
-                if (achievement.achievementHrid && achievement.isCompleted) {
-                    playerObj.achievements[achievement.achievementHrid] = true;
-                }
-            }
-        }
-
-        return playerObj;
-    }
-
-    /**
-     * Construct full export object (solo or party)
-     * @param {string|null} externalProfileId - Optional profile ID (for viewing other players' profiles)
-     * @param {boolean} singlePlayerFormat - If true, returns player object instead of multi-player format
-     * @returns {Object} Export object with player data, IDs, positions, and zone info
-     */
-    async function constructExportObject(externalProfileId = null, singlePlayerFormat = false) {
-        const characterObj = await getCharacterData$1();
-        if (!characterObj) {
-            return null;
-        }
-
-        const clientObj = await getClientData();
-        const battleObj = await getBattleData();
-        const profileList = await getProfileList$1();
-
-        // Blank player template (as string, like MCS)
-        const BLANK =
-            '{"player":{"attackLevel":1,"magicLevel":1,"meleeLevel":1,"rangedLevel":1,"defenseLevel":1,"staminaLevel":1,"intelligenceLevel":1,"equipment":[]},"food":{"/action_types/combat":[{"itemHrid":""},{"itemHrid":""},{"itemHrid":""}]},"drinks":{"/action_types/combat":[{"itemHrid":""},{"itemHrid":""},{"itemHrid":""}]},"abilities":[{"abilityHrid":"","level":1},{"abilityHrid":"","level":1},{"abilityHrid":"","level":1},{"abilityHrid":"","level":1},{"abilityHrid":"","level":1}],"triggerMap":{},"zone":"/actions/combat/fly","simulationTime":"100","houseRooms":{"/house_rooms/dairy_barn":0,"/house_rooms/garden":0,"/house_rooms/log_shed":0,"/house_rooms/forge":0,"/house_rooms/workshop":0,"/house_rooms/sewing_parlor":0,"/house_rooms/kitchen":0,"/house_rooms/brewery":0,"/house_rooms/laboratory":0,"/house_rooms/observatory":0,"/house_rooms/dining_room":0,"/house_rooms/library":0,"/house_rooms/dojo":0,"/house_rooms/gym":0,"/house_rooms/armory":0,"/house_rooms/archery_range":0,"/house_rooms/mystical_study":0},"achievements":{}}';
-
-        // Check if exporting another player's profile
-        if (externalProfileId && externalProfileId !== characterObj.character.id) {
-            // Try to find profile in GM storage first, then fall back to memory cache
-            let profile = profileList.find((p) => p.characterID === externalProfileId);
-
-            // If not found in GM storage, check memory cache (works on Steam)
-            const cachedProfile = getCurrentProfile();
-            if (!profile && cachedProfile && cachedProfile.characterID === externalProfileId) {
-                profile = cachedProfile;
-            }
-
-            if (!profile) {
-                console.error('[Combat Sim Export] Profile not found for:', externalProfileId);
-                return null; // Profile not in cache
-            }
-
-            // Construct the player object
-            const playerObj = constructPartyPlayer(profile, clientObj, battleObj);
-
-            // If single-player format requested, return player object directly
-            if (singlePlayerFormat) {
-                // Add required fields for solo format
-                playerObj.name = profile.characterName;
-                playerObj.zone = '/actions/combat/fly';
-                playerObj.simulationTime = '100';
-
-                return {
-                    exportObj: playerObj,
-                    playerIDs: [profile.characterName, 'Player 2', 'Player 3', 'Player 4', 'Player 5'],
-                    importedPlayerPositions: [true, false, false, false, false],
-                    zone: '/actions/combat/fly',
-                    isZoneDungeon: false,
-                    difficultyTier: 0,
-                    isParty: false,
-                };
-            }
-
-            // Multi-player format (for auto-import storage)
-            const exportObj = {};
-            exportObj[1] = JSON.stringify(playerObj);
-
-            // Fill other slots with blanks
-            for (let i = 2; i <= 5; i++) {
-                exportObj[i] = BLANK;
-            }
-
-            return {
-                exportObj,
-                playerIDs: [profile.characterName, 'Player 2', 'Player 3', 'Player 4', 'Player 5'],
-                importedPlayerPositions: [true, false, false, false, false],
-                zone: '/actions/combat/fly',
-                isZoneDungeon: false,
-                difficultyTier: 0,
-                isParty: false,
-            };
-        }
-
-        // Export YOUR data (solo or party) - existing logic below
-        const exportObj = {};
-        for (let i = 1; i <= 5; i++) {
-            exportObj[i] = BLANK;
-        }
-
-        const playerIDs = ['Player 1', 'Player 2', 'Player 3', 'Player 4', 'Player 5'];
-        const importedPlayerPositions = [false, false, false, false, false];
-        let zone = '/actions/combat/fly';
-        let isZoneDungeon = false;
-        let difficultyTier = 0;
-        let isParty = false;
-        let yourSlotIndex = 1; // Track which slot contains YOUR data (for party mode)
-
-        // Check if in party
-        const hasParty = characterObj.partyInfo?.partySlotMap;
-
-        if (!hasParty) {
-            exportObj[1] = JSON.stringify(constructSelfPlayer(characterObj, clientObj));
-            playerIDs[0] = characterObj.character?.name || 'Player 1';
-            importedPlayerPositions[0] = true;
-
-            // Get current combat zone and tier
-            for (const action of characterObj.characterActions || []) {
-                if (action && action.actionHrid.includes('/actions/combat/')) {
-                    zone = action.actionHrid;
-                    difficultyTier = action.difficultyTier || 0;
-                    isZoneDungeon = clientObj?.actionDetailMap?.[action.actionHrid]?.combatZoneInfo?.isDungeon || false;
-                    break;
-                }
-            }
-        } else {
-            isParty = true;
-
-            let slotIndex = 1;
-            for (const member of Object.values(characterObj.partyInfo.partySlotMap)) {
-                if (member.characterID) {
-                    if (member.characterID === characterObj.character.id) {
-                        // This is you
-                        yourSlotIndex = slotIndex; // Remember your slot
-                        exportObj[slotIndex] = JSON.stringify(constructSelfPlayer(characterObj, clientObj));
-                        playerIDs[slotIndex - 1] = characterObj.character.name;
-                        importedPlayerPositions[slotIndex - 1] = true;
-                    } else {
-                        // Party member - try to get from profile list
-                        const profile = profileList.find((p) => p.characterID === member.characterID);
-                        if (profile) {
-                            exportObj[slotIndex] = JSON.stringify(constructPartyPlayer(profile, clientObj, battleObj));
-                            playerIDs[slotIndex - 1] = profile.characterName;
-                            importedPlayerPositions[slotIndex - 1] = true;
-                        } else {
-                            console.warn(
-                                '[Combat Sim Export] No profile found for party member',
-                                member.characterID,
-                                '- profiles have:',
-                                profileList.map((p) => p.characterID)
-                            );
-                            playerIDs[slotIndex - 1] = 'Open profile in game';
-                        }
-                    }
-                    slotIndex++;
-                }
-            }
-
-            // Get party zone and tier
-            zone = characterObj.partyInfo?.party?.actionHrid || '/actions/combat/fly';
-            difficultyTier = characterObj.partyInfo?.party?.difficultyTier || 0;
-            isZoneDungeon = clientObj?.actionDetailMap?.[zone]?.combatZoneInfo?.isDungeon || false;
-        }
-
-        // If single-player format requested, return just the player object
-        if (singlePlayerFormat && exportObj[1]) {
-            // In party mode, export YOUR data (not necessarily slot 1)
-            const slotToExport = isParty ? yourSlotIndex : 1;
-
-            // Parse the player JSON string back to an object
-            const playerObj = JSON.parse(exportObj[slotToExport]);
-
-            // Add required fields for solo format
-            playerObj.name = playerIDs[slotToExport - 1];
-            playerObj.zone = zone;
-            playerObj.simulationTime = '100';
-
-            return {
-                exportObj: playerObj, // Single player object instead of multi-player format
-                playerIDs,
-                importedPlayerPositions,
-                zone,
-                isZoneDungeon,
-                difficultyTier,
-                isParty: false, // Single player export is never party format
-            };
-        }
-
-        return {
-            exportObj,
-            playerIDs,
-            importedPlayerPositions,
-            zone,
-            isZoneDungeon,
-            difficultyTier,
-            isParty,
-        };
-    }
 
     /**
      * Skill Calculator Logic
@@ -70463,6 +70845,7 @@ self.onmessage = function (e) {
 
     toolashaRoot$1.Combat = {
         zoneIndices,
+        loadoutExportButton,
         dungeonTracker,
         dungeonTrackerUI,
         dungeonTrackerChatAnnotations,
@@ -84085,6 +84468,13 @@ self.onmessage = function (e) {
                 name: 'Character Card Button',
                 category: 'Profile',
                 module: Combat.characterCardButton,
+                async: false,
+            },
+            {
+                key: 'loadoutExportButton',
+                name: 'Loadout Export Button',
+                category: 'Combat',
+                module: Combat.loadoutExportButton,
                 async: false,
             },
             {

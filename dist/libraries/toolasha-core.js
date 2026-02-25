@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 1.13.0
+ * Version: 1.14.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -849,6 +849,12 @@
                     default: 'None',
                     options: ['None', 'Ask', 'Bid'],
                 },
+                invSort_netOfTax: {
+                    id: 'invSort_netOfTax',
+                    label: 'Show badge values net of market tax',
+                    type: 'checkbox',
+                    default: false,
+                },
                 invSort_sortEquipment: {
                     id: 'invSort_sortEquipment',
                     label: 'Enable sorting for Equipment category',
@@ -861,14 +867,6 @@
                     type: 'checkbox',
                     default: false,
                     help: 'Displays per-item ask or bid price on inventory items',
-                },
-                invBadgePrices_type: {
-                    id: 'invBadgePrices_type',
-                    label: 'Badge price type to display',
-                    type: 'select',
-                    default: 'Ask',
-                    options: ['None', 'Ask', 'Bid'],
-                    help: 'Ask (instant-buy price), Bid (instant-sell price), or None',
                 },
                 profitCalc_pricingMode: {
                     id: 'profitCalc_pricingMode',
