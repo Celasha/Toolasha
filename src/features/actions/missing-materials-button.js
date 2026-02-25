@@ -8,7 +8,7 @@ import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
 import webSocketHook from '../../core/websocket.js';
 import { findActionInput, attachInputListeners, performInitialUpdate } from '../../utils/action-panel-helper.js';
-import { ARTISAN_MATERIAL_MODE, calculateMaterialRequirements } from '../../utils/material-calculator.js';
+import { calculateMaterialRequirements } from '../../utils/material-calculator.js';
 import { formatWithSeparator } from '../../utils/formatters.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { createAutofillManager } from '../../utils/marketplace-autofill.js';
@@ -168,14 +168,7 @@ function updateButtonForPanel(panel, value) {
     // Check if user wants to ignore queue (default: false, meaning we DO account for queue)
     const ignoreQueue = config.getSetting('actions_missingMaterialsButton_ignoreQueue') || false;
     const accountForQueue = !ignoreQueue; // Invert: ignoreQueue=false means accountForQueue=true
-    const artisanModeSetting = config.getSettingValue('actions_artisanMaterialMode', ARTISAN_MATERIAL_MODE.EXPECTED);
-    const artisanMode =
-        artisanModeSetting === ARTISAN_MATERIAL_MODE.WORST_CASE
-            ? ARTISAN_MATERIAL_MODE.WORST_CASE
-            : ARTISAN_MATERIAL_MODE.EXPECTED;
-    const missingMaterials = calculateMaterialRequirements(actionHrid, numActions, accountForQueue, {
-        artisanMode,
-    });
+    const missingMaterials = calculateMaterialRequirements(actionHrid, numActions, accountForQueue);
     if (missingMaterials.length === 0) {
         return;
     }

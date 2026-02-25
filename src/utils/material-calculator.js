@@ -47,7 +47,7 @@ function calculateTotalRequired(basePerAction, artisanBonus, numActions, artisan
  * @param {string} actionHrid - Action HRID to check queue for (optional - if null, calculates for ALL queued actions)
  * @returns {Map<string, number>} Map of itemHrid -> queued quantity
  */
-export function calculateQueuedMaterialsForAction(actionHrid = null, artisanMode = ARTISAN_MATERIAL_MODE.EXPECTED) {
+export function calculateQueuedMaterialsForAction(actionHrid = null) {
     const queuedMaterials = new Map();
     const gameData = dataManager.getInitClientData();
 
@@ -62,7 +62,7 @@ export function calculateQueuedMaterialsForAction(actionHrid = null, artisanMode
         return queuedMaterials;
     }
 
-    const normalizedArtisanMode = normalizeArtisanMode(artisanMode);
+    const artisanMode = getArtisanMaterialMode();
 
     // Process each queued action
     for (const queuedAction of queuedActions) {
@@ -101,12 +101,7 @@ export function calculateQueuedMaterialsForAction(actionHrid = null, artisanMode
                 const basePerAction = input.count || input.amount || 1;
 
                 // Calculate total materials needed for this queued action
-                const totalForAction = calculateTotalRequired(
-                    basePerAction,
-                    artisanBonus,
-                    actionCount,
-                    normalizedArtisanMode
-                );
+                const totalForAction = calculateTotalRequired(basePerAction, artisanBonus, actionCount, artisanMode);
 
                 // Add to queued total
                 const currentQueued = queuedMaterials.get(input.itemHrid) || 0;
@@ -134,7 +129,7 @@ export function calculateQueuedMaterialsForAction(actionHrid = null, artisanMode
  * @param {boolean} accountForQueue - Whether to subtract queued materials from available inventory (default: false)
  * @returns {Array<Object>} Array of material requirement objects (includes upgrade items)
  */
-export function calculateMaterialRequirements(actionHrid, numActions, accountForQueue = false, options = {}) {
+export function calculateMaterialRequirements(actionHrid, numActions, accountForQueue = false) {
     const actionDetails = dataManager.getActionDetails(actionHrid);
     const inventory = dataManager.getInventory();
     const gameData = dataManager.getInitClientData();
@@ -143,18 +138,14 @@ export function calculateMaterialRequirements(actionHrid, numActions, accountFor
         return [];
     }
 
-    const normalizedArtisanMode = normalizeArtisanMode(
-        options.artisanMode === undefined ? getArtisanMaterialMode() : options.artisanMode
-    );
+    const artisanMode = getArtisanMaterialMode();
 
     // Calculate artisan bonus (material reduction from Artisan Tea)
     const artisanBonus = calculateArtisanBonus(actionDetails);
 
     // Get queued materials if accounting for queue
     // Pass null to get materials for ALL queued actions (not just matching actionHrid)
-    const queuedMaterialsMap = accountForQueue
-        ? calculateQueuedMaterialsForAction(null, normalizedArtisanMode)
-        : new Map();
+    const queuedMaterialsMap = accountForQueue ? calculateQueuedMaterialsForAction(null) : new Map();
 
     const materials = [];
 
@@ -164,12 +155,7 @@ export function calculateMaterialRequirements(actionHrid, numActions, accountFor
             const basePerAction = input.count || input.amount || 1;
 
             // Calculate total materials needed for requested actions
-            const totalRequired = calculateTotalRequired(
-                basePerAction,
-                artisanBonus,
-                numActions,
-                normalizedArtisanMode
-            );
+            const totalRequired = calculateTotalRequired(basePerAction, artisanBonus, numActions, artisanMode);
 
             const inventoryItem = inventory.find((i) => i.itemHrid === input.itemHrid);
             const have = inventoryItem?.count || 0;
