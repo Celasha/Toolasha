@@ -96,7 +96,7 @@ function handleBuyModal(modal, activeQuantity) {
     }
 
     const headerText = header.textContent.trim();
-    if (!headerText.includes('Buy Now')) {
+    if (!headerText.includes('Buy Now') && !headerText.includes('Buy Listing')) {
         return;
     }
 
