@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.16.0](https://github.com/Celasha/Toolasha/compare/v1.15.0...v1.16.0) (2026-02-25)
+
+
+### Features
+
+* clear mention badge on tab click and close popup on outside click ([c6b611f](https://github.com/Celasha/Toolasha/commit/c6b611fc7ea5ced924997cd9e858f2222c3fce14))
+
+
+### Bug Fixes
+
+* autofill quantity on both "Buy Now" and "Buy Listing" modals ([c54c8dc](https://github.com/Celasha/Toolasha/commit/c54c8dcb82336b4c8fde4f51258840c9f925ca85))
+
 ## [1.15.0](https://github.com/Celasha/Toolasha/compare/v1.14.0...v1.15.0) (2026-02-25)
 
 ### Features
