@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.17.0](https://github.com/Celasha/Toolasha/compare/v1.16.0...v1.17.0) (2026-02-25)
+
+### Features
+
+- add artisan material requirement mode (expected vs worst-case) ([66530b3](https://github.com/Celasha/Toolasha/commit/66530b33193de1fc645ba77523c57a9e99308090))
+
+### Bug Fixes
+
+- prevent double-processing of action_completed WebSocket messages ([9006063](https://github.com/Celasha/Toolasha/commit/900606308c15d77945842ad1c5e97a2e856169ea))
+- re-fit font sizes after emoji indicator update to prevent clipping ([db3da1b](https://github.com/Celasha/Toolasha/commit/db3da1b1a780a9ea894e389fb0b9ed0665e4723b))
+
+### Code Refactoring
+
+- centralize artisan mode lookup ([9a52424](https://github.com/Celasha/Toolasha/commit/9a524247ee079945044aa8bbc81db48702fbbb48))
+
 ## [1.16.0](https://github.com/Celasha/Toolasha/compare/v1.15.0...v1.16.0) (2026-02-25)
 
 ### Features
