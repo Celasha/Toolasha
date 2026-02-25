@@ -14,6 +14,7 @@ import networthCache from '../networth/networth-cache.js';
 import expectedValueCalculator from '../market/expected-value-calculator.js';
 import { getItemPrice } from '../../utils/market-data.js';
 import { parseItemCount } from '../../utils/number-parser.js';
+import { MARKET_TAX, COWBELL_BAG_HRID, COWBELL_BAG_TAX } from '../../utils/profit-constants.js';
 
 /**
  * InventoryBadgeManager class manages all inventory item badges from multiple features
@@ -455,6 +456,13 @@ class InventoryBadgeManager {
                     }
                     // Leave values at 0 (no badge will be shown)
                 }
+            }
+
+            // Apply market tax if setting is enabled
+            if (config.getSetting('invSort_netOfTax')) {
+                const taxRate = itemHrid === COWBELL_BAG_HRID ? COWBELL_BAG_TAX : MARKET_TAX;
+                askPrice *= 1 - taxRate;
+                bidPrice *= 1 - taxRate;
             }
 
             // Store per-item prices (for badge display)

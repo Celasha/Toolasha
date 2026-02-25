@@ -9,6 +9,16 @@
 export const MARKET_TAX = 0.02;
 
 /**
+ * Bag of 10 Cowbells item HRID (subject to 18% market tax)
+ */
+export const COWBELL_BAG_HRID = '/items/bag_of_10_cowbells';
+
+/**
+ * Bag of 10 Cowbells market tax rate (18%)
+ */
+export const COWBELL_BAG_TAX = 0.18;
+
+/**
  * Base drink consumption rate per hour (before Drink Concentration)
  */
 export const DRINKS_PER_HOUR_BASE = 12;
@@ -48,6 +58,8 @@ export const ALL_SKILL_TYPES = [...GATHERING_TYPES, ...PRODUCTION_TYPES];
 
 export default {
     MARKET_TAX,
+    COWBELL_BAG_HRID,
+    COWBELL_BAG_TAX,
     DRINKS_PER_HOUR_BASE,
     SECONDS_PER_HOUR,
     HOURS_PER_DAY,
