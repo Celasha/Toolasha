@@ -24,7 +24,6 @@ class GatheringStats {
         this.characterSwitchingHandler = null; // Handler for character switch cleanup
         this.isInitialized = false;
         this.itemsUpdatedDebounceTimer = null; // Debounce timer for items_updated events
-        this.actionCompletedDebounceTimer = null; // Debounce timer for action_completed events
         this.consumablesUpdatedDebounceTimer = null; // Debounce timer for consumables_updated events
         this.indicatorUpdateDebounceTimer = null; // Debounce timer for indicator rendering
         this.DEBOUNCE_DELAY = 300; // 300ms debounce for event handlers
@@ -56,13 +55,6 @@ class GatheringStats {
                 this.updateAllStats();
             }, this.DEBOUNCE_DELAY);
         };
-        this.actionCompletedHandler = () => {
-            clearTimeout(this.actionCompletedDebounceTimer);
-            this.actionCompletedDebounceTimer = setTimeout(() => {
-                this.updateAllStats();
-            }, this.DEBOUNCE_DELAY);
-        };
-
         this.consumablesUpdatedHandler = () => {
             clearTimeout(this.consumablesUpdatedDebounceTimer);
             this.consumablesUpdatedDebounceTimer = setTimeout(() => {
@@ -76,7 +68,6 @@ class GatheringStats {
 
         // Event-driven updates (no polling needed)
         dataManager.on('items_updated', this.itemsUpdatedHandler);
-        dataManager.on('action_completed', this.actionCompletedHandler);
         dataManager.on('consumables_updated', this.consumablesUpdatedHandler);
         dataManager.on('character_switching', this.characterSwitchingHandler);
     }
@@ -403,6 +394,9 @@ class GatheringStats {
             if (overallSpan) {
                 overallSpan.textContent = stripEmoji(overallSpan.textContent) + (isBestOverall ? ' 🏆' : '');
             }
+
+            // Re-fit font sizes now that emoji may have changed span widths.
+            this.fitLineFontSizes(actionPanel, data.displayElement);
         }
     }
 
@@ -547,10 +541,7 @@ class GatheringStats {
             dataManager.off('items_updated', this.itemsUpdatedHandler);
             this.itemsUpdatedHandler = null;
         }
-        if (this.actionCompletedHandler) {
-            dataManager.off('action_completed', this.actionCompletedHandler);
-            this.actionCompletedHandler = null;
-        }
+
         if (this.consumablesUpdatedHandler) {
             dataManager.off('consumables_updated', this.consumablesUpdatedHandler);
             this.consumablesUpdatedHandler = null;
