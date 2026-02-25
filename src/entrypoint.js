@@ -286,6 +286,13 @@ function registerFeatures() {
             async: false,
         },
         {
+            key: 'loadoutExportButton',
+            name: 'Loadout Export Button',
+            category: 'Combat',
+            module: Combat.loadoutExportButton,
+            async: false,
+        },
+        {
             key: 'dungeonTracker',
             name: 'Dungeon Tracker',
             category: 'Combat',
