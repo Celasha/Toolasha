@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 1.16.0
+ * Version: 1.17.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -6098,6 +6098,41 @@ self.onmessage = function (e) {
      */
 
 
+    const ARTISAN_MATERIAL_MODE = {
+        EXPECTED: 'expected',
+        WORST_CASE: 'worst-case',
+    };
+
+    function normalizeArtisanMode(mode) {
+        return mode === ARTISAN_MATERIAL_MODE.WORST_CASE
+            ? ARTISAN_MATERIAL_MODE.WORST_CASE
+            : ARTISAN_MATERIAL_MODE.EXPECTED;
+    }
+
+    /**
+     * Get artisan material mode setting.
+     * @returns {string}
+     */
+    function getArtisanMaterialMode() {
+        const setting = config.getSettingValue('actions_artisanMaterialMode', ARTISAN_MATERIAL_MODE.EXPECTED);
+        return normalizeArtisanMode(setting);
+    }
+    /**
+     * Calculate total materials required, optionally using conservative per-action rounding.
+     * @param {number} basePerAction
+     * @param {number} artisanBonus
+     * @param {number} numActions
+     * @param {string} artisanMode
+     * @returns {number}
+     */
+    function calculateTotalRequired(basePerAction, artisanBonus, numActions, artisanMode) {
+        const materialsPerAction = basePerAction * (1 - artisanBonus);
+        if (artisanMode === ARTISAN_MATERIAL_MODE.WORST_CASE) {
+            return Math.ceil(materialsPerAction) * numActions;
+        }
+        return Math.ceil(materialsPerAction * numActions);
+    }
+
     /**
      * Calculate materials reserved by queued actions
      * @param {string} actionHrid - Action HRID to check queue for (optional - if null, calculates for ALL queued actions)
@@ -6117,6 +6152,8 @@ self.onmessage = function (e) {
         if (!queuedActions || queuedActions.length === 0) {
             return queuedMaterials;
         }
+
+        const artisanMode = getArtisanMaterialMode();
 
         // Process each queued action
         for (const queuedAction of queuedActions) {
@@ -6154,11 +6191,8 @@ self.onmessage = function (e) {
                 for (const input of actionDetails.inputItems) {
                     const basePerAction = input.count || input.amount || 1;
 
-                    // Apply artisan reduction (same formula as profit-calculator)
-                    const materialsPerAction = basePerAction * (1 - artisanBonus);
-
                     // Calculate total materials needed for this queued action
-                    const totalForAction = Math.ceil(materialsPerAction * actionCount);
+                    const totalForAction = calculateTotalRequired(basePerAction, artisanBonus, actionCount, artisanMode);
 
                     // Add to queued total
                     const currentQueued = queuedMaterials.get(input.itemHrid) || 0;
@@ -6195,6 +6229,8 @@ self.onmessage = function (e) {
             return [];
         }
 
+        const artisanMode = getArtisanMaterialMode();
+
         // Calculate artisan bonus (material reduction from Artisan Tea)
         const artisanBonus = calculateArtisanBonus(actionDetails);
 
@@ -6209,13 +6245,8 @@ self.onmessage = function (e) {
             for (const input of actionDetails.inputItems) {
                 const basePerAction = input.count || input.amount || 1;
 
-                // Apply artisan reduction to materials
-                // Materials are consumed PER ACTION
-                // Efficiency gives bonus actions for FREE (no material cost)
-                const materialsPerAction = basePerAction * (1 - artisanBonus);
-
                 // Calculate total materials needed for requested actions
-                const totalRequired = Math.ceil(materialsPerAction * numActions);
+                const totalRequired = calculateTotalRequired(basePerAction, artisanBonus, numActions, artisanMode);
 
                 const inventoryItem = inventory.find((i) => i.itemHrid === input.itemHrid);
                 const have = inventoryItem?.count || 0;
@@ -6306,6 +6337,7 @@ self.onmessage = function (e) {
 
     var materialCalculator = /*#__PURE__*/Object.freeze({
         __proto__: null,
+        ARTISAN_MATERIAL_MODE: ARTISAN_MATERIAL_MODE,
         calculateMaterialRequirements: calculateMaterialRequirements,
         calculateQueuedMaterialsForAction: calculateQueuedMaterialsForAction
     });

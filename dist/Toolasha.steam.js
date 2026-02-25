@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      1.16.0
+// @version      1.17.0
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -15514,6 +15514,17 @@ return plugin;
                         { value: 'optimistic', label: 'Optimistic (Bid/Ask - patient trading)' },
                     ],
                 },
+                actions_artisanMaterialMode: {
+                    id: 'actions_artisanMaterialMode',
+                    label: 'Missing materials: Artisan requirement mode',
+                    type: 'select',
+                    default: 'expected',
+                    options: [
+                        { value: 'expected', label: 'Expected value (average)' },
+                        { value: 'worst-case', label: 'Worst-case per action (ceil per craft)' },
+                    ],
+                    help: 'Choose how missing materials accounts for Artisan Tea reductions when suggesting what to buy.',
+                },
                 networth_highEnhancementUseCost: {
                     id: 'networth_highEnhancementUseCost',
                     label: 'Use enhancement cost for highly enhanced items',
@@ -16540,6 +16551,7 @@ return plugin;
              * Uses message content (first 100 chars) as key since same message can have different event objects
              */
             this.processedMessages = new Map(); // message hash -> timestamp
+            this.recentActionCompleted = new Map(); // message content -> timestamp (50ms TTL dedup)
             this.messageCleanupInterval = null;
             this.isSocketWrapped = false;
             this.originalWebSocket = null;
@@ -16861,6 +16873,25 @@ return plugin;
                 // Cleanup old entries every 100 messages to prevent memory leak
                 if (this.processedMessages.size > 100) {
                     this.cleanupProcessedMessages();
+                }
+            } else if (messageType === 'action_completed') {
+                // action_completed bypasses the content-hash dedup (Gabriel's fix, commit 1007215)
+                // but the WebSocket prototype wrapper can fire two listeners for the same physical
+                // message object. The WeakSet guard catches same-object duplicates, but if two
+                // independent listeners each receive a distinct MessageEvent wrapping the same
+                // payload, both pass the WeakSet check and processMessage is called twice.
+                // Use a short 50ms TTL keyed on full message content to collapse these duplicates.
+                // Two genuine consecutive action_completed messages are always seconds apart.
+                const now = Date.now();
+                if (this.recentActionCompleted.has(message)) {
+                    return; // Duplicate from second listener — skip
+                }
+                this.recentActionCompleted.set(message, now);
+                // Prune entries older than 50ms to keep memory bounded
+                for (const [key, ts] of this.recentActionCompleted) {
+                    if (now - ts > 50) {
+                        this.recentActionCompleted.delete(key);
+                    }
                 }
             }
 
@@ -26257,6 +26288,41 @@ self.onmessage = function (e) {
      */
 
 
+    const ARTISAN_MATERIAL_MODE = {
+        EXPECTED: 'expected',
+        WORST_CASE: 'worst-case',
+    };
+
+    function normalizeArtisanMode(mode) {
+        return mode === ARTISAN_MATERIAL_MODE.WORST_CASE
+            ? ARTISAN_MATERIAL_MODE.WORST_CASE
+            : ARTISAN_MATERIAL_MODE.EXPECTED;
+    }
+
+    /**
+     * Get artisan material mode setting.
+     * @returns {string}
+     */
+    function getArtisanMaterialMode() {
+        const setting = config$1.getSettingValue('actions_artisanMaterialMode', ARTISAN_MATERIAL_MODE.EXPECTED);
+        return normalizeArtisanMode(setting);
+    }
+    /**
+     * Calculate total materials required, optionally using conservative per-action rounding.
+     * @param {number} basePerAction
+     * @param {number} artisanBonus
+     * @param {number} numActions
+     * @param {string} artisanMode
+     * @returns {number}
+     */
+    function calculateTotalRequired(basePerAction, artisanBonus, numActions, artisanMode) {
+        const materialsPerAction = basePerAction * (1 - artisanBonus);
+        if (artisanMode === ARTISAN_MATERIAL_MODE.WORST_CASE) {
+            return Math.ceil(materialsPerAction) * numActions;
+        }
+        return Math.ceil(materialsPerAction * numActions);
+    }
+
     /**
      * Calculate materials reserved by queued actions
      * @param {string} actionHrid - Action HRID to check queue for (optional - if null, calculates for ALL queued actions)
@@ -26276,6 +26342,8 @@ self.onmessage = function (e) {
         if (!queuedActions || queuedActions.length === 0) {
             return queuedMaterials;
         }
+
+        const artisanMode = getArtisanMaterialMode();
 
         // Process each queued action
         for (const queuedAction of queuedActions) {
@@ -26313,11 +26381,8 @@ self.onmessage = function (e) {
                 for (const input of actionDetails.inputItems) {
                     const basePerAction = input.count || input.amount || 1;
 
-                    // Apply artisan reduction (same formula as profit-calculator)
-                    const materialsPerAction = basePerAction * (1 - artisanBonus);
-
                     // Calculate total materials needed for this queued action
-                    const totalForAction = Math.ceil(materialsPerAction * actionCount);
+                    const totalForAction = calculateTotalRequired(basePerAction, artisanBonus, actionCount, artisanMode);
 
                     // Add to queued total
                     const currentQueued = queuedMaterials.get(input.itemHrid) || 0;
@@ -26354,6 +26419,8 @@ self.onmessage = function (e) {
             return [];
         }
 
+        const artisanMode = getArtisanMaterialMode();
+
         // Calculate artisan bonus (material reduction from Artisan Tea)
         const artisanBonus = calculateArtisanBonus(actionDetails);
 
@@ -26368,13 +26435,8 @@ self.onmessage = function (e) {
             for (const input of actionDetails.inputItems) {
                 const basePerAction = input.count || input.amount || 1;
 
-                // Apply artisan reduction to materials
-                // Materials are consumed PER ACTION
-                // Efficiency gives bonus actions for FREE (no material cost)
-                const materialsPerAction = basePerAction * (1 - artisanBonus);
-
                 // Calculate total materials needed for requested actions
-                const totalRequired = Math.ceil(materialsPerAction * numActions);
+                const totalRequired = calculateTotalRequired(basePerAction, artisanBonus, numActions, artisanMode);
 
                 const inventoryItem = inventory.find((i) => i.itemHrid === input.itemHrid);
                 const have = inventoryItem?.count || 0;
@@ -26465,6 +26527,7 @@ self.onmessage = function (e) {
 
     var materialCalculator = /*#__PURE__*/Object.freeze({
         __proto__: null,
+        ARTISAN_MATERIAL_MODE: ARTISAN_MATERIAL_MODE,
         calculateMaterialRequirements: calculateMaterialRequirements,
         calculateQueuedMaterialsForAction: calculateQueuedMaterialsForAction
     });
@@ -51556,7 +51619,6 @@ self.onmessage = function (e) {
             this.actionNameToHridCache = null; // Cached reverse lookup map (name → hrid)
             this.isInitialized = false;
             this.itemsUpdatedDebounceTimer = null; // Debounce timer for items_updated events
-            this.actionCompletedDebounceTimer = null; // Debounce timer for action_completed events
             this.DEBOUNCE_DELAY = 300; // 300ms debounce for event handlers
             this.timerRegistry = createTimerRegistry();
         }
@@ -51587,19 +51649,12 @@ self.onmessage = function (e) {
                     this.updateAllCounts();
                 }, this.DEBOUNCE_DELAY);
             };
-            this.actionCompletedHandler = () => {
-                clearTimeout(this.actionCompletedDebounceTimer);
-                this.actionCompletedDebounceTimer = setTimeout(() => {
-                    this.updateAllCounts();
-                }, this.DEBOUNCE_DELAY);
-            };
             this.characterSwitchingHandler = () => {
                 this.clearAllReferences();
             };
 
             // Event-driven updates (no polling needed)
             dataManager$1.on('items_updated', this.itemsUpdatedHandler);
-            dataManager$1.on('action_completed', this.actionCompletedHandler);
             dataManager$1.on('character_switching', this.characterSwitchingHandler);
         }
 
@@ -52122,6 +52177,9 @@ self.onmessage = function (e) {
                 if (overallSpan) {
                     overallSpan.textContent = stripEmoji(overallSpan.textContent) + (isBestOverall ? ' 🏆' : '');
                 }
+
+                // Re-fit font sizes now that emoji may have changed span widths.
+                this.fitLineFontSizes(actionPanel, data.displayElement);
             }
         }
 
@@ -52278,10 +52336,7 @@ self.onmessage = function (e) {
                 dataManager$1.off('items_updated', this.itemsUpdatedHandler);
                 this.itemsUpdatedHandler = null;
             }
-            if (this.actionCompletedHandler) {
-                dataManager$1.off('action_completed', this.actionCompletedHandler);
-                this.actionCompletedHandler = null;
-            }
+
             if (this.characterSwitchingHandler) {
                 dataManager$1.off('character_switching', this.characterSwitchingHandler);
                 this.characterSwitchingHandler = null;
@@ -52330,7 +52385,6 @@ self.onmessage = function (e) {
             this.characterSwitchingHandler = null; // Handler for character switch cleanup
             this.isInitialized = false;
             this.itemsUpdatedDebounceTimer = null; // Debounce timer for items_updated events
-            this.actionCompletedDebounceTimer = null; // Debounce timer for action_completed events
             this.consumablesUpdatedDebounceTimer = null; // Debounce timer for consumables_updated events
             this.indicatorUpdateDebounceTimer = null; // Debounce timer for indicator rendering
             this.DEBOUNCE_DELAY = 300; // 300ms debounce for event handlers
@@ -52362,13 +52416,6 @@ self.onmessage = function (e) {
                     this.updateAllStats();
                 }, this.DEBOUNCE_DELAY);
             };
-            this.actionCompletedHandler = () => {
-                clearTimeout(this.actionCompletedDebounceTimer);
-                this.actionCompletedDebounceTimer = setTimeout(() => {
-                    this.updateAllStats();
-                }, this.DEBOUNCE_DELAY);
-            };
-
             this.consumablesUpdatedHandler = () => {
                 clearTimeout(this.consumablesUpdatedDebounceTimer);
                 this.consumablesUpdatedDebounceTimer = setTimeout(() => {
@@ -52382,7 +52429,6 @@ self.onmessage = function (e) {
 
             // Event-driven updates (no polling needed)
             dataManager$1.on('items_updated', this.itemsUpdatedHandler);
-            dataManager$1.on('action_completed', this.actionCompletedHandler);
             dataManager$1.on('consumables_updated', this.consumablesUpdatedHandler);
             dataManager$1.on('character_switching', this.characterSwitchingHandler);
         }
@@ -52709,6 +52755,9 @@ self.onmessage = function (e) {
                 if (overallSpan) {
                     overallSpan.textContent = stripEmoji(overallSpan.textContent) + (isBestOverall ? ' 🏆' : '');
                 }
+
+                // Re-fit font sizes now that emoji may have changed span widths.
+                this.fitLineFontSizes(actionPanel, data.displayElement);
             }
         }
 
@@ -52853,10 +52902,7 @@ self.onmessage = function (e) {
                 dataManager$1.off('items_updated', this.itemsUpdatedHandler);
                 this.itemsUpdatedHandler = null;
             }
-            if (this.actionCompletedHandler) {
-                dataManager$1.off('action_completed', this.actionCompletedHandler);
-                this.actionCompletedHandler = null;
-            }
+
             if (this.consumablesUpdatedHandler) {
                 dataManager$1.off('consumables_updated', this.consumablesUpdatedHandler);
                 this.consumablesUpdatedHandler = null;
@@ -55880,7 +55926,6 @@ self.onmessage = function (e) {
             this.detailPanels = new Set();
             this.unregisterObservers = [];
             this.itemsUpdatedHandler = null;
-            this.actionCompletedHandler = null;
             this.isInitialized = false;
             this.DEBOUNCE_DELAY = 300;
             this.debounceTimer = null;
@@ -55900,17 +55945,10 @@ self.onmessage = function (e) {
                 this.debounceTimer = setTimeout(() => this._refreshAll(), this.DEBOUNCE_DELAY);
             };
 
-            this.actionCompletedHandler = () => {
-                clearTimeout(this.debounceTimer);
-                this.debounceTimer = setTimeout(() => this._refreshAll(), this.DEBOUNCE_DELAY);
-            };
-
             dataManager$1.on('items_updated', this.itemsUpdatedHandler);
-            dataManager$1.on('action_completed', this.actionCompletedHandler);
 
             this.unregisterObservers.push(() => {
                 dataManager$1.off('items_updated', this.itemsUpdatedHandler);
-                dataManager$1.off('action_completed', this.actionCompletedHandler);
             });
         }
 

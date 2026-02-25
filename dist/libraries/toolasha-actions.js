@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 1.16.0
+ * Version: 1.17.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -8439,7 +8439,6 @@
             this.actionNameToHridCache = null; // Cached reverse lookup map (name → hrid)
             this.isInitialized = false;
             this.itemsUpdatedDebounceTimer = null; // Debounce timer for items_updated events
-            this.actionCompletedDebounceTimer = null; // Debounce timer for action_completed events
             this.DEBOUNCE_DELAY = 300; // 300ms debounce for event handlers
             this.timerRegistry = timerRegistry_js.createTimerRegistry();
         }
@@ -8470,19 +8469,12 @@
                     this.updateAllCounts();
                 }, this.DEBOUNCE_DELAY);
             };
-            this.actionCompletedHandler = () => {
-                clearTimeout(this.actionCompletedDebounceTimer);
-                this.actionCompletedDebounceTimer = setTimeout(() => {
-                    this.updateAllCounts();
-                }, this.DEBOUNCE_DELAY);
-            };
             this.characterSwitchingHandler = () => {
                 this.clearAllReferences();
             };
 
             // Event-driven updates (no polling needed)
             dataManager.on('items_updated', this.itemsUpdatedHandler);
-            dataManager.on('action_completed', this.actionCompletedHandler);
             dataManager.on('character_switching', this.characterSwitchingHandler);
         }
 
@@ -9005,6 +8997,9 @@
                 if (overallSpan) {
                     overallSpan.textContent = stripEmoji(overallSpan.textContent) + (isBestOverall ? ' 🏆' : '');
                 }
+
+                // Re-fit font sizes now that emoji may have changed span widths.
+                this.fitLineFontSizes(actionPanel, data.displayElement);
             }
         }
 
@@ -9161,10 +9156,7 @@
                 dataManager.off('items_updated', this.itemsUpdatedHandler);
                 this.itemsUpdatedHandler = null;
             }
-            if (this.actionCompletedHandler) {
-                dataManager.off('action_completed', this.actionCompletedHandler);
-                this.actionCompletedHandler = null;
-            }
+
             if (this.characterSwitchingHandler) {
                 dataManager.off('character_switching', this.characterSwitchingHandler);
                 this.characterSwitchingHandler = null;
@@ -9213,7 +9205,6 @@
             this.characterSwitchingHandler = null; // Handler for character switch cleanup
             this.isInitialized = false;
             this.itemsUpdatedDebounceTimer = null; // Debounce timer for items_updated events
-            this.actionCompletedDebounceTimer = null; // Debounce timer for action_completed events
             this.consumablesUpdatedDebounceTimer = null; // Debounce timer for consumables_updated events
             this.indicatorUpdateDebounceTimer = null; // Debounce timer for indicator rendering
             this.DEBOUNCE_DELAY = 300; // 300ms debounce for event handlers
@@ -9245,13 +9236,6 @@
                     this.updateAllStats();
                 }, this.DEBOUNCE_DELAY);
             };
-            this.actionCompletedHandler = () => {
-                clearTimeout(this.actionCompletedDebounceTimer);
-                this.actionCompletedDebounceTimer = setTimeout(() => {
-                    this.updateAllStats();
-                }, this.DEBOUNCE_DELAY);
-            };
-
             this.consumablesUpdatedHandler = () => {
                 clearTimeout(this.consumablesUpdatedDebounceTimer);
                 this.consumablesUpdatedDebounceTimer = setTimeout(() => {
@@ -9265,7 +9249,6 @@
 
             // Event-driven updates (no polling needed)
             dataManager.on('items_updated', this.itemsUpdatedHandler);
-            dataManager.on('action_completed', this.actionCompletedHandler);
             dataManager.on('consumables_updated', this.consumablesUpdatedHandler);
             dataManager.on('character_switching', this.characterSwitchingHandler);
         }
@@ -9592,6 +9575,9 @@
                 if (overallSpan) {
                     overallSpan.textContent = stripEmoji(overallSpan.textContent) + (isBestOverall ? ' 🏆' : '');
                 }
+
+                // Re-fit font sizes now that emoji may have changed span widths.
+                this.fitLineFontSizes(actionPanel, data.displayElement);
             }
         }
 
@@ -9736,10 +9722,7 @@
                 dataManager.off('items_updated', this.itemsUpdatedHandler);
                 this.itemsUpdatedHandler = null;
             }
-            if (this.actionCompletedHandler) {
-                dataManager.off('action_completed', this.actionCompletedHandler);
-                this.actionCompletedHandler = null;
-            }
+
             if (this.consumablesUpdatedHandler) {
                 dataManager.off('consumables_updated', this.consumablesUpdatedHandler);
                 this.consumablesUpdatedHandler = null;
@@ -12763,7 +12746,6 @@
             this.detailPanels = new Set();
             this.unregisterObservers = [];
             this.itemsUpdatedHandler = null;
-            this.actionCompletedHandler = null;
             this.isInitialized = false;
             this.DEBOUNCE_DELAY = 300;
             this.debounceTimer = null;
@@ -12783,17 +12765,10 @@
                 this.debounceTimer = setTimeout(() => this._refreshAll(), this.DEBOUNCE_DELAY);
             };
 
-            this.actionCompletedHandler = () => {
-                clearTimeout(this.debounceTimer);
-                this.debounceTimer = setTimeout(() => this._refreshAll(), this.DEBOUNCE_DELAY);
-            };
-
             dataManager.on('items_updated', this.itemsUpdatedHandler);
-            dataManager.on('action_completed', this.actionCompletedHandler);
 
             this.unregisterObservers.push(() => {
                 dataManager.off('items_updated', this.itemsUpdatedHandler);
-                dataManager.off('action_completed', this.actionCompletedHandler);
             });
         }
 
