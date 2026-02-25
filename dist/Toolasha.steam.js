@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      1.14.0
+// @version      1.15.0
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -15821,6 +15821,12 @@ return plugin;
                 itemIconLevel: {
                     id: 'itemIconLevel',
                     label: 'Bottom left corner of icons: Show equipment level',
+                    type: 'checkbox',
+                    default: true,
+                },
+                loadoutEnhancementDisplay: {
+                    id: 'loadoutEnhancementDisplay',
+                    label: 'Loadout panel: Show highest-owned enhancement level on equipment icons',
                     type: 'checkbox',
                     default: true,
                 },
@@ -53553,7 +53559,7 @@ self.onmessage = function (e) {
     /**
      * Initialize missing materials button feature
      */
-    function initialize$3() {
+    function initialize$4() {
         cleanupObserver = setupMarketplaceCleanupObserver(handleMarketplaceCleanup, currentMaterialsTabs);
         autofillManager.initialize();
 
@@ -53571,7 +53577,7 @@ self.onmessage = function (e) {
     /**
      * Cleanup function
      */
-    function cleanup$1() {
+    function cleanup$2() {
         if (domObserverUnregister) {
             domObserverUnregister();
             domObserverUnregister = null;
@@ -54069,8 +54075,8 @@ self.onmessage = function (e) {
     }
 
     var missingMaterialsButton = {
-        initialize: initialize$3,
-        cleanup: cleanup$1,
+        initialize: initialize$4,
+        cleanup: cleanup$2,
     };
 
     /**
@@ -59413,7 +59419,7 @@ self.onmessage = function (e) {
      * Covers both currently equipped items and inventory items.
      * @returns {Map<string, number>}
      */
-    function buildEnhancementLevelMap() {
+    function buildEnhancementLevelMap$1() {
         const inventory = dataManager$1.getInventory();
         const map = new Map();
         if (!inventory) return map;
@@ -59473,7 +59479,7 @@ self.onmessage = function (e) {
         const equipDiv = selectedLoadout.querySelector('[class*="LoadoutsPanel_equipment"]');
         if (!equipDiv) return [];
 
-        const enhancementMap = buildEnhancementLevelMap();
+        const enhancementMap = buildEnhancementLevelMap$1();
         const equipment = [];
         const uses = equipDiv.querySelectorAll('use');
 
@@ -59711,7 +59717,7 @@ self.onmessage = function (e) {
     /**
      * Initialize loadout export button
      */
-    function initialize$2() {
+    function initialize$3() {
         domObserver$1.register(
             'LoadoutExportButton-Panel',
             () => {
@@ -59731,7 +59737,146 @@ self.onmessage = function (e) {
 
     var loadoutExportButton = {
         name: 'Loadout Export Button',
+        initialize: initialize$3,
+    };
+
+    /**
+     * Loadout Enhancement Display
+     * Shows highest-owned enhancement level on equipment icons in the loadout panel
+     *
+     * Scrapes characterItems for the highest enhancementLevel per itemHrid,
+     * then injects a "+N" overlay (upper-right) on each loadout equipment icon.
+     */
+
+
+    const OVERLAY_CLASS = 'script_loadoutEnhLevel';
+
+    /**
+     * Build a map of itemHrid → highest enhancementLevel across all character items.
+     * @returns {Map<string, number>}
+     */
+    function buildEnhancementLevelMap() {
+        const inventory = dataManager$1.getInventory();
+        const map = new Map();
+        if (!inventory) return map;
+
+        for (const item of inventory) {
+            if (!item.itemHrid || item.count === 0) continue;
+            const existing = map.get(item.itemHrid) ?? 0;
+            const level = item.enhancementLevel ?? 0;
+            if (level > existing) {
+                map.set(item.itemHrid, level);
+            }
+        }
+        return map;
+    }
+
+    /**
+     * Inject enhancement level overlays on all equipment icons in the loadout panel.
+     */
+    function annotateLoadout() {
+        if (!config$1.getSetting('loadoutEnhancementDisplay')) return;
+
+        const selectedLoadout = document.querySelector('[class*="LoadoutsPanel_selectedLoadout"]');
+        if (!selectedLoadout) return;
+
+        const equipDiv = selectedLoadout.querySelector('[class*="LoadoutsPanel_equipment"]');
+        if (!equipDiv) return;
+
+        // Remove any stale overlays from a previous loadout selection
+        for (const el of equipDiv.querySelectorAll(`.${OVERLAY_CLASS}`)) {
+            el.remove();
+        }
+
+        const enhancementMap = buildEnhancementLevelMap();
+
+        const uses = equipDiv.querySelectorAll('use');
+        for (const use of uses) {
+            const href = use.getAttribute('href') || use.getAttribute('xlink:href') || '';
+            if (!href.includes('items_sprite')) continue;
+
+            const fragment = href.split('#')[1];
+            if (!fragment) continue;
+            const itemHrid = `/items/${fragment}`;
+
+            const enhLevel = enhancementMap.get(itemHrid) ?? 0;
+            if (enhLevel === 0) continue;
+
+            // DOM: use → svg → Item_iconContainer → Item_item__
+            const svg = use.closest('svg');
+            if (!svg) continue;
+            const itemDiv = svg.parentElement?.parentElement;
+            if (!itemDiv) continue;
+
+            // Skip if already annotated
+            if (itemDiv.querySelector(`.${OVERLAY_CLASS}`)) continue;
+
+            itemDiv.style.position = 'relative';
+            const overlay = document.createElement('div');
+            overlay.className = OVERLAY_CLASS;
+            overlay.textContent = `+${enhLevel}`;
+            overlay.style.cssText = `
+            z-index: 1;
+            position: absolute;
+            top: 2px;
+            right: 2px;
+            text-align: right;
+            color: ${config$1.COLOR_ACCENT};
+            font-size: 10px;
+            font-weight: bold;
+            text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 0 3px #000;
+            pointer-events: none;
+        `;
+            itemDiv.appendChild(overlay);
+        }
+    }
+
+    /**
+     * Remove all loadout enhancement overlays from the page.
+     */
+    function removeOverlays() {
+        for (const el of document.querySelectorAll(`.${OVERLAY_CLASS}`)) {
+            el.remove();
+        }
+    }
+
+    let unregisterHandler = null;
+
+    function initialize$2() {
+        if (!config$1.getSetting('loadoutEnhancementDisplay')) return;
+
+        unregisterHandler = domObserver$1.register(
+            'LoadoutEnhancementDisplay',
+            () => {
+                annotateLoadout();
+            },
+            { debounce: true, debounceDelay: 200 }
+        );
+
+        // Run immediately for any already-open loadout
+        annotateLoadout();
+
+        config$1.onSettingChange('loadoutEnhancementDisplay', (enabled) => {
+            if (enabled) {
+                annotateLoadout();
+            } else {
+                removeOverlays();
+            }
+        });
+    }
+
+    function cleanup$1() {
+        if (unregisterHandler) {
+            unregisterHandler();
+            unregisterHandler = null;
+        }
+        removeOverlays();
+    }
+
+    var loadoutEnhancementDisplay = {
+        name: 'Loadout Enhancement Display',
         initialize: initialize$2,
+        cleanup: cleanup$1,
     };
 
     /**
@@ -70846,6 +70991,7 @@ self.onmessage = function (e) {
     toolashaRoot$1.Combat = {
         zoneIndices,
         loadoutExportButton,
+        loadoutEnhancementDisplay,
         dungeonTracker,
         dungeonTrackerUI,
         dungeonTrackerChatAnnotations,
@@ -84475,6 +84621,13 @@ self.onmessage = function (e) {
                 name: 'Loadout Export Button',
                 category: 'Combat',
                 module: Combat.loadoutExportButton,
+                async: false,
+            },
+            {
+                key: 'loadoutEnhancementDisplay',
+                name: 'Loadout Enhancement Display',
+                category: 'Combat',
+                module: Combat.loadoutEnhancementDisplay,
                 async: false,
             },
             {

@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 1.14.0
+ * Version: 1.15.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1186,6 +1186,12 @@
                 itemIconLevel: {
                     id: 'itemIconLevel',
                     label: 'Bottom left corner of icons: Show equipment level',
+                    type: 'checkbox',
+                    default: true,
+                },
+                loadoutEnhancementDisplay: {
+                    id: 'loadoutEnhancementDisplay',
+                    label: 'Loadout panel: Show highest-owned enhancement level on equipment icons',
                     type: 'checkbox',
                     default: true,
                 },
