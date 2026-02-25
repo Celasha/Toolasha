@@ -456,6 +456,17 @@ export const settingsGroups = {
                     { value: 'optimistic', label: 'Optimistic (Bid/Ask - patient trading)' },
                 ],
             },
+            actions_artisanMaterialMode: {
+                id: 'actions_artisanMaterialMode',
+                label: 'Missing materials: Artisan requirement mode',
+                type: 'select',
+                default: 'expected',
+                options: [
+                    { value: 'expected', label: 'Expected value (average)' },
+                    { value: 'worst-case', label: 'Worst-case per action (ceil per craft)' },
+                ],
+                help: 'Choose how missing materials accounts for Artisan Tea reductions when suggesting what to buy.',
+            },
             networth_highEnhancementUseCost: {
                 id: 'networth_highEnhancementUseCost',
                 label: 'Use enhancement cost for highly enhanced items',
