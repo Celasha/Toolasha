@@ -16,6 +16,9 @@ class MentionPopup {
         this.dragOffset = { x: 0, y: 0 };
         this.dragMoveHandler = null;
         this.dragUpHandler = null;
+
+        // Click-outside handler
+        this.clickOutsideHandler = null;
     }
 
     /**
@@ -161,6 +164,7 @@ class MentionPopup {
         document.body.appendChild(this.container);
 
         this._setupDragging(header);
+        this._setupClickOutside();
     }
 
     /**
@@ -238,6 +242,19 @@ class MentionPopup {
     }
 
     /**
+     * Close the popup when clicking outside of it
+     */
+    _setupClickOutside() {
+        this.clickOutsideHandler = (e) => {
+            if (this.container && !this.container.contains(e.target)) {
+                this.close();
+            }
+        };
+        // Use mousedown so it fires before any other click handlers
+        document.addEventListener('mousedown', this.clickOutsideHandler);
+    }
+
+    /**
      * Set up drag behaviour on the header element
      * @param {HTMLElement} header
      */
@@ -295,6 +312,10 @@ class MentionPopup {
         if (this.dragUpHandler) {
             document.removeEventListener('mouseup', this.dragUpHandler);
             this.dragUpHandler = null;
+        }
+        if (this.clickOutsideHandler) {
+            document.removeEventListener('mousedown', this.clickOutsideHandler);
+            this.clickOutsideHandler = null;
         }
 
         if (this.container) {

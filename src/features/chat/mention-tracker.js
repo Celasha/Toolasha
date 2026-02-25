@@ -140,6 +140,14 @@ class MentionTracker {
                 button.style.position = 'relative';
             }
 
+            // Clicking the tab itself clears the mention badge for that channel
+            if (!button.dataset.mentionClickBound) {
+                button.dataset.mentionClickBound = '1';
+                button.addEventListener('click', () => {
+                    this.clearMentions(channel);
+                });
+            }
+
             // Update badge for this channel
             this.updateBadgeForButton(button, channel);
         }
