@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.15.0](https://github.com/Celasha/Toolasha/compare/v1.14.0...v1.15.0) (2026-02-25)
+
+### Features
+
+- show highest-owned enhancement level on loadout equipment icons ([5a6e2bf](https://github.com/Celasha/Toolasha/commit/5a6e2bf0d1d4ca8c5379d280dafb917b83028593))
+
 ## [1.14.0](https://github.com/Celasha/Toolasha/compare/v1.13.0...v1.14.0) (2026-02-25)
 
 ### Features
