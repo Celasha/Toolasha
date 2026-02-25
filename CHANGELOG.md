@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.14.0](https://github.com/Celasha/Toolasha/compare/v1.13.0...v1.14.0) (2026-02-25)
+
+### Features
+
+- add loadout export button for combat simulator ([60c84a6](https://github.com/Celasha/Toolasha/commit/60c84a691b4965644bfeb7ae1008f979714e09f2))
+- add net-of-tax badge values setting and remove unused invBadgePrices_type setting ([2c38b86](https://github.com/Celasha/Toolasha/commit/2c38b86cf1f4979a06aff89f8dfc67d90e6329a6))
+
 ## [1.13.0](https://github.com/Celasha/Toolasha/compare/v1.12.3...v1.13.0) (2026-02-24)
 
 ### Features
