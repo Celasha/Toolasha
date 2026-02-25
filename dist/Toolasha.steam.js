@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      1.15.0
+// @version      1.16.0
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -53232,7 +53232,7 @@ self.onmessage = function (e) {
         }
 
         const headerText = header.textContent.trim();
-        if (!headerText.includes('Buy Now')) {
+        if (!headerText.includes('Buy Now') && !headerText.includes('Buy Listing')) {
             return;
         }
 
@@ -72441,6 +72441,9 @@ self.onmessage = function (e) {
             this.dragOffset = { x: 0, y: 0 };
             this.dragMoveHandler = null;
             this.dragUpHandler = null;
+
+            // Click-outside handler
+            this.clickOutsideHandler = null;
         }
 
         /**
@@ -72586,6 +72589,7 @@ self.onmessage = function (e) {
             document.body.appendChild(this.container);
 
             this._setupDragging(header);
+            this._setupClickOutside();
         }
 
         /**
@@ -72663,6 +72667,19 @@ self.onmessage = function (e) {
         }
 
         /**
+         * Close the popup when clicking outside of it
+         */
+        _setupClickOutside() {
+            this.clickOutsideHandler = (e) => {
+                if (this.container && !this.container.contains(e.target)) {
+                    this.close();
+                }
+            };
+            // Use mousedown so it fires before any other click handlers
+            document.addEventListener('mousedown', this.clickOutsideHandler);
+        }
+
+        /**
          * Set up drag behaviour on the header element
          * @param {HTMLElement} header
          */
@@ -72720,6 +72737,10 @@ self.onmessage = function (e) {
             if (this.dragUpHandler) {
                 document.removeEventListener('mouseup', this.dragUpHandler);
                 this.dragUpHandler = null;
+            }
+            if (this.clickOutsideHandler) {
+                document.removeEventListener('mousedown', this.clickOutsideHandler);
+                this.clickOutsideHandler = null;
             }
 
             if (this.container) {
@@ -72869,6 +72890,14 @@ self.onmessage = function (e) {
                 // Ensure button has relative positioning for badge
                 if (getComputedStyle(button).position === 'static') {
                     button.style.position = 'relative';
+                }
+
+                // Clicking the tab itself clears the mention badge for that channel
+                if (!button.dataset.mentionClickBound) {
+                    button.dataset.mentionClickBound = '1';
+                    button.addEventListener('click', () => {
+                        this.clearMentions(channel);
+                    });
                 }
 
                 // Update badge for this channel
