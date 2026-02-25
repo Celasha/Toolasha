@@ -293,6 +293,13 @@ function registerFeatures() {
             async: false,
         },
         {
+            key: 'loadoutEnhancementDisplay',
+            name: 'Loadout Enhancement Display',
+            category: 'Combat',
+            module: Combat.loadoutEnhancementDisplay,
+            async: false,
+        },
+        {
             key: 'dungeonTracker',
             name: 'Dungeon Tracker',
             category: 'Combat',

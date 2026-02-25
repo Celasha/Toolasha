@@ -766,6 +766,12 @@ export const settingsGroups = {
                 type: 'checkbox',
                 default: true,
             },
+            loadoutEnhancementDisplay: {
+                id: 'loadoutEnhancementDisplay',
+                label: 'Loadout panel: Show highest-owned enhancement level on equipment icons',
+                type: 'checkbox',
+                default: true,
+            },
             showsKeyInfoInIcon: {
                 id: 'showsKeyInfoInIcon',
                 label: 'Bottom left corner of key icons: Show zone index',

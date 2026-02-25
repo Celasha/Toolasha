@@ -8,6 +8,7 @@
 // Combat features
 import zoneIndices from '../features/combat/zone-indices.js';
 import loadoutExportButton from '../features/combat/loadout-export-button.js';
+import loadoutEnhancementDisplay from '../features/combat/loadout-enhancement-display.js';
 import dungeonTracker from '../features/combat/dungeon-tracker.js';
 import dungeonTrackerUI from '../features/combat/dungeon-tracker-ui.js';
 import dungeonTrackerChatAnnotations from '../features/combat/dungeon-tracker-chat-annotations.js';
@@ -37,6 +38,7 @@ if (typeof unsafeWindow !== 'undefined') {
 toolashaRoot.Combat = {
     zoneIndices,
     loadoutExportButton,
+    loadoutEnhancementDisplay,
     dungeonTracker,
     dungeonTrackerUI,
     dungeonTrackerChatAnnotations,
