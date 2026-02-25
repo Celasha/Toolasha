@@ -627,6 +627,9 @@ class MaxProduceable {
             if (overallSpan) {
                 overallSpan.textContent = stripEmoji(overallSpan.textContent) + (isBestOverall ? ' 🏆' : '');
             }
+
+            // Re-fit font sizes now that emoji may have changed span widths.
+            this.fitLineFontSizes(actionPanel, data.displayElement);
         }
     }
 
