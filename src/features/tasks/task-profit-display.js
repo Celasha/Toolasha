@@ -597,6 +597,11 @@ class TaskProfitDisplay {
         const completionSeconds = calculateTaskCompletionSeconds(profitData);
         const timeEstimate = completionSeconds !== null ? timeReadable(completionSeconds) : '???';
 
+        // Store machine-readable value for task sorter
+        if (completionSeconds !== null) {
+            profitContainer.dataset.completionSeconds = completionSeconds;
+        }
+
         // Create main profit display (Option B format: compact with time)
         const profitLine = document.createElement('div');
         profitLine.style.cssText = `

@@ -3,7 +3,7 @@
  * Sorts tasks in the task board by skill type
  */
 
-import { GAME } from '../../utils/selectors.js';
+import { GAME, TOOLASHA } from '../../utils/selectors.js';
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import taskIcons from './task-icons.js';
@@ -178,6 +178,43 @@ class TaskSorter {
     }
 
     /**
+     * Compare two task cards by time to completion (ascending).
+     * Combat tasks and tasks with no profit data sort to the bottom,
+     * followed by completed tasks at the very bottom.
+     * Combat tasks among themselves are sorted by zone (same as skill sort).
+     */
+    compareTaskCardsByTime(cardA, cardB) {
+        const orderA = this.getTaskOrder(cardA);
+        const orderB = this.getTaskOrder(cardB);
+
+        // Completed tasks always last
+        if (orderA.isCompleted !== orderB.isCompleted) {
+            return orderA.isCompleted ? 1 : -1;
+        }
+
+        const profitA = cardA.querySelector(TOOLASHA.TASK_PROFIT);
+        const profitB = cardB.querySelector(TOOLASHA.TASK_PROFIT);
+        const secondsA = profitA?.dataset.completionSeconds ? parseFloat(profitA.dataset.completionSeconds) : null;
+        const secondsB = profitB?.dataset.completionSeconds ? parseFloat(profitB.dataset.completionSeconds) : null;
+
+        const noTimeA = secondsA === null || orderA.isCombat;
+        const noTimeB = secondsB === null || orderB.isCombat;
+
+        // No-time tasks (combat, unknown) after timed tasks
+        if (noTimeA !== noTimeB) {
+            return noTimeA ? 1 : -1;
+        }
+
+        // Both have no time — fall back to skill/zone sort among themselves
+        if (noTimeA && noTimeB) {
+            return this.compareTaskCards(cardA, cardB);
+        }
+
+        // Both have time — sort ascending
+        return secondsA - secondsB;
+    }
+
+    /**
      * Compare two task cards for sorting
      */
     compareTaskCards(cardA, cardB) {
@@ -221,7 +258,12 @@ class TaskSorter {
         }
 
         // Sort the cards
-        taskCards.sort((a, b) => this.compareTaskCards(a, b));
+        const sortMode = config.getSettingValue('taskSorter_sortMode', 'skill');
+        if (sortMode === 'time') {
+            taskCards.sort((a, b) => this.compareTaskCardsByTime(a, b));
+        } else {
+            taskCards.sort((a, b) => this.compareTaskCards(a, b));
+        }
 
         // Re-append in sorted order
         taskCards.forEach((card) => taskList.appendChild(card));

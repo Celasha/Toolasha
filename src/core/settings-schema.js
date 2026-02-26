@@ -730,6 +730,17 @@ export const settingsGroups = {
                 default: false,
                 help: 'Automatically sorts tasks by skill type when you open the task panel',
             },
+            taskSorter_sortMode: {
+                id: 'taskSorter_sortMode',
+                label: 'Task sort mode',
+                type: 'select',
+                default: 'skill',
+                options: [
+                    { value: 'skill', label: 'Skill / Zone' },
+                    { value: 'time', label: 'Time to Completion' },
+                ],
+                help: 'How tasks are ordered when clicking Sort Tasks. "Time to Completion" sorts fastest tasks first; combat and completed tasks go to the bottom.',
+            },
             taskInventoryHighlighter: {
                 id: 'taskInventoryHighlighter',
                 label: 'Enable Task Inventory Highlighter button',
