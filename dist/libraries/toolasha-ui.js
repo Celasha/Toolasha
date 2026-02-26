@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 1.18.0
+ * Version: 1.18.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -10250,12 +10250,13 @@ self.onmessage = function (e) {
             const stats = calcStats(history);
             if (stats.lastXPH <= 0) return;
 
-            // Parse "XP to next level: 12,345"
+            // Parse "XP to next level: 12,345" — strip all non-digit characters to handle
+            // locale-specific separators (commas, periods, spaces)
             const xpText = divs[3].textContent;
-            const match = xpText.match(/[\d,]+$/);
+            const match = xpText.match(/[\d.,\s]+$/);
             if (!match) return;
 
-            const xpTillLevel = parseInt(match[0].replace(/,/g, ''), 10);
+            const xpTillLevel = parseInt(match[0].replace(/[^\d]/g, ''), 10);
             if (isNaN(xpTillLevel) || xpTillLevel <= 0) return;
 
             // Remove any previously injected element
