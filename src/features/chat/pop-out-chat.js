@@ -381,6 +381,11 @@ class PopOutChat {
   }
   #add-pane-btn:hover { background: rgba(215,183,255,0.2); }
   #add-pane-btn:disabled { opacity: 0.4; cursor: default; }
+  #vertical-label {
+    display: flex; align-items: center; gap: 4px;
+    font-size: 12px; color: #8b949e; cursor: pointer; user-select: none;
+  }
+  #vertical-label input { cursor: pointer; accent-color: #d7b7ff; }
   #disconnect-banner {
     display: none; margin-left: auto;
     padding: 3px 10px; background: rgba(220,50,50,0.2);
@@ -469,6 +474,7 @@ class PopOutChat {
   <span id="topbar-title">MWI Chat</span>
   <span id="topbar-name"></span>
   <button id="add-pane-btn">+ Pane</button>
+  <label id="vertical-label"><input type="checkbox" id="vertical-toggle"> Vertical</label>
   <div id="disconnect-banner">⚠ Disconnected from game tab</div>
 </div>
 <div id="panes"></div>
@@ -492,10 +498,11 @@ class PopOutChat {
   let paneIdSeq    = 0;
 
   // ── DOM refs ──────────────────────────────────────────────────
-  const panesEl      = document.getElementById('panes');
-  const addPaneBtn   = document.getElementById('add-pane-btn');
-  const nameEl       = document.getElementById('topbar-name');
-  const disconnectEl = document.getElementById('disconnect-banner');
+  const panesEl        = document.getElementById('panes');
+  const addPaneBtn     = document.getElementById('add-pane-btn');
+  const verticalToggle = document.getElementById('vertical-toggle');
+  const nameEl         = document.getElementById('topbar-name');
+  const disconnectEl   = document.getElementById('disconnect-banner');
 
   // ── Ping watchdog ─────────────────────────────────────────────
   function resetPingWatchdog() {
@@ -635,7 +642,14 @@ class PopOutChat {
   }
 
   function updateGrid() {
-    panesEl.style.gridTemplateColumns = panes.map(() => '1fr').join(' ');
+    const vertical = document.getElementById('vertical-toggle')?.checked;
+    if (vertical) {
+      panesEl.style.gridTemplateColumns = '1fr';
+      panesEl.style.gridTemplateRows = panes.map(() => '1fr').join(' ');
+    } else {
+      panesEl.style.gridTemplateRows = '1fr';
+      panesEl.style.gridTemplateColumns = panes.map(() => '1fr').join(' ');
+    }
   }
 
   function updateAddButton() {
@@ -722,6 +736,8 @@ class PopOutChat {
   }
 
   // ── Init ──────────────────────────────────────────────────────
+  verticalToggle.addEventListener('change', () => updateGrid());
+
   addPaneBtn.addEventListener('click', () => {
     // Pick a channel not already in use if possible
     const usedHrids = new Set(panes.map(p => p.channelHrid));
