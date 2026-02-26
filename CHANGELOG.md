@@ -2,11 +2,10 @@
 
 ## [1.19.0](https://github.com/Celasha/Toolasha/compare/v1.18.2...v1.19.0) (2026-02-26)
 
-
 ### Features
 
-* add vertical layout toggle to pop-out chat window ([cbc3bfc](https://github.com/Celasha/Toolasha/commit/cbc3bfc0ef419cb380540a1c197657dc3857984d))
-* remove pane limit in pop-out chat window ([fcf54e3](https://github.com/Celasha/Toolasha/commit/fcf54e31746ead8e0e97165e7e95bc9ecde5e9d5))
+- add vertical layout toggle to pop-out chat window ([cbc3bfc](https://github.com/Celasha/Toolasha/commit/cbc3bfc0ef419cb380540a1c197657dc3857984d))
+- remove pane limit in pop-out chat window ([fcf54e3](https://github.com/Celasha/Toolasha/commit/fcf54e31746ead8e0e97165e7e95bc9ecde5e9d5))
 
 ## [1.18.2](https://github.com/Celasha/Toolasha/compare/v1.18.1...v1.18.2) (2026-02-26)
 
