@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 1.17.0
+ * Version: 1.18.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -15921,13 +15921,27 @@ self.onmessage = function (e) {
 
             // Listen for inventory changes
             this.itemsUpdateHandler = () => {
-                // Debounce item updates
+                // Debounce item updates with a maxWait so continuous actions still trigger a refresh
                 clearTimeout(this.itemsUpdateDebounceTimer);
                 this.itemsUpdateDebounceTimer = setTimeout(() => {
                     if (this.isActive && connectionState.isConnected()) {
+                        this.itemsUpdateMaxWaitTimer = null;
+                        clearTimeout(this.itemsUpdateMaxWaitTimer);
                         this.recalculate();
                     }
                 }, 500); // 500ms debounce for inventory changes
+
+                // maxWait: force a recalculation at least every 30s under continuous load
+                if (!this.itemsUpdateMaxWaitTimer) {
+                    this.itemsUpdateMaxWaitTimer = setTimeout(() => {
+                        this.itemsUpdateMaxWaitTimer = null;
+                        clearTimeout(this.itemsUpdateDebounceTimer);
+                        this.itemsUpdateDebounceTimer = null;
+                        if (this.isActive && connectionState.isConnected()) {
+                            this.recalculate();
+                        }
+                    }, 5000);
+                }
             };
 
             dataManager.on('items_updated', this.itemsUpdateHandler);
@@ -15940,6 +15954,8 @@ self.onmessage = function (e) {
             // Clear any pending debounce timers
             clearTimeout(this.priceUpdateDebounceTimer);
             clearTimeout(this.itemsUpdateDebounceTimer);
+            clearTimeout(this.itemsUpdateMaxWaitTimer);
+            this.itemsUpdateMaxWaitTimer = null;
         }
 
         /**
@@ -15985,6 +16001,8 @@ self.onmessage = function (e) {
             // Clear debounce timers
             clearTimeout(this.priceUpdateDebounceTimer);
             clearTimeout(this.itemsUpdateDebounceTimer);
+            clearTimeout(this.itemsUpdateMaxWaitTimer);
+            this.itemsUpdateMaxWaitTimer = null;
 
             // Unregister event listeners
             if (this.priceUpdateHandler) {

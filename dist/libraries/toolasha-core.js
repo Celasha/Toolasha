@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 1.17.0
+ * Version: 1.18.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -450,6 +450,13 @@
                     type: 'checkbox',
                     default: true,
                     help: 'Displays a red badge on chat tabs when someone @mentions you',
+                },
+                chat_popOut: {
+                    id: 'chat_popOut',
+                    label: 'Enable Pop-out Chat Window button',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Adds a button to the chat panel to open chat in a separate browser window with multi-channel split view',
                 },
                 altClickNavigation: {
                     id: 'altClickNavigation',
@@ -1152,6 +1159,17 @@
                     type: 'checkbox',
                     default: false,
                     help: 'Automatically sorts tasks by skill type when you open the task panel',
+                },
+                taskSorter_sortMode: {
+                    id: 'taskSorter_sortMode',
+                    label: 'Task sort mode',
+                    type: 'select',
+                    default: 'skill',
+                    options: [
+                        { value: 'skill', label: 'Skill / Zone' },
+                        { value: 'time', label: 'Time to Completion' },
+                    ],
+                    help: 'How tasks are ordered when clicking Sort Tasks. "Time to Completion" sorts fastest tasks first; combat and completed tasks go to the bottom.',
                 },
                 taskInventoryHighlighter: {
                     id: 'taskInventoryHighlighter',
@@ -3013,6 +3031,9 @@
                             this.characterItems.push(endItem);
                         }
                     }
+
+                    // Notify items_updated listeners (e.g. networth) of the inventory change
+                    this.emit('items_updated', data);
                 }
 
                 // CRITICAL: Update skill experience from action_completed (this is how XP updates in real-time!)
@@ -3037,18 +3058,17 @@
                 if (data.endCharacterItems) {
                     // Update inventory items in-place (endCharacterItems contains only changed items, not full inventory)
                     for (const item of data.endCharacterItems) {
-                        if (item.itemLocationHrid !== '/item_locations/inventory') {
-                            // Equipment items handled by updateEquipmentMap
-                            continue;
-                        }
-
-                        // Update or add inventory item
                         const index = this.characterItems.findIndex((invItem) => invItem.id === item.id);
                         if (index !== -1) {
-                            // Update existing item count
-                            this.characterItems[index].count = item.count;
-                        } else {
-                            // Add new item to inventory
+                            if (item.count === 0) {
+                                // count 0 means removed from this location (e.g. equipped from inventory)
+                                this.characterItems.splice(index, 1);
+                            } else {
+                                // Update existing item (count and location may have changed, e.g. unequip)
+                                this.characterItems[index] = { ...this.characterItems[index], ...item };
+                            }
+                        } else if (item.count > 0) {
+                            // New item in inventory or equipment slot
                             this.characterItems.push(item);
                         }
                     }
