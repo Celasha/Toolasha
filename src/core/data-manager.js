@@ -309,6 +309,9 @@ class DataManager {
                         this.characterItems.push(endItem);
                     }
                 }
+
+                // Notify items_updated listeners (e.g. networth) of the inventory change
+                this.emit('items_updated', data);
             }
 
             // CRITICAL: Update skill experience from action_completed (this is how XP updates in real-time!)
@@ -333,18 +336,17 @@ class DataManager {
             if (data.endCharacterItems) {
                 // Update inventory items in-place (endCharacterItems contains only changed items, not full inventory)
                 for (const item of data.endCharacterItems) {
-                    if (item.itemLocationHrid !== '/item_locations/inventory') {
-                        // Equipment items handled by updateEquipmentMap
-                        continue;
-                    }
-
-                    // Update or add inventory item
                     const index = this.characterItems.findIndex((invItem) => invItem.id === item.id);
                     if (index !== -1) {
-                        // Update existing item count
-                        this.characterItems[index].count = item.count;
-                    } else {
-                        // Add new item to inventory
+                        if (item.count === 0) {
+                            // count 0 means removed from this location (e.g. equipped from inventory)
+                            this.characterItems.splice(index, 1);
+                        } else {
+                            // Update existing item (count and location may have changed, e.g. unequip)
+                            this.characterItems[index] = { ...this.characterItems[index], ...item };
+                        }
+                    } else if (item.count > 0) {
+                        // New item in inventory or equipment slot
                         this.characterItems.push(item);
                     }
                 }
