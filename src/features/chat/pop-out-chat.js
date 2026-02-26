@@ -639,7 +639,7 @@ class PopOutChat {
   }
 
   function updateAddButton() {
-    addPaneBtn.disabled = panes.length >= 4;
+    // No pane limit
   }
 
   function populateSelect(select, channelList, activeHrid) {
@@ -723,7 +723,6 @@ class PopOutChat {
 
   // ── Init ──────────────────────────────────────────────────────
   addPaneBtn.addEventListener('click', () => {
-    if (panes.length >= 4) return;
     // Pick a channel not already in use if possible
     const usedHrids = new Set(panes.map(p => p.channelHrid));
     const next = channels.find(c => !usedHrids.has(c.hrid)) || channels[0];
