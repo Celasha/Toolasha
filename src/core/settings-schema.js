@@ -28,6 +28,13 @@ export const settingsGroups = {
                 default: true,
                 help: 'Displays a red badge on chat tabs when someone @mentions you',
             },
+            chat_popOut: {
+                id: 'chat_popOut',
+                label: 'Enable Pop-out Chat Window button',
+                type: 'checkbox',
+                default: true,
+                help: 'Adds a button to the chat panel to open chat in a separate browser window with multi-channel split view',
+            },
             altClickNavigation: {
                 id: 'altClickNavigation',
                 label: 'Alt+click items to navigate to crafting/gathering or dictionary',
