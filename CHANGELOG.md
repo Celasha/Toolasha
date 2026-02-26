@@ -2,16 +2,14 @@
 
 ## [1.18.0](https://github.com/Celasha/Toolasha/compare/v1.17.0...v1.18.0) (2026-02-26)
 
-
 ### Features
 
-* add pop-out chat window with multi-pane split view ([94654a0](https://github.com/Celasha/Toolasha/commit/94654a077c64b1041bfa2342a8170610fceabeaa))
-* add time-to-completion sort mode for task sorter ([8d39bc6](https://github.com/Celasha/Toolasha/commit/8d39bc62ab0d51d98260602df73277f1b809987b))
-
+- add pop-out chat window with multi-pane split view ([94654a0](https://github.com/Celasha/Toolasha/commit/94654a077c64b1041bfa2342a8170610fceabeaa))
+- add time-to-completion sort mode for task sorter ([8d39bc6](https://github.com/Celasha/Toolasha/commit/8d39bc62ab0d51d98260602df73277f1b809987b))
 
 ### Bug Fixes
 
-* update networth on equip/unequip and during continuous gathering ([c36fb79](https://github.com/Celasha/Toolasha/commit/c36fb7949abb12df4a8900cfc17cc7875238f669))
+- update networth on equip/unequip and during continuous gathering ([c36fb79](https://github.com/Celasha/Toolasha/commit/c36fb7949abb12df4a8900cfc17cc7875238f669))
 
 ## [1.17.0](https://github.com/Celasha/Toolasha/compare/v1.16.0...v1.17.0) (2026-02-25)
 
