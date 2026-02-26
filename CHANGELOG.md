@@ -2,10 +2,9 @@
 
 ## [1.18.1](https://github.com/Celasha/Toolasha/compare/v1.18.0...v1.18.1) (2026-02-26)
 
-
 ### Bug Fixes
 
-* handle locale-specific XP number separators in time-to-level tooltip ([1acf6e0](https://github.com/Celasha/Toolasha/commit/1acf6e0caf8ae8547fad72f01395a317a71a78c9))
+- handle locale-specific XP number separators in time-to-level tooltip ([1acf6e0](https://github.com/Celasha/Toolasha/commit/1acf6e0caf8ae8547fad72f01395a317a71a78c9))
 
 ## [1.18.0](https://github.com/Celasha/Toolasha/compare/v1.17.0...v1.18.0) (2026-02-26)
 
