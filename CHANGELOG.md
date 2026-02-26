@@ -2,10 +2,9 @@
 
 ## [1.18.2](https://github.com/Celasha/Toolasha/compare/v1.18.1...v1.18.2) (2026-02-26)
 
-
 ### Bug Fixes
 
-* use empty string instead of about:blank for Steam CEF compatibility ([308151e](https://github.com/Celasha/Toolasha/commit/308151e74d3ed43977f1403636a0232bf06112ac))
+- use empty string instead of about:blank for Steam CEF compatibility ([308151e](https://github.com/Celasha/Toolasha/commit/308151e74d3ed43977f1403636a0232bf06112ac))
 
 ## [1.18.1](https://github.com/Celasha/Toolasha/compare/v1.18.0...v1.18.1) (2026-02-26)
 
