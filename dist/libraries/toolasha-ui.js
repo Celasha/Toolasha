@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 1.18.1
+ * Version: 1.18.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2318,7 +2318,7 @@
                 return;
             }
 
-            this.popoutWindow = window.open('about:blank', 'mwi-chat-popout', 'width=960,height=720,resizable=yes');
+            this.popoutWindow = window.open('', 'mwi-chat-popout', 'width=960,height=720,resizable=yes');
 
             if (!this.popoutWindow) {
                 console.error('[PopOutChat] window.open() blocked — allow pop-ups for this site');

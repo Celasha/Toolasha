@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      1.18.1
+// @version      1.18.2
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -73393,7 +73393,7 @@ self.onmessage = function (e) {
                 return;
             }
 
-            this.popoutWindow = window.open('about:blank', 'mwi-chat-popout', 'width=960,height=720,resizable=yes');
+            this.popoutWindow = window.open('', 'mwi-chat-popout', 'width=960,height=720,resizable=yes');
 
             if (!this.popoutWindow) {
                 console.error('[PopOutChat] window.open() blocked — allow pop-ups for this site');
