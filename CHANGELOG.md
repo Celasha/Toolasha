@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.19.1](https://github.com/Celasha/Toolasha/compare/v1.19.0...v1.19.1) (2026-02-27)
+
+
+### Bug Fixes
+
+* correct vertical/horizontal layout toggle default in pop-out chat ([2ba769b](https://github.com/Celasha/Toolasha/commit/2ba769ba9e6984634bdb6a6382b3270d9df278c6))
+
 ## [1.19.0](https://github.com/Celasha/Toolasha/compare/v1.18.2...v1.19.0) (2026-02-26)
 
 ### Features
