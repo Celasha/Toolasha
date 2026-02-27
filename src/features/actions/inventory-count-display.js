@@ -209,7 +209,13 @@ class InventoryCountDisplay {
         const outputHrid = getPrimaryOutputHrid(actionDetails);
         if (!outputHrid) return;
 
-        panel.querySelector('.mwi-inv-count-detail')?.remove();
+        // infoContainer may be panel itself if SkillActionDetail_info is absent.
+        // The span is inserted as a sibling of infoContainer (outside panel's subtree
+        // in that case), so we must scope the guard to infoContainer.parentElement
+        // rather than panel to reliably find and remove any previously inserted span.
+        const infoContainer = nameEl.closest('[class*="SkillActionDetail_info"]') ?? nameEl.parentElement;
+        const scopeEl = infoContainer.parentElement ?? infoContainer;
+        scopeEl.querySelector('.mwi-inv-count-detail')?.remove();
 
         const count = buildCountMap().get(outputHrid) || 0;
 
@@ -229,7 +235,6 @@ class InventoryCountDisplay {
         // Insert after the info container (nameEl's parent) so it sits on its own
         // line below the action name row. Inserting after nameEl itself puts the span
         // inside the flex info row and causes overlap.
-        const infoContainer = nameEl.closest('[class*="SkillActionDetail_info"]') ?? nameEl.parentElement;
         infoContainer.after(span);
         this.detailPanels.add(panel);
     }
@@ -252,7 +257,12 @@ class InventoryCountDisplay {
                 this.detailPanels.delete(panel);
                 continue;
             }
-            const span = panel.querySelector('.mwi-inv-count-detail');
+            const nameEl = panel.querySelector('[class*="SkillActionDetail_name"]');
+            const infoContainer = nameEl
+                ? (nameEl.closest('[class*="SkillActionDetail_info"]') ?? nameEl.parentElement)
+                : panel;
+            const scopeEl = infoContainer.parentElement ?? infoContainer;
+            const span = scopeEl.querySelector('.mwi-inv-count-detail');
             if (!span || !span.dataset.outputHrid) continue;
             const count = countMap.get(span.dataset.outputHrid) || 0;
             span.style.color = config.COLOR_INV_COUNT;
