@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      1.18.2
+// @version      1.19.0
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -73494,6 +73494,11 @@ self.onmessage = function (e) {
   }
   #add-pane-btn:hover { background: rgba(215,183,255,0.2); }
   #add-pane-btn:disabled { opacity: 0.4; cursor: default; }
+  #vertical-label {
+    display: flex; align-items: center; gap: 4px;
+    font-size: 12px; color: #8b949e; cursor: pointer; user-select: none;
+  }
+  #vertical-label input { cursor: pointer; accent-color: #d7b7ff; }
   #disconnect-banner {
     display: none; margin-left: auto;
     padding: 3px 10px; background: rgba(220,50,50,0.2);
@@ -73582,6 +73587,7 @@ self.onmessage = function (e) {
   <span id="topbar-title">MWI Chat</span>
   <span id="topbar-name"></span>
   <button id="add-pane-btn">+ Pane</button>
+  <label id="vertical-label"><input type="checkbox" id="vertical-toggle"> Vertical</label>
   <div id="disconnect-banner">⚠ Disconnected from game tab</div>
 </div>
 <div id="panes"></div>
@@ -73605,10 +73611,11 @@ self.onmessage = function (e) {
   let paneIdSeq    = 0;
 
   // ── DOM refs ──────────────────────────────────────────────────
-  const panesEl      = document.getElementById('panes');
-  const addPaneBtn   = document.getElementById('add-pane-btn');
-  const nameEl       = document.getElementById('topbar-name');
-  const disconnectEl = document.getElementById('disconnect-banner');
+  const panesEl        = document.getElementById('panes');
+  const addPaneBtn     = document.getElementById('add-pane-btn');
+  const verticalToggle = document.getElementById('vertical-toggle');
+  const nameEl         = document.getElementById('topbar-name');
+  const disconnectEl   = document.getElementById('disconnect-banner');
 
   // ── Ping watchdog ─────────────────────────────────────────────
   function resetPingWatchdog() {
@@ -73748,11 +73755,18 @@ self.onmessage = function (e) {
   }
 
   function updateGrid() {
-    panesEl.style.gridTemplateColumns = panes.map(() => '1fr').join(' ');
+    const vertical = document.getElementById('vertical-toggle')?.checked;
+    if (vertical) {
+      panesEl.style.gridTemplateColumns = '1fr';
+      panesEl.style.gridTemplateRows = panes.map(() => '1fr').join(' ');
+    } else {
+      panesEl.style.gridTemplateRows = '1fr';
+      panesEl.style.gridTemplateColumns = panes.map(() => '1fr').join(' ');
+    }
   }
 
   function updateAddButton() {
-    addPaneBtn.disabled = panes.length >= 4;
+    // No pane limit
   }
 
   function populateSelect(select, channelList, activeHrid) {
@@ -73835,8 +73849,9 @@ self.onmessage = function (e) {
   }
 
   // ── Init ──────────────────────────────────────────────────────
+  verticalToggle.addEventListener('change', () => updateGrid());
+
   addPaneBtn.addEventListener('click', () => {
-    if (panes.length >= 4) return;
     // Pick a channel not already in use if possible
     const usedHrids = new Set(panes.map(p => p.channelHrid));
     const next = channels.find(c => !usedHrids.has(c.hrid)) || channels[0];
