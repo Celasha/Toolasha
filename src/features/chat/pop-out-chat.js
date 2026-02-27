@@ -397,7 +397,7 @@ class PopOutChat {
   /* Pane grid */
   #panes {
     display: grid;
-    grid-template-columns: 1fr;
+    grid-template-rows: 1fr;
     height: calc(100vh - 46px);
     gap: 0;
     overflow: hidden;
@@ -644,11 +644,11 @@ class PopOutChat {
   function updateGrid() {
     const vertical = document.getElementById('vertical-toggle')?.checked;
     if (vertical) {
-      panesEl.style.gridTemplateColumns = '1fr';
-      panesEl.style.gridTemplateRows = panes.map(() => '1fr').join(' ');
-    } else {
       panesEl.style.gridTemplateRows = '1fr';
       panesEl.style.gridTemplateColumns = panes.map(() => '1fr').join(' ');
+    } else {
+      panesEl.style.gridTemplateColumns = '1fr';
+      panesEl.style.gridTemplateRows = panes.map(() => '1fr').join(' ');
     }
   }
 
