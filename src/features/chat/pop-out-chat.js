@@ -103,6 +103,16 @@ function resolveLink(link) {
         const tier = ` T${link.partyDifficultyTier ?? 0}`;
         return `[Party: ${zoneName}${tier}]`;
     }
+    if (link.linkType === '/chat_link_types/collection') {
+        const itemDetails = dataManager.getItemDetails(link.itemHrid);
+        const itemName = itemDetails?.name || link.itemHrid.split('/').pop().replace(/_/g, ' ');
+        return `[Collection: ${itemName} ×${formatKMB(link.itemCount)}]`;
+    }
+    if (link.linkType === '/chat_link_types/bestiary') {
+        const monsterDetails = dataManager.getInitClientData()?.combatMonsterDetailMap?.[link.monsterHrid];
+        const monsterName = monsterDetails?.name || link.monsterHrid.split('/').pop().replace(/_/g, ' ');
+        return `[Bestiary: ${monsterName} ×${link.monsterCount}]`;
+    }
     // Fallback: humanize the HRID
     return `[${link.linkType.split('/').pop().replace(/_/g, ' ')}]`;
 }
