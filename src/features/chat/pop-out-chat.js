@@ -836,6 +836,28 @@ class PopOutChat {
     return h + ':' + m;
   }
 
+  function linkifyText(el, text) {
+    const URL_RE = /https?:[/][/][^ \t\r\n<>"']+/g;
+    let last = 0;
+    let match;
+    while ((match = URL_RE.exec(text)) !== null) {
+      if (match.index > last) {
+        el.appendChild(document.createTextNode(text.slice(last, match.index)));
+      }
+      const a = document.createElement('a');
+      a.href = match[0];
+      a.textContent = match[0];
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.style.cssText = 'color: #60a5fa; word-break: break-all;';
+      el.appendChild(a);
+      last = match.index + match[0].length;
+    }
+    if (last < text.length) {
+      el.appendChild(document.createTextNode(text.slice(last)));
+    }
+  }
+
   function appendMessage(paneObj, msg) {
     const { messages } = paneObj;
     const atBottom = messages.scrollHeight - messages.scrollTop - messages.clientHeight < 40;
@@ -863,7 +885,7 @@ class PopOutChat {
 
       const textEl = document.createElement('span');
       textEl.className = 'msg-text';
-      textEl.textContent = msg.m;
+      linkifyText(textEl, msg.m);
 
       row.appendChild(timeEl);
       row.appendChild(nameEl);
