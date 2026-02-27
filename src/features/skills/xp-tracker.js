@@ -13,7 +13,10 @@ import { createTimerRegistry } from '../../utils/timer-registry.js';
 const STORE_NAME = 'xpHistory';
 const WINDOW_10M = 10 * 60 * 1000;
 const WINDOW_1H = 60 * 60 * 1000;
-const WINDOW_1W = 7 * 24 * 60 * 60 * 1000;
+const HISTORY_RETENTION = WINDOW_1H;
+const MIN_SAMPLE_COUNT = 3;
+const TARGET_SAMPLE_COUNT_10M = 6;
+const TARGET_SAMPLE_COUNT_1H = 10;
 
 /**
  * Skill definitions matching game skill HRIDs
@@ -62,20 +65,7 @@ function pushXP(arr, d) {
 
     if (arr.length <= 2) return;
 
-    // Rule 1: within the last 10 minutes, keep only first + last
-    let recentLength = 0;
-    for (let i = arr.length - 1; i >= 0; i--) {
-        if (d.t - arr[i].t <= WINDOW_10M) {
-            recentLength++;
-        } else {
-            break;
-        }
-    }
-    if (recentLength > 2) {
-        arr.splice(arr.length - recentLength + 1, recentLength - 2);
-    }
-
-    // Rule 2: collapse consecutive same-XP entries that are within 1 hour apart
+    // Rule 1: collapse consecutive same-XP entries that are within 1 hour apart
     let sameLength = 0;
     for (let i = arr.length - 1; i >= 0; i--) {
         if (arr[i].xp === d.xp && d.t - arr[i].t <= WINDOW_1H) {
@@ -88,10 +78,10 @@ function pushXP(arr, d) {
         arr.splice(arr.length - sameLength, sameLength - 1);
     }
 
-    // Rule 3: drop entries older than 1 week
+    // Rule 2: drop entries older than retention window
     let oldLength = 0;
     for (let i = 0; i < arr.length; i++) {
-        if (d.t - arr[i].t > WINDOW_1W) {
+        if (d.t - arr[i].t > HISTORY_RETENTION) {
             oldLength++;
         } else {
             break;
@@ -134,18 +124,54 @@ function calcXPH(prev, cur) {
 }
 
 /**
+ * Downsample an array to a fixed count with even spacing.
+ * Always preserves first and last elements when possible.
+ * @param {Array} arr
+ * @param {number} targetCount
+ * @returns {Array}
+ */
+function downsampleEvenly(arr, targetCount) {
+    if (arr.length <= targetCount) return arr;
+    if (targetCount <= 1) return [arr[0]];
+
+    const lastIndex = arr.length - 1;
+    const step = lastIndex / (targetCount - 1);
+    const result = [];
+    let lastSelected = -1;
+
+    for (let i = 0; i < targetCount - 1; i++) {
+        let index = Math.round(i * step);
+        if (index <= lastSelected) {
+            index = lastSelected + 1;
+        }
+
+        const remainingSlots = targetCount - 1 - i;
+        const maxIndex = lastIndex - remainingSlots;
+        if (index > maxIndex) {
+            index = maxIndex;
+        }
+
+        result.push(arr[index]);
+        lastSelected = index;
+    }
+
+    result.push(arr[lastIndex]);
+    return result;
+}
+
+/**
  * Compute lastXPH (10-min window) and lastHourXPH (1-hr window) for a skill.
  * @param {Array} arr - History array for one skill
  * @returns {{lastXPH: number, lastHourXPH: number}}
  */
 function calcStats(arr) {
-    if (arr.length < 2) return { lastXPH: 0, lastHourXPH: 0 };
+    if (arr.length < MIN_SAMPLE_COUNT) return { lastXPH: 0, lastHourXPH: 0 };
 
-    const last10m = inLastInterval(arr, WINDOW_10M);
-    const lastXPH = last10m.length >= 2 ? calcXPH(last10m[0], last10m[last10m.length - 1]) : 0;
+    const last10m = downsampleEvenly(inLastInterval(arr, WINDOW_10M), TARGET_SAMPLE_COUNT_10M);
+    const lastXPH = last10m.length >= MIN_SAMPLE_COUNT ? calcXPH(last10m[0], last10m[last10m.length - 1]) : 0;
 
-    const last1h = inLastInterval(arr, WINDOW_1H);
-    const lastHourXPH = last1h.length >= 2 ? calcXPH(last1h[0], last1h[last1h.length - 1]) : 0;
+    const last1h = downsampleEvenly(inLastInterval(arr, WINDOW_1H), TARGET_SAMPLE_COUNT_1H);
+    const lastHourXPH = last1h.length >= MIN_SAMPLE_COUNT ? calcXPH(last1h[0], last1h[last1h.length - 1]) : 0;
 
     return { lastXPH, lastHourXPH };
 }
@@ -195,15 +221,21 @@ class XPTracker {
             await this._onCharacterInit(data);
         };
 
+        const actionsUpdatedHandler = () => {
+            this._updateNavBars();
+        };
+
         const actionCompletedHandler = (data) => {
             this._onActionCompleted(data);
         };
 
         dataManager.on('character_initialized', characterInitHandler);
+        dataManager.on('actions_updated', actionsUpdatedHandler);
         dataManager.on('action_completed', actionCompletedHandler);
 
         this.unregisterObservers.push(() => {
             dataManager.off('character_initialized', characterInitHandler);
+            dataManager.off('actions_updated', actionsUpdatedHandler);
             dataManager.off('action_completed', actionCompletedHandler);
         });
 
