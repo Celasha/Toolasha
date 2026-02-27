@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.20.1](https://github.com/Celasha/Toolasha/compare/v1.20.0...v1.20.1) (2026-02-27)
+
+### Bug Fixes
+
+- add draggable pane reordering and persistent layout to pop-out chat ([92ba2ef](https://github.com/Celasha/Toolasha/commit/92ba2ef3a85ac90404d4015f5bccaeeefad594bd))
+- prevent duplicate inventory count row when opening action panel from task card ([f6af0ee](https://github.com/Celasha/Toolasha/commit/f6af0ee2b6fc108c7c2a2604297ce8d3c0b8568d))
+
 ## [1.20.0](https://github.com/Celasha/Toolasha/compare/v1.19.1...v1.20.0) (2026-02-27)
 
 ### Features
