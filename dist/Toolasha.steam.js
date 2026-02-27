@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      1.19.1
+// @version      1.20.0
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -73144,6 +73144,41 @@ self.onmessage = function (e) {
 
     const CHANNEL_NAME_MAP = Object.fromEntries(CHANNELS.map((c) => [c.hrid, c.name]));
 
+    const SKILL_HRID_TO_NAME = {
+        '/skills/total_level': 'Total Level',
+        '/skills/milking': 'Milking',
+        '/skills/foraging': 'Foraging',
+        '/skills/woodcutting': 'Woodcutting',
+        '/skills/cheesesmithing': 'Cheesesmithing',
+        '/skills/crafting': 'Crafting',
+        '/skills/tailoring': 'Tailoring',
+        '/skills/cooking': 'Cooking',
+        '/skills/brewing': 'Brewing',
+        '/skills/alchemy': 'Alchemy',
+        '/skills/enhancing': 'Enhancing',
+        '/skills/stamina': 'Stamina',
+        '/skills/intelligence': 'Intelligence',
+        '/skills/attack': 'Attack',
+        '/skills/melee': 'Melee',
+        '/skills/defense': 'Defense',
+        '/skills/ranged': 'Ranged',
+        '/skills/magic': 'Magic',
+    };
+
+    /**
+     * Resolve a system message with systemMetadata into a human-readable string.
+     * @param {string} messageKey - e.g. "systemChatMessage.characterLeveledUp"
+     * @param {Object} meta - Parsed systemMetadata
+     * @returns {string|null} Rendered string, or null if unrecognized
+     */
+    function resolveSystemMessage(messageKey, meta) {
+        if (messageKey === 'systemChatMessage.characterLeveledUp') {
+            const skillName = SKILL_HRID_TO_NAME[meta.skillHrid] || meta.skillHrid.split('/').pop().replace(/_/g, ' ');
+            return `🎉 ${meta.name} reached ${skillName} ${meta.level}!`;
+        }
+        return null;
+    }
+
     /**
      * Resolve a single linksMetadata link entry to a display string.
      * @param {Object} link
@@ -73158,6 +73193,38 @@ self.onmessage = function (e) {
             const price = formatKMB(link.price);
             const side = link.isSell ? 'Sell' : 'Buy';
             return `[${itemName}${enhancement}${count} @ ${price} ${side}]`;
+        }
+        if (link.linkType === '/chat_link_types/item') {
+            const itemDetails = dataManager$1.getItemDetails(link.itemHrid);
+            const itemName = itemDetails?.name || link.itemHrid.split('/').pop().replace(/_/g, ' ');
+            const enhancement = link.itemEnhancementLevel > 0 ? ` +${link.itemEnhancementLevel}` : '';
+            const count = link.itemCount > 1 ? ` ×${link.itemCount}` : '';
+            return `[${itemName}${enhancement}${count}]`;
+        }
+        if (link.linkType === '/chat_link_types/ability') {
+            const abilityDetails = dataManager$1.getInitClientData()?.abilityDetailMap?.[link.abilityHrid];
+            const abilityName = abilityDetails?.name || link.abilityHrid.split('/').pop().replace(/_/g, ' ');
+            return `[${abilityName} Lv.${link.abilityLevel}]`;
+        }
+        if (link.linkType === '/chat_link_types/skill') {
+            const skillName = SKILL_HRID_TO_NAME[link.skillHrid] || link.skillHrid.split('/').pop().replace(/_/g, ' ');
+            return `[${skillName} Lv.${link.skillLevel}]`;
+        }
+        if (link.linkType === '/chat_link_types/party') {
+            const actionDetails = dataManager$1.getActionDetails(link.partyActionHrid);
+            const zoneName = actionDetails?.name || link.partyActionHrid.split('/').pop().replace(/_/g, ' ');
+            const tier = ` T${link.partyDifficultyTier ?? 0}`;
+            return `[Party: ${zoneName}${tier}]`;
+        }
+        if (link.linkType === '/chat_link_types/collection') {
+            const itemDetails = dataManager$1.getItemDetails(link.itemHrid);
+            const itemName = itemDetails?.name || link.itemHrid.split('/').pop().replace(/_/g, ' ');
+            return `[Collection: ${itemName} ×${formatKMB(link.itemCount)}]`;
+        }
+        if (link.linkType === '/chat_link_types/bestiary') {
+            const monsterDetails = dataManager$1.getInitClientData()?.combatMonsterDetailMap?.[link.monsterHrid];
+            const monsterName = monsterDetails?.name || link.monsterHrid.split('/').pop().replace(/_/g, ' ');
+            return `[Bestiary: ${monsterName} ×${link.monsterCount}]`;
         }
         // Fallback: humanize the HRID
         return `[${link.linkType.split('/').pop().replace(/_/g, ' ')}]`;
@@ -73179,11 +73246,24 @@ self.onmessage = function (e) {
             }
         }
 
+        let resolvedText = message.m || '';
+        if (message.isSystemMessage && message.systemMetadata) {
+            try {
+                const meta = JSON.parse(message.systemMetadata);
+                const rendered = resolveSystemMessage(message.m || '', meta);
+                if (rendered !== null) {
+                    resolvedText = rendered;
+                }
+            } catch {
+                // ignore malformed systemMetadata
+            }
+        }
+
         return {
             type: 'chat_message',
             channel: message.chan || '',
             sName: message.sName || '',
-            m: message.m || '',
+            m: resolvedText,
             t: message.t || '',
             isSystem: !!message.isSystemMessage,
             renderedLinks,
