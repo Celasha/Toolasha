@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      1.20.0
+// @version      1.20.1
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -56100,7 +56100,13 @@ self.onmessage = function (e) {
             const outputHrid = getPrimaryOutputHrid(actionDetails);
             if (!outputHrid) return;
 
-            panel.querySelector('.mwi-inv-count-detail')?.remove();
+            // infoContainer may be panel itself if SkillActionDetail_info is absent.
+            // The span is inserted as a sibling of infoContainer (outside panel's subtree
+            // in that case), so we must scope the guard to infoContainer.parentElement
+            // rather than panel to reliably find and remove any previously inserted span.
+            const infoContainer = nameEl.closest('[class*="SkillActionDetail_info"]') ?? nameEl.parentElement;
+            const scopeEl = infoContainer.parentElement ?? infoContainer;
+            scopeEl.querySelector('.mwi-inv-count-detail')?.remove();
 
             const count = buildCountMap().get(outputHrid) || 0;
 
@@ -56120,7 +56126,6 @@ self.onmessage = function (e) {
             // Insert after the info container (nameEl's parent) so it sits on its own
             // line below the action name row. Inserting after nameEl itself puts the span
             // inside the flex info row and causes overlap.
-            const infoContainer = nameEl.closest('[class*="SkillActionDetail_info"]') ?? nameEl.parentElement;
             infoContainer.after(span);
             this.detailPanels.add(panel);
         }
@@ -56143,7 +56148,12 @@ self.onmessage = function (e) {
                     this.detailPanels.delete(panel);
                     continue;
                 }
-                const span = panel.querySelector('.mwi-inv-count-detail');
+                const nameEl = panel.querySelector('[class*="SkillActionDetail_name"]');
+                const infoContainer = nameEl
+                    ? (nameEl.closest('[class*="SkillActionDetail_info"]') ?? nameEl.parentElement)
+                    : panel;
+                const scopeEl = infoContainer.parentElement ?? infoContainer;
+                const span = scopeEl.querySelector('.mwi-inv-count-detail');
                 if (!span || !span.dataset.outputHrid) continue;
                 const count = countMap.get(span.dataset.outputHrid) || 0;
                 span.style.color = config$1.COLOR_INV_COUNT;
@@ -73610,6 +73620,11 @@ self.onmessage = function (e) {
     padding: 6px 10px; background: var(--topbg);
     border-bottom: 1px solid var(--border); flex-shrink: 0;
   }
+  .pane-drag-handle {
+    color: var(--muted); font-size: 14px; cursor: grab;
+    padding: 0 2px; line-height: 1; user-select: none; flex-shrink: 0;
+  }
+  .pane-drag-handle:active { cursor: grabbing; }
   .pane-channel-select {
     flex: 1; background: var(--input-bg); color: var(--text);
     border: 1px solid rgba(255,255,255,0.12); border-radius: 5px;
@@ -73620,6 +73635,10 @@ self.onmessage = function (e) {
     font-size: 14px; cursor: pointer; padding: 0 2px; line-height: 1;
   }
   .pane-close-btn:hover { color: var(--text); }
+  .pane.drag-over-before { box-shadow: -3px 0 0 0 var(--accent); }
+  .pane.drag-over-after  { box-shadow:  3px 0 0 0 var(--accent); }
+  .pane.drag-over-before.vertical-drop { box-shadow: 0 -3px 0 0 var(--accent); }
+  .pane.drag-over-after.vertical-drop  { box-shadow: 0  3px 0 0 var(--accent); }
 
   /* Message list */
   .pane-messages {
@@ -73679,6 +73698,7 @@ self.onmessage = function (e) {
   const RELAY = '${RELAY_CHANNEL}';
   const SEND  = '${SEND_CHANNEL}';
   const MAX_PER_CHANNEL = 500;
+  const STORAGE_KEY = 'mwi-chat-popout-layout';
 
   const relay  = new BroadcastChannel(RELAY);
   const sendCh = new BroadcastChannel(SEND);
@@ -73755,6 +73775,11 @@ self.onmessage = function (e) {
     const header = document.createElement('div');
     header.className = 'pane-header';
 
+    const dragHandle = document.createElement('span');
+    dragHandle.className = 'pane-drag-handle';
+    dragHandle.textContent = '⠿';
+    dragHandle.title = 'Drag to reorder';
+
     const select = document.createElement('select');
     select.className = 'pane-channel-select';
     populateSelect(select, channels, hrid);
@@ -73765,6 +73790,7 @@ self.onmessage = function (e) {
     closeBtn.title = 'Close pane';
     closeBtn.addEventListener('click', () => removePane(id));
 
+    header.appendChild(dragHandle);
     header.appendChild(select);
     header.appendChild(closeBtn);
 
@@ -73805,6 +73831,56 @@ self.onmessage = function (e) {
     pane.appendChild(header);
     pane.appendChild(messages);
     pane.appendChild(footer);
+
+    // Drag-to-reorder
+    pane.draggable = true;
+    pane.addEventListener('dragstart', (e) => {
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', String(id));
+      // Use the handle as the drag image anchor so the whole pane moves naturally
+      setTimeout(() => pane.style.opacity = '0.5', 0);
+    });
+    pane.addEventListener('dragend', () => {
+      pane.style.opacity = '';
+      clearDragOver();
+    });
+    pane.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      clearDragOver();
+      const vertical = verticalToggle.checked;
+      const rect = pane.getBoundingClientRect();
+      const mid = vertical ? rect.top + rect.height / 2 : rect.left + rect.width / 2;
+      const before = vertical ? e.clientY < mid : e.clientX < mid;
+      pane.classList.add(before ? 'drag-over-before' : 'drag-over-after');
+      if (vertical) pane.classList.add('vertical-drop');
+    });
+    pane.addEventListener('dragleave', () => clearDragOver());
+    pane.addEventListener('drop', (e) => {
+      e.preventDefault();
+      const srcId = parseInt(e.dataTransfer.getData('text/plain'), 10);
+      if (srcId === id) return;
+      const srcIdx = panes.findIndex(p => p.id === srcId);
+      const tgtIdx = panes.findIndex(p => p.id === id);
+      if (srcIdx === -1 || tgtIdx === -1) return;
+      const vertical = verticalToggle.checked;
+      const rect = pane.getBoundingClientRect();
+      const mid = vertical ? rect.top + rect.height / 2 : rect.left + rect.width / 2;
+      const insertBefore = vertical ? e.clientY < mid : e.clientX < mid;
+      // Reorder DOM
+      if (insertBefore) {
+        panesEl.insertBefore(panes[srcIdx].pane, pane);
+      } else {
+        pane.insertAdjacentElement('afterend', panes[srcIdx].pane);
+      }
+      // Sync panes array to match DOM order
+      const [moved] = panes.splice(srcIdx, 1);
+      const newTgtIdx = panes.findIndex(p => p.id === id);
+      panes.splice(insertBefore ? newTgtIdx : newTgtIdx + 1, 0, moved);
+      clearDragOver();
+      saveLayout();
+    });
+
     panesEl.appendChild(pane);
 
     const paneObj = { id, pane, select, messages, input, channelHrid: hrid };
@@ -73814,6 +73890,7 @@ self.onmessage = function (e) {
       paneObj.channelHrid = select.value;
       messages.innerHTML = '';
       (messageBuffer[paneObj.channelHrid] || []).forEach(msg => appendMessage(paneObj, msg));
+      saveLayout();
     });
 
     // Pre-populate with buffered messages
@@ -73832,6 +73909,13 @@ self.onmessage = function (e) {
     panes.splice(idx, 1);
     updateGrid();
     updateAddButton();
+    saveLayout();
+  }
+
+  function clearDragOver() {
+    document.querySelectorAll('.pane').forEach(el => {
+      el.classList.remove('drag-over-before', 'drag-over-after', 'vertical-drop');
+    });
   }
 
   function updateGrid() {
@@ -73928,19 +74012,53 @@ self.onmessage = function (e) {
     if (atBottom) messages.scrollTop = messages.scrollHeight;
   }
 
+  // ── Layout persistence ────────────────────────────────────────
+  function saveLayout() {
+    try {
+      const layout = {
+        vertical: verticalToggle.checked,
+        panes: panes.map(p => ({ channelHrid: p.channelHrid })),
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(layout));
+    } catch { /* ignore */ }
+  }
+
+  function loadLayout() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return null;
+      return JSON.parse(raw);
+    } catch { return null; }
+  }
+
   // ── Init ──────────────────────────────────────────────────────
-  verticalToggle.addEventListener('change', () => updateGrid());
+  verticalToggle.addEventListener('change', () => { updateGrid(); saveLayout(); });
 
   addPaneBtn.addEventListener('click', () => {
     // Pick a channel not already in use if possible
     const usedHrids = new Set(panes.map(p => p.channelHrid));
     const next = channels.find(c => !usedHrids.has(c.hrid)) || channels[0];
     createPane(next?.hrid);
+    saveLayout();
   });
 
-  // Create initial pane (default to General, or first available)
-  const defaultHrid = channels[0]?.hrid || '/chat_channel_types/general';
-  createPane(defaultHrid);
+  // Restore saved layout, or create a single default pane
+  const savedLayout = loadLayout();
+  if (savedLayout) {
+    if (savedLayout.vertical) {
+      verticalToggle.checked = true;
+    }
+    const savedPanes = savedLayout.panes || [];
+    if (savedPanes.length > 0) {
+      savedPanes.forEach(p => createPane(p.channelHrid));
+    } else {
+      createPane(channels[0]?.hrid || '/chat_channel_types/general');
+    }
+  } else {
+    // Create initial pane (default to General, or first available)
+    const defaultHrid = channels[0]?.hrid || '/chat_channel_types/general';
+    createPane(defaultHrid);
+  }
 
 })();
 </script>
