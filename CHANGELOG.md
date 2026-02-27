@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.20.0](https://github.com/Celasha/Toolasha/compare/v1.19.1...v1.20.0) (2026-02-27)
+
+
+### Features
+
+* add collection and bestiary chat link type rendering ([6264b52](https://github.com/Celasha/Toolasha/commit/6264b5285b04f76c70bc28b65114acafca3bf8e7))
+* resolve chat link types and system messages in pop-out relay ([c2c0001](https://github.com/Celasha/Toolasha/commit/c2c00014c2c9dada725ff8aca00007b62eb5a46d))
+
 ## [1.19.1](https://github.com/Celasha/Toolasha/compare/v1.19.0...v1.19.1) (2026-02-27)
 
 ### Bug Fixes
