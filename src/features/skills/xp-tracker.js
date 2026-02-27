@@ -124,17 +124,6 @@ function calcXPH(prev, cur) {
 }
 
 /**
- * Filter history to entries after a given timestamp.
- * @param {Array} arr
- * @param {number|null} startTime
- * @returns {Array}
- */
-function filterHistorySince(arr, startTime) {
-    if (!startTime) return arr;
-    return arr.filter((entry) => entry.t >= startTime);
-}
-
-/**
  * Downsample an array to a fixed count with even spacing.
  * Always preserves first and last elements when possible.
  * @param {Array} arr
@@ -222,6 +211,7 @@ class XPTracker {
         this.currentActionHrid = null;
         this.currentSkillHrid = null;
         this.currentActionStartTime = null;
+        this.statsCache = {}; // skillId → { length, lastTimestamp, rate }
         this.timerRegistry = createTimerRegistry();
         this.unregisterObservers = [];
         this.tooltipObserver = null;
@@ -319,11 +309,15 @@ class XPTracker {
             }
 
             pushXP(this.xpHistory[skillId], { t, xp: skillEntry.experience });
+            delete this.statsCache[skillId];
         });
 
         storage.set(`xpHistory_${this.characterId}`, this.xpHistory, STORE_NAME);
 
-        this._setCurrentActionFromCompleted(data.endCharacterAction, t);
+        this._setCurrentAction({
+            actionHrid: data.endCharacterAction?.actionHrid ?? null,
+            startTime: t,
+        });
 
         this._updateNavBars();
     }
@@ -466,6 +460,7 @@ class XPTracker {
         this.currentActionHrid = null;
         this.currentSkillHrid = null;
         this.currentActionStartTime = null;
+        this.statsCache = {};
         this.initialized = false;
     }
 
@@ -476,9 +471,7 @@ class XPTracker {
     _syncCurrentAction(actions) {
         const currentActions = Array.isArray(actions) ? actions : dataManager.getCurrentActions();
         if (!currentActions || currentActions.length === 0) {
-            this.currentActionHrid = null;
-            this.currentSkillHrid = null;
-            this.currentActionStartTime = null;
+            this._setCurrentAction({ actionHrid: null, startTime: null });
             return;
         }
 
@@ -488,46 +481,36 @@ class XPTracker {
         if (!nextActionHrid) return;
 
         if (this.currentActionHrid && nextActionHrid !== this.currentActionHrid) {
+            this._setCurrentAction({ actionHrid: null, startTime: null });
+        }
+    }
+
+    /**
+     * Set current action context and reset action-scoped state when needed.
+     * @param {{actionHrid: string|null, startTime: number|null}} params
+     */
+    _setCurrentAction({ actionHrid, startTime }) {
+        if (!actionHrid) {
             this.currentActionHrid = null;
             this.currentSkillHrid = null;
             this.currentActionStartTime = null;
+            this.statsCache = {};
             return;
         }
 
-        if (!this.currentActionHrid) {
-            this._setCurrentActionFromQueue(nextAction);
-        }
-    }
-
-    /**
-     * Set current action from action_completed payload.
-     * @param {Object=} action
-     * @param {number} timestamp
-     */
-    _setCurrentActionFromCompleted(action, timestamp) {
-        const actionHrid = action?.actionHrid ?? null;
-        if (!actionHrid) return;
-
-        if (actionHrid !== this.currentActionHrid) {
-            this.currentActionHrid = actionHrid;
-            const actionDetails = dataManager.getActionDetails(actionHrid);
-            this.currentSkillHrid = actionDetails?.experienceGain?.skillHrid ?? actionDetails?.skillHrid ?? null;
-            this.currentActionStartTime = timestamp ?? Date.now();
-        }
-    }
-
-    /**
-     * Set current action from the queue.
-     * @param {Object} action
-     */
-    _setCurrentActionFromQueue(action) {
-        const actionHrid = action?.actionHrid ?? null;
-        if (!actionHrid) return;
+        if (actionHrid === this.currentActionHrid) return;
 
         this.currentActionHrid = actionHrid;
         const actionDetails = dataManager.getActionDetails(actionHrid);
         this.currentSkillHrid = actionDetails?.experienceGain?.skillHrid ?? actionDetails?.skillHrid ?? null;
-        this.currentActionStartTime = Date.now();
+        this.currentActionStartTime = startTime ?? Date.now();
+        this.statsCache = {};
+
+        if (!this.currentSkillHrid) return;
+        const skillId = SKILL_HRID_TO_ID[this.currentSkillHrid];
+        if (!skillId || !this.xpHistory[skillId]) return;
+
+        this.xpHistory[skillId] = this.xpHistory[skillId].filter((entry) => entry.t >= this.currentActionStartTime);
     }
 
     /**
@@ -538,11 +521,21 @@ class XPTracker {
     _getRateForSkill(skillId) {
         const history = this.xpHistory[skillId];
         if (!history) return 0;
+        if (history.length < MIN_SAMPLE_COUNT) return 0;
 
-        const filteredHistory = filterHistorySince(history, this.currentActionStartTime);
-        if (filteredHistory.length < MIN_SAMPLE_COUNT) return 0;
+        const lastEntry = history[history.length - 1];
+        const cached = this.statsCache[skillId];
+        if (cached && cached.length === history.length && cached.lastTimestamp === lastEntry.t) {
+            return cached.rate;
+        }
 
-        const stats = calcStats(filteredHistory);
+        const stats = calcStats(history);
+        this.statsCache[skillId] = {
+            length: history.length,
+            lastTimestamp: lastEntry.t,
+            rate: stats.lastXPH,
+        };
+
         return stats.lastXPH;
     }
 }
