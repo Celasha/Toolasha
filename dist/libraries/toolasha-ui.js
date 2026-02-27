@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 1.19.0
+ * Version: 1.19.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2435,7 +2435,7 @@
   /* Pane grid */
   #panes {
     display: grid;
-    grid-template-columns: 1fr;
+    grid-template-rows: 1fr;
     height: calc(100vh - 46px);
     gap: 0;
     overflow: hidden;
@@ -2682,11 +2682,11 @@
   function updateGrid() {
     const vertical = document.getElementById('vertical-toggle')?.checked;
     if (vertical) {
-      panesEl.style.gridTemplateColumns = '1fr';
-      panesEl.style.gridTemplateRows = panes.map(() => '1fr').join(' ');
-    } else {
       panesEl.style.gridTemplateRows = '1fr';
       panesEl.style.gridTemplateColumns = panes.map(() => '1fr').join(' ');
+    } else {
+      panesEl.style.gridTemplateColumns = '1fr';
+      panesEl.style.gridTemplateRows = panes.map(() => '1fr').join(' ');
     }
   }
 

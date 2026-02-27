@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      1.19.0
+// @version      1.19.1
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -73510,7 +73510,7 @@ self.onmessage = function (e) {
   /* Pane grid */
   #panes {
     display: grid;
-    grid-template-columns: 1fr;
+    grid-template-rows: 1fr;
     height: calc(100vh - 46px);
     gap: 0;
     overflow: hidden;
@@ -73757,11 +73757,11 @@ self.onmessage = function (e) {
   function updateGrid() {
     const vertical = document.getElementById('vertical-toggle')?.checked;
     if (vertical) {
-      panesEl.style.gridTemplateColumns = '1fr';
-      panesEl.style.gridTemplateRows = panes.map(() => '1fr').join(' ');
-    } else {
       panesEl.style.gridTemplateRows = '1fr';
       panesEl.style.gridTemplateColumns = panes.map(() => '1fr').join(' ');
+    } else {
+      panesEl.style.gridTemplateColumns = '1fr';
+      panesEl.style.gridTemplateRows = panes.map(() => '1fr').join(' ');
     }
   }
 
