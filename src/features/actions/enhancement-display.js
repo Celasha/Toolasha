@@ -64,7 +64,7 @@ function getProtectionItemFromUI(panel) {
 
         return null;
     } catch (error) {
-        console.error('[MWI Tools] Error detecting protection item:', error);
+        console.error('[Toolasha] Error detecting protection item:', error);
         return null;
     }
 }
@@ -124,8 +124,8 @@ export async function displayEnhancementStats(panel, itemHrid) {
         );
         injectDisplay(panel, html);
     } catch (error) {
-        console.error('[MWI Tools] ❌ Error displaying enhancement stats:', error);
-        console.error('[MWI Tools] Error stack:', error.stack);
+        console.error('[Toolasha] ❌ Error displaying enhancement stats:', error);
+        console.error('[Toolasha] Error stack:', error.stack);
     }
 }
 

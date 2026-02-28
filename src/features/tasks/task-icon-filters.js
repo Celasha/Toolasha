@@ -17,18 +17,12 @@ import config from '../../core/config.js';
 import storage from '../../core/storage.js';
 import { GAME } from '../../utils/selectors.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
+import assetManifest from '../../utils/asset-manifest.js';
 
 const STORAGE_KEYS = {
     migration: 'taskIconsFiltersMigratedV1',
     battle: 'taskIconsFilterBattle',
     dungeonPrefix: 'taskIconsFilterDungeon:',
-};
-
-// Hardcoded sprite URLs (like MWI Task Manager)
-// These may need updating when the game rebuilds with new webpack hashes
-const SPRITE_URLS = {
-    actions: '/static/media/actions_sprite.e6388cbc.svg',
-    misc: '/static/media/misc_sprite.354aafcf.svg',
 };
 
 class TaskIconFilters {
@@ -40,6 +34,7 @@ class TaskIconFilters {
         this.settingChangeHandler = null; // Handler for setting changes
         this.stateLoadPromise = null;
         this.isStateLoaded = false;
+        this.manifestUrls = {}; // Sprite URLs from asset manifest
         this.state = {
             battle: true,
             dungeons: {},
@@ -77,6 +72,11 @@ class TaskIconFilters {
         // Note: Filter bar is added by task-sorter.js when task panel appears
 
         this.loadState();
+
+        // Pre-fetch asset manifest so sprite URLs are ready when icons render
+        assetManifest.fetchManifest().then((urls) => {
+            this.manifestUrls = urls;
+        });
 
         // Listen for taskIconsDungeons setting changes
         this.settingChangeHandler = (enabled) => {
@@ -196,11 +196,14 @@ class TaskIconFilters {
      * Called by task-sorter.js when task panel appears
      * @param {HTMLElement} headerElement - Task panel header element
      */
-    addFilterBar(headerElement) {
+    async addFilterBar(headerElement) {
         // Check if we already added filters to this header
         if (headerElement.querySelector('[data-mwi-task-filters]')) {
             return;
         }
+
+        // Ensure manifest URLs are loaded before creating icons
+        this.manifestUrls = await assetManifest.fetchManifest();
 
         // Find the task panel container to observe task list
         // DOM structure: Grandparent > TaskBoardInfo (parent) > TaskSlotCount (header)
@@ -263,69 +266,6 @@ class TaskIconFilters {
     }
 
     /**
-     * Get the current items sprite URL from the DOM
-     * @returns {string|null} Items sprite URL or null if not found
-     */
-    getItemsSpriteUrl() {
-        const itemIcon = document.querySelector('use[href*="items_sprite"]');
-        if (!itemIcon) {
-            return null;
-        }
-        const href = itemIcon.getAttribute('href');
-        return href ? href.split('#')[0] : null;
-    }
-
-    /**
-     * Get the current misc sprite URL from the DOM (for combat icons)
-     * @returns {string|null} Misc sprite URL or null if not found
-     */
-    getMiscSpriteUrl() {
-        const miscIcon = document.querySelector('use[href*="misc_sprite"]');
-        if (!miscIcon) {
-            return null;
-        }
-        const href = miscIcon.getAttribute('href');
-        return href ? href.split('#')[0] : null;
-    }
-
-    /**
-     * Get the current actions sprite URL from the DOM (for dungeon icons)
-     * @returns {string|null} Actions sprite URL or null if not found
-     */
-    getActionsSpriteUrl() {
-        const actionsIcon = document.querySelector('use[href*="actions_sprite"]');
-        if (!actionsIcon) {
-            return null;
-        }
-        const href = actionsIcon.getAttribute('href');
-        return href ? href.split('#')[0] : null;
-    }
-
-    /**
-     * Clone SVG symbol from DOM into defs
-     * @param {string} symbolId - Symbol ID to clone
-     * @param {SVGDefsElement} defsElement - Defs element to append to
-     * @returns {boolean} True if symbol was found and cloned
-     */
-    cloneSymbolToDefs(symbolId, defsElement) {
-        // Check if already cloned
-        if (defsElement.querySelector(`symbol[id="${symbolId}"]`)) {
-            return true;
-        }
-
-        // Find the symbol in the game's loaded sprites
-        const symbol = document.querySelector(`symbol[id="${symbolId}"]`);
-        if (!symbol) {
-            return false;
-        }
-
-        // Clone and add to our defs
-        const clonedSymbol = symbol.cloneNode(true);
-        defsElement.appendChild(clonedSymbol);
-        return true;
-    }
-
-    /**
      * Create a clickable filter icon with count badge
      * @param {string} id - Unique identifier for this filter
      * @param {string} title - Tooltip text
@@ -342,18 +282,8 @@ class TaskIconFilters {
         container.style.userSelect = 'none';
         container.title = title;
 
-        // Get appropriate sprite URL based on type
-        let spriteUrl;
-
-        if (spriteType === 'actions') {
-            // Try dynamic extraction first, fallback to hardcoded URL
-            spriteUrl = this.getActionsSpriteUrl() || SPRITE_URLS.actions;
-        } else if (spriteType === 'misc') {
-            // Try dynamic extraction first, fallback to hardcoded URL
-            spriteUrl = this.getMiscSpriteUrl() || SPRITE_URLS.misc;
-        } else if (spriteType === 'items') {
-            spriteUrl = this.getItemsSpriteUrl();
-        }
+        // Get sprite URL from manifest
+        const spriteUrl = this.manifestUrls[spriteType] || null;
 
         // Create SVG icon
         if (spriteUrl) {
