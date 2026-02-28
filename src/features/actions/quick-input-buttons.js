@@ -13,6 +13,7 @@
  */
 
 import dataManager from '../../core/data-manager.js';
+import storage from '../../core/storage.js';
 import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
 import { calculateActionStats } from '../../utils/action-calculator.js';
@@ -45,6 +46,7 @@ import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
 class QuickInputButtons {
     constructor() {
         this.isInitialized = false;
+        this.addMode = false;
         this.unregisterObserver = null;
         this.presetHours = [0.5, 1, 2, 3, 4, 5, 6, 10, 12, 24];
         this.presetValues = [10, 100, 1000];
@@ -54,10 +56,12 @@ class QuickInputButtons {
     /**
      * Initialize the quick input buttons feature
      */
-    initialize() {
+    async initialize() {
         if (this.isInitialized) {
             return;
         }
+
+        this.addMode = await storage.get('quickInput_addMode', 'settings', false);
 
         // Start observing for action panels
         this.startObserving();
@@ -534,7 +538,17 @@ class QuickInputButtons {
 
                 // SECOND ROW: Count-based buttons (times)
                 // Add-mode toggle: clicking presets adds to current value instead of replacing
-                let addMode = false;
+                const applyToggleStyle = (btn, active) => {
+                    if (active) {
+                        btn.style.background = 'rgba(215, 183, 255, 0.2)';
+                        btn.style.color = '#d7b7ff';
+                        btn.style.borderColor = '#d7b7ff';
+                    } else {
+                        btn.style.background = 'transparent';
+                        btn.style.color = 'rgba(215, 183, 255, 0.5)';
+                        btn.style.borderColor = 'rgba(215, 183, 255, 0.3)';
+                    }
+                };
 
                 const addToggle = document.createElement('button');
                 addToggle.textContent = '+';
@@ -552,17 +566,11 @@ class QuickInputButtons {
                     line-height: 1.4;
                     transition: background 0.15s, color 0.15s, border-color 0.15s;
                 `;
+                applyToggleStyle(addToggle, this.addMode);
                 addToggle.addEventListener('click', () => {
-                    addMode = !addMode;
-                    if (addMode) {
-                        addToggle.style.background = 'rgba(215, 183, 255, 0.2)';
-                        addToggle.style.color = '#d7b7ff';
-                        addToggle.style.borderColor = '#d7b7ff';
-                    } else {
-                        addToggle.style.background = 'transparent';
-                        addToggle.style.color = 'rgba(215, 183, 255, 0.5)';
-                        addToggle.style.borderColor = 'rgba(215, 183, 255, 0.3)';
-                    }
+                    this.addMode = !this.addMode;
+                    applyToggleStyle(addToggle, this.addMode);
+                    storage.set('quickInput_addMode', this.addMode, 'settings');
                 });
                 queueContent.appendChild(addToggle);
 
@@ -570,7 +578,7 @@ class QuickInputButtons {
 
                 this.presetValues.forEach((value) => {
                     const button = this.createButton(value.toLocaleString(), () => {
-                        if (addMode) {
+                        if (this.addMode) {
                             const current = parseInt(numberInput.value) || 0;
                             this.setInputValue(numberInput, current + value);
                         } else {
