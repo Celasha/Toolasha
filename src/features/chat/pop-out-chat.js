@@ -837,7 +837,8 @@ class PopOutChat {
   }
 
   function linkifyText(el, text) {
-    const URL_RE = /https?:[/][/][^ \t\r\n<>"']+/g;
+    // Use RegExp constructor to avoid literal slashes being misread by document.write HTML parser
+    const URL_RE = new RegExp('https?://[^ \\t\\r\\n<>\\x22\\x27]+', 'g');
     let last = 0;
     let match;
     while ((match = URL_RE.exec(text)) !== null) {
