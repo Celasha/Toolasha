@@ -9,12 +9,14 @@
 import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
+import actionPanelSort from './action-panel-sort.js';
 
 class ActionFilter {
     constructor() {
         this.panels = new Map(); // actionPanel → {actionName, container}
         this.filterValue = ''; // Current filter text
         this.filterInput = null; // Reference to the input element
+        this.sortButton = null; // Reference to the sort toggle button
         this.noResultsMessage = null; // Reference to "No matching actions" message
         this.initialized = false;
         this.timerRegistry = createTimerRegistry();
@@ -64,6 +66,7 @@ class ActionFilter {
         this.filterValue = '';
         this.panels.clear();
         this.filterInput = null;
+        this.sortButton = null;
         this.noResultsMessage = null;
 
         // The h1 has display: block from game CSS, need to override it
@@ -108,6 +111,44 @@ class ActionFilter {
 
         // Store reference
         this.filterInput = input;
+
+        // Create sort toggle button
+        const SORT_MODES = ['default', 'profit', 'xp', 'coinsPerXp'];
+        const SORT_LABELS = {
+            default: 'Sort: Default',
+            profit: 'Sort: Profit',
+            xp: 'Sort: XP',
+            coinsPerXp: 'Sort: Coins/XP',
+        };
+        const sortBtn = document.createElement('button');
+        sortBtn.id = 'mwi-action-sort-toggle';
+        const updateSortBtn = () => {
+            const mode = actionPanelSort.getSortMode();
+            sortBtn.textContent = SORT_LABELS[mode] || 'Sort: Default';
+            const isActive = mode !== 'default';
+            sortBtn.style.borderColor = isActive ? config.COLOR_ACCENT : 'rgba(255, 255, 255, 0.23)';
+            sortBtn.style.color = isActive ? config.COLOR_ACCENT : 'inherit';
+        };
+        sortBtn.style.cssText = `
+            padding: 8px 12px;
+            font-size: 14px;
+            border: 1px solid rgba(255, 255, 255, 0.23);
+            border-radius: 4px;
+            background: transparent;
+            cursor: pointer;
+            font-family: inherit;
+            flex-shrink: 0;
+        `;
+        updateSortBtn();
+        sortBtn.addEventListener('click', () => {
+            const current = actionPanelSort.getSortMode();
+            const nextIndex = (SORT_MODES.indexOf(current) + 1) % SORT_MODES.length;
+            actionPanelSort.setSortMode(SORT_MODES[nextIndex]);
+            updateSortBtn();
+            actionPanelSort.sortPanelsByProfit();
+        });
+        input.insertAdjacentElement('afterend', sortBtn);
+        this.sortButton = sortBtn;
 
         // Find the container for action panels to inject "No results" message
         this.setupNoResultsMessage(titleElement);
@@ -303,6 +344,11 @@ class ActionFilter {
         if (this.filterInput && this.filterInput.parentElement) {
             this.filterInput.remove();
             this.filterInput = null;
+        }
+
+        if (this.sortButton && this.sortButton.parentElement) {
+            this.sortButton.remove();
+            this.sortButton = null;
         }
 
         if (this.noResultsMessage && this.noResultsMessage.parentElement) {

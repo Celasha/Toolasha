@@ -241,6 +241,7 @@ class GatheringStats {
         data.profitPerHour = profitPerHour;
         data.expPerHour = expPerHour;
         actionPanelSort.updateProfit(actionPanel, profitPerHour);
+        actionPanelSort.updateExpPerHour(actionPanel, expPerHour);
 
         // Check if we should hide actions with negative profit (unless pinned)
         const hideNegativeProfit = config.getSetting('actionPanel_hideNegativeProfit');

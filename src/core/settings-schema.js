@@ -131,13 +131,6 @@ export const settingsGroups = {
                 default: false,
                 help: 'Hides action panels that would result in a loss (negative profit/hr)',
             },
-            actionPanel_sortByProfit: {
-                id: 'actionPanel_sortByProfit',
-                label: 'Action panel: Sort actions by profit/hr (highest first)',
-                type: 'checkbox',
-                default: false,
-                help: 'Sorts action tiles by profit/hr in descending order. Actions without profit data appear at the end.',
-            },
             requiredMaterials: {
                 id: 'requiredMaterials',
                 label: 'Action panel: Show total required and missing materials',

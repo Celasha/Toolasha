@@ -439,6 +439,7 @@ class MaxProduceable {
         data.profitPerHour = resolvedProfitPerHour;
         data.expPerHour = expPerHour;
         data.hasMissingPrices = hasMissingPrices;
+        actionPanelSort.updateExpPerHour(actionPanel, expPerHour);
 
         // Build display HTML using .mwi-action-stat-line divs so fitLineFontSizes
         // can size each line immediately — avoids the multi-second flash of tiny
