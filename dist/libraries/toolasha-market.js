@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 1.20.1
+ * Version: 1.20.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -247,7 +247,9 @@
             // Uses 'profit' context with 'sell' side to get correct sell price
             const rawOutputPrice = getCachedPrice(itemHrid, { context: 'profit', side: 'sell' });
             const outputPriceMissing = rawOutputPrice === null;
-            const outputPrice = outputPriceMissing ? 0 : rawOutputPrice;
+            const craftingFallback = outputPriceMissing ? this.calculateCraftingCostFallback(itemHrid, getCachedPrice) : 0;
+            const outputPriceEstimated = outputPriceMissing && craftingFallback > 0;
+            const outputPrice = outputPriceMissing ? craftingFallback : rawOutputPrice;
 
             // Apply market tax (2% tax on sales)
             const priceAfterTax = profitHelpers_js.calculatePriceAfterTax(outputPrice);
@@ -276,7 +278,7 @@
             const bonusRevenue = bonusRevenueCalculator_js.calculateBonusRevenue(actionDetails, actionsPerHour, characterEquipment, itemDetailMap);
 
             const hasMissingPrices =
-                outputPriceMissing ||
+                (outputPriceMissing && !outputPriceEstimated) ||
                 materialCosts.some((material) => material.missingPrice) ||
                 teaCostData.hasMissingPrices ||
                 (bonusRevenue?.hasMissingPrices ?? false);
@@ -316,6 +318,7 @@
                 itemPrice,
                 outputPrice, // Output price before tax (bid or ask based on mode)
                 outputPriceMissing,
+                outputPriceEstimated, // True when outputPriceMissing but crafting cost fallback resolved a price
                 priceAfterTax, // Output price after 2% tax (bid or ask based on mode)
                 revenuePerHour,
                 profitPerItem,
@@ -349,6 +352,33 @@
                 timeBreakdown,
                 pricingMode, // Pricing mode for display
             };
+        }
+
+        /**
+         * Estimate an item's value from the cost of its crafting inputs.
+         * Used as a fallback when the item has no market listing (e.g. refined items).
+         * @param {string} itemHrid - Item HRID to estimate
+         * @param {Function} getCachedPrice - Price lookup function
+         * @returns {number} Estimated price (0 if no crafting action found)
+         */
+        calculateCraftingCostFallback(itemHrid, getCachedPrice) {
+            const actionDetailMap = this.getActionDetailMap();
+            for (const action of Object.values(actionDetailMap)) {
+                if (!action.outputItems) continue;
+                const output = action.outputItems.find((o) => o.itemHrid === itemHrid);
+                if (!output) continue;
+                let totalCost = 0;
+                if (action.upgradeItemHrid) {
+                    const price = getCachedPrice(action.upgradeItemHrid, { context: 'profit', side: 'buy' }) ?? 0;
+                    totalCost += price;
+                }
+                for (const input of action.inputItems || []) {
+                    const price = getCachedPrice(input.itemHrid, { context: 'profit', side: 'buy' }) ?? 0;
+                    totalCost += price * (input.count || 1);
+                }
+                return totalCost / (output.count || 1);
+            }
+            return 0;
         }
 
         /**

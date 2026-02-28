@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      1.20.1
+// @version      1.20.2
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -15189,13 +15189,6 @@ return plugin;
                     default: false,
                     help: 'Hides action panels that would result in a loss (negative profit/hr)',
                 },
-                actionPanel_sortByProfit: {
-                    id: 'actionPanel_sortByProfit',
-                    label: 'Action panel: Sort actions by profit/hr (highest first)',
-                    type: 'checkbox',
-                    default: false,
-                    help: 'Sorts action tiles by profit/hr in descending order. Actions without profit data appear at the end.',
-                },
                 requiredMaterials: {
                     id: 'requiredMaterials',
                     label: 'Action panel: Show total required and missing materials',
@@ -27355,7 +27348,9 @@ self.onmessage = function (e) {
             // Uses 'profit' context with 'sell' side to get correct sell price
             const rawOutputPrice = getCachedPrice(itemHrid, { context: 'profit', side: 'sell' });
             const outputPriceMissing = rawOutputPrice === null;
-            const outputPrice = outputPriceMissing ? 0 : rawOutputPrice;
+            const craftingFallback = outputPriceMissing ? this.calculateCraftingCostFallback(itemHrid, getCachedPrice) : 0;
+            const outputPriceEstimated = outputPriceMissing && craftingFallback > 0;
+            const outputPrice = outputPriceMissing ? craftingFallback : rawOutputPrice;
 
             // Apply market tax (2% tax on sales)
             const priceAfterTax = calculatePriceAfterTax(outputPrice);
@@ -27384,7 +27379,7 @@ self.onmessage = function (e) {
             const bonusRevenue = calculateBonusRevenue(actionDetails, actionsPerHour, characterEquipment, itemDetailMap);
 
             const hasMissingPrices =
-                outputPriceMissing ||
+                (outputPriceMissing && !outputPriceEstimated) ||
                 materialCosts.some((material) => material.missingPrice) ||
                 teaCostData.hasMissingPrices ||
                 (bonusRevenue?.hasMissingPrices ?? false);
@@ -27424,6 +27419,7 @@ self.onmessage = function (e) {
                 itemPrice,
                 outputPrice, // Output price before tax (bid or ask based on mode)
                 outputPriceMissing,
+                outputPriceEstimated, // True when outputPriceMissing but crafting cost fallback resolved a price
                 priceAfterTax, // Output price after 2% tax (bid or ask based on mode)
                 revenuePerHour,
                 profitPerItem,
@@ -27457,6 +27453,33 @@ self.onmessage = function (e) {
                 timeBreakdown,
                 pricingMode, // Pricing mode for display
             };
+        }
+
+        /**
+         * Estimate an item's value from the cost of its crafting inputs.
+         * Used as a fallback when the item has no market listing (e.g. refined items).
+         * @param {string} itemHrid - Item HRID to estimate
+         * @param {Function} getCachedPrice - Price lookup function
+         * @returns {number} Estimated price (0 if no crafting action found)
+         */
+        calculateCraftingCostFallback(itemHrid, getCachedPrice) {
+            const actionDetailMap = this.getActionDetailMap();
+            for (const action of Object.values(actionDetailMap)) {
+                if (!action.outputItems) continue;
+                const output = action.outputItems.find((o) => o.itemHrid === itemHrid);
+                if (!output) continue;
+                let totalCost = 0;
+                if (action.upgradeItemHrid) {
+                    const price = getCachedPrice(action.upgradeItemHrid, { context: 'profit', side: 'buy' }) ?? 0;
+                    totalCost += price;
+                }
+                for (const input of action.inputItems || []) {
+                    const price = getCachedPrice(input.itemHrid, { context: 'profit', side: 'buy' }) ?? 0;
+                    totalCost += price * (input.count || 1);
+                }
+                return totalCost / (output.count || 1);
+            }
+            return 0;
         }
 
         /**
@@ -45872,13 +45895,18 @@ self.onmessage = function (e) {
         const profit = Math.round(profitData.profitPerHour);
         const profitPerDay = Math.round(profitData.profitPerDay);
         const outputMissing = profitData.outputPriceMissing || false;
+        const outputEstimated = profitData.outputPriceEstimated || false;
         const bonusMissing = profitData.bonusRevenue?.hasMissingPrices || false;
         const materialMissing = profitData.materialCosts?.some((material) => material.missingPrice) || false;
         const teaMissing = profitData.teaCosts?.some((tea) => tea.missingPrice) || false;
-        const revenueMissing = outputMissing || bonusMissing;
+        const revenueMissing = (outputMissing && !outputEstimated) || bonusMissing;
+        const revenueEstimated = outputEstimated && !revenueMissing;
         const costsMissing = materialMissing || teaMissing || revenueMissing;
+        const costsEstimated = revenueEstimated && !costsMissing;
         const marketTaxMissing = revenueMissing;
+        const marketTaxEstimated = revenueEstimated && !marketTaxMissing;
         const netMissing = profitData.hasMissingPrices;
+        const netEstimated = (revenueEstimated || costsEstimated) && !netMissing;
         const bonusDrops = profitData.bonusRevenue?.bonusDrops || [];
         const bonusRevenueTotal = profitData.bonusRevenue?.totalBonusRevenue || 0;
         const efficiencyMultiplier = profitData.efficiencyMultiplier || 1;
@@ -45899,14 +45927,20 @@ self.onmessage = function (e) {
 
         // Revenue Section
         const revenueDiv = document.createElement('div');
-        const revenueLabel = revenueMissing ? '-- ⚠' : `${formatLargeNumber(revenue)}/hr`;
+        const revenueLabel = revenueMissing
+            ? '-- ⚠'
+            : revenueEstimated
+              ? `${formatLargeNumber(revenue)}/hr ⚠`
+              : `${formatLargeNumber(revenue)}/hr`;
         revenueDiv.innerHTML = `<div style="font-weight: 500; color: ${config$1.COLOR_TOOLTIP_PROFIT}; margin-bottom: 4px;">Revenue: ${revenueLabel}</div>`;
 
         // Primary Outputs subsection
         const primaryOutputContent = document.createElement('div');
         const baseOutputLine = document.createElement('div');
         baseOutputLine.style.marginLeft = '8px';
-        const baseOutputMissingNote = getMissingPriceIndicator(profitData.outputPriceMissing);
+        const baseOutputMissingNote = getMissingPriceIndicator(
+            profitData.outputPriceMissing || profitData.outputPriceEstimated
+        );
         baseOutputLine.textContent = `• ${profitData.itemName} (Base): ${profitData.itemsPerHour.toFixed(1)}/hr @ ${formatWithSeparator(Math.round(profitData.outputPrice))}${baseOutputMissingNote} each → ${formatLargeNumber(Math.round(profitData.itemsPerHour * profitData.outputPrice))}/hr`;
         primaryOutputContent.appendChild(baseOutputLine);
 
@@ -46007,7 +46041,11 @@ self.onmessage = function (e) {
 
         // Costs Section
         const costsDiv = document.createElement('div');
-        const costsLabel = costsMissing ? '-- ⚠' : `${formatLargeNumber(costs)}/hr`;
+        const costsLabel = costsMissing
+            ? '-- ⚠'
+            : costsEstimated
+              ? `${formatLargeNumber(costs)}/hr ⚠`
+              : `${formatLargeNumber(costs)}/hr`;
         costsDiv.innerHTML = `<div style="font-weight: 500; color: ${config$1.COLOR_TOOLTIP_LOSS}; margin-top: 12px; margin-bottom: 4px;">Costs: ${costsLabel}</div>`;
 
         // Material Costs subsection
@@ -46082,11 +46120,15 @@ self.onmessage = function (e) {
         const marketTaxContent = document.createElement('div');
         const marketTaxLine = document.createElement('div');
         marketTaxLine.style.marginLeft = '8px';
-        const marketTaxLabel = formatMissingLabel(marketTaxMissing, `${formatLargeNumber(marketTax)}/hr`);
+        const marketTaxLabel = marketTaxMissing
+            ? '-- ⚠'
+            : marketTaxEstimated
+              ? `${formatLargeNumber(marketTax)}/hr ⚠`
+              : `${formatLargeNumber(marketTax)}/hr`;
         marketTaxLine.textContent = `• Market Tax: 2% of revenue → ${marketTaxLabel}`;
         marketTaxContent.appendChild(marketTaxLine);
 
-        const marketTaxHeader = formatMissingLabel(marketTaxMissing, `${formatLargeNumber(marketTax)}/hr`);
+        const marketTaxHeader = marketTaxLabel;
         const marketTaxSection = createCollapsibleSection(
             '',
             `Market Tax: ${marketTaxHeader} (2%)`,
@@ -46243,7 +46285,9 @@ self.onmessage = function (e) {
     `;
         netProfitLine.textContent = netMissing
             ? 'Net Profit: -- ⚠'
-            : `Net Profit: ${formatLargeNumber(profit)}/hr, ${formatLargeNumber(profitPerDay)}/day`;
+            : netEstimated
+              ? `Net Profit: ${formatLargeNumber(profit)}/hr ⚠, ${formatLargeNumber(profitPerDay)}/day ⚠`
+              : `Net Profit: ${formatLargeNumber(profit)}/hr, ${formatLargeNumber(profitPerDay)}/day`;
         topLevelContent.appendChild(netProfitLine);
 
         // Add pricing mode label
@@ -46680,13 +46724,18 @@ self.onmessage = function (e) {
     function buildProductionActionsBreakdown(profitData, actionsCount) {
         // Calculate queued actions breakdown
         const outputMissing = profitData.outputPriceMissing || false;
+        const outputEstimated = profitData.outputPriceEstimated || false;
         const bonusMissing = profitData.bonusRevenue?.hasMissingPrices || false;
         const materialMissing = profitData.materialCosts?.some((material) => material.missingPrice) || false;
         const teaMissing = profitData.teaCosts?.some((tea) => tea.missingPrice) || false;
-        const revenueMissing = outputMissing || bonusMissing;
+        const revenueMissing = (outputMissing && !outputEstimated) || bonusMissing;
+        const revenueEstimated = outputEstimated && !revenueMissing;
         const costsMissing = materialMissing || teaMissing || revenueMissing;
+        const costsEstimated = revenueEstimated && !costsMissing;
         const marketTaxMissing = revenueMissing;
+        const marketTaxEstimated = revenueEstimated && !marketTaxMissing;
         const netMissing = profitData.hasMissingPrices;
+        const netEstimated = (revenueEstimated || costsEstimated) && !netMissing;
         const bonusDrops = profitData.bonusRevenue?.bonusDrops || [];
         const totals = calculateProductionActionTotalsFromBase({
             actionsCount,
@@ -46708,7 +46757,11 @@ self.onmessage = function (e) {
 
         // Revenue Section
         const revenueDiv = document.createElement('div');
-        const revenueLabel = formatMissingLabel(revenueMissing, formatLargeNumber(totalRevenue));
+        const revenueLabel = revenueMissing
+            ? '-- ⚠'
+            : revenueEstimated
+              ? `${formatLargeNumber(totalRevenue)} ⚠`
+              : formatLargeNumber(totalRevenue);
         revenueDiv.innerHTML = `<div style="font-weight: 500; color: ${config$1.COLOR_TOOLTIP_PROFIT}; margin-bottom: 4px;">Revenue: ${revenueLabel}</div>`;
 
         // Primary Outputs subsection
@@ -46717,7 +46770,9 @@ self.onmessage = function (e) {
         const totalBaseRevenue = totals.totalBaseRevenue;
         const baseOutputLine = document.createElement('div');
         baseOutputLine.style.marginLeft = '8px';
-        const baseOutputMissingNote = getMissingPriceIndicator(profitData.outputPriceMissing);
+        const baseOutputMissingNote = getMissingPriceIndicator(
+            profitData.outputPriceMissing || profitData.outputPriceEstimated
+        );
         baseOutputLine.textContent = `• ${profitData.itemName} (Base): ${totalBaseItems.toFixed(1)} items @ ${formatWithSeparator(Math.round(profitData.outputPrice))}${baseOutputMissingNote} each → ${formatLargeNumber(Math.round(totalBaseRevenue))}`;
         primaryOutputContent.appendChild(baseOutputLine);
 
@@ -46731,7 +46786,12 @@ self.onmessage = function (e) {
         }
 
         const primaryRevenue = totals.totalBaseRevenue + totals.totalGourmetRevenue;
-        const primaryOutputLabel = formatMissingLabel(outputMissing, formatLargeNumber(Math.round(primaryRevenue)));
+        const primaryOutputLabel =
+            outputMissing && !outputEstimated
+                ? '-- ⚠'
+                : outputEstimated
+                  ? `${formatLargeNumber(Math.round(primaryRevenue))} ⚠`
+                  : formatLargeNumber(Math.round(primaryRevenue));
         const gourmetLabel =
             profitData.gourmetBonus > 0 ? ` (${formatPercentage(profitData.gourmetBonus, 1)} gourmet)` : '';
         const primaryOutputSection = createCollapsibleSection(
@@ -46828,7 +46888,11 @@ self.onmessage = function (e) {
 
         // Costs Section
         const costsDiv = document.createElement('div');
-        const costsLabel = costsMissing ? '-- ⚠' : formatLargeNumber(totalCosts);
+        const costsLabel = costsMissing
+            ? '-- ⚠'
+            : costsEstimated
+              ? `${formatLargeNumber(totalCosts)} ⚠`
+              : formatLargeNumber(totalCosts);
         costsDiv.innerHTML = `<div style="font-weight: 500; color: ${config$1.COLOR_TOOLTIP_LOSS}; margin-top: 12px; margin-bottom: 4px;">Costs: ${costsLabel}</div>`;
 
         // Material Costs subsection
@@ -46900,11 +46964,15 @@ self.onmessage = function (e) {
         const marketTaxContent = document.createElement('div');
         const marketTaxLine = document.createElement('div');
         marketTaxLine.style.marginLeft = '8px';
-        const marketTaxLabel = marketTaxMissing ? '-- ⚠' : formatLargeNumber(totalMarketTax);
+        const marketTaxLabel = marketTaxMissing
+            ? '-- ⚠'
+            : marketTaxEstimated
+              ? `${formatLargeNumber(totalMarketTax)} ⚠`
+              : formatLargeNumber(totalMarketTax);
         marketTaxLine.textContent = `• Market Tax: 2% of revenue → ${marketTaxLabel}`;
         marketTaxContent.appendChild(marketTaxLine);
 
-        const marketTaxHeader = marketTaxMissing ? '-- ⚠' : formatLargeNumber(totalMarketTax);
+        const marketTaxHeader = marketTaxLabel;
         const marketTaxSection = createCollapsibleSection(
             '',
             `Market Tax: ${marketTaxHeader} (2%)`,
@@ -46929,13 +46997,24 @@ self.onmessage = function (e) {
         color: ${profitColor};
         margin-bottom: 8px;
     `;
-        netProfitLine.textContent = netMissing ? 'Net Profit: -- ⚠' : `Net Profit: ${formatLargeNumber(totalProfit)}`;
+        netProfitLine.textContent = netMissing
+            ? 'Net Profit: -- ⚠'
+            : netEstimated
+              ? `Net Profit: ${formatLargeNumber(totalProfit)} ⚠`
+              : `Net Profit: ${formatLargeNumber(totalProfit)}`;
         topLevelContent.appendChild(netProfitLine);
 
-        const actionsSummary = `Revenue: ${formatMissingLabel(revenueMissing, formatLargeNumber(totalRevenue))} | Costs: ${formatMissingLabel(
-        costsMissing,
-        formatLargeNumber(totalCosts)
-    )}`;
+        const revenueDisplay = revenueMissing
+            ? '-- ⚠'
+            : revenueEstimated
+              ? `${formatLargeNumber(totalRevenue)} ⚠`
+              : formatLargeNumber(totalRevenue);
+        const costsDisplay = costsMissing
+            ? '-- ⚠'
+            : costsEstimated
+              ? `${formatLargeNumber(totalCosts)} ⚠`
+              : formatLargeNumber(totalCosts);
+        const actionsSummary = `Revenue: ${revenueDisplay} | Costs: ${costsDisplay}`;
         const actionsBreakdownSection = createCollapsibleSection('', actionsSummary, null, detailsContent, false, 1);
         topLevelContent.appendChild(actionsBreakdownSection);
 
@@ -46953,6 +47032,317 @@ self.onmessage = function (e) {
     }
 
     /**
+     * Action Panel Sort Manager
+     *
+     * Centralized sorting logic for action panels.
+     * Handles both profit-based sorting and pin priority.
+     * Used by max-produceable and gathering-stats features.
+     */
+
+
+    class ActionPanelSort {
+        constructor() {
+            this.panels = new Map(); // actionPanel → {actionHrid, profitPerHour, expPerHour}
+            this.pinnedActions = new Set(); // Set of pinned action HRIDs
+            this.sortMode = 'default'; // 'default' | 'profit' | 'xp' | 'coinsPerXp'
+            this.sortTimeout = null; // Debounce timer
+            this.initialized = false;
+            this.timerRegistry = createTimerRegistry();
+            this.handlers = {};
+        }
+
+        /**
+         * Initialize - load pinned actions from storage
+         */
+        async initialize() {
+            if (this.initialized) return;
+
+            const pinnedData = await storage$1.getJSON('pinnedActions', 'settings', []);
+            this.pinnedActions = new Set(pinnedData);
+            this.sortMode = await storage$1.get('actionSortMode', 'settings', 'default');
+            this.initialized = true;
+
+            // Listen for character switch to clear character-specific data
+            if (!this.handlers.characterSwitch) {
+                this.handlers.characterSwitch = () => this.onCharacterSwitch();
+                dataManager$1.on('character_switching', this.handlers.characterSwitch);
+            }
+        }
+
+        /**
+         * Handle character switch - clear all cached data
+         */
+        async onCharacterSwitch() {
+            this.clearAllPanels();
+            this.pinnedActions.clear();
+            this.initialized = false;
+        }
+
+        /**
+         * Disable - cleanup event listeners
+         */
+        disable() {
+            this.clearAllPanels();
+            if (this.handlers.characterSwitch) {
+                dataManager$1.off('character_switching', this.handlers.characterSwitch);
+                this.handlers.characterSwitch = null;
+            }
+            this.initialized = false;
+        }
+
+        /**
+         * Register a panel for sorting
+         * @param {HTMLElement} actionPanel - The action panel element
+         * @param {string} actionHrid - The action HRID
+         * @param {number|null} profitPerHour - Profit per hour (null if not calculated yet)
+         */
+        registerPanel(actionPanel, actionHrid, profitPerHour = null) {
+            this.panels.set(actionPanel, {
+                actionHrid: actionHrid,
+                profitPerHour: profitPerHour,
+                expPerHour: null,
+            });
+        }
+
+        /**
+         * Update profit for a registered panel
+         * @param {HTMLElement} actionPanel - The action panel element
+         * @param {number|null} profitPerHour - Profit per hour
+         */
+        updateProfit(actionPanel, profitPerHour) {
+            const data = this.panels.get(actionPanel);
+            if (data) {
+                data.profitPerHour = profitPerHour;
+            }
+        }
+
+        /**
+         * Update exp/hr for a registered panel
+         * @param {HTMLElement} actionPanel - The action panel element
+         * @param {number|null} expPerHour - Experience per hour
+         */
+        updateExpPerHour(actionPanel, expPerHour) {
+            const data = this.panels.get(actionPanel);
+            if (data) {
+                data.expPerHour = expPerHour;
+            }
+        }
+
+        /**
+         * Set the active sort mode
+         * @param {'default'|'profit'|'xp'|'coinsPerXp'} mode
+         */
+        setSortMode(mode) {
+            this.sortMode = mode;
+            storage$1.set('actionSortMode', mode, 'settings');
+        }
+
+        /**
+         * Get the active sort mode
+         * @returns {'default'|'profit'|'xp'|'coinsPerXp'}
+         */
+        getSortMode() {
+            return this.sortMode;
+        }
+
+        /**
+         * Unregister a panel (cleanup when panel removed from DOM)
+         * @param {HTMLElement} actionPanel - The action panel element
+         */
+        unregisterPanel(actionPanel) {
+            this.panels.delete(actionPanel);
+        }
+
+        /**
+         * Toggle pin state for an action
+         * @param {string} actionHrid - Action HRID to toggle
+         * @returns {boolean} New pin state
+         */
+        async togglePin(actionHrid) {
+            if (this.pinnedActions.has(actionHrid)) {
+                this.pinnedActions.delete(actionHrid);
+            } else {
+                this.pinnedActions.add(actionHrid);
+            }
+
+            // Save to storage
+            await storage$1.setJSON('pinnedActions', Array.from(this.pinnedActions), 'settings', true);
+
+            return this.pinnedActions.has(actionHrid);
+        }
+
+        /**
+         * Check if action is pinned
+         * @param {string} actionHrid - Action HRID
+         * @returns {boolean}
+         */
+        isPinned(actionHrid) {
+            return this.pinnedActions.has(actionHrid);
+        }
+
+        /**
+         * Get all pinned actions
+         * @returns {Set<string>}
+         */
+        getPinnedActions() {
+            return this.pinnedActions;
+        }
+
+        /**
+         * Clear all panel references (called during character switch to prevent memory leaks)
+         */
+        clearAllPanels() {
+            // Clear sort timeout
+            if (this.sortTimeout) {
+                clearTimeout(this.sortTimeout);
+                this.sortTimeout = null;
+            }
+
+            this.timerRegistry.clearAll();
+
+            // Clear all panel references
+            this.panels.clear();
+        }
+
+        /**
+         * Trigger a debounced sort
+         */
+        triggerSort() {
+            this.scheduleSortIfEnabled();
+        }
+
+        /**
+         * Schedule a sort to run after a short delay (debounced)
+         */
+        scheduleSortIfEnabled() {
+            const hasPinnedActions = this.pinnedActions.size > 0;
+
+            // Only sort if a sort mode is active OR there are pinned actions
+            if (this.sortMode === 'default' && !hasPinnedActions) {
+                return;
+            }
+
+            // Clear existing timeout
+            if (this.sortTimeout) {
+                clearTimeout(this.sortTimeout);
+            }
+
+            // Schedule new sort after 300ms of inactivity (reduced from 500ms)
+            this.sortTimeout = setTimeout(() => {
+                this.sortPanelsByProfit();
+                this.sortTimeout = null;
+            }, 300);
+            this.timerRegistry.registerTimeout(this.sortTimeout);
+        }
+
+        /**
+         * Sort action panels by the active sort mode, with pinned actions at top
+         */
+        sortPanelsByProfit() {
+            const sortMode = this.sortMode;
+
+            // Group panels by their parent container
+            const containerMap = new Map();
+
+            // Clean up stale panels and group by container
+            for (const [actionPanel, data] of this.panels.entries()) {
+                const container = actionPanel.parentElement;
+
+                // If no parent, panel is detached - clean it up
+                if (!container) {
+                    this.panels.delete(actionPanel);
+                    continue;
+                }
+
+                if (!containerMap.has(container)) {
+                    containerMap.set(container, []);
+                }
+
+                const isPinned = this.pinnedActions.has(data.actionHrid);
+
+                containerMap.get(container).push({
+                    panel: actionPanel,
+                    profit: data.profitPerHour ?? null,
+                    exp: data.expPerHour ?? null,
+                    pinned: isPinned,
+                    originalIndex: containerMap.get(container).length,
+                    actionHrid: data.actionHrid,
+                });
+            }
+
+            // Dismiss any open tooltips before reordering (prevents stuck tooltips)
+            // Only dismiss if a tooltip exists and its trigger is not hovered
+            const openTooltip = document.querySelector('.MuiTooltip-popper');
+            if (openTooltip) {
+                const trigger = document.querySelector(`[aria-describedby="${openTooltip.id}"]`);
+                if (!trigger || !trigger.matches(':hover')) {
+                    dismissTooltips();
+                }
+            }
+
+            // Sort and reorder each container
+            for (const [container, panels] of containerMap.entries()) {
+                panels.sort((a, b) => {
+                    // Pinned actions always come first
+                    if (a.pinned && !b.pinned) return -1;
+                    if (!a.pinned && b.pinned) return 1;
+
+                    // Both same pin state — apply active sort mode
+                    return this._compareByMode(a, b, sortMode);
+                });
+
+                // Reorder DOM elements using DocumentFragment to batch reflows
+                // This prevents 50 individual reflows (one per appendChild)
+                const fragment = document.createDocumentFragment();
+                panels.forEach(({ panel }) => {
+                    fragment.appendChild(panel);
+                });
+                container.appendChild(fragment);
+            }
+        }
+
+        /**
+         * Compare two panel entries by the active sort mode
+         * @private
+         */
+        _compareByMode(a, b, sortMode) {
+            if (sortMode === 'profit') {
+                if (a.profit === null && b.profit === null) return 0;
+                if (a.profit === null) return 1;
+                if (b.profit === null) return -1;
+                return b.profit - a.profit;
+            }
+
+            if (sortMode === 'xp') {
+                if (a.exp === null && b.exp === null) return 0;
+                if (a.exp === null) return 1;
+                if (b.exp === null) return -1;
+                return b.exp - a.exp;
+            }
+
+            if (sortMode === 'coinsPerXp') {
+                const aRatio = a.profit !== null && a.exp ? a.profit / a.exp : null;
+                const bRatio = b.profit !== null && b.exp ? b.profit / b.exp : null;
+                if (aRatio === null && bRatio === null) return 0;
+                if (aRatio === null) return 1;
+                if (bRatio === null) return -1;
+                return bRatio - aRatio;
+            }
+
+            // 'default' — sort ascending by required level, falling back to insertion order
+            const aLevel = dataManager$1.getActionDetails(a.actionHrid)?.levelRequirement?.level ?? null;
+            const bLevel = dataManager$1.getActionDetails(b.actionHrid)?.levelRequirement?.level ?? null;
+            if (aLevel === null && bLevel === null) return a.originalIndex - b.originalIndex;
+            if (aLevel === null) return 1;
+            if (bLevel === null) return -1;
+            if (aLevel !== bLevel) return aLevel - bLevel;
+            return a.originalIndex - b.originalIndex;
+        }
+    }
+
+    const actionPanelSort = new ActionPanelSort();
+
+    /**
      * Action Filter Manager
      *
      * Adds a search/filter input box to action panel pages (gathering/production).
@@ -46966,6 +47356,7 @@ self.onmessage = function (e) {
             this.panels = new Map(); // actionPanel → {actionName, container}
             this.filterValue = ''; // Current filter text
             this.filterInput = null; // Reference to the input element
+            this.sortButton = null; // Reference to the sort toggle button
             this.noResultsMessage = null; // Reference to "No matching actions" message
             this.initialized = false;
             this.timerRegistry = createTimerRegistry();
@@ -47015,6 +47406,7 @@ self.onmessage = function (e) {
             this.filterValue = '';
             this.panels.clear();
             this.filterInput = null;
+            this.sortButton = null;
             this.noResultsMessage = null;
 
             // The h1 has display: block from game CSS, need to override it
@@ -47059,6 +47451,44 @@ self.onmessage = function (e) {
 
             // Store reference
             this.filterInput = input;
+
+            // Create sort toggle button
+            const SORT_MODES = ['default', 'profit', 'xp', 'coinsPerXp'];
+            const SORT_LABELS = {
+                default: 'Sort: Default',
+                profit: 'Sort: Profit',
+                xp: 'Sort: XP',
+                coinsPerXp: 'Sort: Coins/XP',
+            };
+            const sortBtn = document.createElement('button');
+            sortBtn.id = 'mwi-action-sort-toggle';
+            const updateSortBtn = () => {
+                const mode = actionPanelSort.getSortMode();
+                sortBtn.textContent = SORT_LABELS[mode] || 'Sort: Default';
+                const isActive = mode !== 'default';
+                sortBtn.style.borderColor = isActive ? config$1.COLOR_ACCENT : 'rgba(255, 255, 255, 0.23)';
+                sortBtn.style.color = isActive ? config$1.COLOR_ACCENT : 'inherit';
+            };
+            sortBtn.style.cssText = `
+            padding: 8px 12px;
+            font-size: 14px;
+            border: 1px solid rgba(255, 255, 255, 0.23);
+            border-radius: 4px;
+            background: transparent;
+            cursor: pointer;
+            font-family: inherit;
+            flex-shrink: 0;
+        `;
+            updateSortBtn();
+            sortBtn.addEventListener('click', () => {
+                const current = actionPanelSort.getSortMode();
+                const nextIndex = (SORT_MODES.indexOf(current) + 1) % SORT_MODES.length;
+                actionPanelSort.setSortMode(SORT_MODES[nextIndex]);
+                updateSortBtn();
+                actionPanelSort.sortPanelsByProfit();
+            });
+            input.insertAdjacentElement('afterend', sortBtn);
+            this.sortButton = sortBtn;
 
             // Find the container for action panels to inject "No results" message
             this.setupNoResultsMessage(titleElement);
@@ -47254,6 +47684,11 @@ self.onmessage = function (e) {
             if (this.filterInput && this.filterInput.parentElement) {
                 this.filterInput.remove();
                 this.filterInput = null;
+            }
+
+            if (this.sortButton && this.sortButton.parentElement) {
+                this.sortButton.remove();
+                this.sortButton = null;
             }
 
             if (this.noResultsMessage && this.noResultsMessage.parentElement) {
@@ -51345,268 +51780,6 @@ self.onmessage = function (e) {
     const outputTotals = new OutputTotals();
 
     /**
-     * Action Panel Sort Manager
-     *
-     * Centralized sorting logic for action panels.
-     * Handles both profit-based sorting and pin priority.
-     * Used by max-produceable and gathering-stats features.
-     */
-
-
-    class ActionPanelSort {
-        constructor() {
-            this.panels = new Map(); // actionPanel → {actionHrid, profitPerHour}
-            this.pinnedActions = new Set(); // Set of pinned action HRIDs
-            this.sortTimeout = null; // Debounce timer
-            this.initialized = false;
-            this.timerRegistry = createTimerRegistry();
-            this.handlers = {};
-        }
-
-        /**
-         * Initialize - load pinned actions from storage
-         */
-        async initialize() {
-            if (this.initialized) return;
-
-            const pinnedData = await storage$1.getJSON('pinnedActions', 'settings', []);
-            this.pinnedActions = new Set(pinnedData);
-            this.initialized = true;
-
-            // Listen for character switch to clear character-specific data
-            if (!this.handlers.characterSwitch) {
-                this.handlers.characterSwitch = () => this.onCharacterSwitch();
-                dataManager$1.on('character_switching', this.handlers.characterSwitch);
-            }
-        }
-
-        /**
-         * Handle character switch - clear all cached data
-         */
-        async onCharacterSwitch() {
-            this.clearAllPanels();
-            this.pinnedActions.clear();
-            this.initialized = false;
-        }
-
-        /**
-         * Disable - cleanup event listeners
-         */
-        disable() {
-            this.clearAllPanels();
-            if (this.handlers.characterSwitch) {
-                dataManager$1.off('character_switching', this.handlers.characterSwitch);
-                this.handlers.characterSwitch = null;
-            }
-            this.initialized = false;
-        }
-
-        /**
-         * Register a panel for sorting
-         * @param {HTMLElement} actionPanel - The action panel element
-         * @param {string} actionHrid - The action HRID
-         * @param {number|null} profitPerHour - Profit per hour (null if not calculated yet)
-         */
-        registerPanel(actionPanel, actionHrid, profitPerHour = null) {
-            this.panels.set(actionPanel, {
-                actionHrid: actionHrid,
-                profitPerHour: profitPerHour,
-            });
-        }
-
-        /**
-         * Update profit for a registered panel
-         * @param {HTMLElement} actionPanel - The action panel element
-         * @param {number|null} profitPerHour - Profit per hour
-         */
-        updateProfit(actionPanel, profitPerHour) {
-            const data = this.panels.get(actionPanel);
-            if (data) {
-                data.profitPerHour = profitPerHour;
-            }
-        }
-
-        /**
-         * Unregister a panel (cleanup when panel removed from DOM)
-         * @param {HTMLElement} actionPanel - The action panel element
-         */
-        unregisterPanel(actionPanel) {
-            this.panels.delete(actionPanel);
-        }
-
-        /**
-         * Toggle pin state for an action
-         * @param {string} actionHrid - Action HRID to toggle
-         * @returns {boolean} New pin state
-         */
-        async togglePin(actionHrid) {
-            if (this.pinnedActions.has(actionHrid)) {
-                this.pinnedActions.delete(actionHrid);
-            } else {
-                this.pinnedActions.add(actionHrid);
-            }
-
-            // Save to storage
-            await storage$1.setJSON('pinnedActions', Array.from(this.pinnedActions), 'settings', true);
-
-            return this.pinnedActions.has(actionHrid);
-        }
-
-        /**
-         * Check if action is pinned
-         * @param {string} actionHrid - Action HRID
-         * @returns {boolean}
-         */
-        isPinned(actionHrid) {
-            return this.pinnedActions.has(actionHrid);
-        }
-
-        /**
-         * Get all pinned actions
-         * @returns {Set<string>}
-         */
-        getPinnedActions() {
-            return this.pinnedActions;
-        }
-
-        /**
-         * Clear all panel references (called during character switch to prevent memory leaks)
-         */
-        clearAllPanels() {
-            // Clear sort timeout
-            if (this.sortTimeout) {
-                clearTimeout(this.sortTimeout);
-                this.sortTimeout = null;
-            }
-
-            this.timerRegistry.clearAll();
-
-            // Clear all panel references
-            this.panels.clear();
-        }
-
-        /**
-         * Trigger a debounced sort
-         */
-        triggerSort() {
-            this.scheduleSortIfEnabled();
-        }
-
-        /**
-         * Schedule a sort to run after a short delay (debounced)
-         */
-        scheduleSortIfEnabled() {
-            const sortByProfitEnabled = config$1.getSetting('actionPanel_sortByProfit');
-            const hasPinnedActions = this.pinnedActions.size > 0;
-
-            // Only sort if either profit sorting is enabled OR there are pinned actions
-            if (!sortByProfitEnabled && !hasPinnedActions) {
-                return;
-            }
-
-            // Clear existing timeout
-            if (this.sortTimeout) {
-                clearTimeout(this.sortTimeout);
-            }
-
-            // Schedule new sort after 300ms of inactivity (reduced from 500ms)
-            this.sortTimeout = setTimeout(() => {
-                this.sortPanelsByProfit();
-                this.sortTimeout = null;
-            }, 300);
-            this.timerRegistry.registerTimeout(this.sortTimeout);
-        }
-
-        /**
-         * Sort action panels by profit/hr (highest first), with pinned actions at top
-         */
-        sortPanelsByProfit() {
-            const sortByProfitEnabled = config$1.getSetting('actionPanel_sortByProfit');
-
-            // Group panels by their parent container
-            const containerMap = new Map();
-
-            // Clean up stale panels and group by container
-            for (const [actionPanel, data] of this.panels.entries()) {
-                const container = actionPanel.parentElement;
-
-                // If no parent, panel is detached - clean it up
-                if (!container) {
-                    this.panels.delete(actionPanel);
-                    continue;
-                }
-
-                if (!containerMap.has(container)) {
-                    containerMap.set(container, []);
-                }
-
-                const isPinned = this.pinnedActions.has(data.actionHrid);
-                const profitPerHour = data.profitPerHour ?? null;
-
-                containerMap.get(container).push({
-                    panel: actionPanel,
-                    profit: profitPerHour,
-                    pinned: isPinned,
-                    originalIndex: containerMap.get(container).length,
-                    actionHrid: data.actionHrid,
-                });
-            }
-
-            // Dismiss any open tooltips before reordering (prevents stuck tooltips)
-            // Only dismiss if a tooltip exists and its trigger is not hovered
-            const openTooltip = document.querySelector('.MuiTooltip-popper');
-            if (openTooltip) {
-                const trigger = document.querySelector(`[aria-describedby="${openTooltip.id}"]`);
-                if (!trigger || !trigger.matches(':hover')) {
-                    dismissTooltips();
-                }
-            }
-
-            // Sort and reorder each container
-            for (const [container, panels] of containerMap.entries()) {
-                panels.sort((a, b) => {
-                    // Pinned actions always come first
-                    if (a.pinned && !b.pinned) return -1;
-                    if (!a.pinned && b.pinned) return 1;
-
-                    // Both pinned - sort by profit if enabled, otherwise by original order
-                    if (a.pinned && b.pinned) {
-                        if (sortByProfitEnabled) {
-                            if (a.profit === null && b.profit === null) return 0;
-                            if (a.profit === null) return 1;
-                            if (b.profit === null) return -1;
-                            return b.profit - a.profit;
-                        } else {
-                            return a.originalIndex - b.originalIndex;
-                        }
-                    }
-
-                    // Both unpinned - only sort by profit if setting is enabled
-                    if (sortByProfitEnabled) {
-                        if (a.profit === null && b.profit === null) return 0;
-                        if (a.profit === null) return 1;
-                        if (b.profit === null) return -1;
-                        return b.profit - a.profit;
-                    } else {
-                        // Keep original order
-                        return a.originalIndex - b.originalIndex;
-                    }
-                });
-
-                // Reorder DOM elements using DocumentFragment to batch reflows
-                // This prevents 50 individual reflows (one per appendChild)
-                const fragment = document.createDocumentFragment();
-                panels.forEach(({ panel }) => {
-                    fragment.appendChild(panel);
-                });
-                container.appendChild(fragment);
-            }
-        }
-    }
-
-    const actionPanelSort = new ActionPanelSort();
-
-    /**
      * Max Produceable Display Module
      *
      * Shows maximum craftable quantity on action panels based on current inventory.
@@ -51702,7 +51875,15 @@ self.onmessage = function (e) {
         setupObserver() {
             // Watch for skill action panels (in skill screen, not detail modal)
             this.unregisterObserver = domObserver$1.onClass('MaxProduceable', 'SkillAction_skillAction', (actionPanel) => {
+                const isNew = !this.actionElements.has(actionPanel);
                 this.injectMaxProduceable(actionPanel);
+
+                // Only schedule a profit recalculation for genuinely new panels.
+                // Panels that are already registered are being re-added by the sort
+                // reorder (DocumentFragment move), not navigated to fresh — scheduling
+                // updateAllCounts for them creates the sort→observer→updateAllCounts→sort
+                // infinite loop that causes continuous flashing and CPU waste.
+                if (!isNew) return;
 
                 // Schedule profit calculation after panels settle
                 // This prevents 20-50 simultaneous API calls during character switch
@@ -51974,6 +52155,7 @@ self.onmessage = function (e) {
             // Calculate profit/hr (for both gathering and production)
             let profitPerHour = null;
             let hasMissingPrices = false;
+            let outputPriceEstimated = false;
             const actionDetails = dataManager$1.getActionDetails(data.actionHrid);
 
             if (actionDetails) {
@@ -51985,6 +52167,7 @@ self.onmessage = function (e) {
                     const profitData = await calculateProductionProfit(data.actionHrid);
                     profitPerHour = profitData?.profitPerHour || null;
                     hasMissingPrices = profitData?.hasMissingPrices || false;
+                    outputPriceEstimated = profitData?.outputPriceEstimated || false;
                 }
             }
 
@@ -52035,6 +52218,7 @@ self.onmessage = function (e) {
             data.profitPerHour = resolvedProfitPerHour;
             data.expPerHour = expPerHour;
             data.hasMissingPrices = hasMissingPrices;
+            actionPanelSort.updateExpPerHour(actionPanel, expPerHour);
 
             // Build display HTML using .mwi-action-stat-line divs so fitLineFontSizes
             // can size each line immediately — avoids the multi-second flash of tiny
@@ -52048,8 +52232,9 @@ self.onmessage = function (e) {
             } else if (resolvedProfitPerHour !== null) {
                 const profitColor = resolvedProfitPerHour >= 0 ? config$1.COLOR_PROFIT : config$1.COLOR_LOSS;
                 const profitSign = resolvedProfitPerHour >= 0 ? '' : '-';
+                const estimatedNote = outputPriceEstimated ? ' ⚠' : '';
                 html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
-                html += `<span data-stat="profit" style="color: ${profitColor};">Profit/hr: ${profitSign}${formatKMB(Math.abs(resolvedProfitPerHour))}</span></div>`;
+                html += `<span data-stat="profit" style="color: ${profitColor};">Profit/hr: ${profitSign}${formatKMB(Math.abs(resolvedProfitPerHour))}${estimatedNote}</span></div>`;
             }
 
             if (expPerHour !== null && expPerHour > 0) {
@@ -52075,7 +52260,6 @@ self.onmessage = function (e) {
          * Update all counts
          */
         async updateAllCounts() {
-            // Pre-load market API ONCE before all profit calculations
             // This prevents all 20+ calculations from triggering simultaneous fetches
             if (!marketAPI.isLoaded()) {
                 await marketAPI.fetch();
@@ -52510,6 +52694,13 @@ self.onmessage = function (e) {
             // Check if already injected
             const existingDisplay = actionPanel.querySelector('.mwi-gathering-stats');
             if (existingDisplay) {
+                // If the panel is already registered in our Map, it's being re-added by a
+                // sort reorder (DocumentFragment move) — not genuine navigation. Skip
+                // updateStats and triggerSort to avoid the sort→observer→triggerSort loop.
+                if (this.actionElements.has(actionPanel)) {
+                    return;
+                }
+
                 // Re-register existing display (DOM elements may be reused across navigation).
                 // Use skipRender so we don't wipe innerHTML (which would erase the emoji
                 // set by addBestActionIndicators and cause a visible blink).
@@ -52640,6 +52831,7 @@ self.onmessage = function (e) {
             data.profitPerHour = profitPerHour;
             data.expPerHour = expPerHour;
             actionPanelSort.updateProfit(actionPanel, profitPerHour);
+            actionPanelSort.updateExpPerHour(actionPanel, expPerHour);
 
             // Check if we should hide actions with negative profit (unless pinned)
             const hideNegativeProfit = config$1.getSetting('actionPanel_hideNegativeProfit');
@@ -73959,6 +74151,28 @@ self.onmessage = function (e) {
     return h + ':' + m;
   }
 
+  function linkifyText(el, text) {
+    const URL_RE = /https?:[/][/][^ \t\r\n<>"']+/g;
+    let last = 0;
+    let match;
+    while ((match = URL_RE.exec(text)) !== null) {
+      if (match.index > last) {
+        el.appendChild(document.createTextNode(text.slice(last, match.index)));
+      }
+      const a = document.createElement('a');
+      a.href = match[0];
+      a.textContent = match[0];
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.style.cssText = 'color: #60a5fa; word-break: break-all;';
+      el.appendChild(a);
+      last = match.index + match[0].length;
+    }
+    if (last < text.length) {
+      el.appendChild(document.createTextNode(text.slice(last)));
+    }
+  }
+
   function appendMessage(paneObj, msg) {
     const { messages } = paneObj;
     const atBottom = messages.scrollHeight - messages.scrollTop - messages.clientHeight < 40;
@@ -73986,7 +74200,7 @@ self.onmessage = function (e) {
 
       const textEl = document.createElement('span');
       textEl.className = 'msg-text';
-      textEl.textContent = msg.m;
+      linkifyText(textEl, msg.m);
 
       row.appendChild(timeEl);
       row.appendChild(nameEl);
