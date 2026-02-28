@@ -2,13 +2,12 @@
 
 ## [1.20.2](https://github.com/Celasha/Toolasha/compare/v1.20.1...v1.20.2) (2026-02-28)
 
-
 ### Bug Fixes
 
-* linkify URLs in pop-out chat regular messages ([e06a52b](https://github.com/Celasha/Toolasha/commit/e06a52bc000f62b140202d0c15afe5c1c716dbb6))
-* prevent infinite sort→observer loop on action panel reorder ([e6365f9](https://github.com/Celasha/Toolasha/commit/e6365f929e99c5d936b64fefc64edd50ec2c7929))
-* replace sort-by-profit setting with inline button cycling Default/Profit/XP/Coins-per-XP ([5a8006c](https://github.com/Celasha/Toolasha/commit/5a8006ca7f2b83813ac109e1b8eb241f64a4820e))
-* show estimated price indicator for items without market listing ([4960c0f](https://github.com/Celasha/Toolasha/commit/4960c0f10e96ec41364982f1b9c5906253aa3cc0))
+- linkify URLs in pop-out chat regular messages ([e06a52b](https://github.com/Celasha/Toolasha/commit/e06a52bc000f62b140202d0c15afe5c1c716dbb6))
+- prevent infinite sort→observer loop on action panel reorder ([e6365f9](https://github.com/Celasha/Toolasha/commit/e6365f929e99c5d936b64fefc64edd50ec2c7929))
+- replace sort-by-profit setting with inline button cycling Default/Profit/XP/Coins-per-XP ([5a8006c](https://github.com/Celasha/Toolasha/commit/5a8006ca7f2b83813ac109e1b8eb241f64a4820e))
+- show estimated price indicator for items without market listing ([4960c0f](https://github.com/Celasha/Toolasha/commit/4960c0f10e96ec41364982f1b9c5906253aa3cc0))
 
 ## [1.20.1](https://github.com/Celasha/Toolasha/compare/v1.20.0...v1.20.1) (2026-02-27)
 
