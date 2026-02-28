@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      1.20.3
+// @version      1.20.4
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -74190,7 +74190,8 @@ self.onmessage = function (e) {
   }
 
   function linkifyText(el, text) {
-    const URL_RE = /https?:[/][/][^ \t\r\n<>"']+/g;
+    // Use RegExp constructor to avoid literal slashes being misread by document.write HTML parser
+    const URL_RE = new RegExp('https?://[^ \\t\\r\\n<>\\x22\\x27]+', 'g');
     let last = 0;
     let match;
     while ((match = URL_RE.exec(text)) !== null) {

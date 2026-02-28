@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 1.20.3
+ * Version: 1.20.4
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2875,7 +2875,8 @@
   }
 
   function linkifyText(el, text) {
-    const URL_RE = /https?:[/][/][^ \t\r\n<>"']+/g;
+    // Use RegExp constructor to avoid literal slashes being misread by document.write HTML parser
+    const URL_RE = new RegExp('https?://[^ \\t\\r\\n<>\\x22\\x27]+', 'g');
     let last = 0;
     let match;
     while ((match = URL_RE.exec(text)) !== null) {
