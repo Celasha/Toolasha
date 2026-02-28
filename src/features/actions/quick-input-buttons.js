@@ -533,11 +533,49 @@ class QuickInputButtons {
                 queueContent.appendChild(document.createElement('div')); // Line break
 
                 // SECOND ROW: Count-based buttons (times)
+                // Add-mode toggle: clicking presets adds to current value instead of replacing
+                let addMode = false;
+
+                const addToggle = document.createElement('button');
+                addToggle.textContent = '+';
+                addToggle.title = 'Toggle add mode: click to accumulate counts instead of setting them';
+                addToggle.style.cssText = `
+                    font-size: 11px;
+                    font-weight: 700;
+                    padding: 1px 5px;
+                    border-radius: 4px;
+                    border: 1px solid rgba(215, 183, 255, 0.3);
+                    background: transparent;
+                    color: rgba(215, 183, 255, 0.5);
+                    cursor: pointer;
+                    margin-right: 4px;
+                    line-height: 1.4;
+                    transition: background 0.15s, color 0.15s, border-color 0.15s;
+                `;
+                addToggle.addEventListener('click', () => {
+                    addMode = !addMode;
+                    if (addMode) {
+                        addToggle.style.background = 'rgba(215, 183, 255, 0.2)';
+                        addToggle.style.color = '#d7b7ff';
+                        addToggle.style.borderColor = '#d7b7ff';
+                    } else {
+                        addToggle.style.background = 'transparent';
+                        addToggle.style.color = 'rgba(215, 183, 255, 0.5)';
+                        addToggle.style.borderColor = 'rgba(215, 183, 255, 0.3)';
+                    }
+                });
+                queueContent.appendChild(addToggle);
+
                 queueContent.appendChild(document.createTextNode('Do '));
 
                 this.presetValues.forEach((value) => {
                     const button = this.createButton(value.toLocaleString(), () => {
-                        this.setInputValue(numberInput, value);
+                        if (addMode) {
+                            const current = parseInt(numberInput.value) || 0;
+                            this.setInputValue(numberInput, current + value);
+                        } else {
+                            this.setInputValue(numberInput, value);
+                        }
                     });
                     queueContent.appendChild(button);
                 });
