@@ -1,0 +1,63 @@
+name: Discord Weekly Summary
+
+on:
+  schedule:
+    # Sunday 6pm Pacific = Monday 02:00 UTC
+    - cron: '0 2 * * 1'
+  workflow_dispatch: # allow manual trigger for testing
+
+jobs:
+  summary:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch commits and post weekly summary
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEEKLY_WEBHOOK }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          REPO="${{ github.repository }}"
+          SINCE=$(date -u -d '7 days ago' +"%Y-%m-%dT%H:%M:%SZ")
+          TODAY=$(date -u +"%b %-d, %Y")
+          WEEK_START=$(date -u -d '7 days ago' +"%b %-d")
+
+          # Fetch commits to main in the past 7 days
+          COMMITS=$(curl -s \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${REPO}/commits?sha=main&since=${SINCE}&per_page=50")
+
+          COUNT=$(echo "$COMMITS" | python3 -c "import sys,json; data=json.load(sys.stdin); print(len(data))")
+
+          if [ "$COUNT" -eq 0 ]; then
+            LINES="No commits this week."
+          else
+            LINES=$(echo "$COMMITS" | python3 -c "
+          import sys, json
+          data = json.load(sys.stdin)
+          for c in data:
+              sha = c['sha'][:7]
+              msg = c['commit']['message'].splitlines()[0]
+              url = c['html_url']
+              print(f'\`{sha}\` {msg}')
+          ")
+          fi
+
+          # TODO: replace LINES with AI-generated narrative summary here
+
+          # Escape for JSON
+          BODY=$(printf '%s' "$LINES" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read()))")
+
+          PAYLOAD=$(cat <<EOF
+          {
+            "embeds": [{
+              "title": "Toolasha — Weekly Summary (${WEEK_START}–${TODAY})",
+              "color": 7291618,
+              "description": ${BODY}
+            }]
+          }
+          EOF
+          )
+
+          curl -s -X POST "$DISCORD_WEBHOOK" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD"
