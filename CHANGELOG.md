@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.21.1](https://github.com/Celasha/Toolasha/compare/v1.21.0...v1.21.1) (2026-02-28)
+
+### Continuous Integration
+
+- parse PR body for commit list instead of PR commits API ([cefbacc](https://github.com/Celasha/Toolasha/commit/cefbaccf02bdeb7d58b046dd2ab1273a055f07ac))
+
 ## [1.21.0](https://github.com/Celasha/Toolasha/compare/v1.20.6...v1.21.0) (2026-02-28)
 
 ### Features
