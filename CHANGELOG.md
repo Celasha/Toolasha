@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.21.0](https://github.com/Celasha/Toolasha/compare/v1.20.6...v1.21.0) (2026-02-28)
+
+### Features
+
+- add Discord commit notification and weekly summary workflows ([22a152c](https://github.com/Celasha/Toolasha/commit/22a152c62acac45f77b9eccd16e6fd872c638705))
+- list individual commits in Discord release notification ([3324590](https://github.com/Celasha/Toolasha/commit/33245904304d7c2a87dd14e6864e36cfeeb94427))
+- post feat commits to dedicated Discord feats channel ([1997b11](https://github.com/Celasha/Toolasha/commit/1997b11e123ecc452e63546a264159aaebfa3824))
+
+### Bug Fixes
+
+- decouple chat annotations from dungeon tracker UI panel toggle ([046c9a3](https://github.com/Celasha/Toolasha/commit/046c9a3418a3eec3b3f8bcfffb627ad7c04c7b59))
+- only notify Discord on release-please PR merges ([77f3eb0](https://github.com/Celasha/Toolasha/commit/77f3eb0311faf38ec18e4a0659a5098883496213))
+- trigger Discord notifications on PR merge instead of direct push ([ac01f43](https://github.com/Celasha/Toolasha/commit/ac01f436e0074e9485559c5645276a6b0de69d33))
+- use markdown hyperlink for commit SHA in Discord notifications ([a4aaebb](https://github.com/Celasha/Toolasha/commit/a4aaebb0428dd0d9eabbb8a96d22a738eb421313))
+
+### Continuous Integration
+
+- extract inline Python to script to fix YAML parse error ([b20b6d9](https://github.com/Celasha/Toolasha/commit/b20b6d9e746b83b4cfdab189c86f5ce8860a0c07))
+
+### Miscellaneous Chores
+
+- test Discord commit notification formatting ([ff3969e](https://github.com/Celasha/Toolasha/commit/ff3969e1476752091ac52496176e5f0c06dd2114))
+
 ## [1.20.6](https://github.com/Celasha/Toolasha/compare/v1.20.5...v1.20.6) (2026-02-28)
 
 ### Bug Fixes
