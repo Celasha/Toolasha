@@ -111,6 +111,13 @@ class GatheringStats {
         // Check if already injected
         const existingDisplay = actionPanel.querySelector('.mwi-gathering-stats');
         if (existingDisplay) {
+            // If the panel is already registered in our Map, it's being re-added by a
+            // sort reorder (DocumentFragment move) — not genuine navigation. Skip
+            // updateStats and triggerSort to avoid the sort→observer→triggerSort loop.
+            if (this.actionElements.has(actionPanel)) {
+                return;
+            }
+
             // Re-register existing display (DOM elements may be reused across navigation).
             // Use skipRender so we don't wipe innerHTML (which would erase the emoji
             // set by addBestActionIndicators and cause a visible blink).
