@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.20.3](https://github.com/Celasha/Toolasha/compare/v1.20.2...v1.20.3) (2026-02-28)
+
+### Bug Fixes
+
+- add additive toggle to preset count buttons in quick input panel ([2d71037](https://github.com/Celasha/Toolasha/commit/2d71037a9d299a6efa04469bc48650823dce95ee))
+
 ## [1.20.2](https://github.com/Celasha/Toolasha/compare/v1.20.1...v1.20.2) (2026-02-28)
 
 ### Bug Fixes
