@@ -27,7 +27,7 @@ jobs:
           {
             "embeds": [{
               "color": 7291618,
-              "description": "\`${SHORT_SHA}\` ${ESCAPED_MESSAGE}\n${COMMIT_URL}",
+              "description": "[${SHORT_SHA}](${COMMIT_URL}) ${ESCAPED_MESSAGE}",
               "footer": { "text": "${AUTHOR}" }
             }]
           }
