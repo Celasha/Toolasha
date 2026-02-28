@@ -11,7 +11,8 @@ jobs:
     steps:
       - name: Post commit to Discord
         env:
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_COMMITS_WEBHOOK }}
+          DISCORD_COMMITS_WEBHOOK: ${{ secrets.DISCORD_COMMITS_WEBHOOK }}
+          DISCORD_FEAT_WEBHOOK: ${{ secrets.DISCORD_FEAT_WEBHOOK }}
         run: |
           COMMIT_SHA="${{ github.sha }}"
           SHORT_SHA="${COMMIT_SHA:0:7}"
@@ -33,6 +34,14 @@ jobs:
           EOF
           )
 
-          curl -s -X POST "$DISCORD_WEBHOOK" \
+          # Always post to #commits
+          curl -s -X POST "$DISCORD_COMMITS_WEBHOOK" \
             -H "Content-Type: application/json" \
             -d "$PAYLOAD"
+
+          # Also post to #feats if commit starts with "feat:"
+          if echo "$ESCAPED_MESSAGE" | grep -q "^feat:"; then
+            curl -s -X POST "$DISCORD_FEAT_WEBHOOK" \
+              -H "Content-Type: application/json" \
+              -d "$PAYLOAD"
+          fi
