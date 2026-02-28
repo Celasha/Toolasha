@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 1.20.5
+ * Version: 1.20.6
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -5129,10 +5129,10 @@
 
             // Cache settings
             this.CACHE_DURATION = 15 * 60 * 1000; // 15 minutes in milliseconds
-            this.CACHE_KEY_DATA = 'MWITools_marketAPI_json';
-            this.CACHE_KEY_TIMESTAMP = 'MWITools_marketAPI_timestamp';
-            this.CACHE_KEY_PATCHES = 'MWITools_marketAPI_patches';
-            this.CACHE_KEY_MIGRATION = 'MWITools_marketAPI_migration_version';
+            this.CACHE_KEY_DATA = 'Toolasha_marketAPI_json';
+            this.CACHE_KEY_TIMESTAMP = 'Toolasha_marketAPI_timestamp';
+            this.CACHE_KEY_PATCHES = 'Toolasha_marketAPI_patches';
+            this.CACHE_KEY_MIGRATION = 'Toolasha_marketAPI_migration_version';
             this.CURRENT_MIGRATION_VERSION = 1; // Increment this when patches need to be cleared
 
             // Current market data

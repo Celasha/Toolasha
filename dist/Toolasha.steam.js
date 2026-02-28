@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      1.20.5
+// @version      1.20.6
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -19769,10 +19769,10 @@ return plugin;
 
             // Cache settings
             this.CACHE_DURATION = 15 * 60 * 1000; // 15 minutes in milliseconds
-            this.CACHE_KEY_DATA = 'MWITools_marketAPI_json';
-            this.CACHE_KEY_TIMESTAMP = 'MWITools_marketAPI_timestamp';
-            this.CACHE_KEY_PATCHES = 'MWITools_marketAPI_patches';
-            this.CACHE_KEY_MIGRATION = 'MWITools_marketAPI_migration_version';
+            this.CACHE_KEY_DATA = 'Toolasha_marketAPI_json';
+            this.CACHE_KEY_TIMESTAMP = 'Toolasha_marketAPI_timestamp';
+            this.CACHE_KEY_PATCHES = 'Toolasha_marketAPI_patches';
+            this.CACHE_KEY_MIGRATION = 'Toolasha_marketAPI_migration_version';
             this.CURRENT_MIGRATION_VERSION = 1; // Increment this when patches need to be cleared
 
             // Current market data
@@ -44370,7 +44370,7 @@ self.onmessage = function (e) {
 
             return null;
         } catch (error) {
-            console.error('[MWI Tools] Error detecting protection item:', error);
+            console.error('[Toolasha] Error detecting protection item:', error);
             return null;
         }
     }
@@ -44430,8 +44430,8 @@ self.onmessage = function (e) {
             );
             injectDisplay(panel, html);
         } catch (error) {
-            console.error('[MWI Tools] ❌ Error displaying enhancement stats:', error);
-            console.error('[MWI Tools] Error stack:', error.stack);
+            console.error('[Toolasha] ❌ Error displaying enhancement stats:', error);
+            console.error('[Toolasha] Error stack:', error.stack);
         }
     }
 
@@ -49959,7 +49959,7 @@ self.onmessage = function (e) {
                     this.calculateAndDisplayTotalProfit(totalDiv, actionsToCalculate, totalText, queueMenu);
                 }
             } catch (error) {
-                console.error('[MWI Tools] Error injecting queue times:', error);
+                console.error('[Toolasha] Error injecting queue times:', error);
             } finally {
                 // Reconnect observer only if async didn't take over
                 if (shouldReconnectObserver) {
@@ -75975,6 +75975,83 @@ self.onmessage = function (e) {
     const taskRerollTracker = new TaskRerollTracker();
 
     /**
+     * Asset Manifest Utility
+     *
+     * Fetches the game's asset-manifest.json to resolve current webpack hashed
+     * sprite URLs without hardcoding hashes that break on game updates.
+     */
+
+    const MANIFEST_URL = 'https://www.milkywayidle.com/asset-manifest.json';
+
+    // Sprite keys to extract from the manifest (key → sprite name)
+    const SPRITE_KEYS = {
+        actions: 'actions_sprite',
+        items: 'items_sprite',
+        monsters: 'combat_monsters_sprite',
+        misc: 'misc_sprite',
+        abilities: 'abilities_sprite',
+    };
+
+    let manifestPromise = null;
+    let cachedUrls = null;
+
+    /**
+     * Fetch and parse the asset manifest, returning a map of sprite name → URL.
+     * Result is cached for the lifetime of the page.
+     * @returns {Promise<Object>} Map of sprite key → full URL
+     */
+    async function fetchManifest() {
+        if (cachedUrls) return cachedUrls;
+        if (manifestPromise) return manifestPromise;
+
+        manifestPromise = (async () => {
+            try {
+                const response = await fetch(MANIFEST_URL);
+                if (!response.ok) {
+                    console.warn('[AssetManifest] Failed to fetch manifest:', response.status);
+                    return {};
+                }
+
+                const manifest = await response.json();
+                const files = manifest.files || manifest; // handle both formats
+
+                const urls = {};
+                for (const [key, spriteName] of Object.entries(SPRITE_KEYS)) {
+                    // Find the entry whose key contains the sprite name and ends in .svg
+                    const entry = Object.entries(files).find(([k]) => k.includes(spriteName) && k.endsWith('.svg'));
+                    if (entry) {
+                        // Values may be relative paths like /static/media/...
+                        urls[key] = entry[1];
+                    }
+                }
+
+                cachedUrls = urls;
+                return urls;
+            } catch (error) {
+                console.warn('[AssetManifest] Error fetching manifest:', error);
+                return {};
+            }
+        })();
+
+        return manifestPromise;
+    }
+
+    /**
+     * Get a specific sprite URL by key.
+     * @param {'actions'|'items'|'monsters'|'misc'|'abilities'} key
+     * @returns {Promise<string|null>}
+     */
+    async function getSpriteUrl(key) {
+        const urls = await fetchManifest();
+        return urls[key] || null;
+    }
+
+    var assetManifest = {
+        fetchManifest,
+        getSpriteUrl,
+    };
+
+    /**
      * Task Icon Filters
      *
      * Adds clickable filter icons to the task panel header for controlling
@@ -75996,13 +76073,6 @@ self.onmessage = function (e) {
         dungeonPrefix: 'taskIconsFilterDungeon:',
     };
 
-    // Hardcoded sprite URLs (like MWI Task Manager)
-    // These may need updating when the game rebuilds with new webpack hashes
-    const SPRITE_URLS = {
-        actions: '/static/media/actions_sprite.e6388cbc.svg',
-        misc: '/static/media/misc_sprite.354aafcf.svg',
-    };
-
     class TaskIconFilters {
         constructor() {
             this.filterIcons = new Map(); // Map of filter ID -> DOM element
@@ -76012,6 +76082,7 @@ self.onmessage = function (e) {
             this.settingChangeHandler = null; // Handler for setting changes
             this.stateLoadPromise = null;
             this.isStateLoaded = false;
+            this.manifestUrls = {}; // Sprite URLs from asset manifest
             this.state = {
                 battle: true,
                 dungeons: {},
@@ -76049,6 +76120,11 @@ self.onmessage = function (e) {
             // Note: Filter bar is added by task-sorter.js when task panel appears
 
             this.loadState();
+
+            // Pre-fetch asset manifest so sprite URLs are ready when icons render
+            assetManifest.fetchManifest().then((urls) => {
+                this.manifestUrls = urls;
+            });
 
             // Listen for taskIconsDungeons setting changes
             this.settingChangeHandler = (enabled) => {
@@ -76168,11 +76244,14 @@ self.onmessage = function (e) {
          * Called by task-sorter.js when task panel appears
          * @param {HTMLElement} headerElement - Task panel header element
          */
-        addFilterBar(headerElement) {
+        async addFilterBar(headerElement) {
             // Check if we already added filters to this header
             if (headerElement.querySelector('[data-mwi-task-filters]')) {
                 return;
             }
+
+            // Ensure manifest URLs are loaded before creating icons
+            this.manifestUrls = await assetManifest.fetchManifest();
 
             // Find the task panel container to observe task list
             // DOM structure: Grandparent > TaskBoardInfo (parent) > TaskSlotCount (header)
@@ -76235,69 +76314,6 @@ self.onmessage = function (e) {
         }
 
         /**
-         * Get the current items sprite URL from the DOM
-         * @returns {string|null} Items sprite URL or null if not found
-         */
-        getItemsSpriteUrl() {
-            const itemIcon = document.querySelector('use[href*="items_sprite"]');
-            if (!itemIcon) {
-                return null;
-            }
-            const href = itemIcon.getAttribute('href');
-            return href ? href.split('#')[0] : null;
-        }
-
-        /**
-         * Get the current misc sprite URL from the DOM (for combat icons)
-         * @returns {string|null} Misc sprite URL or null if not found
-         */
-        getMiscSpriteUrl() {
-            const miscIcon = document.querySelector('use[href*="misc_sprite"]');
-            if (!miscIcon) {
-                return null;
-            }
-            const href = miscIcon.getAttribute('href');
-            return href ? href.split('#')[0] : null;
-        }
-
-        /**
-         * Get the current actions sprite URL from the DOM (for dungeon icons)
-         * @returns {string|null} Actions sprite URL or null if not found
-         */
-        getActionsSpriteUrl() {
-            const actionsIcon = document.querySelector('use[href*="actions_sprite"]');
-            if (!actionsIcon) {
-                return null;
-            }
-            const href = actionsIcon.getAttribute('href');
-            return href ? href.split('#')[0] : null;
-        }
-
-        /**
-         * Clone SVG symbol from DOM into defs
-         * @param {string} symbolId - Symbol ID to clone
-         * @param {SVGDefsElement} defsElement - Defs element to append to
-         * @returns {boolean} True if symbol was found and cloned
-         */
-        cloneSymbolToDefs(symbolId, defsElement) {
-            // Check if already cloned
-            if (defsElement.querySelector(`symbol[id="${symbolId}"]`)) {
-                return true;
-            }
-
-            // Find the symbol in the game's loaded sprites
-            const symbol = document.querySelector(`symbol[id="${symbolId}"]`);
-            if (!symbol) {
-                return false;
-            }
-
-            // Clone and add to our defs
-            const clonedSymbol = symbol.cloneNode(true);
-            defsElement.appendChild(clonedSymbol);
-            return true;
-        }
-
-        /**
          * Create a clickable filter icon with count badge
          * @param {string} id - Unique identifier for this filter
          * @param {string} title - Tooltip text
@@ -76314,18 +76330,8 @@ self.onmessage = function (e) {
             container.style.userSelect = 'none';
             container.title = title;
 
-            // Get appropriate sprite URL based on type
-            let spriteUrl;
-
-            if (spriteType === 'actions') {
-                // Try dynamic extraction first, fallback to hardcoded URL
-                spriteUrl = this.getActionsSpriteUrl() || SPRITE_URLS.actions;
-            } else if (spriteType === 'misc') {
-                // Try dynamic extraction first, fallback to hardcoded URL
-                spriteUrl = this.getMiscSpriteUrl() || SPRITE_URLS.misc;
-            } else if (spriteType === 'items') {
-                spriteUrl = this.getItemsSpriteUrl();
-            }
+            // Get sprite URL from manifest
+            const spriteUrl = this.manifestUrls[spriteType] || null;
 
             // Create SVG icon
             if (spriteUrl) {
@@ -76606,22 +76612,6 @@ self.onmessage = function (e) {
      */
 
 
-    // Sprite URL detection and fallback system
-    // Instead of hardcoded URLs, we detect sprite URLs from the game's DOM
-    // If detection fails, we try multiple fallback strategies for Steam compatibility
-    const FALLBACK_ACTIONS_SPRITE_URLS = [
-        '/static/media/actions_sprite.e6388cbc.svg', // Original hardcoded URL
-        '/static/media/actions_sprite.svg', // Without webpack hash (if build system changed)
-        'actions_sprite.svg', // Relative path
-    ];
-
-    // Known webpack hashes for combat_monsters_sprite (update as game updates)
-    const FALLBACK_MONSTERS_SPRITE_URLS = [
-        '/static/media/combat_monsters_sprite.e6388cbc.svg', // Try same hash as actions_sprite
-        '/static/media/combat_monsters_sprite.svg', // Without webpack hash
-        'combat_monsters_sprite.svg', // Relative path
-    ];
-
     class TaskIcons {
         constructor() {
             this.initialized = false;
@@ -76633,6 +76623,9 @@ self.onmessage = function (e) {
             this.actionsByHrid = null;
             this.monstersByHrid = null;
             this.timerRegistry = createTimerRegistry();
+
+            // Sprite URLs resolved from asset manifest
+            this.manifestUrls = {};
 
             // Cache for detected sprite URLs (avoid repeated DOM queries)
             this.cachedSpriteUrls = {
@@ -76749,38 +76742,16 @@ self.onmessage = function (e) {
             });
             this.observers.push(unregisterTask);
 
-            // Watch for monster sprite being loaded into DOM
-            // The sprite might be an SVG element or a defs section
-            const checkForMonsterSprite = () => {
-                const useElements = document.querySelectorAll('use');
-                for (const use of useElements) {
-                    const href = use.getAttribute('href') || use.getAttributeNS('http://www.w3.org/1999/xlink', 'href');
-                    if (href && href.includes('combat_monsters_sprite')) {
-                        const url = href.split('#')[0];
-
-                        // Cache the URL so we don't lose it
-                        this.cachedSpriteUrls.monsters = url;
-
-                        // Remove sprite warning since sprites are now loaded
-                        this.removeSpriteWarning();
-
-                        // Sprite just loaded, refresh all icons
-                        this.clearAllProcessedMarkers();
-                        this.processAllTaskCards();
-                        break;
-                    }
-                }
-            };
-
-            // Check periodically for sprite loading (more reliable than trying to watch for it)
-            const spriteCheckInterval = setInterval(() => {
-                // Only check if we haven't found it yet
+            // Fetch all sprite URLs from manifest, then inject monster sprite and re-process
+            assetManifest.fetchManifest().then((urls) => {
+                this.manifestUrls = urls;
                 if (!this.cachedSpriteUrls.monsters) {
-                    checkForMonsterSprite();
+                    this.fetchAndInjectMonsterSprite(urls.monsters ? [urls.monsters] : []);
                 }
-            }, 1000);
-            this.timerRegistry.registerInterval(spriteCheckInterval);
-            this.observers.push(() => clearInterval(spriteCheckInterval));
+                // Re-process now that all sprite URLs are available
+                this.clearAllProcessedMarkers();
+                this.processAllTaskCards();
+            });
 
             // Watch for task rerolls via WebSocket
             const questsHandler = (data) => {
@@ -77235,58 +77206,19 @@ self.onmessage = function (e) {
         }
 
         /**
-         * Get the current items sprite URL from the DOM
-         * @returns {string|null} Items sprite URL or null if not found
+         * Get the current items sprite URL from the manifest
+         * @returns {string|null} Items sprite URL or null if manifest not yet loaded
          */
         getItemsSpriteUrl() {
-            // Search manually to support both href and xlink:href
-            const allUseElements = document.querySelectorAll('use');
-
-            for (const use of allUseElements) {
-                const href = use.getAttribute('href') || use.getAttributeNS('http://www.w3.org/1999/xlink', 'href');
-                if (href && href.includes('items_sprite')) {
-                    return href.split('#')[0];
-                }
-            }
-
-            return null;
+            return this.manifestUrls.items || null;
         }
 
         /**
-         * Get the current combat monsters sprite URL from the DOM
-         * @returns {string|null} Monsters sprite URL or null if not found
+         * Get the current combat monsters sprite URL
+         * @returns {string|null} Monsters sprite URL or null if not yet injected
          */
-        async getMonstersSpriteUrl() {
-            // Check cache first
-            if (this.cachedSpriteUrls.monsters) {
-                return this.cachedSpriteUrls.monsters;
-            }
-
-            // Try to find it in the DOM first
-            // Can't use CSS selector for xlink:href, so search manually
-            const allUseElements = document.querySelectorAll('use');
-            let monsterIcon = null;
-
-            for (const use of allUseElements) {
-                const href = use.getAttribute('href') || use.getAttributeNS('http://www.w3.org/1999/xlink', 'href');
-                if (href && href.includes('combat_monsters_sprite')) {
-                    monsterIcon = use;
-                    break;
-                }
-            }
-
-            if (monsterIcon) {
-                const href =
-                    monsterIcon.getAttribute('href') || monsterIcon.getAttributeNS('http://www.w3.org/1999/xlink', 'href');
-                const url = href ? href.split('#')[0] : null;
-                // Cache it
-                this.cachedSpriteUrls.monsters = url;
-                return url;
-            }
-
-            // If not in DOM, we can't display monster icons
-            // The sprite is only loaded when viewing combat panel
-            return null;
+        getMonstersSpriteUrl() {
+            return this.cachedSpriteUrls.monsters || this.manifestUrls.monsters || null;
         }
 
         /**
@@ -77294,19 +77226,18 @@ self.onmessage = function (e) {
          * @param {Array<string>} detectedHashes - Array of webpack hashes to try
          * @returns {Promise<string|null>} Sprite URL if successful
          */
-        async fetchAndInjectMonsterSprite(detectedHashes = []) {
+        async fetchAndInjectMonsterSprite(manifestUrls = []) {
             if (this.spriteFetchInProgress.monsters) {
                 return null; // Already fetching, avoid duplicate requests
             }
 
             this.spriteFetchInProgress.monsters = true;
 
-            // Build fallback URLs using detected hashes + original hardcoded ones
+            // Use manifest URLs first, then plain fallbacks without hardcoded hashes
             const fallbackUrls = [
-                // Try detected hashes first (from currently loaded sprites)
-                ...detectedHashes.map((hash) => `/static/media/combat_monsters_sprite.${hash}.svg`),
-                // Then try original hardcoded fallbacks
-                ...FALLBACK_MONSTERS_SPRITE_URLS,
+                ...manifestUrls,
+                '/static/media/combat_monsters_sprite.svg',
+                'combat_monsters_sprite.svg',
             ];
 
             try {
@@ -77348,8 +77279,12 @@ self.onmessage = function (e) {
                             // Inject into page body
                             document.body.appendChild(finalElement);
 
-                            // Store the URL for future use
+                            // Cache URL and refresh task icons now that sprite is available
                             this.fetchedSprites.monsters = url;
+                            this.cachedSpriteUrls.monsters = url;
+                            this.removeSpriteWarning();
+                            this.clearAllProcessedMarkers();
+                            this.processAllTaskCards();
                             return url;
                         }
                     } catch {
@@ -77365,55 +77300,19 @@ self.onmessage = function (e) {
         }
 
         /**
-         * Get the current actions sprite URL from the DOM (for dungeon icons)
-         * @returns {string|null} Actions sprite URL or null if not found
+         * Get the current actions sprite URL from the manifest (for dungeon icons)
+         * @returns {string|null} Actions sprite URL or null if manifest not yet loaded
          */
         getActionsSpriteUrl() {
-            const actionsIcon = document.querySelector('use[href*="actions_sprite"]');
-            if (actionsIcon) {
-                const href = actionsIcon.getAttribute('href');
-                return href ? href.split('#')[0] : null;
-            }
-
-            // Fallback to hardcoded URL
-            return FALLBACK_ACTIONS_SPRITE_URLS[0];
+            return this.manifestUrls.actions || null;
         }
 
         /**
-         * Get the current misc sprite URL from the DOM
-         * @returns {string|null} Misc sprite URL or null if not found
+         * Get the current misc sprite URL from the manifest
+         * @returns {string|null} Misc sprite URL or null if manifest not yet loaded
          */
         getMiscSpriteUrl() {
-            const miscIcon = document.querySelector('use[href*="misc_sprite"]');
-            if (!miscIcon) {
-                return null;
-            }
-            const href = miscIcon.getAttribute('href');
-            return href ? href.split('#')[0] : null;
-        }
-
-        /**
-         * Clone SVG symbol from DOM into defs
-         * @param {string} symbolId - Symbol ID to clone
-         * @param {SVGDefsElement} defsElement - Defs element to append to
-         * @returns {boolean} True if symbol was found and cloned
-         */
-        cloneSymbolToDefs(symbolId, defsElement) {
-            // Check if already cloned
-            if (defsElement.querySelector(`symbol[id="${symbolId}"]`)) {
-                return true;
-            }
-
-            // Find the symbol in the game's loaded sprites
-            const symbol = document.querySelector(`symbol[id="${symbolId}"]`);
-            if (!symbol) {
-                return false;
-            }
-
-            // Clone and add to our defs
-            const clonedSymbol = symbol.cloneNode(true);
-            defsElement.appendChild(clonedSymbol);
-            return true;
+            return this.manifestUrls.misc || null;
         }
 
         /**
@@ -77440,7 +77339,7 @@ self.onmessage = function (e) {
             let spriteUrl;
             if (type === 'monster') {
                 // Await monster sprite (might fetch it)
-                spriteUrl = await this.getMonstersSpriteUrl();
+                spriteUrl = this.getMonstersSpriteUrl();
             } else if (type === 'dungeon' || type === 'action') {
                 // Dungeon icons and action icons (trees, etc.) are in actions_sprite
                 spriteUrl = this.getActionsSpriteUrl();

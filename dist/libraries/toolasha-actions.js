@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 1.20.5
+ * Version: 1.20.6
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -69,7 +69,7 @@
 
             return null;
         } catch (error) {
-            console.error('[MWI Tools] Error detecting protection item:', error);
+            console.error('[Toolasha] Error detecting protection item:', error);
             return null;
         }
     }
@@ -129,8 +129,8 @@
             );
             injectDisplay(panel, html);
         } catch (error) {
-            console.error('[MWI Tools] ❌ Error displaying enhancement stats:', error);
-            console.error('[MWI Tools] Error stack:', error.stack);
+            console.error('[Toolasha] ❌ Error displaying enhancement stats:', error);
+            console.error('[Toolasha] Error stack:', error.stack);
         }
     }
 
@@ -6748,7 +6748,7 @@
                     this.calculateAndDisplayTotalProfit(totalDiv, actionsToCalculate, totalText, queueMenu);
                 }
             } catch (error) {
-                console.error('[MWI Tools] Error injecting queue times:', error);
+                console.error('[Toolasha] Error injecting queue times:', error);
             } finally {
                 // Reconnect observer only if async didn't take over
                 if (shouldReconnectObserver) {
