@@ -2,10 +2,9 @@
 
 ## [1.20.6](https://github.com/Celasha/Toolasha/compare/v1.20.5...v1.20.6) (2026-02-28)
 
-
 ### Bug Fixes
 
-* rename MWITools storage keys and console prefixes to Toolasha ([d31cdef](https://github.com/Celasha/Toolasha/commit/d31cdef558ee8109d3b49d532f8e63294c223e5a))
+- rename MWITools storage keys and console prefixes to Toolasha ([d31cdef](https://github.com/Celasha/Toolasha/commit/d31cdef558ee8109d3b49d532f8e63294c223e5a))
 
 ## [1.20.5](https://github.com/Celasha/Toolasha/compare/v1.20.4...v1.20.5) (2026-02-28)
 
