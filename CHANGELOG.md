@@ -2,10 +2,9 @@
 
 ## [1.20.5](https://github.com/Celasha/Toolasha/compare/v1.20.4...v1.20.5) (2026-02-28)
 
-
 ### Bug Fixes
 
-* persist add-mode toggle state for quick input preset buttons ([4fc4348](https://github.com/Celasha/Toolasha/commit/4fc43480b6d0fe4b9ec0bd646eb444e37bc86897))
+- persist add-mode toggle state for quick input preset buttons ([4fc4348](https://github.com/Celasha/Toolasha/commit/4fc43480b6d0fe4b9ec0bd646eb444e37bc86897))
 
 ## [1.20.4](https://github.com/Celasha/Toolasha/compare/v1.20.3...v1.20.4) (2026-02-28)
 
