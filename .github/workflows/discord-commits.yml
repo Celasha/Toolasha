@@ -10,8 +10,8 @@ on:
 jobs:
   notify:
     runs-on: ubuntu-latest
-    # Only run when PR is actually merged, not just closed, and not release-please PRs
-    if: github.event.pull_request.merged == true && !startsWith(github.event.pull_request.head.ref, 'release-please--')
+    # Only run when a release-please PR is merged
+    if: github.event.pull_request.merged == true && startsWith(github.event.pull_request.head.ref, 'release-please--')
     steps:
       - name: Post commit to Discord
         env:
