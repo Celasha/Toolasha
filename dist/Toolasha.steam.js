@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      1.20.4
+// @version      1.20.5
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -50157,6 +50157,7 @@ self.onmessage = function (e) {
     class QuickInputButtons {
         constructor() {
             this.isInitialized = false;
+            this.addMode = false;
             this.unregisterObserver = null;
             this.presetHours = [0.5, 1, 2, 3, 4, 5, 6, 10, 12, 24];
             this.presetValues = [10, 100, 1000];
@@ -50166,10 +50167,12 @@ self.onmessage = function (e) {
         /**
          * Initialize the quick input buttons feature
          */
-        initialize() {
+        async initialize() {
             if (this.isInitialized) {
                 return;
             }
+
+            this.addMode = await storage$1.get('quickInput_addMode', 'settings', false);
 
             // Start observing for action panels
             this.startObserving();
@@ -50646,7 +50649,17 @@ self.onmessage = function (e) {
 
                     // SECOND ROW: Count-based buttons (times)
                     // Add-mode toggle: clicking presets adds to current value instead of replacing
-                    let addMode = false;
+                    const applyToggleStyle = (btn, active) => {
+                        if (active) {
+                            btn.style.background = 'rgba(215, 183, 255, 0.2)';
+                            btn.style.color = '#d7b7ff';
+                            btn.style.borderColor = '#d7b7ff';
+                        } else {
+                            btn.style.background = 'transparent';
+                            btn.style.color = 'rgba(215, 183, 255, 0.5)';
+                            btn.style.borderColor = 'rgba(215, 183, 255, 0.3)';
+                        }
+                    };
 
                     const addToggle = document.createElement('button');
                     addToggle.textContent = '+';
@@ -50664,17 +50677,11 @@ self.onmessage = function (e) {
                     line-height: 1.4;
                     transition: background 0.15s, color 0.15s, border-color 0.15s;
                 `;
+                    applyToggleStyle(addToggle, this.addMode);
                     addToggle.addEventListener('click', () => {
-                        addMode = !addMode;
-                        if (addMode) {
-                            addToggle.style.background = 'rgba(215, 183, 255, 0.2)';
-                            addToggle.style.color = '#d7b7ff';
-                            addToggle.style.borderColor = '#d7b7ff';
-                        } else {
-                            addToggle.style.background = 'transparent';
-                            addToggle.style.color = 'rgba(215, 183, 255, 0.5)';
-                            addToggle.style.borderColor = 'rgba(215, 183, 255, 0.3)';
-                        }
+                        this.addMode = !this.addMode;
+                        applyToggleStyle(addToggle, this.addMode);
+                        storage$1.set('quickInput_addMode', this.addMode, 'settings');
                     });
                     queueContent.appendChild(addToggle);
 
@@ -50682,7 +50689,7 @@ self.onmessage = function (e) {
 
                     this.presetValues.forEach((value) => {
                         const button = this.createButton(value.toLocaleString(), () => {
-                            if (addMode) {
+                            if (this.addMode) {
                                 const current = parseInt(numberInput.value) || 0;
                                 this.setInputValue(numberInput, current + value);
                             } else {
