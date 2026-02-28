@@ -378,6 +378,7 @@ class MaxProduceable {
         // Calculate profit/hr (for both gathering and production)
         let profitPerHour = null;
         let hasMissingPrices = false;
+        let outputPriceEstimated = false;
         const actionDetails = dataManager.getActionDetails(data.actionHrid);
 
         if (actionDetails) {
@@ -389,6 +390,7 @@ class MaxProduceable {
                 const profitData = await calculateProductionProfit(data.actionHrid);
                 profitPerHour = profitData?.profitPerHour || null;
                 hasMissingPrices = profitData?.hasMissingPrices || false;
+                outputPriceEstimated = profitData?.outputPriceEstimated || false;
             }
         }
 
@@ -453,8 +455,9 @@ class MaxProduceable {
         } else if (resolvedProfitPerHour !== null) {
             const profitColor = resolvedProfitPerHour >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
             const profitSign = resolvedProfitPerHour >= 0 ? '' : '-';
+            const estimatedNote = outputPriceEstimated ? ' ⚠' : '';
             html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
-            html += `<span data-stat="profit" style="color: ${profitColor};">Profit/hr: ${profitSign}${formatKMB(Math.abs(resolvedProfitPerHour))}</span></div>`;
+            html += `<span data-stat="profit" style="color: ${profitColor};">Profit/hr: ${profitSign}${formatKMB(Math.abs(resolvedProfitPerHour))}${estimatedNote}</span></div>`;
         }
 
         if (expPerHour !== null && expPerHour > 0) {
