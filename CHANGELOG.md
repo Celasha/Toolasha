@@ -2,10 +2,9 @@
 
 ## [1.20.4](https://github.com/Celasha/Toolasha/compare/v1.20.3...v1.20.4) (2026-02-28)
 
-
 ### Bug Fixes
 
-* resolve SyntaxError in pop-out chat caused by regex literal in document.write ([5bc9c86](https://github.com/Celasha/Toolasha/commit/5bc9c86d4a1c68e249701e305356e707e8bf6b38))
+- resolve SyntaxError in pop-out chat caused by regex literal in document.write ([5bc9c86](https://github.com/Celasha/Toolasha/commit/5bc9c86d4a1c68e249701e305356e707e8bf6b38))
 
 ## [1.20.3](https://github.com/Celasha/Toolasha/compare/v1.20.2...v1.20.3) (2026-02-28)
 
