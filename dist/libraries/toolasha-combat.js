@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 1.20.6
+ * Version: 1.21.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -5527,16 +5527,19 @@
 
             // Store callback reference for cleanup
             this.dungeonUpdateHandler = (currentRun, completedRun) => {
-                // Check if UI is enabled
+                if (completedRun) {
+                    // Dungeon completed - trigger chat annotation update regardless of UI setting
+                    const annotateTimeout = setTimeout(() => dungeonTrackerChatAnnotations.annotateAllMessages(), 200);
+                    this.timerRegistry.registerTimeout(annotateTimeout);
+                }
+
+                // Check if UI is enabled before updating the panel
                 if (!config.isFeatureEnabled('dungeonTrackerUI')) {
                     this.hide();
                     return;
                 }
 
                 if (completedRun) {
-                    // Dungeon completed - trigger chat annotation update and hide UI
-                    const annotateTimeout = setTimeout(() => dungeonTrackerChatAnnotations.annotateAllMessages(), 200);
-                    this.timerRegistry.registerTimeout(annotateTimeout);
                     this.hide();
                 } else if (currentRun) {
                     // Dungeon in progress

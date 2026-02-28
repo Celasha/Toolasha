@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      1.20.6
+// @version      1.21.0
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -64304,16 +64304,19 @@ self.onmessage = function (e) {
 
             // Store callback reference for cleanup
             this.dungeonUpdateHandler = (currentRun, completedRun) => {
-                // Check if UI is enabled
+                if (completedRun) {
+                    // Dungeon completed - trigger chat annotation update regardless of UI setting
+                    const annotateTimeout = setTimeout(() => dungeonTrackerChatAnnotations.annotateAllMessages(), 200);
+                    this.timerRegistry.registerTimeout(annotateTimeout);
+                }
+
+                // Check if UI is enabled before updating the panel
                 if (!config$1.isFeatureEnabled('dungeonTrackerUI')) {
                     this.hide();
                     return;
                 }
 
                 if (completedRun) {
-                    // Dungeon completed - trigger chat annotation update and hide UI
-                    const annotateTimeout = setTimeout(() => dungeonTrackerChatAnnotations.annotateAllMessages(), 200);
-                    this.timerRegistry.registerTimeout(annotateTimeout);
                     this.hide();
                 } else if (currentRun) {
                     // Dungeon in progress
