@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.22.0](https://github.com/Celasha/Toolasha/compare/v1.21.0...v1.22.0) (2026-03-01)
+
+### Features
+
+- add navigation buttons to collection items ([0625750](https://github.com/Celasha/Toolasha/commit/062575000fc0e0a2d9cf2a39bbd8b1a6f44b4462))
+
+### Bug Fixes
+
+- prevent duplicate WebSocket handler registration in on() ([30591d1](https://github.com/Celasha/Toolasha/commit/30591d1668d99f6da9286d5271b0531636e111ce))
+
+### Continuous Integration
+
+- parse PR body for commit list instead of PR commits API ([cefbacc](https://github.com/Celasha/Toolasha/commit/cefbaccf02bdeb7d58b046dd2ab1273a055f07ac))
+
 ## [1.21.0](https://github.com/Celasha/Toolasha/compare/v1.20.6...v1.21.0) (2026-02-28)
 
 ### Features
