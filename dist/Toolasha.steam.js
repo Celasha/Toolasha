@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      1.23.1
+// @version      1.23.2
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -25050,7 +25050,7 @@ self.onmessage = function (e) {
      * @returns {boolean} True if initial update was performed
      */
     function performInitialUpdate(input, updateCallback) {
-        if (input.value && parseInt(input.value) > 0) {
+        if (input.value) {
             updateCallback(input.value);
             return true;
         }
@@ -51569,10 +51569,10 @@ self.onmessage = function (e) {
             // Remove existing totals (cloned outputs and XP)
             detailPanel.querySelectorAll('.mwi-output-total').forEach((el) => el.remove());
 
-            // No amount entered - nothing to calculate
-            if (isNaN(amount) || amount <= 0) {
-                return;
-            }
+            // Determine display state: real number, ∞, or 0
+            const isIndeterminate = isNaN(amount) || amount <= 0;
+            // '∞' parses to NaN; explicit '0' parses to 0 — show matching placeholder
+            const placeholderLabel = isNaN(amount) ? '∞' : '0.0';
 
             // Find main drop container
             let dropTable = detailPanel.querySelector('[class*="SkillActionDetail_dropTable"]');
@@ -51585,7 +51585,7 @@ self.onmessage = function (e) {
             const processedContainers = new Set();
 
             // Process main outputs
-            this.processDropContainer(dropTable, amount);
+            this.processDropContainer(dropTable, amount, isIndeterminate, placeholderLabel);
             processedContainers.add(dropTable);
 
             // Process Essences and Rares - find all dropTable containers
@@ -51598,7 +51598,7 @@ self.onmessage = function (e) {
 
                 // Check for essences
                 if (container.innerText.toLowerCase().includes('essence')) {
-                    this.processDropContainer(container, amount);
+                    this.processDropContainer(container, amount, isIndeterminate, placeholderLabel);
                     processedContainers.add(container);
                     return;
                 }
@@ -51607,14 +51607,14 @@ self.onmessage = function (e) {
                 if (container.innerText.includes('%')) {
                     const percentageMatch = container.innerText.match(/([\d.]+)%/);
                     if (percentageMatch && parseFloat(percentageMatch[1]) < 5) {
-                        this.processDropContainer(container, amount);
+                        this.processDropContainer(container, amount, isIndeterminate, placeholderLabel);
                         processedContainers.add(container);
                     }
                 }
             });
 
             // Process XP element
-            this.processXpElement(detailPanel, amount);
+            this.processXpElement(detailPanel, amount, isIndeterminate, placeholderLabel);
         }
 
         /**
@@ -51622,7 +51622,7 @@ self.onmessage = function (e) {
          * @param {HTMLElement} container - The drop table container
          * @param {number} amount - Number of actions
          */
-        processDropContainer(container, amount) {
+        processDropContainer(container, amount, isIndeterminate, placeholderLabel) {
             if (!container) return;
 
             const children = Array.from(container.children);
@@ -51645,14 +51645,14 @@ self.onmessage = function (e) {
                         if (dropEl.nextSibling?.classList?.contains('mwi-output-total')) {
                             return;
                         }
-                        const clone = this.processChildElement(dropEl, amount);
+                        const clone = this.processChildElement(dropEl, amount, isIndeterminate, placeholderLabel);
                         if (clone) {
                             dropEl.after(clone);
                         }
                     });
                 } else {
                     // Process single element
-                    const clone = this.processChildElement(child, amount);
+                    const clone = this.processChildElement(child, amount, isIndeterminate, placeholderLabel);
                     if (clone) {
                         child.parentNode.insertBefore(clone, child.nextSibling);
                     }
@@ -51666,7 +51666,7 @@ self.onmessage = function (e) {
          * @param {number} amount - Number of actions
          * @returns {HTMLElement|null} Clone element or null
          */
-        processChildElement(child, amount) {
+        processChildElement(child, amount, isIndeterminate, placeholderLabel) {
             // Look for output element (first child with numbers or ranges)
             const hasRange = child.children[0]?.innerText?.includes('-');
             const hasNumbers = child.children[0]?.innerText?.match(/[\d.]+/);
@@ -51680,27 +51680,25 @@ self.onmessage = function (e) {
             const rateMatch = dropRateText.match(/~?([\d.]+)%/);
             const dropRate = rateMatch ? parseFloat(rateMatch[1]) / 100 : 1; // Default to 100%
 
-            // Parse output values
-            const output = outputElement.innerText.split('-');
-
             // Create styled clone (same as MWIT-E)
             const clone = outputElement.cloneNode(true);
             clone.classList.add('mwi-output-total');
 
-            // Determine color based on item type
-            let color = config$1.COLOR_INFO; // Default blue for outputs
-
-            if (child.innerText.toLowerCase().includes('essence')) {
-                color = config$1.COLOR_ESSENCE; // Purple for essences
-            } else if (dropRate < 0.05) {
-                color = config$1.COLOR_WARNING; // Orange for rares (< 5% drop)
-            }
+            const color = config$1.COLOR_TEXT_SECONDARY;
 
             clone.style.cssText = `
             color: ${color};
             font-weight: 600;
             margin-top: 2px;
         `;
+
+            if (isIndeterminate) {
+                clone.innerText = placeholderLabel;
+                return clone;
+            }
+
+            // Parse output values
+            const output = outputElement.innerText.split('-');
 
             // Calculate and set the expected output
             if (output.length > 1) {
@@ -51764,7 +51762,7 @@ self.onmessage = function (e) {
          * @param {HTMLElement} detailPanel - The action detail panel
          * @param {number} amount - Number of actions
          */
-        processXpElement(detailPanel, amount) {
+        processXpElement(detailPanel, amount, isIndeterminate, placeholderLabel) {
             // Find XP element
             const xpElement = detailPanel.querySelector('[class*="SkillActionDetail_expGain"]');
             if (!xpElement) {
@@ -51782,31 +51780,34 @@ self.onmessage = function (e) {
                 return;
             }
 
-            // Calculate experience multiplier (Wisdom + Charm Experience)
-            const skillHrid = actionDetails.experienceGain.skillHrid;
-            const xpData = calculateExperienceMultiplier(skillHrid, actionDetails.type);
-
-            // Calculate total XP
-            const baseXP = actionDetails.experienceGain.value;
-            const modifiedXP = baseXP * xpData.totalMultiplier;
-            const totalXP = modifiedXP * amount;
-
             // Create clone for total display
             const clone = xpElement.cloneNode(true);
             clone.classList.add('mwi-output-total');
 
-            // Apply blue color for XP
+            // Apply secondary color for XP
             clone.style.cssText = `
-            color: ${config$1.COLOR_INFO};
+            color: ${config$1.COLOR_TEXT_SECONDARY};
             font-weight: 600;
             margin-top: 2px;
         `;
 
-            // Set total XP text (formatted with 1 decimal place and thousand separators)
-            clone.childNodes[0].textContent = totalXP.toLocaleString('en-US', {
-                minimumFractionDigits: 1,
-                maximumFractionDigits: 1,
-            });
+            if (isIndeterminate) {
+                clone.childNodes[0].textContent = placeholderLabel;
+            } else {
+                // Calculate experience multiplier (Wisdom + Charm Experience)
+                const skillHrid = actionDetails.experienceGain.skillHrid;
+                const xpData = calculateExperienceMultiplier(skillHrid, actionDetails.type);
+
+                const baseXP = actionDetails.experienceGain.value;
+                const modifiedXP = baseXP * xpData.totalMultiplier;
+                const totalXP = modifiedXP * amount;
+
+                // Set total XP text (formatted with 1 decimal place and thousand separators)
+                clone.childNodes[0].textContent = totalXP.toLocaleString('en-US', {
+                    minimumFractionDigits: 1,
+                    maximumFractionDigits: 1,
+                });
+            }
 
             // Insert after original XP element
             xpElement.parentNode.insertBefore(clone, xpElement.nextSibling);
@@ -53283,9 +53284,11 @@ self.onmessage = function (e) {
             existingDisplays.forEach((el) => el.remove());
 
             const numActions = parseInt(amount) || 0;
-            if (numActions <= 0) {
-                return;
-            }
+            const isIndeterminate = numActions <= 0;
+
+            // Determine placeholder label for indeterminate state
+            // '∞' input parses to NaN→0; explicit '0' also hits this branch
+            const placeholderLabel = isNaN(parseInt(amount)) ? '∞' : '0';
 
             // Get action HRID from panel
             const actionHrid = this.getActionHridFromPanel(panel);
@@ -53294,7 +53297,8 @@ self.onmessage = function (e) {
             }
 
             // Use shared material calculator with queue accounting (always enabled for Required Materials)
-            const materials = calculateMaterialRequirements(actionHrid, numActions, true);
+            // When indeterminate, pass 1 just to get the item list for rendering placeholders
+            const materials = calculateMaterialRequirements(actionHrid, isIndeterminate ? 1 : numActions, true);
             if (!materials || materials.length === 0) {
                 return;
             }
@@ -53315,7 +53319,7 @@ self.onmessage = function (e) {
 
             // Process upgrade item first (if exists)
             if (upgradeMaterial) {
-                this.processUpgradeItemWithData(panel, upgradeMaterial);
+                this.processUpgradeItemWithData(panel, upgradeMaterial, isIndeterminate, placeholderLabel);
             }
 
             // Process regular materials
@@ -53342,15 +53346,22 @@ self.onmessage = function (e) {
                 `;
 
                     // Build text with queue info
-                    const queuedText = material.queued > 0 ? ` (${numberFormatter(material.queued)} Q'd)` : '';
-                    let text = `Required: ${numberFormatter(material.required)}${queuedText}`;
-
-                    if (material.missing > 0) {
-                        const missingQueuedText = material.queued > 0 ? ` (${numberFormatter(material.queued)} Q'd)` : '';
-                        text += ` || Missing: ${numberFormatter(material.missing)}${missingQueuedText}`;
-                        displaySpan.style.color = config$1.COLOR_LOSS; // Missing materials
+                    let text;
+                    if (isIndeterminate) {
+                        text = `Required: ${placeholderLabel}`;
+                        displaySpan.style.color = '';
                     } else {
-                        displaySpan.style.color = config$1.COLOR_PROFIT; // Sufficient materials
+                        const queuedText = material.queued > 0 ? ` (${numberFormatter(material.queued)} Q'd)` : '';
+                        text = `Required: ${numberFormatter(material.required)}${queuedText}`;
+
+                        if (material.missing > 0) {
+                            const missingQueuedText =
+                                material.queued > 0 ? ` (${numberFormatter(material.queued)} Q'd)` : '';
+                            text += ` || Missing: ${numberFormatter(material.missing)}${missingQueuedText}`;
+                            displaySpan.style.color = config$1.COLOR_LOSS; // Missing materials
+                        } else {
+                            displaySpan.style.color = config$1.COLOR_PROFIT; // Sufficient materials
+                        }
                     }
 
                     displaySpan.textContent = text;
@@ -53368,7 +53379,7 @@ self.onmessage = function (e) {
          * @param {HTMLElement} panel - Action panel element
          * @param {Object} material - Material object from calculateMaterialRequirements
          */
-        processUpgradeItemWithData(panel, material) {
+        processUpgradeItemWithData(panel, material, isIndeterminate, placeholderLabel) {
             try {
                 // Find upgrade item selector container
                 const upgradeContainer = panel.querySelector('[class*="SkillActionDetail_upgradeItemSelectorInput"]');
@@ -53389,15 +53400,21 @@ self.onmessage = function (e) {
             `;
 
                 // Build text with queue info
-                const queuedText = material.queued > 0 ? ` (${numberFormatter(material.queued)} Q'd)` : '';
-                let text = `Required: ${numberFormatter(material.required)}${queuedText}`;
-
-                if (material.missing > 0) {
-                    const missingQueuedText = material.queued > 0 ? ` (${numberFormatter(material.queued)} Q'd)` : '';
-                    text += ` || Missing: ${numberFormatter(material.missing)}${missingQueuedText}`;
-                    displaySpan.style.color = config$1.COLOR_LOSS; // Missing materials
+                let text;
+                if (isIndeterminate) {
+                    text = `Required: ${placeholderLabel}`;
+                    displaySpan.style.color = '';
                 } else {
-                    displaySpan.style.color = config$1.COLOR_PROFIT; // Sufficient materials
+                    const queuedText = material.queued > 0 ? ` (${numberFormatter(material.queued)} Q'd)` : '';
+                    text = `Required: ${numberFormatter(material.required)}${queuedText}`;
+
+                    if (material.missing > 0) {
+                        const missingQueuedText = material.queued > 0 ? ` (${numberFormatter(material.queued)} Q'd)` : '';
+                        text += ` || Missing: ${numberFormatter(material.missing)}${missingQueuedText}`;
+                        displaySpan.style.color = config$1.COLOR_LOSS; // Missing materials
+                    } else {
+                        displaySpan.style.color = config$1.COLOR_PROFIT; // Sufficient materials
+                    }
                 }
 
                 displaySpan.textContent = text;
@@ -53979,11 +53996,6 @@ self.onmessage = function (e) {
             existingButton.remove();
         }
 
-        // Don't show button if no quantity entered
-        if (numActions <= 0) {
-            return;
-        }
-
         // Check setting early
         if (!config$1.getSetting('actions_missingMaterialsButton')) {
             return;
@@ -54010,17 +54022,25 @@ self.onmessage = function (e) {
             return;
         }
 
-        // Get missing materials using shared utility
-        // Check if user wants to ignore queue (default: false, meaning we DO account for queue)
-        const ignoreQueue = config$1.getSetting('actions_missingMaterialsButton_ignoreQueue') || false;
-        const accountForQueue = !ignoreQueue; // Invert: ignoreQueue=false means accountForQueue=true
-        const missingMaterials = calculateMaterialRequirements(actionHrid, numActions, accountForQueue);
-        if (missingMaterials.length === 0) {
-            return;
+        // Determine disabled state: no quantity entered (∞ parses to 0)
+        let missingMaterials = [];
+        let disabled = false;
+
+        if (numActions <= 0) {
+            disabled = true;
+        } else {
+            // Get missing materials using shared utility
+            // Check if user wants to ignore queue (default: false, meaning we DO account for queue)
+            const ignoreQueue = config$1.getSetting('actions_missingMaterialsButton_ignoreQueue') || false;
+            const accountForQueue = !ignoreQueue; // Invert: ignoreQueue=false means accountForQueue=true
+            missingMaterials = calculateMaterialRequirements(actionHrid, numActions, accountForQueue);
+            if (missingMaterials.length === 0) {
+                disabled = true;
+            }
         }
 
         // Create and insert button with actionHrid and numActions for live updates
-        const button = createMissingMaterialsButton(missingMaterials, actionHrid, numActions);
+        const button = createMissingMaterialsButton(missingMaterials, actionHrid, numActions, disabled);
 
         // Find insertion point (beneath item requirements field)
         const itemRequirements = panel.querySelector('.SkillActionDetail_itemRequirements__3SPnA');
@@ -54083,12 +54103,15 @@ self.onmessage = function (e) {
      * @param {Array} missingMaterials - Array of missing material objects
      * @param {string} actionHrid - Action HRID for recalculating materials
      * @param {number} numActions - Number of actions for recalculating materials
+     * @param {boolean} disabled - Whether the button should be rendered in a disabled state
      * @returns {HTMLElement} Button element
      */
-    function createMissingMaterialsButton(missingMaterials, actionHrid, numActions) {
+    function createMissingMaterialsButton(missingMaterials, actionHrid, numActions, disabled = false) {
         const button = document.createElement('button');
         button.id = 'mwi-missing-mats-button';
         button.textContent = 'Missing Mats Marketplace';
+        button.disabled = disabled;
+        button.title = disabled && numActions <= 0 ? 'Enter a quantity to check missing materials' : '';
         button.style.cssText = `
         width: 100%;
         padding: 10px 16px;
@@ -54097,31 +54120,36 @@ self.onmessage = function (e) {
         color: #ffffff;
         border: 1px solid rgba(91, 141, 239, 0.4);
         border-radius: 8px;
-        cursor: pointer;
+        cursor: ${disabled ? 'default' : 'pointer'};
         font-size: 14px;
         font-weight: 600;
         text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
         transition: all 0.2s ease;
         box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        opacity: ${disabled ? '0.45' : '1'};
     `;
 
-        // Hover effect
-        button.addEventListener('mouseenter', () => {
-            button.style.background = 'linear-gradient(180deg, rgba(91, 141, 239, 0.35) 0%, rgba(91, 141, 239, 0.25) 100%)';
-            button.style.borderColor = 'rgba(91, 141, 239, 0.6)';
-            button.style.boxShadow = '0 3px 6px rgba(0, 0, 0, 0.3)';
-        });
+        if (!disabled) {
+            // Hover effect
+            button.addEventListener('mouseenter', () => {
+                button.style.background =
+                    'linear-gradient(180deg, rgba(91, 141, 239, 0.35) 0%, rgba(91, 141, 239, 0.25) 100%)';
+                button.style.borderColor = 'rgba(91, 141, 239, 0.6)';
+                button.style.boxShadow = '0 3px 6px rgba(0, 0, 0, 0.3)';
+            });
 
-        button.addEventListener('mouseleave', () => {
-            button.style.background = 'linear-gradient(180deg, rgba(91, 141, 239, 0.2) 0%, rgba(91, 141, 239, 0.1) 100%)';
-            button.style.borderColor = 'rgba(91, 141, 239, 0.4)';
-            button.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.2)';
-        });
+            button.addEventListener('mouseleave', () => {
+                button.style.background =
+                    'linear-gradient(180deg, rgba(91, 141, 239, 0.2) 0%, rgba(91, 141, 239, 0.1) 100%)';
+                button.style.borderColor = 'rgba(91, 141, 239, 0.4)';
+                button.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.2)';
+            });
 
-        // Click handler
-        button.addEventListener('click', async () => {
-            await handleMissingMaterialsClick(missingMaterials, actionHrid, numActions);
-        });
+            // Click handler
+            button.addEventListener('click', async () => {
+                await handleMissingMaterialsClick(missingMaterials, actionHrid, numActions);
+            });
+        }
 
         return button;
     }

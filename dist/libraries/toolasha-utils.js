@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 1.23.1
+ * Version: 1.23.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -4837,7 +4837,7 @@ self.onmessage = function (e) {
      * @returns {boolean} True if initial update was performed
      */
     function performInitialUpdate(input, updateCallback) {
-        if (input.value && parseInt(input.value) > 0) {
+        if (input.value) {
             updateCallback(input.value);
             return true;
         }
