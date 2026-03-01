@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 1.21.0
+ * Version: 1.22.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -464,6 +464,13 @@
                     type: 'checkbox',
                     default: true,
                     help: 'Hold Alt/Option and click any item to navigate to its crafting/gathering page, or item dictionary if not craftable',
+                },
+                collectionNavigation: {
+                    id: 'collectionNavigation',
+                    label: 'Add navigation buttons to collection items',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Adds View Action and Item Dictionary buttons when clicking collection items',
                 },
             },
         },
@@ -2455,7 +2462,10 @@
             if (!this.messageHandlers.has(messageType)) {
                 this.messageHandlers.set(messageType, []);
             }
-            this.messageHandlers.get(messageType).push(handler);
+            const handlers = this.messageHandlers.get(messageType);
+            if (!handlers.includes(handler)) {
+                handlers.push(handler);
+            }
         }
 
         /**
