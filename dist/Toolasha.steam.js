@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      1.24.1
+// @version      1.24.2
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -15520,7 +15520,7 @@ return plugin;
                     label: 'Show price badges on item icons',
                     type: 'checkbox',
                     default: false,
-                    help: 'Displays per-item ask or bid price on inventory items',
+                    help: 'Displays per-item ask and bid prices on inventory items',
                 },
                 profitCalc_pricingMode: {
                     id: 'profitCalc_pricingMode',
@@ -43127,6 +43127,18 @@ self.onmessage = function (e) {
             });
 
             config$1.onSettingChange('color_accent', () => {
+                if (this.isInitialized) {
+                    this.refresh();
+                }
+            });
+
+            config$1.onSettingChange('invSort_showBadges', () => {
+                if (this.isInitialized) {
+                    this.refresh();
+                }
+            });
+
+            config$1.onSettingChange('invSort_badgesOnNone', () => {
                 if (this.isInitialized) {
                     this.refresh();
                 }

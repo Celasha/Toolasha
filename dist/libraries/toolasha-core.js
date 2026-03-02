@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 1.24.1
+ * Version: 1.24.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -885,7 +885,7 @@
                     label: 'Show price badges on item icons',
                     type: 'checkbox',
                     default: false,
-                    help: 'Displays per-item ask or bid price on inventory items',
+                    help: 'Displays per-item ask and bid prices on inventory items',
                 },
                 profitCalc_pricingMode: {
                     id: 'profitCalc_pricingMode',

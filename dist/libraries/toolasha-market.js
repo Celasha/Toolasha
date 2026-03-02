@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 1.24.1
+ * Version: 1.24.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -16693,6 +16693,18 @@ self.onmessage = function (e) {
             });
 
             config.onSettingChange('color_accent', () => {
+                if (this.isInitialized) {
+                    this.refresh();
+                }
+            });
+
+            config.onSettingChange('invSort_showBadges', () => {
+                if (this.isInitialized) {
+                    this.refresh();
+                }
+            });
+
+            config.onSettingChange('invSort_badgesOnNone', () => {
                 if (this.isInitialized) {
                     this.refresh();
                 }
