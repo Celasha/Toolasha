@@ -9,10 +9,12 @@ on:
 jobs:
   summary:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Fetch commits and post weekly summary
         env:
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEEKLY_WEBHOOKS }}
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEEKLY_WEBHOOK }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           REPO="${{ github.repository }}"
