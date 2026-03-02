@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.24.2](https://github.com/Celasha/Toolasha/compare/v1.24.1...v1.24.2) (2026-03-02)
+
+### Bug Fixes
+
+- make inventory badge settings reactive and correct help text ([4bad7ef](https://github.com/Celasha/Toolasha/commit/4bad7efda5b2c69ec2bbd9e5ab193b153383a7cb))
+
 ## [1.24.1](https://github.com/Celasha/Toolasha/compare/v1.24.0...v1.24.1) (2026-03-02)
 
 ### Continuous Integration
