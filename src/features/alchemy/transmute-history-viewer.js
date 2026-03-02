@@ -590,14 +590,11 @@ class TransmuteHistoryViewer {
 
         // Sort: non-self-returns by totalValue desc, self-returns last
         // Exclude incidental drops (essences, artisan's crates) recorded in older sessions
-        const INCIDENTAL = ['_essence', '_artisans_crate'];
-        const filteredEntries = entries
-            .filter(([hrid]) => !INCIDENTAL.some((p) => hrid.includes(p)))
-            .sort(([, a], [, b]) => {
-                if (a.isSelfReturn && !b.isSelfReturn) return 1;
-                if (!a.isSelfReturn && b.isSelfReturn) return -1;
-                return (b.totalValue || 0) - (a.totalValue || 0);
-            });
+        const filteredEntries = entries.sort(([, a], [, b]) => {
+            if (a.isSelfReturn && !b.isSelfReturn) return 1;
+            if (!a.isSelfReturn && b.isSelfReturn) return -1;
+            return (b.totalValue || 0) - (a.totalValue || 0);
+        });
 
         filteredEntries.forEach(([itemHrid, result]) => {
             const line = document.createElement('div');
@@ -1302,7 +1299,6 @@ class TransmuteHistoryViewer {
      * Export all sessions to a CSV file download
      */
     exportHistory() {
-        const INCIDENTAL = ['_essence', '_artisans_crate'];
         const escape = (val) => `"${String(val === null || val === undefined ? '' : val).replace(/"/g, '""')}"`;
 
         const headers = ['Session Start', 'Input Item', 'Attempts', 'Successes', 'Failures', 'Results'];
@@ -1313,7 +1309,6 @@ class TransmuteHistoryViewer {
             const failures = session.totalAttempts - session.totalSuccesses;
 
             const resultParts = Object.entries(session.results || {})
-                .filter(([hrid]) => !INCIDENTAL.some((p) => hrid.includes(p)))
                 .sort(([, a], [, b]) => {
                     if (a.isSelfReturn && !b.isSelfReturn) return 1;
                     if (!a.isSelfReturn && b.isSelfReturn) return -1;

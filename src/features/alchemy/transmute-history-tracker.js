@@ -23,10 +23,6 @@ const COIN_ITEM_HRID = '/items/coin';
 const STORAGE_KEY = 'transmuteSessions';
 const STORAGE_STORE = 'alchemyHistory';
 
-// Item HRID substrings that are incidental drops (essences, artisan's crates)
-// and should not be recorded as transmutation output results.
-const INCIDENTAL_DROP_PATTERNS = ['_essence', '_artisans_crate'];
-
 class TransmuteHistoryTracker {
     constructor() {
         this.isInitialized = false;
@@ -127,19 +123,19 @@ class TransmuteHistoryTracker {
         // Detect success vs failure — exclude incidental drops (essences, artisan's crates)
         const nonCoinItems = (data.endCharacterItems || []).filter((item) => item.itemHrid !== COIN_ITEM_HRID);
 
-        const isIncidental = (hrid) => INCIDENTAL_DROP_PATTERNS.some((p) => hrid.includes(p));
-
-        // Self-return detection: the game sends the input item twice in endCharacterItems
-        // (once at pre-return count, once at post-return count) when the item is returned.
-        // A failure only sends the item once at the reduced count.
+        // The game always sends one entry for the consumed input item.
+        // If the input is also returned (self-return), it sends additional entries.
+        // Only the extra entries (beyond the first consumed one) represent actual returns.
         const inputItemEntries = nonCoinItems.filter((item) => item.itemHrid === inputItemHrid);
-        const isSelfReturn = inputItemEntries.length > 1;
+        const inputReturned = inputItemEntries.length > 1;
+        const selfReturnEntries = inputReturned ? inputItemEntries.slice(1) : [];
+
+        // Other non-input outputs
+        const otherOutputs = nonCoinItems.filter((item) => item.itemHrid !== inputItemHrid);
 
         // Collect all output items — the game sends one entry per action per output item,
         // so entry count correctly represents number of actions for that output.
-        const outputItems = isSelfReturn
-            ? inputItemEntries
-            : nonCoinItems.filter((item) => item.itemHrid !== inputItemHrid && !isIncidental(item.itemHrid));
+        const outputItems = [...selfReturnEntries, ...otherOutputs];
 
         // Each entry corresponds to one successful action; failures produce no output.
         // Use the output count as the attempt count so efficiency procs are recorded accurately.
