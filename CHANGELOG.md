@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.25.1](https://github.com/Celasha/Toolasha/compare/v1.25.0...v1.25.1) (2026-03-02)
+
+### Bug Fixes
+
+- milkonomy export now uses viewed profile instead of own data ([65fe9f1](https://github.com/Celasha/Toolasha/commit/65fe9f1cdfe9e4c8776e46f48645942c95401917))
+
+### Styles
+
+- rename Coins/XP label to Profit/XP ([7f2ec40](https://github.com/Celasha/Toolasha/commit/7f2ec404f845117b2fb652c2007c11cd8240cafe))
+
+### Continuous Integration
+
+- include commit body in feat Discord notifications ([6757a68](https://github.com/Celasha/Toolasha/commit/6757a68fd64e2d45f19ac9301cefee77131136f6))
+
 ## [1.25.0](https://github.com/Celasha/Toolasha/compare/v1.24.3...v1.25.0) (2026-03-02)
 
 ### Features
