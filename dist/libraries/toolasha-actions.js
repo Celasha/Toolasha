@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 1.25.0
+ * Version: 1.25.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -4247,7 +4247,7 @@
                 default: 'Sort: Default',
                 profit: 'Sort: Profit',
                 xp: 'Sort: XP',
-                coinsPerXp: 'Sort: Coins/XP',
+                coinsPerXp: 'Sort: Profit/XP',
             };
             const sortBtn = document.createElement('button');
             sortBtn.id = 'mwi-action-sort-toggle';
@@ -9082,7 +9082,7 @@
                 const efficiencyColor = coinsPerXp >= 0 ? config.COLOR_INFO : config.COLOR_WARNING;
                 const efficiencySign = coinsPerXp >= 0 ? '' : '-';
                 html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
-                html += `<span data-stat="overall" style="color: ${efficiencyColor};">Coins/XP: ${efficiencySign}${formatters_js.formatKMB(Math.abs(coinsPerXp))}</span></div>`;
+                html += `<span data-stat="overall" style="color: ${efficiencyColor};">Profit/XP: ${efficiencySign}${formatters_js.formatKMB(Math.abs(coinsPerXp))}</span></div>`;
             }
 
             data.displayElement.style.display = 'block';
@@ -9852,7 +9852,7 @@
                 const efficiencyColor = coinsPerXp >= 0 ? config.COLOR_INFO : config.COLOR_WARNING;
                 const efficiencySign = coinsPerXp >= 0 ? '' : '-';
                 html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
-                html += `<span data-stat="overall" style="color: ${efficiencyColor};">Coins/XP: ${efficiencySign}${formatters_js.formatKMB(Math.abs(coinsPerXp))}</span></div>`;
+                html += `<span data-stat="overall" style="color: ${efficiencyColor};">Profit/XP: ${efficiencySign}${formatters_js.formatKMB(Math.abs(coinsPerXp))}</span></div>`;
             }
 
             data.displayElement.innerHTML = html;

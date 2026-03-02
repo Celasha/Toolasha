@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      1.25.0
+// @version      1.25.1
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -47507,7 +47507,7 @@ self.onmessage = function (e) {
                 default: 'Sort: Default',
                 profit: 'Sort: Profit',
                 xp: 'Sort: XP',
-                coinsPerXp: 'Sort: Coins/XP',
+                coinsPerXp: 'Sort: Profit/XP',
             };
             const sortBtn = document.createElement('button');
             sortBtn.id = 'mwi-action-sort-toggle';
@@ -52342,7 +52342,7 @@ self.onmessage = function (e) {
                 const efficiencyColor = coinsPerXp >= 0 ? config$1.COLOR_INFO : config$1.COLOR_WARNING;
                 const efficiencySign = coinsPerXp >= 0 ? '' : '-';
                 html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
-                html += `<span data-stat="overall" style="color: ${efficiencyColor};">Coins/XP: ${efficiencySign}${formatKMB(Math.abs(coinsPerXp))}</span></div>`;
+                html += `<span data-stat="overall" style="color: ${efficiencyColor};">Profit/XP: ${efficiencySign}${formatKMB(Math.abs(coinsPerXp))}</span></div>`;
             }
 
             data.displayElement.style.display = 'block';
@@ -53112,7 +53112,7 @@ self.onmessage = function (e) {
                 const efficiencyColor = coinsPerXp >= 0 ? config$1.COLOR_INFO : config$1.COLOR_WARNING;
                 const efficiencySign = coinsPerXp >= 0 ? '' : '-';
                 html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
-                html += `<span data-stat="overall" style="color: ${efficiencyColor};">Coins/XP: ${efficiencySign}${formatKMB(Math.abs(coinsPerXp))}</span></div>`;
+                html += `<span data-stat="overall" style="color: ${efficiencyColor};">Profit/XP: ${efficiencySign}${formatKMB(Math.abs(coinsPerXp))}</span></div>`;
             }
 
             data.displayElement.innerHTML = html;
@@ -71477,12 +71477,7 @@ self.onmessage = function (e) {
             const originalBg = button.style.background;
 
             try {
-                // Defensive: ensure currentProfileId is null when exporting own profile
-                // This prevents stale data from blocking export
-                await storage$1.set('currentProfileId', null, 'combatExport', true);
-                clearCurrentProfile();
-
-                // Get current profile ID (should be null for own profile)
+                // Get current profile ID (if viewing someone else's profile)
                 const currentProfileId = await storage$1.get('currentProfileId', 'combatExport', null);
 
                 // Get export data (pass profile ID if viewing external profile)

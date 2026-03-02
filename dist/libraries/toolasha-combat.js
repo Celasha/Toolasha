@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 1.25.0
+ * Version: 1.25.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -12809,12 +12809,7 @@ self.onmessage = function (e) {
             const originalBg = button.style.background;
 
             try {
-                // Defensive: ensure currentProfileId is null when exporting own profile
-                // This prevents stale data from blocking export
-                await storage.set('currentProfileId', null, 'combatExport', true);
-                profileManager_js.clearCurrentProfile();
-
-                // Get current profile ID (should be null for own profile)
+                // Get current profile ID (if viewing someone else's profile)
                 const currentProfileId = await storage.get('currentProfileId', 'combatExport', null);
 
                 // Get export data (pass profile ID if viewing external profile)
