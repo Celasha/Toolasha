@@ -2,10 +2,9 @@
 
 ## [1.24.1](https://github.com/Celasha/Toolasha/compare/v1.24.0...v1.24.1) (2026-03-02)
 
-
 ### Continuous Integration
 
-* fix feat detection in Discord notification script ([681f617](https://github.com/Celasha/Toolasha/commit/681f617c89ad76a05c50846fc20c7b053cb8a9da))
+- fix feat detection in Discord notification script ([681f617](https://github.com/Celasha/Toolasha/commit/681f617c89ad76a05c50846fc20c7b053cb8a9da))
 
 ## [1.24.0](https://github.com/Celasha/Toolasha/compare/v1.23.2...v1.24.0) (2026-03-02)
 
