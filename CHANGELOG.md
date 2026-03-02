@@ -2,10 +2,9 @@
 
 ## [1.24.3](https://github.com/Celasha/Toolasha/compare/v1.24.2...v1.24.3) (2026-03-02)
 
-
 ### Continuous Integration
 
-* fix Discord weekly webhook secret name ([948bb17](https://github.com/Celasha/Toolasha/commit/948bb17e56e72e235a91ee048d5b1c23b1d34c85))
+- fix Discord weekly webhook secret name ([948bb17](https://github.com/Celasha/Toolasha/commit/948bb17e56e72e235a91ee048d5b1c23b1d34c85))
 
 ## [1.24.2](https://github.com/Celasha/Toolasha/compare/v1.24.1...v1.24.2) (2026-03-02)
 
