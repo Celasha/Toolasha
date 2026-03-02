@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 1.23.2
+ * Version: 1.24.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -21,7 +21,7 @@
             this.db = null;
             this.available = false;
             this.dbName = 'ToolashaDB';
-            this.dbVersion = 9; // Bumped for xpHistory store
+            this.dbVersion = 10; // Bumped for alchemyHistory store
             this.saveDebounceTimers = new Map(); // Per-key debounce timers
             this.pendingWrites = new Map(); // Per-key pending write data: {value, storeName}
             this.SAVE_DEBOUNCE_DELAY = 3000; // 3 seconds
@@ -140,6 +140,11 @@
                     // Create xpHistory store if it doesn't exist (for XP/hr tracker)
                     if (!db.objectStoreNames.contains('xpHistory')) {
                         db.createObjectStore('xpHistory');
+                    }
+
+                    // Create alchemyHistory store if it doesn't exist (for transmute history tracker)
+                    if (!db.objectStoreNames.contains('alchemyHistory')) {
+                        db.createObjectStore('alchemyHistory');
                     }
                 };
             });
@@ -574,6 +579,13 @@
                     type: 'checkbox',
                     default: true,
                     help: 'Displays profit/hour and profit/day for alchemy actions based on success rate and market prices',
+                },
+                alchemy_transmuteHistory: {
+                    id: 'alchemy_transmuteHistory',
+                    label: 'Alchemy panel: Track and view transmute session history',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Records transmutation sessions and displays history in a viewer tab in the Alchemy panel',
                 },
                 actions_missingMaterialsButton: {
                     id: 'actions_missingMaterialsButton',
