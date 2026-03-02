@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 1.24.3
+ * Version: 1.25.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -21,7 +21,7 @@
             this.db = null;
             this.available = false;
             this.dbName = 'ToolashaDB';
-            this.dbVersion = 10; // Bumped for alchemyHistory store
+            this.dbVersion = 11; // Bumped for labyrinth store
             this.saveDebounceTimers = new Map(); // Per-key debounce timers
             this.pendingWrites = new Map(); // Per-key pending write data: {value, storeName}
             this.SAVE_DEBOUNCE_DELAY = 3000; // 3 seconds
@@ -145,6 +145,11 @@
                     // Create alchemyHistory store if it doesn't exist (for transmute history tracker)
                     if (!db.objectStoreNames.contains('alchemyHistory')) {
                         db.createObjectStore('alchemyHistory');
+                    }
+
+                    // Create labyrinth store if it doesn't exist (for labyrinth tracker)
+                    if (!db.objectStoreNames.contains('labyrinth')) {
+                        db.createObjectStore('labyrinth');
                     }
                 };
             });
@@ -1046,6 +1051,13 @@
                     type: 'checkbox',
                     default: true,
                     help: 'Adds colored timer annotations to "Key counts" messages (green if fast, red if slow)',
+                },
+                labyrinthTracker: {
+                    id: 'labyrinthTracker',
+                    label: 'Labyrinth best level tracker',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Tracks the highest recommended level enemy defeated per monster type and shows it in the Automation tab',
                 },
                 combatSummary: {
                     id: 'combatSummary',
@@ -2252,7 +2264,8 @@
                 messageType === 'battle_unit_fetched' ||
                 messageType === 'action_type_consumable_slots_updated' ||
                 messageType === 'consumable_buffs_updated' ||
-                messageType === 'character_info_updated';
+                messageType === 'character_info_updated' ||
+                messageType === 'labyrinth_updated';
 
             if (!skipDedup) {
                 // Deduplicate by message content to prevent 4x JSON.parse on same message

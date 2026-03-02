@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      1.24.3
+// @version      1.25.0
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -14656,7 +14656,7 @@ return plugin;
             this.db = null;
             this.available = false;
             this.dbName = 'ToolashaDB';
-            this.dbVersion = 10; // Bumped for alchemyHistory store
+            this.dbVersion = 11; // Bumped for labyrinth store
             this.saveDebounceTimers = new Map(); // Per-key debounce timers
             this.pendingWrites = new Map(); // Per-key pending write data: {value, storeName}
             this.SAVE_DEBOUNCE_DELAY = 3000; // 3 seconds
@@ -14780,6 +14780,11 @@ return plugin;
                     // Create alchemyHistory store if it doesn't exist (for transmute history tracker)
                     if (!db.objectStoreNames.contains('alchemyHistory')) {
                         db.createObjectStore('alchemyHistory');
+                    }
+
+                    // Create labyrinth store if it doesn't exist (for labyrinth tracker)
+                    if (!db.objectStoreNames.contains('labyrinth')) {
+                        db.createObjectStore('labyrinth');
                     }
                 };
             });
@@ -15681,6 +15686,13 @@ return plugin;
                     type: 'checkbox',
                     default: true,
                     help: 'Adds colored timer annotations to "Key counts" messages (green if fast, red if slow)',
+                },
+                labyrinthTracker: {
+                    id: 'labyrinthTracker',
+                    label: 'Labyrinth best level tracker',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Tracks the highest recommended level enemy defeated per monster type and shows it in the Automation tab',
                 },
                 combatSummary: {
                     id: 'combatSummary',
@@ -16887,7 +16899,8 @@ return plugin;
                 messageType === 'battle_unit_fetched' ||
                 messageType === 'action_type_consumable_slots_updated' ||
                 messageType === 'consumable_buffs_updated' ||
-                messageType === 'character_info_updated';
+                messageType === 'character_info_updated' ||
+                messageType === 'labyrinth_updated';
 
             if (!skipDedup) {
                 // Deduplicate by message content to prevent 4x JSON.parse on same message
@@ -65316,6 +65329,378 @@ self.onmessage = function (e) {
     const combatSummary = new CombatSummary();
 
     /**
+     * Labyrinth Tracker
+     * Detects cleared combat rooms via WebSocket events and records per-monster best recommendedLevel
+     */
+
+
+    const STORAGE_KEY$2 = 'monsterBestLevels';
+    const STORE_NAME$1 = 'labyrinth';
+    const COMBAT_ROOM_TYPE = '/labyrinth_room_types/combat';
+    const SKILLING_ROOM_TYPE = '/labyrinth_room_types/skilling';
+
+    class LabyrinthTracker {
+        constructor() {
+            this.prevRoomData = null;
+            this.monsterBestLevels = {};
+            this.handlers = {};
+            this.isInitialized = false;
+            this.updateListeners = [];
+        }
+
+        /**
+         * Initialize labyrinth tracker
+         */
+        async initialize() {
+            if (!config$1.getSetting('labyrinthTracker')) {
+                return;
+            }
+
+            if (this.isInitialized) {
+                return;
+            }
+
+            await this.loadData();
+
+            this.handlers.labyrinthUpdated = (data) => this.onLabyrinthUpdated(data);
+            webSocketHook$1.on('labyrinth_updated', this.handlers.labyrinthUpdated);
+
+            this.isInitialized = true;
+            console.log('[LabyrinthTracker] Initialized');
+        }
+
+        /**
+         * Disable and clean up
+         */
+        disable() {
+            if (this.handlers.labyrinthUpdated) {
+                webSocketHook$1.off('labyrinth_updated', this.handlers.labyrinthUpdated);
+                this.handlers.labyrinthUpdated = null;
+            }
+
+            this.prevRoomData = null;
+            this.updateListeners = [];
+            this.isInitialized = false;
+        }
+
+        /**
+         * Handle labyrinth_updated WebSocket event
+         * @param {Object} data - WS message payload
+         */
+        onLabyrinthUpdated(data) {
+            const roomData = data.labyrinth?.roomData;
+
+            if (!roomData) {
+                return;
+            }
+
+            if (this.prevRoomData) {
+                this.diffRooms(this.prevRoomData, roomData);
+            }
+
+            // Deep-copy to snapshot current state
+            this.prevRoomData = roomData.map((row) => row.map((cell) => ({ ...cell })));
+        }
+
+        /**
+         * Compare previous and current room grids to find newly cleared rooms
+         * @param {Array} prevRooms - Previous room grid snapshot
+         * @param {Array} currRooms - Current room grid
+         */
+        diffRooms(prevRooms, currRooms) {
+            for (let row = 0; row < currRooms.length; row++) {
+                for (let col = 0; col < currRooms[row].length; col++) {
+                    const prev = prevRooms[row]?.[col];
+                    const curr = currRooms[row][col];
+
+                    if (!prev || !curr) {
+                        continue;
+                    }
+
+                    const wasTrackable =
+                        (prev.roomType === COMBAT_ROOM_TYPE || prev.roomType === SKILLING_ROOM_TYPE) && !prev.isCleared;
+                    const isNowCleared = curr.isCleared === true;
+
+                    if (wasTrackable && isNowCleared) {
+                        this.recordClear(prev);
+                    }
+                }
+            }
+        }
+
+        /**
+         * Record a room clear, updating best level if this is a new record
+         * @param {Object} room - Pre-clear room data
+         */
+        recordClear(room) {
+            const hrid = room.monsterHrid || room.skillHrid || room.combatZoneHrid || room.enemyHrid || null;
+
+            if (!hrid) {
+                console.warn('[LabyrinthTracker] Could not determine HRID from room:', room);
+                return;
+            }
+
+            let recommendedLevel = room.recommendedLevel;
+            if (recommendedLevel == null) {
+                const clientData = dataManager$1.getInitClientData();
+                const details = clientData?.combatMonsterDetailMap?.[hrid] || clientData?.skillDetailMap?.[hrid];
+                recommendedLevel = details?.recommendedLevel;
+            }
+
+            if (recommendedLevel == null) {
+                console.warn('[LabyrinthTracker] Could not determine recommendedLevel for', hrid);
+                return;
+            }
+
+            const level = Number(recommendedLevel);
+            const existing = this.monsterBestLevels[hrid];
+
+            if (!existing || level > existing.bestLevel) {
+                const clientData = dataManager$1.getInitClientData();
+                const details = clientData?.combatMonsterDetailMap?.[hrid] || clientData?.skillDetailMap?.[hrid];
+                const name = details?.name || hrid;
+
+                this.monsterBestLevels[hrid] = { name, bestLevel: level };
+                this.saveData();
+                this.notifyListeners();
+            }
+        }
+
+        /**
+         * Load stored best levels from IndexedDB
+         */
+        async loadData() {
+            try {
+                const data = await storage$1.getJSON(STORAGE_KEY$2, STORE_NAME$1, {});
+                this.monsterBestLevels = data || {};
+            } catch (error) {
+                console.error('[LabyrinthTracker] Failed to load data:', error);
+                this.monsterBestLevels = {};
+            }
+        }
+
+        /**
+         * Save best levels to IndexedDB
+         */
+        async saveData() {
+            try {
+                await storage$1.setJSON(STORAGE_KEY$2, this.monsterBestLevels, STORE_NAME$1, true);
+            } catch (error) {
+                console.error('[LabyrinthTracker] Failed to save data:', error);
+            }
+        }
+
+        /**
+         * Get the best level recorded for a monster
+         * @param {string} monsterHrid - Monster HRID
+         * @returns {number|null} Best level or null
+         */
+        getBestLevel(monsterHrid) {
+            return this.monsterBestLevels[monsterHrid]?.bestLevel ?? null;
+        }
+
+        /**
+         * Subscribe to update events (called when a new best is recorded)
+         * @param {Function} cb - Callback function
+         */
+        onUpdate(cb) {
+            if (!this.updateListeners.includes(cb)) {
+                this.updateListeners.push(cb);
+            }
+        }
+
+        /**
+         * Unsubscribe from update events
+         * @param {Function} cb - Callback function
+         */
+        offUpdate(cb) {
+            this.updateListeners = this.updateListeners.filter((l) => l !== cb);
+        }
+
+        /**
+         * Notify all update subscribers
+         */
+        notifyListeners() {
+            for (const cb of this.updateListeners) {
+                try {
+                    cb();
+                } catch (error) {
+                    console.error('[LabyrinthTracker] Error in update listener:', error);
+                }
+            }
+        }
+    }
+
+    const labyrinthTracker = new LabyrinthTracker();
+
+    /**
+     * Labyrinth Best Level Display
+     * Injects "Best: N" badges into the Labyrinth Automation tab's skip threshold cells
+     */
+
+
+    class LabyrinthBestLevel {
+        constructor() {
+            this.unregisterHandlers = [];
+            this.isInitialized = false;
+            this.updateHandler = null;
+            this.automationClickHandler = null;
+            this.automationButton = null;
+        }
+
+        /**
+         * Initialize the best level display
+         */
+        initialize() {
+            if (!config$1.getSetting('labyrinthTracker')) {
+                return;
+            }
+
+            if (this.isInitialized) {
+                return;
+            }
+
+            // Watch for the Labyrinth tab bar to appear, then attach click listener to Automation tab
+            const unregister = domObserver$1.onClass(
+                'LabyrinthBestLevel',
+                'LabyrinthPanel_tabsComponentContainer',
+                (container) => this.attachAutomationClickListener(container)
+            );
+            this.unregisterHandlers.push(unregister);
+
+            // Re-inject all badges when tracker records a new best
+            this.updateHandler = () => this.refreshAll();
+            labyrinthTracker.onUpdate(this.updateHandler);
+
+            this.isInitialized = true;
+        }
+
+        /**
+         * Disable and clean up
+         */
+        disable() {
+            if (this.updateHandler) {
+                labyrinthTracker.offUpdate(this.updateHandler);
+                this.updateHandler = null;
+            }
+
+            if (this.automationButton && this.automationClickHandler) {
+                this.automationButton.removeEventListener('click', this.automationClickHandler);
+                this.automationClickHandler = null;
+                this.automationButton = null;
+            }
+
+            this.unregisterHandlers.forEach((unregister) => unregister());
+            this.unregisterHandlers = [];
+
+            document.querySelectorAll('.mwi-labyrinth-best').forEach((el) => el.remove());
+
+            this.isInitialized = false;
+        }
+
+        /**
+         * Find the Automation tab button and attach a click listener to it
+         * @param {Element} container - The LabyrinthPanel_tabsComponentContainer element
+         */
+        attachAutomationClickListener(container) {
+            const buttons = Array.from(container.querySelectorAll('button[role="tab"]'));
+            const automationBtn = buttons.find((btn) => btn.textContent.trim().startsWith('Automation'));
+
+            if (!automationBtn) {
+                return;
+            }
+
+            // Remove previous listener if we re-attached (e.g. panel re-mounted)
+            if (this.automationButton && this.automationClickHandler) {
+                this.automationButton.removeEventListener('click', this.automationClickHandler);
+            }
+
+            this.automationButton = automationBtn;
+            this.automationClickHandler = () => {
+                // Small delay to let React render the tab content
+                setTimeout(() => this.refreshAll(), 100);
+            };
+
+            automationBtn.addEventListener('click', this.automationClickHandler);
+        }
+
+        /**
+         * Extract room HRID from the row containing this cell by reading the SVG use href.
+         * Returns /monsters/<slug> for combat rooms or /skills/<slug> for skilling rooms.
+         * @param {Element} cell - Skip threshold cell (div inside a <td>)
+         * @returns {string|null} Room HRID or null
+         */
+        extractRoomHrid(cell) {
+            try {
+                const row = cell.closest('tr');
+                if (!row) {
+                    return null;
+                }
+
+                const useEl = row.querySelector('[class*="LabyrinthPanel_roomLabel"] use');
+                if (!useEl) {
+                    return null;
+                }
+
+                const href = useEl.getAttribute('href') || useEl.getAttribute('xlink:href');
+                if (!href) {
+                    return null;
+                }
+
+                const slug = href.split('#')[1];
+                if (!slug) {
+                    return null;
+                }
+
+                const prefix = href.includes('skills_sprite') ? '/skills/' : '/monsters/';
+                return `${prefix}${slug}`;
+            } catch (error) {
+                console.error('[LabyrinthBestLevel] Error extracting room HRID:', error);
+                return null;
+            }
+        }
+
+        /**
+         * Inject a "Best: N" badge into the skip threshold cell
+         * @param {Element} cell - The LabyrinthPanel_skipThreshold div
+         * @param {number} bestLevel - Best level to display
+         */
+        injectBadge(cell, bestLevel) {
+            const existing = cell.querySelector('.mwi-labyrinth-best');
+            if (existing) {
+                existing.textContent = `Best: ${bestLevel}`;
+                return;
+            }
+
+            const badge = document.createElement('span');
+            badge.className = 'mwi-labyrinth-best';
+            badge.textContent = `Best: ${bestLevel}`;
+            badge.style.cssText = 'font-size:0.75rem;opacity:0.75;margin-right:6px;';
+
+            cell.insertBefore(badge, cell.firstChild);
+        }
+
+        /**
+         * Process all visible skipThreshold cells and inject badges where data exists
+         */
+        refreshAll() {
+            document.querySelectorAll('[class*="LabyrinthPanel_skipThreshold"]').forEach((cell) => {
+                const monsterHrid = this.extractRoomHrid(cell);
+                if (!monsterHrid) {
+                    return;
+                }
+
+                const bestLevel = labyrinthTracker.getBestLevel(monsterHrid);
+                if (bestLevel !== null) {
+                    this.injectBadge(cell, bestLevel);
+                }
+            });
+        }
+    }
+
+    const labyrinthBestLevel = new LabyrinthBestLevel();
+
+    /**
      * Skill Calculator Logic
      * Calculation functions for skill progression and combat level
      */
@@ -71386,6 +71771,8 @@ self.onmessage = function (e) {
         dungeonTrackerUI,
         dungeonTrackerChatAnnotations,
         combatSummary,
+        labyrinthTracker,
+        labyrinthBestLevel,
         combatSimIntegration,
         combatSimExport: {
             constructExportObject,
@@ -88100,6 +88487,20 @@ self.onmessage = function (e) {
                 async: false,
             },
             { key: 'combatStats', name: 'Combat Stats', category: 'Combat', module: Combat.combatStats, async: true },
+            {
+                key: 'labyrinthTracker',
+                name: 'Labyrinth Tracker',
+                category: 'Combat',
+                module: Combat.labyrinthTracker,
+                async: false,
+            },
+            {
+                key: 'labyrinthBestLevel',
+                name: 'Labyrinth Best Level',
+                category: 'Combat',
+                module: Combat.labyrinthBestLevel,
+                async: false,
+            },
         ];
 
         // UI Features
