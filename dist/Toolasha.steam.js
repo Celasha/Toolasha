@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      1.26.0
+// @version      1.27.0
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -15358,6 +15358,13 @@ return plugin;
                     default: true,
                     help: 'Shows whether ability is learned and current level/progress on ability book tooltips',
                 },
+                itemTooltip_enhancementMilestones: {
+                    id: 'itemTooltip_enhancementMilestones',
+                    label: 'Show enhancement milestones (+5/+7/+10/+12)',
+                    type: 'checkbox',
+                    default: false,
+                    help: 'Shows expected cost and XP to reach +5, +7, +10, and +12 on unenhanced equipment tooltips',
+                },
             },
         },
 
@@ -25388,13 +25395,62 @@ self.onmessage = function (e) {
         };
     }
 
+    /**
+     * Calculate actions and time needed to reach a target level
+     * Accounts for progressive efficiency gains (+1% per level)
+     * @param {number} currentLevel - Current skill level
+     * @param {number} currentXP - Current experience points
+     * @param {number} targetLevel - Target skill level
+     * @param {number} baseEfficiency - Starting efficiency percentage
+     * @param {number} actionTime - Time per action in seconds
+     * @param {number} xpPerAction - Modified XP per action (with multipliers, success rate, etc.)
+     * @param {Object} levelExperienceTable - XP requirements per level
+     * @returns {{ actionsNeeded: number, timeNeeded: number }}
+     */
+    function calculateMultiLevelProgress(
+        currentLevel,
+        currentXP,
+        targetLevel,
+        baseEfficiency,
+        actionTime,
+        xpPerAction,
+        levelExperienceTable
+    ) {
+        let totalActions = 0;
+        let totalTime = 0;
+
+        for (let level = currentLevel; level < targetLevel; level++) {
+            let xpNeeded;
+            if (level === currentLevel) {
+                xpNeeded = levelExperienceTable[level + 1] - currentXP;
+            } else {
+                xpNeeded = levelExperienceTable[level + 1] - levelExperienceTable[level];
+            }
+
+            // Progressive efficiency: +1% per level gained during grind
+            const levelsGained = level - currentLevel;
+            const progressiveEfficiency = baseEfficiency + levelsGained;
+            const efficiencyMultiplier = 1 + progressiveEfficiency / 100;
+
+            const xpPerPerformedAction = xpPerAction * efficiencyMultiplier;
+            const baseActionsForLevel = Math.ceil(xpNeeded / xpPerPerformedAction);
+            const actionsToQueue = Math.round(baseActionsForLevel * efficiencyMultiplier);
+            totalActions += actionsToQueue;
+            totalTime += baseActionsForLevel * actionTime;
+        }
+
+        return { actionsNeeded: totalActions, timeNeeded: totalTime };
+    }
+
     var experienceCalculator = {
         calculateExpPerHour,
+        calculateMultiLevelProgress,
     };
 
     var experienceCalculator$1 = /*#__PURE__*/Object.freeze({
         __proto__: null,
         calculateExpPerHour: calculateExpPerHour,
+        calculateMultiLevelProgress: calculateMultiLevelProgress,
         default: experienceCalculator
     });
 
@@ -29587,6 +29643,79 @@ self.onmessage = function (e) {
         return html;
     }
 
+    const MILESTONE_LEVELS = [5, 7, 10, 12];
+
+    /**
+     * Build compact enhancement milestones HTML for unenhanced item tooltips
+     * Shows expected cost and XP for +5, +7, +10, +12
+     * @param {string} itemHrid - Item HRID
+     * @param {Object} enhancementConfig - Enhancement configuration from getEnhancingParams()
+     * @returns {string} HTML string, or empty string if item is not enhanceable
+     */
+    function buildEnhancementMilestonesHTML(itemHrid, enhancementConfig) {
+        const gameData = dataManager$1.getInitClientData();
+        if (!gameData) return '';
+
+        const itemDetails = gameData.itemDetailMap[itemHrid];
+        if (!itemDetails?.enhancementCosts?.length) return '';
+
+        const showPrices = config$1.getSetting('itemTooltip_prices');
+        const useKMB = config$1.getSetting('formatting_useKMBFormat');
+        const fmt = (n) => (n != null && n > 0 ? (useKMB ? formatLargeNumber(n, 0) : numberFormatter(Math.round(n))) : '—');
+
+        const rows = [];
+        for (const level of MILESTONE_LEVELS) {
+            const data = calculateEnhancementPath(itemHrid, level, enhancementConfig);
+            if (!data) continue;
+
+            const cost = fmt(Math.round(data.optimalStrategy.totalCost));
+            const xp = data.totalExpectedXP !== null ? fmt(Math.round(data.totalExpectedXP)) : '—';
+
+            let ask = '—';
+            let bid = '—';
+            if (showPrices) {
+                const prices = getItemPrices(itemHrid, level);
+                ask = fmt(prices?.ask);
+                bid = fmt(prices?.bid);
+            }
+
+            rows.push({ level, cost, xp, ask, bid });
+        }
+
+        if (rows.length === 0) return '';
+
+        const tdStyle = (align = 'right', color = '') =>
+            `style="padding: 1px 6px; text-align: ${align};${color ? ` color: ${color};` : ''}"`;
+        const thStyle = (align = 'right') =>
+            `style="padding: 1px 6px; text-align: ${align}; opacity: 0.6; font-weight: normal;"`;
+
+        let html = '<div style="border-top: 1px solid rgba(255,255,255,0.2); margin-top: 8px; padding-top: 8px;">';
+        html += '<div style="font-weight: bold; margin-bottom: 4px;">Enhancement Milestones</div>';
+        html += '<table style="font-size: 0.9em; border-collapse: collapse; width: 100%;">';
+        html += '<thead><tr>';
+        html += `<th ${thStyle('left')}>Level</th>`;
+        html += `<th ${thStyle()}>Cost</th>`;
+        html += `<th ${thStyle()}>XP</th>`;
+        if (showPrices) html += `<th ${thStyle()}>Ask / Bid</th>`;
+        html += '</tr></thead><tbody>';
+
+        for (const row of rows) {
+            html += '<tr>';
+            html += `<td ${tdStyle('left', config$1.COLOR_TOOLTIP_INFO)}>+${row.level}</td>`;
+            html += `<td ${tdStyle('right', config$1.COLOR_TOOLTIP_INFO)}>${row.cost}</td>`;
+            html += `<td ${tdStyle('right', config$1.COLOR_XP_RATE)}>${row.xp}</td>`;
+            if (showPrices) {
+                html += `<td ${tdStyle('right', config$1.COLOR_TOOLTIP_INFO)}>${row.ask} / ${row.bid}</td>`;
+            }
+            html += '</tr>';
+        }
+
+        html += '</tbody></table>';
+        html += '</div>';
+
+        return html;
+    }
+
     /**
      * Gathering Profit Calculator
      *
@@ -30352,6 +30481,26 @@ self.onmessage = function (e) {
                 const abilityStatus = this.getAbilityStatus(itemHrid);
                 if (abilityStatus) {
                     this.injectAbilityStatusDisplay(tooltipElement, abilityStatus, isCollectionTooltip);
+                }
+            }
+
+            // Show enhancement milestones for unenhanced equipment items
+            if (enhancementLevel === 0 && config$1.getSetting('itemTooltip_enhancementMilestones')) {
+                const enhancementConfig = getEnhancingParams();
+                if (enhancementConfig) {
+                    const milestonesHTML = buildEnhancementMilestonesHTML(itemHrid, enhancementConfig);
+                    if (milestonesHTML) {
+                        const tooltipText = tooltipElement.querySelector('.ItemTooltipText_itemTooltipText__zFq3A');
+                        if (tooltipText && !tooltipText.querySelector('.mwi-enhancement-milestones')) {
+                            const div = dom.createStyledDiv(
+                                { color: config$1.COLOR_TOOLTIP_INFO },
+                                '',
+                                'mwi-enhancement-milestones'
+                            );
+                            div.innerHTML = milestonesHTML;
+                            tooltipText.appendChild(div);
+                        }
+                    }
                 }
             }
 
@@ -51270,65 +51419,6 @@ self.onmessage = function (e) {
         }
 
         /**
-         * Calculate actions and time needed to reach target level
-         * Accounts for progressive efficiency gains (+1% per level)
-         * Efficiency reduces actions needed (each action gives more XP) but not time per action
-         * @param {number} currentLevel - Current skill level
-         * @param {number} currentXP - Current experience points
-         * @param {number} targetLevel - Target skill level
-         * @param {number} baseEfficiency - Starting efficiency percentage
-         * @param {number} actionTime - Time per action in seconds
-         * @param {number} xpPerAction - Modified XP per action (with multipliers)
-         * @param {Object} levelExperienceTable - XP requirements per level
-         * @returns {Object} {actionsNeeded, timeNeeded}
-         */
-        calculateMultiLevelProgress(
-            currentLevel,
-            currentXP,
-            targetLevel,
-            baseEfficiency,
-            actionTime,
-            xpPerAction,
-            levelExperienceTable
-        ) {
-            let totalActions = 0;
-            let totalTime = 0;
-
-            for (let level = currentLevel; level < targetLevel; level++) {
-                // Calculate XP needed for this level
-                let xpNeeded;
-                if (level === currentLevel) {
-                    // First level: Account for current progress
-                    xpNeeded = levelExperienceTable[level + 1] - currentXP;
-                } else {
-                    // Subsequent levels: Full level requirement
-                    xpNeeded = levelExperienceTable[level + 1] - levelExperienceTable[level];
-                }
-
-                // Progressive efficiency: +1% per level gained during grind
-                const levelsGained = level - currentLevel;
-                const progressiveEfficiency = baseEfficiency + levelsGained;
-                const efficiencyMultiplier = 1 + progressiveEfficiency / 100;
-
-                // Calculate XP per performed action (base XP × efficiency multiplier)
-                // Efficiency means each action repeats, giving more XP per performed action
-                const xpPerPerformedAction = xpPerAction * efficiencyMultiplier;
-
-                // Calculate time-consuming actions needed for this level
-                const baseActionsForLevel = Math.ceil(xpNeeded / xpPerPerformedAction);
-
-                // Convert time-consuming actions to queued actions (instant repeats count toward queue total)
-                const actionsToQueue = Math.round(baseActionsForLevel * efficiencyMultiplier);
-                totalActions += actionsToQueue;
-
-                // Time is based on time-consuming actions, not instant repeats
-                totalTime += baseActionsForLevel * actionTime;
-            }
-
-            return { actionsNeeded: totalActions, timeNeeded: totalTime };
-        }
-
-        /**
          * Create level progress section
          * @param {Object} actionDetails - Action details from game data
          * @param {number} actionTime - Time per action in seconds
@@ -51479,7 +51569,7 @@ self.onmessage = function (e) {
                 lines.push('');
 
                 // Single level progress (always shown)
-                const singleLevel = this.calculateMultiLevelProgress(
+                const singleLevel = calculateMultiLevelProgress(
                     currentLevel,
                     currentXP,
                     nextLevel,
@@ -51542,7 +51632,7 @@ self.onmessage = function (e) {
                     const targetLevel = parseInt(targetLevelInput.value);
 
                     if (targetLevel > currentLevel && targetLevel <= 200) {
-                        const result = this.calculateMultiLevelProgress(
+                        const result = calculateMultiLevelProgress(
                             currentLevel,
                             currentXP,
                             targetLevel,
@@ -58838,11 +58928,69 @@ self.onmessage = function (e) {
                 lines.push(`  Time: ${timeReadable(timeNeeded)}`);
 
                 lines.push('');
+
+                // Target level calculator
+                lines.push(
+                    `<span style="font-weight: 500; color: var(--text-color-primary, ${config$1.COLOR_TEXT_PRIMARY});">Target Level Calculator:</span>`
+                );
+                lines.push(`<div style="margin-top: 4px;">
+                <span>To level </span>
+                <input
+                    type="number"
+                    id="mwi-alchemy-target-level-input"
+                    value="${nextLevel}"
+                    min="${nextLevel}"
+                    max="200"
+                    style="
+                        width: 50px;
+                        padding: 2px 4px;
+                        background: var(--background-secondary, #2a2a2a);
+                        color: var(--text-color-primary, ${config$1.COLOR_TEXT_PRIMARY});
+                        border: 1px solid var(--border-color, ${config$1.COLOR_BORDER});
+                        border-radius: 3px;
+                        font-size: 0.9em;
+                    "
+                >
+                <span>:</span>
+            </div>`);
+                lines.push(`<div id="mwi-alchemy-target-level-result" style="margin-top: 4px; margin-left: 8px;">
+                ${formatWithSeparator(actionsNeeded)} actions | ${timeReadable(timeNeeded)}
+            </div>`);
+
+                lines.push('');
                 lines.push(
                     `XP/hour: ${formatWithSeparator(Math.round(xpPerHour))} | XP/day: ${formatWithSeparator(Math.round(xpPerDay))}`
                 );
 
                 content.innerHTML = lines.join('<br>');
+
+                // Set up event listener for target level calculator
+                const targetLevelInput = content.querySelector('#mwi-alchemy-target-level-input');
+                const targetLevelResult = content.querySelector('#mwi-alchemy-target-level-result');
+                const baseEfficiency = profitData.efficiency * 100; // efficiency is decimal, convert to %
+
+                const updateTargetLevel = () => {
+                    const targetLevelValue = parseInt(targetLevelInput.value);
+                    if (targetLevelValue > currentLevel && targetLevelValue <= 200) {
+                        const result = calculateMultiLevelProgress(
+                            currentLevel,
+                            currentXP,
+                            targetLevelValue,
+                            baseEfficiency,
+                            actionTime,
+                            xpPerAction,
+                            levelExperienceTable
+                        );
+                        targetLevelResult.innerHTML = `${formatWithSeparator(result.actionsNeeded)} actions | ${timeReadable(result.timeNeeded)}`;
+                        targetLevelResult.style.color = `var(--text-color-primary, ${config$1.COLOR_TEXT_PRIMARY})`;
+                    } else {
+                        targetLevelResult.textContent = 'Invalid level';
+                        targetLevelResult.style.color = 'var(--color-error, #ff4444)';
+                    }
+                };
+
+                targetLevelInput.addEventListener('input', updateTargetLevel);
+                targetLevelInput.addEventListener('change', updateTargetLevel);
 
                 // Create summary for collapsed view
                 const summary = `${timeReadable(timeNeeded)} to Level ${nextLevel}`;

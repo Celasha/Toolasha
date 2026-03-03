@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 1.26.0
+ * Version: 1.27.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -722,6 +722,13 @@
                     type: 'checkbox',
                     default: true,
                     help: 'Shows whether ability is learned and current level/progress on ability book tooltips',
+                },
+                itemTooltip_enhancementMilestones: {
+                    id: 'itemTooltip_enhancementMilestones',
+                    label: 'Show enhancement milestones (+5/+7/+10/+12)',
+                    type: 'checkbox',
+                    default: false,
+                    help: 'Shows expected cost and XP to reach +5, +7, +10, and +12 on unenhanced equipment tooltips',
                 },
             },
         },

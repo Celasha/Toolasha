@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 1.26.0
+ * Version: 1.27.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -5143,13 +5143,62 @@ self.onmessage = function (e) {
         };
     }
 
+    /**
+     * Calculate actions and time needed to reach a target level
+     * Accounts for progressive efficiency gains (+1% per level)
+     * @param {number} currentLevel - Current skill level
+     * @param {number} currentXP - Current experience points
+     * @param {number} targetLevel - Target skill level
+     * @param {number} baseEfficiency - Starting efficiency percentage
+     * @param {number} actionTime - Time per action in seconds
+     * @param {number} xpPerAction - Modified XP per action (with multipliers, success rate, etc.)
+     * @param {Object} levelExperienceTable - XP requirements per level
+     * @returns {{ actionsNeeded: number, timeNeeded: number }}
+     */
+    function calculateMultiLevelProgress(
+        currentLevel,
+        currentXP,
+        targetLevel,
+        baseEfficiency,
+        actionTime,
+        xpPerAction,
+        levelExperienceTable
+    ) {
+        let totalActions = 0;
+        let totalTime = 0;
+
+        for (let level = currentLevel; level < targetLevel; level++) {
+            let xpNeeded;
+            if (level === currentLevel) {
+                xpNeeded = levelExperienceTable[level + 1] - currentXP;
+            } else {
+                xpNeeded = levelExperienceTable[level + 1] - levelExperienceTable[level];
+            }
+
+            // Progressive efficiency: +1% per level gained during grind
+            const levelsGained = level - currentLevel;
+            const progressiveEfficiency = baseEfficiency + levelsGained;
+            const efficiencyMultiplier = 1 + progressiveEfficiency / 100;
+
+            const xpPerPerformedAction = xpPerAction * efficiencyMultiplier;
+            const baseActionsForLevel = Math.ceil(xpNeeded / xpPerPerformedAction);
+            const actionsToQueue = Math.round(baseActionsForLevel * efficiencyMultiplier);
+            totalActions += actionsToQueue;
+            totalTime += baseActionsForLevel * actionTime;
+        }
+
+        return { actionsNeeded: totalActions, timeNeeded: totalTime };
+    }
+
     var experienceCalculator = {
         calculateExpPerHour,
+        calculateMultiLevelProgress,
     };
 
     var experienceCalculator$1 = /*#__PURE__*/Object.freeze({
         __proto__: null,
         calculateExpPerHour: calculateExpPerHour,
+        calculateMultiLevelProgress: calculateMultiLevelProgress,
         default: experienceCalculator
     });
 

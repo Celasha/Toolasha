@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 1.26.0
+ * Version: 1.27.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -7940,65 +7940,6 @@
         }
 
         /**
-         * Calculate actions and time needed to reach target level
-         * Accounts for progressive efficiency gains (+1% per level)
-         * Efficiency reduces actions needed (each action gives more XP) but not time per action
-         * @param {number} currentLevel - Current skill level
-         * @param {number} currentXP - Current experience points
-         * @param {number} targetLevel - Target skill level
-         * @param {number} baseEfficiency - Starting efficiency percentage
-         * @param {number} actionTime - Time per action in seconds
-         * @param {number} xpPerAction - Modified XP per action (with multipliers)
-         * @param {Object} levelExperienceTable - XP requirements per level
-         * @returns {Object} {actionsNeeded, timeNeeded}
-         */
-        calculateMultiLevelProgress(
-            currentLevel,
-            currentXP,
-            targetLevel,
-            baseEfficiency,
-            actionTime,
-            xpPerAction,
-            levelExperienceTable
-        ) {
-            let totalActions = 0;
-            let totalTime = 0;
-
-            for (let level = currentLevel; level < targetLevel; level++) {
-                // Calculate XP needed for this level
-                let xpNeeded;
-                if (level === currentLevel) {
-                    // First level: Account for current progress
-                    xpNeeded = levelExperienceTable[level + 1] - currentXP;
-                } else {
-                    // Subsequent levels: Full level requirement
-                    xpNeeded = levelExperienceTable[level + 1] - levelExperienceTable[level];
-                }
-
-                // Progressive efficiency: +1% per level gained during grind
-                const levelsGained = level - currentLevel;
-                const progressiveEfficiency = baseEfficiency + levelsGained;
-                const efficiencyMultiplier = 1 + progressiveEfficiency / 100;
-
-                // Calculate XP per performed action (base XP × efficiency multiplier)
-                // Efficiency means each action repeats, giving more XP per performed action
-                const xpPerPerformedAction = xpPerAction * efficiencyMultiplier;
-
-                // Calculate time-consuming actions needed for this level
-                const baseActionsForLevel = Math.ceil(xpNeeded / xpPerPerformedAction);
-
-                // Convert time-consuming actions to queued actions (instant repeats count toward queue total)
-                const actionsToQueue = Math.round(baseActionsForLevel * efficiencyMultiplier);
-                totalActions += actionsToQueue;
-
-                // Time is based on time-consuming actions, not instant repeats
-                totalTime += baseActionsForLevel * actionTime;
-            }
-
-            return { actionsNeeded: totalActions, timeNeeded: totalTime };
-        }
-
-        /**
          * Create level progress section
          * @param {Object} actionDetails - Action details from game data
          * @param {number} actionTime - Time per action in seconds
@@ -8149,7 +8090,7 @@
                 lines.push('');
 
                 // Single level progress (always shown)
-                const singleLevel = this.calculateMultiLevelProgress(
+                const singleLevel = experienceCalculator_js.calculateMultiLevelProgress(
                     currentLevel,
                     currentXP,
                     nextLevel,
@@ -8212,7 +8153,7 @@
                     const targetLevel = parseInt(targetLevelInput.value);
 
                     if (targetLevel > currentLevel && targetLevel <= 200) {
-                        const result = this.calculateMultiLevelProgress(
+                        const result = experienceCalculator_js.calculateMultiLevelProgress(
                             currentLevel,
                             currentXP,
                             targetLevel,
@@ -17376,11 +17317,69 @@ self.onmessage = function (e) {
                 lines.push(`  Time: ${formatters_js.timeReadable(timeNeeded)}`);
 
                 lines.push('');
+
+                // Target level calculator
+                lines.push(
+                    `<span style="font-weight: 500; color: var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY});">Target Level Calculator:</span>`
+                );
+                lines.push(`<div style="margin-top: 4px;">
+                <span>To level </span>
+                <input
+                    type="number"
+                    id="mwi-alchemy-target-level-input"
+                    value="${nextLevel}"
+                    min="${nextLevel}"
+                    max="200"
+                    style="
+                        width: 50px;
+                        padding: 2px 4px;
+                        background: var(--background-secondary, #2a2a2a);
+                        color: var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY});
+                        border: 1px solid var(--border-color, ${config.COLOR_BORDER});
+                        border-radius: 3px;
+                        font-size: 0.9em;
+                    "
+                >
+                <span>:</span>
+            </div>`);
+                lines.push(`<div id="mwi-alchemy-target-level-result" style="margin-top: 4px; margin-left: 8px;">
+                ${formatters_js.formatWithSeparator(actionsNeeded)} actions | ${formatters_js.timeReadable(timeNeeded)}
+            </div>`);
+
+                lines.push('');
                 lines.push(
                     `XP/hour: ${formatters_js.formatWithSeparator(Math.round(xpPerHour))} | XP/day: ${formatters_js.formatWithSeparator(Math.round(xpPerDay))}`
                 );
 
                 content.innerHTML = lines.join('<br>');
+
+                // Set up event listener for target level calculator
+                const targetLevelInput = content.querySelector('#mwi-alchemy-target-level-input');
+                const targetLevelResult = content.querySelector('#mwi-alchemy-target-level-result');
+                const baseEfficiency = profitData.efficiency * 100; // efficiency is decimal, convert to %
+
+                const updateTargetLevel = () => {
+                    const targetLevelValue = parseInt(targetLevelInput.value);
+                    if (targetLevelValue > currentLevel && targetLevelValue <= 200) {
+                        const result = experienceCalculator_js.calculateMultiLevelProgress(
+                            currentLevel,
+                            currentXP,
+                            targetLevelValue,
+                            baseEfficiency,
+                            actionTime,
+                            xpPerAction,
+                            levelExperienceTable
+                        );
+                        targetLevelResult.innerHTML = `${formatters_js.formatWithSeparator(result.actionsNeeded)} actions | ${formatters_js.timeReadable(result.timeNeeded)}`;
+                        targetLevelResult.style.color = `var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY})`;
+                    } else {
+                        targetLevelResult.textContent = 'Invalid level';
+                        targetLevelResult.style.color = 'var(--color-error, #ff4444)';
+                    }
+                };
+
+                targetLevelInput.addEventListener('input', updateTargetLevel);
+                targetLevelInput.addEventListener('change', updateTargetLevel);
 
                 // Create summary for collapsed view
                 const summary = `${formatters_js.timeReadable(timeNeeded)} to Level ${nextLevel}`;
