@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 1.25.1
+ * Version: 1.26.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -144,9 +144,12 @@
      * @param {string|null} protectionItemHrid - Protection item HRID (cached, avoid repeated DOM queries)
      * @returns {string} HTML string
      */
-    function generateCostsByLevelTable(panel, params, itemLevel, protectFromLevel, enhancementCosts, protectionItemHrid) {
+    function generateCostsByLevelTable(panel, params, itemDetails, protectFromLevel, enhancementCosts, protectionItemHrid) {
         const lines = [];
         const gameData = dataManager.getInitClientData();
+        const itemLevel = itemDetails.itemLevel || 1;
+        const xpBaseLevel = itemDetails.level || itemDetails.equipmentDetail?.levelRequirements?.[0]?.level || 0;
+        const wisdomDecimal = params.experienceBonus / 100;
 
         lines.push('<div style="margin-top: 12px; background: rgba(0,0,0,0.2); padding: 8px; border-radius: 4px;">');
         lines.push('<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">');
@@ -232,11 +235,26 @@
 
             const totalCost = materialCost + protectionCost;
 
+            // Calculate XP/hr for this target level
+            let totalXP = 0;
+            if (calc.visitCounts && calc.totalTime > 0) {
+                for (let i = 0; i < level; i++) {
+                    const visits = calc.visitCounts[i];
+                    const successRate = calc.successRates[i].actualRate / 100;
+                    const enhMult = i === 0 ? 1.0 : i + 1;
+                    const successXP = Math.floor(1.4 * (1 + wisdomDecimal) * enhMult * (10 + xpBaseLevel));
+                    const failXP = Math.floor(successXP * 0.1);
+                    totalXP += visits * (successRate * successXP + (1 - successRate) * failXP);
+                }
+            }
+            const xpPerHour = calc.totalTime > 0 ? Math.round((totalXP / calc.totalTime) * 3600) : 0;
+
             costData.push({
                 level,
                 attempts: calc.attempts, // Use exact decimal attempts
                 protection: calc.protectionCount,
                 time: calc.totalTime,
+                xpPerHour,
                 cost: totalCost,
                 breakdown: materialBreakdown,
             });
@@ -317,6 +335,7 @@
         });
 
         lines.push('<th style="text-align: right; padding: 4px;">Time</th>');
+        lines.push('<th style="text-align: right; padding: 4px;">XP/hr</th>');
         lines.push('<th style="text-align: right; padding: 4px;">Total Cost</th>');
 
         // Add Mirror Cost column if Philosopher's Mirror is equipped
@@ -368,6 +387,9 @@
             });
 
             lines.push(`<td style="padding: 6px 4px; text-align: right; color: #ccc;">${formatters_js.timeReadable(data.time)}</td>`);
+            lines.push(
+                `<td style="padding: 6px 4px; text-align: right; color: ${config.COLOR_XP_RATE};">${data.xpPerHour > 0 ? data.xpPerHour.toLocaleString() : '-'}</td>`
+            );
             lines.push(
                 `<td style="padding: 6px 4px; text-align: right; color: #ffa500;">${Math.round(data.cost).toLocaleString()}</td>`
             );
@@ -665,7 +687,7 @@
         const costsByLevelHTML = generateCostsByLevelTable(
             panel,
             params,
-            itemDetails.itemLevel,
+            itemDetails,
             protectFromLevel,
             enhancementCosts,
             protectionItemHrid

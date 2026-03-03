@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 1.25.1
+ * Version: 1.26.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -6847,6 +6847,9 @@ self.onmessage = function (e) {
                     actualRate: Math.min(100, base * successMultiplier),
                 };
             }),
+
+            // Expected number of times each state is visited (from fundamental matrix M)
+            visitCounts: Array.from({ length: targetLevel }, (_, i) => M.get([0, i])),
         };
     }
 

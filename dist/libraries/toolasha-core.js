@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 1.25.1
+ * Version: 1.26.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -963,6 +963,13 @@
                     default: true,
                     help: 'Automatically clicks the "All" button when opening openable containers (crates, chests, caches)',
                 },
+                autoAllButton_excludeSeals: {
+                    id: 'autoAllButton_excludeSeals',
+                    label: 'Auto-click "All": Skip Seal of... items',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'When enabled, Seal of... items from the Labyrinth are not auto-opened',
+                },
             },
         },
 
@@ -1598,7 +1605,7 @@
                 },
                 color_xp_rate: {
                     id: 'color_xp_rate',
-                    label: 'XP/hr Rate Text',
+                    label: 'XP Text',
                     type: 'color',
                     default: '#ffffff',
                 },

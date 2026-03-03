@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      1.25.1
+// @version      1.26.0
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -15598,6 +15598,13 @@ return plugin;
                     default: true,
                     help: 'Automatically clicks the "All" button when opening openable containers (crates, chests, caches)',
                 },
+                autoAllButton_excludeSeals: {
+                    id: 'autoAllButton_excludeSeals',
+                    label: 'Auto-click "All": Skip Seal of... items',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'When enabled, Seal of... items from the Labyrinth are not auto-opened',
+                },
             },
         },
 
@@ -16233,7 +16240,7 @@ return plugin;
                 },
                 color_xp_rate: {
                     id: 'color_xp_rate',
-                    label: 'XP/hr Rate Text',
+                    label: 'XP Text',
                     type: 'color',
                     default: '#ffffff',
                 },
@@ -27085,6 +27092,9 @@ self.onmessage = function (e) {
                     actualRate: Math.min(100, base * successMultiplier),
                 };
             }),
+
+            // Expected number of times each state is visited (from fundamental matrix M)
+            visitCounts: Array.from({ length: targetLevel }, (_, i) => M.get([0, i])),
         };
     }
 
@@ -28988,11 +28998,48 @@ self.onmessage = function (e) {
             };
         }
 
+        // Calculate XP/hr for the optimal path
+        let xpPerHour = null;
+        let totalExpectedXP = null;
+        try {
+            const xpCalc = calculateEnhancement({
+                enhancingLevel: config.enhancingLevel,
+                houseLevel: config.houseLevel,
+                toolBonus: config.toolBonus || 0,
+                speedBonus: config.speedBonus || 0,
+                itemLevel,
+                targetLevel: currentEnhancementLevel,
+                protectFrom: optimalStrategy.protectFrom,
+                blessedTea: config.teas.blessed,
+                guzzlingBonus: config.guzzlingBonus,
+            });
+
+            if (xpCalc && xpCalc.visitCounts && xpCalc.totalTime > 0) {
+                const wisdomDecimal = (config.experienceBonus || 0) / 100;
+                const xpBaseLevel = itemDetails.level || itemDetails.equipmentDetail?.levelRequirements?.[0]?.level || 0;
+                let totalXP = 0;
+                for (let i = 0; i < currentEnhancementLevel; i++) {
+                    const visits = xpCalc.visitCounts[i];
+                    const successRate = xpCalc.successRates[i].actualRate / 100;
+                    const enhMult = i === 0 ? 1.0 : i + 1;
+                    const successXP = Math.floor(1.4 * (1 + wisdomDecimal) * enhMult * (10 + xpBaseLevel));
+                    const failXP = Math.floor(successXP * 0.1);
+                    totalXP += visits * (successRate * successXP + (1 - successRate) * failXP);
+                }
+                xpPerHour = Math.round((totalXP / xpCalc.totalTime) * 3600);
+                totalExpectedXP = Math.round(totalXP);
+            }
+        } catch {
+            // XP data is optional; don't let it break the tooltip
+        }
+
         return {
             targetLevel: currentEnhancementLevel,
             itemLevel,
             optimalStrategy,
             allStrategies: [optimalStrategy], // Only return optimal
+            xpPerHour,
+            totalExpectedXP,
         };
     }
 
@@ -29390,7 +29437,7 @@ self.onmessage = function (e) {
             return '';
         }
 
-        const { targetLevel, optimalStrategy } = enhancementData;
+        const { targetLevel, optimalStrategy, xpPerHour, totalExpectedXP } = enhancementData;
 
         // Validate required fields
         if (
@@ -29517,6 +29564,24 @@ self.onmessage = function (e) {
         }
 
         html += '</div>'; // Close margin-left div
+
+        if (xpPerHour !== null && xpPerHour > 0) {
+            html +=
+                '<div style="margin-top: 4px; font-size: 0.9em; color: ' +
+                config$1.COLOR_XP_RATE +
+                ';">XP/hr: ' +
+                xpPerHour.toLocaleString() +
+                '</div>';
+        }
+        if (totalExpectedXP !== null && totalExpectedXP > 0) {
+            html +=
+                '<div style="font-size: 0.9em; color: ' +
+                config$1.COLOR_XP_RATE +
+                ';">Total XP: ~' +
+                totalExpectedXP.toLocaleString() +
+                '</div>';
+        }
+
         html += '</div>'; // Close main container
 
         return html;
@@ -44257,6 +44322,11 @@ self.onmessage = function (e) {
                 return;
             }
 
+            // Skip seals if the exclude setting is on
+            if (config$1.getSetting('autoAllButton_excludeSeals') && itemHrid.startsWith('/items/seal_of_')) {
+                return;
+            }
+
             // Item IS openable - find and click the "All" button
             this.clickAllButton(container);
         }
@@ -44494,9 +44564,12 @@ self.onmessage = function (e) {
      * @param {string|null} protectionItemHrid - Protection item HRID (cached, avoid repeated DOM queries)
      * @returns {string} HTML string
      */
-    function generateCostsByLevelTable(panel, params, itemLevel, protectFromLevel, enhancementCosts, protectionItemHrid) {
+    function generateCostsByLevelTable(panel, params, itemDetails, protectFromLevel, enhancementCosts, protectionItemHrid) {
         const lines = [];
         const gameData = dataManager$1.getInitClientData();
+        const itemLevel = itemDetails.itemLevel || 1;
+        const xpBaseLevel = itemDetails.level || itemDetails.equipmentDetail?.levelRequirements?.[0]?.level || 0;
+        const wisdomDecimal = params.experienceBonus / 100;
 
         lines.push('<div style="margin-top: 12px; background: rgba(0,0,0,0.2); padding: 8px; border-radius: 4px;">');
         lines.push('<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">');
@@ -44582,11 +44655,26 @@ self.onmessage = function (e) {
 
             const totalCost = materialCost + protectionCost;
 
+            // Calculate XP/hr for this target level
+            let totalXP = 0;
+            if (calc.visitCounts && calc.totalTime > 0) {
+                for (let i = 0; i < level; i++) {
+                    const visits = calc.visitCounts[i];
+                    const successRate = calc.successRates[i].actualRate / 100;
+                    const enhMult = i === 0 ? 1.0 : i + 1;
+                    const successXP = Math.floor(1.4 * (1 + wisdomDecimal) * enhMult * (10 + xpBaseLevel));
+                    const failXP = Math.floor(successXP * 0.1);
+                    totalXP += visits * (successRate * successXP + (1 - successRate) * failXP);
+                }
+            }
+            const xpPerHour = calc.totalTime > 0 ? Math.round((totalXP / calc.totalTime) * 3600) : 0;
+
             costData.push({
                 level,
                 attempts: calc.attempts, // Use exact decimal attempts
                 protection: calc.protectionCount,
                 time: calc.totalTime,
+                xpPerHour,
                 cost: totalCost,
                 breakdown: materialBreakdown,
             });
@@ -44667,6 +44755,7 @@ self.onmessage = function (e) {
         });
 
         lines.push('<th style="text-align: right; padding: 4px;">Time</th>');
+        lines.push('<th style="text-align: right; padding: 4px;">XP/hr</th>');
         lines.push('<th style="text-align: right; padding: 4px;">Total Cost</th>');
 
         // Add Mirror Cost column if Philosopher's Mirror is equipped
@@ -44718,6 +44807,9 @@ self.onmessage = function (e) {
             });
 
             lines.push(`<td style="padding: 6px 4px; text-align: right; color: #ccc;">${timeReadable(data.time)}</td>`);
+            lines.push(
+                `<td style="padding: 6px 4px; text-align: right; color: ${config$1.COLOR_XP_RATE};">${data.xpPerHour > 0 ? data.xpPerHour.toLocaleString() : '-'}</td>`
+            );
             lines.push(
                 `<td style="padding: 6px 4px; text-align: right; color: #ffa500;">${Math.round(data.cost).toLocaleString()}</td>`
             );
@@ -45015,7 +45107,7 @@ self.onmessage = function (e) {
         const costsByLevelHTML = generateCostsByLevelTable(
             panel,
             params,
-            itemDetails.itemLevel,
+            itemDetails,
             protectFromLevel,
             enhancementCosts,
             protectionItemHrid
