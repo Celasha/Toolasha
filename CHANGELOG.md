@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.27.3](https://github.com/Celasha/Toolasha/compare/v1.27.2...v1.27.3) (2026-03-03)
+
+### Bug Fixes
+
+- add configurable buy listing price strategy setting ([1596a47](https://github.com/Celasha/Toolasha/commit/1596a4713f1b6b41b1a0924b13eb450f4bcf130a))
+- respect time format setting in chat pop-out timestamps ([5325522](https://github.com/Celasha/Toolasha/commit/5325522880993a17a41db4bacccfbe687bff675f))
+
 ## [1.27.2](https://github.com/Celasha/Toolasha/compare/v1.27.1...v1.27.2) (2026-03-03)
 
 ### Bug Fixes
