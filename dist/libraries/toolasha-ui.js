@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 1.27.1
+ * Version: 1.27.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -17095,6 +17095,17 @@ self.onmessage = function (e) {
             extendSession(session, newTargetLevel);
             this.currentSessionId = sessionId;
 
+            // Recalculate predictions for the new target level
+            const predictions = calculateEnhancementPredictions(
+                session.itemHrid,
+                session.currentLevel,
+                newTargetLevel,
+                session.protectFrom
+            );
+            if (predictions) {
+                session.predictions = predictions;
+            }
+
             await saveSessions(this.sessions);
             await saveCurrentSessionId(sessionId);
 
@@ -18705,7 +18716,7 @@ self.onmessage = function (e) {
                 // Try to extend a completed session for the same item
                 const extendableSessionId = enhancementTracker.findExtendableSession(itemHrid, newLevel);
                 if (extendableSessionId) {
-                    const newTarget = Math.min(newLevel + 5, 20);
+                    const newTarget = action.enhancingMaxLevel || Math.min(newLevel + 5, 20);
                     await enhancementTracker.extendSessionTarget(extendableSessionId, newTarget);
                     currentSession = enhancementTracker.getCurrentSession();
 

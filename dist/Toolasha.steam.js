@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Toolasha
 // @namespace    http://tampermonkey.net/
-// @version      1.27.1
+// @version      1.27.2
 // @downloadURL  https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.user.js
 // @updateURL    https://greasyfork.org/scripts/562662-toolasha/code/Toolasha.meta.js
 // @description  Toolasha - Enhanced tools for Milky Way Idle.
@@ -86445,6 +86445,17 @@ self.onmessage = function (e) {
             extendSession(session, newTargetLevel);
             this.currentSessionId = sessionId;
 
+            // Recalculate predictions for the new target level
+            const predictions = calculateEnhancementPredictions(
+                session.itemHrid,
+                session.currentLevel,
+                newTargetLevel,
+                session.protectFrom
+            );
+            if (predictions) {
+                session.predictions = predictions;
+            }
+
             await saveSessions(this.sessions);
             await saveCurrentSessionId(sessionId);
 
@@ -88055,7 +88066,7 @@ self.onmessage = function (e) {
                 // Try to extend a completed session for the same item
                 const extendableSessionId = enhancementTracker.findExtendableSession(itemHrid, newLevel);
                 if (extendableSessionId) {
-                    const newTarget = Math.min(newLevel + 5, 20);
+                    const newTarget = action.enhancingMaxLevel || Math.min(newLevel + 5, 20);
                     await enhancementTracker.extendSessionTarget(extendableSessionId, newTarget);
                     currentSession = enhancementTracker.getCurrentSession();
 
