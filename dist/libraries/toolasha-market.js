@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 1.27.0
+ * Version: 1.27.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -3936,12 +3936,6 @@ self.onmessage = function (e) {
          * @param {Element} tooltipElement - The tooltip popper element
          */
         async handleTooltip(tooltipElement) {
-            // Guard against duplicate processing
-            if (tooltipElement.dataset.pricesProcessed) {
-                return;
-            }
-            tooltipElement.dataset.pricesProcessed = 'true';
-
             // Check if it's a collection tooltip
             const collectionContent = tooltipElement.querySelector('div.Collection_tooltipContent__2IcSJ');
             const isCollectionTooltip = !!collectionContent;
@@ -3965,6 +3959,37 @@ self.onmessage = function (e) {
             } else {
                 itemName = nameElement.textContent.trim();
             }
+
+            // Guard against duplicate processing for the same item.
+            // Use the full item name (includes enhancement suffix e.g. "+3") as the key so
+            // that switching to a different item — or a different enhancement level of the same
+            // item — clears stale injected content and re-processes.
+            if (tooltipElement.dataset.pricesProcessedItem === itemName) {
+                return;
+            }
+
+            // Item changed (or first visit) — remove any previously injected elements so
+            // stale data from the previous item doesn't bleed through.
+            if (tooltipElement.dataset.pricesProcessedItem) {
+                const tooltipText = tooltipElement.querySelector('.ItemTooltipText_itemTooltipText__zFq3A');
+                if (tooltipText) {
+                    const staleSelectors = [
+                        '.market-price-injected',
+                        '.market-profit-injected',
+                        '.market-ev-injected',
+                        '.market-gathering-injected',
+                        '.market-multi-action-injected',
+                        '.market-enhancement-injected',
+                        '.mwi-enhancement-milestones',
+                        '.mwi-ability-status',
+                    ];
+                    for (const sel of staleSelectors) {
+                        tooltipText.querySelector(sel)?.remove();
+                    }
+                }
+            }
+
+            tooltipElement.dataset.pricesProcessedItem = itemName;
 
             // Get the item HRID from the name
             const itemHrid = this.extractItemHridFromName(itemName);
