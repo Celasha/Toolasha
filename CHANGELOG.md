@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.28.0](https://github.com/Celasha/Toolasha/compare/v1.27.3...v1.28.0) (2026-03-04)
+
+
+### Features
+
+* add coinify session history tracker and viewer ([1d04d20](https://github.com/Celasha/Toolasha/commit/1d04d2005684639d65d25e30d8f1f66efef23427))
+
 ## [1.27.3](https://github.com/Celasha/Toolasha/compare/v1.27.2...v1.27.3) (2026-03-03)
 
 ### Bug Fixes
