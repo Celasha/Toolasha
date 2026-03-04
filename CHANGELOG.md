@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.29.0](https://github.com/Celasha/Toolasha/compare/v1.28.0...v1.29.0) (2026-03-04)
+
+
+### Features
+
+* filter blocked players from pop-out chat ([583c6c4](https://github.com/Celasha/Toolasha/commit/583c6c4627570ef1ff31d995507f13639699291c))
+* highlight deaths, XP, and consumables on combat sim results page ([7abb6fa](https://github.com/Celasha/Toolasha/commit/7abb6faa96e3331e9edf8d4d8f533b833b5499e9))
+
+
+### Bug Fixes
+
+* resolve enhancing skill level always returning 1 ([e055c1b](https://github.com/Celasha/Toolasha/commit/e055c1b6693905e356ce6968dac75b233c51cc5a))
+
+
+### Styles
+
+* fix prettier formatting in tooltip-enhancement.js ([e85fed7](https://github.com/Celasha/Toolasha/commit/e85fed77e3365b757df0463e7d3158b268f5c7e4))
+* update enhancement milestones cost format and column order ([0f1227f](https://github.com/Celasha/Toolasha/commit/0f1227fcbfc23c407958ba42f6882d9db30296b3))
+
 ## [1.28.0](https://github.com/Celasha/Toolasha/compare/v1.27.3...v1.28.0) (2026-03-04)
 
 ### Features
