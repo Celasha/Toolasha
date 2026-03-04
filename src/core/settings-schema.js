@@ -159,6 +159,13 @@ export const settingsGroups = {
                 default: true,
                 help: 'Records transmutation sessions and displays history in a viewer tab in the Alchemy panel',
             },
+            alchemy_coinifyHistory: {
+                id: 'alchemy_coinifyHistory',
+                label: 'Alchemy panel: Track and view coinify session history',
+                type: 'checkbox',
+                default: true,
+                help: 'Records coinify sessions and displays history in a viewer tab in the Alchemy panel',
+            },
             actions_missingMaterialsButton: {
                 id: 'actions_missingMaterialsButton',
                 label: 'Show "Missing Mats Marketplace" button on production panels',

@@ -48,6 +48,8 @@ import viewActionButton from '../features/dictionary/view-action-button.js';
 // Alchemy History
 import transmuteHistoryTracker from '../features/alchemy/transmute-history-tracker.js';
 import transmuteHistoryViewer from '../features/alchemy/transmute-history-viewer.js';
+import coinifyHistoryTracker from '../features/alchemy/coinify-history-tracker.js';
+import coinifyHistoryViewer from '../features/alchemy/coinify-history-viewer.js';
 
 // Enhancement
 import enhancementFeature from '../features/enhancement/enhancement-feature.js';
@@ -88,6 +90,8 @@ toolashaRoot.UI = {
     viewActionButton,
     transmuteHistoryTracker,
     transmuteHistoryViewer,
+    coinifyHistoryTracker,
+    coinifyHistoryViewer,
     enhancementFeature,
     emptyQueueNotification,
 };

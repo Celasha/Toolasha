@@ -446,6 +446,20 @@ function registerFeatures() {
             async: false,
         },
         {
+            key: 'alchemy_coinifyHistory',
+            name: 'Coinify History Tracker',
+            category: 'Alchemy',
+            module: UI.coinifyHistoryTracker,
+            async: false,
+        },
+        {
+            key: 'alchemy_coinifyHistoryViewer',
+            name: 'Coinify History Viewer',
+            category: 'Alchemy',
+            module: UI.coinifyHistoryViewer,
+            async: false,
+        },
+        {
             key: 'enhancementFeature',
             name: 'Enhancement Tracker',
             category: 'Enhancement',
