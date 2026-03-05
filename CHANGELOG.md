@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.29.2](https://github.com/Celasha/Toolasha/compare/v1.29.1...v1.29.2) (2026-03-05)
+
+
+### Bug Fixes
+
+* add diagnostic logging to silent failure catch blocks ([6dc199d](https://github.com/Celasha/Toolasha/commit/6dc199da87eb88417eae2a38d867a88af1173aff))
+
+
+### Documentation
+
+* remove broken FEATURES.md links from README ([ea88dc2](https://github.com/Celasha/Toolasha/commit/ea88dc2176042f31d6888ff8859792e939fb72ed))
+
+
+### Styles
+
+* fix prettier formatting in README.md ([f49339d](https://github.com/Celasha/Toolasha/commit/f49339d0d0ba30aa69431a123c5911bc32bedd99))
+
 ## [1.29.1](https://github.com/Celasha/Toolasha/compare/v1.29.0...v1.29.1) (2026-03-05)
 
 ### Documentation
