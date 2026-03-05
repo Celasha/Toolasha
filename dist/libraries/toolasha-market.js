@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 1.29.1
+ * Version: 1.29.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -131,6 +131,9 @@
 
             // Calculate efficiency components
             // Action Level bonus increases the effective requirement
+            if (!actionDetails.levelRequirement) {
+                console.error(`[ProfitCalculator] Action has no levelRequirement: ${actionDetails.hrid}`);
+            }
             const baseRequirement = actionDetails.levelRequirement?.level || 1;
             // Calculate tea skill level bonus (e.g., +8 Cheesesmithing from Ultra Cheesesmithing Tea)
             const teaSkillLevelBonus = teaParser_js.parseTeaSkillLevelBonus(
@@ -504,6 +507,9 @@
             const skillHrid = skillType.replace('/action_types/', '/skills/');
 
             const skill = skills.find((s) => s.skillHrid === skillHrid);
+            if (!skill) {
+                console.error(`[ProfitCalculator] Skill not found: ${skillHrid}`);
+            }
             return skill?.level || 1;
         }
 
@@ -1048,8 +1054,9 @@ self.onmessage = function (e) {
                             this.containerCache.set(result.containerHrid, result.ev);
                         }
                     }
-                } catch {
+                } catch (error) {
                     // Worker failed, fall back to main thread calculation
+                    console.warn('[ExpectedValueCalculator] Worker failed, falling back to main thread:', error);
                     for (const containerHrid of containerHrids) {
                         const ev = this.calculateSingleContainer(containerHrid, initData);
                         if (ev !== null) {
@@ -3451,6 +3458,9 @@ self.onmessage = function (e) {
         }));
 
         // Calculate level efficiency bonus
+        if (!actionDetail.levelRequirement) {
+            console.error(`[GatheringProfit] Action has no levelRequirement: ${actionDetail.hrid}`);
+        }
         const requiredLevel = actionDetail.levelRequirement?.level || 1;
         const skillHrid = actionDetail.levelRequirement?.skillHrid;
         let currentLevel = requiredLevel;
@@ -13741,6 +13751,9 @@ self.onmessage = function (e) {
         // Get expected value of each Task Shop item (all cost 30 tokens)
         const expectedValues = taskShopItems.map((itemHrid) => {
             const result = expectedValueCalculator.calculateExpectedValue(itemHrid);
+            if (!result) {
+                console.warn(`[TaskProfit] Expected value returned null for task shop item: ${itemHrid}`);
+            }
             return result?.expectedValue || 0;
         });
 
@@ -13752,6 +13765,9 @@ self.onmessage = function (e) {
 
         // Calculate Purple's Gift prorated value (divide by 50 tasks)
         const giftResult = expectedValueCalculator.calculateExpectedValue('/items/purples_gift');
+        if (!giftResult) {
+            console.warn('[TaskProfit] Expected value returned null for /items/purples_gift');
+        }
         const giftValue = giftResult?.expectedValue || 0;
         const giftPerTask = giftValue / 50;
 
@@ -14907,8 +14923,9 @@ self.onmessage = function (e) {
                               gameData
                           );
                           return values;
-                      } catch {
+                      } catch (error) {
                           // Fallback to sequential for worker items
+                          console.warn('[NetworthCalculator] Worker failed, falling back to sequential:', error);
                           const values = [];
                           for (const item of itemsNeedingWorkers) {
                               values.push(await calculateItemValue(item, priceCache));

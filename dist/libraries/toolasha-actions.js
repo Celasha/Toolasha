@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 1.29.1
+ * Version: 1.29.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1194,6 +1194,9 @@
         }));
 
         // Calculate level efficiency bonus
+        if (!actionDetail.levelRequirement) {
+            console.error(`[GatheringProfit] Action has no levelRequirement: ${actionDetail.hrid}`);
+        }
         const requiredLevel = actionDetail.levelRequirement?.level || 1;
         const skillHrid = actionDetail.levelRequirement?.skillHrid;
         let currentLevel = requiredLevel;
@@ -1587,6 +1590,9 @@
 
             // Calculate efficiency components
             // Action Level bonus increases the effective requirement
+            if (!actionDetails.levelRequirement) {
+                console.error(`[ProfitCalculator] Action has no levelRequirement: ${actionDetails.hrid}`);
+            }
             const baseRequirement = actionDetails.levelRequirement?.level || 1;
             // Calculate tea skill level bonus (e.g., +8 Cheesesmithing from Ultra Cheesesmithing Tea)
             const teaSkillLevelBonus = teaParser_js.parseTeaSkillLevelBonus(
@@ -1960,6 +1966,9 @@
             const skillHrid = skillType.replace('/action_types/', '/skills/');
 
             const skill = skills.find((s) => s.skillHrid === skillHrid);
+            if (!skill) {
+                console.error(`[ProfitCalculator] Skill not found: ${skillHrid}`);
+            }
             return skill?.level || 1;
         }
 
@@ -7887,6 +7896,9 @@
             // Map action type to skill HRID
             const skillHrid = skillType.replace('/action_types/', '/skills/');
             const skill = skills.find((s) => s.skillHrid === skillHrid);
+            if (!skill) {
+                console.error(`[QuickInputButtons] Skill not found: ${skillHrid}`);
+            }
             return skill?.level || 1;
         }
 
@@ -7903,6 +7915,9 @@
 
             // Calculate all efficiency components (reuse existing logic)
             const skillLevel = this.getSkillLevel(skills, actionDetails.type);
+            if (!actionDetails.levelRequirement) {
+                console.error(`[QuickInputButtons] Action has no levelRequirement: ${actionDetails.hrid}`);
+            }
             const baseRequirement = actionDetails.levelRequirement?.level || 1;
 
             const drinkConcentration = teaParser_js.getDrinkConcentration(equipment, itemDetailMap);
@@ -13675,8 +13690,9 @@ self.onmessage = function (e) {
                             this.containerCache.set(result.containerHrid, result.ev);
                         }
                     }
-                } catch {
+                } catch (error) {
                     // Worker failed, fall back to main thread calculation
+                    console.warn('[ExpectedValueCalculator] Worker failed, falling back to main thread:', error);
                     for (const containerHrid of containerHrids) {
                         const ev = this.calculateSingleContainer(containerHrid, initData);
                         if (ev !== null) {

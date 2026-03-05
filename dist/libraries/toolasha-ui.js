@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 1.29.1
+ * Version: 1.29.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -322,6 +322,9 @@
             }
 
             const alchemySkill = skills.find((s) => s.skillHrid === '/skills/alchemy');
+            if (!alchemySkill) {
+                console.error('[AlchemyItemDimming] Skill not found: /skills/alchemy');
+            }
             const playerAlchemyLevel = alchemySkill?.level || 1;
 
             // Find all item icon divs within the alchemy panel
@@ -3973,8 +3976,9 @@ self.onmessage = function (e) {
                             this.containerCache.set(result.containerHrid, result.ev);
                         }
                     }
-                } catch {
+                } catch (error) {
                     // Worker failed, fall back to main thread calculation
+                    console.warn('[ExpectedValueCalculator] Worker failed, falling back to main thread:', error);
                     for (const containerHrid of containerHrids) {
                         const ev = this.calculateSingleContainer(containerHrid, initData);
                         if (ev !== null) {
@@ -4454,6 +4458,9 @@ self.onmessage = function (e) {
         }));
 
         // Calculate level efficiency bonus
+        if (!actionDetail.levelRequirement) {
+            console.error(`[GatheringProfit] Action has no levelRequirement: ${actionDetail.hrid}`);
+        }
         const requiredLevel = actionDetail.levelRequirement?.level || 1;
         const skillHrid = actionDetail.levelRequirement?.skillHrid;
         let currentLevel = requiredLevel;
@@ -4847,6 +4854,9 @@ self.onmessage = function (e) {
 
             // Calculate efficiency components
             // Action Level bonus increases the effective requirement
+            if (!actionDetails.levelRequirement) {
+                console.error(`[ProfitCalculator] Action has no levelRequirement: ${actionDetails.hrid}`);
+            }
             const baseRequirement = actionDetails.levelRequirement?.level || 1;
             // Calculate tea skill level bonus (e.g., +8 Cheesesmithing from Ultra Cheesesmithing Tea)
             const teaSkillLevelBonus = teaParser_js.parseTeaSkillLevelBonus(
@@ -5220,6 +5230,9 @@ self.onmessage = function (e) {
             const skillHrid = skillType.replace('/action_types/', '/skills/');
 
             const skill = skills.find((s) => s.skillHrid === skillHrid);
+            if (!skill) {
+                console.error(`[ProfitCalculator] Skill not found: ${skillHrid}`);
+            }
             return skill?.level || 1;
         }
 
@@ -5399,6 +5412,9 @@ self.onmessage = function (e) {
         // Get expected value of each Task Shop item (all cost 30 tokens)
         const expectedValues = taskShopItems.map((itemHrid) => {
             const result = expectedValueCalculator.calculateExpectedValue(itemHrid);
+            if (!result) {
+                console.warn(`[TaskProfit] Expected value returned null for task shop item: ${itemHrid}`);
+            }
             return result?.expectedValue || 0;
         });
 
@@ -5410,6 +5426,9 @@ self.onmessage = function (e) {
 
         // Calculate Purple's Gift prorated value (divide by 50 tasks)
         const giftResult = expectedValueCalculator.calculateExpectedValue('/items/purples_gift');
+        if (!giftResult) {
+            console.warn('[TaskProfit] Expected value returned null for /items/purples_gift');
+        }
         const giftValue = giftResult?.expectedValue || 0;
         const giftPerTask = giftValue / 50;
 
@@ -14751,7 +14770,11 @@ self.onmessage = function (e) {
             }
 
             // bulkMultiplier defines how many items are consumed and returned per action
-            const bulkMultiplier = dataManager.getItemDetails(inputItemHrid)?.alchemyDetail?.bulkMultiplier ?? 1;
+            const itemDetailsForBulk = dataManager.getItemDetails(inputItemHrid);
+            if (!itemDetailsForBulk?.alchemyDetail?.bulkMultiplier) {
+                console.error(`[TransmuteHistoryTracker] Item has no alchemyDetail.bulkMultiplier: ${inputItemHrid}`);
+            }
+            const bulkMultiplier = itemDetailsForBulk?.alchemyDetail?.bulkMultiplier ?? 1;
 
             // Detect success vs failure — exclude incidental drops (essences, artisan's crates)
             const nonCoinItems = (data.endCharacterItems || []).filter((item) => item.itemHrid !== COIN_ITEM_HRID$1);
@@ -16484,6 +16507,9 @@ self.onmessage = function (e) {
         async startSession(inputItemHrid, enhancementLevel, timestamp) {
             const itemDetails = dataManager.getItemDetails(inputItemHrid);
 
+            if (!itemDetails?.alchemyDetail?.bulkMultiplier) {
+                console.error(`[CoinifyHistoryTracker] Item has no alchemyDetail.bulkMultiplier: ${inputItemHrid}`);
+            }
             const bulkMultiplier = itemDetails?.alchemyDetail?.bulkMultiplier ?? 1;
             const coinsPerSuccess = (itemDetails?.sellPrice || 0) * 5 * bulkMultiplier;
 
@@ -18352,7 +18378,8 @@ self.onmessage = function (e) {
         try {
             const sessions = await storage.getJSON(STORAGE_KEY, STORAGE_STORE, {});
             return sessions;
-        } catch {
+        } catch (error) {
+            console.error('[EnhancementStorage] Failed to load sessions:', error);
             return {};
         }
     }
@@ -18365,8 +18392,8 @@ self.onmessage = function (e) {
     async function saveCurrentSessionId(sessionId) {
         try {
             await storage.set(CURRENT_SESSION_KEY, sessionId, STORAGE_STORE, true); // immediate=true for rapid updates
-        } catch {
-            // Silent failure
+        } catch (error) {
+            console.error('[EnhancementStorage] Failed to save current session ID:', error);
         }
     }
 
@@ -18377,7 +18404,8 @@ self.onmessage = function (e) {
     async function loadCurrentSessionId() {
         try {
             return await storage.get(CURRENT_SESSION_KEY, STORAGE_STORE, null);
-        } catch {
+        } catch (error) {
+            console.error('[EnhancementStorage] Failed to load current session ID:', error);
             return null;
         }
     }
@@ -18561,7 +18589,11 @@ self.onmessage = function (e) {
             const itemLevel = itemData.level || 0;
 
             // Get enhancing skill level
-            const enhancingLevel = charData.characterSkills?.find((s) => s.skillHrid === '/skills/enhancing')?.level || 1;
+            const enhancingSkill = charData.characterSkills?.find((s) => s.skillHrid === '/skills/enhancing');
+            if (!enhancingSkill) {
+                console.error('[EnhancementXP] Skill not found: /skills/enhancing');
+            }
+            const enhancingLevel = enhancingSkill?.level || 1;
 
             // Get house level (Observatory)
             const houseRooms = charData.characterHouseRoomMap;
@@ -18706,8 +18738,8 @@ self.onmessage = function (e) {
                 }
 
                 this.isInitialized = true;
-            } catch {
-                // Silent failure
+            } catch (error) {
+                console.error('[EnhancementTracker] Failed to initialize:', error);
             }
         }
 
@@ -20492,6 +20524,11 @@ self.onmessage = function (e) {
                     if (protectionCost === 0) {
                         const gameData = dataManager.getInitClientData();
                         const protectionItem = gameData?.itemDetailMap?.[protectionItemHrid];
+                        if (!protectionItem) {
+                            console.warn(
+                                `[EnhancementHandlers] Protection item not found in game data: ${protectionItemHrid}`
+                            );
+                        }
                         protectionCost = protectionItem?.vendorSellPrice || 0;
                     }
 
@@ -20541,8 +20578,8 @@ self.onmessage = function (e) {
             }
             // Note: If newLevel === previousLevel (and not 0->0), we track costs but don't record attempt
             // This happens with protection items that prevent level decrease
-        } catch {
-            // Silent failure
+        } catch (error) {
+            console.error('[EnhancementHandlers] Enhancement result handler failed:', error);
         }
     }
 

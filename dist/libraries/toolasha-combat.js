@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 1.29.1
+ * Version: 1.29.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -542,6 +542,9 @@
             if (!ability || !ability.abilityHrid) continue;
 
             // Check if special ability
+            if (clientObj?.abilityDetailMap && !clientObj.abilityDetailMap[ability.abilityHrid]) {
+                console.error(`[CombatSimExport] Ability not found in abilityDetailMap: ${ability.abilityHrid}`);
+            }
             const isSpecial = clientObj?.abilityDetailMap?.[ability.abilityHrid]?.isSpecialAbility || false;
 
             if (isSpecial) {
@@ -698,6 +701,9 @@
             if (!ability || !ability.abilityHrid) continue;
 
             // Check if special ability
+            if (clientObj?.abilityDetailMap && !clientObj.abilityDetailMap[ability.abilityHrid]) {
+                console.error(`[CombatSimExport] Ability not found in abilityDetailMap: ${ability.abilityHrid}`);
+            }
             const isSpecial = clientObj?.abilityDetailMap?.[ability.abilityHrid]?.isSpecialAbility || false;
 
             if (isSpecial) {
@@ -1085,6 +1091,9 @@
                 if (match) level = parseInt(match[0], 10);
             }
 
+            if (clientData?.abilityDetailMap && !clientData.abilityDetailMap[abilityHrid]) {
+                console.error(`[LoadoutExportButton] Ability not found in abilityDetailMap: ${abilityHrid}`);
+            }
             const isSpecial = clientData?.abilityDetailMap?.[abilityHrid]?.isSpecialAbility || false;
 
             if (isSpecial) {
@@ -6948,6 +6957,13 @@
      * @returns {number} Combat level
      */
     function calculateCombatLevel(skills) {
+        if (!skills.stamina) console.error('[SkillCalculatorLogic] Skill not found: stamina');
+        if (!skills.intelligence) console.error('[SkillCalculatorLogic] Skill not found: intelligence');
+        if (!skills.attack) console.error('[SkillCalculatorLogic] Skill not found: attack');
+        if (!skills.melee) console.error('[SkillCalculatorLogic] Skill not found: melee');
+        if (!skills.defense) console.error('[SkillCalculatorLogic] Skill not found: defense');
+        if (!skills.ranged) console.error('[SkillCalculatorLogic] Skill not found: ranged');
+        if (!skills.magic) console.error('[SkillCalculatorLogic] Skill not found: magic');
         const stamina = skills.stamina?.level || 1;
         const intelligence = skills.intelligence?.level || 1;
         const attack = skills.attack?.level || 1;
@@ -8041,6 +8057,9 @@
     function getSkillLevel(skills, actionType) {
         const skillHrid = actionType.replace('/action_types/', '/skills/');
         const skill = skills.find((s) => s.skillHrid === skillHrid);
+        if (!skill) {
+            console.error(`[MilkonomyExport] Skill not found: ${skillHrid}`);
+        }
         return skill?.level || 1;
     }
 
@@ -11390,8 +11409,8 @@ self.onmessage = function (e) {
         if (workerTasks.length > 0) {
             try {
                 workerResults = await calculateEnhancementBatch(workerTasks);
-            } catch {
-                // Continue with empty results - will use fallback pricing
+            } catch (error) {
+                console.warn('[ScoreCalculator] Enhancement batch worker failed, using fallback pricing:', error);
             }
         }
 
@@ -11707,6 +11726,9 @@ self.onmessage = function (e) {
             for (const ability of abilities) {
                 if (!ability || !ability.abilityHrid) continue;
 
+                if (clientData?.abilityDetailMap && !clientData.abilityDetailMap[ability.abilityHrid]) {
+                    console.error(`[CharacterSheet] Ability not found in abilityDetailMap: ${ability.abilityHrid}`);
+                }
                 const isSpecial = clientData?.abilityDetailMap?.[ability.abilityHrid]?.isSpecialAbility || false;
 
                 if (isSpecial) {

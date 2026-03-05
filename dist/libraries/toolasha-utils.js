@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 1.29.1
+ * Version: 1.29.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2580,8 +2580,9 @@ self.onmessage = function (e) {
                             this.containerCache.set(result.containerHrid, result.ev);
                         }
                     }
-                } catch {
+                } catch (error) {
                     // Worker failed, fall back to main thread calculation
+                    console.warn('[ExpectedValueCalculator] Worker failed, falling back to main thread:', error);
                     for (const containerHrid of containerHrids) {
                         const ev = this.calculateSingleContainer(containerHrid, initData);
                         if (ev !== null) {
@@ -3550,6 +3551,10 @@ self.onmessage = function (e) {
                         expectedValueCalculator.getCachedValue(drop.itemHrid) ||
                         expectedValueCalculator.calculateSingleContainer(drop.itemHrid) ||
                         0;
+                    if (itemPrice === 0) {
+                        console.warn(`[BonusRevenue] EV lookup returned 0 for openable container: ${drop.itemHrid}`);
+                        isMissingPrice = true;
+                    }
                 } else {
                     // Use market price for regular items
                     const price = marketAPI.getPrice(drop.itemHrid, 0);
@@ -3606,6 +3611,10 @@ self.onmessage = function (e) {
                         expectedValueCalculator.getCachedValue(drop.itemHrid) ||
                         expectedValueCalculator.calculateSingleContainer(drop.itemHrid) ||
                         0;
+                    if (itemPrice === 0) {
+                        console.warn(`[BonusRevenue] EV lookup returned 0 for openable container: ${drop.itemHrid}`);
+                        isMissingPrice = true;
+                    }
                 } else {
                     // Use market price for regular items
                     const price = marketAPI.getPrice(drop.itemHrid, 0);
@@ -4756,6 +4765,9 @@ self.onmessage = function (e) {
         // Map action type to skill HRID
         const skillHrid = skillType.replace('/action_types/', '/skills/');
         const skill = skills.find((s) => s.skillHrid === skillHrid);
+        if (!skill) {
+            console.error(`[ActionCalculator] Skill not found: ${skillHrid}`);
+        }
         return skill?.level || 1;
     }
 
@@ -5847,6 +5859,9 @@ self.onmessage = function (e) {
 
         // Get Enhancing skill level
         const enhancingSkill = skills.find((s) => s.skillHrid === '/skills/enhancing');
+        if (!enhancingSkill) {
+            console.error('[EnhancementConfig] Skill not found: /skills/enhancing');
+        }
         const enhancingLevel = enhancingSkill?.level || 1;
 
         // Get Observatory house room level (enhancing uses observatory, NOT laboratory!)
