@@ -27,13 +27,11 @@
         throw new Error('[Toolasha] Browser build cannot run on Steam. Install the Steam build.');
     }
     if (buildTarget === 'steam' && hasScriptManager) {
-        alert(
-            'Toolasha: Wrong build installed!\n\n' +
-                'You have the STEAM build installed, but you are running in a browser.\n' +
-                'The Steam build is unnecessarily large for browser use.\n\n' +
-                'Please install the browser build instead.'
+        console.warn(
+            '[Toolasha] Steam build detected in browser. ' +
+                'The Steam build is larger than necessary for browser use — consider switching to the browser build. ' +
+                'Continuing anyway.'
         );
-        throw new Error('[Toolasha] Steam build should not run in a browser. Install the browser build.');
     }
 })();
 
