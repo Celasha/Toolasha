@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 1.29.3
+ * Version: 1.29.4
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -8749,7 +8749,12 @@
                 lastUpdate: null,
                 lastEventByItem: {},
             };
+            this.partyConsumableTrackers = {};
+            this.partyConsumableSnapshots = {};
+            this.partyLastKnownConsumables = {};
             await storage.setJSON('consumableTracker', null, 'combatStats');
+            await storage.setJSON('partyConsumableTrackers', null, 'combatStats');
+            await storage.setJSON('partyConsumableSnapshots', null, 'combatStats');
         }
 
         /**
