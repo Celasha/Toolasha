@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.29.3](https://github.com/Celasha/Toolasha/compare/v1.29.2...v1.29.3) (2026-03-06)
+
+### Bug Fixes
+
+- set dungeon mode before player names on group combat import ([b486fcf](https://github.com/Celasha/Toolasha/commit/b486fcf79d74df37df814e8035d7eb5031af1c77))
+
 ## [1.29.2](https://github.com/Celasha/Toolasha/compare/v1.29.1...v1.29.2) (2026-03-05)
 
 ### Bug Fixes
