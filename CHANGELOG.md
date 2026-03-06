@@ -2,10 +2,9 @@
 
 ## [1.29.4](https://github.com/Celasha/Toolasha/compare/v1.29.3...v1.29.4) (2026-03-06)
 
-
 ### Bug Fixes
 
-* reset party consumable trackers on new session ([a6c5b0b](https://github.com/Celasha/Toolasha/commit/a6c5b0ba7a212b38f224b4c0cc87990735317174))
+- reset party consumable trackers on new session ([a6c5b0b](https://github.com/Celasha/Toolasha/commit/a6c5b0ba7a212b38f224b4c0cc87990735317174))
 
 ## [1.29.3](https://github.com/Celasha/Toolasha/compare/v1.29.2...v1.29.3) (2026-03-06)
 
