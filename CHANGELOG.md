@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.30.0](https://github.com/Celasha/Toolasha/compare/v1.29.4...v1.30.0) (2026-03-07)
+
+
+### Features
+
+* add View Action button to item action menu popup ([24de747](https://github.com/Celasha/Toolasha/commit/24de74743bc7347485031c4b06aa677f9f8a86a2))
+* show 3 decimal places on consumable cost stats ([af1ec4e](https://github.com/Celasha/Toolasha/commit/af1ec4ee59ea8a4f652136a7d3db98d1ab852649))
+
+
+### Bug Fixes
+
+* align combat score enhancement valuation with tooltip ([a83e1bb](https://github.com/Celasha/Toolasha/commit/a83e1bb5665230b398ffede32980aae920f4bc7a))
+* allow steam build to run in browser with a warning ([495dafb](https://github.com/Celasha/Toolasha/commit/495dafb19419ecb226e3d7dbfbb9d284a0ce2862))
+* correct zone action items/hr in gathering tooltip ([52db527](https://github.com/Celasha/Toolasha/commit/52db5271421ca294f68dcd71ca87b8e478b3f696))
+* hide inventory count on foraging zone action cards ([686bb6c](https://github.com/Celasha/Toolasha/commit/686bb6c310b95c858b7af34f092fd743022dc94d))
+* improve party consumable tracking accuracy ([2949368](https://github.com/Celasha/Toolasha/commit/2949368c5b7fa7d250a91858eedff858401984ae))
+
 ## [1.29.4](https://github.com/Celasha/Toolasha/compare/v1.29.3...v1.29.4) (2026-03-06)
 
 ### Bug Fixes
