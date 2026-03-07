@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 1.29.4
+ * Version: 1.30.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2942,11 +2942,13 @@ self.onmessage = function (e) {
 
         // Find the action that produces this item
         let actionHrid = null;
+        let outputCount = 1;
         for (const [hrid, action] of Object.entries(gameData.actionDetailMap)) {
             if (action.outputItems && action.outputItems.length > 0) {
                 const output = action.outputItems[0];
                 if (output.itemHrid === itemHrid) {
                     actionHrid = hrid;
+                    outputCount = output.count || 1;
                     break;
                 }
             }
@@ -2984,7 +2986,7 @@ self.onmessage = function (e) {
             totalPrice += upgradePrice;
         }
 
-        return totalPrice;
+        return totalPrice / outputCount;
     }
 
     /**
@@ -3182,25 +3184,14 @@ self.onmessage = function (e) {
             html += '<div>Time: ~' + days + ' days</div>';
         }
 
-        html += '</div>'; // Close margin-left div
-
         if (xpPerHour !== null && xpPerHour > 0) {
-            html +=
-                '<div style="margin-top: 4px; font-size: 0.9em; color: ' +
-                config.COLOR_XP_RATE +
-                ';">XP/hr: ' +
-                xpPerHour.toLocaleString() +
-                '</div>';
+            html += '<div style="margin-top: 4px;">XP/hr: ' + xpPerHour.toLocaleString() + '</div>';
         }
         if (totalExpectedXP !== null && totalExpectedXP > 0) {
-            html +=
-                '<div style="font-size: 0.9em; color: ' +
-                config.COLOR_XP_RATE +
-                ';">Total XP: ~' +
-                totalExpectedXP.toLocaleString() +
-                '</div>';
+            html += '<div>Total XP: ~' + totalExpectedXP.toLocaleString() + '</div>';
         }
 
+        html += '</div>'; // Close margin-left div
         html += '</div>'; // Close main container
 
         return html;
@@ -3555,6 +3546,7 @@ self.onmessage = function (e) {
             baseRevenuePerHour += baseRevenueLine;
 
             baseOutputs.push({
+                itemHrid: drop.itemHrid,
                 name: rawItemName,
                 itemsPerHour: baseItemsPerHour,
                 itemsPerAction: baseItemsPerAction,
@@ -4601,20 +4593,12 @@ self.onmessage = function (e) {
                 }
             }
 
-            // Calculate items/hr for zone actions (no profit)
+            // Calculate items/hr for zone actions using calculateGatheringProfit for accuracy
+            // (accounts for speed bonuses, gathering quantity bonus, efficiency multiplier, and avg drop amount)
             for (const action of zoneActions) {
-                const actionDetail = gameData.actionDetailMap[action.actionHrid];
-                if (!actionDetail) {
-                    continue;
-                }
-
-                // Calculate base actions per hour
-                const baseTimeCost = actionDetail.baseTimeCost; // in nanoseconds
-                const timeInSeconds = baseTimeCost / 1e9;
-                const actionsPerHour = profitHelpers_js.calculateActionsPerHour(timeInSeconds);
-
-                // Calculate items per hour
-                const itemsPerHour = actionsPerHour * action.dropRate;
+                const profitData = await calculateGatheringProfit(action.actionHrid);
+                const output = profitData?.baseOutputs?.find((o) => o.itemHrid === itemHrid);
+                const itemsPerHour = output?.itemsPerHour ?? 0;
 
                 // For rare drops (< 1%), store items/day instead for better readability
                 // For regular drops (>= 1%), store items/hr
