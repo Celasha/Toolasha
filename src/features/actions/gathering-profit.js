@@ -298,6 +298,7 @@ export async function calculateGatheringProfit(actionHrid) {
         baseRevenuePerHour += baseRevenueLine;
 
         baseOutputs.push({
+            itemHrid: drop.itemHrid,
             name: rawItemName,
             itemsPerHour: baseItemsPerHour,
             itemsPerAction: baseItemsPerAction,

@@ -19,7 +19,6 @@ import { calculateGatheringProfit } from '../actions/gathering-profit.js';
 import { getEnhancingParams } from '../../utils/enhancement-config.js';
 import { numberFormatter, formatKMB, networthFormatter, formatPercentage } from '../../utils/formatters.js';
 import { getItemPrices } from '../../utils/market-data.js';
-import { calculateActionsPerHour } from '../../utils/profit-helpers.js';
 import dom from '../../utils/dom.js';
 import { parseItemCount } from '../../utils/number-parser.js';
 
@@ -793,20 +792,12 @@ class TooltipPrices {
             }
         }
 
-        // Calculate items/hr for zone actions (no profit)
+        // Calculate items/hr for zone actions using calculateGatheringProfit for accuracy
+        // (accounts for speed bonuses, gathering quantity bonus, efficiency multiplier, and avg drop amount)
         for (const action of zoneActions) {
-            const actionDetail = gameData.actionDetailMap[action.actionHrid];
-            if (!actionDetail) {
-                continue;
-            }
-
-            // Calculate base actions per hour
-            const baseTimeCost = actionDetail.baseTimeCost; // in nanoseconds
-            const timeInSeconds = baseTimeCost / 1e9;
-            const actionsPerHour = calculateActionsPerHour(timeInSeconds);
-
-            // Calculate items per hour
-            const itemsPerHour = actionsPerHour * action.dropRate;
+            const profitData = await calculateGatheringProfit(action.actionHrid);
+            const output = profitData?.baseOutputs?.find((o) => o.itemHrid === itemHrid);
+            const itemsPerHour = output?.itemsPerHour ?? 0;
 
             // For rare drops (< 1%), store items/day instead for better readability
             // For regular drops (>= 1%), store items/hr
