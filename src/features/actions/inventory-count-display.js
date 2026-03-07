@@ -49,7 +49,11 @@ function getPrimaryOutputHrid(actionDetails) {
     if (!actionDetails) return null;
 
     if (GATHERING_TYPES.includes(actionDetails.type)) {
-        return actionDetails.dropTable?.[0]?.itemHrid ?? null;
+        // Only show count for solo gathering actions (100% drop rate = single primary item).
+        // Zone actions have multiple items at partial drop rates — showing just the first is misleading.
+        const firstDrop = actionDetails.dropTable?.[0];
+        if (!firstDrop || firstDrop.dropRate < 1) return null;
+        return firstDrop.itemHrid;
     }
 
     if (PRODUCTION_TYPES.includes(actionDetails.type)) {
