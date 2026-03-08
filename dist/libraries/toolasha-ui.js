@@ -1,11 +1,11 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 1.32.0
+ * Version: 1.33.0
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (config, dataManager, domObserver, formatters_js, timerRegistry_js, domObserverHelpers_js, webSocketHook, marketAPI, tokenValuation_js, marketData_js, profitHelpers_js, equipmentParser_js, teaParser_js, bonusRevenueCalculator_js, profitConstants_js, efficiency_js, houseEfficiency_js, selectors_js, storage, cleanupRegistry_js, settingsSchema_js, settingsStorage, enhancementCalculator_js) {
+(function (config, dataManager, domObserver, formatters_js, timerRegistry_js, domObserverHelpers_js, webSocketHook, reactInput_js, actionPanelHelper_js, marketAPI, tokenValuation_js, marketData_js, profitHelpers_js, equipmentParser_js, teaParser_js, bonusRevenueCalculator_js, profitConstants_js, efficiency_js, houseEfficiency_js, selectors_js, storage, cleanupRegistry_js, settingsSchema_js, settingsStorage, enhancementCalculator_js) {
     'use strict';
 
     window.Toolasha = window.Toolasha || {}; window.Toolasha.__buildTarget = "browser";
@@ -6019,10 +6019,72 @@ self.onmessage = function (e) {
             this.unregisterHandlers.push(unregisterTaskList);
 
             // Watch for individual tasks appearing
-            const unregisterTask = domObserver.onClass('TaskProfitDisplay-Task', 'RandomTask_randomTask', () => {
+            const unregisterTask = domObserver.onClass('TaskProfitDisplay-Task', 'RandomTask_randomTask', (taskNode) => {
                 // Small delay to let task data settle
                 const taskTimeout = setTimeout(() => this.updateTaskProfits(), 100);
                 this.timerRegistry.registerTimeout(taskTimeout);
+
+                // Merge duplicate task Go buttons: sum goalCount - currentCount across all
+                // in-progress tasks with the same actionHrid/monsterHrid and overwrite the input
+                const goBtn = taskNode.querySelector('button.Button_success__6d6kU');
+                if (goBtn) {
+                    goBtn.addEventListener(
+                        'click',
+                        () => {
+                            if (!config.getSetting('taskGoMerge')) return;
+
+                            // Extract the quest for this task card from the fiber tree
+                            const rootEl = document.getElementById('root');
+                            const rootFiber =
+                                rootEl?._reactRootContainer?.current || rootEl?._reactRootContainer?._internalRoot?.current;
+                            if (!rootFiber) return;
+
+                            function walk(fiber, target) {
+                                if (!fiber) return null;
+                                if (fiber.stateNode === target) return fiber;
+                                return walk(fiber.child, target) || walk(fiber.sibling, target);
+                            }
+
+                            const btnFiber = walk(rootFiber, goBtn);
+                            if (!btnFiber) return;
+
+                            let f = btnFiber.return;
+                            let thisQuest = null;
+                            while (f) {
+                                if (f.memoizedProps?.characterQuest && f.memoizedProps?.rerollRandomTaskHandler) {
+                                    thisQuest = f.memoizedProps.characterQuest;
+                                    break;
+                                }
+                                f = f.return;
+                            }
+                            if (!thisQuest) return;
+
+                            const hrid = thisQuest.actionHrid || thisQuest.monsterHrid;
+                            if (!hrid) return;
+
+                            const allQuests = dataManager.characterQuests || [];
+                            const matchingQuests = allQuests.filter(
+                                (q) =>
+                                    q.status === '/quest_status/in_progress' &&
+                                    q.category === '/quest_category/random_task' &&
+                                    (q.actionHrid === hrid || q.monsterHrid === hrid)
+                            );
+
+                            if (matchingQuests.length <= 1) return;
+
+                            const total = matchingQuests.reduce((sum, q) => sum + (q.goalCount - q.currentCount), 0);
+
+                            // Wait for the game to navigate and render the input field
+                            setTimeout(() => {
+                                const inputEl = actionPanelHelper_js.findActionInput(document);
+                                if (inputEl) {
+                                    reactInput_js.setReactInputValue(inputEl, total);
+                                }
+                            }, 300);
+                        },
+                        true
+                    );
+                }
             });
             this.unregisterHandlers.push(unregisterTask);
         }
@@ -20895,4 +20957,4 @@ self.onmessage = function (e) {
 
     console.log('[Toolasha] UI library loaded');
 
-})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Utils.formatters, Toolasha.Utils.timerRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Core.webSocketHook, Toolasha.Core.marketAPI, Toolasha.Utils.tokenValuation, Toolasha.Utils.marketData, Toolasha.Utils.profitHelpers, Toolasha.Utils.equipmentParser, Toolasha.Utils.teaParser, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.profitConstants, Toolasha.Utils.efficiency, Toolasha.Utils.houseEfficiency, Toolasha.Utils.selectors, Toolasha.Core.storage, Toolasha.Utils.cleanupRegistry, Toolasha.Core, Toolasha.Core.settingsStorage, Toolasha.Utils.enhancementCalculator);
+})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Utils.formatters, Toolasha.Utils.timerRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Core.webSocketHook, Toolasha.Utils.reactInput, Toolasha.Utils.actionPanelHelper, Toolasha.Core.marketAPI, Toolasha.Utils.tokenValuation, Toolasha.Utils.marketData, Toolasha.Utils.profitHelpers, Toolasha.Utils.equipmentParser, Toolasha.Utils.teaParser, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.profitConstants, Toolasha.Utils.efficiency, Toolasha.Utils.houseEfficiency, Toolasha.Utils.selectors, Toolasha.Core.storage, Toolasha.Utils.cleanupRegistry, Toolasha.Core, Toolasha.Core.settingsStorage, Toolasha.Utils.enhancementCalculator);
