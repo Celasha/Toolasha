@@ -27,6 +27,7 @@ class AlchemyProfitDisplay {
         this.isInitialized = false;
         this.timerRegistry = createTimerRegistry();
         this.equipmentChangeHandler = null;
+        this.sectionExpanded = new Map(); // Persistent expand/collapse state across rebuilds
         this.cachedInputField = null; // Cache input field since it gets removed when action starts
     }
 
@@ -334,14 +335,8 @@ class AlchemyProfitDisplay {
             // Get item HRID from requirements
             const itemHrid = requirements && requirements.length > 0 ? requirements[0].itemHrid : null;
 
-            // Save expanded/collapsed state before recreating
-            const expandedState = this.saveExpandedState();
-
             // Always recreate display (complex collapsible structure makes refresh difficult)
             this.createDisplay(infoContainer, profitData, actionType, itemHrid);
-
-            // Restore expanded/collapsed state
-            this.restoreExpandedState(expandedState);
         } catch (error) {
             console.error('[AlchemyProfitDisplay] Failed to update display:', error);
             this.removeDisplay();
@@ -349,65 +344,34 @@ class AlchemyProfitDisplay {
     }
 
     /**
-     * Save the expanded/collapsed state of all collapsible sections
-     * @returns {Map<string, boolean>} Map of section titles to their expanded state
+     * Create a collapsible section that persists its expanded state across display rebuilds.
+     * Uses this.sectionExpanded as the source of truth so concurrent rebuilds always
+     * create sections in the correct state without any save/restore timing issues.
+     * @param {string} icon - Icon/emoji (or empty string)
+     * @param {string} title - Section title
+     * @param {string|null} summary - Collapsed summary text
+     * @param {HTMLElement} content - Content element
+     * @param {boolean} defaultOpen - Initial state if not yet tracked
+     * @param {number} indent - Indentation level
+     * @returns {HTMLElement} Section element
      */
-    saveExpandedState() {
-        const state = new Map();
+    createTrackedCollapsible(icon, title, summary, content, defaultOpen = false, indent = 0) {
+        // Strip dynamic values after ':' to get a stable persistence key across rebuilds.
+        // "Normal Drops: 55.1K/hr (4 items)" → "Normal Drops"
+        // "📊 Detailed Breakdown" → "📊 Detailed Breakdown" (no colon, unchanged)
+        const key = (icon ? `${icon} ${title}` : title).replace(/:.+$/, '').trim();
+        const isOpen = this.sectionExpanded.has(key) ? this.sectionExpanded.get(key) : defaultOpen;
+        const section = createCollapsibleSection(icon, title, summary, content, isOpen, indent);
 
-        if (!this.displayElement) {
-            return state;
-        }
-
-        // Find all collapsible sections and save their state
-        const sections = this.displayElement.querySelectorAll('.mwi-collapsible-section');
-        sections.forEach((section) => {
-            const header = section.querySelector('.mwi-section-header');
-            const content = section.querySelector('.mwi-section-content');
-            const label = header?.querySelector('span:last-child');
-
-            if (label && content) {
-                const title = label.textContent.trim();
-                const isExpanded = content.style.display === 'block';
-                state.set(title, isExpanded);
-            }
+        // Track clicks so this.sectionExpanded stays current for future rebuilds.
+        // createCollapsibleSection's own listener runs first (toggles display), then ours reads the result.
+        const header = section.querySelector('.mwi-section-header');
+        header.addEventListener('click', () => {
+            const contentEl = section.querySelector('.mwi-section-content');
+            this.sectionExpanded.set(key, contentEl.style.display === 'block');
         });
 
-        return state;
-    }
-
-    /**
-     * Restore the expanded/collapsed state of collapsible sections
-     * @param {Map<string, boolean>} state - Map of section titles to their expanded state
-     */
-    restoreExpandedState(state) {
-        if (!this.displayElement || state.size === 0) {
-            return;
-        }
-
-        // Find all collapsible sections and restore their state
-        const sections = this.displayElement.querySelectorAll('.mwi-collapsible-section');
-        sections.forEach((section) => {
-            const header = section.querySelector('.mwi-section-header');
-            const content = section.querySelector('.mwi-section-content');
-            const summary = section.querySelector('div[style*="margin-left: 16px"]');
-            const arrow = header?.querySelector('span:first-child');
-            const label = header?.querySelector('span:last-child');
-
-            if (label && content && arrow) {
-                const title = label.textContent.trim();
-                const shouldBeExpanded = state.get(title);
-
-                if (shouldBeExpanded !== undefined && shouldBeExpanded) {
-                    // Expand this section
-                    content.style.display = 'block';
-                    if (summary) {
-                        summary.style.display = 'none';
-                    }
-                    arrow.textContent = '▼';
-                }
-            }
-        });
+        return section;
     }
 
     /**
@@ -486,7 +450,7 @@ class AlchemyProfitDisplay {
                 normalDropsRevenue += drop.revenuePerHour;
             }
 
-            const normalDropsSection = createCollapsibleSection(
+            const normalDropsSection = this.createTrackedCollapsible(
                 '',
                 `Normal Drops: ${formatLargeNumber(Math.round(normalDropsRevenue))}/hr (${normalDrops.length} item${normalDrops.length !== 1 ? 's' : ''})`,
                 null,
@@ -516,7 +480,7 @@ class AlchemyProfitDisplay {
                 essenceRevenue += drop.revenuePerHour;
             }
 
-            const essenceSection = createCollapsibleSection(
+            const essenceSection = this.createTrackedCollapsible(
                 '',
                 `Essence Drops: ${formatLargeNumber(Math.round(essenceRevenue))}/hr (${essenceDrops.length} item${essenceDrops.length !== 1 ? 's' : ''})`,
                 null,
@@ -558,7 +522,7 @@ class AlchemyProfitDisplay {
                 rareRevenue += drop.revenuePerHour;
             }
 
-            const rareSection = createCollapsibleSection(
+            const rareSection = this.createTrackedCollapsible(
                 '',
                 `Rare Drops: ${formatLargeNumber(Math.round(rareRevenue))}/hr (${rareDrops.length} item${rareDrops.length !== 1 ? 's' : ''})`,
                 null,
@@ -604,7 +568,7 @@ class AlchemyProfitDisplay {
                 materialCostsContent.appendChild(line);
             }
 
-            const materialCostsSection = createCollapsibleSection(
+            const materialCostsSection = this.createTrackedCollapsible(
                 '',
                 `Material Costs: ${formatLargeNumber(Math.round(profitData.materialCostPerHour))}/hr (${profitData.requirementCosts.length} material${profitData.requirementCosts.length !== 1 ? 's' : ''})`,
                 null,
@@ -635,7 +599,7 @@ class AlchemyProfitDisplay {
             line.textContent = `• ${itemName}: ${formattedCatalystAmount}/hr (consumed only on success, ${formatPercentage(profitData.successRate, 2)}) @ ${formatWithSeparator(Math.round(profitData.catalystCost.price))} → ${formatLargeNumber(Math.round(profitData.catalystCost.costPerHour))}/hr`;
             catalystContent.appendChild(line);
 
-            const catalystSection = createCollapsibleSection(
+            const catalystSection = this.createTrackedCollapsible(
                 '',
                 `Catalyst Cost: ${formatLargeNumber(Math.round(profitData.catalystCost.costPerHour))}/hr`,
                 null,
@@ -666,7 +630,7 @@ class AlchemyProfitDisplay {
             }
 
             const drinkCount = profitData.consumableCosts.length;
-            const drinkCostsSection = createCollapsibleSection(
+            const drinkCostsSection = this.createTrackedCollapsible(
                 '',
                 `Drink Costs: ${formatLargeNumber(Math.round(profitData.totalTeaCostPerHour))}/hr (${drinkCount} drink${drinkCount !== 1 ? 's' : ''})`,
                 null,
@@ -708,7 +672,7 @@ class AlchemyProfitDisplay {
                 successContent.appendChild(teaLine);
             }
 
-            const successSection = createCollapsibleSection(
+            const successSection = this.createTrackedCollapsible(
                 '',
                 `Success Rate: ${formatPercentage(profitData.successRate, 1)}`,
                 null,
@@ -772,7 +736,7 @@ class AlchemyProfitDisplay {
                 effContent.appendChild(line);
             }
 
-            const effSection = createCollapsibleSection(
+            const effSection = this.createTrackedCollapsible(
                 '',
                 `Efficiency: +${formatPercentage(profitData.efficiency, 1)}`,
                 null,
@@ -806,7 +770,7 @@ class AlchemyProfitDisplay {
                     speedContent.appendChild(line);
                 }
 
-                const speedSection = createCollapsibleSection(
+                const speedSection = this.createTrackedCollapsible(
                     '',
                     `Action Speed: +${formatPercentage(actionSpeed, 1)}`,
                     null,
@@ -846,7 +810,7 @@ class AlchemyProfitDisplay {
                     rareContent.appendChild(line);
                 }
 
-                const rareSection = createCollapsibleSection(
+                const rareSection = this.createTrackedCollapsible(
                     '',
                     `Rare Find: +${rareBreakdown.total.toFixed(2)}%`,
                     null,
@@ -872,7 +836,7 @@ class AlchemyProfitDisplay {
                     essenceContent.appendChild(line);
                 }
 
-                const essenceSection = createCollapsibleSection(
+                const essenceSection = this.createTrackedCollapsible(
                     '',
                     `Essence Find: +${essenceBreakdown.total.toFixed(2)}%`,
                     null,
@@ -924,7 +888,7 @@ class AlchemyProfitDisplay {
         modeDiv.textContent = `Pricing Mode: ${modeLabel}`;
         topLevelContent.appendChild(modeDiv);
 
-        const detailedBreakdownSection = createCollapsibleSection(
+        const detailedBreakdownSection = this.createTrackedCollapsible(
             '📊',
             'Detailed Breakdown',
             null,
@@ -936,7 +900,7 @@ class AlchemyProfitDisplay {
         topLevelContent.appendChild(detailedBreakdownSection);
 
         // Create main profit section
-        const profitSection = createCollapsibleSection('💰', 'Profitability', summary, topLevelContent, false, 0);
+        const profitSection = this.createTrackedCollapsible('💰', 'Profitability', summary, topLevelContent, false, 0);
         profitSection.id = 'mwi-alchemy-profit';
         profitSection.classList.add('mwi-alchemy-profit');
         profitSection.setAttribute('data-mwi-profit-display', 'true');
@@ -1169,7 +1133,7 @@ class AlchemyProfitDisplay {
 
             const summary = getSummary();
 
-            return createCollapsibleSection('⏱', 'Action Speed & Time', summary, content, false);
+            return this.createTrackedCollapsible('⏱', 'Action Speed & Time', summary, content, false);
         } catch (error) {
             console.error('[AlchemyProfitDisplay] Error creating action speed/time section:', error);
             return null;
@@ -1387,7 +1351,7 @@ class AlchemyProfitDisplay {
             // Create summary for collapsed view
             const summary = `${timeReadable(timeNeeded)} to Level ${nextLevel}`;
 
-            return createCollapsibleSection('📈', 'Level Progress', summary, content, false);
+            return this.createTrackedCollapsible('📈', 'Level Progress', summary, content, false);
         } catch (error) {
             console.error('[AlchemyProfitDisplay] Error creating level progress section:', error);
             return null;

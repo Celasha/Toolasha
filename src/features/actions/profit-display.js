@@ -62,7 +62,15 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
 
     // Check if we already added profit display
     const existingProfit = panel.querySelector('#mwi-foraging-profit');
+    const openSectionTitles = new Set();
     if (existingProfit) {
+        existingProfit.querySelectorAll('.mwi-section-header').forEach((header) => {
+            const content = header.parentElement.querySelector('.mwi-section-content');
+            if (content?.style.display === 'block') {
+                const label = header.querySelector('span:last-child');
+                if (label) openSectionTitles.add(label.textContent.trim());
+            }
+        });
         existingProfit.remove();
     }
 
@@ -550,6 +558,17 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
             dropTableElement.parentNode.insertBefore(profitSection, dropTableElement.nextSibling);
         }
     }
+
+    // Restore any sections the user had previously opened
+    if (openSectionTitles.size > 0) {
+        profitSection.querySelectorAll('.mwi-section-header').forEach((header) => {
+            const label = header.querySelector('span:last-child');
+            const title = label?.textContent.trim();
+            if (label && openSectionTitles.has(title)) {
+                header.click();
+            }
+        });
+    }
 }
 
 /**
@@ -601,7 +620,15 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
 
     // Check if we already added profit display
     const existingProfit = panel.querySelector('#mwi-production-profit');
+    const openSectionTitles = new Set();
     if (existingProfit) {
+        existingProfit.querySelectorAll('.mwi-section-header').forEach((header) => {
+            const content = header.parentElement.querySelector('.mwi-section-content');
+            if (content?.style.display === 'block') {
+                const label = header.querySelector('span:last-child');
+                if (label) openSectionTitles.add(label.textContent.trim());
+            }
+        });
         existingProfit.remove();
     }
 
@@ -1126,6 +1153,16 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
         if (dropTableElement) {
             dropTableElement.parentNode.insertBefore(profitSection, dropTableElement.nextSibling);
         }
+    }
+
+    // Restore any sections the user had previously opened
+    if (openSectionTitles.size > 0) {
+        profitSection.querySelectorAll('.mwi-section-header').forEach((header) => {
+            const label = header.querySelector('span:last-child');
+            if (label && openSectionTitles.has(label.textContent.trim())) {
+                header.click();
+            }
+        });
     }
 }
 
