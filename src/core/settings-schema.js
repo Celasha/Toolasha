@@ -797,6 +797,13 @@ export const settingsGroups = {
                 default: true,
                 help: 'Adds a Statistics button to the Tasks panel showing overflow time, expected rewards, and completion estimates',
             },
+            taskGoMerge: {
+                id: 'taskGoMerge',
+                label: 'Merge duplicate tasks on Go',
+                type: 'checkbox',
+                default: true,
+                help: 'When clicking Go on a task, combines the required amounts of all in-progress tasks for the same action into a single pre-filled count',
+            },
         },
     },
 

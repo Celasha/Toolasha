@@ -8,6 +8,8 @@ import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
 import webSocketHook from '../../core/websocket.js';
+import { setReactInputValue } from '../../utils/react-input.js';
+import { findActionInput } from '../../utils/action-panel-helper.js';
 import { calculateTaskProfit } from './task-profit-calculator.js';
 import expectedValueCalculator from '../market/expected-value-calculator.js';
 import { numberFormatter, timeReadable, formatPercentage } from '../../utils/formatters.js';
@@ -285,10 +287,72 @@ class TaskProfitDisplay {
         this.unregisterHandlers.push(unregisterTaskList);
 
         // Watch for individual tasks appearing
-        const unregisterTask = domObserver.onClass('TaskProfitDisplay-Task', 'RandomTask_randomTask', () => {
+        const unregisterTask = domObserver.onClass('TaskProfitDisplay-Task', 'RandomTask_randomTask', (taskNode) => {
             // Small delay to let task data settle
             const taskTimeout = setTimeout(() => this.updateTaskProfits(), 100);
             this.timerRegistry.registerTimeout(taskTimeout);
+
+            // Merge duplicate task Go buttons: sum goalCount - currentCount across all
+            // in-progress tasks with the same actionHrid/monsterHrid and overwrite the input
+            const goBtn = taskNode.querySelector('button.Button_success__6d6kU');
+            if (goBtn) {
+                goBtn.addEventListener(
+                    'click',
+                    () => {
+                        if (!config.getSetting('taskGoMerge')) return;
+
+                        // Extract the quest for this task card from the fiber tree
+                        const rootEl = document.getElementById('root');
+                        const rootFiber =
+                            rootEl?._reactRootContainer?.current || rootEl?._reactRootContainer?._internalRoot?.current;
+                        if (!rootFiber) return;
+
+                        function walk(fiber, target) {
+                            if (!fiber) return null;
+                            if (fiber.stateNode === target) return fiber;
+                            return walk(fiber.child, target) || walk(fiber.sibling, target);
+                        }
+
+                        const btnFiber = walk(rootFiber, goBtn);
+                        if (!btnFiber) return;
+
+                        let f = btnFiber.return;
+                        let thisQuest = null;
+                        while (f) {
+                            if (f.memoizedProps?.characterQuest && f.memoizedProps?.rerollRandomTaskHandler) {
+                                thisQuest = f.memoizedProps.characterQuest;
+                                break;
+                            }
+                            f = f.return;
+                        }
+                        if (!thisQuest) return;
+
+                        const hrid = thisQuest.actionHrid || thisQuest.monsterHrid;
+                        if (!hrid) return;
+
+                        const allQuests = dataManager.characterQuests || [];
+                        const matchingQuests = allQuests.filter(
+                            (q) =>
+                                q.status === '/quest_status/in_progress' &&
+                                q.category === '/quest_category/random_task' &&
+                                (q.actionHrid === hrid || q.monsterHrid === hrid)
+                        );
+
+                        if (matchingQuests.length <= 1) return;
+
+                        const total = matchingQuests.reduce((sum, q) => sum + (q.goalCount - q.currentCount), 0);
+
+                        // Wait for the game to navigate and render the input field
+                        setTimeout(() => {
+                            const inputEl = findActionInput(document);
+                            if (inputEl) {
+                                setReactInputValue(inputEl, total);
+                            }
+                        }, 300);
+                    },
+                    true
+                );
+            }
         });
         this.unregisterHandlers.push(unregisterTask);
     }
