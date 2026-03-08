@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 1.30.0
+ * Version: 1.30.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2169,7 +2169,15 @@
 
         // Check if we already added profit display
         const existingProfit = panel.querySelector('#mwi-foraging-profit');
+        const openSectionTitles = new Set();
         if (existingProfit) {
+            existingProfit.querySelectorAll('.mwi-section-header').forEach((header) => {
+                const content = header.parentElement.querySelector('.mwi-section-content');
+                if (content?.style.display === 'block') {
+                    const label = header.querySelector('span:last-child');
+                    if (label) openSectionTitles.add(label.textContent.trim());
+                }
+            });
             existingProfit.remove();
         }
 
@@ -2657,6 +2665,17 @@
                 dropTableElement.parentNode.insertBefore(profitSection, dropTableElement.nextSibling);
             }
         }
+
+        // Restore any sections the user had previously opened
+        if (openSectionTitles.size > 0) {
+            profitSection.querySelectorAll('.mwi-section-header').forEach((header) => {
+                const label = header.querySelector('span:last-child');
+                const title = label?.textContent.trim();
+                if (label && openSectionTitles.has(title)) {
+                    header.click();
+                }
+            });
+        }
     }
 
     /**
@@ -2708,7 +2727,15 @@
 
         // Check if we already added profit display
         const existingProfit = panel.querySelector('#mwi-production-profit');
+        const openSectionTitles = new Set();
         if (existingProfit) {
+            existingProfit.querySelectorAll('.mwi-section-header').forEach((header) => {
+                const content = header.parentElement.querySelector('.mwi-section-content');
+                if (content?.style.display === 'block') {
+                    const label = header.querySelector('span:last-child');
+                    if (label) openSectionTitles.add(label.textContent.trim());
+                }
+            });
             existingProfit.remove();
         }
 
@@ -3233,6 +3260,16 @@
             if (dropTableElement) {
                 dropTableElement.parentNode.insertBefore(profitSection, dropTableElement.nextSibling);
             }
+        }
+
+        // Restore any sections the user had previously opened
+        if (openSectionTitles.size > 0) {
+            profitSection.querySelectorAll('.mwi-section-header').forEach((header) => {
+                const label = header.querySelector('span:last-child');
+                if (label && openSectionTitles.has(label.textContent.trim())) {
+                    header.click();
+                }
+            });
         }
     }
 
@@ -16045,6 +16082,7 @@ self.onmessage = function (e) {
             this.isInitialized = false;
             this.timerRegistry = timerRegistry_js.createTimerRegistry();
             this.equipmentChangeHandler = null;
+            this.sectionExpanded = new Map(); // Persistent expand/collapse state across rebuilds
             this.cachedInputField = null; // Cache input field since it gets removed when action starts
         }
 
@@ -16352,14 +16390,8 @@ self.onmessage = function (e) {
                 // Get item HRID from requirements
                 const itemHrid = requirements && requirements.length > 0 ? requirements[0].itemHrid : null;
 
-                // Save expanded/collapsed state before recreating
-                const expandedState = this.saveExpandedState();
-
                 // Always recreate display (complex collapsible structure makes refresh difficult)
                 this.createDisplay(infoContainer, profitData, actionType, itemHrid);
-
-                // Restore expanded/collapsed state
-                this.restoreExpandedState(expandedState);
             } catch (error) {
                 console.error('[AlchemyProfitDisplay] Failed to update display:', error);
                 this.removeDisplay();
@@ -16367,65 +16399,34 @@ self.onmessage = function (e) {
         }
 
         /**
-         * Save the expanded/collapsed state of all collapsible sections
-         * @returns {Map<string, boolean>} Map of section titles to their expanded state
+         * Create a collapsible section that persists its expanded state across display rebuilds.
+         * Uses this.sectionExpanded as the source of truth so concurrent rebuilds always
+         * create sections in the correct state without any save/restore timing issues.
+         * @param {string} icon - Icon/emoji (or empty string)
+         * @param {string} title - Section title
+         * @param {string|null} summary - Collapsed summary text
+         * @param {HTMLElement} content - Content element
+         * @param {boolean} defaultOpen - Initial state if not yet tracked
+         * @param {number} indent - Indentation level
+         * @returns {HTMLElement} Section element
          */
-        saveExpandedState() {
-            const state = new Map();
+        createTrackedCollapsible(icon, title, summary, content, defaultOpen = false, indent = 0) {
+            // Strip dynamic values after ':' to get a stable persistence key across rebuilds.
+            // "Normal Drops: 55.1K/hr (4 items)" → "Normal Drops"
+            // "📊 Detailed Breakdown" → "📊 Detailed Breakdown" (no colon, unchanged)
+            const key = (icon ? `${icon} ${title}` : title).replace(/:.+$/, '').trim();
+            const isOpen = this.sectionExpanded.has(key) ? this.sectionExpanded.get(key) : defaultOpen;
+            const section = uiComponents_js.createCollapsibleSection(icon, title, summary, content, isOpen, indent);
 
-            if (!this.displayElement) {
-                return state;
-            }
-
-            // Find all collapsible sections and save their state
-            const sections = this.displayElement.querySelectorAll('.mwi-collapsible-section');
-            sections.forEach((section) => {
-                const header = section.querySelector('.mwi-section-header');
-                const content = section.querySelector('.mwi-section-content');
-                const label = header?.querySelector('span:last-child');
-
-                if (label && content) {
-                    const title = label.textContent.trim();
-                    const isExpanded = content.style.display === 'block';
-                    state.set(title, isExpanded);
-                }
+            // Track clicks so this.sectionExpanded stays current for future rebuilds.
+            // createCollapsibleSection's own listener runs first (toggles display), then ours reads the result.
+            const header = section.querySelector('.mwi-section-header');
+            header.addEventListener('click', () => {
+                const contentEl = section.querySelector('.mwi-section-content');
+                this.sectionExpanded.set(key, contentEl.style.display === 'block');
             });
 
-            return state;
-        }
-
-        /**
-         * Restore the expanded/collapsed state of collapsible sections
-         * @param {Map<string, boolean>} state - Map of section titles to their expanded state
-         */
-        restoreExpandedState(state) {
-            if (!this.displayElement || state.size === 0) {
-                return;
-            }
-
-            // Find all collapsible sections and restore their state
-            const sections = this.displayElement.querySelectorAll('.mwi-collapsible-section');
-            sections.forEach((section) => {
-                const header = section.querySelector('.mwi-section-header');
-                const content = section.querySelector('.mwi-section-content');
-                const summary = section.querySelector('div[style*="margin-left: 16px"]');
-                const arrow = header?.querySelector('span:first-child');
-                const label = header?.querySelector('span:last-child');
-
-                if (label && content && arrow) {
-                    const title = label.textContent.trim();
-                    const shouldBeExpanded = state.get(title);
-
-                    if (shouldBeExpanded !== undefined && shouldBeExpanded) {
-                        // Expand this section
-                        content.style.display = 'block';
-                        if (summary) {
-                            summary.style.display = 'none';
-                        }
-                        arrow.textContent = '▼';
-                    }
-                }
-            });
+            return section;
         }
 
         /**
@@ -16504,7 +16505,7 @@ self.onmessage = function (e) {
                     normalDropsRevenue += drop.revenuePerHour;
                 }
 
-                const normalDropsSection = uiComponents_js.createCollapsibleSection(
+                const normalDropsSection = this.createTrackedCollapsible(
                     '',
                     `Normal Drops: ${formatters_js.formatLargeNumber(Math.round(normalDropsRevenue))}/hr (${normalDrops.length} item${normalDrops.length !== 1 ? 's' : ''})`,
                     null,
@@ -16534,7 +16535,7 @@ self.onmessage = function (e) {
                     essenceRevenue += drop.revenuePerHour;
                 }
 
-                const essenceSection = uiComponents_js.createCollapsibleSection(
+                const essenceSection = this.createTrackedCollapsible(
                     '',
                     `Essence Drops: ${formatters_js.formatLargeNumber(Math.round(essenceRevenue))}/hr (${essenceDrops.length} item${essenceDrops.length !== 1 ? 's' : ''})`,
                     null,
@@ -16576,7 +16577,7 @@ self.onmessage = function (e) {
                     rareRevenue += drop.revenuePerHour;
                 }
 
-                const rareSection = uiComponents_js.createCollapsibleSection(
+                const rareSection = this.createTrackedCollapsible(
                     '',
                     `Rare Drops: ${formatters_js.formatLargeNumber(Math.round(rareRevenue))}/hr (${rareDrops.length} item${rareDrops.length !== 1 ? 's' : ''})`,
                     null,
@@ -16622,7 +16623,7 @@ self.onmessage = function (e) {
                     materialCostsContent.appendChild(line);
                 }
 
-                const materialCostsSection = uiComponents_js.createCollapsibleSection(
+                const materialCostsSection = this.createTrackedCollapsible(
                     '',
                     `Material Costs: ${formatters_js.formatLargeNumber(Math.round(profitData.materialCostPerHour))}/hr (${profitData.requirementCosts.length} material${profitData.requirementCosts.length !== 1 ? 's' : ''})`,
                     null,
@@ -16653,7 +16654,7 @@ self.onmessage = function (e) {
                 line.textContent = `• ${itemName}: ${formattedCatalystAmount}/hr (consumed only on success, ${formatters_js.formatPercentage(profitData.successRate, 2)}) @ ${formatters_js.formatWithSeparator(Math.round(profitData.catalystCost.price))} → ${formatters_js.formatLargeNumber(Math.round(profitData.catalystCost.costPerHour))}/hr`;
                 catalystContent.appendChild(line);
 
-                const catalystSection = uiComponents_js.createCollapsibleSection(
+                const catalystSection = this.createTrackedCollapsible(
                     '',
                     `Catalyst Cost: ${formatters_js.formatLargeNumber(Math.round(profitData.catalystCost.costPerHour))}/hr`,
                     null,
@@ -16684,7 +16685,7 @@ self.onmessage = function (e) {
                 }
 
                 const drinkCount = profitData.consumableCosts.length;
-                const drinkCostsSection = uiComponents_js.createCollapsibleSection(
+                const drinkCostsSection = this.createTrackedCollapsible(
                     '',
                     `Drink Costs: ${formatters_js.formatLargeNumber(Math.round(profitData.totalTeaCostPerHour))}/hr (${drinkCount} drink${drinkCount !== 1 ? 's' : ''})`,
                     null,
@@ -16726,7 +16727,7 @@ self.onmessage = function (e) {
                     successContent.appendChild(teaLine);
                 }
 
-                const successSection = uiComponents_js.createCollapsibleSection(
+                const successSection = this.createTrackedCollapsible(
                     '',
                     `Success Rate: ${formatters_js.formatPercentage(profitData.successRate, 1)}`,
                     null,
@@ -16790,7 +16791,7 @@ self.onmessage = function (e) {
                     effContent.appendChild(line);
                 }
 
-                const effSection = uiComponents_js.createCollapsibleSection(
+                const effSection = this.createTrackedCollapsible(
                     '',
                     `Efficiency: +${formatters_js.formatPercentage(profitData.efficiency, 1)}`,
                     null,
@@ -16824,7 +16825,7 @@ self.onmessage = function (e) {
                         speedContent.appendChild(line);
                     }
 
-                    const speedSection = uiComponents_js.createCollapsibleSection(
+                    const speedSection = this.createTrackedCollapsible(
                         '',
                         `Action Speed: +${formatters_js.formatPercentage(actionSpeed, 1)}`,
                         null,
@@ -16864,7 +16865,7 @@ self.onmessage = function (e) {
                         rareContent.appendChild(line);
                     }
 
-                    const rareSection = uiComponents_js.createCollapsibleSection(
+                    const rareSection = this.createTrackedCollapsible(
                         '',
                         `Rare Find: +${rareBreakdown.total.toFixed(2)}%`,
                         null,
@@ -16890,7 +16891,7 @@ self.onmessage = function (e) {
                         essenceContent.appendChild(line);
                     }
 
-                    const essenceSection = uiComponents_js.createCollapsibleSection(
+                    const essenceSection = this.createTrackedCollapsible(
                         '',
                         `Essence Find: +${essenceBreakdown.total.toFixed(2)}%`,
                         null,
@@ -16942,7 +16943,7 @@ self.onmessage = function (e) {
             modeDiv.textContent = `Pricing Mode: ${modeLabel}`;
             topLevelContent.appendChild(modeDiv);
 
-            const detailedBreakdownSection = uiComponents_js.createCollapsibleSection(
+            const detailedBreakdownSection = this.createTrackedCollapsible(
                 '📊',
                 'Detailed Breakdown',
                 null,
@@ -16954,7 +16955,7 @@ self.onmessage = function (e) {
             topLevelContent.appendChild(detailedBreakdownSection);
 
             // Create main profit section
-            const profitSection = uiComponents_js.createCollapsibleSection('💰', 'Profitability', summary, topLevelContent, false, 0);
+            const profitSection = this.createTrackedCollapsible('💰', 'Profitability', summary, topLevelContent, false, 0);
             profitSection.id = 'mwi-alchemy-profit';
             profitSection.classList.add('mwi-alchemy-profit');
             profitSection.setAttribute('data-mwi-profit-display', 'true');
@@ -17187,7 +17188,7 @@ self.onmessage = function (e) {
 
                 const summary = getSummary();
 
-                return uiComponents_js.createCollapsibleSection('⏱', 'Action Speed & Time', summary, content, false);
+                return this.createTrackedCollapsible('⏱', 'Action Speed & Time', summary, content, false);
             } catch (error) {
                 console.error('[AlchemyProfitDisplay] Error creating action speed/time section:', error);
                 return null;
@@ -17405,7 +17406,7 @@ self.onmessage = function (e) {
                 // Create summary for collapsed view
                 const summary = `${formatters_js.timeReadable(timeNeeded)} to Level ${nextLevel}`;
 
-                return uiComponents_js.createCollapsibleSection('📈', 'Level Progress', summary, content, false);
+                return this.createTrackedCollapsible('📈', 'Level Progress', summary, content, false);
             } catch (error) {
                 console.error('[AlchemyProfitDisplay] Error creating level progress section:', error);
                 return null;
