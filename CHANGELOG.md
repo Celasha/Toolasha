@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.32.0](https://github.com/Celasha/Toolasha/compare/v1.31.0...v1.32.0) (2026-03-08)
+
+
+### Features
+
+* add per-action tea optimizer drilldown with popup stability fixes ([86a2b02](https://github.com/Celasha/Toolasha/commit/86a2b02172c17d7e65b974f95b213c18e06bee8e))
+
 ## [1.31.0](https://github.com/Celasha/Toolasha/compare/v1.30.2...v1.31.0) (2026-03-08)
 
 ### Features
