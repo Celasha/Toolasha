@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.31.0](https://github.com/Celasha/Toolasha/compare/v1.30.2...v1.31.0) (2026-03-08)
+
+
+### Features
+
+* add expandable tea cost breakdown to optimizer popup ([aabe7fe](https://github.com/Celasha/Toolasha/commit/aabe7fecdcaa77582f0c4ccef73dac38f26f003a))
+
 ## [1.30.2](https://github.com/Celasha/Toolasha/compare/v1.30.1...v1.30.2) (2026-03-08)
 
 ### Bug Fixes
