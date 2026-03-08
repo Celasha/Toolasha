@@ -642,9 +642,10 @@ function getOtherEfficiencySources(actionType) {
  * @param {string} skillName - Skill name (e.g., 'Milking')
  * @param {string} goal - 'xp' or 'gold'
  * @param {string|null} locationName - Optional location name to filter actions (e.g., "Silly Cow Valley")
+ * @param {string|null} actionNameFilter - Optional action name to restrict optimization to a single action
  * @returns {Object} Optimization result
  */
-export function findOptimalTeas(skillName, goal, locationName = null) {
+export function findOptimalTeas(skillName, goal, locationName = null, actionNameFilter = null) {
     const normalizedSkill = skillName.toLowerCase();
     const isGathering = GATHERING_SKILLS.includes(normalizedSkill);
     const isProduction = PRODUCTION_SKILLS.includes(normalizedSkill);
@@ -706,6 +707,12 @@ export function findOptimalTeas(skillName, goal, locationName = null) {
             // Also filter excluded actions to same category (so we only show relevant excluded items)
             excludedActions = excludedActions.filter((item) => item.action.category === targetCategoryHrid);
         }
+    }
+
+    // Optionally narrow to a single action by name
+    if (actionNameFilter) {
+        actions = actions.filter((a) => a.name === actionNameFilter);
+        excludedActions = excludedActions.filter((item) => item.action.name === actionNameFilter);
     }
 
     // Check if there are no available actions (even if there are excluded ones)
