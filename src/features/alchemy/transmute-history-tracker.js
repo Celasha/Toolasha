@@ -26,12 +26,18 @@ const STORAGE_STORE = 'alchemyHistory';
 class TransmuteHistoryTracker {
     constructor() {
         this.isInitialized = false;
+        this.characterId = null;
         this.activeSession = null; // Current in-progress session object
         this.handlers = {
             actionsUpdated: (data) => this.handleActionsUpdated(data),
             actionCompleted: (data) => this.handleActionCompleted(data),
             initCharacterData: () => this.handleReconnect(),
+            characterSwitched: (data) => this.handleCharacterSwitched(data),
         };
+    }
+
+    getStorageKey() {
+        return this.characterId ? `${STORAGE_KEY}_${this.characterId}` : STORAGE_KEY;
     }
 
     /**
@@ -47,10 +53,12 @@ class TransmuteHistoryTracker {
         }
 
         this.isInitialized = true;
+        this.characterId = dataManager.getCurrentCharacterId();
 
         webSocketHook.on('actions_updated', this.handlers.actionsUpdated);
         webSocketHook.on('action_completed', this.handlers.actionCompleted);
         webSocketHook.on('init_character_data', this.handlers.initCharacterData);
+        dataManager.on('character_switched', this.handlers.characterSwitched);
     }
 
     /**
@@ -60,12 +68,14 @@ class TransmuteHistoryTracker {
         webSocketHook.off('actions_updated', this.handlers.actionsUpdated);
         webSocketHook.off('action_completed', this.handlers.actionCompleted);
         webSocketHook.off('init_character_data', this.handlers.initCharacterData);
+        dataManager.off('character_switched', this.handlers.characterSwitched);
 
         if (this.activeSession) {
             this.endSession();
         }
 
         this.isInitialized = false;
+        this.characterId = null;
     }
 
     /**
@@ -188,6 +198,17 @@ class TransmuteHistoryTracker {
     }
 
     /**
+     * Handle character switch — update character ID and clear active session
+     * @param {Object} data - { newId, newName }
+     */
+    async handleCharacterSwitched(data) {
+        if (this.activeSession) {
+            await this.endSession();
+        }
+        this.characterId = data.newId || null;
+    }
+
+    /**
      * Start a new session
      * @param {string} inputItemHrid - Input item HRID
      * @param {number} timestamp - Start timestamp in ms
@@ -235,7 +256,7 @@ class TransmuteHistoryTracker {
                 sessions.push(this.activeSession);
             }
 
-            await storage.setJSON(STORAGE_KEY, sessions, STORAGE_STORE, true);
+            await storage.setJSON(this.getStorageKey(), sessions, STORAGE_STORE, true);
         } catch (error) {
             console.error('[TransmuteHistoryTracker] Failed to save session:', error);
         }
@@ -247,7 +268,7 @@ class TransmuteHistoryTracker {
      */
     async loadSessions() {
         try {
-            return await storage.getJSON(STORAGE_KEY, STORAGE_STORE, []);
+            return await storage.getJSON(this.getStorageKey(), STORAGE_STORE, []);
         } catch (error) {
             console.error('[TransmuteHistoryTracker] Failed to load sessions:', error);
             return [];
@@ -260,7 +281,7 @@ class TransmuteHistoryTracker {
     async clearHistory() {
         try {
             this.activeSession = null;
-            await storage.setJSON(STORAGE_KEY, [], STORAGE_STORE, true);
+            await storage.setJSON(this.getStorageKey(), [], STORAGE_STORE, true);
         } catch (error) {
             console.error('[TransmuteHistoryTracker] Failed to clear history:', error);
         }
@@ -272,7 +293,7 @@ class TransmuteHistoryTracker {
      */
     async deleteSessions(sessions) {
         try {
-            await storage.setJSON(STORAGE_KEY, sessions, STORAGE_STORE, true);
+            await storage.setJSON(this.getStorageKey(), sessions, STORAGE_STORE, true);
         } catch (error) {
             console.error('[TransmuteHistoryTracker] Failed to save sessions after delete:', error);
         }
