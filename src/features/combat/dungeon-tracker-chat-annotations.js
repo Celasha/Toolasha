@@ -43,6 +43,9 @@ class DungeonTrackerChatAnnotations {
      */
     async loadRunCountsFromStorage() {
         try {
+            // Scrub outlier runs (Houston downtime artifacts) before seeding averages
+            await dungeonTrackerStorage.scrubOutlierRuns();
+
             // Get all runs from unified storage
             const allRuns = await dungeonTrackerStorage.getAllRuns();
 
@@ -258,10 +261,7 @@ class DungeonTrackerChatAnnotations {
             }
 
             if (label) {
-                // Check if this is a successful run before inserting annotation
-                const nextNext = events[i + 2];
-                const nextRunWasCanceled = nextNext && (nextNext.type === 'fail' || nextNext.type === 'cancel');
-                const isSuccessfulRun = diff && dungeonName && dungeonName !== 'Unknown' && !nextRunWasCanceled;
+                const isSuccessfulRun = diff && dungeonName && dungeonName !== 'Unknown';
 
                 if (isSuccessfulRun) {
                     // Create unique message ID to prevent duplicate counting on scroll
