@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 1.33.1
+ * Version: 1.33.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -798,18 +798,30 @@
             return null;
         }
 
+        const itemSlug = itemHrid.split('/').pop();
+
         // First pass: Look for production actions (outputItems)
+        const productionMatches = [];
         for (const [actionHrid, action] of Object.entries(gameData.actionDetailMap)) {
             if (action.outputItems?.some((item) => item.itemHrid === itemHrid)) {
-                return { actionHrid, type: 'production' };
+                productionMatches.push(actionHrid);
             }
+        }
+        if (productionMatches.length > 0) {
+            const exact = productionMatches.find((a) => a.split('/').pop() === itemSlug);
+            return { actionHrid: exact || productionMatches[0], type: 'production' };
         }
 
         // Second pass: Look for gathering actions (dropTable)
+        const gatheringMatches = [];
         for (const [actionHrid, action] of Object.entries(gameData.actionDetailMap)) {
             if (action.dropTable?.some((drop) => drop.itemHrid === itemHrid)) {
-                return { actionHrid, type: 'gathering' };
+                gatheringMatches.push(actionHrid);
             }
+        }
+        if (gatheringMatches.length > 0) {
+            const exact = gatheringMatches.find((a) => a.split('/').pop() === itemSlug);
+            return { actionHrid: exact || gatheringMatches[0], type: 'gathering' };
         }
 
         return null;
@@ -14786,12 +14798,18 @@ self.onmessage = function (e) {
     class TransmuteHistoryTracker {
         constructor() {
             this.isInitialized = false;
+            this.characterId = null;
             this.activeSession = null; // Current in-progress session object
             this.handlers = {
                 actionsUpdated: (data) => this.handleActionsUpdated(data),
                 actionCompleted: (data) => this.handleActionCompleted(data),
                 initCharacterData: () => this.handleReconnect(),
+                characterSwitched: (data) => this.handleCharacterSwitched(data),
             };
+        }
+
+        getStorageKey() {
+            return this.characterId ? `${STORAGE_KEY$2}_${this.characterId}` : STORAGE_KEY$2;
         }
 
         /**
@@ -14807,10 +14825,12 @@ self.onmessage = function (e) {
             }
 
             this.isInitialized = true;
+            this.characterId = dataManager.getCurrentCharacterId();
 
             webSocketHook.on('actions_updated', this.handlers.actionsUpdated);
             webSocketHook.on('action_completed', this.handlers.actionCompleted);
             webSocketHook.on('init_character_data', this.handlers.initCharacterData);
+            dataManager.on('character_switched', this.handlers.characterSwitched);
         }
 
         /**
@@ -14820,12 +14840,14 @@ self.onmessage = function (e) {
             webSocketHook.off('actions_updated', this.handlers.actionsUpdated);
             webSocketHook.off('action_completed', this.handlers.actionCompleted);
             webSocketHook.off('init_character_data', this.handlers.initCharacterData);
+            dataManager.off('character_switched', this.handlers.characterSwitched);
 
             if (this.activeSession) {
                 this.endSession();
             }
 
             this.isInitialized = false;
+            this.characterId = null;
         }
 
         /**
@@ -14948,6 +14970,17 @@ self.onmessage = function (e) {
         }
 
         /**
+         * Handle character switch — update character ID and clear active session
+         * @param {Object} data - { newId, newName }
+         */
+        async handleCharacterSwitched(data) {
+            if (this.activeSession) {
+                await this.endSession();
+            }
+            this.characterId = data.newId || null;
+        }
+
+        /**
          * Start a new session
          * @param {string} inputItemHrid - Input item HRID
          * @param {number} timestamp - Start timestamp in ms
@@ -14995,7 +15028,7 @@ self.onmessage = function (e) {
                     sessions.push(this.activeSession);
                 }
 
-                await storage.setJSON(STORAGE_KEY$2, sessions, STORAGE_STORE$2, true);
+                await storage.setJSON(this.getStorageKey(), sessions, STORAGE_STORE$2, true);
             } catch (error) {
                 console.error('[TransmuteHistoryTracker] Failed to save session:', error);
             }
@@ -15007,7 +15040,7 @@ self.onmessage = function (e) {
          */
         async loadSessions() {
             try {
-                return await storage.getJSON(STORAGE_KEY$2, STORAGE_STORE$2, []);
+                return await storage.getJSON(this.getStorageKey(), STORAGE_STORE$2, []);
             } catch (error) {
                 console.error('[TransmuteHistoryTracker] Failed to load sessions:', error);
                 return [];
@@ -15020,7 +15053,7 @@ self.onmessage = function (e) {
         async clearHistory() {
             try {
                 this.activeSession = null;
-                await storage.setJSON(STORAGE_KEY$2, [], STORAGE_STORE$2, true);
+                await storage.setJSON(this.getStorageKey(), [], STORAGE_STORE$2, true);
             } catch (error) {
                 console.error('[TransmuteHistoryTracker] Failed to clear history:', error);
             }
@@ -15032,7 +15065,7 @@ self.onmessage = function (e) {
          */
         async deleteSessions(sessions) {
             try {
-                await storage.setJSON(STORAGE_KEY$2, sessions, STORAGE_STORE$2, true);
+                await storage.setJSON(this.getStorageKey(), sessions, STORAGE_STORE$2, true);
             } catch (error) {
                 console.error('[TransmuteHistoryTracker] Failed to save sessions after delete:', error);
             }
@@ -16473,12 +16506,18 @@ self.onmessage = function (e) {
     class CoinifyHistoryTracker {
         constructor() {
             this.isInitialized = false;
+            this.characterId = null;
             this.activeSession = null; // Current in-progress session object
             this.handlers = {
                 actionsUpdated: (data) => this.handleActionsUpdated(data),
                 actionCompleted: (data) => this.handleActionCompleted(data),
                 initCharacterData: () => this.handleReconnect(),
+                characterSwitched: (data) => this.handleCharacterSwitched(data),
             };
+        }
+
+        getStorageKey() {
+            return this.characterId ? `${STORAGE_KEY$1}_${this.characterId}` : STORAGE_KEY$1;
         }
 
         /**
@@ -16494,10 +16533,12 @@ self.onmessage = function (e) {
             }
 
             this.isInitialized = true;
+            this.characterId = dataManager.getCurrentCharacterId();
 
             webSocketHook.on('actions_updated', this.handlers.actionsUpdated);
             webSocketHook.on('action_completed', this.handlers.actionCompleted);
             webSocketHook.on('init_character_data', this.handlers.initCharacterData);
+            dataManager.on('character_switched', this.handlers.characterSwitched);
         }
 
         /**
@@ -16507,12 +16548,14 @@ self.onmessage = function (e) {
             webSocketHook.off('actions_updated', this.handlers.actionsUpdated);
             webSocketHook.off('action_completed', this.handlers.actionCompleted);
             webSocketHook.off('init_character_data', this.handlers.initCharacterData);
+            dataManager.off('character_switched', this.handlers.characterSwitched);
 
             if (this.activeSession) {
                 this.endSession();
             }
 
             this.isInitialized = false;
+            this.characterId = null;
         }
 
         /**
@@ -16607,6 +16650,17 @@ self.onmessage = function (e) {
         }
 
         /**
+         * Handle character switch — update character ID and clear active session
+         * @param {Object} data - { newId, newName }
+         */
+        async handleCharacterSwitched(data) {
+            if (this.activeSession) {
+                await this.endSession();
+            }
+            this.characterId = data.newId || null;
+        }
+
+        /**
          * Start a new session
          * @param {string} inputItemHrid - Input item HRID
          * @param {number} enhancementLevel - Enhancement level of input item
@@ -16668,7 +16722,7 @@ self.onmessage = function (e) {
                     sessions.push(this.activeSession);
                 }
 
-                await storage.setJSON(STORAGE_KEY$1, sessions, STORAGE_STORE$1, true);
+                await storage.setJSON(this.getStorageKey(), sessions, STORAGE_STORE$1, true);
             } catch (error) {
                 console.error('[CoinifyHistoryTracker] Failed to save session:', error);
             }
@@ -16680,7 +16734,7 @@ self.onmessage = function (e) {
          */
         async loadSessions() {
             try {
-                return await storage.getJSON(STORAGE_KEY$1, STORAGE_STORE$1, []);
+                return await storage.getJSON(this.getStorageKey(), STORAGE_STORE$1, []);
             } catch (error) {
                 console.error('[CoinifyHistoryTracker] Failed to load sessions:', error);
                 return [];
@@ -16693,7 +16747,7 @@ self.onmessage = function (e) {
         async clearHistory() {
             try {
                 this.activeSession = null;
-                await storage.setJSON(STORAGE_KEY$1, [], STORAGE_STORE$1, true);
+                await storage.setJSON(this.getStorageKey(), [], STORAGE_STORE$1, true);
             } catch (error) {
                 console.error('[CoinifyHistoryTracker] Failed to clear history:', error);
             }
@@ -16705,7 +16759,7 @@ self.onmessage = function (e) {
          */
         async deleteSessions(sessions) {
             try {
-                await storage.setJSON(STORAGE_KEY$1, sessions, STORAGE_STORE$1, true);
+                await storage.setJSON(this.getStorageKey(), sessions, STORAGE_STORE$1, true);
             } catch (error) {
                 console.error('[CoinifyHistoryTracker] Failed to save sessions after delete:', error);
             }
