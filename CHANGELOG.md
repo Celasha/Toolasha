@@ -2,11 +2,10 @@
 
 ## [1.33.2](https://github.com/Celasha/Toolasha/compare/v1.33.1...v1.33.2) (2026-03-09)
 
-
 ### Bug Fixes
 
-* prefer exact slug match when multiple actions map to same item ([a49015a](https://github.com/Celasha/Toolasha/commit/a49015a2f7bfd0679320c4d70e39a15f180136c8))
-* scope coinify and transmute history to current character ([9d3d560](https://github.com/Celasha/Toolasha/commit/9d3d56084954fb4f7ce80d40ad4b62bc8aa6b825))
+- prefer exact slug match when multiple actions map to same item ([a49015a](https://github.com/Celasha/Toolasha/commit/a49015a2f7bfd0679320c4d70e39a15f180136c8))
+- scope coinify and transmute history to current character ([9d3d560](https://github.com/Celasha/Toolasha/commit/9d3d56084954fb4f7ce80d40ad4b62bc8aa6b825))
 
 ## [1.33.1](https://github.com/Celasha/Toolasha/compare/v1.33.0...v1.33.1) (2026-03-09)
 
