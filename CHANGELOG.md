@@ -2,10 +2,9 @@
 
 ## [1.34.2](https://github.com/Celasha/Toolasha/compare/v1.34.1...v1.34.2) (2026-03-10)
 
-
 ### Bug Fixes
 
-* fall back to on-demand EV calculation for uncached dungeon chests ([5467d97](https://github.com/Celasha/Toolasha/commit/5467d97a3bbcf383eb5bce5a38aaca4754e07968))
+- fall back to on-demand EV calculation for uncached dungeon chests ([5467d97](https://github.com/Celasha/Toolasha/commit/5467d97a3bbcf383eb5bce5a38aaca4754e07968))
 
 ## [1.34.1](https://github.com/Celasha/Toolasha/compare/v1.34.0...v1.34.1) (2026-03-10)
 
