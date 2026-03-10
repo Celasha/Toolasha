@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 1.34.0
+ * Version: 1.34.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -3453,12 +3453,21 @@
         }
 
         /**
-         * Refresh run counts after backfill operation
+         * Refresh run counts after backfill or clear operation
+         * Resets all in-memory state and DOM annotation state, then re-annotates from scratch
          */
         async refreshRunCounts() {
             this.cumulativeStatsByDungeon = {};
             this.processedMessages.clear();
-            await this.loadRunCountsFromStorage();
+
+            // Remove existing annotation spans and reset DOM flags so messages can be re-annotated
+            document.querySelectorAll('[class^="ChatMessage_chatMessage"]').forEach((msg) => {
+                msg.querySelectorAll('.dungeon-timer-annotation, .dungeon-timer-average').forEach((s) => s.remove());
+                delete msg.dataset.timerAppended;
+                delete msg.dataset.avgAppended;
+                delete msg.dataset.processed;
+            });
+
             await this.annotateAllMessages();
         }
 
@@ -5190,6 +5199,9 @@
                         // Refresh both history and chart display
                         if (this.callbacks.onUpdateHistory) await this.callbacks.onUpdateHistory();
                         if (this.callbacks.onUpdateChart) await this.callbacks.onUpdateChart();
+
+                        // Reset chat annotations so run numbers restart from #1
+                        await dungeonTrackerChatAnnotations.refreshRunCounts();
                     } catch (error) {
                         console.error('[Dungeon Tracker UI Interactions] Clear all history error:', error);
                         alert('Failed to clear run history. Check console for details.');
@@ -5252,6 +5264,9 @@
                     // Refresh both history and chart display
                     if (this.callbacks.onUpdateHistory) await this.callbacks.onUpdateHistory();
                     if (this.callbacks.onUpdateChart) await this.callbacks.onUpdateChart();
+
+                    // Sync chat annotations with newly stored run data
+                    await dungeonTrackerChatAnnotations.refreshRunCounts();
                 } catch (error) {
                     console.error('[Dungeon Tracker UI Interactions] Backfill error:', error);
                     alert('Backfill failed. Check console for details.');
