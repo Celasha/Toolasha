@@ -2,10 +2,9 @@
 
 ## [1.34.1](https://github.com/Celasha/Toolasha/compare/v1.34.0...v1.34.1) (2026-03-10)
 
-
 ### Bug Fixes
 
-* sync chat run annotations after clear and backfill ([0b6f971](https://github.com/Celasha/Toolasha/commit/0b6f9719af0b1d6ca68f331c73fcde65d2b2ed9d))
+- sync chat run annotations after clear and backfill ([0b6f971](https://github.com/Celasha/Toolasha/commit/0b6f9719af0b1d6ca68f331c73fcde65d2b2ed9d))
 
 ## [1.34.0](https://github.com/Celasha/Toolasha/compare/v1.33.3...v1.34.0) (2026-03-10)
 
