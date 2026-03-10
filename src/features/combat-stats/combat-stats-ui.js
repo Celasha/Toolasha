@@ -503,6 +503,10 @@ class CombatStatsUI {
         // Use K/M/B formatting if enabled, otherwise use separators
         const useKMB = config.getSetting('formatting_useKMBFormat');
         const formatNum = (num) => (useKMB ? coinFormatter(Math.round(num)) : formatWithSeparator(Math.round(num)));
+        const formatNumDecimals = (num) =>
+            useKMB
+                ? coinFormatter(Math.round(num))
+                : new Intl.NumberFormat('en-US', { minimumFractionDigits: 3, maximumFractionDigits: 3 }).format(num);
 
         const statsRows = [
             { label: 'Duration', value: stats.durationFormatted || '0s' },
@@ -511,14 +515,14 @@ class CombatStatsUI {
             { label: 'Daily Income', value: `${formatNum(stats.dailyIncome.bid)}/d` },
             {
                 label: 'Consumable Costs',
-                value: formatNum(stats.consumableCosts),
+                value: formatNumDecimals(stats.consumableCosts),
                 color: '#ff6b6b',
                 expandable: true,
                 breakdown: stats.consumableBreakdown,
             },
             {
                 label: 'Daily Consumable Costs',
-                value: `${formatNum(stats.dailyConsumableCosts)}/d`,
+                value: `${formatNumDecimals(stats.dailyConsumableCosts)}/d`,
                 color: '#ff6b6b',
                 expandable: true,
                 breakdown: stats.consumableBreakdown,

@@ -49,6 +49,18 @@ class InventorySort {
                 this.refresh();
             }
         });
+
+        config.onSettingChange('invSort_showBadges', () => {
+            if (this.isInitialized) {
+                this.refresh();
+            }
+        });
+
+        config.onSettingChange('invSort_badgesOnNone', () => {
+            if (this.isInitialized) {
+                this.refresh();
+            }
+        });
     }
 
     /**

@@ -117,8 +117,9 @@ class ExpectedValueCalculator {
                         this.containerCache.set(result.containerHrid, result.ev);
                     }
                 }
-            } catch {
+            } catch (error) {
                 // Worker failed, fall back to main thread calculation
+                console.warn('[ExpectedValueCalculator] Worker failed, falling back to main thread:', error);
                 for (const containerHrid of containerHrids) {
                     const ev = this.calculateSingleContainer(containerHrid, initData);
                     if (ev !== null) {

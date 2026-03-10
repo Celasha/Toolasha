@@ -111,6 +111,13 @@ class GatheringStats {
         // Check if already injected
         const existingDisplay = actionPanel.querySelector('.mwi-gathering-stats');
         if (existingDisplay) {
+            // If the panel is already registered in our Map, it's being re-added by a
+            // sort reorder (DocumentFragment move) — not genuine navigation. Skip
+            // updateStats and triggerSort to avoid the sort→observer→triggerSort loop.
+            if (this.actionElements.has(actionPanel)) {
+                return;
+            }
+
             // Re-register existing display (DOM elements may be reused across navigation).
             // Use skipRender so we don't wipe innerHTML (which would erase the emoji
             // set by addBestActionIndicators and cause a visible blink).
@@ -241,6 +248,7 @@ class GatheringStats {
         data.profitPerHour = profitPerHour;
         data.expPerHour = expPerHour;
         actionPanelSort.updateProfit(actionPanel, profitPerHour);
+        actionPanelSort.updateExpPerHour(actionPanel, expPerHour);
 
         // Check if we should hide actions with negative profit (unless pinned)
         const hideNegativeProfit = config.getSetting('actionPanel_hideNegativeProfit');
@@ -426,7 +434,7 @@ class GatheringStats {
             const efficiencyColor = coinsPerXp >= 0 ? config.COLOR_INFO : config.COLOR_WARNING;
             const efficiencySign = coinsPerXp >= 0 ? '' : '-';
             html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
-            html += `<span data-stat="overall" style="color: ${efficiencyColor};">Coins/XP: ${efficiencySign}${formatKMB(Math.abs(coinsPerXp))}</span></div>`;
+            html += `<span data-stat="overall" style="color: ${efficiencyColor};">Profit/XP: ${efficiencySign}${formatKMB(Math.abs(coinsPerXp))}</span></div>`;
         }
 
         data.displayElement.innerHTML = html;

@@ -9,7 +9,6 @@ import webSocketHook from '../../core/websocket.js';
 import { calculateCombatScore } from './score-calculator.js';
 import { numberFormatter } from '../../utils/formatters.js';
 import { constructExportObject } from '../combat/combat-sim-export.js';
-import { clearCurrentProfile } from '../../core/profile-manager.js';
 import { constructMilkonomyExport } from '../combat/milkonomy-export.js';
 import { handleViewCardClick } from './character-card-button.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
@@ -744,12 +743,7 @@ class CombatScore {
         const originalBg = button.style.background;
 
         try {
-            // Defensive: ensure currentProfileId is null when exporting own profile
-            // This prevents stale data from blocking export
-            await storage.set('currentProfileId', null, 'combatExport', true);
-            clearCurrentProfile();
-
-            // Get current profile ID (should be null for own profile)
+            // Get current profile ID (if viewing someone else's profile)
             const currentProfileId = await storage.get('currentProfileId', 'combatExport', null);
 
             // Get export data (pass profile ID if viewing external profile)

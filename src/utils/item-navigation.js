@@ -35,18 +35,30 @@ export function findActionForItem(itemHrid) {
         return null;
     }
 
+    const itemSlug = itemHrid.split('/').pop();
+
     // First pass: Look for production actions (outputItems)
+    const productionMatches = [];
     for (const [actionHrid, action] of Object.entries(gameData.actionDetailMap)) {
         if (action.outputItems?.some((item) => item.itemHrid === itemHrid)) {
-            return { actionHrid, type: 'production' };
+            productionMatches.push(actionHrid);
         }
+    }
+    if (productionMatches.length > 0) {
+        const exact = productionMatches.find((a) => a.split('/').pop() === itemSlug);
+        return { actionHrid: exact || productionMatches[0], type: 'production' };
     }
 
     // Second pass: Look for gathering actions (dropTable)
+    const gatheringMatches = [];
     for (const [actionHrid, action] of Object.entries(gameData.actionDetailMap)) {
         if (action.dropTable?.some((drop) => drop.itemHrid === itemHrid)) {
-            return { actionHrid, type: 'gathering' };
+            gatheringMatches.push(actionHrid);
         }
+    }
+    if (gatheringMatches.length > 0) {
+        const exact = gatheringMatches.find((a) => a.split('/').pop() === itemSlug);
+        return { actionHrid: exact || gatheringMatches[0], type: 'gathering' };
     }
 
     return null;

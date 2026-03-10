@@ -27,13 +27,11 @@
         throw new Error('[Toolasha] Browser build cannot run on Steam. Install the Steam build.');
     }
     if (buildTarget === 'steam' && hasScriptManager) {
-        alert(
-            'Toolasha: Wrong build installed!\n\n' +
-                'You have the STEAM build installed, but you are running in a browser.\n' +
-                'The Steam build is unnecessarily large for browser use.\n\n' +
-                'Please install the browser build instead.'
+        console.warn(
+            '[Toolasha] Steam build detected in browser. ' +
+                'The Steam build is larger than necessary for browser use — consider switching to the browser build. ' +
+                'Continuing anyway.'
         );
-        throw new Error('[Toolasha] Steam build should not run in a browser. Install the browser build.');
     }
 })();
 
@@ -184,6 +182,13 @@ function registerFeatures() {
             async: false,
         },
         {
+            key: 'invCategoryTotals',
+            name: 'Inventory Category Totals',
+            category: 'Inventory',
+            module: Market.inventoryCategoryTotals,
+            async: false,
+        },
+        {
             key: 'autoAllButton',
             name: 'Auto All Button',
             category: 'Inventory',
@@ -328,6 +333,20 @@ function registerFeatures() {
             async: false,
         },
         { key: 'combatStats', name: 'Combat Stats', category: 'Combat', module: Combat.combatStats, async: true },
+        {
+            key: 'labyrinthTracker',
+            name: 'Labyrinth Tracker',
+            category: 'Combat',
+            module: Combat.labyrinthTracker,
+            async: false,
+        },
+        {
+            key: 'labyrinthBestLevel',
+            name: 'Labyrinth Best Level',
+            category: 'Combat',
+            module: Combat.labyrinthBestLevel,
+            async: false,
+        },
     ];
 
     // UI Features
@@ -361,9 +380,17 @@ function registerFeatures() {
             module: UI.altClickNavigation,
             async: false,
         },
+        {
+            key: 'collectionNavigation',
+            name: 'Collection Navigation',
+            category: 'Navigation',
+            module: UI.collectionNavigation,
+            async: false,
+        },
         { key: 'chatCommands', name: 'Chat Commands', category: 'Chat', module: UI.chatCommands, async: true },
         { key: 'mentionTracker', name: 'Mention Tracker', category: 'Chat', module: UI.mentionTracker, async: true },
         { key: 'popOutChat', name: 'Pop-Out Chat', category: 'Chat', module: UI.popOutChat, async: true },
+        { key: 'chatBlockList', name: 'Chat Block List', category: 'Chat', module: UI.chatBlockList, async: false },
         {
             key: 'taskProfitDisplay',
             name: 'Task Profit Display',
@@ -408,6 +435,34 @@ function registerFeatures() {
             name: 'Transmute Rates',
             category: 'Dictionary',
             module: UI.transmuteRates,
+            async: false,
+        },
+        {
+            key: 'alchemy_transmuteHistory',
+            name: 'Transmute History Tracker',
+            category: 'Alchemy',
+            module: UI.transmuteHistoryTracker,
+            async: false,
+        },
+        {
+            key: 'alchemy_transmuteHistoryViewer',
+            name: 'Transmute History Viewer',
+            category: 'Alchemy',
+            module: UI.transmuteHistoryViewer,
+            async: false,
+        },
+        {
+            key: 'alchemy_coinifyHistory',
+            name: 'Coinify History Tracker',
+            category: 'Alchemy',
+            module: UI.coinifyHistoryTracker,
+            async: false,
+        },
+        {
+            key: 'alchemy_coinifyHistoryViewer',
+            name: 'Coinify History Viewer',
+            category: 'Alchemy',
+            module: UI.coinifyHistoryViewer,
             async: false,
         },
         {

@@ -133,11 +133,6 @@ function updateButtonForPanel(panel, value) {
         existingButton.remove();
     }
 
-    // Don't show button if no quantity entered
-    if (numActions <= 0) {
-        return;
-    }
-
     // Check setting early
     if (!config.getSetting('actions_missingMaterialsButton')) {
         return;
@@ -164,17 +159,25 @@ function updateButtonForPanel(panel, value) {
         return;
     }
 
-    // Get missing materials using shared utility
-    // Check if user wants to ignore queue (default: false, meaning we DO account for queue)
-    const ignoreQueue = config.getSetting('actions_missingMaterialsButton_ignoreQueue') || false;
-    const accountForQueue = !ignoreQueue; // Invert: ignoreQueue=false means accountForQueue=true
-    const missingMaterials = calculateMaterialRequirements(actionHrid, numActions, accountForQueue);
-    if (missingMaterials.length === 0) {
-        return;
+    // Determine disabled state: no quantity entered (∞ parses to 0)
+    let missingMaterials = [];
+    let disabled = false;
+
+    if (numActions <= 0) {
+        disabled = true;
+    } else {
+        // Get missing materials using shared utility
+        // Check if user wants to ignore queue (default: false, meaning we DO account for queue)
+        const ignoreQueue = config.getSetting('actions_missingMaterialsButton_ignoreQueue') || false;
+        const accountForQueue = !ignoreQueue; // Invert: ignoreQueue=false means accountForQueue=true
+        missingMaterials = calculateMaterialRequirements(actionHrid, numActions, accountForQueue);
+        if (missingMaterials.length === 0) {
+            disabled = true;
+        }
     }
 
     // Create and insert button with actionHrid and numActions for live updates
-    const button = createMissingMaterialsButton(missingMaterials, actionHrid, numActions);
+    const button = createMissingMaterialsButton(missingMaterials, actionHrid, numActions, disabled);
 
     // Find insertion point (beneath item requirements field)
     const itemRequirements = panel.querySelector('.SkillActionDetail_itemRequirements__3SPnA');
@@ -237,12 +240,15 @@ function getActionHridFromName(actionName) {
  * @param {Array} missingMaterials - Array of missing material objects
  * @param {string} actionHrid - Action HRID for recalculating materials
  * @param {number} numActions - Number of actions for recalculating materials
+ * @param {boolean} disabled - Whether the button should be rendered in a disabled state
  * @returns {HTMLElement} Button element
  */
-function createMissingMaterialsButton(missingMaterials, actionHrid, numActions) {
+function createMissingMaterialsButton(missingMaterials, actionHrid, numActions, disabled = false) {
     const button = document.createElement('button');
     button.id = 'mwi-missing-mats-button';
     button.textContent = 'Missing Mats Marketplace';
+    button.disabled = disabled;
+    button.title = disabled && numActions <= 0 ? 'Enter a quantity to check missing materials' : '';
     button.style.cssText = `
         width: 100%;
         padding: 10px 16px;
@@ -251,31 +257,36 @@ function createMissingMaterialsButton(missingMaterials, actionHrid, numActions) 
         color: #ffffff;
         border: 1px solid rgba(91, 141, 239, 0.4);
         border-radius: 8px;
-        cursor: pointer;
+        cursor: ${disabled ? 'default' : 'pointer'};
         font-size: 14px;
         font-weight: 600;
         text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
         transition: all 0.2s ease;
         box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        opacity: ${disabled ? '0.45' : '1'};
     `;
 
-    // Hover effect
-    button.addEventListener('mouseenter', () => {
-        button.style.background = 'linear-gradient(180deg, rgba(91, 141, 239, 0.35) 0%, rgba(91, 141, 239, 0.25) 100%)';
-        button.style.borderColor = 'rgba(91, 141, 239, 0.6)';
-        button.style.boxShadow = '0 3px 6px rgba(0, 0, 0, 0.3)';
-    });
+    if (!disabled) {
+        // Hover effect
+        button.addEventListener('mouseenter', () => {
+            button.style.background =
+                'linear-gradient(180deg, rgba(91, 141, 239, 0.35) 0%, rgba(91, 141, 239, 0.25) 100%)';
+            button.style.borderColor = 'rgba(91, 141, 239, 0.6)';
+            button.style.boxShadow = '0 3px 6px rgba(0, 0, 0, 0.3)';
+        });
 
-    button.addEventListener('mouseleave', () => {
-        button.style.background = 'linear-gradient(180deg, rgba(91, 141, 239, 0.2) 0%, rgba(91, 141, 239, 0.1) 100%)';
-        button.style.borderColor = 'rgba(91, 141, 239, 0.4)';
-        button.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.2)';
-    });
+        button.addEventListener('mouseleave', () => {
+            button.style.background =
+                'linear-gradient(180deg, rgba(91, 141, 239, 0.2) 0%, rgba(91, 141, 239, 0.1) 100%)';
+            button.style.borderColor = 'rgba(91, 141, 239, 0.4)';
+            button.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.2)';
+        });
 
-    // Click handler
-    button.addEventListener('click', async () => {
-        await handleMissingMaterialsClick(missingMaterials, actionHrid, numActions);
-    });
+        // Click handler
+        button.addEventListener('click', async () => {
+            await handleMissingMaterialsClick(missingMaterials, actionHrid, numActions);
+        });
+    }
 
     return button;
 }

@@ -14,7 +14,12 @@ const userscriptHeaderRaw = readFileSync(join(__dirname, 'userscript-header.txt'
 // Keep @grant directives and other metadata
 const userscriptHeader = userscriptHeaderRaw
     .split('\n')
-    .filter((line) => !line.includes('@require'))
+    .filter((line) => !line.includes('@require') && !line.includes('@updateURL'))
+    .map((line) =>
+        line.includes('@downloadURL')
+            ? '// @downloadURL  https://github.com/Celasha/Toolasha/releases/latest/download/Toolasha.steam.js'
+            : line
+    )
     .join('\n');
 
 // Custom plugin to import CSS as raw strings

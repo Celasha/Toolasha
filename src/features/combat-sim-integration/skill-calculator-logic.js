@@ -100,6 +100,13 @@ export function calculateLevelsAfterDays(skills, expRates, days, levelExpTable) 
  * @returns {number} Combat level
  */
 export function calculateCombatLevel(skills) {
+    if (!skills.stamina) console.error('[SkillCalculatorLogic] Skill not found: stamina');
+    if (!skills.intelligence) console.error('[SkillCalculatorLogic] Skill not found: intelligence');
+    if (!skills.attack) console.error('[SkillCalculatorLogic] Skill not found: attack');
+    if (!skills.melee) console.error('[SkillCalculatorLogic] Skill not found: melee');
+    if (!skills.defense) console.error('[SkillCalculatorLogic] Skill not found: defense');
+    if (!skills.ranged) console.error('[SkillCalculatorLogic] Skill not found: ranged');
+    if (!skills.magic) console.error('[SkillCalculatorLogic] Skill not found: magic');
     const stamina = skills.stamina?.level || 1;
     const intelligence = skills.intelligence?.level || 1;
     const attack = skills.attack?.level || 1;

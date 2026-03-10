@@ -114,8 +114,7 @@ async function _handleEnhancementStart(action) {
         const extendableSessionId = enhancementTracker.findExtendableSession(itemHrid, currentLevel);
 
         if (extendableSessionId) {
-            // Extend by 5 levels (or to 20, whichever is lower)
-            const newTarget = Math.min(currentLevel + 5, 20);
+            const newTarget = action.enhancingMaxLevel || Math.min(currentLevel + 5, 20);
             await enhancementTracker.extendSessionTarget(extendableSessionId, newTarget);
             enhancementUI.switchToSession(extendableSessionId);
             enhancementUI.scheduleUpdate();
@@ -132,8 +131,8 @@ async function _handleEnhancementStart(action) {
         const sessionId = await enhancementTracker.startSession(itemHrid, currentLevel, targetLevel, protectFrom);
         enhancementUI.switchToSession(sessionId);
         enhancementUI.scheduleUpdate();
-    } catch {
-        // Silent failure
+    } catch (error) {
+        console.error('[EnhancementHandlers] Enhancement start failed:', error);
     }
 }
 
@@ -334,7 +333,7 @@ async function handleEnhancementResult(action, _data) {
             // Try to extend a completed session for the same item
             const extendableSessionId = enhancementTracker.findExtendableSession(itemHrid, newLevel);
             if (extendableSessionId) {
-                const newTarget = Math.min(newLevel + 5, 20);
+                const newTarget = action.enhancingMaxLevel || Math.min(newLevel + 5, 20);
                 await enhancementTracker.extendSessionTarget(extendableSessionId, newTarget);
                 currentSession = enhancementTracker.getCurrentSession();
 
@@ -359,15 +358,15 @@ async function handleEnhancementResult(action, _data) {
         // Track protection cost if protection item exists in action data
         // Protection items are consumed when:
         // 1. Level would have decreased (Mirror of Protection prevents decrease, level stays same)
-        // 2. Level increased (Philosopher's Mirror guarantees success)
         const protectionItemHrid = getProtectionItemHrid(action);
         if (protectionItemHrid) {
             // Only track if we're at a level where protection might be used
-            // (either level stayed same when it could have decreased, or succeeded at high level)
             const protectFrom = currentSession.protectFrom || 0;
             const shouldTrack = previousLevel >= Math.max(2, protectFrom);
 
-            if (shouldTrack && (newLevel <= previousLevel || newLevel === previousLevel + 1)) {
+            // Protection is consumed only on failure (level stays same or would have decreased)
+            // Successful enhancements do NOT consume a protection item
+            if (shouldTrack && newLevel <= previousLevel) {
                 // Use market price (like Ultimate Tracker) instead of vendor price
                 const marketPrice = marketAPI.getPrice(protectionItemHrid, 0);
                 let protectionCost = marketPrice?.ask || marketPrice?.bid || 0;
@@ -376,6 +375,11 @@ async function handleEnhancementResult(action, _data) {
                 if (protectionCost === 0) {
                     const gameData = dataManager.getInitClientData();
                     const protectionItem = gameData?.itemDetailMap?.[protectionItemHrid];
+                    if (!protectionItem) {
+                        console.warn(
+                            `[EnhancementHandlers] Protection item not found in game data: ${protectionItemHrid}`
+                        );
+                    }
                     protectionCost = protectionItem?.vendorSellPrice || 0;
                 }
 
@@ -425,8 +429,8 @@ async function handleEnhancementResult(action, _data) {
         }
         // Note: If newLevel === previousLevel (and not 0->0), we track costs but don't record attempt
         // This happens with protection items that prevent level decrease
-    } catch {
-        // Silent failure
+    } catch (error) {
+        console.error('[EnhancementHandlers] Enhancement result handler failed:', error);
     }
 }
 

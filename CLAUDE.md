@@ -11,6 +11,7 @@ This file contains general workflow and behavioral guidelines for AI assistants 
 ### Code Changes
 
 - **Never add code without approval**: Only add debuggers without approval; all other code requires explicit user permission
+- **Always build after implementing**: Run `npm run build:dev` immediately after every approved code change
 
 ### Communication
 

@@ -6,7 +6,6 @@
  * Used by max-produceable and gathering-stats features.
  */
 
-import config from '../../core/config.js';
 import storage from '../../core/storage.js';
 import dataManager from '../../core/data-manager.js';
 import { dismissTooltips } from '../../utils/dom.js';
@@ -14,8 +13,9 @@ import { createTimerRegistry } from '../../utils/timer-registry.js';
 
 class ActionPanelSort {
     constructor() {
-        this.panels = new Map(); // actionPanel → {actionHrid, profitPerHour}
+        this.panels = new Map(); // actionPanel → {actionHrid, profitPerHour, expPerHour}
         this.pinnedActions = new Set(); // Set of pinned action HRIDs
+        this.sortMode = 'default'; // 'default' | 'profit' | 'xp' | 'coinsPerXp'
         this.sortTimeout = null; // Debounce timer
         this.initialized = false;
         this.timerRegistry = createTimerRegistry();
@@ -30,6 +30,7 @@ class ActionPanelSort {
 
         const pinnedData = await storage.getJSON('pinnedActions', 'settings', []);
         this.pinnedActions = new Set(pinnedData);
+        this.sortMode = await storage.get('actionSortMode', 'settings', 'default');
         this.initialized = true;
 
         // Listen for character switch to clear character-specific data
@@ -70,6 +71,7 @@ class ActionPanelSort {
         this.panels.set(actionPanel, {
             actionHrid: actionHrid,
             profitPerHour: profitPerHour,
+            expPerHour: null,
         });
     }
 
@@ -83,6 +85,35 @@ class ActionPanelSort {
         if (data) {
             data.profitPerHour = profitPerHour;
         }
+    }
+
+    /**
+     * Update exp/hr for a registered panel
+     * @param {HTMLElement} actionPanel - The action panel element
+     * @param {number|null} expPerHour - Experience per hour
+     */
+    updateExpPerHour(actionPanel, expPerHour) {
+        const data = this.panels.get(actionPanel);
+        if (data) {
+            data.expPerHour = expPerHour;
+        }
+    }
+
+    /**
+     * Set the active sort mode
+     * @param {'default'|'profit'|'xp'|'coinsPerXp'} mode
+     */
+    setSortMode(mode) {
+        this.sortMode = mode;
+        storage.set('actionSortMode', mode, 'settings');
+    }
+
+    /**
+     * Get the active sort mode
+     * @returns {'default'|'profit'|'xp'|'coinsPerXp'}
+     */
+    getSortMode() {
+        return this.sortMode;
     }
 
     /**
@@ -155,11 +186,10 @@ class ActionPanelSort {
      * Schedule a sort to run after a short delay (debounced)
      */
     scheduleSortIfEnabled() {
-        const sortByProfitEnabled = config.getSetting('actionPanel_sortByProfit');
         const hasPinnedActions = this.pinnedActions.size > 0;
 
-        // Only sort if either profit sorting is enabled OR there are pinned actions
-        if (!sortByProfitEnabled && !hasPinnedActions) {
+        // Only sort if a sort mode is active OR there are pinned actions
+        if (this.sortMode === 'default' && !hasPinnedActions) {
             return;
         }
 
@@ -177,10 +207,10 @@ class ActionPanelSort {
     }
 
     /**
-     * Sort action panels by profit/hr (highest first), with pinned actions at top
+     * Sort action panels by the active sort mode, with pinned actions at top
      */
     sortPanelsByProfit() {
-        const sortByProfitEnabled = config.getSetting('actionPanel_sortByProfit');
+        const sortMode = this.sortMode;
 
         // Group panels by their parent container
         const containerMap = new Map();
@@ -200,11 +230,11 @@ class ActionPanelSort {
             }
 
             const isPinned = this.pinnedActions.has(data.actionHrid);
-            const profitPerHour = data.profitPerHour ?? null;
 
             containerMap.get(container).push({
                 panel: actionPanel,
-                profit: profitPerHour,
+                profit: data.profitPerHour ?? null,
+                exp: data.expPerHour ?? null,
                 pinned: isPinned,
                 originalIndex: containerMap.get(container).length,
                 actionHrid: data.actionHrid,
@@ -228,28 +258,8 @@ class ActionPanelSort {
                 if (a.pinned && !b.pinned) return -1;
                 if (!a.pinned && b.pinned) return 1;
 
-                // Both pinned - sort by profit if enabled, otherwise by original order
-                if (a.pinned && b.pinned) {
-                    if (sortByProfitEnabled) {
-                        if (a.profit === null && b.profit === null) return 0;
-                        if (a.profit === null) return 1;
-                        if (b.profit === null) return -1;
-                        return b.profit - a.profit;
-                    } else {
-                        return a.originalIndex - b.originalIndex;
-                    }
-                }
-
-                // Both unpinned - only sort by profit if setting is enabled
-                if (sortByProfitEnabled) {
-                    if (a.profit === null && b.profit === null) return 0;
-                    if (a.profit === null) return 1;
-                    if (b.profit === null) return -1;
-                    return b.profit - a.profit;
-                } else {
-                    // Keep original order
-                    return a.originalIndex - b.originalIndex;
-                }
+                // Both same pin state — apply active sort mode
+                return this._compareByMode(a, b, sortMode);
             });
 
             // Reorder DOM elements using DocumentFragment to batch reflows
@@ -260,6 +270,44 @@ class ActionPanelSort {
             });
             container.appendChild(fragment);
         }
+    }
+
+    /**
+     * Compare two panel entries by the active sort mode
+     * @private
+     */
+    _compareByMode(a, b, sortMode) {
+        if (sortMode === 'profit') {
+            if (a.profit === null && b.profit === null) return 0;
+            if (a.profit === null) return 1;
+            if (b.profit === null) return -1;
+            return b.profit - a.profit;
+        }
+
+        if (sortMode === 'xp') {
+            if (a.exp === null && b.exp === null) return 0;
+            if (a.exp === null) return 1;
+            if (b.exp === null) return -1;
+            return b.exp - a.exp;
+        }
+
+        if (sortMode === 'coinsPerXp') {
+            const aRatio = a.profit !== null && a.exp ? a.profit / a.exp : null;
+            const bRatio = b.profit !== null && b.exp ? b.profit / b.exp : null;
+            if (aRatio === null && bRatio === null) return 0;
+            if (aRatio === null) return 1;
+            if (bRatio === null) return -1;
+            return bRatio - aRatio;
+        }
+
+        // 'default' — sort ascending by required level, falling back to insertion order
+        const aLevel = dataManager.getActionDetails(a.actionHrid)?.levelRequirement?.level ?? null;
+        const bLevel = dataManager.getActionDetails(b.actionHrid)?.levelRequirement?.level ?? null;
+        if (aLevel === null && bLevel === null) return a.originalIndex - b.originalIndex;
+        if (aLevel === null) return 1;
+        if (bLevel === null) return -1;
+        if (aLevel !== bLevel) return aLevel - bLevel;
+        return a.originalIndex - b.originalIndex;
     }
 }
 

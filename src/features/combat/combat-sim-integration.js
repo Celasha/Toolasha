@@ -165,7 +165,7 @@ async function importDataToSimulator(button) {
             return;
         }
 
-        const { exportObj, playerIDs, importedPlayerPositions, zone, isZoneDungeon, difficultyTier, _isParty } =
+        const { exportObj, playerIDs, importedPlayerPositions, zone, isZoneDungeon, difficultyTier, isParty } =
             exportData;
 
         // Step 1: Switch to Group Combat tab
@@ -195,20 +195,34 @@ async function importDataToSimulator(button) {
                 console.error('[Toolasha Combat Sim] Import button not found');
             }
 
-            // Step 4: Set player names in tabs
-            for (let i = 0; i < 5; i++) {
-                const tab = document.querySelector(`a#player${i + 1}-tab`);
-                if (tab) {
-                    tab.textContent = playerIDs[i];
+            // Step 4: Toggle dungeon mode BEFORE setting player names.
+            // Toggling from 3-player to 5-player mode causes a re-render that adds
+            // fresh "Player 4"/"Player 5" entries and overwrites any names already set.
+            // Party play needs dungeon mode enabled to show all 5 player slots even on
+            // non-dungeon zones.
+            const dungeonToggle = document.querySelector('input#simDungeonToggle');
+            if (dungeonToggle) {
+                const needDungeon = isParty || isZoneDungeon;
+                if (dungeonToggle.checked !== needDungeon) {
+                    dungeonToggle.checked = needDungeon;
+                    dungeonToggle.dispatchEvent(new Event('change'));
                 }
             }
 
-            // Step 5: Select zone or dungeon
+            // Step 5: Set player names in tabs AND labels AFTER dungeon re-render
+            for (let i = 0; i < 5; i++) {
+                const tab = document.querySelector(`a#player${i + 1}-tab`);
+                if (tab) tab.textContent = playerIDs[i];
+                const label = document.querySelector(`label[for="player${i + 1}"]`);
+                if (label) label.textContent = playerIDs[i];
+            }
+
+            // Step 6: Select zone or dungeon dropdown (toggle already handled above)
             if (zone) {
                 selectZone(zone, isZoneDungeon);
             }
 
-            // Step 5.5: Set difficulty tier
+            // Step 7: Set difficulty tier
             const difficultyTimeout = setTimeout(() => {
                 // Try both input and select elements
                 const difficultyElement =
@@ -247,7 +261,7 @@ async function importDataToSimulator(button) {
             }, 250); // Increased delay to ensure zone loads first
             timerRegistry.registerTimeout(difficultyTimeout);
 
-            // Step 6: Enable/disable player checkboxes
+            // Step 8: Enable/disable player checkboxes
             for (let i = 0; i < 5; i++) {
                 const checkbox = document.querySelector(`input#player${i + 1}.form-check-input.player-checkbox`);
                 if (checkbox) {
@@ -256,13 +270,13 @@ async function importDataToSimulator(button) {
                 }
             }
 
-            // Step 7: Set simulation time to 24 hours (standard)
+            // Step 9: Set simulation time to 24 hours (standard)
             const simTimeInput = document.querySelector('input#inputSimulationTime');
             if (simTimeInput) {
                 setReactInputValue(simTimeInput, '24', { focus: false });
             }
 
-            // Step 8: Get prices (refresh market data)
+            // Step 10: Get prices (refresh market data)
             const getPriceButton = document.querySelector('button#buttonGetPrices');
             if (getPriceButton) {
                 getPriceButton.click();
@@ -291,20 +305,13 @@ async function importDataToSimulator(button) {
 }
 
 /**
- * Select zone or dungeon in simulator
+ * Select zone or dungeon dropdown in simulator
+ * Dungeon toggle is handled separately before this is called.
  * @param {string} zoneHrid - Zone action HRID
  * @param {boolean} isDungeon - Whether it's a dungeon
  */
 function selectZone(zoneHrid, isDungeon) {
-    const dungeonToggle = document.querySelector('input#simDungeonToggle');
-
     if (isDungeon) {
-        // Dungeon mode
-        if (dungeonToggle) {
-            dungeonToggle.checked = true;
-            dungeonToggle.dispatchEvent(new Event('change'));
-        }
-
         const dungeonTimeout = setTimeout(() => {
             const selectDungeon = document.querySelector('select#selectDungeon');
             if (selectDungeon) {
@@ -319,19 +326,13 @@ function selectZone(zoneHrid, isDungeon) {
         }, 100);
         timerRegistry.registerTimeout(dungeonTimeout);
     } else {
-        // Zone mode
-        if (dungeonToggle) {
-            dungeonToggle.checked = false;
-            dungeonToggle.dispatchEvent(new Event('change'));
-        }
-
         const zoneTimeout = setTimeout(() => {
-            const selectZone = document.querySelector('select#selectZone');
-            if (selectZone) {
-                for (let i = 0; i < selectZone.options.length; i++) {
-                    if (selectZone.options[i].value === zoneHrid) {
-                        selectZone.options[i].selected = true;
-                        selectZone.dispatchEvent(new Event('change'));
+            const selectZoneEl = document.querySelector('select#selectZone');
+            if (selectZoneEl) {
+                for (let i = 0; i < selectZoneEl.options.length; i++) {
+                    if (selectZoneEl.options[i].value === zoneHrid) {
+                        selectZoneEl.options[i].selected = true;
+                        selectZoneEl.dispatchEvent(new Event('change'));
                         break;
                     }
                 }
@@ -359,6 +360,9 @@ async function initializeSkillCalculator() {
             console.warn('[Toolasha Combat Sim Calculator] Experience div not found');
             return;
         }
+
+        // Apply result section highlights
+        applyResultHighlights();
 
         // Setup mutation observer to watch for sim results
         setupSkillCalculatorObserver(expDiv, resultsPanel);
@@ -422,6 +426,25 @@ async function waitForExpDiv() {
 
         check();
     });
+}
+
+/**
+ * Apply background color highlights to the three key result sections.
+ */
+function applyResultHighlights() {
+    const highlights = [
+        { id: 'simulationResultPlayerDeaths', background: '#FFEAE9' },
+        { id: 'simulationResultExperienceGain', background: '#CDFFDD' },
+        { id: 'simulationResultConsumablesUsed', background: '#F0F8FF' },
+    ];
+
+    for (const { id, background } of highlights) {
+        const el = document.getElementById(id);
+        if (el) {
+            el.style.backgroundColor = background;
+            el.style.color = 'black';
+        }
+    }
 }
 
 /**

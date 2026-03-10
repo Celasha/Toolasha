@@ -10,8 +10,9 @@
  */
 
 import { calculateEnhancement } from '../../utils/enhancement-calculator.js';
+import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
-import { formatLargeNumber } from '../../utils/formatters.js';
+import { formatLargeNumber, numberFormatter } from '../../utils/formatters.js';
 import { getItemPrice, getItemPrices } from '../../utils/market-data.js';
 
 /**
@@ -152,11 +153,48 @@ export function calculateEnhancementPath(itemHrid, currentEnhancementLevel, conf
         };
     }
 
+    // Calculate XP/hr for the optimal path
+    let xpPerHour = null;
+    let totalExpectedXP = null;
+    try {
+        const xpCalc = calculateEnhancement({
+            enhancingLevel: config.enhancingLevel,
+            houseLevel: config.houseLevel,
+            toolBonus: config.toolBonus || 0,
+            speedBonus: config.speedBonus || 0,
+            itemLevel,
+            targetLevel: currentEnhancementLevel,
+            protectFrom: optimalStrategy.protectFrom,
+            blessedTea: config.teas.blessed,
+            guzzlingBonus: config.guzzlingBonus,
+        });
+
+        if (xpCalc && xpCalc.visitCounts && xpCalc.totalTime > 0) {
+            const wisdomDecimal = (config.experienceBonus || 0) / 100;
+            const xpBaseLevel = itemDetails.level || itemDetails.equipmentDetail?.levelRequirements?.[0]?.level || 0;
+            let totalXP = 0;
+            for (let i = 0; i < currentEnhancementLevel; i++) {
+                const visits = xpCalc.visitCounts[i];
+                const successRate = xpCalc.successRates[i].actualRate / 100;
+                const enhMult = i === 0 ? 1.0 : i + 1;
+                const successXP = Math.floor(1.4 * (1 + wisdomDecimal) * enhMult * (10 + xpBaseLevel));
+                const failXP = Math.floor(successXP * 0.1);
+                totalXP += visits * (successRate * successXP + (1 - successRate) * failXP);
+            }
+            xpPerHour = Math.round((totalXP / xpCalc.totalTime) * 3600);
+            totalExpectedXP = Math.round(totalXP);
+        }
+    } catch {
+        // XP data is optional; don't let it break the tooltip
+    }
+
     return {
         targetLevel: currentEnhancementLevel,
         itemLevel,
         optimalStrategy,
         allStrategies: [optimalStrategy], // Only return optimal
+        xpPerHour,
+        totalExpectedXP,
     };
 }
 
@@ -388,7 +426,7 @@ function calculateTotalCost(itemHrid, targetLevel, protectFrom, config) {
  * Matches original MWI Tools v25.0 getRealisticBaseItemPrice logic
  * @private
  */
-function getRealisticBaseItemPrice(itemHrid) {
+export function getRealisticBaseItemPrice(itemHrid) {
     const marketPrice = getItemPrices(itemHrid, 0);
     const ask = marketPrice?.ask > 0 ? marketPrice.ask : 0;
     const bid = marketPrice?.bid > 0 ? marketPrice.bid : 0;
@@ -440,11 +478,13 @@ function getProductionCost(itemHrid) {
 
     // Find the action that produces this item
     let actionHrid = null;
+    let outputCount = 1;
     for (const [hrid, action] of Object.entries(gameData.actionDetailMap)) {
         if (action.outputItems && action.outputItems.length > 0) {
             const output = action.outputItems[0];
             if (output.itemHrid === itemHrid) {
                 actionHrid = hrid;
+                outputCount = output.count || 1;
                 break;
             }
         }
@@ -482,7 +522,7 @@ function getProductionCost(itemHrid) {
         totalPrice += upgradePrice;
     }
 
-    return totalPrice;
+    return totalPrice / outputCount;
 }
 
 /**
@@ -490,7 +530,7 @@ function getProductionCost(itemHrid) {
  * Tests: item itself, mirror of protection, and specific protection items
  * @private
  */
-function getCheapestProtectionPrice(itemHrid) {
+export function getCheapestProtectionPrice(itemHrid) {
     const gameData = dataManager.getInitClientData();
     const itemDetails = gameData.itemDetailMap[itemHrid];
 
@@ -554,7 +594,7 @@ export function buildEnhancementTooltipHTML(enhancementData) {
         return '';
     }
 
-    const { targetLevel, optimalStrategy } = enhancementData;
+    const { targetLevel, optimalStrategy, xpPerHour, totalExpectedXP } = enhancementData;
 
     // Validate required fields
     if (
@@ -680,8 +720,90 @@ export function buildEnhancementTooltipHTML(enhancementData) {
         html += '<div>Time: ~' + days + ' days</div>';
     }
 
+    if (xpPerHour !== null && xpPerHour > 0) {
+        html += '<div style="margin-top: 4px;">XP/hr: ' + xpPerHour.toLocaleString() + '</div>';
+    }
+    if (totalExpectedXP !== null && totalExpectedXP > 0) {
+        html += '<div>Total XP: ~' + totalExpectedXP.toLocaleString() + '</div>';
+    }
+
     html += '</div>'; // Close margin-left div
     html += '</div>'; // Close main container
+
+    return html;
+}
+
+const MILESTONE_LEVELS = [5, 7, 10, 12];
+
+/**
+ * Build compact enhancement milestones HTML for unenhanced item tooltips
+ * Shows expected cost and XP for +5, +7, +10, +12
+ * @param {string} itemHrid - Item HRID
+ * @param {Object} enhancementConfig - Enhancement configuration from getEnhancingParams()
+ * @returns {string} HTML string, or empty string if item is not enhanceable
+ */
+export function buildEnhancementMilestonesHTML(itemHrid, enhancementConfig) {
+    const gameData = dataManager.getInitClientData();
+    if (!gameData) return '';
+
+    const itemDetails = gameData.itemDetailMap[itemHrid];
+    if (!itemDetails?.enhancementCosts?.length) return '';
+
+    const showPrices = config.getSetting('itemTooltip_prices');
+    const useKMB = config.getSetting('formatting_useKMBFormat');
+    const fmt = (n) => (n != null && n > 0 ? (useKMB ? formatLargeNumber(n, 0) : numberFormatter(Math.round(n))) : '—');
+    const fmtCost = (n) =>
+        n != null && n > 0 ? (useKMB ? formatLargeNumber(n, 1) : numberFormatter(Math.round(n))) : '—';
+
+    const rows = [];
+    for (const level of MILESTONE_LEVELS) {
+        const data = calculateEnhancementPath(itemHrid, level, enhancementConfig);
+        if (!data) continue;
+
+        const cost = fmtCost(data.optimalStrategy.totalCost);
+        const xp = data.totalExpectedXP !== null ? fmt(Math.round(data.totalExpectedXP)) : '—';
+
+        let ask = '—';
+        let bid = '—';
+        if (showPrices) {
+            const prices = getItemPrices(itemHrid, level);
+            ask = fmt(prices?.ask);
+            bid = fmt(prices?.bid);
+        }
+
+        rows.push({ level, cost, xp, ask, bid });
+    }
+
+    if (rows.length === 0) return '';
+
+    const tdStyle = (align = 'right', color = '') =>
+        `style="padding: 1px 6px; text-align: ${align};${color ? ` color: ${color};` : ''}"`;
+    const thStyle = (align = 'right') =>
+        `style="padding: 1px 6px; text-align: ${align}; opacity: 0.6; font-weight: normal;"`;
+
+    let html = '<div style="border-top: 1px solid rgba(255,255,255,0.2); margin-top: 8px; padding-top: 8px;">';
+    html += '<div style="font-weight: bold; margin-bottom: 4px;">Enhancement Milestones</div>';
+    html += '<table style="font-size: 0.9em; border-collapse: collapse; width: 100%;">';
+    html += '<thead><tr>';
+    html += `<th ${thStyle('left')}>Level</th>`;
+    html += `<th ${thStyle()}>Cost</th>`;
+    if (showPrices) html += `<th ${thStyle()}>Ask / Bid</th>`;
+    html += `<th ${thStyle()}>XP</th>`;
+    html += '</tr></thead><tbody>';
+
+    for (const row of rows) {
+        html += '<tr>';
+        html += `<td ${tdStyle('left', config.COLOR_TOOLTIP_INFO)}>+${row.level}</td>`;
+        html += `<td ${tdStyle('right', config.COLOR_TOOLTIP_INFO)}>${row.cost}</td>`;
+        if (showPrices) {
+            html += `<td ${tdStyle('right', config.COLOR_TOOLTIP_INFO)}>${row.ask} / ${row.bid}</td>`;
+        }
+        html += `<td ${tdStyle('right', config.COLOR_XP_RATE)}>${row.xp}</td>`;
+        html += '</tr>';
+    }
+
+    html += '</tbody></table>';
+    html += '</div>';
 
     return html;
 }

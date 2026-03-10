@@ -65,8 +65,8 @@ class EnhancementTracker {
             }
 
             this.isInitialized = true;
-        } catch {
-            // Silent failure
+        } catch (error) {
+            console.error('[EnhancementTracker] Failed to initialize:', error);
         }
     }
 
@@ -187,6 +187,17 @@ class EnhancementTracker {
 
         extendSession(session, newTargetLevel);
         this.currentSessionId = sessionId;
+
+        // Recalculate predictions for the new target level
+        const predictions = calculateEnhancementPredictions(
+            session.itemHrid,
+            session.currentLevel,
+            newTargetLevel,
+            session.protectFrom
+        );
+        if (predictions) {
+            session.predictions = predictions;
+        }
 
         await saveSessions(this.sessions);
         await saveCurrentSessionId(sessionId);

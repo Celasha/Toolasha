@@ -361,6 +361,60 @@ class DungeonTrackerStorage {
     }
 
     /**
+     * Remove runs whose duration is more than 3× the median for their dungeon+team group.
+     * Only scrubs groups with at least 5 runs (not enough data below that to be confident).
+     * @returns {Promise<number>} Number of runs removed
+     */
+    async scrubOutlierRuns() {
+        const allRuns = await this.getAllRuns();
+        if (allRuns.length === 0) return 0;
+
+        // Group by dungeonName + teamKey
+        const groups = new Map();
+        for (const run of allRuns) {
+            const key = `${run.dungeonName}||${run.teamKey}`;
+            if (!groups.has(key)) groups.set(key, []);
+            groups.get(key).push(run);
+        }
+
+        const outlierIds = new Set();
+
+        for (const [groupKey, runs] of groups) {
+            if (runs.length < 5) continue;
+
+            const durations = runs
+                .map((r) => r.duration || r.totalTime || 0)
+                .filter((d) => d > 0)
+                .sort((a, b) => a - b);
+
+            if (durations.length < 5) continue;
+
+            const mid = Math.floor(durations.length / 2);
+            const median = durations.length % 2 === 0 ? (durations[mid - 1] + durations[mid]) / 2 : durations[mid];
+
+            const threshold = median * 3;
+
+            for (const run of runs) {
+                const duration = run.duration || run.totalTime || 0;
+                if (duration > threshold) {
+                    outlierIds.add(run);
+                    console.warn(
+                        `[DungeonTrackerStorage] Scrubbing outlier run: ${groupKey} ` +
+                            `duration=${Math.round(duration)}s median=${Math.round(median)}s threshold=${Math.round(threshold)}s`
+                    );
+                }
+            }
+        }
+
+        if (outlierIds.size === 0) return 0;
+
+        const cleaned = allRuns.filter((r) => !outlierIds.has(r));
+        await storage.setJSON('allRuns', cleaned, this.unifiedStoreName, true);
+        console.log(`[DungeonTrackerStorage] Scrubbed ${outlierIds.size} outlier run(s) from storage`);
+        return outlierIds.size;
+    }
+
+    /**
      * Get runs filtered by dungeon and/or team
      * @param {Object} filters - Filter options
      * @param {string} filters.dungeonName - Filter by dungeon name (optional)

@@ -478,8 +478,9 @@ async function calculateItemValuesParallel(items, priceCache, gameData) {
                           gameData
                       );
                       return values;
-                  } catch {
+                  } catch (error) {
                       // Fallback to sequential for worker items
+                      console.warn('[NetworthCalculator] Worker failed, falling back to sequential:', error);
                       const values = [];
                       for (const item of itemsNeedingWorkers) {
                           values.push(await calculateItemValue(item, priceCache));

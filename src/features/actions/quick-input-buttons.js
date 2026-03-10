@@ -13,6 +13,7 @@
  */
 
 import dataManager from '../../core/data-manager.js';
+import storage from '../../core/storage.js';
 import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
 import { calculateActionStats } from '../../utils/action-calculator.js';
@@ -33,7 +34,7 @@ import { calculateHouseEfficiency } from '../../utils/house-efficiency.js';
 import { stackAdditive } from '../../utils/efficiency.js';
 import { calculateExperienceMultiplier } from '../../utils/experience-parser.js';
 import { setReactInputValue } from '../../utils/react-input.js';
-import { calculateExpPerHour } from '../../utils/experience-calculator.js';
+import { calculateExpPerHour, calculateMultiLevelProgress } from '../../utils/experience-calculator.js';
 import { createCollapsibleSection } from '../../utils/ui-components.js';
 import { calculateActionsPerHour, calculateEffectiveActionsPerHour } from '../../utils/profit-helpers.js';
 import { createCleanupRegistry } from '../../utils/cleanup-registry.js';
@@ -45,6 +46,7 @@ import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
 class QuickInputButtons {
     constructor() {
         this.isInitialized = false;
+        this.addMode = false;
         this.unregisterObserver = null;
         this.presetHours = [0.5, 1, 2, 3, 4, 5, 6, 10, 12, 24];
         this.presetValues = [10, 100, 1000];
@@ -54,10 +56,12 @@ class QuickInputButtons {
     /**
      * Initialize the quick input buttons feature
      */
-    initialize() {
+    async initialize() {
         if (this.isInitialized) {
             return;
         }
+
+        this.addMode = await storage.get('quickInput_addMode', 'settings', false);
 
         // Start observing for action panels
         this.startObserving();
@@ -533,11 +537,53 @@ class QuickInputButtons {
                 queueContent.appendChild(document.createElement('div')); // Line break
 
                 // SECOND ROW: Count-based buttons (times)
+                // Add-mode toggle: clicking presets adds to current value instead of replacing
+                const applyToggleStyle = (btn, active) => {
+                    if (active) {
+                        btn.style.background = 'rgba(215, 183, 255, 0.2)';
+                        btn.style.color = '#d7b7ff';
+                        btn.style.borderColor = '#d7b7ff';
+                    } else {
+                        btn.style.background = 'transparent';
+                        btn.style.color = 'rgba(215, 183, 255, 0.5)';
+                        btn.style.borderColor = 'rgba(215, 183, 255, 0.3)';
+                    }
+                };
+
+                const addToggle = document.createElement('button');
+                addToggle.textContent = '+';
+                addToggle.title = 'Toggle add mode: click to accumulate counts instead of setting them';
+                addToggle.style.cssText = `
+                    font-size: 11px;
+                    font-weight: 700;
+                    padding: 1px 5px;
+                    border-radius: 4px;
+                    border: 1px solid rgba(215, 183, 255, 0.3);
+                    background: transparent;
+                    color: rgba(215, 183, 255, 0.5);
+                    cursor: pointer;
+                    margin-right: 4px;
+                    line-height: 1.4;
+                    transition: background 0.15s, color 0.15s, border-color 0.15s;
+                `;
+                applyToggleStyle(addToggle, this.addMode);
+                addToggle.addEventListener('click', () => {
+                    this.addMode = !this.addMode;
+                    applyToggleStyle(addToggle, this.addMode);
+                    storage.set('quickInput_addMode', this.addMode, 'settings');
+                });
+                queueContent.appendChild(addToggle);
+
                 queueContent.appendChild(document.createTextNode('Do '));
 
                 this.presetValues.forEach((value) => {
                     const button = this.createButton(value.toLocaleString(), () => {
-                        this.setInputValue(numberInput, value);
+                        if (this.addMode) {
+                            const current = parseInt(numberInput.value) || 0;
+                            this.setInputValue(numberInput, current + value);
+                        } else {
+                            this.setInputValue(numberInput, value);
+                        }
                     });
                     queueContent.appendChild(button);
                 });
@@ -919,6 +965,9 @@ class QuickInputButtons {
         // Map action type to skill HRID
         const skillHrid = skillType.replace('/action_types/', '/skills/');
         const skill = skills.find((s) => s.skillHrid === skillHrid);
+        if (!skill) {
+            console.error(`[QuickInputButtons] Skill not found: ${skillHrid}`);
+        }
         return skill?.level || 1;
     }
 
@@ -935,6 +984,9 @@ class QuickInputButtons {
 
         // Calculate all efficiency components (reuse existing logic)
         const skillLevel = this.getSkillLevel(skills, actionDetails.type);
+        if (!actionDetails.levelRequirement) {
+            console.error(`[QuickInputButtons] Action has no levelRequirement: ${actionDetails.hrid}`);
+        }
         const baseRequirement = actionDetails.levelRequirement?.level || 1;
 
         const drinkConcentration = getDrinkConcentration(equipment, itemDetailMap);
@@ -969,65 +1021,6 @@ class QuickInputButtons {
         const communityEfficiency = communityBuffLevel ? (0.14 + (communityBuffLevel - 1) * 0.003) * 100 : 0;
 
         return stackAdditive(levelEfficiency, houseEfficiency, equipmentEfficiency, teaEfficiency, communityEfficiency);
-    }
-
-    /**
-     * Calculate actions and time needed to reach target level
-     * Accounts for progressive efficiency gains (+1% per level)
-     * Efficiency reduces actions needed (each action gives more XP) but not time per action
-     * @param {number} currentLevel - Current skill level
-     * @param {number} currentXP - Current experience points
-     * @param {number} targetLevel - Target skill level
-     * @param {number} baseEfficiency - Starting efficiency percentage
-     * @param {number} actionTime - Time per action in seconds
-     * @param {number} xpPerAction - Modified XP per action (with multipliers)
-     * @param {Object} levelExperienceTable - XP requirements per level
-     * @returns {Object} {actionsNeeded, timeNeeded}
-     */
-    calculateMultiLevelProgress(
-        currentLevel,
-        currentXP,
-        targetLevel,
-        baseEfficiency,
-        actionTime,
-        xpPerAction,
-        levelExperienceTable
-    ) {
-        let totalActions = 0;
-        let totalTime = 0;
-
-        for (let level = currentLevel; level < targetLevel; level++) {
-            // Calculate XP needed for this level
-            let xpNeeded;
-            if (level === currentLevel) {
-                // First level: Account for current progress
-                xpNeeded = levelExperienceTable[level + 1] - currentXP;
-            } else {
-                // Subsequent levels: Full level requirement
-                xpNeeded = levelExperienceTable[level + 1] - levelExperienceTable[level];
-            }
-
-            // Progressive efficiency: +1% per level gained during grind
-            const levelsGained = level - currentLevel;
-            const progressiveEfficiency = baseEfficiency + levelsGained;
-            const efficiencyMultiplier = 1 + progressiveEfficiency / 100;
-
-            // Calculate XP per performed action (base XP × efficiency multiplier)
-            // Efficiency means each action repeats, giving more XP per performed action
-            const xpPerPerformedAction = xpPerAction * efficiencyMultiplier;
-
-            // Calculate time-consuming actions needed for this level
-            const baseActionsForLevel = Math.ceil(xpNeeded / xpPerPerformedAction);
-
-            // Convert time-consuming actions to queued actions (instant repeats count toward queue total)
-            const actionsToQueue = Math.round(baseActionsForLevel * efficiencyMultiplier);
-            totalActions += actionsToQueue;
-
-            // Time is based on time-consuming actions, not instant repeats
-            totalTime += baseActionsForLevel * actionTime;
-        }
-
-        return { actionsNeeded: totalActions, timeNeeded: totalTime };
     }
 
     /**
@@ -1181,7 +1174,7 @@ class QuickInputButtons {
             lines.push('');
 
             // Single level progress (always shown)
-            const singleLevel = this.calculateMultiLevelProgress(
+            const singleLevel = calculateMultiLevelProgress(
                 currentLevel,
                 currentXP,
                 nextLevel,
@@ -1244,7 +1237,7 @@ class QuickInputButtons {
                 const targetLevel = parseInt(targetLevelInput.value);
 
                 if (targetLevel > currentLevel && targetLevel <= 200) {
-                    const result = this.calculateMultiLevelProgress(
+                    const result = calculateMultiLevelProgress(
                         currentLevel,
                         currentXP,
                         targetLevel,

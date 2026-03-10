@@ -96,6 +96,9 @@ function getAutoDetectedParams() {
 
     // Get Enhancing skill level
     const enhancingSkill = skills.find((s) => s.skillHrid === '/skills/enhancing');
+    if (!enhancingSkill) {
+        console.error('[EnhancementConfig] Skill not found: /skills/enhancing');
+    }
     const enhancingLevel = enhancingSkill?.level || 1;
 
     // Get Observatory house room level (enhancing uses observatory, NOT laboratory!)

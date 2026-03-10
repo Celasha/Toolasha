@@ -95,10 +95,10 @@ class OutputTotals {
         // Remove existing totals (cloned outputs and XP)
         detailPanel.querySelectorAll('.mwi-output-total').forEach((el) => el.remove());
 
-        // No amount entered - nothing to calculate
-        if (isNaN(amount) || amount <= 0) {
-            return;
-        }
+        // Determine display state: real number, ∞, or 0
+        const isIndeterminate = isNaN(amount) || amount <= 0;
+        // '∞' parses to NaN; explicit '0' parses to 0 — show matching placeholder
+        const placeholderLabel = isNaN(amount) ? '∞' : '0.0';
 
         // Find main drop container
         let dropTable = detailPanel.querySelector('[class*="SkillActionDetail_dropTable"]');
@@ -111,7 +111,7 @@ class OutputTotals {
         const processedContainers = new Set();
 
         // Process main outputs
-        this.processDropContainer(dropTable, amount);
+        this.processDropContainer(dropTable, amount, isIndeterminate, placeholderLabel);
         processedContainers.add(dropTable);
 
         // Process Essences and Rares - find all dropTable containers
@@ -124,7 +124,7 @@ class OutputTotals {
 
             // Check for essences
             if (container.innerText.toLowerCase().includes('essence')) {
-                this.processDropContainer(container, amount);
+                this.processDropContainer(container, amount, isIndeterminate, placeholderLabel);
                 processedContainers.add(container);
                 return;
             }
@@ -133,14 +133,14 @@ class OutputTotals {
             if (container.innerText.includes('%')) {
                 const percentageMatch = container.innerText.match(/([\d.]+)%/);
                 if (percentageMatch && parseFloat(percentageMatch[1]) < 5) {
-                    this.processDropContainer(container, amount);
+                    this.processDropContainer(container, amount, isIndeterminate, placeholderLabel);
                     processedContainers.add(container);
                 }
             }
         });
 
         // Process XP element
-        this.processXpElement(detailPanel, amount);
+        this.processXpElement(detailPanel, amount, isIndeterminate, placeholderLabel);
     }
 
     /**
@@ -148,7 +148,7 @@ class OutputTotals {
      * @param {HTMLElement} container - The drop table container
      * @param {number} amount - Number of actions
      */
-    processDropContainer(container, amount) {
+    processDropContainer(container, amount, isIndeterminate, placeholderLabel) {
         if (!container) return;
 
         const children = Array.from(container.children);
@@ -171,14 +171,14 @@ class OutputTotals {
                     if (dropEl.nextSibling?.classList?.contains('mwi-output-total')) {
                         return;
                     }
-                    const clone = this.processChildElement(dropEl, amount);
+                    const clone = this.processChildElement(dropEl, amount, isIndeterminate, placeholderLabel);
                     if (clone) {
                         dropEl.after(clone);
                     }
                 });
             } else {
                 // Process single element
-                const clone = this.processChildElement(child, amount);
+                const clone = this.processChildElement(child, amount, isIndeterminate, placeholderLabel);
                 if (clone) {
                     child.parentNode.insertBefore(clone, child.nextSibling);
                 }
@@ -192,7 +192,7 @@ class OutputTotals {
      * @param {number} amount - Number of actions
      * @returns {HTMLElement|null} Clone element or null
      */
-    processChildElement(child, amount) {
+    processChildElement(child, amount, isIndeterminate, placeholderLabel) {
         // Look for output element (first child with numbers or ranges)
         const hasRange = child.children[0]?.innerText?.includes('-');
         const hasNumbers = child.children[0]?.innerText?.match(/[\d.]+/);
@@ -206,27 +206,25 @@ class OutputTotals {
         const rateMatch = dropRateText.match(/~?([\d.]+)%/);
         const dropRate = rateMatch ? parseFloat(rateMatch[1]) / 100 : 1; // Default to 100%
 
-        // Parse output values
-        const output = outputElement.innerText.split('-');
-
         // Create styled clone (same as MWIT-E)
         const clone = outputElement.cloneNode(true);
         clone.classList.add('mwi-output-total');
 
-        // Determine color based on item type
-        let color = config.COLOR_INFO; // Default blue for outputs
-
-        if (child.innerText.toLowerCase().includes('essence')) {
-            color = config.COLOR_ESSENCE; // Purple for essences
-        } else if (dropRate < 0.05) {
-            color = config.COLOR_WARNING; // Orange for rares (< 5% drop)
-        }
+        const color = config.COLOR_TEXT_SECONDARY;
 
         clone.style.cssText = `
             color: ${color};
             font-weight: 600;
             margin-top: 2px;
         `;
+
+        if (isIndeterminate) {
+            clone.innerText = placeholderLabel;
+            return clone;
+        }
+
+        // Parse output values
+        const output = outputElement.innerText.split('-');
 
         // Calculate and set the expected output
         if (output.length > 1) {
@@ -290,7 +288,7 @@ class OutputTotals {
      * @param {HTMLElement} detailPanel - The action detail panel
      * @param {number} amount - Number of actions
      */
-    processXpElement(detailPanel, amount) {
+    processXpElement(detailPanel, amount, isIndeterminate, placeholderLabel) {
         // Find XP element
         const xpElement = detailPanel.querySelector('[class*="SkillActionDetail_expGain"]');
         if (!xpElement) {
@@ -308,31 +306,34 @@ class OutputTotals {
             return;
         }
 
-        // Calculate experience multiplier (Wisdom + Charm Experience)
-        const skillHrid = actionDetails.experienceGain.skillHrid;
-        const xpData = calculateExperienceMultiplier(skillHrid, actionDetails.type);
-
-        // Calculate total XP
-        const baseXP = actionDetails.experienceGain.value;
-        const modifiedXP = baseXP * xpData.totalMultiplier;
-        const totalXP = modifiedXP * amount;
-
         // Create clone for total display
         const clone = xpElement.cloneNode(true);
         clone.classList.add('mwi-output-total');
 
-        // Apply blue color for XP
+        // Apply secondary color for XP
         clone.style.cssText = `
-            color: ${config.COLOR_INFO};
+            color: ${config.COLOR_TEXT_SECONDARY};
             font-weight: 600;
             margin-top: 2px;
         `;
 
-        // Set total XP text (formatted with 1 decimal place and thousand separators)
-        clone.childNodes[0].textContent = totalXP.toLocaleString('en-US', {
-            minimumFractionDigits: 1,
-            maximumFractionDigits: 1,
-        });
+        if (isIndeterminate) {
+            clone.childNodes[0].textContent = placeholderLabel;
+        } else {
+            // Calculate experience multiplier (Wisdom + Charm Experience)
+            const skillHrid = actionDetails.experienceGain.skillHrid;
+            const xpData = calculateExperienceMultiplier(skillHrid, actionDetails.type);
+
+            const baseXP = actionDetails.experienceGain.value;
+            const modifiedXP = baseXP * xpData.totalMultiplier;
+            const totalXP = modifiedXP * amount;
+
+            // Set total XP text (formatted with 1 decimal place and thousand separators)
+            clone.childNodes[0].textContent = totalXP.toLocaleString('en-US', {
+                minimumFractionDigits: 1,
+                maximumFractionDigits: 1,
+            });
+        }
 
         // Insert after original XP element
         xpElement.parentNode.insertBefore(clone, xpElement.nextSibling);

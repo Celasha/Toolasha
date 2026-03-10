@@ -71,7 +71,7 @@ export function attachInputListeners(panel, input, updateCallback, options = {})
  * @returns {boolean} True if initial update was performed
  */
 export function performInitialUpdate(input, updateCallback) {
-    if (input.value && parseInt(input.value) > 0) {
+    if (input.value) {
         updateCallback(input.value);
         return true;
     }

@@ -378,6 +378,9 @@ export function buildSegmentsFromCharacterData(characterData, clientData, consum
         for (const ability of abilities) {
             if (!ability || !ability.abilityHrid) continue;
 
+            if (clientData?.abilityDetailMap && !clientData.abilityDetailMap[ability.abilityHrid]) {
+                console.error(`[CharacterSheet] Ability not found in abilityDetailMap: ${ability.abilityHrid}`);
+            }
             const isSpecial = clientData?.abilityDetailMap?.[ability.abilityHrid]?.isSpecialAbility || false;
 
             if (isSpecial) {

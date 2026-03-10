@@ -56,7 +56,20 @@ class CombatStatsDataCollector {
     }
 
     /**
-     * Get default consumed count for an item (MCS-style baseline)
+     * Get game-theoretical maximum consumption rate per day for an item
+     * Based on cooldown floors: drinks 300s / 1.2 max concentration, food 60s flat
+     * @param {string} itemHrid - Item HRID
+     * @returns {number} Max consumptions per day
+     */
+    getMaxRatePerDay(itemHrid) {
+        const name = itemHrid.toLowerCase();
+        if (name.includes('coffee') || name.includes('drink')) {
+            return 345.6; // 300s / (1 + 0.20 max drink concentration) = 250s cooldown
+        }
+        return 1440; // 60s food cooldown
+    }
+
+    /**
      * @param {string} itemHrid - Item HRID
      * @returns {number} Default consumed count (2 for drinks, 10 for food)
      */
@@ -159,18 +172,50 @@ class CombatStatsDataCollector {
     }
 
     /**
+     * Cap elapsed time and counts to a maximum window, preserving the rate ratio.
+     * Prevents long-running sessions from dominating the rate after a reload.
+     * @param {Object} counts - actualConsumed or defaultConsumed map (not mutated)
+     * @param {number} elapsedMs - Raw elapsed time in ms
+     * @param {number} maxMs - Maximum window in ms
+     * @returns {{counts: Object, elapsedMs: number}}
+     */
+    capToWindow(counts, elapsedMs, maxMs) {
+        if (elapsedMs <= maxMs) {
+            return { counts, elapsedMs };
+        }
+        const ratio = maxMs / elapsedMs;
+        const capped = {};
+        Object.keys(counts).forEach((k) => {
+            capped[k] = Math.round(counts[k] * ratio);
+        });
+        return { counts: capped, elapsedMs: maxMs };
+    }
+
+    /**
      * Save consumable tracking state to storage
      */
     async saveConsumableTracking() {
         try {
+            const MAX_WINDOW_MS = 24 * 60 * 60 * 1000;
+
             // Save current player tracker
+            const rawElapsedMs = this.consumableTracker.startTime ? Date.now() - this.consumableTracker.startTime : 0;
+            const { counts: cappedActual, elapsedMs: cappedElapsed } = this.capToWindow(
+                this.consumableTracker.actualConsumed,
+                rawElapsedMs,
+                MAX_WINDOW_MS
+            );
+            const { counts: cappedDefault } = this.capToWindow(
+                this.consumableTracker.defaultConsumed,
+                rawElapsedMs,
+                MAX_WINDOW_MS
+            );
             const toSave = {
-                actualConsumed: this.consumableTracker.actualConsumed,
-                defaultConsumed: this.consumableTracker.defaultConsumed,
+                actualConsumed: cappedActual,
+                defaultConsumed: cappedDefault,
                 inventoryAmount: this.consumableTracker.inventoryAmount,
                 lastUpdate: this.consumableTracker.lastUpdate,
-                // Save elapsed time, not raw startTime (MCS-style)
-                elapsedMs: this.consumableTracker.startTime ? Date.now() - this.consumableTracker.startTime : 0,
+                elapsedMs: cappedElapsed,
                 saveTimestamp: Date.now(),
             };
             await storage.setJSON('consumableTracker', toSave, 'combatStats');
@@ -180,11 +225,22 @@ class CombatStatsDataCollector {
             Object.keys(this.partyConsumableTrackers).forEach((playerName) => {
                 const tracker = this.partyConsumableTrackers[playerName];
                 if (tracker && tracker.actualConsumed && tracker.defaultConsumed && tracker.inventoryAmount) {
+                    const rawPartyElapsedMs = tracker.startTime ? Date.now() - tracker.startTime : 0;
+                    const { counts: pCappedActual, elapsedMs: pCappedElapsed } = this.capToWindow(
+                        tracker.actualConsumed,
+                        rawPartyElapsedMs,
+                        MAX_WINDOW_MS
+                    );
+                    const { counts: pCappedDefault } = this.capToWindow(
+                        tracker.defaultConsumed,
+                        rawPartyElapsedMs,
+                        MAX_WINDOW_MS
+                    );
                     partyTrackersToSave[playerName] = {
-                        actualConsumed: tracker.actualConsumed || {},
-                        defaultConsumed: tracker.defaultConsumed || {},
+                        actualConsumed: pCappedActual,
+                        defaultConsumed: pCappedDefault,
                         inventoryAmount: tracker.inventoryAmount || {},
-                        elapsedMs: tracker.startTime ? Date.now() - tracker.startTime : 0,
+                        elapsedMs: pCappedElapsed,
                         lastUpdate: tracker.lastUpdate || null,
                         saveTimestamp: Date.now(),
                     };
@@ -211,7 +267,12 @@ class CombatStatsDataCollector {
             lastUpdate: null,
             lastEventByItem: {},
         };
+        this.partyConsumableTrackers = {};
+        this.partyConsumableSnapshots = {};
+        this.partyLastKnownConsumables = {};
         await storage.setJSON('consumableTracker', null, 'combatStats');
+        await storage.setJSON('partyConsumableTrackers', null, 'combatStats');
+        await storage.setJSON('partyConsumableSnapshots', null, 'combatStats');
     }
 
     /**
@@ -383,9 +444,9 @@ class CombatStatsDataCollector {
                         if (previousCount !== undefined) {
                             const diff = previousCount - currentCount;
 
-                            // Only count if exactly 1 consumed (conservative approach)
-                            if (diff === 1) {
-                                tracker.actualConsumed[itemHrid] = (tracker.actualConsumed[itemHrid] || 0) + 1;
+                            // Accept 1-5 consumed between events; rejects stale cross-session diffs
+                            if (diff > 0 && diff <= 5) {
+                                tracker.actualConsumed[itemHrid] = (tracker.actualConsumed[itemHrid] || 0) + diff;
                                 tracker.lastUpdate = Date.now();
                             }
                         }
@@ -417,6 +478,11 @@ class CombatStatsDataCollector {
             Object.keys(this.partyConsumableSnapshots).forEach((playerName) => {
                 if (!currentPartyMembers.has(playerName)) {
                     delete this.partyConsumableSnapshots[playerName];
+                }
+            });
+            Object.keys(this.partyLastKnownConsumables).forEach((playerName) => {
+                if (!currentPartyMembers.has(playerName)) {
+                    delete this.partyLastKnownConsumables[playerName];
                 }
             });
 
@@ -486,7 +552,13 @@ class CombatStatsDataCollector {
                             const DEFAULT_TIME = 10 * 60; // 600 seconds
                             const actualRate = trackingElapsed > 0 ? actualConsumed / trackingElapsed : 0;
                             const combinedRate = (defaultConsumed + actualConsumed) / (DEFAULT_TIME + trackingElapsed);
-                            const consumptionRate = actualRate * 0.9 + combinedRate * 0.1;
+                            const rawRate = actualRate * 0.9 + combinedRate * 0.1;
+
+                            // Cap at game-theoretical maximum (cooldown-based):
+                            // Drinks: 300s base / 1.2 max concentration (+20 guzzling pouch) = 345.6/day
+                            // Food: 60s base cooldown = 1440/day (drink concentration doesn't affect food)
+                            const maxRatePerDay = this.getMaxRatePerDay(consumable.itemHrid);
+                            const consumptionRate = Math.min(rawRate, maxRatePerDay / 86400);
 
                             // Per-day rate (MCS uses Math.ceil)
                             const consumedPerDay = Math.ceil(consumptionRate * 86400);

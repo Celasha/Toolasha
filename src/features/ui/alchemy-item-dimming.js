@@ -62,6 +62,9 @@ class AlchemyItemDimming {
         }
 
         const alchemySkill = skills.find((s) => s.skillHrid === '/skills/alchemy');
+        if (!alchemySkill) {
+            console.error('[AlchemyItemDimming] Skill not found: /skills/alchemy');
+        }
         const playerAlchemyLevel = alchemySkill?.level || 1;
 
         // Find all item icon divs within the alchemy panel

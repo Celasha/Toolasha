@@ -106,7 +106,15 @@ class MaxProduceable {
     setupObserver() {
         // Watch for skill action panels (in skill screen, not detail modal)
         this.unregisterObserver = domObserver.onClass('MaxProduceable', 'SkillAction_skillAction', (actionPanel) => {
+            const isNew = !this.actionElements.has(actionPanel);
             this.injectMaxProduceable(actionPanel);
+
+            // Only schedule a profit recalculation for genuinely new panels.
+            // Panels that are already registered are being re-added by the sort
+            // reorder (DocumentFragment move), not navigated to fresh — scheduling
+            // updateAllCounts for them creates the sort→observer→updateAllCounts→sort
+            // infinite loop that causes continuous flashing and CPU waste.
+            if (!isNew) return;
 
             // Schedule profit calculation after panels settle
             // This prevents 20-50 simultaneous API calls during character switch
@@ -378,6 +386,7 @@ class MaxProduceable {
         // Calculate profit/hr (for both gathering and production)
         let profitPerHour = null;
         let hasMissingPrices = false;
+        let outputPriceEstimated = false;
         const actionDetails = dataManager.getActionDetails(data.actionHrid);
 
         if (actionDetails) {
@@ -389,6 +398,7 @@ class MaxProduceable {
                 const profitData = await calculateProductionProfit(data.actionHrid);
                 profitPerHour = profitData?.profitPerHour || null;
                 hasMissingPrices = profitData?.hasMissingPrices || false;
+                outputPriceEstimated = profitData?.outputPriceEstimated || false;
             }
         }
 
@@ -439,6 +449,7 @@ class MaxProduceable {
         data.profitPerHour = resolvedProfitPerHour;
         data.expPerHour = expPerHour;
         data.hasMissingPrices = hasMissingPrices;
+        actionPanelSort.updateExpPerHour(actionPanel, expPerHour);
 
         // Build display HTML using .mwi-action-stat-line divs so fitLineFontSizes
         // can size each line immediately — avoids the multi-second flash of tiny
@@ -452,8 +463,9 @@ class MaxProduceable {
         } else if (resolvedProfitPerHour !== null) {
             const profitColor = resolvedProfitPerHour >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
             const profitSign = resolvedProfitPerHour >= 0 ? '' : '-';
+            const estimatedNote = outputPriceEstimated ? ' ⚠' : '';
             html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
-            html += `<span data-stat="profit" style="color: ${profitColor};">Profit/hr: ${profitSign}${formatKMB(Math.abs(resolvedProfitPerHour))}</span></div>`;
+            html += `<span data-stat="profit" style="color: ${profitColor};">Profit/hr: ${profitSign}${formatKMB(Math.abs(resolvedProfitPerHour))}${estimatedNote}</span></div>`;
         }
 
         if (expPerHour !== null && expPerHour > 0) {
@@ -466,7 +478,7 @@ class MaxProduceable {
             const efficiencyColor = coinsPerXp >= 0 ? config.COLOR_INFO : config.COLOR_WARNING;
             const efficiencySign = coinsPerXp >= 0 ? '' : '-';
             html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
-            html += `<span data-stat="overall" style="color: ${efficiencyColor};">Coins/XP: ${efficiencySign}${formatKMB(Math.abs(coinsPerXp))}</span></div>`;
+            html += `<span data-stat="overall" style="color: ${efficiencyColor};">Profit/XP: ${efficiencySign}${formatKMB(Math.abs(coinsPerXp))}</span></div>`;
         }
 
         data.displayElement.style.display = 'block';
@@ -479,7 +491,6 @@ class MaxProduceable {
      * Update all counts
      */
     async updateAllCounts() {
-        // Pre-load market API ONCE before all profit calculations
         // This prevents all 20+ calculations from triggering simultaneous fetches
         if (!marketAPI.isLoaded()) {
             await marketAPI.fetch();

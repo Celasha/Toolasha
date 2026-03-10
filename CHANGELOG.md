@@ -1,5 +1,324 @@
 # Changelog
 
+## [1.33.3](https://github.com/Celasha/Toolasha/compare/v1.33.2...v1.33.3) (2026-03-09)
+
+### Bug Fixes
+
+- replace success rate with profit per action in alternative actions tooltip ([2797f45](https://github.com/Celasha/Toolasha/commit/2797f4585d46e98a04475cfb3178f064732ed478))
+- scrub downtime-inflated runs and drop invalid nextRunWasCanceled check ([8ccbcb0](https://github.com/Celasha/Toolasha/commit/8ccbcb0891cc7b9c40e19ecefc692514ee7f3564))
+
+## [1.33.2](https://github.com/Celasha/Toolasha/compare/v1.33.1...v1.33.2) (2026-03-09)
+
+### Bug Fixes
+
+- prefer exact slug match when multiple actions map to same item ([a49015a](https://github.com/Celasha/Toolasha/commit/a49015a2f7bfd0679320c4d70e39a15f180136c8))
+- scope coinify and transmute history to current character ([9d3d560](https://github.com/Celasha/Toolasha/commit/9d3d56084954fb4f7ce80d40ad4b62bc8aa6b825))
+
+## [1.33.1](https://github.com/Celasha/Toolasha/compare/v1.33.0...v1.33.1) (2026-03-09)
+
+### Bug Fixes
+
+- await state load in addFilterBar to restore persisted dungeon filter selections ([42b69dc](https://github.com/Celasha/Toolasha/commit/42b69dce81f326c427cc0b3ecf7fddf2c3d9bea2))
+- only count protection uses on failure, not successful enhancements ([a5fb333](https://github.com/Celasha/Toolasha/commit/a5fb3335de32bd7ed50bca7f794b3fbbd0731451))
+- show total market value per category in inventory panel ([88dbaff](https://github.com/Celasha/Toolasha/commit/88dbaff2d18e2829cca819ef7b3d318ad62d7456))
+
+### Continuous Integration
+
+- strip chore prefix from release PR title in Discord notification ([2969ec7](https://github.com/Celasha/Toolasha/commit/2969ec7955242dca6f9c74d24f024f425a5cd94b))
+
+## [1.33.0](https://github.com/Celasha/Toolasha/compare/v1.32.0...v1.33.0) (2026-03-08)
+
+### Features
+
+- merge duplicate task amounts when clicking Go ([2d8df70](https://github.com/Celasha/Toolasha/commit/2d8df70c390959301ba1ccc8297eb2b8229d28e1))
+
+### Miscellaneous Chores
+
+- fix Steam build header — point downloadURL to GitHub releases, drop updateURL ([d433ddd](https://github.com/Celasha/Toolasha/commit/d433ddd8a90187dbc3cfc560b2663ef931bd4f8a))
+
+## [1.32.0](https://github.com/Celasha/Toolasha/compare/v1.31.0...v1.32.0) (2026-03-08)
+
+### Features
+
+- add per-action tea optimizer drilldown with popup stability fixes ([86a2b02](https://github.com/Celasha/Toolasha/commit/86a2b02172c17d7e65b974f95b213c18e06bee8e))
+
+## [1.31.0](https://github.com/Celasha/Toolasha/compare/v1.30.2...v1.31.0) (2026-03-08)
+
+### Features
+
+- add expandable tea cost breakdown to optimizer popup ([aabe7fe](https://github.com/Celasha/Toolasha/commit/aabe7fecdcaa77582f0c4ccef73dac38f26f003a))
+
+## [1.30.2](https://github.com/Celasha/Toolasha/compare/v1.30.1...v1.30.2) (2026-03-08)
+
+### Bug Fixes
+
+- only enable sim dungeon mode for full 5-player parties ([297ac5c](https://github.com/Celasha/Toolasha/commit/297ac5cd506dfd9ff2c60319f7cf95faf2ae1e1f))
+
+## [1.30.1](https://github.com/Celasha/Toolasha/compare/v1.30.0...v1.30.1) (2026-03-08)
+
+### Bug Fixes
+
+- persist collapsible section state across panel rebuilds ([67f50ed](https://github.com/Celasha/Toolasha/commit/67f50ed66b21cbe0ea847844515d46535449c141))
+
+## [1.30.0](https://github.com/Celasha/Toolasha/compare/v1.29.4...v1.30.0) (2026-03-07)
+
+### Features
+
+- add View Action button to item action menu popup ([24de747](https://github.com/Celasha/Toolasha/commit/24de74743bc7347485031c4b06aa677f9f8a86a2))
+- show 3 decimal places on consumable cost stats ([af1ec4e](https://github.com/Celasha/Toolasha/commit/af1ec4ee59ea8a4f652136a7d3db98d1ab852649))
+
+### Bug Fixes
+
+- align combat score enhancement valuation with tooltip ([a83e1bb](https://github.com/Celasha/Toolasha/commit/a83e1bb5665230b398ffede32980aae920f4bc7a))
+- allow steam build to run in browser with a warning ([495dafb](https://github.com/Celasha/Toolasha/commit/495dafb19419ecb226e3d7dbfbb9d284a0ce2862))
+- correct zone action items/hr in gathering tooltip ([52db527](https://github.com/Celasha/Toolasha/commit/52db5271421ca294f68dcd71ca87b8e478b3f696))
+- hide inventory count on foraging zone action cards ([686bb6c](https://github.com/Celasha/Toolasha/commit/686bb6c310b95c858b7af34f092fd743022dc94d))
+- improve party consumable tracking accuracy ([2949368](https://github.com/Celasha/Toolasha/commit/2949368c5b7fa7d250a91858eedff858401984ae))
+
+## [1.29.4](https://github.com/Celasha/Toolasha/compare/v1.29.3...v1.29.4) (2026-03-06)
+
+### Bug Fixes
+
+- reset party consumable trackers on new session ([a6c5b0b](https://github.com/Celasha/Toolasha/commit/a6c5b0ba7a212b38f224b4c0cc87990735317174))
+
+## [1.29.3](https://github.com/Celasha/Toolasha/compare/v1.29.2...v1.29.3) (2026-03-06)
+
+### Bug Fixes
+
+- set dungeon mode before player names on group combat import ([b486fcf](https://github.com/Celasha/Toolasha/commit/b486fcf79d74df37df814e8035d7eb5031af1c77))
+
+## [1.29.2](https://github.com/Celasha/Toolasha/compare/v1.29.1...v1.29.2) (2026-03-05)
+
+### Bug Fixes
+
+- add diagnostic logging to silent failure catch blocks ([6dc199d](https://github.com/Celasha/Toolasha/commit/6dc199da87eb88417eae2a38d867a88af1173aff))
+
+### Documentation
+
+- remove broken FEATURES.md links from README ([ea88dc2](https://github.com/Celasha/Toolasha/commit/ea88dc2176042f31d6888ff8859792e939fb72ed))
+
+### Styles
+
+- fix prettier formatting in README.md ([f49339d](https://github.com/Celasha/Toolasha/commit/f49339d0d0ba30aa69431a123c5911bc32bedd99))
+
+## [1.29.1](https://github.com/Celasha/Toolasha/compare/v1.29.0...v1.29.1) (2026-03-05)
+
+### Documentation
+
+- rewrite README and remove legacy MWI-TOOLS-CHANGELOG ([b3781bb](https://github.com/Celasha/Toolasha/commit/b3781bb0a6ed6dab4ba5ba0ba95019bfd9e745a9))
+
+## [1.29.0](https://github.com/Celasha/Toolasha/compare/v1.28.0...v1.29.0) (2026-03-04)
+
+### Features
+
+- filter blocked players from pop-out chat ([583c6c4](https://github.com/Celasha/Toolasha/commit/583c6c4627570ef1ff31d995507f13639699291c))
+- highlight deaths, XP, and consumables on combat sim results page ([7abb6fa](https://github.com/Celasha/Toolasha/commit/7abb6faa96e3331e9edf8d4d8f533b833b5499e9))
+
+### Bug Fixes
+
+- resolve enhancing skill level always returning 1 ([e055c1b](https://github.com/Celasha/Toolasha/commit/e055c1b6693905e356ce6968dac75b233c51cc5a))
+
+### Styles
+
+- fix prettier formatting in tooltip-enhancement.js ([e85fed7](https://github.com/Celasha/Toolasha/commit/e85fed77e3365b757df0463e7d3158b268f5c7e4))
+- update enhancement milestones cost format and column order ([0f1227f](https://github.com/Celasha/Toolasha/commit/0f1227fcbfc23c407958ba42f6882d9db30296b3))
+
+## [1.28.0](https://github.com/Celasha/Toolasha/compare/v1.27.3...v1.28.0) (2026-03-04)
+
+### Features
+
+- add coinify session history tracker and viewer ([1d04d20](https://github.com/Celasha/Toolasha/commit/1d04d2005684639d65d25e30d8f1f66efef23427))
+
+## [1.27.3](https://github.com/Celasha/Toolasha/compare/v1.27.2...v1.27.3) (2026-03-03)
+
+### Bug Fixes
+
+- add configurable buy listing price strategy setting ([1596a47](https://github.com/Celasha/Toolasha/commit/1596a4713f1b6b41b1a0924b13eb450f4bcf130a))
+- respect time format setting in chat pop-out timestamps ([5325522](https://github.com/Celasha/Toolasha/commit/5325522880993a17a41db4bacccfbe687bff675f))
+
+## [1.27.2](https://github.com/Celasha/Toolasha/compare/v1.27.1...v1.27.2) (2026-03-03)
+
+### Bug Fixes
+
+- use game target level when extending enhancement sessions ([463f43c](https://github.com/Celasha/Toolasha/commit/463f43c70ee5a4446b46c6a1eff099bad63f0167))
+
+## [1.27.1](https://github.com/Celasha/Toolasha/compare/v1.27.0...v1.27.1) (2026-03-03)
+
+### Bug Fixes
+
+- clear stale tooltip injections when item changes ([b662d95](https://github.com/Celasha/Toolasha/commit/b662d9507066514cd2161da692c3cf94d4133708))
+
+## [1.27.0](https://github.com/Celasha/Toolasha/compare/v1.26.0...v1.27.0) (2026-03-03)
+
+### Features
+
+- add enhancement milestones to unenhanced item tooltips ([181f09d](https://github.com/Celasha/Toolasha/commit/181f09dfbcd4e141583ef6730da47fdba6b0af93))
+
+### Bug Fixes
+
+- add target level calculator to alchemy Level Progress section ([d512931](https://github.com/Celasha/Toolasha/commit/d512931b9eb503ea6438f52f3a9cf69ccf5b3ab2))
+- improve enhancement milestones table formatting and layout ([abd4f1d](https://github.com/Celasha/Toolasha/commit/abd4f1d49ac32ba9d065f7a1019a129a859e8130))
+
+### Continuous Integration
+
+- use full clone in discord-commits workflow ([312884d](https://github.com/Celasha/Toolasha/commit/312884d58026503be17a9aea4d4fa6a423fa3c14))
+
+## [1.26.0](https://github.com/Celasha/Toolasha/compare/v1.25.1...v1.26.0) (2026-03-03)
+
+### Features
+
+- add option to skip auto-opening Seal of... items ([a5856c9](https://github.com/Celasha/Toolasha/commit/a5856c9429e303a872db64cf749867893f3a584c))
+- add XP/hr and total expected XP to enhancing displays ([122787e](https://github.com/Celasha/Toolasha/commit/122787eade0287e949275e67edea06d6faa1b24f))
+
+## [1.25.1](https://github.com/Celasha/Toolasha/compare/v1.25.0...v1.25.1) (2026-03-02)
+
+### Bug Fixes
+
+- milkonomy export now uses viewed profile instead of own data ([65fe9f1](https://github.com/Celasha/Toolasha/commit/65fe9f1cdfe9e4c8776e46f48645942c95401917))
+
+### Styles
+
+- rename Coins/XP label to Profit/XP ([7f2ec40](https://github.com/Celasha/Toolasha/commit/7f2ec404f845117b2fb652c2007c11cd8240cafe))
+
+### Continuous Integration
+
+- include commit body in feat Discord notifications ([6757a68](https://github.com/Celasha/Toolasha/commit/6757a68fd64e2d45f19ac9301cefee77131136f6))
+
+## [1.25.0](https://github.com/Celasha/Toolasha/compare/v1.24.3...v1.25.0) (2026-03-02)
+
+### Features
+
+- add labyrinth best level tracker for combat and skilling rooms ([b6ca1a9](https://github.com/Celasha/Toolasha/commit/b6ca1a938b76b69be257cac0748ca7eed243643c))
+
+### Continuous Integration
+
+- filter chore/ci/merge commits from weekly Discord summary ([6e7ade2](https://github.com/Celasha/Toolasha/commit/6e7ade2f2d16375c9bea5b2be912ddfc06847744))
+- fix weekly webhook secret name and add permissions block ([6c9ff82](https://github.com/Celasha/Toolasha/commit/6c9ff8274070a9fafed5746e324007b90e76a1f9))
+- format feat commits as headers and link SHAs in weekly summary ([1350ebe](https://github.com/Celasha/Toolasha/commit/1350ebe8baad1a53390edf5538d44d1c11cbf090))
+
+## [1.24.3](https://github.com/Celasha/Toolasha/compare/v1.24.2...v1.24.3) (2026-03-02)
+
+### Continuous Integration
+
+- fix Discord weekly webhook secret name ([948bb17](https://github.com/Celasha/Toolasha/commit/948bb17e56e72e235a91ee048d5b1c23b1d34c85))
+
+## [1.24.2](https://github.com/Celasha/Toolasha/compare/v1.24.1...v1.24.2) (2026-03-02)
+
+### Bug Fixes
+
+- make inventory badge settings reactive and correct help text ([4bad7ef](https://github.com/Celasha/Toolasha/commit/4bad7efda5b2c69ec2bbd9e5ab193b153383a7cb))
+
+## [1.24.1](https://github.com/Celasha/Toolasha/compare/v1.24.0...v1.24.1) (2026-03-02)
+
+### Continuous Integration
+
+- fix feat detection in Discord notification script ([681f617](https://github.com/Celasha/Toolasha/commit/681f617c89ad76a05c50846fc20c7b053cb8a9da))
+
+## [1.24.0](https://github.com/Celasha/Toolasha/compare/v1.23.2...v1.24.0) (2026-03-02)
+
+### Features
+
+- add transmute history tracker and viewer ([cfdbe3c](https://github.com/Celasha/Toolasha/commit/cfdbe3c03962ef7e53ba122daf75af3d5136b72d))
+
+### Bug Fixes
+
+- remove incidental drop filtering from transmute history ([1d2b945](https://github.com/Celasha/Toolasha/commit/1d2b9451e063280703dc8c3e6984159022ea3eea))
+
+## [1.23.2](https://github.com/Celasha/Toolasha/compare/v1.23.1...v1.23.2) (2026-03-01)
+
+### Bug Fixes
+
+- always render action panel injections to eliminate UI jitter ([771910c](https://github.com/Celasha/Toolasha/commit/771910c56d6287a100eb31f825c779a5348ea044))
+
+## [1.23.1](https://github.com/Celasha/Toolasha/compare/v1.23.0...v1.23.1) (2026-03-01)
+
+### Continuous Integration
+
+- fix PR body regex to match release-please linked SHA format ([62fe0f3](https://github.com/Celasha/Toolasha/commit/62fe0f33e31d1fe474329ec96b10cc06556af992))
+
+## [1.23.0](https://github.com/Celasha/Toolasha/compare/v1.22.0...v1.23.0) (2026-03-01)
+
+### Features
+
+- auto-click All button for ability book tooltips ([296dab0](https://github.com/Celasha/Toolasha/commit/296dab089cf5bbf8e1d2e4fd8fecefd11a2e87f6))
+
+## [1.22.0](https://github.com/Celasha/Toolasha/compare/v1.21.0...v1.22.0) (2026-03-01)
+
+### Features
+
+- add navigation buttons to collection items ([0625750](https://github.com/Celasha/Toolasha/commit/062575000fc0e0a2d9cf2a39bbd8b1a6f44b4462))
+
+### Bug Fixes
+
+- prevent duplicate WebSocket handler registration in on() ([30591d1](https://github.com/Celasha/Toolasha/commit/30591d1668d99f6da9286d5271b0531636e111ce))
+
+### Continuous Integration
+
+- parse PR body for commit list instead of PR commits API ([cefbacc](https://github.com/Celasha/Toolasha/commit/cefbaccf02bdeb7d58b046dd2ab1273a055f07ac))
+
+## [1.21.0](https://github.com/Celasha/Toolasha/compare/v1.20.6...v1.21.0) (2026-02-28)
+
+### Features
+
+- add Discord commit notification and weekly summary workflows ([22a152c](https://github.com/Celasha/Toolasha/commit/22a152c62acac45f77b9eccd16e6fd872c638705))
+- list individual commits in Discord release notification ([3324590](https://github.com/Celasha/Toolasha/commit/33245904304d7c2a87dd14e6864e36cfeeb94427))
+- post feat commits to dedicated Discord feats channel ([1997b11](https://github.com/Celasha/Toolasha/commit/1997b11e123ecc452e63546a264159aaebfa3824))
+
+### Bug Fixes
+
+- decouple chat annotations from dungeon tracker UI panel toggle ([046c9a3](https://github.com/Celasha/Toolasha/commit/046c9a3418a3eec3b3f8bcfffb627ad7c04c7b59))
+- only notify Discord on release-please PR merges ([77f3eb0](https://github.com/Celasha/Toolasha/commit/77f3eb0311faf38ec18e4a0659a5098883496213))
+- trigger Discord notifications on PR merge instead of direct push ([ac01f43](https://github.com/Celasha/Toolasha/commit/ac01f436e0074e9485559c5645276a6b0de69d33))
+- use markdown hyperlink for commit SHA in Discord notifications ([a4aaebb](https://github.com/Celasha/Toolasha/commit/a4aaebb0428dd0d9eabbb8a96d22a738eb421313))
+
+### Continuous Integration
+
+- extract inline Python to script to fix YAML parse error ([b20b6d9](https://github.com/Celasha/Toolasha/commit/b20b6d9e746b83b4cfdab189c86f5ce8860a0c07))
+
+### Miscellaneous Chores
+
+- test Discord commit notification formatting ([ff3969e](https://github.com/Celasha/Toolasha/commit/ff3969e1476752091ac52496176e5f0c06dd2114))
+
+## [1.20.6](https://github.com/Celasha/Toolasha/compare/v1.20.5...v1.20.6) (2026-02-28)
+
+### Bug Fixes
+
+- rename MWITools storage keys and console prefixes to Toolasha ([d31cdef](https://github.com/Celasha/Toolasha/commit/d31cdef558ee8109d3b49d532f8e63294c223e5a))
+
+## [1.20.5](https://github.com/Celasha/Toolasha/compare/v1.20.4...v1.20.5) (2026-02-28)
+
+### Bug Fixes
+
+- persist add-mode toggle state for quick input preset buttons ([4fc4348](https://github.com/Celasha/Toolasha/commit/4fc43480b6d0fe4b9ec0bd646eb444e37bc86897))
+
+## [1.20.4](https://github.com/Celasha/Toolasha/compare/v1.20.3...v1.20.4) (2026-02-28)
+
+### Bug Fixes
+
+- resolve SyntaxError in pop-out chat caused by regex literal in document.write ([5bc9c86](https://github.com/Celasha/Toolasha/commit/5bc9c86d4a1c68e249701e305356e707e8bf6b38))
+
+## [1.20.3](https://github.com/Celasha/Toolasha/compare/v1.20.2...v1.20.3) (2026-02-28)
+
+### Bug Fixes
+
+- add additive toggle to preset count buttons in quick input panel ([2d71037](https://github.com/Celasha/Toolasha/commit/2d71037a9d299a6efa04469bc48650823dce95ee))
+
+## [1.20.2](https://github.com/Celasha/Toolasha/compare/v1.20.1...v1.20.2) (2026-02-28)
+
+### Bug Fixes
+
+- linkify URLs in pop-out chat regular messages ([e06a52b](https://github.com/Celasha/Toolasha/commit/e06a52bc000f62b140202d0c15afe5c1c716dbb6))
+- prevent infinite sort→observer loop on action panel reorder ([e6365f9](https://github.com/Celasha/Toolasha/commit/e6365f929e99c5d936b64fefc64edd50ec2c7929))
+- replace sort-by-profit setting with inline button cycling Default/Profit/XP/Coins-per-XP ([5a8006c](https://github.com/Celasha/Toolasha/commit/5a8006ca7f2b83813ac109e1b8eb241f64a4820e))
+- show estimated price indicator for items without market listing ([4960c0f](https://github.com/Celasha/Toolasha/commit/4960c0f10e96ec41364982f1b9c5906253aa3cc0))
+
+## [1.20.1](https://github.com/Celasha/Toolasha/compare/v1.20.0...v1.20.1) (2026-02-27)
+
+### Bug Fixes
+
+- add draggable pane reordering and persistent layout to pop-out chat ([92ba2ef](https://github.com/Celasha/Toolasha/commit/92ba2ef3a85ac90404d4015f5bccaeeefad594bd))
+- prevent duplicate inventory count row when opening action panel from task card ([f6af0ee](https://github.com/Celasha/Toolasha/commit/f6af0ee2b6fc108c7c2a2604297ce8d3c0b8568d))
+
 ## [1.20.0](https://github.com/Celasha/Toolasha/compare/v1.19.1...v1.20.0) (2026-02-27)
 
 ### Features

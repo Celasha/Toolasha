@@ -124,23 +124,25 @@ class AutoFillPrice {
         }
 
         if (isBuyOrder) {
-            // For buy orders: click the 3rd button container's button (increment)
-            const targetContainer = buttonContainers[2];
-            const button = targetContainer.querySelector('div button');
-            if (button) {
-                button.click();
+            const buyStrategy = config.getSettingValue('market_autoFillBuyStrategy', 'outbid');
+
+            if (buyStrategy === 'outbid') {
+                // Click the 3rd button container's button (increment)
+                const button = buttonContainers[2].querySelector('div button');
+                if (button) button.click();
+            } else if (buyStrategy === 'undercut') {
+                // Click the 2nd button container's button (decrement)
+                const button = buttonContainers[1].querySelector('div button');
+                if (button) button.click();
             }
+            // If 'match', do nothing (use best buy price as-is)
         } else if (isSellOrder) {
-            // For sell orders: check user setting
             const sellStrategy = config.getSettingValue('market_autoFillSellStrategy', 'match');
 
             if (sellStrategy === 'undercut') {
                 // Click the 2nd button container's button (decrement)
-                const targetContainer = buttonContainers[1];
-                const button = targetContainer.querySelector('div button');
-                if (button) {
-                    button.click();
-                }
+                const button = buttonContainers[1].querySelector('div button');
+                if (button) button.click();
             }
             // If 'match', do nothing (use best sell price as-is)
         }

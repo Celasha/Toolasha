@@ -1,0 +1,67 @@
+name: Discord Commit Notification
+
+on:
+  pull_request:
+    types:
+      - closed
+    branches:
+      - main
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    # Only run when a release-please PR is merged
+    if: github.event.pull_request.merged == true && startsWith(github.event.pull_request.head.ref, 'release-please--')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Process commits from PR body
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          python3 .github/scripts/process-commits.py
+
+      - name: Send to Discord
+        env:
+          DISCORD_COMMITS_WEBHOOK: ${{ secrets.DISCORD_COMMITS_WEBHOOK }}
+          DISCORD_FEAT_WEBHOOK: ${{ secrets.DISCORD_FEAT_WEBHOOK }}
+        run: |
+          ESCAPED_TITLE=$(echo "${{ github.event.pull_request.title }}" | sed 's/^chore([^)]*): //' | sed 's/^chore: //' | sed 's/\b\w/\u&/' | sed 's/"/\\"/g')
+          BODY=$(python3 -c "import json,os; print(json.dumps(os.environ.get('COMMIT_LINES','')))")
+
+          PAYLOAD=$(cat <<EOF
+          {
+            "embeds": [{
+              "title": "${ESCAPED_TITLE}",
+              "color": 7291618,
+              "description": ${BODY}
+            }]
+          }
+          EOF
+          )
+
+          curl -s -X POST "$DISCORD_COMMITS_WEBHOOK" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD"
+
+          # Post only feat commits to #feats if any exist
+          if [ "$HAS_FEATS" = "true" ]; then
+            FEAT_BODY=$(python3 -c "import json,os; print(json.dumps(os.environ.get('FEAT_LINES','')))")
+            FEAT_PAYLOAD=$(cat <<EOF
+          {
+            "embeds": [{
+              "title": "${ESCAPED_TITLE}",
+              "color": 7291618,
+              "description": ${FEAT_BODY}
+            }]
+          }
+          EOF
+            )
+            curl -s -X POST "$DISCORD_FEAT_WEBHOOK" \
+              -H "Content-Type: application/json" \
+              -d "$FEAT_PAYLOAD"
+          fi

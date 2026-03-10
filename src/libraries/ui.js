@@ -13,11 +13,13 @@ import externalLinks from '../features/ui/external-links.js';
 
 // Navigation features
 import altClickNavigation from '../features/navigation/alt-click-navigation.js';
+import collectionNavigation from '../features/collection/collection-navigation.js';
 
 // Chat features
 import chatCommands from '../features/chat/chat-commands.js';
 import mentionTracker from '../features/chat/mention-tracker.js';
 import popOutChat from '../features/chat/pop-out-chat.js';
+import chatBlockList from '../features/chat/chat-block-list.js';
 
 // Task features
 import taskProfitDisplay from '../features/tasks/task-profit-display.js';
@@ -44,6 +46,12 @@ import settingsUI from '../features/settings/settings-ui.js';
 import transmuteRates from '../features/dictionary/transmute-rates.js';
 import viewActionButton from '../features/dictionary/view-action-button.js';
 
+// Alchemy History
+import transmuteHistoryTracker from '../features/alchemy/transmute-history-tracker.js';
+import transmuteHistoryViewer from '../features/alchemy/transmute-history-viewer.js';
+import coinifyHistoryTracker from '../features/alchemy/coinify-history-tracker.js';
+import coinifyHistoryViewer from '../features/alchemy/coinify-history-viewer.js';
+
 // Enhancement
 import enhancementFeature from '../features/enhancement/enhancement-feature.js';
 
@@ -64,9 +72,11 @@ toolashaRoot.UI = {
     skillExperiencePercentage,
     externalLinks,
     altClickNavigation,
+    collectionNavigation,
     chatCommands,
     mentionTracker,
     popOutChat,
+    chatBlockList,
     taskProfitDisplay,
     taskRerollTracker,
     taskSorter,
@@ -80,6 +90,10 @@ toolashaRoot.UI = {
     settingsUI,
     transmuteRates,
     viewActionButton,
+    transmuteHistoryTracker,
+    transmuteHistoryViewer,
+    coinifyHistoryTracker,
+    coinifyHistoryViewer,
     enhancementFeature,
     emptyQueueNotification,
 };

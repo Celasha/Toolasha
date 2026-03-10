@@ -94,6 +94,9 @@ function mapSlotType(slotType) {
 function getSkillLevel(skills, actionType) {
     const skillHrid = actionType.replace('/action_types/', '/skills/');
     const skill = skills.find((s) => s.skillHrid === skillHrid);
+    if (!skill) {
+        console.error(`[MilkonomyExport] Skill not found: ${skillHrid}`);
+    }
     return skill?.level || 1;
 }
 

@@ -43,6 +43,7 @@ class TeaRecommendation {
         this.timerRegistry = createTimerRegistry();
         this.currentPopup = null;
         this.buttonContainer = null;
+        this.closeHandlerCleanup = null;
     }
 
     /**
@@ -194,7 +195,7 @@ class TeaRecommendation {
             return;
         }
 
-        // Create popup
+        // Create popup container
         const popup = document.createElement('div');
         popup.className = 'mwi-tea-recommendation-popup';
         popup.style.cssText = `
@@ -210,8 +211,58 @@ class TeaRecommendation {
             cursor: default;
         `;
 
-        // Header (draggable) - show location if filtering by tab
+        this.buildPopupContent(popup, result, goal, skillName, locationTab, null);
+
+        // Position popup relative to button
+        document.body.appendChild(popup);
+        const buttonRect = anchorButton.getBoundingClientRect();
+        const popupRect = popup.getBoundingClientRect();
+
+        let top = buttonRect.bottom + 8;
+        let left = buttonRect.left;
+
+        if (left + popupRect.width > window.innerWidth - 16) {
+            left = window.innerWidth - popupRect.width - 16;
+        }
+        if (top + popupRect.height > window.innerHeight - 16) {
+            top = buttonRect.top - popupRect.height - 8;
+        }
+
+        popup.style.top = `${top}px`;
+        popup.style.left = `${left}px`;
+
+        this.currentPopup = popup;
+
+        // Close on click outside
+        const closeHandler = (e) => {
+            if (!popup.contains(e.target) && e.target !== anchorButton && e.target.isConnected) {
+                this.closePopup();
+                document.removeEventListener('click', closeHandler);
+            }
+        };
+        // Delay to prevent immediate close
+        setTimeout(() => {
+            document.addEventListener('click', closeHandler);
+            this.closeHandlerCleanup = () => document.removeEventListener('click', closeHandler);
+        }, 100);
+    }
+
+    /**
+     * Build (or rebuild) popup inner content in place
+     * Called on initial open and again when drilling into a specific action or returning to all-actions view.
+     * @param {HTMLElement} popup - Popup container (preserved across re-renders)
+     * @param {Object} result - findOptimalTeas result
+     * @param {string} goal - 'xp' or 'gold'
+     * @param {string} skillName - Current skill name
+     * @param {string|null} locationTab - Current location tab
+     * @param {string|null} drilldownAction - Action name when showing single-action view, null for all-actions
+     */
+    buildPopupContent(popup, result, goal, skillName, locationTab, drilldownAction) {
+        popup.innerHTML = '';
+
         const goalLabel = goal === 'xp' ? 'XP' : 'Gold';
+
+        // Header (draggable)
         const header = document.createElement('div');
         header.style.cssText = `
             font-size: 14px;
@@ -223,16 +274,16 @@ class TeaRecommendation {
             cursor: grab;
             user-select: none;
         `;
-        // Show location name if we're filtering by tab, otherwise show skill name
-        const displayName = locationTab || skillName;
-        // Include drink concentration in header if > 0
-        const dcPercent = result.drinkConcentration ? (result.drinkConcentration * 100).toFixed(2) : 0;
-        const dcSuffix = dcPercent > 0 ? ` (${dcPercent}% DC)` : '';
-        header.textContent = `Optimal ${goalLabel}/hr for ${displayName}${dcSuffix}`;
         header.title = 'Drag to move';
+        if (drilldownAction) {
+            header.textContent = `Optimal ${goalLabel}/hr for ${drilldownAction}`;
+        } else {
+            const displayName = locationTab || skillName;
+            const dcPercent = result.drinkConcentration ? (result.drinkConcentration * 100).toFixed(2) : 0;
+            const dcSuffix = dcPercent > 0 ? ` (${dcPercent}% DC)` : '';
+            header.textContent = `Optimal ${goalLabel}/hr for ${displayName}${dcSuffix}`;
+        }
         popup.appendChild(header);
-
-        // Make popup draggable via header
         this.makeDraggable(popup, header);
 
         // Optimal teas list
@@ -284,129 +335,8 @@ class TeaRecommendation {
         `;
 
         const avgValue = result.optimal ? formatKMB(result.optimal.avgScore) : '0';
-
-        // For gold mode, show profitable actions count
         const profitableCount = result.profitableActionsCount || result.actionsEvaluated;
         const excludedCount = result.excludedActions?.length || 0;
-        let actionsText;
-        if (goal === 'gold') {
-            actionsText =
-                excludedCount > 0
-                    ? `${profitableCount} profitable of ${result.actionsEvaluated} (+${excludedCount} excluded)`
-                    : `${profitableCount} profitable of ${result.actionsEvaluated}`;
-        } else {
-            actionsText =
-                excludedCount > 0
-                    ? `${result.actionsEvaluated} actions (+${excludedCount} excluded)`
-                    : `${result.actionsEvaluated} actions evaluated`;
-        }
-
-        // Create expandable actions section
-        const actionsToggle = document.createElement('span');
-        actionsToggle.style.cssText = `
-            cursor: pointer;
-            text-decoration: underline;
-            color: rgba(255, 255, 255, 0.5);
-        `;
-        actionsToggle.textContent = actionsText;
-        actionsToggle.title = 'Click to expand';
-
-        const actionsDetail = document.createElement('div');
-        actionsDetail.style.cssText = `
-            display: none;
-            margin-top: 8px;
-            padding: 8px;
-            background: rgba(0, 0, 0, 0.3);
-            border-radius: 4px;
-            max-height: 150px;
-            overflow-y: auto;
-        `;
-
-        // Sort actions by score descending
-        const sortedActions = [...(result.optimal?.actionScores || [])].sort((a, b) => b.score - a.score);
-        for (const actionData of sortedActions) {
-            const actionRow = document.createElement('div');
-            actionRow.style.cssText = `
-                display: flex;
-                justify-content: space-between;
-                font-size: 11px;
-                padding: 2px 0;
-            `;
-            const actionName = document.createElement('span');
-            actionName.textContent = actionData.action;
-            actionName.style.color = 'rgba(255, 255, 255, 0.7)';
-
-            const actionScore = document.createElement('span');
-            actionScore.textContent = formatKMB(actionData.score);
-            actionScore.style.color = actionData.score >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
-
-            actionRow.appendChild(actionName);
-            actionRow.appendChild(actionScore);
-            actionsDetail.appendChild(actionRow);
-        }
-
-        // Add excluded actions (greyed out with strikethrough)
-        const excludedActions = result.excludedActions || [];
-        if (excludedActions.length > 0) {
-            // Add separator if there are regular actions
-            if (sortedActions.length > 0) {
-                const separator = document.createElement('div');
-                separator.style.cssText = `
-                    border-top: 1px solid rgba(255, 255, 255, 0.2);
-                    margin: 6px 0;
-                    font-size: 10px;
-                    color: rgba(255, 255, 255, 0.4);
-                    padding-top: 4px;
-                `;
-                separator.textContent = `Excluded (${excludedActions.length} - level too low)`;
-                actionsDetail.appendChild(separator);
-            }
-
-            for (const excluded of excludedActions) {
-                const actionRow = document.createElement('div');
-                actionRow.style.cssText = `
-                    display: flex;
-                    justify-content: space-between;
-                    font-size: 11px;
-                    padding: 2px 0;
-                `;
-                const actionName = document.createElement('span');
-                actionName.textContent = excluded.action;
-                actionName.style.cssText = `
-                    color: rgba(255, 255, 255, 0.35);
-                    text-decoration: line-through;
-                `;
-
-                const levelReq = document.createElement('span');
-                levelReq.textContent = `Lvl ${excluded.requiredLevel}`;
-                levelReq.style.cssText = `
-                    color: rgba(255, 255, 255, 0.35);
-                    font-style: italic;
-                `;
-
-                actionRow.appendChild(actionName);
-                actionRow.appendChild(levelReq);
-                actionsDetail.appendChild(actionRow);
-            }
-        }
-
-        actionsToggle.addEventListener('click', () => {
-            const isHidden = actionsDetail.style.display === 'none';
-            actionsDetail.style.display = isHidden ? 'block' : 'none';
-            let expandedText;
-            if (goal === 'gold') {
-                expandedText =
-                    excludedCount > 0
-                        ? `▼ ${profitableCount} profitable (+${excludedCount})`
-                        : `▼ ${profitableCount} profitable`;
-            } else {
-                expandedText =
-                    excludedCount > 0
-                        ? `▼ ${result.actionsEvaluated} (+${excludedCount})`
-                        : `▼ ${result.actionsEvaluated} actions`;
-            }
-            actionsToggle.textContent = isHidden ? expandedText : actionsText;
-        });
 
         stats.innerHTML = `
             <div style="margin-bottom: 4px;">
@@ -418,8 +348,266 @@ class TeaRecommendation {
                 Level ${result.playerLevel} •
             </div>
         `;
-        stats.querySelector('div:last-child').appendChild(actionsToggle);
-        stats.appendChild(actionsDetail);
+
+        if (drilldownAction) {
+            // Back link to all-actions view
+            const backLink = document.createElement('span');
+            backLink.style.cssText = `
+                cursor: pointer;
+                text-decoration: underline;
+                color: rgba(255, 255, 255, 0.5);
+            `;
+            backLink.textContent = `← All ${skillName} actions`;
+            backLink.addEventListener('click', () => {
+                const allResult = findOptimalTeas(skillName, goal, locationTab);
+                if (!allResult.error && allResult.optimal) {
+                    this.buildPopupContent(popup, allResult, goal, skillName, locationTab, null);
+                }
+            });
+            stats.querySelector('div:last-child').appendChild(backLink);
+        } else {
+            // Expandable actions section
+            let actionsText;
+            if (goal === 'gold') {
+                actionsText =
+                    excludedCount > 0
+                        ? `${profitableCount} profitable of ${result.actionsEvaluated} (+${excludedCount} excluded)`
+                        : `${profitableCount} profitable of ${result.actionsEvaluated}`;
+            } else {
+                actionsText =
+                    excludedCount > 0
+                        ? `${result.actionsEvaluated} actions (+${excludedCount} excluded)`
+                        : `${result.actionsEvaluated} actions evaluated`;
+            }
+
+            const actionsToggle = document.createElement('span');
+            actionsToggle.style.cssText = `
+                cursor: pointer;
+                text-decoration: underline;
+                color: rgba(255, 255, 255, 0.5);
+            `;
+            actionsToggle.textContent = actionsText;
+            actionsToggle.title = 'Click to expand';
+
+            const actionsDetail = document.createElement('div');
+            actionsDetail.style.cssText = `
+                display: none;
+                margin-top: 8px;
+                padding: 8px;
+                background: rgba(0, 0, 0, 0.3);
+                border-radius: 4px;
+                max-height: 150px;
+                overflow-y: auto;
+            `;
+
+            // Sort actions by score descending; rows are clickable to drill down
+            const sortedActions = [...(result.optimal?.actionScores || [])].sort((a, b) => b.score - a.score);
+            for (const actionData of sortedActions) {
+                const actionRow = document.createElement('div');
+                actionRow.style.cssText = `
+                    display: flex;
+                    justify-content: space-between;
+                    font-size: 11px;
+                    padding: 2px 4px;
+                    border-radius: 3px;
+                    cursor: pointer;
+                `;
+                const actionName = document.createElement('span');
+                actionName.textContent = actionData.action;
+                actionName.style.color = 'rgba(255, 255, 255, 0.7)';
+
+                const actionScore = document.createElement('span');
+                actionScore.textContent = formatKMB(actionData.score);
+                actionScore.style.color = actionData.score >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
+
+                actionRow.appendChild(actionName);
+                actionRow.appendChild(actionScore);
+                actionsDetail.appendChild(actionRow);
+
+                actionRow.addEventListener('mouseenter', () => {
+                    actionRow.style.background = 'rgba(255, 255, 255, 0.05)';
+                });
+                actionRow.addEventListener('mouseleave', () => {
+                    actionRow.style.background = '';
+                });
+                actionRow.addEventListener('click', () => {
+                    const drillResult = findOptimalTeas(skillName, goal, locationTab, actionData.action);
+                    if (!drillResult.error && drillResult.optimal) {
+                        this.buildPopupContent(popup, drillResult, goal, skillName, locationTab, actionData.action);
+                    }
+                });
+            }
+
+            // Add excluded actions (greyed out with strikethrough)
+            const excludedActions = result.excludedActions || [];
+            if (excludedActions.length > 0) {
+                if (sortedActions.length > 0) {
+                    const separator = document.createElement('div');
+                    separator.style.cssText = `
+                        border-top: 1px solid rgba(255, 255, 255, 0.2);
+                        margin: 6px 0;
+                        font-size: 10px;
+                        color: rgba(255, 255, 255, 0.4);
+                        padding-top: 4px;
+                    `;
+                    separator.textContent = `Excluded (${excludedActions.length} - level too low)`;
+                    actionsDetail.appendChild(separator);
+                }
+
+                for (const excluded of excludedActions) {
+                    const actionRow = document.createElement('div');
+                    actionRow.style.cssText = `
+                        display: flex;
+                        justify-content: space-between;
+                        font-size: 11px;
+                        padding: 2px 0;
+                    `;
+                    const actionName = document.createElement('span');
+                    actionName.textContent = excluded.action;
+                    actionName.style.cssText = `
+                        color: rgba(255, 255, 255, 0.35);
+                        text-decoration: line-through;
+                    `;
+
+                    const levelReq = document.createElement('span');
+                    levelReq.textContent = `Lvl ${excluded.requiredLevel}`;
+                    levelReq.style.cssText = `
+                        color: rgba(255, 255, 255, 0.35);
+                        font-style: italic;
+                    `;
+
+                    actionRow.appendChild(actionName);
+                    actionRow.appendChild(levelReq);
+                    actionsDetail.appendChild(actionRow);
+                }
+            }
+
+            actionsToggle.addEventListener('click', () => {
+                const isHidden = actionsDetail.style.display === 'none';
+                actionsDetail.style.display = isHidden ? 'block' : 'none';
+                let expandedText;
+                if (goal === 'gold') {
+                    expandedText =
+                        excludedCount > 0
+                            ? `▼ ${profitableCount} profitable (+${excludedCount})`
+                            : `▼ ${profitableCount} profitable`;
+                } else {
+                    expandedText =
+                        excludedCount > 0
+                            ? `▼ ${result.actionsEvaluated} (+${excludedCount})`
+                            : `▼ ${result.actionsEvaluated} actions`;
+                }
+                actionsToggle.textContent = isHidden ? expandedText : actionsText;
+            });
+
+            stats.querySelector('div:last-child').appendChild(actionsToggle);
+            stats.appendChild(actionsDetail);
+        }
+
+        // Expandable tea cost breakdown
+        const costData = result.teaCostPerHour;
+        if (costData?.total > 0) {
+            const costSection = document.createElement('div');
+            costSection.style.cssText = 'margin-top: 6px; font-size: 11px;';
+
+            const costToggle = document.createElement('span');
+            costToggle.style.cssText = `
+                cursor: pointer;
+                text-decoration: underline;
+                color: ${config.COLOR_GOLD};
+            `;
+            costToggle.textContent = `Tea cost: ${formatKMB(costData.total)}/hr ▶`;
+            costToggle.title = 'Click to expand';
+
+            const costDetail = document.createElement('div');
+            costDetail.style.cssText = `
+                display: none;
+                margin-top: 6px;
+                padding: 8px;
+                background: rgba(0, 0, 0, 0.3);
+                border-radius: 4px;
+            `;
+
+            // Header row
+            const headerRow = document.createElement('div');
+            headerRow.style.cssText = `
+                display: grid;
+                grid-template-columns: 1fr auto auto auto;
+                gap: 8px;
+                font-size: 10px;
+                color: rgba(255, 255, 255, 0.4);
+                padding-bottom: 4px;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+                margin-bottom: 4px;
+            `;
+            ['Tea', 'Units/hr', 'Unit cost', 'Cost/hr'].forEach((label) => {
+                const cell = document.createElement('span');
+                cell.textContent = label;
+                cell.style.textAlign = 'right';
+                if (label === 'Tea') cell.style.textAlign = 'left';
+                headerRow.appendChild(cell);
+            });
+            costDetail.appendChild(headerRow);
+
+            // Per-tea rows
+            for (const tea of costData.breakdown) {
+                const row = document.createElement('div');
+                row.style.cssText = `
+                    display: grid;
+                    grid-template-columns: 1fr auto auto auto;
+                    gap: 8px;
+                    font-size: 11px;
+                    padding: 2px 0;
+                    color: rgba(255, 255, 255, 0.7);
+                `;
+                const cells = [
+                    { text: tea.name, align: 'left' },
+                    { text: tea.unitsPerHour.toFixed(1), align: 'right' },
+                    { text: formatKMB(tea.unitPrice), align: 'right' },
+                    { text: formatKMB(tea.costPerHour), align: 'right', color: config.COLOR_GOLD },
+                ];
+                for (const { text, align, color } of cells) {
+                    const cell = document.createElement('span');
+                    cell.textContent = text;
+                    cell.style.textAlign = align;
+                    if (color) cell.style.color = color;
+                    row.appendChild(cell);
+                }
+                costDetail.appendChild(row);
+            }
+
+            // Total row
+            const totalRow = document.createElement('div');
+            totalRow.style.cssText = `
+                display: grid;
+                grid-template-columns: 1fr auto auto auto;
+                gap: 8px;
+                font-size: 11px;
+                padding-top: 4px;
+                margin-top: 4px;
+                border-top: 1px solid rgba(255, 255, 255, 0.15);
+                color: rgba(255, 255, 255, 0.5);
+            `;
+            ['Total', '', '', formatKMB(costData.total)].forEach((text, i) => {
+                const cell = document.createElement('span');
+                cell.textContent = text;
+                cell.style.textAlign = i === 0 ? 'left' : 'right';
+                if (i === 3) cell.style.color = config.COLOR_GOLD;
+                totalRow.appendChild(cell);
+            });
+            costDetail.appendChild(totalRow);
+
+            costToggle.addEventListener('click', () => {
+                const isHidden = costDetail.style.display === 'none';
+                costDetail.style.display = isHidden ? 'block' : 'none';
+                costToggle.textContent = `Tea cost: ${formatKMB(costData.total)}/hr ${isHidden ? '▼' : '▶'}`;
+            });
+
+            costSection.appendChild(costToggle);
+            costSection.appendChild(costDetail);
+            stats.appendChild(costSection);
+        }
+
         popup.appendChild(stats);
 
         // Alternative combos section
@@ -449,7 +637,9 @@ class TeaRecommendation {
                     color: rgba(255, 255, 255, 0.6);
                     padding: 2px 0;
                 `;
-                altRow.textContent = `${alt.teas.join(', ')} (${formatKMB(alt.avgScore)}/hr)`;
+                const costSuffix =
+                    alt.teaCostPerHour?.total > 0 ? ` · ${formatKMB(alt.teaCostPerHour.total)} cost/hr` : '';
+                altRow.textContent = `${alt.teas.join(', ')} (${formatKMB(alt.avgScore)}/hr${costSuffix})`;
                 altSection.appendChild(altRow);
             }
 
@@ -473,40 +663,6 @@ class TeaRecommendation {
         closeBtn.innerHTML = '&times;';
         closeBtn.addEventListener('click', () => this.closePopup());
         popup.appendChild(closeBtn);
-
-        // Position popup relative to button
-        document.body.appendChild(popup);
-        const buttonRect = anchorButton.getBoundingClientRect();
-        const popupRect = popup.getBoundingClientRect();
-
-        // Position below the button
-        let top = buttonRect.bottom + 8;
-        let left = buttonRect.left;
-
-        // Adjust if off-screen
-        if (left + popupRect.width > window.innerWidth - 16) {
-            left = window.innerWidth - popupRect.width - 16;
-        }
-        if (top + popupRect.height > window.innerHeight - 16) {
-            top = buttonRect.top - popupRect.height - 8;
-        }
-
-        popup.style.top = `${top}px`;
-        popup.style.left = `${left}px`;
-
-        this.currentPopup = popup;
-
-        // Close on click outside
-        const closeHandler = (e) => {
-            if (!popup.contains(e.target) && e.target !== anchorButton) {
-                this.closePopup();
-                document.removeEventListener('click', closeHandler);
-            }
-        };
-        // Delay to prevent immediate close
-        setTimeout(() => {
-            document.addEventListener('click', closeHandler);
-        }, 100);
     }
 
     /**
@@ -716,6 +872,10 @@ class TeaRecommendation {
      * Close the current popup
      */
     closePopup() {
+        if (this.closeHandlerCleanup) {
+            this.closeHandlerCleanup();
+            this.closeHandlerCleanup = null;
+        }
         if (this.currentPopup) {
             this.currentPopup.remove();
             this.currentPopup = null;

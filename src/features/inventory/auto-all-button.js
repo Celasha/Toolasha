@@ -91,9 +91,16 @@ class AutoAllButton {
             return;
         }
 
-        // Check if item is openable - exit early if not
+        // Check if item is openable or an ability book - exit early if neither
         const itemDetails = gameData.itemDetailMap[itemHrid];
-        if (!itemDetails || !itemDetails.isOpenable) {
+        const isOpenable = itemDetails?.isOpenable;
+        const isAbilityBook = itemDetails?.categoryHrid === '/item_categories/ability_book';
+        if (!itemDetails || (!isOpenable && !isAbilityBook)) {
+            return;
+        }
+
+        // Skip seals if the exclude setting is on
+        if (config.getSetting('autoAllButton_excludeSeals') && itemHrid.startsWith('/items/seal_of_')) {
             return;
         }
 

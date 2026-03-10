@@ -734,6 +734,14 @@ class DataManager {
     }
 
     /**
+     * Get the current blocked character map { [characterId]: name }
+     * @returns {Object} Blocked character map, or empty object if not available
+     */
+    getBlockedCharacterMap() {
+        return this.characterData?.blockedCharacterMap || {};
+    }
+
+    /**
      * Get active task action HRIDs
      * @returns {Array<string>} Array of action HRIDs that are currently active tasks
      */

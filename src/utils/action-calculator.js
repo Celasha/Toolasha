@@ -196,5 +196,8 @@ function getSkillLevel(skills, skillType) {
     // Map action type to skill HRID
     const skillHrid = skillType.replace('/action_types/', '/skills/');
     const skill = skills.find((s) => s.skillHrid === skillHrid);
+    if (!skill) {
+        console.error(`[ActionCalculator] Skill not found: ${skillHrid}`);
+    }
     return skill?.level || 1;
 }

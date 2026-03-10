@@ -30,7 +30,8 @@ export async function loadSessions() {
     try {
         const sessions = await storage.getJSON(STORAGE_KEY, STORAGE_STORE, {});
         return sessions;
-    } catch {
+    } catch (error) {
+        console.error('[EnhancementStorage] Failed to load sessions:', error);
         return {};
     }
 }
@@ -43,8 +44,8 @@ export async function loadSessions() {
 export async function saveCurrentSessionId(sessionId) {
     try {
         await storage.set(CURRENT_SESSION_KEY, sessionId, STORAGE_STORE, true); // immediate=true for rapid updates
-    } catch {
-        // Silent failure
+    } catch (error) {
+        console.error('[EnhancementStorage] Failed to save current session ID:', error);
     }
 }
 
@@ -55,7 +56,8 @@ export async function saveCurrentSessionId(sessionId) {
 export async function loadCurrentSessionId() {
     try {
         return await storage.get(CURRENT_SESSION_KEY, STORAGE_STORE, null);
-    } catch {
+    } catch (error) {
+        console.error('[EnhancementStorage] Failed to load current session ID:', error);
         return null;
     }
 }
@@ -134,7 +136,7 @@ export async function clearAllSessions() {
     try {
         await storage.setJSON(STORAGE_KEY, {}, STORAGE_STORE);
         await storage.set(CURRENT_SESSION_KEY, null, STORAGE_STORE);
-    } catch {
-        // Silent failure
+    } catch (error) {
+        console.error('[EnhancementStorage] Failed to clear sessions:', error);
     }
 }

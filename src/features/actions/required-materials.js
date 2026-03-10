@@ -69,9 +69,11 @@ class RequiredMaterials {
         existingDisplays.forEach((el) => el.remove());
 
         const numActions = parseInt(amount) || 0;
-        if (numActions <= 0) {
-            return;
-        }
+        const isIndeterminate = numActions <= 0;
+
+        // Determine placeholder label for indeterminate state
+        // '∞' input parses to NaN→0; explicit '0' also hits this branch
+        const placeholderLabel = isNaN(parseInt(amount)) ? '∞' : '0';
 
         // Get action HRID from panel
         const actionHrid = this.getActionHridFromPanel(panel);
@@ -80,7 +82,8 @@ class RequiredMaterials {
         }
 
         // Use shared material calculator with queue accounting (always enabled for Required Materials)
-        const materials = calculateMaterialRequirements(actionHrid, numActions, true);
+        // When indeterminate, pass 1 just to get the item list for rendering placeholders
+        const materials = calculateMaterialRequirements(actionHrid, isIndeterminate ? 1 : numActions, true);
         if (!materials || materials.length === 0) {
             return;
         }
@@ -101,7 +104,7 @@ class RequiredMaterials {
 
         // Process upgrade item first (if exists)
         if (upgradeMaterial) {
-            this.processUpgradeItemWithData(panel, upgradeMaterial);
+            this.processUpgradeItemWithData(panel, upgradeMaterial, isIndeterminate, placeholderLabel);
         }
 
         // Process regular materials
@@ -128,15 +131,22 @@ class RequiredMaterials {
                 `;
 
                 // Build text with queue info
-                const queuedText = material.queued > 0 ? ` (${numberFormatter(material.queued)} Q'd)` : '';
-                let text = `Required: ${numberFormatter(material.required)}${queuedText}`;
-
-                if (material.missing > 0) {
-                    const missingQueuedText = material.queued > 0 ? ` (${numberFormatter(material.queued)} Q'd)` : '';
-                    text += ` || Missing: ${numberFormatter(material.missing)}${missingQueuedText}`;
-                    displaySpan.style.color = config.COLOR_LOSS; // Missing materials
+                let text;
+                if (isIndeterminate) {
+                    text = `Required: ${placeholderLabel}`;
+                    displaySpan.style.color = '';
                 } else {
-                    displaySpan.style.color = config.COLOR_PROFIT; // Sufficient materials
+                    const queuedText = material.queued > 0 ? ` (${numberFormatter(material.queued)} Q'd)` : '';
+                    text = `Required: ${numberFormatter(material.required)}${queuedText}`;
+
+                    if (material.missing > 0) {
+                        const missingQueuedText =
+                            material.queued > 0 ? ` (${numberFormatter(material.queued)} Q'd)` : '';
+                        text += ` || Missing: ${numberFormatter(material.missing)}${missingQueuedText}`;
+                        displaySpan.style.color = config.COLOR_LOSS; // Missing materials
+                    } else {
+                        displaySpan.style.color = config.COLOR_PROFIT; // Sufficient materials
+                    }
                 }
 
                 displaySpan.textContent = text;
@@ -154,7 +164,7 @@ class RequiredMaterials {
      * @param {HTMLElement} panel - Action panel element
      * @param {Object} material - Material object from calculateMaterialRequirements
      */
-    processUpgradeItemWithData(panel, material) {
+    processUpgradeItemWithData(panel, material, isIndeterminate, placeholderLabel) {
         try {
             // Find upgrade item selector container
             const upgradeContainer = panel.querySelector('[class*="SkillActionDetail_upgradeItemSelectorInput"]');
@@ -175,15 +185,21 @@ class RequiredMaterials {
             `;
 
             // Build text with queue info
-            const queuedText = material.queued > 0 ? ` (${numberFormatter(material.queued)} Q'd)` : '';
-            let text = `Required: ${numberFormatter(material.required)}${queuedText}`;
-
-            if (material.missing > 0) {
-                const missingQueuedText = material.queued > 0 ? ` (${numberFormatter(material.queued)} Q'd)` : '';
-                text += ` || Missing: ${numberFormatter(material.missing)}${missingQueuedText}`;
-                displaySpan.style.color = config.COLOR_LOSS; // Missing materials
+            let text;
+            if (isIndeterminate) {
+                text = `Required: ${placeholderLabel}`;
+                displaySpan.style.color = '';
             } else {
-                displaySpan.style.color = config.COLOR_PROFIT; // Sufficient materials
+                const queuedText = material.queued > 0 ? ` (${numberFormatter(material.queued)} Q'd)` : '';
+                text = `Required: ${numberFormatter(material.required)}${queuedText}`;
+
+                if (material.missing > 0) {
+                    const missingQueuedText = material.queued > 0 ? ` (${numberFormatter(material.queued)} Q'd)` : '';
+                    text += ` || Missing: ${numberFormatter(material.missing)}${missingQueuedText}`;
+                    displaySpan.style.color = config.COLOR_LOSS; // Missing materials
+                } else {
+                    displaySpan.style.color = config.COLOR_PROFIT; // Sufficient materials
+                }
             }
 
             displaySpan.textContent = text;

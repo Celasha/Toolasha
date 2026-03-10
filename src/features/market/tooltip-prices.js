@@ -10,12 +10,15 @@ import marketAPI from '../../api/marketplace.js';
 import profitCalculator from './profit-calculator.js';
 import alchemyProfitCalculator from './alchemy-profit-calculator.js';
 import expectedValueCalculator from './expected-value-calculator.js';
-import { calculateEnhancementPath, buildEnhancementTooltipHTML } from '../enhancement/tooltip-enhancement.js';
+import {
+    calculateEnhancementPath,
+    buildEnhancementTooltipHTML,
+    buildEnhancementMilestonesHTML,
+} from '../enhancement/tooltip-enhancement.js';
 import { calculateGatheringProfit } from '../actions/gathering-profit.js';
 import { getEnhancingParams } from '../../utils/enhancement-config.js';
 import { numberFormatter, formatKMB, networthFormatter, formatPercentage } from '../../utils/formatters.js';
 import { getItemPrices } from '../../utils/market-data.js';
-import { calculateActionsPerHour } from '../../utils/profit-helpers.js';
 import dom from '../../utils/dom.js';
 import { parseItemCount } from '../../utils/number-parser.js';
 
@@ -136,12 +139,6 @@ class TooltipPrices {
      * @param {Element} tooltipElement - The tooltip popper element
      */
     async handleTooltip(tooltipElement) {
-        // Guard against duplicate processing
-        if (tooltipElement.dataset.pricesProcessed) {
-            return;
-        }
-        tooltipElement.dataset.pricesProcessed = 'true';
-
         // Check if it's a collection tooltip
         const collectionContent = tooltipElement.querySelector('div.Collection_tooltipContent__2IcSJ');
         const isCollectionTooltip = !!collectionContent;
@@ -165,6 +162,37 @@ class TooltipPrices {
         } else {
             itemName = nameElement.textContent.trim();
         }
+
+        // Guard against duplicate processing for the same item.
+        // Use the full item name (includes enhancement suffix e.g. "+3") as the key so
+        // that switching to a different item — or a different enhancement level of the same
+        // item — clears stale injected content and re-processes.
+        if (tooltipElement.dataset.pricesProcessedItem === itemName) {
+            return;
+        }
+
+        // Item changed (or first visit) — remove any previously injected elements so
+        // stale data from the previous item doesn't bleed through.
+        if (tooltipElement.dataset.pricesProcessedItem) {
+            const tooltipText = tooltipElement.querySelector('.ItemTooltipText_itemTooltipText__zFq3A');
+            if (tooltipText) {
+                const staleSelectors = [
+                    '.market-price-injected',
+                    '.market-profit-injected',
+                    '.market-ev-injected',
+                    '.market-gathering-injected',
+                    '.market-multi-action-injected',
+                    '.market-enhancement-injected',
+                    '.mwi-enhancement-milestones',
+                    '.mwi-ability-status',
+                ];
+                for (const sel of staleSelectors) {
+                    tooltipText.querySelector(sel)?.remove();
+                }
+            }
+        }
+
+        tooltipElement.dataset.pricesProcessedItem = itemName;
 
         // Get the item HRID from the name
         const itemHrid = this.extractItemHridFromName(itemName);
@@ -237,6 +265,26 @@ class TooltipPrices {
             const abilityStatus = this.getAbilityStatus(itemHrid);
             if (abilityStatus) {
                 this.injectAbilityStatusDisplay(tooltipElement, abilityStatus, isCollectionTooltip);
+            }
+        }
+
+        // Show enhancement milestones for unenhanced equipment items
+        if (enhancementLevel === 0 && config.getSetting('itemTooltip_enhancementMilestones')) {
+            const enhancementConfig = getEnhancingParams();
+            if (enhancementConfig) {
+                const milestonesHTML = buildEnhancementMilestonesHTML(itemHrid, enhancementConfig);
+                if (milestonesHTML) {
+                    const tooltipText = tooltipElement.querySelector('.ItemTooltipText_itemTooltipText__zFq3A');
+                    if (tooltipText && !tooltipText.querySelector('.mwi-enhancement-milestones')) {
+                        const div = dom.createStyledDiv(
+                            { color: config.COLOR_TOOLTIP_INFO },
+                            '',
+                            'mwi-enhancement-milestones'
+                        );
+                        div.innerHTML = milestonesHTML;
+                        tooltipText.appendChild(div);
+                    }
+                }
             }
         }
 
@@ -744,20 +792,12 @@ class TooltipPrices {
             }
         }
 
-        // Calculate items/hr for zone actions (no profit)
+        // Calculate items/hr for zone actions using calculateGatheringProfit for accuracy
+        // (accounts for speed bonuses, gathering quantity bonus, efficiency multiplier, and avg drop amount)
         for (const action of zoneActions) {
-            const actionDetail = gameData.actionDetailMap[action.actionHrid];
-            if (!actionDetail) {
-                continue;
-            }
-
-            // Calculate base actions per hour
-            const baseTimeCost = actionDetail.baseTimeCost; // in nanoseconds
-            const timeInSeconds = baseTimeCost / 1e9;
-            const actionsPerHour = calculateActionsPerHour(timeInSeconds);
-
-            // Calculate items per hour
-            const itemsPerHour = actionsPerHour * action.dropRate;
+            const profitData = await calculateGatheringProfit(action.actionHrid);
+            const output = profitData?.baseOutputs?.find((o) => o.itemHrid === itemHrid);
+            const itemsPerHour = output?.itemsPerHour ?? 0;
 
             // For rare drops (< 1%), store items/day instead for better readability
             // For regular drops (>= 1%), store items/hr
@@ -931,9 +971,10 @@ class TooltipPrices {
             const color = profit.profitPerHour >= 0 ? config.COLOR_TOOLTIP_INFO : config.COLOR_TOOLTIP_LOSS;
             html += `<div style="color: ${color};">• ${label}: ${numberFormatter(profit.profitPerHour)}/hr`;
 
-            // Show success rate for alchemy actions
-            if (profit.successRate !== undefined) {
-                html += ` <span style="opacity: 0.7;">(${(profit.successRate * 100).toFixed(0)}% success)</span>`;
+            // Show profit per action for alchemy actions
+            if (profit.netProfitPerAttempt !== undefined) {
+                const perActionColor = profit.netProfitPerAttempt >= 0 ? 'inherit' : config.COLOR_TOOLTIP_LOSS;
+                html += ` <span style="opacity: 0.7; color: ${perActionColor};">(${numberFormatter(profit.netProfitPerAttempt)}/action)</span>`;
             }
 
             html += '</div>';

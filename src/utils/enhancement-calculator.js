@@ -216,5 +216,8 @@ export function calculateEnhancement(params) {
                 actualRate: Math.min(100, base * successMultiplier),
             };
         }),
+
+        // Expected number of times each state is visited (from fundamental matrix M)
+        visitCounts: Array.from({ length: targetLevel }, (_, i) => M.get([0, i])),
     };
 }

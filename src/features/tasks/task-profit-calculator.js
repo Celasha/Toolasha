@@ -38,6 +38,9 @@ export function calculateTaskTokenValue() {
     // Get expected value of each Task Shop item (all cost 30 tokens)
     const expectedValues = taskShopItems.map((itemHrid) => {
         const result = expectedValueCalculator.calculateExpectedValue(itemHrid);
+        if (!result) {
+            console.warn(`[TaskProfit] Expected value returned null for task shop item: ${itemHrid}`);
+        }
         return result?.expectedValue || 0;
     });
 
@@ -49,6 +52,9 @@ export function calculateTaskTokenValue() {
 
     // Calculate Purple's Gift prorated value (divide by 50 tasks)
     const giftResult = expectedValueCalculator.calculateExpectedValue('/items/purples_gift');
+    if (!giftResult) {
+        console.warn('[TaskProfit] Expected value returned null for /items/purples_gift');
+    }
     const giftValue = giftResult?.expectedValue || 0;
     const giftPerTask = giftValue / 50;
 

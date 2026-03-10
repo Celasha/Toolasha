@@ -208,6 +208,9 @@ function constructSelfPlayer(characterObj, clientObj) {
         if (!ability || !ability.abilityHrid) continue;
 
         // Check if special ability
+        if (clientObj?.abilityDetailMap && !clientObj.abilityDetailMap[ability.abilityHrid]) {
+            console.error(`[CombatSimExport] Ability not found in abilityDetailMap: ${ability.abilityHrid}`);
+        }
         const isSpecial = clientObj?.abilityDetailMap?.[ability.abilityHrid]?.isSpecialAbility || false;
 
         if (isSpecial) {
@@ -364,6 +367,9 @@ function constructPartyPlayer(profile, clientObj, battleObj) {
         if (!ability || !ability.abilityHrid) continue;
 
         // Check if special ability
+        if (clientObj?.abilityDetailMap && !clientObj.abilityDetailMap[ability.abilityHrid]) {
+            console.error(`[CombatSimExport] Ability not found in abilityDetailMap: ${ability.abilityHrid}`);
+        }
         const isSpecial = clientObj?.abilityDetailMap?.[ability.abilityHrid]?.isSpecialAbility || false;
 
         if (isSpecial) {
@@ -516,8 +522,6 @@ export async function constructExportObject(externalProfileId = null, singlePlay
             }
         }
     } else {
-        isParty = true;
-
         let slotIndex = 1;
         for (const member of Object.values(characterObj.partyInfo.partySlotMap)) {
             if (member.characterID) {
@@ -547,6 +551,10 @@ export async function constructExportObject(externalProfileId = null, singlePlay
                 slotIndex++;
             }
         }
+
+        // Only enable party (5-slot) mode in the sim when the party is full (5 players).
+        // Smaller parties fit within the sim's default 3-slot mode without needing dungeon toggle.
+        isParty = slotIndex - 1 === 5;
 
         // Get party zone and tier
         zone = characterObj.partyInfo?.party?.actionHrid || '/actions/combat/fly';

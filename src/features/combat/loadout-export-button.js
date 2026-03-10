@@ -164,6 +164,9 @@ function scrapeAbilities(selectedLoadout, clientData) {
             if (match) level = parseInt(match[0], 10);
         }
 
+        if (clientData?.abilityDetailMap && !clientData.abilityDetailMap[abilityHrid]) {
+            console.error(`[LoadoutExportButton] Ability not found in abilityDetailMap: ${abilityHrid}`);
+        }
         const isSpecial = clientData?.abilityDetailMap?.[abilityHrid]?.isSpecialAbility || false;
 
         if (isSpecial) {

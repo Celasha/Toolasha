@@ -44,6 +44,47 @@ class ViewActionButton {
         if (existingTitle) {
             this.injectButton(existingTitle);
         }
+
+        // Watch for item action menu popups (e.g. clicking an item within an action)
+        const unregisterPopup = domObserver.onClass('ViewActionButton_popup', 'Item_actionMenu', (actionMenu) => {
+            this.injectPopupButton(actionMenu);
+        });
+        this.unregisterHandlers.push(unregisterPopup);
+    }
+
+    /**
+     * Inject "View Action" button into the item action menu popup
+     * @param {HTMLElement} actionMenu - The Item_actionMenu element
+     */
+    injectPopupButton(actionMenu) {
+        if (actionMenu.querySelector('.mwi-view-action-popup-button')) return;
+
+        const nameEl = actionMenu.querySelector('[class*="Item_name"]');
+        if (!nameEl) return;
+
+        const itemName = nameEl.textContent.trim();
+        const itemHrid = `/items/${itemName.toLowerCase().replace(/'/g, '').replace(/\s+/g, '_')}`;
+
+        const actionInfo = findActionForItem(itemHrid);
+        if (!actionInfo) return;
+
+        const btn = document.createElement('button');
+        btn.textContent = 'View Action';
+
+        // Copy class from existing popup button for visual consistency
+        const existingBtn = actionMenu.querySelector('button');
+        if (existingBtn) {
+            btn.className = existingBtn.className;
+        }
+        btn.classList.add('mwi-view-action-popup-button');
+
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            navigateToItem(itemHrid);
+        });
+
+        actionMenu.appendChild(btn);
     }
 
     /**
@@ -164,6 +205,7 @@ class ViewActionButton {
 
         // Remove all injected buttons
         document.querySelectorAll('.mwi-view-action-button').forEach((elem) => elem.remove());
+        document.querySelectorAll('.mwi-view-action-popup-button').forEach((elem) => elem.remove());
 
         this.isInitialized = false;
     }

@@ -68,6 +68,10 @@ export function calculateBonusRevenue(actionDetails, actionsPerHour, characterEq
                     expectedValueCalculator.getCachedValue(drop.itemHrid) ||
                     expectedValueCalculator.calculateSingleContainer(drop.itemHrid) ||
                     0;
+                if (itemPrice === 0) {
+                    console.warn(`[BonusRevenue] EV lookup returned 0 for openable container: ${drop.itemHrid}`);
+                    isMissingPrice = true;
+                }
             } else {
                 // Use market price for regular items
                 const price = marketAPI.getPrice(drop.itemHrid, 0);
@@ -124,6 +128,10 @@ export function calculateBonusRevenue(actionDetails, actionsPerHour, characterEq
                     expectedValueCalculator.getCachedValue(drop.itemHrid) ||
                     expectedValueCalculator.calculateSingleContainer(drop.itemHrid) ||
                     0;
+                if (itemPrice === 0) {
+                    console.warn(`[BonusRevenue] EV lookup returned 0 for openable container: ${drop.itemHrid}`);
+                    isMissingPrice = true;
+                }
             } else {
                 // Use market price for regular items
                 const price = marketAPI.getPrice(drop.itemHrid, 0);

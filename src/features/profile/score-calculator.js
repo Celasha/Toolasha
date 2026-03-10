@@ -10,9 +10,10 @@ import { calculateAbilityCost } from '../../utils/ability-cost-calculator.js';
 import { calculateBattleHousesCost } from '../../utils/house-cost-calculator.js';
 import dataManager from '../../core/data-manager.js';
 import { getEnhancingParams } from '../../utils/enhancement-config.js';
-import { getItemPrice } from '../../utils/market-data.js';
+import { getItemPrice, getItemPrices } from '../../utils/market-data.js';
 import config from '../../core/config.js';
 import { calculateEnhancementBatch } from '../../utils/enhancement-worker-manager.js';
+import { getCheapestProtectionPrice, getRealisticBaseItemPrice } from '../enhancement/tooltip-enhancement.js';
 
 /**
  * Token-based item data for untradeable back slot items (capes/cloaks/quivers)
@@ -388,7 +389,7 @@ async function calculateEquipmentScore(profileData, scoreType = 'combat') {
             itemDetails,
             itemLevel,
             needsEnhancementCalc: false,
-            workerIndex: -1,
+            subLevelTasks: [],
         });
 
         // Check if this item needs enhancement calculation via worker
@@ -396,40 +397,54 @@ async function calculateEquipmentScore(profileData, scoreType = 'combat') {
         if (tokenValue === 0) {
             // Not a token item, might need enhancement calculation
             if (enhancementLevel >= 1 && useHighEnhancementCost && enhancementLevel >= minLevel) {
-                // High enhancement mode - always calculate cost
-                const workerIndex = workerTasks.length;
+                // High enhancement mode - calculate cost for all sub-levels (needed for mirror optimization)
+                const subLevelTasks = [];
+                for (let subLevel = 1; subLevel <= enhancementLevel; subLevel++) {
+                    const strategies = [0];
+                    for (let pf = 2; pf <= subLevel; pf++) strategies.push(pf);
+                    const levelStartIndex = workerTasks.length;
+                    for (const protectFrom of strategies) {
+                        workerTasks.push({
+                            enhancingLevel: enhancementParams.enhancingLevel,
+                            toolBonus: enhancementParams.toolBonus || 0,
+                            speedBonus: enhancementParams.speedBonus || 0,
+                            itemLevel,
+                            targetLevel: subLevel,
+                            protectFrom,
+                            blessedTea: enhancementParams.teas.blessed,
+                            guzzlingBonus: enhancementParams.guzzlingBonus,
+                        });
+                    }
+                    subLevelTasks.push({ workerStartIndex: levelStartIndex, strategies });
+                }
                 itemsToProcess[itemsToProcess.length - 1].needsEnhancementCalc = true;
-                itemsToProcess[itemsToProcess.length - 1].workerIndex = workerIndex;
-
-                workerTasks.push({
-                    enhancingLevel: enhancementParams.enhancingLevel,
-                    toolBonus: enhancementParams.toolBonus || 0,
-                    speedBonus: enhancementParams.speedBonus || 0,
-                    itemLevel,
-                    targetLevel: enhancementLevel,
-                    protectFrom: Math.max(0, enhancementLevel - 2),
-                    blessedTea: enhancementParams.teas.blessed,
-                    guzzlingBonus: enhancementParams.guzzlingBonus,
-                });
+                itemsToProcess[itemsToProcess.length - 1].subLevelTasks = subLevelTasks;
             } else if (enhancementLevel > 1) {
                 // Check market price first
                 const marketPrice = getMarketPriceWithFallback(itemHrid, enhancementLevel);
                 if (!marketPrice || marketPrice === 0) {
-                    // No market data - need enhancement calculation
-                    const workerIndex = workerTasks.length;
+                    // No market data - calculate cost for all sub-levels (needed for mirror optimization)
+                    const subLevelTasks = [];
+                    for (let subLevel = 1; subLevel <= enhancementLevel; subLevel++) {
+                        const strategies = [0];
+                        for (let pf = 2; pf <= subLevel; pf++) strategies.push(pf);
+                        const levelStartIndex = workerTasks.length;
+                        for (const protectFrom of strategies) {
+                            workerTasks.push({
+                                enhancingLevel: enhancementParams.enhancingLevel,
+                                toolBonus: enhancementParams.toolBonus || 0,
+                                speedBonus: enhancementParams.speedBonus || 0,
+                                itemLevel,
+                                targetLevel: subLevel,
+                                protectFrom,
+                                blessedTea: enhancementParams.teas.blessed,
+                                guzzlingBonus: enhancementParams.guzzlingBonus,
+                            });
+                        }
+                        subLevelTasks.push({ workerStartIndex: levelStartIndex, strategies });
+                    }
                     itemsToProcess[itemsToProcess.length - 1].needsEnhancementCalc = true;
-                    itemsToProcess[itemsToProcess.length - 1].workerIndex = workerIndex;
-
-                    workerTasks.push({
-                        enhancingLevel: enhancementParams.enhancingLevel,
-                        toolBonus: enhancementParams.toolBonus || 0,
-                        speedBonus: enhancementParams.speedBonus || 0,
-                        itemLevel,
-                        targetLevel: enhancementLevel,
-                        protectFrom: Math.max(0, enhancementLevel - 2),
-                        blessedTea: enhancementParams.teas.blessed,
-                        guzzlingBonus: enhancementParams.guzzlingBonus,
-                    });
+                    itemsToProcess[itemsToProcess.length - 1].subLevelTasks = subLevelTasks;
                 }
             }
         }
@@ -440,8 +455,8 @@ async function calculateEquipmentScore(profileData, scoreType = 'combat') {
     if (workerTasks.length > 0) {
         try {
             workerResults = await calculateEnhancementBatch(workerTasks);
-        } catch {
-            // Continue with empty results - will use fallback pricing
+        } catch (error) {
+            console.warn('[ScoreCalculator] Enhancement batch worker failed, using fallback pricing:', error);
         }
     }
 
@@ -456,16 +471,31 @@ async function calculateEquipmentScore(profileData, scoreType = 'combat') {
         const tokenValue = calculateTokenBasedItemValue(item.itemHrid);
         if (tokenValue > 0) {
             itemCost = tokenValue;
-        } else if (item.needsEnhancementCalc && item.workerIndex >= 0) {
-            // Use worker result
-            const workerResult = workerResults[item.workerIndex];
-            if (workerResult && workerResult.attempts) {
-                // Calculate total cost from worker result
-                itemCost = calculateEnhancementCostFromWorkerResult(item.itemHrid, item.enhancementLevel, workerResult);
-            } else {
-                // Worker failed, use base price
-                itemCost = getMarketPriceWithFallback(item.itemHrid, 0);
+        } else if (item.needsEnhancementCalc && item.subLevelTasks.length > 0) {
+            // Build targetCosts[0..N], matching tooltip's calculateEnhancementPath
+            const targetCosts = [getRealisticBaseItemPrice(item.itemHrid)]; // level 0 = base item
+            for (let subLevel = 1; subLevel <= item.enhancementLevel; subLevel++) {
+                const { workerStartIndex, strategies } = item.subLevelTasks[subLevel - 1];
+                let minCost = null;
+                for (let s = 0; s < strategies.length; s++) {
+                    const wr = workerResults[workerStartIndex + s];
+                    if (!wr || !wr.attempts) continue;
+                    const cost = calculateEnhancementCostFromWorkerResult(item.itemHrid, strategies[s], wr);
+                    if (minCost === null || cost < minCost) minCost = cost;
+                }
+                targetCosts.push(minCost ?? getRealisticBaseItemPrice(item.itemHrid));
             }
+            // Apply Philosopher's Mirror optimization (same pass as tooltip)
+            const mirrorPrice = getRealisticBaseItemPrice('/items/philosophers_mirror');
+            if (mirrorPrice > 0) {
+                for (let level = 3; level <= item.enhancementLevel; level++) {
+                    const mirrorCost = targetCosts[level - 2] + targetCosts[level - 1] + mirrorPrice;
+                    if (mirrorCost < targetCosts[level]) {
+                        targetCosts[level] = mirrorCost;
+                    }
+                }
+            }
+            itemCost = targetCosts[item.enhancementLevel];
         } else {
             // Use market price (already checked or not needed)
             const marketPrice = getMarketPriceWithFallback(item.itemHrid, item.enhancementLevel);
@@ -507,36 +537,60 @@ async function calculateEquipmentScore(profileData, scoreType = 'combat') {
 
 /**
  * Calculate total enhancement cost from worker result
+ * Matches tooltip-enhancement.js calculateTotalCost() exactly.
  * @param {string} itemHrid - Item HRID
- * @param {number} targetLevel - Target enhancement level
+ * @param {number} protectFrom - Protection threshold used in this calculation
  * @param {Object} workerResult - Worker calculation result
- * @returns {number} Total cost
+ * @returns {number} Total cost (base item + materials + protection)
  */
-function calculateEnhancementCostFromWorkerResult(itemHrid, targetLevel, workerResult) {
+function calculateEnhancementCostFromWorkerResult(itemHrid, protectFrom, workerResult) {
     const gameData = dataManager.getInitClientData();
     if (!gameData) return 0;
 
     const itemDetails = gameData.itemDetailMap[itemHrid];
     if (!itemDetails || !itemDetails.enhancementCosts) return 0;
 
-    // Get base item cost
-    const baseItemCost = getMarketPriceWithFallback(itemHrid, 0);
+    // Base item cost — matches tooltip's getRealisticBaseItemPrice (with inflation guard)
+    const baseItemCost = getRealisticBaseItemPrice(itemHrid);
 
-    // Calculate material costs per attempt
-    let materialCostPerAttempt = 0;
-    for (let level = 1; level <= targetLevel; level++) {
-        const enhancementCost = itemDetails.enhancementCosts[level - 1];
-        if (enhancementCost && enhancementCost.itemHrid) {
-            const materialPrice = getItemPrice(enhancementCost.itemHrid, { mode: 'ask' }) || 0;
-            materialCostPerAttempt += materialPrice * (enhancementCost.count || 1);
+    // Material cost per attempt — matches tooltip's calculateTotalCost material loop exactly
+    let perActionCost = 0;
+    for (const material of itemDetails.enhancementCosts) {
+        if (!material || !material.itemHrid) continue;
+
+        let price;
+        if (material.itemHrid.startsWith('/items/trainee_')) {
+            price = 250000; // untradeable trainee charms: fixed 250k
+        } else if (material.itemHrid === '/items/coin') {
+            price = 1; // coins at face value
+        } else {
+            const marketPrice = getItemPrices(material.itemHrid, 0);
+            if (marketPrice) {
+                let ask = marketPrice.ask;
+                let bid = marketPrice.bid;
+                // Normalize: if one side is negative (no listings), use the positive side
+                if (ask > 0 && bid < 0) bid = ask;
+                if (bid > 0 && ask < 0) ask = bid;
+                price = ask;
+            } else {
+                // Fallback to sell price if no market data
+                price = gameData.itemDetailMap[material.itemHrid]?.sellPrice || 0;
+            }
+        }
+        perActionCost += price * (material.count || 1);
+    }
+
+    // Total material cost = per-action cost × total expected attempts
+    const materialCost = perActionCost * workerResult.attempts;
+
+    // Protection cost using actual cheapest protection price
+    let protectionCost = 0;
+    if (protectFrom > 0 && workerResult.protectionCount > 0) {
+        const protectionInfo = getCheapestProtectionPrice(itemHrid);
+        if (protectionInfo.price > 0) {
+            protectionCost = protectionInfo.price * workerResult.protectionCount;
         }
     }
 
-    // Calculate protection costs
-    const protectionCost = workerResult.protectionCount * 50_000; // 50k per protection
-
-    // Total cost = base item + (materials × attempts) + protection cost
-    const totalCost = baseItemCost + materialCostPerAttempt * workerResult.attemptsRounded + protectionCost;
-
-    return totalCost;
+    return baseItemCost + materialCost + protectionCost;
 }
