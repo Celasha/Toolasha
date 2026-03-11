@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.34.3](https://github.com/Celasha/Toolasha/compare/v1.34.2...v1.34.3) (2026-03-11)
+
+
+### Bug Fixes
+
+* group chat annotations by team and fix session boundary pairing ([2c5b5b7](https://github.com/Celasha/Toolasha/commit/2c5b5b79fd0b66c0d512523972f2ef10141f5945))
+
 ## [1.34.2](https://github.com/Celasha/Toolasha/compare/v1.34.1...v1.34.2) (2026-03-10)
 
 ### Bug Fixes
