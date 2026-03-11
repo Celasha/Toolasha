@@ -171,6 +171,13 @@ class LootLogStats {
             // Strip enhancement level from HRID
             const baseHrid = hrid.replace(/::\d+$/, '');
 
+            // Coins are base currency — not in marketplace, face value is 1
+            if (baseHrid === '/items/coin') {
+                askTotal += count;
+                bidTotal += count;
+                continue;
+            }
+
             // Get market prices
             const prices = getItemPrices(baseHrid, 0);
             if (!prices) continue;

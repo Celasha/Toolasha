@@ -5,6 +5,27 @@
 
 import marketAPI from '../../api/marketplace.js';
 import dataManager from '../../core/data-manager.js';
+import expectedValueCalculator from '../market/expected-value-calculator.js';
+
+// Maps regular dungeon chest HRIDs to their required entry key HRIDs (1:1 relationship)
+const DUNGEON_CHEST_KEYS = {
+    '/items/chimerical_chest': '/items/chimerical_entry_key',
+    '/items/sinister_chest': '/items/sinister_entry_key',
+    '/items/enchanted_chest': '/items/enchanted_entry_key',
+    '/items/pirate_chest': '/items/pirate_entry_key',
+};
+
+// Maps dungeon chest HRIDs (regular and refinement) to their required chest key HRIDs (1:1 relationship)
+const DUNGEON_CHEST_CHEST_KEYS = {
+    '/items/chimerical_chest': '/items/chimerical_chest_key',
+    '/items/sinister_chest': '/items/sinister_chest_key',
+    '/items/enchanted_chest': '/items/enchanted_chest_key',
+    '/items/pirate_chest': '/items/pirate_chest_key',
+    '/items/chimerical_refinement_chest': '/items/chimerical_chest_key',
+    '/items/sinister_refinement_chest': '/items/sinister_chest_key',
+    '/items/enchanted_refinement_chest': '/items/enchanted_chest_key',
+    '/items/pirate_refinement_chest': '/items/pirate_chest_key',
+};
 
 /**
  * Calculate total income from loot
@@ -27,16 +48,108 @@ export function calculateIncome(lootMap) {
             totalAsk += itemCount;
             totalBid += itemCount;
         } else {
-            // Other items: get market price
-            const prices = marketAPI.getPrice(loot.itemHrid);
-            if (prices) {
-                totalAsk += prices.ask * itemCount;
-                totalBid += prices.bid * itemCount;
+            const itemDetails = dataManager.getItemDetails(loot.itemHrid);
+            if (itemDetails?.isOpenable && expectedValueCalculator.isInitialized) {
+                // Openable containers (chests, crates, etc.): use expected value
+                const ev =
+                    expectedValueCalculator.getCachedValue(loot.itemHrid) ||
+                    expectedValueCalculator.calculateSingleContainer(loot.itemHrid);
+                if (ev !== null && ev > 0) {
+                    totalAsk += ev * itemCount;
+                    totalBid += ev * itemCount;
+                }
+            } else {
+                // Other items: get market price
+                const prices = marketAPI.getPrice(loot.itemHrid);
+                if (prices) {
+                    totalAsk += prices.ask * itemCount;
+                    totalBid += prices.bid * itemCount;
+                }
             }
         }
     }
 
     return { ask: totalAsk, bid: totalBid };
+}
+
+/**
+ * Calculate entry key costs from dungeon chests dropped
+ * Each regular dungeon chest in the loot map represents one entry key consumed
+ * @param {Object} lootMap - totalLootMap from player data
+ * @param {number} durationSeconds - Combat duration in seconds (for daily rate)
+ * @returns {Object} { ask: number, bid: number, dailyCost: number, breakdown: Array }
+ */
+export function calculateKeyCosts(lootMap, durationSeconds) {
+    let totalCost = 0;
+    const breakdown = [];
+
+    if (!lootMap) {
+        return { ask: 0, bid: 0, dailyCost: 0, breakdown: [] };
+    }
+
+    for (const loot of Object.values(lootMap)) {
+        const keyHrid = DUNGEON_CHEST_KEYS[loot.itemHrid];
+        if (!keyHrid) continue;
+
+        const chestCount = loot.count;
+        const keyPrices = marketAPI.getPrice(keyHrid);
+        if (!keyPrices) continue;
+
+        // Keys are bought at ask price (you pay ask to acquire them)
+        const keyPrice = keyPrices.ask;
+        const itemCost = keyPrice * chestCount;
+
+        totalCost += itemCost;
+
+        const keyDetails = dataManager.getItemDetails(keyHrid);
+        const keyName = keyDetails?.name || keyHrid;
+
+        const consumedPerDay = durationSeconds > 0 ? Math.ceil((chestCount / durationSeconds) * 86400) : 0;
+
+        breakdown.push({
+            itemHrid: keyHrid,
+            itemName: keyName,
+            count: chestCount,
+            consumedPerDay,
+            pricePerItem: keyPrice,
+            totalCost: itemCost,
+        });
+    }
+
+    // Second pass: aggregate chest key costs (regular + refinement chests share the same key)
+    const chestKeyCounts = {};
+    for (const loot of Object.values(lootMap)) {
+        const keyHrid = DUNGEON_CHEST_CHEST_KEYS[loot.itemHrid];
+        if (!keyHrid) continue;
+        chestKeyCounts[keyHrid] = (chestKeyCounts[keyHrid] || 0) + loot.count;
+    }
+
+    for (const [keyHrid, count] of Object.entries(chestKeyCounts)) {
+        const keyPrices = marketAPI.getPrice(keyHrid);
+        if (!keyPrices) continue;
+
+        const keyPrice = keyPrices.ask;
+        const itemCost = keyPrice * count;
+
+        totalCost += itemCost;
+
+        const keyDetails = dataManager.getItemDetails(keyHrid);
+        const keyName = keyDetails?.name || keyHrid;
+        const consumedPerDay = durationSeconds > 0 ? Math.ceil((count / durationSeconds) * 86400) : 0;
+
+        breakdown.push({
+            itemHrid: keyHrid,
+            itemName: keyName,
+            count,
+            consumedPerDay,
+            pricePerItem: keyPrice,
+            totalCost: itemCost,
+        });
+    }
+
+    const finalDailyCost = durationSeconds > 0 ? calculateDailyRate(totalCost, durationSeconds) : 0;
+
+    return { ask: totalCost, bid: totalCost, dailyCost: finalDailyCost, breakdown };
 }
 
 /**
@@ -189,9 +302,15 @@ export function calculatePlayerStats(playerData, durationSeconds = null) {
         0
     );
 
-    // Calculate daily profit
-    const dailyProfitAsk = dailyIncomeAsk - dailyConsumableCosts;
-    const dailyProfitBid = dailyIncomeBid - dailyConsumableCosts;
+    // Calculate entry key costs (1:1 with regular dungeon chests dropped)
+    const keyData = calculateKeyCosts(playerData.loot, duration);
+    const keyCosts = { ask: keyData.ask, bid: keyData.bid };
+    const dailyKeyCosts = keyData.dailyCost;
+    const keyBreakdown = keyData.breakdown;
+
+    // Calculate daily profit (income minus consumables and key costs)
+    const dailyProfitAsk = dailyIncomeAsk - dailyConsumableCosts - dailyKeyCosts;
+    const dailyProfitBid = dailyIncomeBid - dailyConsumableCosts - dailyKeyCosts;
 
     // Calculate total experience
     const totalExp = calculateTotalExperience(playerData.experience);
@@ -218,6 +337,9 @@ export function calculatePlayerStats(playerData, durationSeconds = null) {
         consumableCosts,
         consumableBreakdown,
         dailyConsumableCosts,
+        keyCosts,
+        dailyKeyCosts,
+        keyBreakdown,
         dailyProfit: {
             ask: dailyProfitAsk,
             bid: dailyProfitBid,

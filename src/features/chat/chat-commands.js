@@ -179,9 +179,15 @@ class ChatCommands {
         }
 
         if (lower.startsWith('/market ')) {
-            const itemName = trimmed.substring(8).trim();
+            let itemName = trimmed.substring(8).trim();
             if (!itemName) return null;
-            return { type: 'market', itemName };
+            let enhancementLevel = 0;
+            const enhMatch = itemName.match(/\s*\+(\d+)$/);
+            if (enhMatch) {
+                enhancementLevel = parseInt(enhMatch[1], 10);
+                itemName = itemName.slice(0, -enhMatch[0].length).trim();
+            }
+            return { type: 'market', itemName, enhancementLevel };
         }
 
         return null;
@@ -217,7 +223,7 @@ class ChatCommands {
 
             case 'market':
                 if (itemHrid) {
-                    this.openMarketplace(itemHrid);
+                    this.openMarketplace(itemHrid, command.enhancementLevel ?? 0);
                 } else {
                     // Item not found in game data (best effort normalization was used)
                     this.showError(`Item "${command.itemName}" not found in game data`);
@@ -377,15 +383,16 @@ class ChatCommands {
     /**
      * Open marketplace for specific item
      * @param {string} itemHrid - Item HRID (e.g., "/items/radiant_fiber")
+     * @param {number} enhancementLevel - Enhancement level (default 0)
      */
-    openMarketplace(itemHrid) {
+    openMarketplace(itemHrid, enhancementLevel = 0) {
         if (!this.gameCore?.handleGoToMarketplace) {
             this.showError('Feature unavailable after 2/21/26 game update');
             return;
         }
 
         try {
-            this.gameCore.handleGoToMarketplace(itemHrid, 0);
+            this.gameCore.handleGoToMarketplace(itemHrid, enhancementLevel);
         } catch (error) {
             console.error('[Chat Commands] Failed to open marketplace:', error);
             this.showError('Failed to open marketplace');

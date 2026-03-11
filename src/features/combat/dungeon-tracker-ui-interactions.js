@@ -4,6 +4,7 @@
  */
 
 import dungeonTracker from './dungeon-tracker.js';
+import dungeonTrackerChatAnnotations from './dungeon-tracker-chat-annotations.js';
 import storage from '../../core/storage.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 
@@ -207,6 +208,9 @@ class DungeonTrackerUIInteractions {
                     // Refresh both history and chart display
                     if (this.callbacks.onUpdateHistory) await this.callbacks.onUpdateHistory();
                     if (this.callbacks.onUpdateChart) await this.callbacks.onUpdateChart();
+
+                    // Reset chat annotations so run numbers restart from #1
+                    await dungeonTrackerChatAnnotations.refreshRunCounts();
                 } catch (error) {
                     console.error('[Dungeon Tracker UI Interactions] Clear all history error:', error);
                     alert('Failed to clear run history. Check console for details.');
@@ -269,6 +273,9 @@ class DungeonTrackerUIInteractions {
                 // Refresh both history and chart display
                 if (this.callbacks.onUpdateHistory) await this.callbacks.onUpdateHistory();
                 if (this.callbacks.onUpdateChart) await this.callbacks.onUpdateChart();
+
+                // Sync chat annotations with newly stored run data
+                await dungeonTrackerChatAnnotations.refreshRunCounts();
             } catch (error) {
                 console.error('[Dungeon Tracker UI Interactions] Backfill error:', error);
                 alert('Backfill failed. Check console for details.');

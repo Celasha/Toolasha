@@ -1,5 +1,35 @@
 # Changelog
 
+## [1.34.3](https://github.com/Celasha/Toolasha/compare/v1.34.2...v1.34.3) (2026-03-11)
+
+### Bug Fixes
+
+- group chat annotations by team and fix session boundary pairing ([2c5b5b7](https://github.com/Celasha/Toolasha/commit/2c5b5b79fd0b66c0d512523972f2ef10141f5945))
+
+## [1.34.2](https://github.com/Celasha/Toolasha/compare/v1.34.1...v1.34.2) (2026-03-10)
+
+### Bug Fixes
+
+- fall back to on-demand EV calculation for uncached dungeon chests ([5467d97](https://github.com/Celasha/Toolasha/commit/5467d97a3bbcf383eb5bce5a38aaca4754e07968))
+
+## [1.34.1](https://github.com/Celasha/Toolasha/compare/v1.34.0...v1.34.1) (2026-03-10)
+
+### Bug Fixes
+
+- sync chat run annotations after clear and backfill ([0b6f971](https://github.com/Celasha/Toolasha/commit/0b6f9719af0b1d6ca68f331c73fcde65d2b2ed9d))
+
+## [1.34.0](https://github.com/Celasha/Toolasha/compare/v1.33.3...v1.34.0) (2026-03-10)
+
+### Features
+
+- add chest EV, key costs, and drop tooltips to combat stats ([5be1b92](https://github.com/Celasha/Toolasha/commit/5be1b927fc6b89acf3d385257867f449695a77a2))
+- factor catalyst cost into alchemy profit tooltips ([979d2e5](https://github.com/Celasha/Toolasha/commit/979d2e5d4378912189c6701268ad671359242ed5))
+- support enhancement level in /market chat command ([a190364](https://github.com/Celasha/Toolasha/commit/a19036489538a31265e5237a24132a9a5a14c816))
+
+### Bug Fixes
+
+- resolve spurious skill error for combat and missing coinify value ([0b940a3](https://github.com/Celasha/Toolasha/commit/0b940a3ef922aa49b0a3ddcd28ede97784a4947c))
+
 ## [1.33.3](https://github.com/Celasha/Toolasha/compare/v1.33.2...v1.33.3) (2026-03-09)
 
 ### Bug Fixes

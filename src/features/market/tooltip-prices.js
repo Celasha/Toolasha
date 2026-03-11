@@ -27,6 +27,15 @@ const REGEX_ENHANCEMENT_LEVEL = /\+(\d+)$/;
 const REGEX_ENHANCEMENT_STRIP = /\s*\+\d+$/;
 
 /**
+ * Get the items sprite URL from the DOM (matches pattern used across other display modules)
+ * @returns {string|null} Sprite URL or null if not found
+ */
+function getItemsSpriteUrl() {
+    const el = document.querySelector('use[href*="items_sprite"]');
+    return el ? el.getAttribute('href').split('#')[0] : null;
+}
+
+/**
  * Format price for tooltip display based on user setting
  * @param {number} num - The number to format
  * @returns {string} Formatted number
@@ -975,6 +984,22 @@ class TooltipPrices {
             if (profit.netProfitPerAttempt !== undefined) {
                 const perActionColor = profit.netProfitPerAttempt >= 0 ? 'inherit' : config.COLOR_TOOLTIP_LOSS;
                 html += ` <span style="opacity: 0.7; color: ${perActionColor};">(${numberFormatter(profit.netProfitPerAttempt)}/action)</span>`;
+            }
+
+            // Show item icons for the winning catalyst and/or tea (silence = no modifiers needed)
+            if (profit.winningCatalystHrid || profit.winningTeaUsed) {
+                const spriteUrl = getItemsSpriteUrl();
+                if (spriteUrl) {
+                    html += ` <span style="display:inline-flex;align-items:center;gap:2px;vertical-align:middle;">`;
+                    if (profit.winningCatalystHrid) {
+                        const slug = profit.winningCatalystHrid.split('/').pop();
+                        html += `<svg role="img" style="width:14px;height:14px;"><use href="${spriteUrl}#${slug}"></use></svg>`;
+                    }
+                    if (profit.winningTeaUsed) {
+                        html += `<svg role="img" style="width:14px;height:14px;"><use href="${spriteUrl}#catalytic_tea"></use></svg>`;
+                    }
+                    html += `</span>`;
+                }
             }
 
             html += '</div>';

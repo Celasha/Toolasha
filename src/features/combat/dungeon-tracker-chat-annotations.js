@@ -49,17 +49,29 @@ class DungeonTrackerChatAnnotations {
             // Get all runs from unified storage
             const allRuns = await dungeonTrackerStorage.getAllRuns();
 
-            // Extract unique dungeon names
-            const uniqueDungeonNames = [...new Set(allRuns.map((run) => run.dungeonName))];
+            // Seed per-team-per-dungeon counters directly from run history.
+            // Key: "teamKey::dungeonName" so each team's run count and average are independent.
+            for (const run of allRuns) {
+                if (!run.teamKey || !run.dungeonName) continue;
+                const duration = run.duration || run.totalTime;
+                if (!duration || duration <= 0) continue;
 
-            // Load stats for each dungeon
-            for (const dungeonName of uniqueDungeonNames) {
-                const stats = await dungeonTrackerStorage.getStatsByName(dungeonName);
-                if (stats && stats.totalRuns > 0) {
-                    this.cumulativeStatsByDungeon[dungeonName] = {
-                        runCount: stats.totalRuns,
-                        totalTime: stats.avgTime * stats.totalRuns, // Reconstruct total time
+                const key = `${run.teamKey}::${run.dungeonName}`;
+                if (!this.cumulativeStatsByDungeon[key]) {
+                    this.cumulativeStatsByDungeon[key] = {
+                        runCount: 0,
+                        totalTime: 0,
+                        fastestTime: Infinity,
+                        slowestTime: 0,
                     };
+                }
+                this.cumulativeStatsByDungeon[key].runCount++;
+                this.cumulativeStatsByDungeon[key].totalTime += duration;
+                if (duration < this.cumulativeStatsByDungeon[key].fastestTime) {
+                    this.cumulativeStatsByDungeon[key].fastestTime = duration;
+                }
+                if (duration > this.cumulativeStatsByDungeon[key].slowestTime) {
+                    this.cumulativeStatsByDungeon[key].slowestTime = duration;
                 }
             }
 
@@ -71,12 +83,21 @@ class DungeonTrackerChatAnnotations {
     }
 
     /**
-     * Refresh run counts after backfill operation
+     * Refresh run counts after backfill or clear operation
+     * Resets all in-memory state and DOM annotation state, then re-annotates from scratch
      */
     async refreshRunCounts() {
         this.cumulativeStatsByDungeon = {};
         this.processedMessages.clear();
-        await this.loadRunCountsFromStorage();
+
+        // Remove existing annotation spans and reset DOM flags so messages can be re-annotated
+        document.querySelectorAll('[class^="ChatMessage_chatMessage"]').forEach((msg) => {
+            msg.querySelectorAll('.dungeon-timer-annotation, .dungeon-timer-average').forEach((s) => s.remove());
+            delete msg.dataset.timerAppended;
+            delete msg.dataset.avgAppended;
+            delete msg.dataset.processed;
+        });
+
         await this.annotateAllMessages();
     }
 
@@ -195,9 +216,6 @@ class DungeonTrackerChatAnnotations {
         // NOTE: Run saving is done manually via the Backfill button
         // Chat annotations only add visual time labels to messages
 
-        // Calculate in-memory stats from visible chat messages (for color thresholds only)
-        const inMemoryStats = this.calculateStatsFromEvents(events);
-
         // Continue with visual annotations
         const runDurations = [];
 
@@ -205,13 +223,32 @@ class DungeonTrackerChatAnnotations {
             const e = events[i];
             if (e.type !== 'key') continue;
 
-            const next = events[i + 1];
+            // Find the next relevant event, stopping at any battle_start (session boundary).
+            // This prevents cross-session pairings caused by overnight gaps or mid-run rejoins.
+            let next = null;
+            let hitBattleStart = false;
+            for (let j = i + 1; j < events.length; j++) {
+                const ev = events[j];
+                if (ev.type === 'battle_start') {
+                    hitBattleStart = true;
+                    break;
+                }
+                if (ev.type === 'key' || ev.type === 'fail' || ev.type === 'cancel') {
+                    next = ev;
+                    break;
+                }
+            }
+
             let label = null;
             let diff = null;
             let color = null;
 
             // Get dungeon name with hybrid fallback (handles chat scrolling)
             const dungeonName = this.getDungeonNameWithFallback(events, i);
+
+            // Composite key: team + dungeon so each team's runs are numbered independently
+            const teamKey = dungeonTrackerStorage.getTeamKey(e.team);
+            const statsKey = `${teamKey}::${dungeonName}`;
 
             if (next?.type === 'key') {
                 // Calculate duration between consecutive key counts
@@ -222,28 +259,23 @@ class DungeonTrackerChatAnnotations {
 
                 label = this.formatTime(diff);
 
-                // Determine color based on performance using dungeonName
-                // Check storage first, fall back to in-memory stats
-                if (dungeonName && dungeonName !== 'Unknown') {
-                    const storageStats = await dungeonTrackerStorage.getStatsByName(dungeonName);
-                    const stats = storageStats.totalRuns > 0 ? storageStats : inMemoryStats[dungeonName];
+                // Determine color based on this team's performance history for this dungeon.
+                // Uses cumulativeStatsByDungeon[statsKey] which is seeded from storage and
+                // updated as runs are annotated — no cross-team contamination.
+                const teamStats = this.cumulativeStatsByDungeon[statsKey];
+                if (teamStats && teamStats.fastestTime < Infinity && teamStats.slowestTime > 0) {
+                    const fastestThreshold = teamStats.fastestTime * 1.1;
+                    const slowestThreshold = teamStats.slowestTime * 0.9;
 
-                    if (stats && stats.fastestTime > 0 && stats.slowestTime > 0) {
-                        const fastestThreshold = stats.fastestTime * 1.1;
-                        const slowestThreshold = stats.slowestTime * 0.9;
-
-                        if (diff <= fastestThreshold) {
-                            color = config.COLOR_PROFIT || '#5fda5f'; // Green
-                        } else if (diff >= slowestThreshold) {
-                            color = config.COLOR_LOSS || '#ff6b6b'; // Red
-                        } else {
-                            color = '#90ee90'; // Light green (normal)
-                        }
+                    if (diff <= fastestThreshold) {
+                        color = config.COLOR_PROFIT || '#5fda5f'; // Green
+                    } else if (diff >= slowestThreshold) {
+                        color = config.COLOR_LOSS || '#ff6b6b'; // Red
                     } else {
-                        color = '#90ee90'; // Light green (default)
+                        color = '#90ee90'; // Light green (normal)
                     }
                 } else {
-                    color = '#90ee90'; // Light green (fallback)
+                    color = '#90ee90'; // Light green (no history yet)
                 }
 
                 // Track run durations for average calculation
@@ -258,6 +290,11 @@ class DungeonTrackerChatAnnotations {
             } else if (next?.type === 'cancel') {
                 label = 'canceled';
                 color = '#ffd700'; // Gold
+            } else if (hitBattleStart) {
+                // No key/fail/cancel before the next battle_start — player left the party,
+                // ending the run without a completion key count.
+                label = 'canceled';
+                color = '#ffd700'; // Gold
             }
 
             if (label) {
@@ -265,17 +302,19 @@ class DungeonTrackerChatAnnotations {
 
                 if (isSuccessfulRun) {
                     // Create unique message ID to prevent duplicate counting on scroll
-                    const messageId = `${e.timestamp.getTime()}_${dungeonName}`;
+                    const messageId = `${e.timestamp.getTime()}_${statsKey}`;
 
-                    // Initialize dungeon tracking if needed
-                    if (!this.cumulativeStatsByDungeon[dungeonName]) {
-                        this.cumulativeStatsByDungeon[dungeonName] = {
+                    // Initialize team+dungeon tracking if needed
+                    if (!this.cumulativeStatsByDungeon[statsKey]) {
+                        this.cumulativeStatsByDungeon[statsKey] = {
                             runCount: 0,
                             totalTime: 0,
+                            fastestTime: Infinity,
+                            slowestTime: 0,
                         };
                     }
 
-                    const dungeonStats = this.cumulativeStatsByDungeon[dungeonName];
+                    const dungeonStats = this.cumulativeStatsByDungeon[statsKey];
 
                     // Check if this message was already counted
                     if (this.processedMessages.has(messageId)) {
@@ -286,6 +325,8 @@ class DungeonTrackerChatAnnotations {
                         // New message, increment counter and store
                         dungeonStats.runCount++;
                         dungeonStats.totalTime += diff;
+                        if (diff < dungeonStats.fastestTime) dungeonStats.fastestTime = diff;
+                        if (diff > dungeonStats.slowestTime) dungeonStats.slowestTime = diff;
                         this.processedMessages.set(messageId, dungeonStats.runCount);
                         label = `Run #${dungeonStats.runCount}: ${label}`;
                     }
@@ -298,7 +339,7 @@ class DungeonTrackerChatAnnotations {
 
                 // Add cumulative average if this is a successful run
                 if (isSuccessfulRun) {
-                    const dungeonStats = this.cumulativeStatsByDungeon[dungeonName];
+                    const dungeonStats = this.cumulativeStatsByDungeon[statsKey];
 
                     // Calculate cumulative average (average of all runs up to this point)
                     const cumulativeAvg = Math.floor(dungeonStats.totalTime / dungeonStats.runCount);
@@ -323,7 +364,16 @@ class DungeonTrackerChatAnnotations {
             const event = events[i];
             if (event.type !== 'key') continue;
 
-            const next = events[i + 1];
+            // Find next relevant event, stopping at any battle_start (session boundary).
+            let next = null;
+            for (let j = i + 1; j < events.length; j++) {
+                const ev = events[j];
+                if (ev.type === 'battle_start') break;
+                if (ev.type === 'key' || ev.type === 'fail' || ev.type === 'cancel') {
+                    next = ev;
+                    break;
+                }
+            }
             if (!next || next.type !== 'key') continue; // Only key→key pairs
 
             // Calculate duration
@@ -354,46 +404,56 @@ class DungeonTrackerChatAnnotations {
      * Calculate stats from visible chat events (in-memory, no storage)
      * Used to show averages before backfill is done
      * @param {Array} events - Chat events array
-     * @returns {Object} Stats by dungeon name { dungeonName: { totalRuns, avgTime, fastestTime, slowestTime } }
+     * @returns {Object} Stats keyed by "teamKey::dungeonName"
      */
     calculateStatsFromEvents(events) {
-        const statsByDungeon = {};
+        const statsByKey = {};
 
         // Loop through events and collect all completed runs
         for (let i = 0; i < events.length; i++) {
             const event = events[i];
             if (event.type !== 'key') continue;
 
-            const next = events[i + 1];
+            // Find next relevant event, stopping at any battle_start (session boundary).
+            let next = null;
+            for (let j = i + 1; j < events.length; j++) {
+                const ev = events[j];
+                if (ev.type === 'battle_start') break;
+                if (ev.type === 'key' || ev.type === 'fail' || ev.type === 'cancel') {
+                    next = ev;
+                    break;
+                }
+            }
             if (!next || next.type !== 'key') continue; // Only key→key pairs (successful runs)
 
             // Calculate duration
             let duration = next.timestamp - event.timestamp;
             if (duration < 0) duration += 24 * 60 * 60 * 1000; // Midnight rollover
 
-            // Get dungeon name
+            // Get dungeon name and team key
             const dungeonName = this.getDungeonNameWithFallback(events, i);
             if (!dungeonName || dungeonName === 'Unknown') continue;
 
-            // Initialize dungeon stats if needed
-            if (!statsByDungeon[dungeonName]) {
-                statsByDungeon[dungeonName] = {
-                    durations: [],
-                };
+            const teamKey = dungeonTrackerStorage.getTeamKey(event.team);
+            const statsKey = `${teamKey}::${dungeonName}`;
+
+            // Initialize stats entry if needed
+            if (!statsByKey[statsKey]) {
+                statsByKey[statsKey] = { durations: [] };
             }
 
             // Add this run duration
-            statsByDungeon[dungeonName].durations.push(duration);
+            statsByKey[statsKey].durations.push(duration);
         }
 
-        // Calculate stats for each dungeon
+        // Calculate stats for each team+dungeon combination
         const result = {};
-        for (const [dungeonName, data] of Object.entries(statsByDungeon)) {
+        for (const [key, data] of Object.entries(statsByKey)) {
             const durations = data.durations;
             if (durations.length === 0) continue;
 
             const total = durations.reduce((sum, d) => sum + d, 0);
-            result[dungeonName] = {
+            result[key] = {
                 totalRuns: durations.length,
                 avgTime: Math.floor(total / durations.length),
                 fastestTime: Math.min(...durations),
@@ -439,7 +499,8 @@ class DungeonTrackerChatAnnotations {
                         msg: node,
                     });
                 }
-                node.dataset.processed = '1';
+                // Do NOT mark battle_start as processed — it must persist across passes
+                // as a session boundary for the forward-scan pairing logic.
             }
             // Key counts message (warn if timestamp fails - these should always have timestamps)
             else if (text.includes('Key counts:')) {
@@ -466,7 +527,7 @@ class DungeonTrackerChatAnnotations {
                     timestamp,
                     msg: node,
                 });
-                node.dataset.processed = '1';
+                // Do NOT mark fail as processed — must persist as session context.
             }
             // Battle ended (canceled/fled)
             else if (text.includes('Battle ended:')) {
@@ -478,7 +539,7 @@ class DungeonTrackerChatAnnotations {
                     timestamp,
                     msg: node,
                 });
-                node.dataset.processed = '1';
+                // Do NOT mark cancel as processed — must persist as session context.
             }
         }
 

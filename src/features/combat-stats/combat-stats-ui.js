@@ -7,7 +7,8 @@ import config from '../../core/config.js';
 import marketAPI from '../../api/marketplace.js';
 import combatStatsDataCollector from './combat-stats-data-collector.js';
 import { calculateAllPlayerStats } from './combat-stats-calculator.js';
-import { formatWithSeparator, coinFormatter } from '../../utils/formatters.js';
+import { formatWithSeparator, coinFormatter, formatKMB, formatPercentage } from '../../utils/formatters.js';
+import expectedValueCalculator from '../market/expected-value-calculator.js';
 
 class CombatStatsUI {
     constructor() {
@@ -281,7 +282,7 @@ class CombatStatsUI {
         }
 
         // Get text color from config
-        const textColor = config.getSetting('color_text_primary') || config.COLOR_TEXT_PRIMARY;
+        const textColor = config.COLOR_TEXT_PRIMARY;
 
         // Create overlay
         const overlay = document.createElement('div');
@@ -528,6 +529,27 @@ class CombatStatsUI {
                 breakdown: stats.consumableBreakdown,
                 isDaily: true,
             },
+            ...(stats.keyBreakdown && stats.keyBreakdown.length > 0
+                ? [
+                      {
+                          label: 'Key Costs',
+                          value: formatNum(stats.keyCosts.bid),
+                          color: '#ff6b6b',
+                          expandable: true,
+                          breakdown: stats.keyBreakdown,
+                          hideTrackingNote: true,
+                      },
+                      {
+                          label: 'Daily Key Costs',
+                          value: `${formatNum(stats.dailyKeyCosts)}/d`,
+                          color: '#ff6b6b',
+                          expandable: true,
+                          breakdown: stats.keyBreakdown,
+                          isDaily: true,
+                          hideTrackingNote: true,
+                      },
+                  ]
+                : []),
             {
                 label: 'Daily Profit',
                 value: `${formatNum(stats.dailyProfit.bid)}/d`,
@@ -656,8 +678,8 @@ class CombatStatsUI {
                             `;
                             breakdownDiv.appendChild(totalRow);
 
-                            // Add tracking info note
-                            if (row.breakdown.length > 0) {
+                            // Add tracking info note (consumables only)
+                            if (row.breakdown.length > 0 && !row.hideTrackingNote) {
                                 const trackingNote = document.createElement('div');
                                 trackingNote.style.cssText = `
                                     margin-top: 8px;
@@ -790,6 +812,16 @@ class CombatStatsUI {
                 textSpan.innerHTML = `<span style="color: ${textColor};">${formatNum(item.count)}</span> <span style="color: ${rarityColor};">× ${item.itemName}</span>`;
                 itemDiv.appendChild(textSpan);
 
+                // Attach EV tooltip for openable containers (chests, crates, etc.)
+                if (
+                    expectedValueCalculator.isInitialized &&
+                    expectedValueCalculator.getCachedValue(item.itemHrid) !== null
+                ) {
+                    itemDiv.style.cursor = 'help';
+                    itemDiv.addEventListener('mouseenter', () => this.showChestTooltip(itemDiv, item.itemHrid));
+                    itemDiv.addEventListener('mouseleave', () => this.hideChestTooltip());
+                }
+
                 dropList.appendChild(itemDiv);
             }
 
@@ -829,9 +861,133 @@ class CombatStatsUI {
     }
 
     /**
+     * Build HTML for chest tooltip matching the inventory EV tooltip format
+     * @param {string} itemHrid - Item HRID
+     * @returns {string} HTML string
+     */
+    buildChestTooltipHTML(itemHrid) {
+        const evData = expectedValueCalculator.calculateExpectedValue(itemHrid);
+        if (!evData) return null;
+
+        const formatPrice = (val) => formatKMB(Math.round(val));
+        const showDropsSetting = config.getSettingValue('expectedValue_showDrops', 'All');
+
+        let html = `<div style="font-weight:bold;margin-bottom:4px;">EXPECTED VALUE</div>`;
+        html += `<div style="font-size:0.9em;margin-left:8px;">`;
+        html += `<div style="color:${config.COLOR_TOOLTIP_PROFIT};font-weight:bold;">Expected Return: ${formatPrice(evData.expectedValue)}</div>`;
+        html += `</div>`;
+
+        if (showDropsSetting !== 'None' && evData.drops.length > 0) {
+            html += `<div style="border-top:1px solid rgba(255,255,255,0.2);margin:8px 0;"></div>`;
+
+            let dropsToShow = evData.drops;
+            let headerLabel = 'All Drops';
+            if (showDropsSetting === 'Top 5') {
+                dropsToShow = evData.drops.slice(0, 5);
+                headerLabel = 'Top 5 Drops';
+            } else if (showDropsSetting === 'Top 10') {
+                dropsToShow = evData.drops.slice(0, 10);
+                headerLabel = 'Top 10 Drops';
+            }
+
+            html += `<div style="font-weight:bold;margin-bottom:4px;">${headerLabel} (${evData.drops.length} total):</div>`;
+            html += `<div style="font-size:0.9em;margin-left:8px;">`;
+
+            for (const drop of dropsToShow) {
+                if (!drop.hasPriceData) {
+                    html += `<div style="color:${config.COLOR_TEXT_SECONDARY};">• ${drop.itemName} (${formatPercentage(drop.dropRate, 2)}): ${drop.avgCount.toFixed(2)} avg → No price data</div>`;
+                } else {
+                    const dropRatePercent = formatPercentage(drop.dropRate, 2);
+                    html += `<div>• ${drop.itemName} (${dropRatePercent}): ${drop.avgCount.toFixed(2)} avg → ${formatPrice(drop.expectedValue)}</div>`;
+                }
+            }
+
+            html += `</div>`;
+            html += `<div style="border-top:1px solid rgba(255,255,255,0.2);margin:4px 0;"></div>`;
+            html += `<div style="font-size:0.9em;margin-left:8px;font-weight:bold;">Total from ${evData.drops.length} drops: ${formatPrice(evData.expectedValue)}</div>`;
+        }
+
+        return html;
+    }
+
+    /**
+     * Show chest EV tooltip near a drop list item
+     * @param {HTMLElement} itemDiv - The hovered item element
+     * @param {string} itemHrid - Item HRID
+     */
+    showChestTooltip(itemDiv, itemHrid) {
+        this.hideChestTooltip();
+
+        const html = this.buildChestTooltipHTML(itemHrid);
+        if (!html) return;
+
+        const tooltip = document.createElement('div');
+        tooltip.className = 'toolasha-chest-ev-tooltip';
+        tooltip.style.cssText = `
+            position: fixed;
+            background: #1a1a1a;
+            border: 1px solid #4a4a4a;
+            border-radius: 6px;
+            padding: 10px 12px;
+            font-size: 13px;
+            color: ${config.COLOR_TEXT_PRIMARY};
+            max-width: 320px;
+            overflow-y: auto;
+            z-index: 20000;
+            pointer-events: none;
+            line-height: 1.4;
+            visibility: hidden;
+        `;
+        tooltip.innerHTML = html;
+        document.body.appendChild(tooltip);
+
+        // Measure after paint so offsetHeight is accurate
+        const rect = itemDiv.getBoundingClientRect();
+        const tipW = tooltip.offsetWidth || 320;
+        const tipH = tooltip.offsetHeight;
+
+        const spaceAbove = rect.top - 8;
+        const spaceBelow = window.innerHeight - rect.bottom - 8;
+
+        let top;
+        if (spaceAbove >= tipH || spaceAbove >= spaceBelow) {
+            // Show above — cap height to available space
+            const maxH = Math.min(tipH, spaceAbove);
+            tooltip.style.maxHeight = `${maxH}px`;
+            top = rect.top - maxH - 6;
+        } else {
+            // Show below — cap height to available space
+            const maxH = Math.min(tipH, spaceBelow);
+            tooltip.style.maxHeight = `${maxH}px`;
+            top = rect.bottom + 6;
+        }
+
+        let left = rect.left;
+        if (left + tipW > window.innerWidth - 8) left = window.innerWidth - tipW - 8;
+        if (left < 8) left = 8;
+
+        tooltip.style.left = `${left}px`;
+        tooltip.style.top = `${top}px`;
+        tooltip.style.visibility = 'visible';
+
+        this.chestTooltip = tooltip;
+    }
+
+    /**
+     * Hide and remove the chest EV tooltip
+     */
+    hideChestTooltip() {
+        if (this.chestTooltip) {
+            this.chestTooltip.remove();
+            this.chestTooltip = null;
+        }
+    }
+
+    /**
      * Close the popup
      */
     closePopup() {
+        this.hideChestTooltip();
         if (this.popup) {
             this.popup.remove();
             this.popup = null;
