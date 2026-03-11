@@ -49,7 +49,7 @@ export function calculateIncome(lootMap) {
             totalBid += itemCount;
         } else {
             const itemDetails = dataManager.getItemDetails(loot.itemHrid);
-            if (itemDetails?.isOpenable && expectedValueCalculator.isInitialized) {
+            if (itemDetails?.isOpenable) {
                 // Openable containers (chests, crates, etc.): use expected value
                 const ev =
                     expectedValueCalculator.getCachedValue(loot.itemHrid) ||
