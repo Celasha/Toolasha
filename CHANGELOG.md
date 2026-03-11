@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.34.5](https://github.com/Celasha/Toolasha/compare/v1.34.4...v1.34.5) (2026-03-11)
+
+### Bug Fixes
+
+- calculate dungeon chest income when EV cache is mid-refresh ([de29629](https://github.com/Celasha/Toolasha/commit/de2962977da01c948bf401cfdff16982912067a2))
+
 ## [1.34.4](https://github.com/Celasha/Toolasha/compare/v1.34.3...v1.34.4) (2026-03-11)
 
 ### Bug Fixes
