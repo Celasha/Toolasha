@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 1.34.3
+ * Version: 1.34.4
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1275,21 +1275,11 @@
      * Initialize loadout export button
      */
     function initialize$3() {
-        domObserver.register(
-            'LoadoutExportButton-Panel',
-            () => {
-                const selectedLoadout = document.querySelector('[class*="LoadoutsPanel_selectedLoadout"]');
-                if (!selectedLoadout) {
-                    // Panel closed — remove stale button reference
-                    const stale = document.getElementById(BUTTON_ID);
-                    if (stale) stale.remove();
-                    return;
-                }
-
-                injectButton(selectedLoadout);
-            },
-            { debounce: true, debounceDelay: 300 }
-        );
+        domObserver.onClass('LoadoutExportButton-Panel', 'LoadoutsPanel_buttonsContainer', (node) => {
+            const selectedLoadout = node.closest('[class*="LoadoutsPanel_selectedLoadout"]');
+            if (!selectedLoadout) return;
+            injectButton(selectedLoadout);
+        });
     }
 
     var loadoutExportButton = {
@@ -1944,6 +1934,10 @@
             // WebSocket message history (last 100 party messages for reliable timestamp capture)
             this.recentChatMessages = [];
 
+            // Guard against restoring stale state after a completion
+            // Set synchronously in completeDungeon() before async clearInProgressRun()
+            this._lastCompletionTime = 0;
+
             // Hibernation detection (for UI time label switching)
             this.hibernationDetected = false;
             this.timerRegistry = timerRegistry_js.createTimerRegistry();
@@ -2035,6 +2029,12 @@
 
             if (!saved) {
                 return false; // No saved state
+            }
+
+            // Guard: reject restore if a completion just happened (IndexedDB clear may still be in-flight)
+            if (Date.now() - this._lastCompletionTime < 5000) {
+                await this.clearInProgressRun();
+                return false;
             }
 
             // Verify battleId matches (same run)
@@ -2944,8 +2944,10 @@
             this.keyCountMessages = [];
             this.currentBattleId = null;
 
-            // Clear saved in-progress state immediately (before async saves)
-            // This prevents race condition where next dungeon saves state, then we clear it
+            // Guard: mark completion time synchronously so restoreInProgressRun() rejects stale reads
+            this._lastCompletionTime = Date.now();
+
+            // Clear saved in-progress state (async - may not complete before next restore attempt)
             await this.clearInProgressRun();
 
             const endTime = Date.now();
