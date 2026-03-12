@@ -10,7 +10,13 @@
  * - tooltip-prices.js
  */
 
-import { SECONDS_PER_HOUR, HOURS_PER_DAY, DRINKS_PER_HOUR_BASE, MARKET_TAX } from './profit-constants.js';
+import {
+    SECONDS_PER_HOUR,
+    HOURS_PER_DAY,
+    DRINKS_PER_HOUR_BASE,
+    MARKET_TAX,
+    MIN_ACTION_TIME_SECONDS,
+} from './profit-constants.js';
 
 /**
  * Calculate actions per hour from action time
@@ -25,7 +31,7 @@ export function calculateActionsPerHour(actionTimeSeconds) {
     if (!actionTimeSeconds || actionTimeSeconds <= 0) {
         return 0;
     }
-    return SECONDS_PER_HOUR / actionTimeSeconds;
+    return SECONDS_PER_HOUR / Math.max(MIN_ACTION_TIME_SECONDS, actionTimeSeconds);
 }
 
 /**

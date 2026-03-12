@@ -32,6 +32,10 @@ class DungeonTracker {
         // WebSocket message history (last 100 party messages for reliable timestamp capture)
         this.recentChatMessages = [];
 
+        // Guard against restoring stale state after a completion
+        // Set synchronously in completeDungeon() before async clearInProgressRun()
+        this._lastCompletionTime = 0;
+
         // Hibernation detection (for UI time label switching)
         this.hibernationDetected = false;
         this.timerRegistry = createTimerRegistry();
@@ -123,6 +127,12 @@ class DungeonTracker {
 
         if (!saved) {
             return false; // No saved state
+        }
+
+        // Guard: reject restore if a completion just happened (IndexedDB clear may still be in-flight)
+        if (Date.now() - this._lastCompletionTime < 5000) {
+            await this.clearInProgressRun();
+            return false;
         }
 
         // Verify battleId matches (same run)
@@ -831,8 +841,6 @@ class DungeonTracker {
             if (!restored) {
                 // No restore - initialize tracking anyway
                 this.startDungeon(data);
-            } else {
-                // Restored in-progress run; continue tracking
             }
         } else {
             // Subsequent wave (already tracking)
@@ -1040,8 +1048,10 @@ class DungeonTracker {
         this.keyCountMessages = [];
         this.currentBattleId = null;
 
-        // Clear saved in-progress state immediately (before async saves)
-        // This prevents race condition where next dungeon saves state, then we clear it
+        // Guard: mark completion time synchronously so restoreInProgressRun() rejects stale reads
+        this._lastCompletionTime = Date.now();
+
+        // Clear saved in-progress state (async - may not complete before next restore attempt)
         await this.clearInProgressRun();
 
         const endTime = Date.now();

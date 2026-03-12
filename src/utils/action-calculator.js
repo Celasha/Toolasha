@@ -16,6 +16,7 @@ import {
 } from './tea-parser.js';
 import { calculateHouseEfficiency } from './house-efficiency.js';
 import { stackAdditive } from './efficiency.js';
+import { MIN_ACTION_TIME_SECONDS } from './profit-constants.js';
 
 /**
  * Calculate complete action statistics (time + efficiency)
@@ -59,6 +60,9 @@ export function calculateActionStats(actionDetails, options = {}) {
             const taskSpeedBonus = dataManager.getTaskSpeedBonus(); // Returns percentage (e.g., 15 for 15%)
             actionTime = actionTime / (1 + taskSpeedBonus / 100); // Apply multiplicatively
         }
+
+        // Enforce game minimum action time
+        actionTime = Math.max(MIN_ACTION_TIME_SECONDS, actionTime);
 
         // Calculate efficiency
         const skillLevel = getSkillLevel(skills, actionDetails.type);

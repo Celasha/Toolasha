@@ -37,6 +37,7 @@ import { setReactInputValue } from '../../utils/react-input.js';
 import { calculateExpPerHour, calculateMultiLevelProgress } from '../../utils/experience-calculator.js';
 import { createCollapsibleSection } from '../../utils/ui-components.js';
 import { calculateActionsPerHour, calculateEffectiveActionsPerHour } from '../../utils/profit-helpers.js';
+import { MIN_ACTION_TIME_SECONDS } from '../../utils/profit-constants.js';
 import { createCleanupRegistry } from '../../utils/cleanup-registry.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
 
@@ -191,8 +192,13 @@ class QuickInputButtons {
 
                 // Calculate intermediate time (after equipment speed, before task speed)
                 const timeAfterEquipment = baseTime / (1 + speedBonus);
+                const displayTimeAfterEquipment = Math.max(MIN_ACTION_TIME_SECONDS, timeAfterEquipment);
+                const equipmentClampSuffix =
+                    timeAfterEquipment < MIN_ACTION_TIME_SECONDS ? ` (${timeAfterEquipment.toFixed(2)}s)` : '';
 
-                speedLines.push(`Base: ${baseTime.toFixed(2)}s → ${timeAfterEquipment.toFixed(2)}s`);
+                speedLines.push(
+                    `Base: ${baseTime.toFixed(2)}s → ${displayTimeAfterEquipment.toFixed(2)}s${equipmentClampSuffix}`
+                );
                 if (speedBonus > 0) {
                     speedLines.push(
                         `Speed: +${formatPercentage(speedBonus, 1)} | ${calculateActionsPerHour(timeAfterEquipment).toFixed(0)}/hr`
@@ -238,7 +244,7 @@ class QuickInputButtons {
                         `<span style="font-weight: 500;">Task Speed (multiplicative): +${taskSpeedBonus.toFixed(1)}%</span>`
                     );
                     speedLines.push(
-                        `${timeAfterEquipment.toFixed(2)}s → ${actionTime.toFixed(2)}s | ${calculateActionsPerHour(actionTime).toFixed(0)}/hr`
+                        `${displayTimeAfterEquipment.toFixed(2)}s${equipmentClampSuffix} → ${actionTime.toFixed(2)}s | ${calculateActionsPerHour(actionTime).toFixed(0)}/hr`
                     );
 
                     // Find equipped task badge for details

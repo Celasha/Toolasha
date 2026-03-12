@@ -16,7 +16,8 @@ class DungeonTrackerChatAnnotations {
         this.enabled = true;
         this.observer = null;
         this.lastSeenDungeonName = null; // Cache last known dungeon name
-        this.cumulativeStatsByDungeon = {}; // Persistent cumulative counters for rolling averages
+        this.cumulativeStatsByDungeon = {}; // Persistent cumulative stats for color thresholds and averages
+        this.storedRunNumbers = {}; // timestamp (ms) → run number, per statsKey, from storage
         this.processedMessages = new Map(); // Track processed messages to prevent duplicate counting
         this.initComplete = false; // Flag to ensure storage loads before annotation
         this.timerRegistry = createTimerRegistry();
@@ -43,35 +44,50 @@ class DungeonTrackerChatAnnotations {
      */
     async loadRunCountsFromStorage() {
         try {
-            // Scrub outlier runs (Houston downtime artifacts) before seeding averages
+            // Scrub outlier runs before seeding averages
             await dungeonTrackerStorage.scrubOutlierRuns();
 
             // Get all runs from unified storage
             const allRuns = await dungeonTrackerStorage.getAllRuns();
 
-            // Seed per-team-per-dungeon counters directly from run history.
-            // Key: "teamKey::dungeonName" so each team's run count and average are independent.
+            // Group runs by statsKey (teamKey::dungeonName), sorted oldest→newest
+            const groupedRuns = {};
             for (const run of allRuns) {
                 if (!run.teamKey || !run.dungeonName) continue;
                 const duration = run.duration || run.totalTime;
                 if (!duration || duration <= 0) continue;
 
                 const key = `${run.teamKey}::${run.dungeonName}`;
-                if (!this.cumulativeStatsByDungeon[key]) {
-                    this.cumulativeStatsByDungeon[key] = {
-                        runCount: 0,
-                        totalTime: 0,
-                        fastestTime: Infinity,
-                        slowestTime: 0,
-                    };
-                }
-                this.cumulativeStatsByDungeon[key].runCount++;
-                this.cumulativeStatsByDungeon[key].totalTime += duration;
-                if (duration < this.cumulativeStatsByDungeon[key].fastestTime) {
-                    this.cumulativeStatsByDungeon[key].fastestTime = duration;
-                }
-                if (duration > this.cumulativeStatsByDungeon[key].slowestTime) {
-                    this.cumulativeStatsByDungeon[key].slowestTime = duration;
+                if (!groupedRuns[key]) groupedRuns[key] = [];
+                groupedRuns[key].push(run);
+            }
+
+            // For each group: sort oldest→newest, assign 1-based run numbers,
+            // build timestamp lookup map, and seed color-threshold stats
+            for (const [key, runs] of Object.entries(groupedRuns)) {
+                runs.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+                this.storedRunNumbers[key] = {};
+                this.cumulativeStatsByDungeon[key] = {
+                    runCount: runs.length,
+                    totalTime: 0,
+                    fastestTime: Infinity,
+                    slowestTime: 0,
+                };
+
+                for (let i = 0; i < runs.length; i++) {
+                    const run = runs[i];
+                    const ts = new Date(run.timestamp).getTime();
+                    this.storedRunNumbers[key][ts] = i + 1; // 1-based
+
+                    const duration = run.duration || run.totalTime;
+                    this.cumulativeStatsByDungeon[key].totalTime += duration;
+                    if (duration < this.cumulativeStatsByDungeon[key].fastestTime) {
+                        this.cumulativeStatsByDungeon[key].fastestTime = duration;
+                    }
+                    if (duration > this.cumulativeStatsByDungeon[key].slowestTime) {
+                        this.cumulativeStatsByDungeon[key].slowestTime = duration;
+                    }
                 }
             }
 
@@ -88,7 +104,9 @@ class DungeonTrackerChatAnnotations {
      */
     async refreshRunCounts() {
         this.cumulativeStatsByDungeon = {};
+        this.storedRunNumbers = {};
         this.processedMessages.clear();
+        this.initComplete = false;
 
         // Remove existing annotation spans and reset DOM flags so messages can be re-annotated
         document.querySelectorAll('[class^="ChatMessage_chatMessage"]').forEach((msg) => {
@@ -98,6 +116,8 @@ class DungeonTrackerChatAnnotations {
             delete msg.dataset.processed;
         });
 
+        // Reload run numbers from storage before re-annotating
+        await this.loadRunCountsFromStorage();
         await this.annotateAllMessages();
     }
 
@@ -301,10 +321,10 @@ class DungeonTrackerChatAnnotations {
                 const isSuccessfulRun = diff && dungeonName && dungeonName !== 'Unknown';
 
                 if (isSuccessfulRun) {
-                    // Create unique message ID to prevent duplicate counting on scroll
+                    // Create unique message ID to prevent duplicate annotation on re-runs
                     const messageId = `${e.timestamp.getTime()}_${statsKey}`;
 
-                    // Initialize team+dungeon tracking if needed
+                    // Initialize team+dungeon stats if needed
                     if (!this.cumulativeStatsByDungeon[statsKey]) {
                         this.cumulativeStatsByDungeon[statsKey] = {
                             runCount: 0,
@@ -316,20 +336,33 @@ class DungeonTrackerChatAnnotations {
 
                     const dungeonStats = this.cumulativeStatsByDungeon[statsKey];
 
-                    // Check if this message was already counted
+                    let runNumber;
                     if (this.processedMessages.has(messageId)) {
-                        // Already counted, use stored run number
-                        const storedRunNumber = this.processedMessages.get(messageId);
-                        label = `Run #${storedRunNumber}: ${label}`;
+                        // Already annotated — reuse stored run number
+                        runNumber = this.processedMessages.get(messageId);
                     } else {
-                        // New message, increment counter and store
-                        dungeonStats.runCount++;
+                        // Look up run number from storage timestamp map (10s tolerance)
+                        const msgTs = e.timestamp.getTime();
+                        const tsMap = this.storedRunNumbers[statsKey] || {};
+                        const matchedTs = Object.keys(tsMap).find((ts) => Math.abs(ts - msgTs) < 10000);
+                        if (matchedTs) {
+                            runNumber = tsMap[matchedTs];
+                        } else {
+                            // Not in storage yet (live run just completed) — assign next number
+                            runNumber = dungeonStats.runCount + 1;
+                            dungeonStats.runCount++;
+                            // Add to lookup so subsequent re-annotation passes use the same number
+                            if (!this.storedRunNumbers[statsKey]) this.storedRunNumbers[statsKey] = {};
+                            this.storedRunNumbers[statsKey][msgTs] = runNumber;
+                        }
+
                         dungeonStats.totalTime += diff;
                         if (diff < dungeonStats.fastestTime) dungeonStats.fastestTime = diff;
                         if (diff > dungeonStats.slowestTime) dungeonStats.slowestTime = diff;
-                        this.processedMessages.set(messageId, dungeonStats.runCount);
-                        label = `Run #${dungeonStats.runCount}: ${label}`;
+                        this.processedMessages.set(messageId, runNumber);
                     }
+
+                    label = `Run #${runNumber}: ${label}`;
                 }
 
                 // Mark as processed BEFORE inserting (matches working DRT script)
@@ -748,6 +781,7 @@ class DungeonTrackerChatAnnotations {
         // Clear cached state
         this.lastSeenDungeonName = null;
         this.cumulativeStatsByDungeon = {}; // Reset cumulative counters
+        this.storedRunNumbers = {}; // Reset storage lookup map
         this.processedMessages.clear(); // Clear message deduplication map
         this.initComplete = false; // Reset init flag
         this.enabled = true; // Reset to default enabled state

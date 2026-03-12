@@ -346,21 +346,11 @@ function resetButton(button) {
  * Initialize loadout export button
  */
 function initialize() {
-    domObserver.register(
-        'LoadoutExportButton-Panel',
-        () => {
-            const selectedLoadout = document.querySelector('[class*="LoadoutsPanel_selectedLoadout"]');
-            if (!selectedLoadout) {
-                // Panel closed — remove stale button reference
-                const stale = document.getElementById(BUTTON_ID);
-                if (stale) stale.remove();
-                return;
-            }
-
-            injectButton(selectedLoadout);
-        },
-        { debounce: true, debounceDelay: 300 }
-    );
+    domObserver.onClass('LoadoutExportButton-Panel', 'LoadoutsPanel_buttonsContainer', (node) => {
+        const selectedLoadout = node.closest('[class*="LoadoutsPanel_selectedLoadout"]');
+        if (!selectedLoadout) return;
+        injectButton(selectedLoadout);
+    });
 }
 
 export default {

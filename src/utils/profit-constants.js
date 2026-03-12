@@ -29,6 +29,11 @@ export const DRINKS_PER_HOUR_BASE = 12;
 export const SECONDS_PER_HOUR = 3600;
 
 /**
+ * Minimum action time in seconds (game-enforced cap)
+ */
+export const MIN_ACTION_TIME_SECONDS = 3;
+
+/**
  * Hours per day (for daily profit calculations)
  */
 export const HOURS_PER_DAY = 24;
@@ -62,6 +67,7 @@ export default {
     COWBELL_BAG_TAX,
     DRINKS_PER_HOUR_BASE,
     SECONDS_PER_HOUR,
+    MIN_ACTION_TIME_SECONDS,
     HOURS_PER_DAY,
     GATHERING_TYPES,
     PRODUCTION_TYPES,

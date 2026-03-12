@@ -45,8 +45,8 @@ class DungeonTrackerUIChart {
         filteredRuns.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
 
         // Prepare data
-        // Label runs in reverse chronological order to match list (newest = Run 1, oldest = Run N)
-        const labels = filteredRuns.map((_, i) => `Run ${filteredRuns.length - i}`);
+        // Label runs oldest to newest (Run 1 = oldest, Run N = most recent)
+        const labels = filteredRuns.map((_, i) => `Run ${i + 1}`);
         const durations = filteredRuns.map((r) => (r.duration || r.totalTime || 0) / 60000); // Convert to minutes
 
         // Calculate stats

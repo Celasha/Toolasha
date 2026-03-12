@@ -7,6 +7,8 @@
  * Math.js library is loaded via userscript @require header.
  */
 
+import { MIN_ACTION_TIME_SECONDS } from './profit-constants.js';
+
 /**
  * Base success rates by enhancement level (before bonuses)
  */
@@ -84,7 +86,7 @@ export function calculatePerActionTime(enhancingLevel, itemLevel, speedBonus = 0
         speedMultiplier = 1 + speedBonus / 100;
     }
 
-    return baseActionTime / speedMultiplier;
+    return Math.max(MIN_ACTION_TIME_SECONDS, baseActionTime / speedMultiplier);
 }
 
 /**
@@ -197,7 +199,7 @@ export function calculateEnhancement(params) {
         speedMultiplier = 1 + speedBonus / 100;
     }
 
-    const perActionTime = baseActionTime / speedMultiplier;
+    const perActionTime = Math.max(MIN_ACTION_TIME_SECONDS, baseActionTime / speedMultiplier);
     const totalTime = perActionTime * attempts;
 
     return {

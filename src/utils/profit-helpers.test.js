@@ -23,13 +23,17 @@ import { calculateEfficiencyMultiplier } from './efficiency.js';
 describe('calculateActionsPerHour', () => {
     test('calculates actions per hour from action time', () => {
         expect(calculateActionsPerHour(6)).toBe(600); // 3600 / 6
-        expect(calculateActionsPerHour(1)).toBe(3600); // 3600 / 1
+        expect(calculateActionsPerHour(1)).toBe(1200); // clamped to 3s minimum: 3600 / 3
         expect(calculateActionsPerHour(60)).toBe(60); // 3600 / 60
     });
 
     test('handles fractional action times', () => {
-        expect(calculateActionsPerHour(0.5)).toBe(7200); // 3600 / 0.5
-        expect(calculateActionsPerHour(2.5)).toBe(1440); // 3600 / 2.5
+        expect(calculateActionsPerHour(0.5)).toBe(1200); // clamped to 3s minimum: 3600 / 3
+        expect(calculateActionsPerHour(2.5)).toBe(1200); // clamped to 3s minimum: 3600 / 3
+    });
+
+    test('returns 1200 at exactly the minimum action time', () => {
+        expect(calculateActionsPerHour(3)).toBe(1200); // 3600 / 3
     });
 
     test('returns 0 for invalid inputs', () => {
