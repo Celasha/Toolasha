@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.34.6](https://github.com/Celasha/Toolasha/compare/v1.34.5...v1.34.6) (2026-03-12)
+
+### Bug Fixes
+
+- align chat run numbers with storage and count oldest-to-newest ([3691d49](https://github.com/Celasha/Toolasha/commit/3691d490fcd736175bb5853bde3d3b2c8069ab85))
+- enforce 3-second minimum action time in all calculations ([23ccf9d](https://github.com/Celasha/Toolasha/commit/23ccf9d2e18caaabd373e6e6d58dac1c66b9b2c6))
+
 ## [1.34.5](https://github.com/Celasha/Toolasha/compare/v1.34.4...v1.34.5) (2026-03-11)
 
 ### Bug Fixes
