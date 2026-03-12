@@ -8,7 +8,6 @@ import storage from '../../core/storage.js';
 import domObserver from '../../core/dom-observer.js';
 import config from '../../core/config.js';
 import { formatKMB } from '../../utils/formatters.js';
-import { createTimerRegistry } from '../../utils/timer-registry.js';
 
 const STORE_NAME = 'xpHistory';
 const WINDOW_10M = 10 * 60 * 1000;
@@ -117,9 +116,47 @@ function inLastInterval(arr, interval) {
  * @returns {number} XP per hour
  */
 function calcXPH(prev, cur) {
-    const xpDelta = cur.xp - prev.xp;
     const tDeltaMs = cur.t - prev.t;
+    if (tDeltaMs <= 0) return 0;
+
+    const xpDelta = cur.xp - prev.xp;
+    if (xpDelta < 0) return 0;
+
     return (xpDelta / tDeltaMs) * 3600000;
+}
+
+/**
+ * Get a character skill snapshot by HRID.
+ * @param {Array} characterSkills
+ * @param {string|null} skillHrid
+ * @returns {{skillHrid: string, experience: number}|null}
+ */
+function getCharacterSkillSnapshot(characterSkills, skillHrid) {
+    if (!Array.isArray(characterSkills) || !skillHrid) return null;
+
+    return characterSkills.find((skillEntry) => skillEntry?.skillHrid === skillHrid) ?? null;
+}
+
+/**
+ * Remove an xp-tracker-owned container when it no longer has any content.
+ * @param {HTMLElement|null} remainingXPEl
+ */
+function removeOwnedRemainingXPIfEmpty(remainingXPEl) {
+    if (!remainingXPEl?.dataset?.xpTrackerOwned) return;
+    if (remainingXPEl.childElementCount > 0) return;
+    if (remainingXPEl.textContent.trim()) return;
+
+    remainingXPEl.remove();
+}
+
+/**
+ * Check whether a given skill is the currently active skill.
+ * @param {string|null} skillId
+ * @param {string|null} activeSkillId
+ * @returns {boolean}
+ */
+function isActiveSkill(skillId, activeSkillId) {
+    return Boolean(activeSkillId) && skillId === activeSkillId;
 }
 
 /**
@@ -202,9 +239,11 @@ class XPTracker {
         this.initialized = false;
         this.characterId = null;
         this.xpHistory = {}; // skillId → [{t, xp}]
-        this.timerRegistry = createTimerRegistry();
+        this.currentActionHrid = null;
+        this.currentSkillHrid = null;
+        this.currentActionStartTime = null;
+        this.statsCache = {}; // skillId → { length, lastTimestamp, rate }
         this.unregisterObservers = [];
-        this.tooltipObserver = null;
     }
 
     async initialize() {
@@ -216,6 +255,7 @@ class XPTracker {
         };
 
         const actionsUpdatedHandler = () => {
+            this._syncCurrentAction();
             this._updateNavBars();
         };
 
@@ -273,6 +313,8 @@ class XPTracker {
 
         await storage.set(`xpHistory_${charId}`, this.xpHistory, STORE_NAME);
 
+        this._syncCurrentAction(data.characterActions);
+
         this._updateNavBars();
     }
 
@@ -296,9 +338,15 @@ class XPTracker {
             }
 
             pushXP(this.xpHistory[skillId], { t, xp: skillEntry.experience });
+            delete this.statsCache[skillId];
         });
 
         storage.set(`xpHistory_${this.characterId}`, this.xpHistory, STORE_NAME);
+
+        this._setCurrentAction({
+            actionHrid: data.endCharacterAction?.actionHrid ?? null,
+            startTime: t,
+        });
 
         this._updateNavBars();
     }
@@ -310,6 +358,7 @@ class XPTracker {
         if (!config.getSetting('xpTracker', true)) return;
 
         const navEls = document.querySelectorAll('[class*="NavigationBar_nav"]');
+        const activeSkillId = this.currentSkillHrid ? SKILL_HRID_TO_ID[this.currentSkillHrid] : null;
         navEls.forEach((navEl) => {
             // Only process nav entries that have an XP bar
             if (!navEl.querySelector('[class*="NavigationBar_currentExperience"]')) return;
@@ -321,15 +370,13 @@ class XPTracker {
             const skillId = SKILL_NAME_TO_ID[skillName];
             if (!skillId) return;
 
-            const history = this.xpHistory[skillId];
-            if (!history) return;
-
-            const stats = calcStats(history);
-            const rate = stats.lastXPH;
-
             // Remove existing rate span (may be inline or standalone)
             navEl.querySelector('.mwi-xp-rate')?.remove();
+            removeOwnedRemainingXPIfEmpty(navEl.querySelector('.mwi-remaining-xp'));
 
+            if (!isActiveSkill(skillId, activeSkillId)) return;
+
+            const rate = this._getRateForSkill(skillId);
             if (rate <= 0) return;
 
             const rateText = `${formatKMB(rate)} xp/h`;
@@ -401,12 +448,11 @@ class XPTracker {
         const skillName = divs[0].textContent.trim().toLowerCase();
         const skillId = SKILL_NAME_TO_ID[skillName];
         if (!skillId) return;
+        const activeSkillId = this.currentSkillHrid ? SKILL_HRID_TO_ID[this.currentSkillHrid] : null;
+        if (!isActiveSkill(skillId, activeSkillId)) return;
 
-        const history = this.xpHistory[skillId];
-        if (!history) return;
-
-        const stats = calcStats(history);
-        if (stats.lastXPH <= 0) return;
+        const rate = this._getRateForSkill(skillId);
+        if (rate <= 0) return;
 
         // Parse "XP to next level: 12,345" — strip all non-digit characters to handle
         // locale-specific separators (commas, periods, spaces)
@@ -420,7 +466,7 @@ class XPTracker {
         // Remove any previously injected element
         tooltipEl.querySelector('.mwi-xp-time-left')?.remove();
 
-        const msLeft = (xpTillLevel / stats.lastXPH) * 3600000;
+        const msLeft = (xpTillLevel / rate) * 3600000;
         const timeStr = formatTimeLeft(msLeft);
 
         const div = document.createElement('div');
@@ -432,8 +478,6 @@ class XPTracker {
     }
 
     disable() {
-        this.timerRegistry.clearAll();
-
         this.unregisterObservers.forEach((fn) => fn());
         this.unregisterObservers = [];
 
@@ -441,6 +485,10 @@ class XPTracker {
         document.querySelectorAll('.mwi-xp-time-left').forEach((el) => el.remove());
         document.querySelectorAll('.mwi-remaining-xp[data-xp-tracker-owned]').forEach((el) => el.remove());
 
+        this.currentActionHrid = null;
+        this.currentSkillHrid = null;
+        this.currentActionStartTime = null;
+        this.statsCache = {};
         this.initialized = false;
     }
 
@@ -467,8 +515,10 @@ class XPTracker {
             // First load — populate action context from stored queue without filtering history.
             this._setCurrentAction({ actionHrid: nextActionHrid, startTime: null, preserveHistory: true });
         } else if (nextActionHrid !== this.currentActionHrid) {
-            // Action changed mid-session — clear stale context so the new action starts fresh.
-            this._setCurrentAction({ actionHrid: null, startTime: null });
+            // Action changed mid-session — reset to the new action and seed a baseline
+            // snapshot so the rate can recover after fewer fresh completions.
+            this._setCurrentAction({ actionHrid: nextActionHrid, startTime: Date.now() });
+            this._seedCurrentSkillBaseline(this.currentActionStartTime);
         }
     }
 
@@ -506,6 +556,34 @@ class XPTracker {
     }
 
     /**
+     * Seed a baseline XP snapshot for the current skill using the latest character data.
+     * This reduces the number of fresh action completions needed before a new action can
+     * produce a stable XP/h estimate.
+     * @param {number} timestamp
+     */
+    _seedCurrentSkillBaseline(timestamp) {
+        if (!this.currentSkillHrid) return;
+
+        const skillId = SKILL_HRID_TO_ID[this.currentSkillHrid];
+        if (!skillId) return;
+
+        const characterSkills = dataManager.characterSkills || dataManager.characterData?.characterSkills || [];
+        const skillEntry = getCharacterSkillSnapshot(characterSkills, this.currentSkillHrid);
+        if (!skillEntry) return;
+
+        if (!this.xpHistory[skillId]) {
+            this.xpHistory[skillId] = [];
+        }
+
+        pushXP(this.xpHistory[skillId], { t: timestamp, xp: skillEntry.experience });
+        delete this.statsCache[skillId];
+
+        if (this.characterId) {
+            storage.set(`xpHistory_${this.characterId}`, this.xpHistory, STORE_NAME);
+        }
+    }
+
+    /**
      * Get the current XP/h rate for a skill with action start filtering.
      * @param {string} skillId
      * @returns {number}
@@ -533,6 +611,17 @@ class XPTracker {
 }
 
 const xpTracker = new XPTracker();
+
+export {
+    XPTracker,
+    calcStats,
+    calcXPH,
+    downsampleEvenly,
+    getCharacterSkillSnapshot,
+    isActiveSkill,
+    pushXP,
+    removeOwnedRemainingXPIfEmpty,
+};
 
 export default {
     name: 'XP/hr Tracker',
