@@ -13,10 +13,9 @@ import { createTimerRegistry } from '../../utils/timer-registry.js';
 const STORE_NAME = 'xpHistory';
 const WINDOW_10M = 10 * 60 * 1000;
 const WINDOW_1H = 60 * 60 * 1000;
-const HISTORY_RETENTION = WINDOW_1H;
+const HISTORY_RETENTION = 3 * WINDOW_1H;
 const MIN_SAMPLE_COUNT = 3;
 const TARGET_SAMPLE_COUNT_10M = 6;
-const TARGET_SAMPLE_COUNT_1H = 10;
 
 /**
  * Skill definitions matching game skill HRIDs
@@ -160,20 +159,15 @@ function downsampleEvenly(arr, targetCount) {
 }
 
 /**
- * Compute lastXPH (10-min window) and lastHourXPH (1-hr window) for a skill.
+ * Compute lastXPH (10-min rolling window) for a skill.
  * @param {Array} arr - History array for one skill
- * @returns {{lastXPH: number, lastHourXPH: number}}
+ * @returns {number} XP per hour
  */
 function calcStats(arr) {
-    if (arr.length < MIN_SAMPLE_COUNT) return { lastXPH: 0, lastHourXPH: 0 };
+    if (arr.length < MIN_SAMPLE_COUNT) return 0;
 
     const last10m = downsampleEvenly(inLastInterval(arr, WINDOW_10M), TARGET_SAMPLE_COUNT_10M);
-    const lastXPH = last10m.length >= MIN_SAMPLE_COUNT ? calcXPH(last10m[0], last10m[last10m.length - 1]) : 0;
-
-    const last1h = downsampleEvenly(inLastInterval(arr, WINDOW_1H), TARGET_SAMPLE_COUNT_1H);
-    const lastHourXPH = last1h.length >= MIN_SAMPLE_COUNT ? calcXPH(last1h[0], last1h[last1h.length - 1]) : 0;
-
-    return { lastXPH, lastHourXPH };
+    return last10m.length >= MIN_SAMPLE_COUNT ? calcXPH(last10m[0], last10m[last10m.length - 1]) : 0;
 }
 
 /**
@@ -448,6 +442,93 @@ class XPTracker {
         document.querySelectorAll('.mwi-remaining-xp[data-xp-tracker-owned]').forEach((el) => el.remove());
 
         this.initialized = false;
+    }
+
+    /**
+     * Sync current action context from the action queue.
+     * On first load (currentActionHrid is null), initialises the action fields from
+     * characterActions[0] without filtering stored history so that persisted XP
+     * samples are immediately usable after a page reload.
+     * @param {Array=} actions
+     */
+    _syncCurrentAction(actions) {
+        const currentActions = Array.isArray(actions) ? actions : dataManager.getCurrentActions();
+        if (!currentActions || currentActions.length === 0) {
+            this._setCurrentAction({ actionHrid: null, startTime: null });
+            return;
+        }
+
+        const nextAction = currentActions[0];
+        const nextActionHrid = nextAction?.actionHrid ?? null;
+
+        if (!nextActionHrid) return;
+
+        if (!this.currentActionHrid) {
+            // First load — populate action context from stored queue without filtering history.
+            this._setCurrentAction({ actionHrid: nextActionHrid, startTime: null, preserveHistory: true });
+        } else if (nextActionHrid !== this.currentActionHrid) {
+            // Action changed mid-session — clear stale context so the new action starts fresh.
+            this._setCurrentAction({ actionHrid: null, startTime: null });
+        }
+    }
+
+    /**
+     * Set current action context and reset action-scoped state when needed.
+     * @param {{actionHrid: string|null, startTime: number|null, preserveHistory?: boolean}} params
+     *   preserveHistory — when true (page-reload init), skip the history filter so stored
+     *   samples remain available immediately.
+     */
+    _setCurrentAction({ actionHrid, startTime, preserveHistory = false }) {
+        if (!actionHrid) {
+            this.currentActionHrid = null;
+            this.currentSkillHrid = null;
+            this.currentActionStartTime = null;
+            this.statsCache = {};
+            return;
+        }
+
+        if (actionHrid === this.currentActionHrid) return;
+
+        this.currentActionHrid = actionHrid;
+        const actionDetails = dataManager.getActionDetails(actionHrid);
+        this.currentSkillHrid = actionDetails?.experienceGain?.skillHrid ?? actionDetails?.skillHrid ?? null;
+        this.currentActionStartTime = startTime ?? Date.now();
+        this.statsCache = {};
+
+        // Only trim history when the action genuinely changed mid-session, not on reload.
+        if (preserveHistory) return;
+
+        if (!this.currentSkillHrid) return;
+        const skillId = SKILL_HRID_TO_ID[this.currentSkillHrid];
+        if (!skillId || !this.xpHistory[skillId]) return;
+
+        this.xpHistory[skillId] = this.xpHistory[skillId].filter((entry) => entry.t >= this.currentActionStartTime);
+    }
+
+    /**
+     * Get the current XP/h rate for a skill with action start filtering.
+     * @param {string} skillId
+     * @returns {number}
+     */
+    _getRateForSkill(skillId) {
+        const history = this.xpHistory[skillId];
+        if (!history) return 0;
+        if (history.length < MIN_SAMPLE_COUNT) return 0;
+
+        const lastEntry = history[history.length - 1];
+        const cached = this.statsCache[skillId];
+        if (cached && cached.length === history.length && cached.lastTimestamp === lastEntry.t) {
+            return cached.rate;
+        }
+
+        const rate = calcStats(history);
+        this.statsCache[skillId] = {
+            length: history.length,
+            lastTimestamp: lastEntry.t,
+            rate,
+        };
+
+        return rate;
     }
 }
 
