@@ -73,6 +73,47 @@ export function calculateIncome(lootMap) {
 }
 
 /**
+ * Build per-chest income breakdown for expandable Income display
+ * Only marks isDungeonRun when regular dungeon chests are present
+ * @param {Object} lootMap - totalLootMap from player data
+ * @returns {Object} { isDungeonRun: boolean, breakdown: Array }
+ */
+export function calculateIncomeBreakdown(lootMap) {
+    if (!lootMap) {
+        return { isDungeonRun: false, breakdown: [] };
+    }
+
+    let isDungeonRun = false;
+    const breakdown = [];
+
+    for (const loot of Object.values(lootMap)) {
+        const itemDetails = dataManager.getItemDetails(loot.itemHrid);
+        if (!itemDetails?.isOpenable) {
+            continue;
+        }
+
+        if (DUNGEON_CHEST_KEYS[loot.itemHrid]) {
+            isDungeonRun = true;
+        }
+
+        const evData = expectedValueCalculator.calculateExpectedValue(loot.itemHrid);
+        const evPerChest = evData?.expectedValue ?? 0;
+        const totalValue = evPerChest * loot.count;
+
+        breakdown.push({
+            itemHrid: loot.itemHrid,
+            itemName: itemDetails.name,
+            count: loot.count,
+            evPerChest,
+            totalValue,
+            drops: evData?.drops ?? [],
+        });
+    }
+
+    return { isDungeonRun, breakdown };
+}
+
+/**
  * Calculate entry key costs from dungeon chests dropped
  * Each regular dungeon chest in the loot map represents one entry key consumed
  * @param {Object} lootMap - totalLootMap from player data
@@ -283,6 +324,7 @@ export function formatLootList(lootMap) {
 export function calculatePlayerStats(playerData, durationSeconds = null) {
     // Calculate income
     const income = calculateIncome(playerData.loot);
+    const incomeBreakdownData = calculateIncomeBreakdown(playerData.loot);
 
     // Use provided duration or default to 0 (will show 0 for rates if no duration)
     const duration = durationSeconds || 0;
@@ -349,6 +391,8 @@ export function calculatePlayerStats(playerData, durationSeconds = null) {
         deathCount: playerData.deathCount,
         deathsPerHour,
         lootList,
+        incomeBreakdown: incomeBreakdownData.breakdown,
+        isDungeonRun: incomeBreakdownData.isDungeonRun,
         duration,
     };
 }

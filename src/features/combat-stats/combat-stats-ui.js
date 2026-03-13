@@ -512,7 +512,13 @@ class CombatStatsUI {
         const statsRows = [
             { label: 'Duration', value: stats.durationFormatted || '0s' },
             { label: 'Encounters/Hour', value: formatNum(stats.encountersPerHour) },
-            { label: 'Income', value: formatNum(stats.income.bid) },
+            {
+                label: 'Income',
+                value: formatNum(stats.income.bid),
+                ...(stats.isDungeonRun && stats.incomeBreakdown?.length > 0
+                    ? { expandable: true, incomeBreakdown: stats.incomeBreakdown }
+                    : {}),
+            },
             { label: 'Daily Income', value: `${formatNum(stats.dailyIncome.bid)}/d` },
             {
                 label: 'Consumable Costs',
@@ -607,7 +613,171 @@ class CombatStatsUI {
                             font-size: 13px;
                         `;
 
-                        if (row.breakdown && row.breakdown.length > 0) {
+                        if (row.incomeBreakdown) {
+                            // Pricing mode label
+                            const pricingMode = config.getSettingValue('profitCalc_pricingMode') || 'hybrid';
+                            const pricingLabels = {
+                                conservative: 'Conservative',
+                                hybrid: 'Hybrid',
+                                optimistic: 'Optimistic',
+                            };
+                            const pricingNote = document.createElement('div');
+                            pricingNote.style.cssText = `
+                                margin-bottom: 8px;
+                                font-size: 12px;
+                                color: #aaa;
+                            `;
+                            pricingNote.textContent = `Pricing: ${pricingLabels[pricingMode] || pricingMode}`;
+                            breakdownDiv.appendChild(pricingNote);
+
+                            // Column header
+                            const incomeHeader = document.createElement('div');
+                            incomeHeader.style.cssText = `
+                                display: grid;
+                                grid-template-columns: 2fr 1fr 1fr 1fr;
+                                gap: 10px;
+                                font-weight: bold;
+                                margin-bottom: 5px;
+                                padding-bottom: 5px;
+                                border-bottom: 1px solid #4a4a4a;
+                                color: ${textColor};
+                            `;
+                            incomeHeader.innerHTML = `
+                                <span>Chest</span>
+                                <span style="text-align: right;">Received</span>
+                                <span style="text-align: right;">EV Each</span>
+                                <span style="text-align: right;">Total EV</span>
+                            `;
+                            breakdownDiv.appendChild(incomeHeader);
+
+                            // One row per chest type
+                            for (const chest of row.incomeBreakdown) {
+                                const chestRow = document.createElement('div');
+                                chestRow.style.cssText = `
+                                    display: grid;
+                                    grid-template-columns: 2fr 1fr 1fr 1fr;
+                                    gap: 10px;
+                                    margin-bottom: 3px;
+                                    color: ${textColor};
+                                    cursor: pointer;
+                                    user-select: none;
+                                `;
+                                let chestExpanded = false;
+                                let chestBreakdownDiv = null;
+
+                                const nameCell = document.createElement('span');
+                                nameCell.textContent = `▶ ${chest.itemName}`;
+                                const countCell = document.createElement('span');
+                                countCell.style.textAlign = 'right';
+                                countCell.textContent = formatNum(chest.count);
+                                const evCell = document.createElement('span');
+                                evCell.style.textAlign = 'right';
+                                evCell.textContent = formatNum(chest.evPerChest);
+                                const totalCell = document.createElement('span');
+                                totalCell.style.textAlign = 'right';
+                                totalCell.textContent = formatNum(chest.totalValue);
+
+                                chestRow.appendChild(nameCell);
+                                chestRow.appendChild(countCell);
+                                chestRow.appendChild(evCell);
+                                chestRow.appendChild(totalCell);
+
+                                chestRow.onclick = (e) => {
+                                    e.stopPropagation();
+                                    chestExpanded = !chestExpanded;
+                                    nameCell.textContent = `${chestExpanded ? '▼' : '▶'} ${chest.itemName}`;
+                                    if (chestExpanded) {
+                                        chestBreakdownDiv = document.createElement('div');
+                                        chestBreakdownDiv.style.cssText = `
+                                            margin-left: 20px;
+                                            margin-top: 4px;
+                                            margin-bottom: 8px;
+                                            padding: 8px;
+                                            background: #111;
+                                            border-left: 2px solid #4a4a4a;
+                                            font-size: 12px;
+                                            color: ${textColor};
+                                        `;
+                                        const subHeader = document.createElement('div');
+                                        subHeader.style.cssText = `
+                                            display: grid;
+                                            grid-template-columns: 2fr 1fr 1fr 1fr;
+                                            gap: 8px;
+                                            font-weight: bold;
+                                            margin-bottom: 4px;
+                                            padding-bottom: 4px;
+                                            border-bottom: 1px solid #3a3a3a;
+                                        `;
+                                        subHeader.innerHTML = `
+                                            <span>Item</span>
+                                            <span style="text-align: right;">Rate</span>
+                                            <span style="text-align: right;">Avg Qty</span>
+                                            <span style="text-align: right;">EV</span>
+                                        `;
+                                        chestBreakdownDiv.appendChild(subHeader);
+                                        for (const drop of chest.drops) {
+                                            const dropRow = document.createElement('div');
+                                            dropRow.style.cssText = `
+                                                display: grid;
+                                                grid-template-columns: 2fr 1fr 1fr 1fr;
+                                                gap: 8px;
+                                                margin-bottom: 2px;
+                                            `;
+                                            dropRow.innerHTML = `
+                                                <span>${drop.itemName}</span>
+                                                <span style="text-align: right;">${formatPercentage(drop.dropRate, 1)}</span>
+                                                <span style="text-align: right;">${drop.avgCount.toFixed(2)}</span>
+                                                <span style="text-align: right;">${drop.hasPriceData ? formatNum(drop.expectedValue) : '—'}</span>
+                                            `;
+                                            chestBreakdownDiv.appendChild(dropRow);
+                                        }
+                                        const evTotalRow = document.createElement('div');
+                                        evTotalRow.style.cssText = `
+                                            margin-top: 4px;
+                                            padding-top: 4px;
+                                            border-top: 1px solid #3a3a3a;
+                                            font-weight: bold;
+                                            display: grid;
+                                            grid-template-columns: 2fr 1fr 1fr 1fr;
+                                            gap: 8px;
+                                        `;
+                                        evTotalRow.innerHTML = `
+                                            <span>Total</span>
+                                            <span></span>
+                                            <span></span>
+                                            <span style="text-align: right;">${formatNum(chest.evPerChest)}</span>
+                                        `;
+                                        chestBreakdownDiv.appendChild(evTotalRow);
+                                        chestRow.after(chestBreakdownDiv);
+                                    } else if (chestBreakdownDiv) {
+                                        chestBreakdownDiv.remove();
+                                        chestBreakdownDiv = null;
+                                    }
+                                };
+
+                                breakdownDiv.appendChild(chestRow);
+                            }
+
+                            // Grand total
+                            const incomeTotalRow = document.createElement('div');
+                            incomeTotalRow.style.cssText = `
+                                display: grid;
+                                grid-template-columns: 2fr 1fr 1fr 1fr;
+                                gap: 10px;
+                                margin-top: 5px;
+                                padding-top: 5px;
+                                border-top: 1px solid #4a4a4a;
+                                font-weight: bold;
+                                color: ${textColor};
+                            `;
+                            incomeTotalRow.innerHTML = `
+                                <span>Total</span>
+                                <span></span>
+                                <span></span>
+                                <span style="text-align: right;">${row.value}</span>
+                            `;
+                            breakdownDiv.appendChild(incomeTotalRow);
+                        } else if (row.breakdown && row.breakdown.length > 0) {
                             // Add header
                             const header = document.createElement('div');
                             header.style.cssText = `
