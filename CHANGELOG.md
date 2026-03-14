@@ -2,13 +2,12 @@
 
 ## [1.36.2](https://github.com/Celasha/Toolasha/compare/v1.36.1...v1.36.2) (2026-03-14)
 
-
 ### Bug Fixes
 
-* add ask/bid price setting for key costs in combat statistics ([672f81b](https://github.com/Celasha/Toolasha/commit/672f81b0b5ad07723f61a8b900ff5e798b908355))
-* color chat run annotations relative to cumulative average ([0589a4e](https://github.com/Celasha/Toolasha/commit/0589a4e96b7b75ee155345c0773b400da3a33d8b))
-* multiply boss task fight count by 10 in multi-task Go merge ([8748020](https://github.com/Celasha/Toolasha/commit/8748020ea6095cc6a195004b0350f642387446d5))
-* resume enhancement tracking after mid-session clear or target change ([7515e9b](https://github.com/Celasha/Toolasha/commit/7515e9b2823a458e53b6e10ee9e2ac54255c0488))
+- add ask/bid price setting for key costs in combat statistics ([672f81b](https://github.com/Celasha/Toolasha/commit/672f81b0b5ad07723f61a8b900ff5e798b908355))
+- color chat run annotations relative to cumulative average ([0589a4e](https://github.com/Celasha/Toolasha/commit/0589a4e96b7b75ee155345c0773b400da3a33d8b))
+- multiply boss task fight count by 10 in multi-task Go merge ([8748020](https://github.com/Celasha/Toolasha/commit/8748020ea6095cc6a195004b0350f642387446d5))
+- resume enhancement tracking after mid-session clear or target change ([7515e9b](https://github.com/Celasha/Toolasha/commit/7515e9b2823a458e53b6e10ee9e2ac54255c0488))
 
 ## [1.36.1](https://github.com/Celasha/Toolasha/compare/v1.36.0...v1.36.1) (2026-03-14)
 
