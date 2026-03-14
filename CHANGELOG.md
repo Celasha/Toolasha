@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.35.0](https://github.com/Celasha/Toolasha/compare/v1.34.6...v1.35.0) (2026-03-13)
+
+### Features
+
+- add expandable income breakdown for dungeon runs ([9a64a93](https://github.com/Celasha/Toolasha/commit/9a64a93b71ee5a257781f3a024ba900d67590b4c))
+
+### Bug Fixes
+
+- carry key count timestamp forward to prevent double-run entries ([6fb63bc](https://github.com/Celasha/Toolasha/commit/6fb63bca42f1137b7635e1160d2aec987bf0c990))
+- export correct player slot in sub-5-player parties ([e50772f](https://github.com/Celasha/Toolasha/commit/e50772f64bb9e2f6cf81871524e644d41f673049))
+
 ## [1.34.6](https://github.com/Celasha/Toolasha/compare/v1.34.5...v1.34.6) (2026-03-12)
 
 ### Bug Fixes
