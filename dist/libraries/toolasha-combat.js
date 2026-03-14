@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 1.34.6
+ * Version: 1.35.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -897,9 +897,9 @@
         }
 
         // If single-player format requested, return just the player object
-        if (singlePlayerFormat && exportObj[1]) {
-            // In party mode, export YOUR data (not necessarily slot 1)
-            const slotToExport = isParty ? yourSlotIndex : 1;
+        if (singlePlayerFormat && exportObj[yourSlotIndex]) {
+            // Always use yourSlotIndex — defaults to 1 for solo, set to actual slot in any party size
+            const slotToExport = yourSlotIndex;
 
             // Parse the player JSON string back to an object
             const playerObj = JSON.parse(exportObj[slotToExport]);
@@ -1926,6 +1926,7 @@
             this.firstKeyCountTimestamp = null; // Timestamp from first "Key counts" message
             this.lastKeyCountTimestamp = null; // Timestamp from last "Key counts" message
             this.keyCountMessages = []; // Store all key count messages for this run
+            this.pendingNextRunFirstKeyCount = null; // Carry last timestamp forward as next run's start
             this.battleStartedTimestamp = null; // Timestamp from "Battle started" message
 
             // Character ID for data isolation
@@ -2805,8 +2806,16 @@
             this.waveTimes = [];
 
             // Reset party message tracking
-            this.firstKeyCountTimestamp = null;
-            this.lastKeyCountTimestamp = null;
+            // If a completion just happened, carry its timestamp forward as this run's start.
+            // scanExistingChatMessages will see firstKeyCountTimestamp already set and skip the scan.
+            if (this.pendingNextRunFirstKeyCount !== null) {
+                this.firstKeyCountTimestamp = this.pendingNextRunFirstKeyCount;
+                this.lastKeyCountTimestamp = this.pendingNextRunFirstKeyCount;
+                this.pendingNextRunFirstKeyCount = null;
+            } else {
+                this.firstKeyCountTimestamp = null;
+                this.lastKeyCountTimestamp = null;
+            }
             this.keyCountMessages = [];
 
             // Reset hibernation detection for new run
@@ -2935,6 +2944,11 @@
             const firstTimestamp = this.firstKeyCountTimestamp;
             const lastTimestamp = this.lastKeyCountTimestamp;
 
+            // Carry the completion timestamp forward as the next run's start anchor.
+            // This avoids the scanExistingChatMessages race condition where the scan
+            // fires before the live message arrives and grabs an older timestamp instead.
+            this.pendingNextRunFirstKeyCount = lastTimestamp;
+
             // Clear ALL state immediately - next dungeon can now start without contamination
             this.currentRun = null;
             this.waveStartTime = null;
@@ -3045,6 +3059,7 @@
             this.lastKeyCountTimestamp = null;
             this.keyCountMessages = [];
             this.battleStartedTimestamp = null;
+            this.pendingNextRunFirstKeyCount = null;
 
             // Clear saved state (await to ensure it completes)
             await this.clearInProgressRun();
@@ -3187,6 +3202,7 @@
             this.lastKeyCountTimestamp = null;
             this.keyCountMessages = [];
             this.battleStartedTimestamp = null;
+            this.pendingNextRunFirstKeyCount = null;
             this.recentChatMessages = [];
 
             // Reset hibernation detection
@@ -3620,6 +3636,77 @@
             // NOTE: Run saving is done manually via the Backfill button
             // Chat annotations only add visual time labels to messages
 
+            // Pre-pass: collect all successful key→key chat run timestamps grouped by statsKey.
+            // Used to merge stored run history with visible chat runs and assign each visible run
+            // a number based on its absolute chronological position across both populations.
+            // This prevents the "two sequences" problem caused by gaps in backfill storage —
+            // unbackfilled runs get a number based on where they fall in time, not appended after
+            // the last stored run.
+            const chatRunsByStatsKey = {};
+            for (let pi = 0; pi < events.length; pi++) {
+                const pe = events[pi];
+                if (pe.type !== 'key') continue;
+
+                let pnext = null;
+                for (let pj = pi + 1; pj < events.length; pj++) {
+                    const ev = events[pj];
+                    if (ev.type === 'battle_start') break;
+                    if (ev.type === 'key' || ev.type === 'fail' || ev.type === 'cancel') {
+                        pnext = ev;
+                        break;
+                    }
+                }
+                if (!pnext || pnext.type !== 'key') continue;
+
+                const pDungeonName = this.getDungeonNameWithFallback(events, pi);
+                const pTeamKey = dungeonTrackerStorage.getTeamKey(pe.team);
+                const pStatsKey = `${pTeamKey}::${pDungeonName}`;
+                if (!chatRunsByStatsKey[pStatsKey]) chatRunsByStatsKey[pStatsKey] = [];
+                chatRunsByStatsKey[pStatsKey].push(pe.timestamp.getTime());
+            }
+
+            // Build a chronological run number map for each statsKey.
+            // Stored-only runs (not visible in chat) occupy number slots so that visible runs
+            // reflect their true position in the full run history.
+            const precomputedRunNumbers = {}; // statsKey → Map<chatTimestamp, runNumber>
+            const chatRunsMatchedStorage = {}; // statsKey → Set<chatTimestamp> matched to a stored run
+            for (const [pStatsKey, chatTsList] of Object.entries(chatRunsByStatsKey)) {
+                const tsMap = this.storedRunNumbers[pStatsKey] || {};
+                const storedTsList = Object.keys(tsMap)
+                    .map(Number)
+                    .sort((a, b) => a - b);
+
+                // Match each chat run to a stored run within 10s tolerance
+                const matchedChatSet = new Set();
+                const matchedStoredSet = new Set();
+                for (const chatTs of chatTsList) {
+                    const matchedSt = storedTsList.find((st) => Math.abs(st - chatTs) < 10000);
+                    if (matchedSt !== undefined) {
+                        matchedStoredSet.add(matchedSt);
+                        matchedChatSet.add(chatTs);
+                    }
+                }
+
+                // Stored runs not visible in chat still count toward the running total
+                const storedOnlyTsList = storedTsList.filter((st) => !matchedStoredSet.has(st));
+
+                // Merge and sort all runs chronologically
+                const merged = [
+                    ...storedOnlyTsList.map((ts) => ({ ts, isChatRun: false })),
+                    ...chatTsList.map((ts) => ({ ts, isChatRun: true })),
+                ].sort((a, b) => a.ts - b.ts);
+
+                // Assign 1-based sequential numbers; stored-only runs occupy slots but aren't mapped
+                const numMap = new Map();
+                for (let mi = 0; mi < merged.length; mi++) {
+                    if (merged[mi].isChatRun) {
+                        numMap.set(merged[mi].ts, mi + 1);
+                    }
+                }
+                precomputedRunNumbers[pStatsKey] = numMap;
+                chatRunsMatchedStorage[pStatsKey] = matchedChatSet;
+            }
+
             // Continue with visual annotations
             const runDurations = [];
 
@@ -3725,22 +3812,24 @@
                             // Already annotated — reuse stored run number
                             runNumber = this.processedMessages.get(messageId);
                         } else {
-                            // Look up run number from storage timestamp map (10s tolerance)
+                            // Look up number from pre-computed chronological position map
                             const msgTs = e.timestamp.getTime();
-                            const tsMap = this.storedRunNumbers[statsKey] || {};
-                            const matchedTs = Object.keys(tsMap).find((ts) => Math.abs(ts - msgTs) < 10000);
-                            if (matchedTs) {
-                                runNumber = tsMap[matchedTs];
-                            } else {
-                                // Not in storage yet (live run just completed) — assign next number
-                                runNumber = dungeonStats.runCount + 1;
-                                dungeonStats.runCount++;
-                                // Add to lookup so subsequent re-annotation passes use the same number
-                                if (!this.storedRunNumbers[statsKey]) this.storedRunNumbers[statsKey] = {};
-                                this.storedRunNumbers[statsKey][msgTs] = runNumber;
+                            runNumber = precomputedRunNumbers[statsKey]?.get(msgTs);
+                            if (runNumber === undefined) {
+                                // Edge case: live run arrived after the pre-pass completed
+                                runNumber = (dungeonStats.runCount || 0) + 1;
                             }
 
-                            dungeonStats.totalTime += diff;
+                            // Only add to the running total for new (unmatched) runs.
+                            // Storage-matched runs are already counted in the seed from
+                            // loadRunCountsFromStorage — adding their time again would cause
+                            // the average to climb on every annotation pass regardless of
+                            // actual run performance.
+                            if (!chatRunsMatchedStorage[statsKey]?.has(msgTs)) {
+                                dungeonStats.runCount++;
+                                dungeonStats.totalTime += diff;
+                            }
+
                             if (diff < dungeonStats.fastestTime) dungeonStats.fastestTime = diff;
                             if (diff > dungeonStats.slowestTime) dungeonStats.slowestTime = diff;
                             this.processedMessages.set(messageId, runNumber);
@@ -10188,6 +10277,47 @@ self.onmessage = function (e) {
     }
 
     /**
+     * Build per-chest income breakdown for expandable Income display
+     * Only marks isDungeonRun when regular dungeon chests are present
+     * @param {Object} lootMap - totalLootMap from player data
+     * @returns {Object} { isDungeonRun: boolean, breakdown: Array }
+     */
+    function calculateIncomeBreakdown(lootMap) {
+        if (!lootMap) {
+            return { isDungeonRun: false, breakdown: [] };
+        }
+
+        let isDungeonRun = false;
+        const breakdown = [];
+
+        for (const loot of Object.values(lootMap)) {
+            const itemDetails = dataManager.getItemDetails(loot.itemHrid);
+            if (!itemDetails?.isOpenable) {
+                continue;
+            }
+
+            if (DUNGEON_CHEST_KEYS[loot.itemHrid]) {
+                isDungeonRun = true;
+            }
+
+            const evData = expectedValueCalculator.calculateExpectedValue(loot.itemHrid);
+            const evPerChest = evData?.expectedValue ?? 0;
+            const totalValue = evPerChest * loot.count;
+
+            breakdown.push({
+                itemHrid: loot.itemHrid,
+                itemName: itemDetails.name,
+                count: loot.count,
+                evPerChest,
+                totalValue,
+                drops: evData?.drops ?? [],
+            });
+        }
+
+        return { isDungeonRun, breakdown };
+    }
+
+    /**
      * Calculate entry key costs from dungeon chests dropped
      * Each regular dungeon chest in the loot map represents one entry key consumed
      * @param {Object} lootMap - totalLootMap from player data
@@ -10398,6 +10528,7 @@ self.onmessage = function (e) {
     function calculatePlayerStats(playerData, durationSeconds = null) {
         // Calculate income
         const income = calculateIncome(playerData.loot);
+        const incomeBreakdownData = calculateIncomeBreakdown(playerData.loot);
 
         // Use provided duration or default to 0 (will show 0 for rates if no duration)
         const duration = durationSeconds || 0;
@@ -10464,6 +10595,8 @@ self.onmessage = function (e) {
             deathCount: playerData.deathCount,
             deathsPerHour,
             lootList,
+            incomeBreakdown: incomeBreakdownData.breakdown,
+            isDungeonRun: incomeBreakdownData.isDungeonRun,
             duration,
         };
     }
@@ -11039,7 +11172,13 @@ self.onmessage = function (e) {
             const statsRows = [
                 { label: 'Duration', value: stats.durationFormatted || '0s' },
                 { label: 'Encounters/Hour', value: formatNum(stats.encountersPerHour) },
-                { label: 'Income', value: formatNum(stats.income.bid) },
+                {
+                    label: 'Income',
+                    value: formatNum(stats.income.bid),
+                    ...(stats.isDungeonRun && stats.incomeBreakdown?.length > 0
+                        ? { expandable: true, incomeBreakdown: stats.incomeBreakdown }
+                        : {}),
+                },
                 { label: 'Daily Income', value: `${formatNum(stats.dailyIncome.bid)}/d` },
                 {
                     label: 'Consumable Costs',
@@ -11134,7 +11273,171 @@ self.onmessage = function (e) {
                             font-size: 13px;
                         `;
 
-                            if (row.breakdown && row.breakdown.length > 0) {
+                            if (row.incomeBreakdown) {
+                                // Pricing mode label
+                                const pricingMode = config.getSettingValue('profitCalc_pricingMode') || 'hybrid';
+                                const pricingLabels = {
+                                    conservative: 'Conservative',
+                                    hybrid: 'Hybrid',
+                                    optimistic: 'Optimistic',
+                                };
+                                const pricingNote = document.createElement('div');
+                                pricingNote.style.cssText = `
+                                margin-bottom: 8px;
+                                font-size: 12px;
+                                color: #aaa;
+                            `;
+                                pricingNote.textContent = `Pricing: ${pricingLabels[pricingMode] || pricingMode}`;
+                                breakdownDiv.appendChild(pricingNote);
+
+                                // Column header
+                                const incomeHeader = document.createElement('div');
+                                incomeHeader.style.cssText = `
+                                display: grid;
+                                grid-template-columns: 2fr 1fr 1fr 1fr;
+                                gap: 10px;
+                                font-weight: bold;
+                                margin-bottom: 5px;
+                                padding-bottom: 5px;
+                                border-bottom: 1px solid #4a4a4a;
+                                color: ${textColor};
+                            `;
+                                incomeHeader.innerHTML = `
+                                <span>Chest</span>
+                                <span style="text-align: right;">Received</span>
+                                <span style="text-align: right;">EV Each</span>
+                                <span style="text-align: right;">Total EV</span>
+                            `;
+                                breakdownDiv.appendChild(incomeHeader);
+
+                                // One row per chest type
+                                for (const chest of row.incomeBreakdown) {
+                                    const chestRow = document.createElement('div');
+                                    chestRow.style.cssText = `
+                                    display: grid;
+                                    grid-template-columns: 2fr 1fr 1fr 1fr;
+                                    gap: 10px;
+                                    margin-bottom: 3px;
+                                    color: ${textColor};
+                                    cursor: pointer;
+                                    user-select: none;
+                                `;
+                                    let chestExpanded = false;
+                                    let chestBreakdownDiv = null;
+
+                                    const nameCell = document.createElement('span');
+                                    nameCell.textContent = `▶ ${chest.itemName}`;
+                                    const countCell = document.createElement('span');
+                                    countCell.style.textAlign = 'right';
+                                    countCell.textContent = formatNum(chest.count);
+                                    const evCell = document.createElement('span');
+                                    evCell.style.textAlign = 'right';
+                                    evCell.textContent = formatNum(chest.evPerChest);
+                                    const totalCell = document.createElement('span');
+                                    totalCell.style.textAlign = 'right';
+                                    totalCell.textContent = formatNum(chest.totalValue);
+
+                                    chestRow.appendChild(nameCell);
+                                    chestRow.appendChild(countCell);
+                                    chestRow.appendChild(evCell);
+                                    chestRow.appendChild(totalCell);
+
+                                    chestRow.onclick = (e) => {
+                                        e.stopPropagation();
+                                        chestExpanded = !chestExpanded;
+                                        nameCell.textContent = `${chestExpanded ? '▼' : '▶'} ${chest.itemName}`;
+                                        if (chestExpanded) {
+                                            chestBreakdownDiv = document.createElement('div');
+                                            chestBreakdownDiv.style.cssText = `
+                                            margin-left: 20px;
+                                            margin-top: 4px;
+                                            margin-bottom: 8px;
+                                            padding: 8px;
+                                            background: #111;
+                                            border-left: 2px solid #4a4a4a;
+                                            font-size: 12px;
+                                            color: ${textColor};
+                                        `;
+                                            const subHeader = document.createElement('div');
+                                            subHeader.style.cssText = `
+                                            display: grid;
+                                            grid-template-columns: 2fr 1fr 1fr 1fr;
+                                            gap: 8px;
+                                            font-weight: bold;
+                                            margin-bottom: 4px;
+                                            padding-bottom: 4px;
+                                            border-bottom: 1px solid #3a3a3a;
+                                        `;
+                                            subHeader.innerHTML = `
+                                            <span>Item</span>
+                                            <span style="text-align: right;">Rate</span>
+                                            <span style="text-align: right;">Avg Qty</span>
+                                            <span style="text-align: right;">EV</span>
+                                        `;
+                                            chestBreakdownDiv.appendChild(subHeader);
+                                            for (const drop of chest.drops) {
+                                                const dropRow = document.createElement('div');
+                                                dropRow.style.cssText = `
+                                                display: grid;
+                                                grid-template-columns: 2fr 1fr 1fr 1fr;
+                                                gap: 8px;
+                                                margin-bottom: 2px;
+                                            `;
+                                                dropRow.innerHTML = `
+                                                <span>${drop.itemName}</span>
+                                                <span style="text-align: right;">${formatters_js.formatPercentage(drop.dropRate, 1)}</span>
+                                                <span style="text-align: right;">${drop.avgCount.toFixed(2)}</span>
+                                                <span style="text-align: right;">${drop.hasPriceData ? formatNum(drop.expectedValue) : '—'}</span>
+                                            `;
+                                                chestBreakdownDiv.appendChild(dropRow);
+                                            }
+                                            const evTotalRow = document.createElement('div');
+                                            evTotalRow.style.cssText = `
+                                            margin-top: 4px;
+                                            padding-top: 4px;
+                                            border-top: 1px solid #3a3a3a;
+                                            font-weight: bold;
+                                            display: grid;
+                                            grid-template-columns: 2fr 1fr 1fr 1fr;
+                                            gap: 8px;
+                                        `;
+                                            evTotalRow.innerHTML = `
+                                            <span>Total</span>
+                                            <span></span>
+                                            <span></span>
+                                            <span style="text-align: right;">${formatNum(chest.evPerChest)}</span>
+                                        `;
+                                            chestBreakdownDiv.appendChild(evTotalRow);
+                                            chestRow.after(chestBreakdownDiv);
+                                        } else if (chestBreakdownDiv) {
+                                            chestBreakdownDiv.remove();
+                                            chestBreakdownDiv = null;
+                                        }
+                                    };
+
+                                    breakdownDiv.appendChild(chestRow);
+                                }
+
+                                // Grand total
+                                const incomeTotalRow = document.createElement('div');
+                                incomeTotalRow.style.cssText = `
+                                display: grid;
+                                grid-template-columns: 2fr 1fr 1fr 1fr;
+                                gap: 10px;
+                                margin-top: 5px;
+                                padding-top: 5px;
+                                border-top: 1px solid #4a4a4a;
+                                font-weight: bold;
+                                color: ${textColor};
+                            `;
+                                incomeTotalRow.innerHTML = `
+                                <span>Total</span>
+                                <span></span>
+                                <span></span>
+                                <span style="text-align: right;">${row.value}</span>
+                            `;
+                                breakdownDiv.appendChild(incomeTotalRow);
+                            } else if (row.breakdown && row.breakdown.length > 0) {
                                 // Add header
                                 const header = document.createElement('div');
                                 header.style.cssText = `
