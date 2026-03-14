@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 1.36.3
+ * Version: 1.36.4
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -8953,15 +8953,16 @@ self.onmessage = function (e) {
                 return;
             }
 
-            // Create sort button
-            this.sortButton = document.createElement('button');
-            this.sortButton.className = 'Button_button__1Fe9z Button_small__3fqC7';
-            this.sortButton.textContent = 'Sort Tasks';
-            this.sortButton.style.marginLeft = '8px';
-            this.sortButton.setAttribute('data-mwi-task-sort', 'true');
-            this.sortButton.addEventListener('click', () => this.sortTasks());
-
-            headerElement.appendChild(this.sortButton);
+            // Create and insert sort button (skipped if user has chosen to hide it)
+            if (!config.getSetting('taskSorter_hideButton')) {
+                this.sortButton = document.createElement('button');
+                this.sortButton.className = 'Button_button__1Fe9z Button_small__3fqC7';
+                this.sortButton.textContent = 'Sort Tasks';
+                this.sortButton.style.marginLeft = '8px';
+                this.sortButton.setAttribute('data-mwi-task-sort', 'true');
+                this.sortButton.addEventListener('click', () => this.sortTasks());
+                headerElement.appendChild(this.sortButton);
+            }
 
             // Add task icon filters if enabled
             if (config.isFeatureEnabled('taskIcons')) {
@@ -14805,8 +14806,10 @@ self.onmessage = function (e) {
      * - End: actions_updated with no transmute action, or different input item
      *
      * Result detection:
-     * - Success: endCharacterItems contains a non-coin item different from inputItemHrid
-     * - Failure: all non-coin items in endCharacterItems match inputItemHrid
+     * - Success: endCharacterItems contains an item listed in the input item's transmuteDropTable
+     * - Failure: no items from the transmuteDropTable appear in endCharacterItems
+     * - Incidental drops (essences on non-essence transmutes, artisan's crates) are excluded
+     *   because they are not listed in the input item's transmuteDropTable
      */
 
 
@@ -14926,8 +14929,16 @@ self.onmessage = function (e) {
             }
             const bulkMultiplier = itemDetailsForBulk?.alchemyDetail?.bulkMultiplier ?? 1;
 
-            // Detect success vs failure — exclude incidental drops (essences, artisan's crates)
-            const nonCoinItems = (data.endCharacterItems || []).filter((item) => item.itemHrid !== COIN_ITEM_HRID$1);
+            // Build a Set of valid output HRIDs from the input item's transmute drop table.
+            // This filters out incidental drops (essences, artisan's crates) that arrive even on failure,
+            // while correctly preserving essence outputs when transmuting essence → essence.
+            const dropTable = itemDetailsForBulk?.alchemyDetail?.transmuteDropTable || [];
+            const validOutputHrids = new Set(dropTable.map((entry) => entry.itemHrid));
+
+            // Exclude coins and items not in the drop table (incidental drops)
+            const nonCoinItems = (data.endCharacterItems || []).filter(
+                (item) => item.itemHrid !== COIN_ITEM_HRID$1 && validOutputHrids.has(item.itemHrid)
+            );
 
             // The game always sends one entry for the consumed input item.
             // If the input is also returned (self-return), it sends additional entries.

@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 1.36.3
+ * Version: 1.36.4
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1227,6 +1227,13 @@
                     type: 'checkbox',
                     default: false,
                     help: 'Automatically sorts tasks by skill type when you open the task panel',
+                },
+                taskSorter_hideButton: {
+                    id: 'taskSorter_hideButton',
+                    label: 'Hide Sort Tasks button',
+                    type: 'checkbox',
+                    default: false,
+                    help: 'Hides the Sort Tasks button while keeping auto-sort functional',
                 },
                 taskSorter_sortMode: {
                     id: 'taskSorter_sortMode',
