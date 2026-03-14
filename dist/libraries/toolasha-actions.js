@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 1.35.0
+ * Version: 1.36.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -15369,8 +15369,8 @@ self.onmessage = function (e) {
             const liveTeaBonus = buffParser_js.getAlchemySuccessBonus();
             const typeSpecificHrid = CATALYST_HRIDS[actionType];
             const primeCatalystHrid = CATALYST_HRIDS.prime;
-            const typeSpecificPrice = marketData_js.getItemPrice(typeSpecificHrid, { context: 'profit', side: buyType }) ?? 0;
-            const primeCatalystPrice = marketData_js.getItemPrice(primeCatalystHrid, { context: 'profit', side: buyType }) ?? 0;
+            const typeSpecificPrice = marketData_js.getItemPrice(typeSpecificHrid, { context: 'profit', mode: buyType }) ?? 0;
+            const primeCatalystPrice = marketData_js.getItemPrice(primeCatalystHrid, { context: 'profit', mode: buyType }) ?? 0;
 
             const combinations = [
                 { catalystBonus: 0, catalystHrid: null, catalystPrice: 0, teaBonus: liveTeaBonus },
@@ -15529,7 +15529,7 @@ self.onmessage = function (e) {
 
                 // Calculate input cost (material cost)
                 const bulkMultiplier = itemDetails.alchemyDetail?.bulkMultiplier || 1;
-                const pricePerItem = marketData_js.getItemPrice(itemHrid, { context: 'profit', side: buyType, enhancementLevel });
+                const pricePerItem = marketData_js.getItemPrice(itemHrid, { context: 'profit', mode: buyType, enhancementLevel });
                 if (pricePerItem === null) {
                     return null; // No market data
                 }
@@ -15563,7 +15563,7 @@ self.onmessage = function (e) {
                     drinkSlots: dataManager.getActionDrinkSlots('/action_types/alchemy'),
                     drinkConcentration,
                     itemDetailMap: gameData.itemDetailMap,
-                    getItemPrice: (hrid) => marketData_js.getItemPrice(hrid, { context: 'profit', side: buyType }),
+                    getItemPrice: (hrid) => marketData_js.getItemPrice(hrid, { context: 'profit', mode: buyType }),
                 });
 
                 // Find the best catalyst+tea combination
@@ -15805,7 +15805,7 @@ self.onmessage = function (e) {
                 const drinkConcentration = teaParser_js.getDrinkConcentration(equipment, gameData.itemDetailMap);
 
                 // Get input cost (market price of the item being decomposed)
-                const inputPrice = marketData_js.getItemPrice(itemHrid, { context: 'profit', side: buyType, enhancementLevel });
+                const inputPrice = marketData_js.getItemPrice(itemHrid, { context: 'profit', mode: buyType, enhancementLevel });
                 if (inputPrice === null) {
                     return null; // No market data
                 }
@@ -15816,7 +15816,7 @@ self.onmessage = function (e) {
 
                 // 1. Base decompose items (always received on success)
                 for (const output of itemDetails.alchemyDetail.decomposeItems) {
-                    const outputPrice = marketData_js.getItemPrice(output.itemHrid, { context: 'profit', side: sellType });
+                    const outputPrice = marketData_js.getItemPrice(output.itemHrid, { context: 'profit', mode: sellType });
                     if (outputPrice !== null) {
                         const afterTax = profitHelpers_js.calculatePriceAfterTax(outputPrice);
                         const dropValue = afterTax * output.count;
@@ -15839,7 +15839,7 @@ self.onmessage = function (e) {
                     const itemLevel = itemDetails.itemLevel || 1;
                     essenceAmount = Math.round(2 * (0.5 + 0.1 * Math.pow(1.05, itemLevel)) * Math.pow(2, enhancementLevel));
 
-                    const essencePrice = marketData_js.getItemPrice('/items/enhancing_essence', { context: 'profit', side: sellType });
+                    const essencePrice = marketData_js.getItemPrice('/items/enhancing_essence', { context: 'profit', mode: sellType });
                     if (essencePrice !== null) {
                         const afterTax = profitHelpers_js.calculatePriceAfterTax(essencePrice);
                         const dropValue = afterTax * essenceAmount;
@@ -15879,7 +15879,7 @@ self.onmessage = function (e) {
                     drinkSlots: dataManager.getActionDrinkSlots('/action_types/alchemy'),
                     drinkConcentration,
                     itemDetailMap: gameData.itemDetailMap,
-                    getItemPrice: (hrid) => marketData_js.getItemPrice(hrid, { context: 'profit', side: buyType }),
+                    getItemPrice: (hrid) => marketData_js.getItemPrice(hrid, { context: 'profit', mode: buyType }),
                 });
 
                 // Find the best catalyst+tea combination
@@ -16122,7 +16122,7 @@ self.onmessage = function (e) {
                 const drinkConcentration = teaParser_js.getDrinkConcentration(equipment, gameData.itemDetailMap);
 
                 // Get input cost (market price of the item being transmuted)
-                const inputPrice = marketData_js.getItemPrice(itemHrid, { context: 'profit', side: buyType });
+                const inputPrice = marketData_js.getItemPrice(itemHrid, { context: 'profit', mode: buyType });
                 if (inputPrice === null) {
                     return null; // No market data
                 }
@@ -16147,7 +16147,7 @@ self.onmessage = function (e) {
                         selfReturnCount = averageCount * bulkMultiplier;
                     }
 
-                    const outputPrice = marketData_js.getItemPrice(drop.itemHrid, { context: 'profit', side: sellType });
+                    const outputPrice = marketData_js.getItemPrice(drop.itemHrid, { context: 'profit', mode: sellType });
                     if (outputPrice !== null) {
                         const afterTax = profitHelpers_js.calculatePriceAfterTax(outputPrice);
                         // Expected value: price × dropRate × averageCount × bulkMultiplier
@@ -16197,7 +16197,7 @@ self.onmessage = function (e) {
                     drinkSlots: dataManager.getActionDrinkSlots('/action_types/alchemy'),
                     drinkConcentration,
                     itemDetailMap: gameData.itemDetailMap,
-                    getItemPrice: (hrid) => marketData_js.getItemPrice(hrid, { context: 'profit', side: buyType }),
+                    getItemPrice: (hrid) => marketData_js.getItemPrice(hrid, { context: 'profit', mode: buyType }),
                 });
 
                 // Find the best catalyst+tea combination.

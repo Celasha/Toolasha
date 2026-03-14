@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 1.35.0
+ * Version: 1.36.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -11361,7 +11361,7 @@ self.onmessage = function (e) {
                                             const subHeader = document.createElement('div');
                                             subHeader.style.cssText = `
                                             display: grid;
-                                            grid-template-columns: 2fr 1fr 1fr 1fr;
+                                            grid-template-columns: 2fr 1fr 1fr 1fr 1fr;
                                             gap: 8px;
                                             font-weight: bold;
                                             margin-bottom: 4px;
@@ -11372,6 +11372,7 @@ self.onmessage = function (e) {
                                             <span>Item</span>
                                             <span style="text-align: right;">Rate</span>
                                             <span style="text-align: right;">Avg Qty</span>
+                                            <span style="text-align: right;">@</span>
                                             <span style="text-align: right;">EV</span>
                                         `;
                                             chestBreakdownDiv.appendChild(subHeader);
@@ -11379,7 +11380,7 @@ self.onmessage = function (e) {
                                                 const dropRow = document.createElement('div');
                                                 dropRow.style.cssText = `
                                                 display: grid;
-                                                grid-template-columns: 2fr 1fr 1fr 1fr;
+                                                grid-template-columns: 2fr 1fr 1fr 1fr 1fr;
                                                 gap: 8px;
                                                 margin-bottom: 2px;
                                             `;
@@ -11387,6 +11388,7 @@ self.onmessage = function (e) {
                                                 <span>${drop.itemName}</span>
                                                 <span style="text-align: right;">${formatters_js.formatPercentage(drop.dropRate, 1)}</span>
                                                 <span style="text-align: right;">${drop.avgCount.toFixed(2)}</span>
+                                                <span style="text-align: right;">${drop.hasPriceData ? formatNum(drop.priceEach) : '—'}</span>
                                                 <span style="text-align: right;">${drop.hasPriceData ? formatNum(drop.expectedValue) : '—'}</span>
                                             `;
                                                 chestBreakdownDiv.appendChild(dropRow);
@@ -11398,11 +11400,12 @@ self.onmessage = function (e) {
                                             border-top: 1px solid #3a3a3a;
                                             font-weight: bold;
                                             display: grid;
-                                            grid-template-columns: 2fr 1fr 1fr 1fr;
+                                            grid-template-columns: 2fr 1fr 1fr 1fr 1fr;
                                             gap: 8px;
                                         `;
                                             evTotalRow.innerHTML = `
                                             <span>Total</span>
+                                            <span></span>
                                             <span></span>
                                             <span></span>
                                             <span style="text-align: right;">${formatNum(chest.evPerChest)}</span>
