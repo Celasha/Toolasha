@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.36.1](https://github.com/Celasha/Toolasha/compare/v1.36.0...v1.36.1) (2026-03-14)
+
+### Code Refactoring
+
+- unify alchemy pricing mode resolution with other skills ([c265933](https://github.com/Celasha/Toolasha/commit/c265933cf9fedbbe82f26429e7466144f7481216))
+
 ## [1.36.0](https://github.com/Celasha/Toolasha/compare/v1.35.0...v1.36.0) (2026-03-14)
 
 ### Features
