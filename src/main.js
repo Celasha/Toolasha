@@ -12,6 +12,7 @@ import featureRegistry from './core/feature-registry.js';
 import networkAlert from './features/market/network-alert.js';
 import * as combatSimIntegration from './features/combat/combat-sim-integration.js';
 import settingsUI from './features/settings/settings-ui.js';
+import expectedValueCalculator from './features/market/expected-value-calculator.js';
 import { setupScrollTooltipDismissal } from './utils/dom.js';
 
 /**
@@ -92,6 +93,11 @@ if (isCombatSimulatorPage()) {
                 });
 
                 await featureRegistry.initializeFeatures();
+
+                // Initialize shared EV calculator after features and market data are ready
+                expectedValueCalculator.initialize().catch((error) => {
+                    console.error('[Toolasha] EV calculator initialization failed:', error);
+                });
 
                 // Health check after initialization
                 setTimeout(async () => {

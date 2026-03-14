@@ -47,6 +47,10 @@ class ExpectedValueCalculator {
      * Pre-calculates all openable containers with nested convergence
      */
     async initialize() {
+        if (this.isInitialized) {
+            return true;
+        }
+
         if (!dataManager.getInitClientData()) {
             // Init data not yet available - set up retry on next character update
             if (!this.retryHandler) {
