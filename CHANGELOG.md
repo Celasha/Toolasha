@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.37.1](https://github.com/Celasha/Toolasha/compare/v1.37.0...v1.37.1) (2026-03-15)
+
+### Bug Fixes
+
+- register guildHistory IndexedDB object store ([1c3071a](https://github.com/Celasha/Toolasha/commit/1c3071a62a6b943dc45dc9c0e07447cdb2533715))
+
 ## [1.37.0](https://github.com/Celasha/Toolasha/compare/v1.36.4...v1.37.0) (2026-03-15)
 
 ### Features
