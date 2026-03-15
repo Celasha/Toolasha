@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.37.4](https://github.com/Celasha/Toolasha/compare/v1.37.3...v1.37.4) (2026-03-15)
+
+### Bug Fixes
+
+- update inventory badge values when item quantities change ([7085baf](https://github.com/Celasha/Toolasha/commit/7085baf9abf5c36dbb18ab2dc420400b5276cd7e))
+
 ## [1.37.3](https://github.com/Celasha/Toolasha/compare/v1.37.2...v1.37.3) (2026-03-15)
 
 ### Bug Fixes
