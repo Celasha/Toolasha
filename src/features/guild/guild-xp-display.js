@@ -361,17 +361,13 @@ class GuildXPDisplay {
         if (!config.getSetting('guildXPDisplay', true)) return;
 
         // Watch for Guild panel tabs
-        const unregOverview = domObserver.onClass(
-            'GuildXPDisplay-Overview',
-            'GuildPanel_dataGrid',
-            (el) => this._renderOverview(el)
+        const unregOverview = domObserver.onClass('GuildXPDisplay-Overview', 'GuildPanel_dataGrid', (el) =>
+            this._renderOverview(el)
         );
         this.unregisterObservers.push(unregOverview);
 
-        const unregMembers = domObserver.onClass(
-            'GuildXPDisplay-Members',
-            'GuildPanel_membersTable',
-            (el) => this._renderMembers(el)
+        const unregMembers = domObserver.onClass('GuildXPDisplay-Members', 'GuildPanel_membersTable', (el) =>
+            this._renderMembers(el)
         );
         this.unregisterObservers.push(unregMembers);
 
@@ -528,9 +524,7 @@ class GuildXPDisplay {
         if (!theadTr) return;
 
         // Find Activity column index for inserting before it
-        const activityIndex = Array.from(theadTr.children).findIndex(
-            (el) => el.textContent.trim() === 'Activity'
-        );
+        const activityIndex = Array.from(theadTr.children).findIndex((el) => el.textContent.trim() === 'Activity');
         const insertAfter = activityIndex > 0 ? activityIndex - 1 : theadTr.children.length - 1;
 
         const gameModes = { standard: 'MC', ironcow: 'IC', legacy_ironcow: 'LC' };

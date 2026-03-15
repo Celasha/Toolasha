@@ -911,9 +911,8 @@ class ActionTimeDisplay {
                         // Protection items are the bottleneck — estimate how many attempts
                         // we can sustain. Protection usage ratio = expectedProtections / expectedAttempts
                         const protectionRatio = expectedProtections / expectedAttempts;
-                        const maxAttemptsFromProtection = protectionRatio > 0
-                            ? Math.floor(availableProtections / protectionRatio)
-                            : Infinity;
+                        const maxAttemptsFromProtection =
+                            protectionRatio > 0 ? Math.floor(availableProtections / protectionRatio) : Infinity;
 
                         if (maxAttemptsFromProtection < queuedActions) {
                             queuedActions = maxAttemptsFromProtection;
@@ -925,7 +924,8 @@ class ActionTimeDisplay {
         }
 
         // Realistic time: min of queued actions and expected attempts
-        const realisticActions = queuedActions === Infinity ? expectedAttempts : Math.min(queuedActions, expectedAttempts);
+        const realisticActions =
+            queuedActions === Infinity ? expectedAttempts : Math.min(queuedActions, expectedAttempts);
         const realisticTime = realisticActions * perActionTime;
 
         // Apply CSS overrides for non-combat display
@@ -1626,7 +1626,11 @@ class ActionTimeDisplay {
 
                     if (isEnhancing) {
                         // Enhancing: use enhancement-specific time calculation
-                        const enhancingTime = this.calculateEnhancingQueueTime(currentAction, actionDetails, inventoryLookup);
+                        const enhancingTime = this.calculateEnhancingQueueTime(
+                            currentAction,
+                            actionDetails,
+                            inventoryLookup
+                        );
                         if (enhancingTime) {
                             count = enhancingTime.count;
                             actionTimeSeconds = enhancingTime.totalTime;

@@ -143,7 +143,15 @@ export async function displayEnhancementStats(panel, itemHrid) {
  * @param {string|null} protectionItemHrid - Protection item HRID (cached, avoid repeated DOM queries)
  * @returns {string} HTML string
  */
-function generateCostsByLevelTable(panel, params, itemDetails, protectFromLevel, enhancementCosts, protectionItemHrid, perActionTime) {
+function generateCostsByLevelTable(
+    panel,
+    params,
+    itemDetails,
+    protectFromLevel,
+    enhancementCosts,
+    protectionItemHrid,
+    perActionTime
+) {
     const lines = [];
     const gameData = dataManager.getInitClientData();
     const itemLevel = itemDetails.itemLevel || 1;
@@ -770,7 +778,9 @@ function formatEnhancementDisplay(
 
     lines.push('• Attempts and time are statistical averages<br>');
 
-    lines.push(`• Action time: ${perActionTime.toFixed(2)}s (includes ${(speedBreakdown.total * 100).toFixed(1)}% speed bonus)`);
+    lines.push(
+        `• Action time: ${perActionTime.toFixed(2)}s (includes ${(speedBreakdown.total * 100).toFixed(1)}% speed bonus)`
+    );
     lines.push('</div>');
 
     lines.push('</div>'); // Close targets section

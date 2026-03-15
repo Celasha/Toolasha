@@ -232,7 +232,8 @@ function getEnhancingActionTime(itemHrid) {
 export function getEnhancingSpeedBreakdown(itemHrid) {
     try {
         const charData = dataManager.characterData;
-        if (!charData) return { total: 0, equipment: 0, house: 0, community: 0, consumable: 0, personal: 0, levelAdvantage: 0 };
+        if (!charData)
+            return { total: 0, equipment: 0, house: 0, community: 0, consumable: 0, personal: 0, levelAdvantage: 0 };
 
         // Get enhancing skill level
         const enhancingSkill = charData.characterSkills?.find((s) => s.skillHrid === '/skills/enhancing');
@@ -271,7 +272,10 @@ export function getEnhancingSpeedBreakdown(itemHrid) {
         }
 
         // Personal buffs (Labyrinth seals)
-        breakdown.personal = dataManager.getPersonalBuffFlatBoost('/action_types/enhancing', '/buff_types/action_speed');
+        breakdown.personal = dataManager.getPersonalBuffFlatBoost(
+            '/action_types/enhancing',
+            '/buff_types/action_speed'
+        );
 
         // Level advantage
         const effectiveLevel = baseLevel + teaLevelBonus;
@@ -281,8 +285,13 @@ export function getEnhancingSpeedBreakdown(itemHrid) {
         }
 
         // Total (as decimal, e.g. 1.56 for +156%)
-        breakdown.total = breakdown.equipment + breakdown.house + breakdown.community
-            + breakdown.consumable + breakdown.personal + breakdown.levelAdvantage;
+        breakdown.total =
+            breakdown.equipment +
+            breakdown.house +
+            breakdown.community +
+            breakdown.consumable +
+            breakdown.personal +
+            breakdown.levelAdvantage;
 
         return breakdown;
     } catch {
