@@ -285,9 +285,12 @@ class DataManager {
         this.webSocketHook.on('action_completed', (data) => {
             const action = data.endCharacterAction;
             if (action.isDone === false) {
-                for (const a of this.characterActions) {
-                    if (a.id === action.id) {
-                        a.currentCount = action.currentCount;
+                for (let i = 0; i < this.characterActions.length; i++) {
+                    if (this.characterActions[i].id === action.id) {
+                        // Replace the entire cached action with fresh data from the server
+                        // This keeps primaryItemHash, enhancingMaxLevel, etc. up to date
+                        this.characterActions[i] = action;
+                        break;
                     }
                 }
             }
