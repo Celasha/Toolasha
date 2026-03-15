@@ -2,10 +2,9 @@
 
 ## [1.37.3](https://github.com/Celasha/Toolasha/compare/v1.37.2...v1.37.3) (2026-03-15)
 
-
 ### Bug Fixes
 
-* replace coarse action stats toggles with granular profit/hr and exp/hr settings ([03f458e](https://github.com/Celasha/Toolasha/commit/03f458e817853d7716fc3e48988e02f67cf94369))
+- replace coarse action stats toggles with granular profit/hr and exp/hr settings ([03f458e](https://github.com/Celasha/Toolasha/commit/03f458e817853d7716fc3e48988e02f67cf94369))
 
 ## [1.37.2](https://github.com/Celasha/Toolasha/compare/v1.37.1...v1.37.2) (2026-03-15)
 
