@@ -9,7 +9,7 @@ class Storage {
         this.db = null;
         this.available = false;
         this.dbName = 'ToolashaDB';
-        this.dbVersion = 11; // Bumped for labyrinth store
+        this.dbVersion = 12; // Bumped for guildHistory store
         this.saveDebounceTimers = new Map(); // Per-key debounce timers
         this.pendingWrites = new Map(); // Per-key pending write data: {value, storeName}
         this.SAVE_DEBOUNCE_DELAY = 3000; // 3 seconds
@@ -138,6 +138,11 @@ class Storage {
                 // Create labyrinth store if it doesn't exist (for labyrinth tracker)
                 if (!db.objectStoreNames.contains('labyrinth')) {
                     db.createObjectStore('labyrinth');
+                }
+
+                // Create guildHistory store if it doesn't exist (for guild XP tracker)
+                if (!db.objectStoreNames.contains('guildHistory')) {
+                    db.createObjectStore('guildHistory');
                 }
             };
         });
