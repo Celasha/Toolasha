@@ -116,6 +116,16 @@ class InventoryBadgeManager {
     }
 
     /**
+     * Invalidate caches so next renderAllBadges() uses fresh data.
+     * Call this when inventory contents change (items_updated events).
+     */
+    invalidateCache() {
+        this.inventoryLookupCache = null;
+        this.inventoryLookupCacheTime = 0;
+        this.clearProcessedTracking();
+    }
+
+    /**
      * Render all badges on all items from all providers
      */
     async renderAllBadges() {

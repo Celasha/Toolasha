@@ -95,6 +95,7 @@ class InventoryBadgePrices {
             clearTimeout(this.itemsUpdatedDebounceTimer);
             this.itemsUpdatedDebounceTimer = setTimeout(() => {
                 if (this.currentInventoryElem) {
+                    inventoryBadgeManager.invalidateCache();
                     this.updateBadges();
                 }
             }, this.DEBOUNCE_DELAY);
@@ -157,12 +158,28 @@ class InventoryBadgePrices {
         const bidPrice = parseFloat(itemElem.dataset.bidPrice) || 0;
         const askPrice = parseFloat(itemElem.dataset.askPrice) || 0;
 
-        // Show badges if they have values and don't already exist
-        if (bidPrice > 0 && !itemElem.querySelector('.mwi-badge-price-bid')) {
-            this.renderPriceBadge(itemElem, bidPrice, 'bid');
+        // Create or update bid badge
+        const existingBid = itemElem.querySelector('.mwi-badge-price-bid');
+        if (bidPrice > 0) {
+            if (existingBid) {
+                existingBid.textContent = formatKMB(Math.round(bidPrice), 0);
+            } else {
+                this.renderPriceBadge(itemElem, bidPrice, 'bid');
+            }
+        } else if (existingBid) {
+            existingBid.remove();
         }
-        if (askPrice > 0 && !itemElem.querySelector('.mwi-badge-price-ask')) {
-            this.renderPriceBadge(itemElem, askPrice, 'ask');
+
+        // Create or update ask badge
+        const existingAsk = itemElem.querySelector('.mwi-badge-price-ask');
+        if (askPrice > 0) {
+            if (existingAsk) {
+                existingAsk.textContent = formatKMB(Math.round(askPrice), 0);
+            } else {
+                this.renderPriceBadge(itemElem, askPrice, 'ask');
+            }
+        } else if (existingAsk) {
+            existingAsk.remove();
         }
     }
 

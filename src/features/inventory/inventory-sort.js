@@ -106,6 +106,7 @@ class InventorySort {
             clearTimeout(this.itemsUpdatedDebounceTimer);
             this.itemsUpdatedDebounceTimer = setTimeout(() => {
                 if (this.currentInventoryElem) {
+                    inventoryBadgeManager.invalidateCache();
                     this.applyCurrentSort();
                 }
             }, this.DEBOUNCE_DELAY);
@@ -416,12 +417,19 @@ class InventorySort {
             }
         }
 
-        // Show badge if enabled and doesn't already exist
+        // Show badge if enabled
         if (showBadges && badgeValueKey) {
             const stackValue = parseFloat(itemElem.dataset[badgeValueKey]) || 0;
+            const existingBadge = itemElem.querySelector('.mwi-stack-price');
 
-            if (stackValue > 0 && !itemElem.querySelector('.mwi-stack-price')) {
-                this.renderPriceBadge(itemElem, stackValue);
+            if (stackValue > 0) {
+                if (existingBadge) {
+                    existingBadge.textContent = formatKMB(stackValue, 0);
+                } else {
+                    this.renderPriceBadge(itemElem, stackValue);
+                }
+            } else if (existingBadge) {
+                existingBadge.remove();
             }
         }
     }
