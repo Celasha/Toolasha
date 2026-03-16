@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.39.0](https://github.com/Celasha/Toolasha/compare/v1.38.0...v1.39.0) (2026-03-16)
+
+
+### Features
+
+* add expandable item breakdown to loot tracker Total Value ([f3d6616](https://github.com/Celasha/Toolasha/commit/f3d6616d68ddf48a3088b2127614bc5af6ccb5a1))
+
+
+### Bug Fixes
+
+* derive category totals pricing mode from inventory sort controls ([7f9338e](https://github.com/Celasha/Toolasha/commit/7f9338e241c6b8d6aa209587ad92c9ff8a18eada))
+
 ## [1.38.0](https://github.com/Celasha/Toolasha/compare/v1.37.4...v1.38.0) (2026-03-16)
 
 ### Features
