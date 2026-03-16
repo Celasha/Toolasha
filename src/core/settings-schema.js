@@ -480,14 +480,6 @@ export const settingsGroups = {
                 default: true,
                 help: 'Displays the total market value of all items in each inventory category',
             },
-            invCategoryTotals_mode: {
-                id: 'invCategoryTotals_mode',
-                label: 'Category totals pricing mode',
-                type: 'select',
-                default: 'ask',
-                options: ['ask', 'bid'],
-                help: 'Whether to use ask or bid prices for category totals',
-            },
             profitCalc_pricingMode: {
                 id: 'profitCalc_pricingMode',
                 label: 'Profit calculation pricing mode',
