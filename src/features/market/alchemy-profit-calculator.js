@@ -11,7 +11,9 @@
  * - Tea: Catalytic Tea provides /buff_types/alchemy_success (5% ratio boost, scales with Drink Concentration)
  * - Catalyst (type-specific): +15% multiplicative, consumed once per successful action
  * - Catalyst (prime): +25% multiplicative, consumed once per successful action
- * - Formula: finalRate = min(1, baseRate × (1 + teaBonus) × (1 + catalystBonus))
+ * - Transmute under-level penalty: perLevel = 0.9 / itemLevel, applied when alchemyLevel < itemLevel
+ * - Formula (coinify/decompose): finalRate = min(1, baseRate × (1 + catalystBonus) × (1 + teaBonus))
+ * - Formula (transmute): finalRate = min(1, baseRate × (1 + catalyst + perLevel × (alchemyLvl - itemLvl)) × (1 + tea))
  */
 
 import config from '../../core/config.js';
@@ -201,20 +203,24 @@ class AlchemyProfitCalculator {
      * @param {number} baseRate - Base success rate (0-1)
      * @param {number} catalystBonus - Catalyst multiplicative bonus (0, 0.15, or 0.25)
      * @param {number|null} teaBonusOverride - If provided, use this instead of reading live buffs
-     * @returns {Object} Success rate breakdown { total, base, tea, catalyst }
+     * @param {number} levelPenalty - Under-level penalty term (negative when below item level, 0 otherwise)
+     * @returns {Object} Success rate breakdown { total, base, tea, catalyst, levelPenalty }
      */
-    calculateSuccessRateBreakdown(baseRate, catalystBonus = 0, teaBonusOverride = null) {
+    calculateSuccessRateBreakdown(baseRate, catalystBonus = 0, teaBonusOverride = null, levelPenalty = 0) {
         try {
             const teaBonus = teaBonusOverride !== null ? teaBonusOverride : getAlchemySuccessBonus();
 
-            // Calculate final success rate: base × (1 + tea) × (1 + catalyst)
-            const total = Math.min(1.0, baseRate * (1 + teaBonus) * (1 + catalystBonus));
+            // Calculate final success rate:
+            // base × (1 + catalyst + levelPenalty) × (1 + tea)
+            // levelPenalty is 0 when at or above item level
+            const total = Math.min(1.0, baseRate * (1 + catalystBonus + levelPenalty) * (1 + teaBonus));
 
             return {
-                total,
+                total: Math.max(0, total),
                 base: baseRate,
                 tea: teaBonus,
                 catalyst: catalystBonus,
+                levelPenalty,
             };
         } catch (error) {
             console.error('[AlchemyProfitCalculator] Failed to calculate success rate breakdown:', error);
@@ -241,6 +247,7 @@ class AlchemyProfitCalculator {
      * @param {number} params.alchemyBonusRevenue - Bonus revenue per hour (essences + rares)
      * @param {Function} params.computeNetProfit - fn(successRate) => netProfitPerAttempt
      * @param {Function} params.computeTeaCost - fn(teaBonus) => totalTeaCostPerHour
+     * @param {number} [params.levelPenalty=0] - Under-level penalty for transmute
      * @returns {Object} { catalystBonus, catalystHrid, catalystPrice, teaBonus, teaCostPerHour, successRateBreakdown }
      */
     _bestCatalystCombo({
@@ -252,6 +259,7 @@ class AlchemyProfitCalculator {
         alchemyBonusRevenue,
         computeNetProfit,
         computeTeaCost,
+        levelPenalty = 0,
     }) {
         const liveTeaBonus = getAlchemySuccessBonus();
         const typeSpecificHrid = CATALYST_HRIDS[actionType];
@@ -295,7 +303,8 @@ class AlchemyProfitCalculator {
             const successRateBreakdown = this.calculateSuccessRateBreakdown(
                 baseSuccessRate,
                 combo.catalystBonus,
-                combo.teaBonus
+                combo.teaBonus,
+                levelPenalty
             );
             const successRate = successRateBreakdown.total;
 
@@ -917,6 +926,14 @@ class AlchemyProfitCalculator {
                 return null; // Cannot transmute
             }
 
+            // Calculate under-level penalty for transmute
+            // Formula: perLevel × (alchemyLevel - itemLevel) where perLevel = 0.9 / itemLevel
+            const itemLevel = itemDetails.itemLevel || 1;
+            const skills = dataManager.getSkills();
+            const alchemySkill = skills?.find((s) => s.skillHrid === '/skills/alchemy');
+            const alchemyLevel = alchemySkill?.level || 1;
+            const levelPenalty = alchemyLevel < itemLevel ? (0.9 / itemLevel) * (alchemyLevel - itemLevel) : 0;
+
             // Get alchemy action details
             const actionDetails = gameData.actionDetailMap['/actions/alchemy/transmute'];
             if (!actionDetails) {
@@ -1032,7 +1049,6 @@ class AlchemyProfitCalculator {
             const actionsPerHourWithEfficiency = calculateActionsPerHour(actionTime) * (1 + efficiencyDecimal);
 
             // Calculate bonus revenue (essences + rares) from item level
-            const itemLevel = itemDetails.itemLevel || 1;
             const alchemyBonus = calculateAlchemyBonusDrops(
                 itemLevel,
                 actionsPerHourWithEfficiency,
@@ -1063,6 +1079,7 @@ class AlchemyProfitCalculator {
                     return expectedOutputValue * successRate - (netMat + coinCost);
                 },
                 computeTeaCost: () => teaCostData.totalCostPerHour,
+                levelPenalty,
             });
 
             const {
