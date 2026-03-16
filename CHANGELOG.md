@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.38.0](https://github.com/Celasha/Toolasha/compare/v1.37.4...v1.38.0) (2026-03-16)
+
+
+### Features
+
+* add marketplace action dropdown to inventory item submenu ([f54482d](https://github.com/Celasha/Toolasha/commit/f54482d00724e82247a0e5c3a09f5ba8f6c8f90e))
+
+
+### Bug Fixes
+
+* match combat HP/MP bar width to skilling progress bar in full mode ([3afda1d](https://github.com/Celasha/Toolasha/commit/3afda1d8cb33ba4c34851c4061a5659bf71e443b))
+
 ## [1.37.4](https://github.com/Celasha/Toolasha/compare/v1.37.3...v1.37.4) (2026-03-15)
 
 ### Bug Fixes
