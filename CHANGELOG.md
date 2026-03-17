@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.42.0](https://github.com/Celasha/Toolasha/compare/v1.41.1...v1.42.0) (2026-03-17)
+
+### Features
+
+- add drag-and-drop reordering to loadouts panel ([0080a44](https://github.com/Celasha/Toolasha/commit/0080a443f8efa6e112e0fedc6b46df3c4c109367))
+
 ## [1.41.1](https://github.com/Celasha/Toolasha/compare/v1.41.0...v1.41.1) (2026-03-17)
 
 ### Bug Fixes
