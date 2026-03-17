@@ -347,6 +347,13 @@ function registerFeatures() {
             module: Combat.labyrinthBestLevel,
             async: false,
         },
+        {
+            key: 'loadoutSort',
+            name: 'Loadout Sort',
+            category: 'Combat',
+            module: Combat.loadoutSort,
+            async: false,
+        },
     ];
 
     // UI Features

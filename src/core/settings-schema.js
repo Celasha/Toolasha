@@ -865,6 +865,12 @@ export const settingsGroups = {
                 type: 'checkbox',
                 default: true,
             },
+            loadout_sortEnabled: {
+                id: 'loadout_sortEnabled',
+                label: 'Loadout panel: Enable drag-and-drop reordering',
+                type: 'checkbox',
+                default: true,
+            },
             showsKeyInfoInIcon: {
                 id: 'showsKeyInfoInIcon',
                 label: 'Bottom left corner of key icons: Show zone index',
