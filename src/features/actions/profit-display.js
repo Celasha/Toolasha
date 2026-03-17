@@ -463,6 +463,10 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
 
     topLevelContent.appendChild(detailedBreakdownSection);
 
+    // Add per-action breakdown section
+    const perActionBreakdown = buildGatheringPerActionBreakdown(profitData);
+    topLevelContent.appendChild(perActionBreakdown);
+
     // Add X actions breakdown section (updates dynamically with input)
     const inputField = findActionInput(panel);
     if (inputField) {
@@ -1060,6 +1064,10 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
 
     topLevelContent.appendChild(detailedBreakdownSection);
 
+    // Add per-action breakdown section
+    const perActionBreakdown = buildProductionPerActionBreakdown(profitData);
+    topLevelContent.appendChild(perActionBreakdown);
+
     // Add X actions breakdown section (updates dynamically with input)
     const inputField = findActionInput(panel);
     if (inputField) {
@@ -1164,6 +1172,605 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
             }
         });
     }
+}
+
+/**
+ * Format a per-action value with appropriate decimal precision
+ * @param {number} value - The per-action value
+ * @returns {string} Formatted value
+ */
+function formatPerAction(value) {
+    const abs = Math.abs(value);
+    if (abs >= 1000) return formatLargeNumber(Math.round(value));
+    if (abs >= 10) return value.toFixed(1);
+    if (abs >= 1) return value.toFixed(2);
+    if (abs === 0) return '0';
+    return value.toFixed(2);
+}
+
+/**
+ * Build "Per action breakdown" section for gathering actions
+ * @param {Object} profitData - Profit calculation data
+ * @returns {HTMLElement} Breakdown section element
+ */
+function buildGatheringPerActionBreakdown(profitData) {
+    const actionsPerHour = profitData.actionsPerHour;
+    const baseMissing = profitData.baseOutputs?.some((output) => output.missingPrice) || false;
+    const gourmetMissing = profitData.gourmetBonuses?.some((output) => output.missingPrice) || false;
+    const bonusMissing = profitData.bonusRevenue?.hasMissingPrices || false;
+    const processingMissing = profitData.processingConversions?.some((conversion) => conversion.missingPrice) || false;
+    const primaryMissing = baseMissing || gourmetMissing || processingMissing;
+    const revenueMissing = primaryMissing || bonusMissing;
+    const drinkCostsMissing = profitData.drinkCosts?.some((drink) => drink.missingPrice) || false;
+    const costsMissing = drinkCostsMissing || revenueMissing;
+    const marketTaxMissing = revenueMissing;
+    const netMissing = profitData.hasMissingPrices;
+    const efficiencyMultiplier = profitData.efficiencyMultiplier || 1;
+
+    const revenuePerHour = profitData.revenuePerHour;
+    const revenuePerAction = revenuePerHour / actionsPerHour;
+    const marketTaxPerHour = revenuePerHour * MARKET_TAX;
+    const marketTaxPerAction = marketTaxPerHour / actionsPerHour;
+    const drinkCostPerAction = profitData.drinkCostPerHour / actionsPerHour;
+    const costsPerAction = drinkCostPerAction + marketTaxPerAction;
+    const profitPerAction = profitData.profitPerAction;
+
+    const detailsContent = document.createElement('div');
+
+    // Revenue Section
+    const revenueDiv = document.createElement('div');
+    const revenueLabel = formatMissingLabel(revenueMissing, `${formatPerAction(revenuePerAction)}/action`);
+    revenueDiv.innerHTML = `<div style="font-weight: 500; color: ${config.COLOR_TOOLTIP_PROFIT}; margin-bottom: 4px;">Revenue: ${revenueLabel}</div>`;
+
+    // Primary Outputs subsection
+    const primaryDropsContent = document.createElement('div');
+    if (profitData.baseOutputs && profitData.baseOutputs.length > 0) {
+        for (const output of profitData.baseOutputs) {
+            const itemsPerAction = output.itemsPerAction ?? output.itemsPerHour / actionsPerHour;
+            const revPerAction = output.revenuePerAction ?? output.revenuePerHour / actionsPerHour;
+            const line = document.createElement('div');
+            line.style.marginLeft = '8px';
+            const missingPriceNote = getMissingPriceIndicator(output.missingPrice);
+            line.textContent = `• ${output.name} (Base): ${itemsPerAction.toFixed(2)}/action @ ${formatWithSeparator(output.priceEach)}${missingPriceNote} each → ${formatPerAction(revPerAction)}/action`;
+            primaryDropsContent.appendChild(line);
+        }
+    }
+
+    if (profitData.gourmetBonuses && profitData.gourmetBonuses.length > 0) {
+        for (const output of profitData.gourmetBonuses) {
+            const itemsPerAction = output.itemsPerAction ?? output.itemsPerHour / actionsPerHour;
+            const revPerAction = output.revenuePerAction ?? output.revenuePerHour / actionsPerHour;
+            const line = document.createElement('div');
+            line.style.marginLeft = '8px';
+            const missingPriceNote = getMissingPriceIndicator(output.missingPrice);
+            line.textContent = `• ${output.name} (Gourmet ${formatPercentage(profitData.gourmetBonus || 0, 1)}): ${itemsPerAction.toFixed(2)}/action @ ${formatWithSeparator(output.priceEach)}${missingPriceNote} each → ${formatPerAction(revPerAction)}/action`;
+            primaryDropsContent.appendChild(line);
+        }
+    }
+
+    if (profitData.processingConversions && profitData.processingConversions.length > 0) {
+        const netProcessingPerAction = (profitData.processingRevenueBonus || 0) / actionsPerHour;
+        const netProcessingLabel = formatMissingLabel(
+            processingMissing,
+            `${netProcessingPerAction >= 0 ? '+' : '-'}${formatPerAction(Math.abs(netProcessingPerAction))}`
+        );
+        const processingContent = document.createElement('div');
+
+        for (const conversion of profitData.processingConversions) {
+            const rawConsumedPerAction =
+                conversion.rawConsumedPerAction ?? conversion.rawConsumedPerHour / actionsPerHour;
+            const conversionsPerAction =
+                conversion.conversionsPerAction ?? conversion.conversionsPerHour / actionsPerHour;
+            const consumedRevenuePerAction = rawConsumedPerAction * conversion.rawPriceEach;
+            const producedRevenuePerAction = conversionsPerAction * conversion.processedPriceEach;
+            const missingPriceNote = getMissingPriceIndicator(conversion.missingPrice);
+
+            const consumedLine = document.createElement('div');
+            consumedLine.style.marginLeft = '8px';
+            consumedLine.textContent = `• ${conversion.rawItem} consumed: -${rawConsumedPerAction.toFixed(2)}/action @ ${formatWithSeparator(conversion.rawPriceEach)}${missingPriceNote} → -${formatPerAction(consumedRevenuePerAction)}/action`;
+            processingContent.appendChild(consumedLine);
+
+            const producedLine = document.createElement('div');
+            producedLine.style.marginLeft = '8px';
+            producedLine.textContent = `• ${conversion.processedItem} produced: ${conversionsPerAction.toFixed(2)}/action @ ${formatWithSeparator(conversion.processedPriceEach)}${missingPriceNote} → ${formatPerAction(producedRevenuePerAction)}/action`;
+            processingContent.appendChild(producedLine);
+        }
+
+        const processingSection = createCollapsibleSection(
+            '',
+            `• Processing (${formatPercentage(profitData.processingBonus || 0, 1)} proc): Net ${netProcessingLabel}/action`,
+            null,
+            processingContent,
+            false,
+            1
+        );
+        primaryDropsContent.appendChild(processingSection);
+    }
+
+    const baseRevenuePerAction =
+        profitData.baseOutputs?.reduce((sum, o) => {
+            const rev = o.revenuePerAction ?? o.revenuePerHour / actionsPerHour;
+            return sum + rev;
+        }, 0) || 0;
+    const gourmetRevenuePerAction = (profitData.gourmetRevenueBonus || 0) / actionsPerHour;
+    const processingRevenuePerAction = (profitData.processingRevenueBonus || 0) / actionsPerHour;
+    const primaryRevenuePerAction = baseRevenuePerAction + gourmetRevenuePerAction + processingRevenuePerAction;
+    const primaryRevenueLabel = formatMissingLabel(
+        primaryMissing,
+        `${formatPerAction(primaryRevenuePerAction)}/action`
+    );
+    const outputItemCount =
+        (profitData.baseOutputs?.length || 0) +
+        (profitData.processingConversions && profitData.processingConversions.length > 0 ? 1 : 0);
+    const primaryDropsSection = createCollapsibleSection(
+        '',
+        `Primary Outputs: ${primaryRevenueLabel} (${outputItemCount} item${outputItemCount !== 1 ? 's' : ''})`,
+        null,
+        primaryDropsContent,
+        false,
+        1
+    );
+
+    // Bonus Drops subsections
+    const bonusDrops = profitData.bonusRevenue?.bonusDrops || [];
+    const essenceDrops = bonusDrops.filter((drop) => drop.type === 'essence');
+    const rareFinds = bonusDrops.filter((drop) => drop.type === 'rare_find');
+
+    let essenceSection = null;
+    if (essenceDrops.length > 0) {
+        const essenceContent = document.createElement('div');
+        for (const drop of essenceDrops) {
+            const { dropsPerHour, revenuePerHour } = getBonusDropPerHourTotals(drop, efficiencyMultiplier);
+            const dropsPA = dropsPerHour / actionsPerHour;
+            const revenuePA = revenuePerHour / actionsPerHour;
+            const line = document.createElement('div');
+            line.style.marginLeft = '8px';
+            const dropRatePct = formatPercentage(drop.dropRate, drop.dropRate < 0.01 ? 3 : 2);
+            line.textContent = `• ${drop.itemName}: ${dropsPA.toFixed(4)}/action (${dropRatePct}) → ${formatPerAction(revenuePA)}/action`;
+            essenceContent.appendChild(line);
+        }
+
+        const essenceRevenuePerAction = essenceDrops.reduce(
+            (sum, drop) => sum + getBonusDropPerHourTotals(drop, efficiencyMultiplier).revenuePerHour / actionsPerHour,
+            0
+        );
+        const essenceRevenueLabel = formatMissingLabel(
+            bonusMissing,
+            `${formatPerAction(essenceRevenuePerAction)}/action`
+        );
+        const essenceFindBonus = profitData.bonusRevenue?.essenceFindBonus || 0;
+        essenceSection = createCollapsibleSection(
+            '',
+            `Essence Drops: ${essenceRevenueLabel} (${essenceDrops.length} item${essenceDrops.length !== 1 ? 's' : ''}, ${essenceFindBonus.toFixed(1)}% essence find)`,
+            null,
+            essenceContent,
+            false,
+            1
+        );
+    }
+
+    let rareFindSection = null;
+    if (rareFinds.length > 0) {
+        const rareFindContent = document.createElement('div');
+        for (const drop of rareFinds) {
+            const { dropsPerHour, revenuePerHour } = getBonusDropPerHourTotals(drop, efficiencyMultiplier);
+            const dropsPA = dropsPerHour / actionsPerHour;
+            const revenuePA = revenuePerHour / actionsPerHour;
+            const line = document.createElement('div');
+            line.style.marginLeft = '8px';
+            const dropRatePct = formatPercentage(drop.dropRate, drop.dropRate < 0.01 ? 3 : 2);
+            line.textContent = `• ${drop.itemName}: ${dropsPA.toFixed(4)}/action (${dropRatePct}) → ${formatPerAction(revenuePA)}/action`;
+            rareFindContent.appendChild(line);
+        }
+
+        const rareFindRevenuePerAction = rareFinds.reduce(
+            (sum, drop) => sum + getBonusDropPerHourTotals(drop, efficiencyMultiplier).revenuePerHour / actionsPerHour,
+            0
+        );
+        const rareFindRevenueLabel = formatMissingLabel(
+            bonusMissing,
+            `${formatPerAction(rareFindRevenuePerAction)}/action`
+        );
+        const rareFindSummary = formatRareFindBonusSummary(profitData.bonusRevenue);
+        rareFindSection = createCollapsibleSection(
+            '',
+            `Rare Finds: ${rareFindRevenueLabel} (${rareFinds.length} item${rareFinds.length !== 1 ? 's' : ''}, ${rareFindSummary})`,
+            null,
+            rareFindContent,
+            false,
+            1
+        );
+    }
+
+    revenueDiv.appendChild(primaryDropsSection);
+    if (essenceSection) {
+        revenueDiv.appendChild(essenceSection);
+    }
+    if (rareFindSection) {
+        revenueDiv.appendChild(rareFindSection);
+    }
+
+    // Costs Section
+    const costsDiv = document.createElement('div');
+    const costsLabel = formatMissingLabel(costsMissing, `${formatPerAction(costsPerAction)}/action`);
+    costsDiv.innerHTML = `<div style="font-weight: 500; color: ${config.COLOR_TOOLTIP_LOSS}; margin-top: 12px; margin-bottom: 4px;">Costs: ${costsLabel}</div>`;
+
+    // Drink Costs subsection
+    const drinkCostsContent = document.createElement('div');
+    if (profitData.drinkCosts && profitData.drinkCosts.length > 0) {
+        for (const drink of profitData.drinkCosts) {
+            const drinksPA = drink.drinksPerHour / actionsPerHour;
+            const costPA = drink.costPerHour / actionsPerHour;
+            const line = document.createElement('div');
+            line.style.marginLeft = '8px';
+            const missingPriceNote = getMissingPriceIndicator(drink.missingPrice);
+            line.textContent = `• ${drink.name}: ${drinksPA.toFixed(2)}/action @ ${formatWithSeparator(drink.priceEach)}${missingPriceNote} each → ${formatPerAction(costPA)}/action`;
+            drinkCostsContent.appendChild(line);
+        }
+    }
+
+    const drinkCount = profitData.drinkCosts?.length || 0;
+    const drinkCostsLabel = formatMissingLabel(drinkCostsMissing, `${formatPerAction(drinkCostPerAction)}/action`);
+    const drinkCostsSection = createCollapsibleSection(
+        '',
+        `Drink Costs: ${drinkCostsLabel} (${drinkCount} drink${drinkCount !== 1 ? 's' : ''})`,
+        null,
+        drinkCostsContent,
+        false,
+        1
+    );
+
+    costsDiv.appendChild(drinkCostsSection);
+
+    // Market Tax subsection
+    const marketTaxContent = document.createElement('div');
+    const marketTaxLine = document.createElement('div');
+    marketTaxLine.style.marginLeft = '8px';
+    const marketTaxLabel = formatMissingLabel(marketTaxMissing, `${formatPerAction(marketTaxPerAction)}/action`);
+    marketTaxLine.textContent = `• Market Tax: 2% of revenue → ${marketTaxLabel}`;
+    marketTaxContent.appendChild(marketTaxLine);
+
+    const marketTaxSection = createCollapsibleSection(
+        '',
+        `Market Tax: ${marketTaxLabel} (2%)`,
+        null,
+        marketTaxContent,
+        false,
+        1
+    );
+
+    costsDiv.appendChild(marketTaxSection);
+
+    // Assemble
+    detailsContent.appendChild(revenueDiv);
+    detailsContent.appendChild(costsDiv);
+
+    // Top-level content with net profit
+    const topLevelContent = document.createElement('div');
+    const profitColor = netMissing ? config.SCRIPT_COLOR_ALERT : profitPerAction >= 0 ? '#4ade80' : config.COLOR_LOSS;
+    const netProfitLine = document.createElement('div');
+    netProfitLine.style.cssText = `
+        font-weight: 500;
+        color: ${profitColor};
+        margin-bottom: 8px;
+    `;
+    netProfitLine.textContent = netMissing
+        ? 'Net Profit: -- ⚠'
+        : `Net Profit: ${formatPerAction(profitPerAction)}/action`;
+    topLevelContent.appendChild(netProfitLine);
+
+    const summarySection = createCollapsibleSection(
+        '',
+        `Revenue: ${formatMissingLabel(revenueMissing, `${formatPerAction(revenuePerAction)}/action`)} | Costs: ${formatMissingLabel(costsMissing, `${formatPerAction(costsPerAction)}/action`)}`,
+        null,
+        detailsContent,
+        false,
+        1
+    );
+    topLevelContent.appendChild(summarySection);
+
+    return createCollapsibleSection('🔢', 'Per action breakdown', null, topLevelContent, false, 0);
+}
+
+/**
+ * Build "Per action breakdown" section for production actions
+ * @param {Object} profitData - Profit calculation data
+ * @returns {HTMLElement} Breakdown section element
+ */
+function buildProductionPerActionBreakdown(profitData) {
+    const actionsPerHour = profitData.actionsPerHour;
+    const efficiencyMultiplier = profitData.efficiencyMultiplier || 1;
+    const outputMissing = profitData.outputPriceMissing || false;
+    const outputEstimated = profitData.outputPriceEstimated || false;
+    const bonusMissing = profitData.bonusRevenue?.hasMissingPrices || false;
+    const materialMissing = profitData.materialCosts?.some((material) => material.missingPrice) || false;
+    const teaMissing = profitData.teaCosts?.some((tea) => tea.missingPrice) || false;
+    const revenueMissing = (outputMissing && !outputEstimated) || bonusMissing;
+    const revenueEstimated = outputEstimated && !revenueMissing;
+    const costsMissing = materialMissing || teaMissing || revenueMissing;
+    const costsEstimated = revenueEstimated && !costsMissing;
+    const marketTaxMissing = revenueMissing;
+    const marketTaxEstimated = revenueEstimated && !marketTaxMissing;
+    const netMissing = profitData.hasMissingPrices;
+    const netEstimated = (revenueEstimated || costsEstimated) && !netMissing;
+
+    const bonusDrops = profitData.bonusRevenue?.bonusDrops || [];
+    const bonusRevenueTotal = profitData.bonusRevenue?.totalBonusRevenue || 0;
+    const outputAmount = profitData.outputAmount || 1;
+
+    // Per-action values
+    const baseItemsPerAction = outputAmount * efficiencyMultiplier;
+    const baseRevenuePerAction = baseItemsPerAction * profitData.outputPrice;
+    const gourmetItemsPerAction = baseItemsPerAction * (profitData.gourmetBonus || 0);
+    const gourmetRevenuePerAction = gourmetItemsPerAction * profitData.outputPrice;
+    const bonusRevenuePerAction = (bonusRevenueTotal * efficiencyMultiplier) / actionsPerHour;
+    const revenuePerAction = baseRevenuePerAction + gourmetRevenuePerAction + bonusRevenuePerAction;
+    const marketTaxPerAction = revenuePerAction * MARKET_TAX;
+    const materialCostPerAction = profitData.materialCostPerHour / actionsPerHour;
+    const teaCostPerAction = profitData.totalTeaCostPerHour / actionsPerHour;
+    const costsPerAction = materialCostPerAction + teaCostPerAction + marketTaxPerAction;
+    const profitPerAction = profitData.profitPerAction;
+
+    const detailsContent = document.createElement('div');
+
+    // Revenue Section
+    const revenueDiv = document.createElement('div');
+    const revenueLabel = revenueMissing
+        ? '-- ⚠'
+        : revenueEstimated
+          ? `${formatPerAction(revenuePerAction)}/action ⚠`
+          : `${formatPerAction(revenuePerAction)}/action`;
+    revenueDiv.innerHTML = `<div style="font-weight: 500; color: ${config.COLOR_TOOLTIP_PROFIT}; margin-bottom: 4px;">Revenue: ${revenueLabel}</div>`;
+
+    // Primary Outputs subsection
+    const primaryOutputContent = document.createElement('div');
+    const baseOutputLine = document.createElement('div');
+    baseOutputLine.style.marginLeft = '8px';
+    const baseOutputMissingNote = getMissingPriceIndicator(
+        profitData.outputPriceMissing || profitData.outputPriceEstimated
+    );
+    baseOutputLine.textContent = `• ${profitData.itemName} (Base): ${baseItemsPerAction.toFixed(2)}/action @ ${formatWithSeparator(Math.round(profitData.outputPrice))}${baseOutputMissingNote} each → ${formatPerAction(baseRevenuePerAction)}/action`;
+    primaryOutputContent.appendChild(baseOutputLine);
+
+    if (profitData.gourmetBonus > 0) {
+        const gourmetLine = document.createElement('div');
+        gourmetLine.style.marginLeft = '8px';
+        gourmetLine.textContent = `• ${profitData.itemName} (Gourmet +${formatPercentage(profitData.gourmetBonus, 1)}): ${gourmetItemsPerAction.toFixed(2)}/action @ ${formatWithSeparator(Math.round(profitData.outputPrice))}${baseOutputMissingNote} each → ${formatPerAction(gourmetRevenuePerAction)}/action`;
+        primaryOutputContent.appendChild(gourmetLine);
+    }
+
+    const primaryRevenuePerAction = baseRevenuePerAction + gourmetRevenuePerAction;
+    const primaryOutputLabel =
+        outputMissing && !outputEstimated
+            ? '-- ⚠'
+            : outputEstimated
+              ? `${formatPerAction(primaryRevenuePerAction)}/action ⚠`
+              : `${formatPerAction(primaryRevenuePerAction)}/action`;
+    const gourmetLabel =
+        profitData.gourmetBonus > 0 ? ` (${formatPercentage(profitData.gourmetBonus, 1)} gourmet)` : '';
+    const primaryOutputSection = createCollapsibleSection(
+        '',
+        `Primary Outputs: ${primaryOutputLabel}${gourmetLabel}`,
+        null,
+        primaryOutputContent,
+        false,
+        1
+    );
+
+    revenueDiv.appendChild(primaryOutputSection);
+
+    // Bonus Drops subsections
+    const essenceDrops = bonusDrops.filter((drop) => drop.type === 'essence');
+    const rareFinds = bonusDrops.filter((drop) => drop.type === 'rare_find');
+
+    let essenceSection = null;
+    if (essenceDrops.length > 0) {
+        const essenceContent = document.createElement('div');
+        for (const drop of essenceDrops) {
+            const { dropsPerHour, revenuePerHour } = getBonusDropPerHourTotals(drop, efficiencyMultiplier);
+            const dropsPA = dropsPerHour / actionsPerHour;
+            const revenuePA = revenuePerHour / actionsPerHour;
+            const line = document.createElement('div');
+            line.style.marginLeft = '8px';
+            const dropRatePct = formatPercentage(drop.dropRate, drop.dropRate < 0.01 ? 3 : 2);
+            line.textContent = `• ${drop.itemName}: ${dropsPA.toFixed(4)}/action (${dropRatePct}) → ${formatPerAction(revenuePA)}/action`;
+            essenceContent.appendChild(line);
+        }
+
+        const essenceRevenuePerAction = essenceDrops.reduce(
+            (sum, drop) => sum + getBonusDropPerHourTotals(drop, efficiencyMultiplier).revenuePerHour / actionsPerHour,
+            0
+        );
+        const essenceRevenueLabel = formatMissingLabel(
+            bonusMissing,
+            `${formatPerAction(essenceRevenuePerAction)}/action`
+        );
+        const essenceFindBonus = profitData.bonusRevenue?.essenceFindBonus || 0;
+        essenceSection = createCollapsibleSection(
+            '',
+            `Essence Drops: ${essenceRevenueLabel} (${essenceDrops.length} item${essenceDrops.length !== 1 ? 's' : ''}, ${essenceFindBonus.toFixed(1)}% essence find)`,
+            null,
+            essenceContent,
+            false,
+            1
+        );
+    }
+
+    let rareFindSection = null;
+    if (rareFinds.length > 0) {
+        const rareFindContent = document.createElement('div');
+        for (const drop of rareFinds) {
+            const { dropsPerHour, revenuePerHour } = getBonusDropPerHourTotals(drop, efficiencyMultiplier);
+            const dropsPA = dropsPerHour / actionsPerHour;
+            const revenuePA = revenuePerHour / actionsPerHour;
+            const line = document.createElement('div');
+            line.style.marginLeft = '8px';
+            const dropRatePct = formatPercentage(drop.dropRate, drop.dropRate < 0.01 ? 3 : 2);
+            line.textContent = `• ${drop.itemName}: ${dropsPA.toFixed(4)}/action (${dropRatePct}) → ${formatPerAction(revenuePA)}/action`;
+            rareFindContent.appendChild(line);
+        }
+
+        const rareFindRevenuePerAction = rareFinds.reduce(
+            (sum, drop) => sum + getBonusDropPerHourTotals(drop, efficiencyMultiplier).revenuePerHour / actionsPerHour,
+            0
+        );
+        const rareFindRevenueLabel = formatMissingLabel(
+            bonusMissing,
+            `${formatPerAction(rareFindRevenuePerAction)}/action`
+        );
+        const rareFindSummary = formatRareFindBonusSummary(profitData.bonusRevenue);
+        rareFindSection = createCollapsibleSection(
+            '',
+            `Rare Finds: ${rareFindRevenueLabel} (${rareFinds.length} item${rareFinds.length !== 1 ? 's' : ''}, ${rareFindSummary})`,
+            null,
+            rareFindContent,
+            false,
+            1
+        );
+    }
+
+    if (essenceSection) {
+        revenueDiv.appendChild(essenceSection);
+    }
+    if (rareFindSection) {
+        revenueDiv.appendChild(rareFindSection);
+    }
+
+    // Costs Section
+    const costsDiv = document.createElement('div');
+    const costsLabel = costsMissing
+        ? '-- ⚠'
+        : costsEstimated
+          ? `${formatPerAction(costsPerAction)}/action ⚠`
+          : `${formatPerAction(costsPerAction)}/action`;
+    costsDiv.innerHTML = `<div style="font-weight: 500; color: ${config.COLOR_TOOLTIP_LOSS}; margin-top: 12px; margin-bottom: 4px;">Costs: ${costsLabel}</div>`;
+
+    // Material Costs subsection
+    const materialCostsContent = document.createElement('div');
+    if (profitData.materialCosts && profitData.materialCosts.length > 0) {
+        for (const material of profitData.materialCosts) {
+            const amountPerAction = material.amount * efficiencyMultiplier;
+            const costPerAction = material.totalCost * efficiencyMultiplier;
+            const line = document.createElement('div');
+            line.style.marginLeft = '8px';
+
+            let materialText = `• ${material.itemName}: ${amountPerAction.toFixed(2)}/action`;
+
+            if (profitData.artisanBonus > 0 && material.baseAmount && material.amount !== material.baseAmount) {
+                const baseAmountPerAction = material.baseAmount * efficiencyMultiplier;
+                materialText += ` (${baseAmountPerAction.toFixed(2)} base -${formatPercentage(profitData.artisanBonus, 1)} 🍵)`;
+            }
+
+            const missingPriceNote = getMissingPriceIndicator(material.missingPrice);
+            materialText += ` @ ${formatWithSeparator(Math.round(material.askPrice))}${missingPriceNote} → ${formatPerAction(costPerAction)}/action`;
+
+            line.textContent = materialText;
+            materialCostsContent.appendChild(line);
+        }
+    }
+
+    const materialCostsLabel = formatMissingLabel(materialMissing, `${formatPerAction(materialCostPerAction)}/action`);
+    const materialCostsSection = createCollapsibleSection(
+        '',
+        `Material Costs: ${materialCostsLabel} (${profitData.materialCosts?.length || 0} material${profitData.materialCosts?.length !== 1 ? 's' : ''})`,
+        null,
+        materialCostsContent,
+        false,
+        1
+    );
+
+    // Tea Costs subsection
+    const teaCostsContent = document.createElement('div');
+    if (profitData.teaCosts && profitData.teaCosts.length > 0) {
+        for (const tea of profitData.teaCosts) {
+            const drinksPA = tea.drinksPerHour / actionsPerHour;
+            const costPA = tea.totalCost / actionsPerHour;
+            const line = document.createElement('div');
+            line.style.marginLeft = '8px';
+            const missingPriceNote = getMissingPriceIndicator(tea.missingPrice);
+            line.textContent = `• ${tea.itemName}: ${drinksPA.toFixed(2)}/action @ ${formatWithSeparator(Math.round(tea.pricePerDrink))}${missingPriceNote} each → ${formatPerAction(costPA)}/action`;
+            teaCostsContent.appendChild(line);
+        }
+    }
+
+    const teaCount = profitData.teaCosts?.length || 0;
+    const teaCostsLabel = formatMissingLabel(teaMissing, `${formatPerAction(teaCostPerAction)}/action`);
+    const teaCostsSection = createCollapsibleSection(
+        '',
+        `Drink Costs: ${teaCostsLabel} (${teaCount} drink${teaCount !== 1 ? 's' : ''})`,
+        null,
+        teaCostsContent,
+        false,
+        1
+    );
+
+    costsDiv.appendChild(materialCostsSection);
+    costsDiv.appendChild(teaCostsSection);
+
+    // Market Tax subsection
+    const marketTaxContent = document.createElement('div');
+    const marketTaxLine = document.createElement('div');
+    marketTaxLine.style.marginLeft = '8px';
+    const marketTaxLabel = marketTaxMissing
+        ? '-- ⚠'
+        : marketTaxEstimated
+          ? `${formatPerAction(marketTaxPerAction)}/action ⚠`
+          : `${formatPerAction(marketTaxPerAction)}/action`;
+    marketTaxLine.textContent = `• Market Tax: 2% of revenue → ${marketTaxLabel}`;
+    marketTaxContent.appendChild(marketTaxLine);
+
+    const marketTaxSection = createCollapsibleSection(
+        '',
+        `Market Tax: ${marketTaxLabel} (2%)`,
+        null,
+        marketTaxContent,
+        false,
+        1
+    );
+
+    costsDiv.appendChild(marketTaxSection);
+
+    // Assemble
+    detailsContent.appendChild(revenueDiv);
+    detailsContent.appendChild(costsDiv);
+
+    // Top-level content with net profit
+    const topLevelContent = document.createElement('div');
+    const profitColor = netMissing ? config.SCRIPT_COLOR_ALERT : profitPerAction >= 0 ? '#4ade80' : config.COLOR_LOSS;
+    const netProfitLine = document.createElement('div');
+    netProfitLine.style.cssText = `
+        font-weight: 500;
+        color: ${profitColor};
+        margin-bottom: 8px;
+    `;
+    netProfitLine.textContent = netMissing
+        ? 'Net Profit: -- ⚠'
+        : netEstimated
+          ? `Net Profit: ${formatPerAction(profitPerAction)}/action ⚠`
+          : `Net Profit: ${formatPerAction(profitPerAction)}/action`;
+    topLevelContent.appendChild(netProfitLine);
+
+    const revenueSummaryLabel = revenueMissing
+        ? '-- ⚠'
+        : revenueEstimated
+          ? `${formatPerAction(revenuePerAction)}/action ⚠`
+          : `${formatPerAction(revenuePerAction)}/action`;
+    const costsSummaryLabel = costsMissing
+        ? '-- ⚠'
+        : costsEstimated
+          ? `${formatPerAction(costsPerAction)}/action ⚠`
+          : `${formatPerAction(costsPerAction)}/action`;
+    const summarySection = createCollapsibleSection(
+        '',
+        `Revenue: ${revenueSummaryLabel} | Costs: ${costsSummaryLabel}`,
+        null,
+        detailsContent,
+        false,
+        1
+    );
+    topLevelContent.appendChild(summarySection);
+
+    return createCollapsibleSection('🔢', 'Per action breakdown', null, topLevelContent, false, 0);
 }
 
 /**
