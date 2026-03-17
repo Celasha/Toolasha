@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.41.0](https://github.com/Celasha/Toolasha/compare/v1.40.0...v1.41.0) (2026-03-17)
+
+### Features
+
+- add sorting and row highlights to guild members table ([2cd332b](https://github.com/Celasha/Toolasha/commit/2cd332bf4bcebfcd8a98c82ab6543e26554e7e00))
+
 ## [1.40.0](https://github.com/Celasha/Toolasha/compare/v1.39.0...v1.40.0) (2026-03-17)
 
 ### Features
