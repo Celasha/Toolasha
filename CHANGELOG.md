@@ -2,18 +2,16 @@
 
 ## [1.40.0](https://github.com/Celasha/Toolasha/compare/v1.39.0...v1.40.0) (2026-03-17)
 
-
 ### Features
 
-* add per-action profit breakdown to gathering and production panels ([2b2b36c](https://github.com/Celasha/Toolasha/commit/2b2b36c9dc8861f04cd7a1ddb5069241f983089d))
-* add quick input buttons to marketplace buy/sell dialogs ([046a522](https://github.com/Celasha/Toolasha/commit/046a522befbd716da9886c178a4902efb481890b))
-
+- add per-action profit breakdown to gathering and production panels ([2b2b36c](https://github.com/Celasha/Toolasha/commit/2b2b36c9dc8861f04cd7a1ddb5069241f983089d))
+- add quick input buttons to marketplace buy/sell dialogs ([046a522](https://github.com/Celasha/Toolasha/commit/046a522befbd716da9886c178a4902efb481890b))
 
 ### Bug Fixes
 
-* apply under-level penalty to transmute success rate calculation ([77b00d1](https://github.com/Celasha/Toolasha/commit/77b00d196b2fd795e6b9ffdcc08b478ec96d79a4))
-* pass enhancement level to marketplace in action menu shortcuts ([e46dc24](https://github.com/Celasha/Toolasha/commit/e46dc248389c76fc4fde64d4cbad4c9f3e345e74))
-* respect pricing mode setting and fix reset in combat statistics ([78c3b4a](https://github.com/Celasha/Toolasha/commit/78c3b4a48375844adaf92c4075677bd089af3067))
+- apply under-level penalty to transmute success rate calculation ([77b00d1](https://github.com/Celasha/Toolasha/commit/77b00d196b2fd795e6b9ffdcc08b478ec96d79a4))
+- pass enhancement level to marketplace in action menu shortcuts ([e46dc24](https://github.com/Celasha/Toolasha/commit/e46dc248389c76fc4fde64d4cbad4c9f3e345e74))
+- respect pricing mode setting and fix reset in combat statistics ([78c3b4a](https://github.com/Celasha/Toolasha/commit/78c3b4a48375844adaf92c4075677bd089af3067))
 
 ## [1.39.0](https://github.com/Celasha/Toolasha/compare/v1.38.0...v1.39.0) (2026-03-16)
 
