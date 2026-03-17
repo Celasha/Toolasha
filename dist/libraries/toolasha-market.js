@@ -1,11 +1,11 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 1.39.0
+ * Version: 1.40.0
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (config, dataManager, domObserver, marketAPI, equipmentParser_js, houseEfficiency_js, efficiency_js, teaParser_js, bonusRevenueCalculator_js, marketData_js, profitConstants_js, profitHelpers_js, buffParser_js, actionCalculator_js, tokenValuation_js, enhancementCalculator_js, formatters_js, enhancementConfig_js, dom, timerRegistry_js, storage, cleanupRegistry_js, domObserverHelpers_js, enhancementMultipliers_js, webSocketHook, abilityCostCalculator_js, houseCostCalculator_js) {
+(function (config, dataManager, domObserver, marketAPI, equipmentParser_js, houseEfficiency_js, efficiency_js, teaParser_js, bonusRevenueCalculator_js, marketData_js, profitConstants_js, profitHelpers_js, buffParser_js, actionCalculator_js, tokenValuation_js, enhancementCalculator_js, formatters_js, enhancementConfig_js, dom, timerRegistry_js, storage, cleanupRegistry_js, domObserverHelpers_js, enhancementMultipliers_js, reactInput_js, webSocketHook, abilityCostCalculator_js, houseCostCalculator_js) {
     'use strict';
 
     window.Toolasha = window.Toolasha || {}; window.Toolasha.__buildTarget = "browser";
@@ -1395,7 +1395,9 @@ self.onmessage = function (e) {
      * - Tea: Catalytic Tea provides /buff_types/alchemy_success (5% ratio boost, scales with Drink Concentration)
      * - Catalyst (type-specific): +15% multiplicative, consumed once per successful action
      * - Catalyst (prime): +25% multiplicative, consumed once per successful action
-     * - Formula: finalRate = min(1, baseRate × (1 + teaBonus) × (1 + catalystBonus))
+     * - Transmute under-level penalty: perLevel = 0.9 / itemLevel, applied when alchemyLevel < itemLevel
+     * - Formula (coinify/decompose): finalRate = min(1, baseRate × (1 + catalystBonus) × (1 + teaBonus))
+     * - Formula (transmute): finalRate = min(1, baseRate × (1 + catalyst + perLevel × (alchemyLvl - itemLvl)) × (1 + tea))
      */
 
 
@@ -1563,20 +1565,24 @@ self.onmessage = function (e) {
          * @param {number} baseRate - Base success rate (0-1)
          * @param {number} catalystBonus - Catalyst multiplicative bonus (0, 0.15, or 0.25)
          * @param {number|null} teaBonusOverride - If provided, use this instead of reading live buffs
-         * @returns {Object} Success rate breakdown { total, base, tea, catalyst }
+         * @param {number} levelPenalty - Under-level penalty term (negative when below item level, 0 otherwise)
+         * @returns {Object} Success rate breakdown { total, base, tea, catalyst, levelPenalty }
          */
-        calculateSuccessRateBreakdown(baseRate, catalystBonus = 0, teaBonusOverride = null) {
+        calculateSuccessRateBreakdown(baseRate, catalystBonus = 0, teaBonusOverride = null, levelPenalty = 0) {
             try {
                 const teaBonus = teaBonusOverride !== null ? teaBonusOverride : buffParser_js.getAlchemySuccessBonus();
 
-                // Calculate final success rate: base × (1 + tea) × (1 + catalyst)
-                const total = Math.min(1.0, baseRate * (1 + teaBonus) * (1 + catalystBonus));
+                // Calculate final success rate:
+                // base × (1 + catalyst + levelPenalty) × (1 + tea)
+                // levelPenalty is 0 when at or above item level
+                const total = Math.min(1.0, baseRate * (1 + catalystBonus + levelPenalty) * (1 + teaBonus));
 
                 return {
-                    total,
+                    total: Math.max(0, total),
                     base: baseRate,
                     tea: teaBonus,
                     catalyst: catalystBonus,
+                    levelPenalty,
                 };
             } catch (error) {
                 console.error('[AlchemyProfitCalculator] Failed to calculate success rate breakdown:', error);
@@ -1603,6 +1609,7 @@ self.onmessage = function (e) {
          * @param {number} params.alchemyBonusRevenue - Bonus revenue per hour (essences + rares)
          * @param {Function} params.computeNetProfit - fn(successRate) => netProfitPerAttempt
          * @param {Function} params.computeTeaCost - fn(teaBonus) => totalTeaCostPerHour
+         * @param {number} [params.levelPenalty=0] - Under-level penalty for transmute
          * @returns {Object} { catalystBonus, catalystHrid, catalystPrice, teaBonus, teaCostPerHour, successRateBreakdown }
          */
         _bestCatalystCombo({
@@ -1614,6 +1621,7 @@ self.onmessage = function (e) {
             alchemyBonusRevenue,
             computeNetProfit,
             computeTeaCost,
+            levelPenalty = 0,
         }) {
             const liveTeaBonus = buffParser_js.getAlchemySuccessBonus();
             const typeSpecificHrid = CATALYST_HRIDS[actionType];
@@ -1657,7 +1665,8 @@ self.onmessage = function (e) {
                 const successRateBreakdown = this.calculateSuccessRateBreakdown(
                     baseSuccessRate,
                     combo.catalystBonus,
-                    combo.teaBonus
+                    combo.teaBonus,
+                    levelPenalty
                 );
                 const successRate = successRateBreakdown.total;
 
@@ -2279,6 +2288,14 @@ self.onmessage = function (e) {
                     return null; // Cannot transmute
                 }
 
+                // Calculate under-level penalty for transmute
+                // Formula: perLevel × (alchemyLevel - itemLevel) where perLevel = 0.9 / itemLevel
+                const itemLevel = itemDetails.itemLevel || 1;
+                const skills = dataManager.getSkills();
+                const alchemySkill = skills?.find((s) => s.skillHrid === '/skills/alchemy');
+                const alchemyLevel = alchemySkill?.level || 1;
+                const levelPenalty = alchemyLevel < itemLevel ? (0.9 / itemLevel) * (alchemyLevel - itemLevel) : 0;
+
                 // Get alchemy action details
                 const actionDetails = gameData.actionDetailMap['/actions/alchemy/transmute'];
                 if (!actionDetails) {
@@ -2394,7 +2411,6 @@ self.onmessage = function (e) {
                 const actionsPerHourWithEfficiency = profitHelpers_js.calculateActionsPerHour(actionTime) * (1 + efficiencyDecimal);
 
                 // Calculate bonus revenue (essences + rares) from item level
-                const itemLevel = itemDetails.itemLevel || 1;
                 const alchemyBonus = calculateAlchemyBonusDrops(
                     itemLevel,
                     actionsPerHourWithEfficiency,
@@ -2425,6 +2441,7 @@ self.onmessage = function (e) {
                         return expectedOutputValue * successRate - (netMat + coinCost);
                     },
                     computeTeaCost: () => teaCostData.totalCostPerHour,
+                    levelPenalty,
                 });
 
                 const {
@@ -13764,6 +13781,7 @@ self.onmessage = function (e) {
             this.itemNameToHridCache = null;
             this.closeHandler = null;
             this.pendingQuantity = null;
+            this.addMode = false;
         }
 
         /**
@@ -13782,9 +13800,10 @@ self.onmessage = function (e) {
             });
             this.unregisterHandlers.push(unregister);
 
-            // Watch for marketplace modals to autofill quantity
+            // Watch for marketplace modals to autofill quantity and inject quick input buttons
             const unregisterModal = domObserver.onClass('MarketplaceShortcuts_modal', 'Modal_modalContainer', (modal) => {
                 this.autofillQuantity(modal);
+                this.injectQuickInputButtons(modal);
             });
             this.unregisterHandlers.push(unregisterModal);
         }
@@ -13807,6 +13826,16 @@ self.onmessage = function (e) {
             const itemHrid = this.findItemHrid(itemName);
             if (!itemHrid) return;
 
+            // Get enhancement level (e.g. "+3" → 3, absent → 0)
+            let enhancementLevel = 0;
+            const enhEl = actionMenu.querySelector('[class*="Item_enhancementLevel"]');
+            if (enhEl) {
+                const match = enhEl.textContent.match(/\+(\d+)/);
+                if (match) {
+                    enhancementLevel = parseInt(match[1], 10);
+                }
+            }
+
             // Check tradeability
             const gameData = dataManager.getInitClientData();
             if (!gameData?.itemDetailMap) return;
@@ -13819,7 +13848,7 @@ self.onmessage = function (e) {
             if (!viewMarketplaceBtn) return;
 
             // Build and insert dropdown
-            const dropdown = this.buildDropdown(actionMenu, itemHrid);
+            const dropdown = this.buildDropdown(actionMenu, itemHrid, enhancementLevel);
             viewMarketplaceBtn.insertAdjacentElement('afterend', dropdown);
         }
 
@@ -13827,9 +13856,10 @@ self.onmessage = function (e) {
          * Build the dropdown UI
          * @param {HTMLElement} actionMenu - The action menu container
          * @param {string} itemHrid - Item HRID for marketplace navigation
+         * @param {number} enhancementLevel - Enhancement level (0 for base items)
          * @returns {HTMLElement} Dropdown wrapper element
          */
-        buildDropdown(actionMenu, itemHrid) {
+        buildDropdown(actionMenu, itemHrid, enhancementLevel = 0) {
             const wrapper = document.createElement('div');
             wrapper.classList.add('mwi-marketplace-dropdown');
             wrapper.style.cssText = 'position: relative; width: 100%;';
@@ -13902,7 +13932,7 @@ self.onmessage = function (e) {
                     e.stopPropagation();
                     e.preventDefault();
                     closePanel();
-                    this.executeAction(action.type, itemHrid);
+                    this.executeAction(action.type, itemHrid, enhancementLevel);
                 });
                 panel.appendChild(btn);
             }
@@ -13939,8 +13969,9 @@ self.onmessage = function (e) {
          * Execute a marketplace action
          * @param {string} actionType - 'sell', 'buy', 'sell-listing', 'buy-listing'
          * @param {string} itemHrid - Item HRID
+         * @param {number} enhancementLevel - Enhancement level (0 for base items)
          */
-        async executeAction(actionType, itemHrid) {
+        async executeAction(actionType, itemHrid, enhancementLevel = 0) {
             // Read quantity from item submenu input before navigating away
             const amountInput = document.querySelector('[class*="Item_amountInputContainer"] input[type="number"]');
             if (amountInput) {
@@ -13951,7 +13982,7 @@ self.onmessage = function (e) {
             }
 
             // Navigate to marketplace for this item
-            navigateToMarketplace(itemHrid, 0);
+            navigateToMarketplace(itemHrid, enhancementLevel);
 
             // Wait for the marketplace panel to render
             await new Promise((r) => setTimeout(r, 300));
@@ -14084,6 +14115,122 @@ self.onmessage = function (e) {
         }
 
         /**
+         * Inject quick input buttons (10, 100, 1000, + toggle) into a marketplace modal.
+         * @param {HTMLElement} modal - Modal container element
+         */
+        injectQuickInputButtons(modal) {
+            // Check setting
+            if (!config.getSetting('market_quickInputButtons')) return;
+
+            // Check if this is a marketplace modal
+            const header = modal.querySelector('div[class*="MarketplacePanel_header"]');
+            if (!header) return;
+
+            const headerText = header.textContent.trim();
+            const isMarketplaceModal =
+                headerText.includes('Buy Now') ||
+                headerText.includes('Buy Listing') ||
+                headerText.includes('Sell Now') ||
+                headerText.includes('Sell Listing');
+            if (!isMarketplaceModal) return;
+
+            // Delay to let the modal fully render
+            setTimeout(() => {
+                // Skip if already injected
+                if (modal.querySelector('.mwi-mp-quick-input')) return;
+
+                const quantityInput = this.findQuantityInput(modal);
+                if (!quantityInput) return;
+
+                // Create button row
+                const row = document.createElement('div');
+                row.className = 'mwi-mp-quick-input';
+                row.style.cssText =
+                    'display: flex; align-items: center; justify-content: center; gap: 2px; margin-top: 2px;';
+
+                // + toggle button
+                const addToggle = document.createElement('button');
+                addToggle.textContent = '+';
+                addToggle.title = 'Toggle add mode: click to accumulate counts instead of setting them';
+                addToggle.style.cssText = `
+                font-size: 11px;
+                font-weight: 700;
+                padding: 1px 5px;
+                border-radius: 4px;
+                border: 1px solid rgba(215, 183, 255, 0.3);
+                background: transparent;
+                color: rgba(215, 183, 255, 0.5);
+                cursor: pointer;
+                margin-right: 4px;
+                line-height: 1.4;
+                transition: background 0.15s, color 0.15s, border-color 0.15s;
+            `;
+
+                const applyToggleStyle = (active) => {
+                    if (active) {
+                        addToggle.style.background = 'rgba(215, 183, 255, 0.2)';
+                        addToggle.style.color = '#d7b7ff';
+                        addToggle.style.borderColor = '#d7b7ff';
+                    } else {
+                        addToggle.style.background = 'transparent';
+                        addToggle.style.color = 'rgba(215, 183, 255, 0.5)';
+                        addToggle.style.borderColor = 'rgba(215, 183, 255, 0.3)';
+                    }
+                };
+
+                applyToggleStyle(this.addMode);
+                addToggle.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    this.addMode = !this.addMode;
+                    applyToggleStyle(this.addMode);
+                });
+                row.appendChild(addToggle);
+
+                // Preset count buttons
+                const presetValues = [10, 100, 1000];
+                for (const value of presetValues) {
+                    const btn = document.createElement('button');
+                    btn.textContent = value.toLocaleString();
+                    btn.className = 'mwi-quick-input-btn';
+                    btn.style.cssText = `
+                    background-color: white;
+                    color: black;
+                    padding: 1px 6px;
+                    margin: 1px;
+                    border: 1px solid #ccc;
+                    border-radius: 3px;
+                    cursor: pointer;
+                    font-size: 0.9em;
+                `;
+                    btn.addEventListener('mouseenter', () => {
+                        btn.style.backgroundColor = '#f0f0f0';
+                    });
+                    btn.addEventListener('mouseleave', () => {
+                        btn.style.backgroundColor = 'white';
+                    });
+                    btn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (this.addMode) {
+                            const current = parseInt(quantityInput.value) || 0;
+                            reactInput_js.setReactInputValue(quantityInput, current + value, { focus: true });
+                        } else {
+                            reactInput_js.setReactInputValue(quantityInput, value, { focus: true });
+                        }
+                    });
+                    row.appendChild(btn);
+                }
+
+                // Insert below the quantity input row (1 / input / Max)
+                const inputRow = quantityInput.closest('div')?.parentElement?.parentElement;
+                if (inputRow) {
+                    inputRow.insertAdjacentElement('afterend', row);
+                }
+            }, 150);
+        }
+
+        /**
          * Find the quantity input in a marketplace modal.
          * Equipment items have multiple number inputs (enhancement level + quantity),
          * so we identify the correct one by checking parent containers.
@@ -14166,6 +14313,7 @@ self.onmessage = function (e) {
             this.timerRegistry.clearAll();
 
             document.querySelectorAll('.mwi-marketplace-dropdown').forEach((el) => el.remove());
+            document.querySelectorAll('.mwi-mp-quick-input').forEach((el) => el.remove());
 
             this.itemNameToHridCache = null;
             this.isInitialized = false;
@@ -19025,4 +19173,4 @@ self.onmessage = function (e) {
 
     console.log('[Toolasha] Market library loaded');
 
-})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.marketAPI, Toolasha.Utils.equipmentParser, Toolasha.Utils.houseEfficiency, Toolasha.Utils.efficiency, Toolasha.Utils.teaParser, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.marketData, Toolasha.Utils.profitConstants, Toolasha.Utils.profitHelpers, Toolasha.Utils.buffParser, Toolasha.Utils.actionCalculator, Toolasha.Utils.tokenValuation, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.formatters, Toolasha.Utils.enhancementConfig, Toolasha.Utils.dom, Toolasha.Utils.timerRegistry, Toolasha.Core.storage, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.enhancementMultipliers, Toolasha.Core.webSocketHook, Toolasha.Utils.abilityCalc, Toolasha.Utils.houseCostCalculator);
+})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.marketAPI, Toolasha.Utils.equipmentParser, Toolasha.Utils.houseEfficiency, Toolasha.Utils.efficiency, Toolasha.Utils.teaParser, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.marketData, Toolasha.Utils.profitConstants, Toolasha.Utils.profitHelpers, Toolasha.Utils.buffParser, Toolasha.Utils.actionCalculator, Toolasha.Utils.tokenValuation, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.formatters, Toolasha.Utils.enhancementConfig, Toolasha.Utils.dom, Toolasha.Utils.timerRegistry, Toolasha.Core.storage, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.enhancementMultipliers, Toolasha.Utils.reactInput, Toolasha.Core.webSocketHook, Toolasha.Utils.abilityCalc, Toolasha.Utils.houseCostCalculator);

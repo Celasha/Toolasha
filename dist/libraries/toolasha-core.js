@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 1.39.0
+ * Version: 1.40.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1108,11 +1108,11 @@
                 },
                 combatStats_keyPricing: {
                     id: 'combatStats_keyPricing',
-                    label: 'Combat Statistics: Key cost pricing',
+                    label: 'Combat Statistics: Pricing mode',
                     type: 'select',
                     default: 'ask',
                     options: ['ask', 'bid'],
-                    help: 'Whether to use ask (instant buy) or bid (patient buy) prices for key costs. Use bid if you craft your own keys.',
+                    help: 'Whether to use ask (instant buy) or bid (patient buy) prices for income, key costs, and profit calculations.',
                 },
                 combatStatsChatMessage: {
                     id: 'combatStatsChatMessage',
@@ -1369,6 +1369,13 @@
                     type: 'checkbox',
                     default: true,
                     help: 'Automatically clicks the Max button in the quantity field when opening Sell listing dialogs',
+                },
+                market_quickInputButtons: {
+                    id: 'market_quickInputButtons',
+                    label: 'Marketplace: Quick input buttons on order dialogs',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Adds 10, 100, 1000 preset quantity buttons to buy/sell dialogs',
                 },
                 market_visibleItemCount: {
                     id: 'market_visibleItemCount',
