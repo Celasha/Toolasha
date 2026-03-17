@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 1.42.0
+ * Version: 1.42.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1434,11 +1434,24 @@
 
 
     const CSS_PREFIX = 'mwi-loadout';
+    const STORAGE_KEY_PREFIX = 'loadout_sortOrder';
+
+    /**
+     * Get character-scoped storage key for loadout sort order.
+     * @returns {string}
+     */
+    function getStorageKey() {
+        const charId = dataManager.getCurrentCharacterId() || 'default';
+        return `${STORAGE_KEY_PREFIX}_${charId}`;
+    }
 
     class LoadoutSort {
         constructor() {
             this.initialized = false;
             this.unregisterObservers = [];
+            this._dragSrc = null;
+            this._containerObserver = null;
+            this._mutationPaused = false;
         }
 
         initialize() {
@@ -1458,11 +1471,13 @@
          * @param {HTMLElement} containerEl
          */
         async _onLoadoutsPanelFound(containerEl) {
-            // Skip if already injected
-            if (containerEl.querySelector(`.${CSS_PREFIX}-drag-handle`)) return;
+            // Skip if already set up
+            if (containerEl.dataset.mwiLoadoutSort) return;
+            containerEl.dataset.mwiLoadoutSort = '1';
 
             await this._applyStoredOrder(containerEl);
             this._injectDragHandles(containerEl);
+            this._observeContainer(containerEl);
         }
 
         /**
@@ -1474,8 +1489,15 @@
             const useEl = loadoutEl.querySelector('use');
             const href = useEl?.getAttribute('href') || useEl?.getAttribute('xlink:href') || '';
             const icon = href.split('#')[1] || '';
-            // Text content includes the icon's aria text, so grab just the direct text
-            const name = loadoutEl.textContent?.trim() || '';
+            // Extract only direct text nodes to avoid SVG aria-label text
+            const texts = [];
+            loadoutEl.childNodes.forEach((n) => {
+                if (n.nodeType === 3) {
+                    const t = n.textContent.trim();
+                    if (t) texts.push(t);
+                }
+            });
+            const name = texts.join(' ');
             return { icon, name };
         }
 
@@ -1484,7 +1506,7 @@
          * @param {HTMLElement} containerEl
          */
         async _applyStoredOrder(containerEl) {
-            const savedOrder = await storage.getJSON('loadout_sortOrder', 'settings', null);
+            const savedOrder = await storage.getJSON(getStorageKey(), 'settings', null);
             if (!savedOrder || !Array.isArray(savedOrder) || savedOrder.length === 0) return;
 
             const loadoutEls = Array.from(containerEl.querySelectorAll('[class*="LoadoutsPanel_characterLoadout"]'));
@@ -1514,10 +1536,12 @@
                 }
             }
 
-            // Reorder DOM
+            // Reorder DOM (pause mutation observer to avoid re-triggering)
+            this._mutationPaused = true;
             for (const el of ordered) {
                 containerEl.appendChild(el);
             }
+            this._mutationPaused = false;
         }
 
         /**
@@ -1528,6 +1552,9 @@
             const loadoutEls = Array.from(containerEl.querySelectorAll('[class*="LoadoutsPanel_characterLoadout"]'));
 
             for (const loadoutEl of loadoutEls) {
+                // Skip if already has a handle
+                if (loadoutEl.querySelector(`.${CSS_PREFIX}-drag-handle`)) continue;
+
                 // Create drag handle
                 const handle = document.createElement('span');
                 handle.className = `${CSS_PREFIX}-drag-handle`;
@@ -1550,17 +1577,16 @@
                         e.preventDefault();
                         return;
                     }
-                    const index = Array.from(
-                        containerEl.querySelectorAll('[class*="LoadoutsPanel_characterLoadout"]')
-                    ).indexOf(loadoutEl);
+                    this._dragSrc = loadoutEl;
                     e.dataTransfer.effectAllowed = 'move';
-                    e.dataTransfer.setData('text/plain', String(index));
+                    e.dataTransfer.setData('text/plain', '');
                     loadoutEl.style.opacity = '0.5';
                 };
 
                 loadoutEl.ondragend = () => {
                     loadoutEl.draggable = false;
                     loadoutEl.style.opacity = '1';
+                    this._dragSrc = null;
                 };
 
                 loadoutEl.ondragover = (e) => {
@@ -1577,24 +1603,39 @@
                     e.preventDefault();
                     loadoutEl.style.borderLeft = '';
 
-                    const dragIndex = parseInt(e.dataTransfer.getData('text/plain'));
-                    const allEls = Array.from(containerEl.querySelectorAll('[class*="LoadoutsPanel_characterLoadout"]'));
-                    const dropIndex = allEls.indexOf(loadoutEl);
+                    if (!this._dragSrc || this._dragSrc === loadoutEl) return;
 
-                    if (dragIndex !== dropIndex && dragIndex >= 0 && dragIndex < allEls.length) {
-                        const draggedEl = allEls[dragIndex];
-                        if (dragIndex < dropIndex) {
-                            containerEl.insertBefore(draggedEl, loadoutEl.nextSibling);
-                        } else {
-                            containerEl.insertBefore(draggedEl, loadoutEl);
-                        }
-                        this._saveOrder(containerEl);
-                    }
+                    // Use cursor position to determine insert before or after
+                    const rect = loadoutEl.getBoundingClientRect();
+                    const before = e.clientY < rect.top + rect.height / 2;
+
+                    this._mutationPaused = true;
+                    containerEl.insertBefore(this._dragSrc, before ? loadoutEl : loadoutEl.nextSibling);
+                    this._mutationPaused = false;
+
+                    this._saveOrder(containerEl);
                 };
 
                 // Prepend handle before the SVG icon
                 loadoutEl.insertBefore(handle, loadoutEl.firstChild);
             }
+        }
+
+        /**
+         * Watch for the game adding/removing loadouts and re-inject handles.
+         * @param {HTMLElement} containerEl
+         */
+        _observeContainer(containerEl) {
+            if (this._containerObserver) {
+                this._containerObserver.disconnect();
+            }
+
+            this._containerObserver = new MutationObserver(() => {
+                if (this._mutationPaused) return;
+                this._injectDragHandles(containerEl);
+            });
+
+            this._containerObserver.observe(containerEl, { childList: true, subtree: false });
         }
 
         /**
@@ -1604,7 +1645,7 @@
         _saveOrder(containerEl) {
             const loadoutEls = Array.from(containerEl.querySelectorAll('[class*="LoadoutsPanel_characterLoadout"]'));
             const order = loadoutEls.map((el) => this._buildIdentifier(el));
-            storage.setJSON('loadout_sortOrder', order, 'settings');
+            storage.setJSON(getStorageKey(), order, 'settings');
         }
 
         disable() {
@@ -1612,6 +1653,11 @@
                 unregister();
             }
             this.unregisterObservers = [];
+
+            if (this._containerObserver) {
+                this._containerObserver.disconnect();
+                this._containerObserver = null;
+            }
 
             // Remove injected drag handles
             document.querySelectorAll(`.${CSS_PREFIX}-drag-handle`).forEach((el) => el.remove());
