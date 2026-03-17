@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.41.1](https://github.com/Celasha/Toolasha/compare/v1.41.0...v1.41.1) (2026-03-17)
+
+### Bug Fixes
+
+- use SVG use element for activity icon sort grouping ([adc05c7](https://github.com/Celasha/Toolasha/commit/adc05c7106008ce4e04ee893f04f30c372887160))
+
 ## [1.41.0](https://github.com/Celasha/Toolasha/compare/v1.40.0...v1.41.0) (2026-03-17)
 
 ### Features
