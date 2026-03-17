@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.42.1](https://github.com/Celasha/Toolasha/compare/v1.42.0...v1.42.1) (2026-03-17)
+
+
+### Bug Fixes
+
+* improve loadout sort with per-character storage and drop positioning ([6e48d02](https://github.com/Celasha/Toolasha/commit/6e48d02909158c72fa1b67bd3b03cf56684067f8))
+
 ## [1.42.0](https://github.com/Celasha/Toolasha/compare/v1.41.1...v1.42.0) (2026-03-17)
 
 ### Features
