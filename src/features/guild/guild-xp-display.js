@@ -157,7 +157,7 @@ function buildChart(chart) {
         else if (i === hLegend.length - 1 && leftPct > 90) labelTransform = 'translate(-100%, 0)';
         legendHTML += `<div style="position: absolute; top: 0; left: ${leftPct}%; flex-direction: column;">
             <div style="width: 1px; height: 8px; background-color: var(--color-space-300);"></div>
-            <div style="font-size: 10px; white-space: nowrap; transform: ${labelTransform};">${new Date(d.t).toLocaleString()}</div>
+            <div style="font-size: 10px; width: 80px; transform: ${labelTransform};">${new Date(d.t).toLocaleString()}</div>
         </div>`;
     }
 
@@ -167,11 +167,10 @@ function buildChart(chart) {
             grid-template-columns: auto auto 1fr;
             grid-template-rows: 1fr auto;
             width: calc(100% - 56px);
-            height: calc(100% - 56px);
+            height: calc(100% - 28px * 3 - 14px);
             margin-top: 28px;
             margin-left: 28px;
             gap: 2px;
-            overflow: hidden;
         ">
             <div style="display: flex; flex-direction: column; justify-content: space-between; height: 100%;">
                 <div style="font-size: 10px; transform: translate(0, -50%);">${fNum(maxXPH)}</div>
@@ -188,7 +187,7 @@ function buildChart(chart) {
             </div>
             <div></div>
             <div></div>
-            <div style="flex: 0 0; position: relative; height: 24px; overflow: visible;">
+            <div style="flex: 0 0; position: relative; height: 28px; overflow: visible;">
                 ${legendHTML}
             </div>
         </div>`;
