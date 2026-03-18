@@ -226,9 +226,9 @@ class QuickInputButtons {
                     for (const item of speedBreakdown.consumables) {
                         const detailText =
                             item.drinkConcentration > 0
-                                ? ` (${item.baseSpeed.toFixed(1)}% × ${(1 + item.drinkConcentration / 100).toFixed(2)})`
+                                ? ` (${item.baseSpeed.toFixed(2)}% × ${(1 + item.drinkConcentration / 100).toFixed(2)})`
                                 : '';
-                        speedLines.push(`  - ${item.name}: +${item.speed.toFixed(1)}%${detailText}`);
+                        speedLines.push(`  - ${item.name}: +${item.speed.toFixed(2)}%${detailText}`);
                     }
 
                     // Personal buff (Seal of Action Speed)
@@ -241,7 +241,7 @@ class QuickInputButtons {
                 if (isTaskAction && taskSpeedBonus > 0) {
                     speedLines.push(''); // Empty line separator
                     speedLines.push(
-                        `<span style="font-weight: 500;">Task Speed (multiplicative): +${taskSpeedBonus.toFixed(1)}%</span>`
+                        `<span style="font-weight: 500;">Task Speed (multiplicative): +${taskSpeedBonus.toFixed(2)}%</span>`
                     );
                     speedLines.push(
                         `${displayTimeAfterEquipment.toFixed(2)}s${equipmentClampSuffix} → ${actionTime.toFixed(2)}s | ${calculateActionsPerHour(actionTime).toFixed(0)}/hr`
@@ -262,11 +262,11 @@ class QuickInputButtons {
 
                             const detailText =
                                 enhancementBonus > 0
-                                    ? ` (${(baseTaskSpeed * 100).toFixed(1)}% + ${(enhancementBonus * enhancementLevel * 100).toFixed(1)}%)`
+                                    ? ` (${(baseTaskSpeed * 100).toFixed(2)}% + ${(enhancementBonus * enhancementLevel * 100).toFixed(2)}%)`
                                     : '';
 
                             speedLines.push(
-                                `  - ${itemDetails.name}${enhText}: +${taskSpeedBonus.toFixed(1)}%${detailText}`
+                                `  - ${itemDetails.name}${enhText}: +${taskSpeedBonus.toFixed(2)}%${detailText}`
                             );
                         }
                     }
@@ -275,7 +275,7 @@ class QuickInputButtons {
                 // Add Efficiency breakdown
                 speedLines.push(''); // Empty line
                 speedLines.push(
-                    `<span style="font-weight: 500; color: var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY});">Efficiency: +${totalEfficiency.toFixed(1)}% → Output: ×${efficiencyMultiplier.toFixed(2)} (${Math.round(calculateActionsPerHour(actionTime) * efficiencyMultiplier)}/hr)</span>`
+                    `<span style="font-weight: 500; color: var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY});">Efficiency: +${totalEfficiency.toFixed(2)}% → Output: ×${efficiencyMultiplier.toFixed(2)} (${Math.round(calculateActionsPerHour(actionTime) * efficiencyMultiplier)}/hr)</span>`
                 );
 
                 // Detailed efficiency breakdown
@@ -287,11 +287,11 @@ class QuickInputButtons {
                     const rawLevelDelta = efficiencyBreakdown.skillLevel - efficiencyBreakdown.baseRequirement;
 
                     // Show final level efficiency
-                    speedLines.push(`  - Level: +${efficiencyBreakdown.levelEfficiency.toFixed(1)}%`);
+                    speedLines.push(`  - Level: +${efficiencyBreakdown.levelEfficiency.toFixed(2)}%`);
 
                     // Show raw level delta (what you'd get without Action Level bonuses)
                     speedLines.push(
-                        `    - Raw level delta: +${rawLevelDelta.toFixed(1)}% (${efficiencyBreakdown.skillLevel} - ${efficiencyBreakdown.baseRequirement} base requirement)`
+                        `    - Raw level delta: +${rawLevelDelta.toFixed(2)}% (${efficiencyBreakdown.skillLevel} - ${efficiencyBreakdown.baseRequirement} base requirement)`
                     );
 
                     // Show Action Level bonus teas that reduce level efficiency
@@ -303,13 +303,13 @@ class QuickInputButtons {
                             // Calculate impact: base tea effect reduces efficiency
                             const baseTeaImpact = -tea.baseActionLevel;
                             speedLines.push(
-                                `    - ${tea.name} impact: ${baseTeaImpact.toFixed(1)}% (raises requirement)`
+                                `    - ${tea.name} impact: ${baseTeaImpact.toFixed(2)}% (raises requirement)`
                             );
 
                             // Show DC contribution as additional reduction if > 0
                             if (tea.dcContribution > 0) {
                                 const dcImpact = -tea.dcContribution;
-                                speedLines.push(`      - Drink Concentration: ${dcImpact.toFixed(1)}%`);
+                                speedLines.push(`      - Drink Concentration: ${dcImpact.toFixed(2)}%`);
                             }
                         }
                     }
@@ -318,23 +318,23 @@ class QuickInputButtons {
                     // Get house room name
                     const houseRoomName = this.getHouseRoomName(actionDetails.type);
                     speedLines.push(
-                        `  - House: +${efficiencyBreakdown.houseEfficiency.toFixed(1)}% (${houseRoomName})`
+                        `  - House: +${efficiencyBreakdown.houseEfficiency.toFixed(2)}% (${houseRoomName})`
                     );
                 }
                 if (efficiencyBreakdown.equipmentEfficiency > 0) {
-                    speedLines.push(`  - Equipment: +${efficiencyBreakdown.equipmentEfficiency.toFixed(1)}%`);
+                    speedLines.push(`  - Equipment: +${efficiencyBreakdown.equipmentEfficiency.toFixed(2)}%`);
                 }
                 if (efficiencyBreakdown.achievementEfficiency > 0) {
-                    speedLines.push(`  - Achievement: +${efficiencyBreakdown.achievementEfficiency.toFixed(1)}%`);
+                    speedLines.push(`  - Achievement: +${efficiencyBreakdown.achievementEfficiency.toFixed(2)}%`);
                 }
                 // Break out individual teas - show BASE efficiency on main line, DC as sub-line
                 if (efficiencyBreakdown.teaBreakdown && efficiencyBreakdown.teaBreakdown.length > 0) {
                     for (const tea of efficiencyBreakdown.teaBreakdown) {
                         // Show BASE efficiency (without DC scaling) on main line
-                        speedLines.push(`  - ${tea.name}: +${tea.baseEfficiency.toFixed(1)}%`);
+                        speedLines.push(`  - ${tea.name}: +${tea.baseEfficiency.toFixed(2)}%`);
                         // Show DC contribution as sub-line if > 0
                         if (tea.dcContribution > 0) {
-                            speedLines.push(`    - Drink Concentration: +${tea.dcContribution.toFixed(1)}%`);
+                            speedLines.push(`    - Drink Concentration: +${tea.dcContribution.toFixed(2)}%`);
                         }
                     }
                 }
@@ -343,11 +343,11 @@ class QuickInputButtons {
                         '/community_buff_types/production_efficiency'
                     );
                     speedLines.push(
-                        `  - Community: +${efficiencyBreakdown.communityEfficiency.toFixed(1)}% (Production Efficiency T${communityBuffLevel})`
+                        `  - Community: +${efficiencyBreakdown.communityEfficiency.toFixed(2)}% (Production Efficiency T${communityBuffLevel})`
                     );
                 }
                 if (efficiencyBreakdown.personalEfficiency > 0) {
-                    speedLines.push(`  - Seal: +${efficiencyBreakdown.personalEfficiency.toFixed(1)}%`);
+                    speedLines.push(`  - Seal: +${efficiencyBreakdown.personalEfficiency.toFixed(2)}%`);
                 }
 
                 // Total time (dynamic)
@@ -1117,18 +1117,18 @@ class QuickInputButtons {
             const lines = [];
 
             // Current level and progress
-            lines.push(`Current: Level ${currentLevel} | ${progressPercent.toFixed(1)}% to Level ${nextLevel}`);
+            lines.push(`Current: Level ${currentLevel} | ${progressPercent.toFixed(2)}% to Level ${nextLevel}`);
             lines.push('');
 
             // Action details
             lines.push(
-                `XP per action: ${formatWithSeparator(baseXP.toFixed(1))} base → ${formatWithSeparator(modifiedXP.toFixed(1))} (×${xpData.totalMultiplier.toFixed(2)})`
+                `XP per action: ${formatWithSeparator(baseXP.toFixed(2))} base → ${formatWithSeparator(modifiedXP.toFixed(2))} (×${xpData.totalMultiplier.toFixed(2)})`
             );
 
             // XP breakdown (if any bonuses exist)
             if (xpData.totalWisdom > 0 || xpData.charmExperience > 0) {
                 const totalXPBonus = xpData.totalWisdom + xpData.charmExperience;
-                lines.push(`  Total XP Bonus: +${totalXPBonus.toFixed(1)}%`);
+                lines.push(`  Total XP Bonus: +${totalXPBonus.toFixed(2)}%`);
 
                 // List all sources that contribute
 
@@ -1136,7 +1136,7 @@ class QuickInputButtons {
                 if (xpData.charmBreakdown && xpData.charmBreakdown.length > 0) {
                     for (const item of xpData.charmBreakdown) {
                         const enhText = item.enhancementLevel > 0 ? ` +${item.enhancementLevel}` : '';
-                        lines.push(`    • ${item.name}${enhText}: +${item.value.toFixed(1)}%`);
+                        lines.push(`    • ${item.name}${enhText}: +${item.value.toFixed(2)}%`);
                     }
                 }
 
@@ -1144,33 +1144,33 @@ class QuickInputButtons {
                 if (xpData.wisdomBreakdown && xpData.wisdomBreakdown.length > 0) {
                     for (const item of xpData.wisdomBreakdown) {
                         const enhText = item.enhancementLevel > 0 ? ` +${item.enhancementLevel}` : '';
-                        lines.push(`    • ${item.name}${enhText}: +${item.value.toFixed(1)}%`);
+                        lines.push(`    • ${item.name}${enhText}: +${item.value.toFixed(2)}%`);
                     }
                 }
 
                 // House rooms
                 if (xpData.breakdown.houseWisdom > 0) {
-                    lines.push(`    • House Rooms: +${xpData.breakdown.houseWisdom.toFixed(1)}%`);
+                    lines.push(`    • House Rooms: +${xpData.breakdown.houseWisdom.toFixed(2)}%`);
                 }
 
                 // Community buff
                 if (xpData.breakdown.communityWisdom > 0) {
-                    lines.push(`    • Community Buff: +${xpData.breakdown.communityWisdom.toFixed(1)}%`);
+                    lines.push(`    • Community Buff: +${xpData.breakdown.communityWisdom.toFixed(2)}%`);
                 }
 
                 // Tea/Coffee
                 if (xpData.breakdown.consumableWisdom > 0) {
-                    lines.push(`    • Wisdom Tea: +${xpData.breakdown.consumableWisdom.toFixed(1)}%`);
+                    lines.push(`    • Wisdom Tea: +${xpData.breakdown.consumableWisdom.toFixed(2)}%`);
                 }
 
                 // Achievement wisdom
                 if (xpData.breakdown.achievementWisdom > 0) {
-                    lines.push(`    • Achievement: +${xpData.breakdown.achievementWisdom.toFixed(1)}%`);
+                    lines.push(`    • Achievement: +${xpData.breakdown.achievementWisdom.toFixed(2)}%`);
                 }
 
                 // Personal buff (Seal of Wisdom)
                 if (xpData.breakdown.personalWisdom > 0) {
-                    lines.push(`    • Seal of Wisdom: +${xpData.breakdown.personalWisdom.toFixed(1)}%`);
+                    lines.push(`    • Seal of Wisdom: +${xpData.breakdown.personalWisdom.toFixed(2)}%`);
                 }
             }
 

@@ -274,7 +274,7 @@ export function calculateExperienceMultiplier(skillHrid, actionTypeHrid) {
  */
 function calculateDrinkConcentration(equipment, itemDetailMap) {
     // Find Guzzling Pouch in equipment
-    const pouchItem = equipment.get('/equipment_types/pouch');
+    const pouchItem = equipment.get('/item_locations/pouch');
     if (!pouchItem || !pouchItem.itemHrid.includes('guzzling_pouch')) {
         return 0;
     }

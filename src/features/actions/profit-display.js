@@ -38,7 +38,7 @@ export const getBonusDropTotalsForActions = (drop, actionsCount, actionsPerHour)
 };
 const formatRareFindBonusSummary = (bonusRevenue) => {
     const rareFindBonus = bonusRevenue?.rareFindBonus || 0;
-    return `${rareFindBonus.toFixed(1)}% rare find`;
+    return `${rareFindBonus.toFixed(2)}% rare find`;
 };
 
 /**
@@ -141,14 +141,14 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
             consumedLine.style.marginLeft = '8px';
             const consumedMissingNote = getMissingPriceIndicator(conversion.missingPrice);
             const consumedRevenue = conversion.rawConsumedPerHour * conversion.rawPriceEach;
-            consumedLine.textContent = `• ${conversion.rawItem} consumed: -${conversion.rawConsumedPerHour.toFixed(1)}/hr @ ${formatWithSeparator(conversion.rawPriceEach)}${consumedMissingNote} → -${formatLargeNumber(Math.round(consumedRevenue))}/hr`;
+            consumedLine.textContent = `• ${conversion.rawItem} consumed: -${conversion.rawConsumedPerHour.toFixed(2)}/hr @ ${formatWithSeparator(conversion.rawPriceEach)}${consumedMissingNote} → -${formatLargeNumber(Math.round(consumedRevenue))}/hr`;
             processingContent.appendChild(consumedLine);
 
             const producedLine = document.createElement('div');
             producedLine.style.marginLeft = '8px';
             const producedMissingNote = getMissingPriceIndicator(conversion.missingPrice);
             const producedRevenue = conversion.conversionsPerHour * conversion.processedPriceEach;
-            producedLine.textContent = `• ${conversion.processedItem} produced: ${conversion.conversionsPerHour.toFixed(1)}/hr @ ${formatWithSeparator(conversion.processedPriceEach)}${producedMissingNote} → ${formatLargeNumber(Math.round(producedRevenue))}/hr`;
+            producedLine.textContent = `• ${conversion.processedItem} produced: ${conversion.conversionsPerHour.toFixed(2)}/hr @ ${formatWithSeparator(conversion.processedPriceEach)}${producedMissingNote} → ${formatLargeNumber(Math.round(producedRevenue))}/hr`;
             processingContent.appendChild(producedLine);
         }
 
@@ -207,7 +207,7 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
         const essenceFindBonus = profitData.bonusRevenue?.essenceFindBonus || 0;
         essenceSection = createCollapsibleSection(
             '',
-            `Essence Drops: ${essenceRevenueLabel}/hr (${essenceDrops.length} item${essenceDrops.length !== 1 ? 's' : ''}, ${essenceFindBonus.toFixed(1)}% essence find)`,
+            `Essence Drops: ${essenceRevenueLabel}/hr (${essenceDrops.length} item${essenceDrops.length !== 1 ? 's' : ''}, ${essenceFindBonus.toFixed(2)}% essence find)`,
             null,
             essenceContent,
             false,
@@ -265,7 +265,7 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
             const line = document.createElement('div');
             line.style.marginLeft = '8px';
             const missingPriceNote = getMissingPriceIndicator(drink.missingPrice);
-            line.textContent = `• ${drink.name}: ${drink.drinksPerHour.toFixed(1)}/hr @ ${formatWithSeparator(drink.priceEach)}${missingPriceNote} → ${formatLargeNumber(Math.round(drink.costPerHour))}/hr`;
+            line.textContent = `• ${drink.name}: ${drink.drinksPerHour.toFixed(2)}/hr @ ${formatWithSeparator(drink.priceEach)}${missingPriceNote} → ${formatLargeNumber(Math.round(drink.costPerHour))}/hr`;
             drinkCostsContent.appendChild(line);
         }
     }
@@ -321,35 +321,35 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
     // Efficiency
     const effRows = [];
     if (profitData.details.levelEfficiency > 0) {
-        effRows.push(`+${profitData.details.levelEfficiency.toFixed(1)}% Level advantage`);
+        effRows.push(`+${profitData.details.levelEfficiency.toFixed(2)}% Level advantage`);
     }
     if (profitData.details.houseEfficiency > 0) {
-        effRows.push(`+${profitData.details.houseEfficiency.toFixed(1)}% House room`);
+        effRows.push(`+${profitData.details.houseEfficiency.toFixed(2)}% House room`);
     }
     if (profitData.details.teaEfficiency > 0) {
-        effRows.push(`+${profitData.details.teaEfficiency.toFixed(1)}% Tea`);
+        effRows.push(`+${profitData.details.teaEfficiency.toFixed(2)}% Tea`);
     }
     if ((profitData.details.equipmentEfficiencyItems || []).length > 0) {
         for (const item of profitData.details.equipmentEfficiencyItems) {
             const enh = item.enhancementLevel > 0 ? ` +${item.enhancementLevel}` : '';
-            effRows.push(`+${item.value.toFixed(1)}% ${item.name}${enh}`);
+            effRows.push(`+${item.value.toFixed(2)}% ${item.name}${enh}`);
         }
     } else if (profitData.details.equipmentEfficiency > 0) {
-        effRows.push(`+${profitData.details.equipmentEfficiency.toFixed(1)}% Equipment`);
+        effRows.push(`+${profitData.details.equipmentEfficiency.toFixed(2)}% Equipment`);
     }
     if (profitData.details.communityEfficiency > 0) {
-        effRows.push(`+${profitData.details.communityEfficiency.toFixed(1)}% Community buff`);
+        effRows.push(`+${profitData.details.communityEfficiency.toFixed(2)}% Community buff`);
     }
     if (profitData.details.achievementEfficiency > 0) {
-        effRows.push(`+${profitData.details.achievementEfficiency.toFixed(1)}% Achievement`);
+        effRows.push(`+${profitData.details.achievementEfficiency.toFixed(2)}% Achievement`);
     }
     if (profitData.details.personalEfficiency > 0) {
-        effRows.push(`+${profitData.details.personalEfficiency.toFixed(1)}% Seal of Efficiency`);
+        effRows.push(`+${profitData.details.personalEfficiency.toFixed(2)}% Seal of Efficiency`);
     }
     if (effRows.length > 0) {
-        modifierSummaryParts.push(`+${profitData.totalEfficiency.toFixed(1)}% eff`);
+        modifierSummaryParts.push(`+${profitData.totalEfficiency.toFixed(2)}% eff`);
         modifierSubSections.push(
-            makeModifierSection('Efficiency', `${profitData.totalEfficiency.toFixed(1)}%`, effRows)
+            makeModifierSection('Efficiency', `${profitData.totalEfficiency.toFixed(2)}%`, effRows)
         );
     }
 
@@ -357,19 +357,19 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
     if (profitData.gatheringQuantity > 0) {
         const gatherRows = [];
         if (profitData.details.communityBuffQuantity > 0) {
-            gatherRows.push(`+${(profitData.details.communityBuffQuantity * 100).toFixed(1)}% Community buff`);
+            gatherRows.push(`+${(profitData.details.communityBuffQuantity * 100).toFixed(2)}% Community buff`);
         }
         if (profitData.details.gatheringTeaBonus > 0) {
-            gatherRows.push(`+${(profitData.details.gatheringTeaBonus * 100).toFixed(1)}% Tea`);
+            gatherRows.push(`+${(profitData.details.gatheringTeaBonus * 100).toFixed(2)}% Tea`);
         }
         if (profitData.details.achievementGathering > 0) {
-            gatherRows.push(`+${(profitData.details.achievementGathering * 100).toFixed(1)}% Achievement`);
+            gatherRows.push(`+${(profitData.details.achievementGathering * 100).toFixed(2)}% Achievement`);
         }
         if (profitData.details.personalGathering > 0) {
-            gatherRows.push(`+${(profitData.details.personalGathering * 100).toFixed(1)}% Seal of Gathering`);
+            gatherRows.push(`+${(profitData.details.personalGathering * 100).toFixed(2)}% Seal of Gathering`);
         }
-        const gatherTotal = `${(profitData.gatheringQuantity * 100).toFixed(1)}%`;
-        modifierSummaryParts.push(`+${(profitData.gatheringQuantity * 100).toFixed(1)}% gather`);
+        const gatherTotal = `${(profitData.gatheringQuantity * 100).toFixed(2)}%`;
+        modifierSummaryParts.push(`+${(profitData.gatheringQuantity * 100).toFixed(2)}% gather`);
         modifierSubSections.push(makeModifierSection('Gathering Quantity', gatherTotal, gatherRows));
     }
 
@@ -380,19 +380,19 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
         const rareRows = [];
         for (const item of rareFindBreakdown.equipmentItems || []) {
             const enh = item.enhancementLevel > 0 ? ` +${item.enhancementLevel}` : '';
-            rareRows.push(`+${item.value.toFixed(1)}% ${item.name}${enh}`);
+            rareRows.push(`+${item.value.toFixed(2)}% ${item.name}${enh}`);
         }
         if (rareFindBreakdown.house > 0) {
-            rareRows.push(`+${rareFindBreakdown.house.toFixed(1)}% House rooms`);
+            rareRows.push(`+${rareFindBreakdown.house.toFixed(2)}% House rooms`);
         }
         if (rareFindBreakdown.achievement > 0) {
-            rareRows.push(`+${rareFindBreakdown.achievement.toFixed(1)}% Achievement`);
+            rareRows.push(`+${rareFindBreakdown.achievement.toFixed(2)}% Achievement`);
         }
         if (rareFindBreakdown.personal > 0) {
-            rareRows.push(`+${rareFindBreakdown.personal.toFixed(1)}% Seal of Rare Find`);
+            rareRows.push(`+${rareFindBreakdown.personal.toFixed(2)}% Seal of Rare Find`);
         }
-        modifierSummaryParts.push(`+${rareFindBonus.toFixed(1)}% rare`);
-        modifierSubSections.push(makeModifierSection('Rare Find', `${rareFindBonus.toFixed(1)}%`, rareRows));
+        modifierSummaryParts.push(`+${rareFindBonus.toFixed(2)}% rare`);
+        modifierSubSections.push(makeModifierSection('Rare Find', `${rareFindBonus.toFixed(2)}%`, rareRows));
     }
 
     // Assemble Detailed Breakdown (WITHOUT net profit - that goes in top level)
@@ -418,7 +418,7 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
     // Create "Detailed Breakdown" collapsible
     const topLevelContent = document.createElement('div');
     topLevelContent.innerHTML = `
-        <div style="margin-bottom: 4px;">Actions: ${profitData.actionsPerHour.toFixed(1)}/hr | Efficiency: +${profitData.totalEfficiency.toFixed(1)}%</div>
+        <div style="margin-bottom: 4px;">Actions: ${profitData.actionsPerHour.toFixed(2)}/hr | Efficiency: +${profitData.totalEfficiency.toFixed(2)}%</div>
     `;
 
     // Add Net Profit line at top level (always visible when Profitability is expanded)
@@ -686,13 +686,13 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
     const baseOutputMissingNote = getMissingPriceIndicator(
         profitData.outputPriceMissing || profitData.outputPriceEstimated
     );
-    baseOutputLine.textContent = `• ${profitData.itemName} (Base): ${profitData.itemsPerHour.toFixed(1)}/hr @ ${formatWithSeparator(Math.round(profitData.outputPrice))}${baseOutputMissingNote} each → ${formatLargeNumber(Math.round(profitData.itemsPerHour * profitData.outputPrice))}/hr`;
+    baseOutputLine.textContent = `• ${profitData.itemName} (Base): ${profitData.itemsPerHour.toFixed(2)}/hr @ ${formatWithSeparator(Math.round(profitData.outputPrice))}${baseOutputMissingNote} each → ${formatLargeNumber(Math.round(profitData.itemsPerHour * profitData.outputPrice))}/hr`;
     primaryOutputContent.appendChild(baseOutputLine);
 
     if (profitData.gourmetBonusItems > 0) {
         const gourmetLine = document.createElement('div');
         gourmetLine.style.marginLeft = '8px';
-        gourmetLine.textContent = `• ${profitData.itemName} (Gourmet +${formatPercentage(profitData.gourmetBonus, 1)}): ${profitData.gourmetBonusItems.toFixed(1)}/hr @ ${formatWithSeparator(Math.round(profitData.outputPrice))}${baseOutputMissingNote} each → ${formatLargeNumber(Math.round(profitData.gourmetBonusItems * profitData.outputPrice))}/hr`;
+        gourmetLine.textContent = `• ${profitData.itemName} (Gourmet +${formatPercentage(profitData.gourmetBonus, 1)}): ${profitData.gourmetBonusItems.toFixed(2)}/hr @ ${formatWithSeparator(Math.round(profitData.outputPrice))}${baseOutputMissingNote} each → ${formatLargeNumber(Math.round(profitData.gourmetBonusItems * profitData.outputPrice))}/hr`;
         primaryOutputContent.appendChild(gourmetLine);
     }
 
@@ -739,7 +739,7 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
         const essenceFindBonus = profitData.bonusRevenue?.essenceFindBonus || 0;
         essenceSection = createCollapsibleSection(
             '',
-            `Essence Drops: ${essenceRevenueLabel}/hr (${essenceDrops.length} item${essenceDrops.length !== 1 ? 's' : ''}, ${essenceFindBonus.toFixed(1)}% essence find)`,
+            `Essence Drops: ${essenceRevenueLabel}/hr (${essenceDrops.length} item${essenceDrops.length !== 1 ? 's' : ''}, ${essenceFindBonus.toFixed(2)}% essence find)`,
             null,
             essenceContent,
             false,
@@ -805,12 +805,12 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
             const amountPerHour = amountPerAction * profitData.actionsPerHour * efficiencyMultiplier;
 
             // Build material line with embedded Artisan information
-            let materialText = `• ${material.itemName}: ${amountPerHour.toFixed(1)}/hr`;
+            let materialText = `• ${material.itemName}: ${amountPerHour.toFixed(2)}/hr`;
 
             // Add Artisan reduction info if present (only show if actually reduced)
             if (profitData.artisanBonus > 0 && material.baseAmount && material.amount !== material.baseAmount) {
                 const baseAmountPerHour = material.baseAmount * profitData.actionsPerHour * efficiencyMultiplier;
-                materialText += ` (${baseAmountPerHour.toFixed(1)} base -${formatPercentage(profitData.artisanBonus, 1)} 🍵)`;
+                materialText += ` (${baseAmountPerHour.toFixed(2)} base -${formatPercentage(profitData.artisanBonus, 1)} 🍵)`;
             }
 
             const missingPriceNote = getMissingPriceIndicator(material.missingPrice);
@@ -842,7 +842,7 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
             line.style.marginLeft = '8px';
             // Tea structure: { itemName, pricePerDrink, drinksPerHour, totalCost }
             const missingPriceNote = getMissingPriceIndicator(tea.missingPrice);
-            line.textContent = `• ${tea.itemName}: ${tea.drinksPerHour.toFixed(1)}/hr @ ${formatWithSeparator(Math.round(tea.pricePerDrink))}${missingPriceNote} → ${formatLargeNumber(Math.round(tea.totalCost))}/hr`;
+            line.textContent = `• ${tea.itemName}: ${tea.drinksPerHour.toFixed(2)}/hr @ ${formatWithSeparator(Math.round(tea.pricePerDrink))}${missingPriceNote} → ${formatLargeNumber(Math.round(tea.totalCost))}/hr`;
             teaCostsContent.appendChild(line);
         }
     }
@@ -906,32 +906,32 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
         effRows.push(`+${profitData.levelEfficiency}% Level advantage`);
     }
     if (profitData.houseEfficiency > 0) {
-        effRows.push(`+${profitData.houseEfficiency.toFixed(1)}% House room`);
+        effRows.push(`+${profitData.houseEfficiency.toFixed(2)}% House room`);
     }
     if (profitData.teaEfficiency > 0) {
-        effRows.push(`+${profitData.teaEfficiency.toFixed(1)}% Tea`);
+        effRows.push(`+${profitData.teaEfficiency.toFixed(2)}% Tea`);
     }
     if ((profitData.equipmentEfficiencyItems || []).length > 0) {
         for (const item of profitData.equipmentEfficiencyItems) {
             const enh = item.enhancementLevel > 0 ? ` +${item.enhancementLevel}` : '';
-            effRows.push(`+${item.value.toFixed(1)}% ${item.name}${enh}`);
+            effRows.push(`+${item.value.toFixed(2)}% ${item.name}${enh}`);
         }
     } else if (profitData.equipmentEfficiency > 0) {
-        effRows.push(`+${profitData.equipmentEfficiency.toFixed(1)}% Equipment`);
+        effRows.push(`+${profitData.equipmentEfficiency.toFixed(2)}% Equipment`);
     }
     if (profitData.communityEfficiency > 0) {
-        effRows.push(`+${profitData.communityEfficiency.toFixed(1)}% Community buff`);
+        effRows.push(`+${profitData.communityEfficiency.toFixed(2)}% Community buff`);
     }
     if (profitData.achievementEfficiency > 0) {
-        effRows.push(`+${profitData.achievementEfficiency.toFixed(1)}% Achievement`);
+        effRows.push(`+${profitData.achievementEfficiency.toFixed(2)}% Achievement`);
     }
     if (profitData.personalEfficiency > 0) {
-        effRows.push(`+${profitData.personalEfficiency.toFixed(1)}% Seal of Efficiency`);
+        effRows.push(`+${profitData.personalEfficiency.toFixed(2)}% Seal of Efficiency`);
     }
     if (effRows.length > 0) {
-        modifierSummaryParts.push(`+${profitData.totalEfficiency.toFixed(1)}% eff`);
+        modifierSummaryParts.push(`+${profitData.totalEfficiency.toFixed(2)}% eff`);
         modifierSubSections.push(
-            makeModifierSectionProd('Efficiency', `${profitData.totalEfficiency.toFixed(1)}%`, effRows)
+            makeModifierSectionProd('Efficiency', `${profitData.totalEfficiency.toFixed(2)}%`, effRows)
         );
     }
 
@@ -942,20 +942,20 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
         const rareRows = [];
         for (const item of productionRareFindBreakdown.equipmentItems || []) {
             const enh = item.enhancementLevel > 0 ? ` +${item.enhancementLevel}` : '';
-            rareRows.push(`+${item.value.toFixed(1)}% ${item.name}${enh}`);
+            rareRows.push(`+${item.value.toFixed(2)}% ${item.name}${enh}`);
         }
         if (productionRareFindBreakdown.house > 0) {
-            rareRows.push(`+${productionRareFindBreakdown.house.toFixed(1)}% House rooms`);
+            rareRows.push(`+${productionRareFindBreakdown.house.toFixed(2)}% House rooms`);
         }
         if (productionRareFindBreakdown.achievement > 0) {
-            rareRows.push(`+${productionRareFindBreakdown.achievement.toFixed(1)}% Achievement`);
+            rareRows.push(`+${productionRareFindBreakdown.achievement.toFixed(2)}% Achievement`);
         }
         if (productionRareFindBreakdown.personal > 0) {
-            rareRows.push(`+${productionRareFindBreakdown.personal.toFixed(1)}% Seal of Rare Find`);
+            rareRows.push(`+${productionRareFindBreakdown.personal.toFixed(2)}% Seal of Rare Find`);
         }
-        modifierSummaryParts.push(`+${productionRareFindBonus.toFixed(1)}% rare`);
+        modifierSummaryParts.push(`+${productionRareFindBonus.toFixed(2)}% rare`);
         modifierSubSections.push(
-            makeModifierSectionProd('Rare Find', `${productionRareFindBonus.toFixed(1)}%`, rareRows)
+            makeModifierSectionProd('Rare Find', `${productionRareFindBonus.toFixed(2)}%`, rareRows)
         );
     }
 
@@ -1017,7 +1017,7 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
     const topLevelContent = document.createElement('div');
     const effectiveActionsPerHour = profitData.actionsPerHour * profitData.efficiencyMultiplier;
     topLevelContent.innerHTML = `
-        <div style="margin-bottom: 4px;">Actions: ${effectiveActionsPerHour.toFixed(1)}/hr</div>
+        <div style="margin-bottom: 4px;">Actions: ${effectiveActionsPerHour.toFixed(2)}/hr</div>
     `;
 
     // Add Net Profit line at top level (always visible when Profitability is expanded)
@@ -1182,7 +1182,7 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
 function formatPerAction(value) {
     const abs = Math.abs(value);
     if (abs >= 1000) return formatLargeNumber(Math.round(value));
-    if (abs >= 10) return value.toFixed(1);
+    if (abs >= 10) return value.toFixed(2);
     if (abs >= 1) return value.toFixed(2);
     if (abs === 0) return '0';
     return value.toFixed(2);
@@ -1341,7 +1341,7 @@ function buildGatheringPerActionBreakdown(profitData) {
         const essenceFindBonus = profitData.bonusRevenue?.essenceFindBonus || 0;
         essenceSection = createCollapsibleSection(
             '',
-            `Essence Drops: ${essenceRevenueLabel} (${essenceDrops.length} item${essenceDrops.length !== 1 ? 's' : ''}, ${essenceFindBonus.toFixed(1)}% essence find)`,
+            `Essence Drops: ${essenceRevenueLabel} (${essenceDrops.length} item${essenceDrops.length !== 1 ? 's' : ''}, ${essenceFindBonus.toFixed(2)}% essence find)`,
             null,
             essenceContent,
             false,
@@ -1588,7 +1588,7 @@ function buildProductionPerActionBreakdown(profitData) {
         const essenceFindBonus = profitData.bonusRevenue?.essenceFindBonus || 0;
         essenceSection = createCollapsibleSection(
             '',
-            `Essence Drops: ${essenceRevenueLabel} (${essenceDrops.length} item${essenceDrops.length !== 1 ? 's' : ''}, ${essenceFindBonus.toFixed(1)}% essence find)`,
+            `Essence Drops: ${essenceRevenueLabel} (${essenceDrops.length} item${essenceDrops.length !== 1 ? 's' : ''}, ${essenceFindBonus.toFixed(2)}% essence find)`,
             null,
             essenceContent,
             false,
@@ -1827,7 +1827,7 @@ function buildGatheringActionsBreakdown(profitData, actionsCount) {
             const line = document.createElement('div');
             line.style.marginLeft = '8px';
             const missingPriceNote = getMissingPriceIndicator(output.missingPrice);
-            line.textContent = `• ${output.name} (Base): ${totalItems.toFixed(1)} items @ ${formatWithSeparator(output.priceEach)}${missingPriceNote} each → ${formatLargeNumber(Math.round(totalRevenueLine))}`;
+            line.textContent = `• ${output.name} (Base): ${totalItems.toFixed(2)} items @ ${formatWithSeparator(output.priceEach)}${missingPriceNote} each → ${formatLargeNumber(Math.round(totalRevenueLine))}`;
             primaryDropsContent.appendChild(line);
         }
     }
@@ -1841,7 +1841,7 @@ function buildGatheringActionsBreakdown(profitData, actionsCount) {
             const line = document.createElement('div');
             line.style.marginLeft = '8px';
             const missingPriceNote = getMissingPriceIndicator(output.missingPrice);
-            line.textContent = `• ${output.name} (Gourmet ${formatPercentage(profitData.gourmetBonus || 0, 1)}): ${totalItems.toFixed(1)} items @ ${formatWithSeparator(output.priceEach)}${missingPriceNote} each → ${formatLargeNumber(Math.round(totalRevenueLine))}`;
+            line.textContent = `• ${output.name} (Gourmet ${formatPercentage(profitData.gourmetBonus || 0, 1)}): ${totalItems.toFixed(2)} items @ ${formatWithSeparator(output.priceEach)}${missingPriceNote} each → ${formatLargeNumber(Math.round(totalRevenueLine))}`;
             primaryDropsContent.appendChild(line);
         }
     }
@@ -1867,12 +1867,12 @@ function buildGatheringActionsBreakdown(profitData, actionsCount) {
 
             const consumedLine = document.createElement('div');
             consumedLine.style.marginLeft = '8px';
-            consumedLine.textContent = `• ${conversion.rawItem} consumed: -${totalConsumed.toFixed(1)} items @ ${formatWithSeparator(conversion.rawPriceEach)}${missingPriceNote} → -${formatLargeNumber(Math.round(consumedRevenue))}`;
+            consumedLine.textContent = `• ${conversion.rawItem} consumed: -${totalConsumed.toFixed(2)} items @ ${formatWithSeparator(conversion.rawPriceEach)}${missingPriceNote} → -${formatLargeNumber(Math.round(consumedRevenue))}`;
             processingContent.appendChild(consumedLine);
 
             const producedLine = document.createElement('div');
             producedLine.style.marginLeft = '8px';
-            producedLine.textContent = `• ${conversion.processedItem} produced: ${totalProduced.toFixed(1)} items @ ${formatWithSeparator(conversion.processedPriceEach)}${missingPriceNote} → ${formatLargeNumber(Math.round(producedRevenue))}`;
+            producedLine.textContent = `• ${conversion.processedItem} produced: ${totalProduced.toFixed(2)} items @ ${formatWithSeparator(conversion.processedPriceEach)}${missingPriceNote} → ${formatLargeNumber(Math.round(producedRevenue))}`;
             processingContent.appendChild(producedLine);
         }
 
@@ -1937,7 +1937,7 @@ function buildGatheringActionsBreakdown(profitData, actionsCount) {
         const essenceFindBonus = profitData.bonusRevenue?.essenceFindBonus || 0;
         essenceSection = createCollapsibleSection(
             '',
-            `Essence Drops: ${essenceRevenueLabel} (${essenceDrops.length} item${essenceDrops.length !== 1 ? 's' : ''}, ${essenceFindBonus.toFixed(1)}% essence find)`,
+            `Essence Drops: ${essenceRevenueLabel} (${essenceDrops.length} item${essenceDrops.length !== 1 ? 's' : ''}, ${essenceFindBonus.toFixed(2)}% essence find)`,
             null,
             essenceContent,
             false,
@@ -1999,7 +1999,7 @@ function buildGatheringActionsBreakdown(profitData, actionsCount) {
             const line = document.createElement('div');
             line.style.marginLeft = '8px';
             const missingPriceNote = getMissingPriceIndicator(drink.missingPrice);
-            line.textContent = `• ${drink.name}: ${totalDrinks.toFixed(1)} drinks @ ${formatWithSeparator(drink.priceEach)}${missingPriceNote} → ${formatLargeNumber(Math.round(totalCostLine))}`;
+            line.textContent = `• ${drink.name}: ${totalDrinks.toFixed(2)} drinks @ ${formatWithSeparator(drink.priceEach)}${missingPriceNote} → ${formatLargeNumber(Math.round(totalCostLine))}`;
             drinkCostsContent.appendChild(line);
         }
     }
@@ -2131,7 +2131,7 @@ function buildProductionActionsBreakdown(profitData, actionsCount) {
     const baseOutputMissingNote = getMissingPriceIndicator(
         profitData.outputPriceMissing || profitData.outputPriceEstimated
     );
-    baseOutputLine.textContent = `• ${profitData.itemName} (Base): ${totalBaseItems.toFixed(1)} items @ ${formatWithSeparator(Math.round(profitData.outputPrice))}${baseOutputMissingNote} each → ${formatLargeNumber(Math.round(totalBaseRevenue))}`;
+    baseOutputLine.textContent = `• ${profitData.itemName} (Base): ${totalBaseItems.toFixed(2)} items @ ${formatWithSeparator(Math.round(profitData.outputPrice))}${baseOutputMissingNote} each → ${formatLargeNumber(Math.round(totalBaseRevenue))}`;
     primaryOutputContent.appendChild(baseOutputLine);
 
     if (profitData.gourmetBonus > 0) {
@@ -2139,7 +2139,7 @@ function buildProductionActionsBreakdown(profitData, actionsCount) {
         const totalGourmetRevenue = totals.totalGourmetRevenue;
         const gourmetLine = document.createElement('div');
         gourmetLine.style.marginLeft = '8px';
-        gourmetLine.textContent = `• ${profitData.itemName} (Gourmet +${formatPercentage(profitData.gourmetBonus, 1)}): ${totalGourmetItems.toFixed(1)} items @ ${formatWithSeparator(Math.round(profitData.outputPrice))}${baseOutputMissingNote} each → ${formatLargeNumber(Math.round(totalGourmetRevenue))}`;
+        gourmetLine.textContent = `• ${profitData.itemName} (Gourmet +${formatPercentage(profitData.gourmetBonus, 1)}): ${totalGourmetItems.toFixed(2)} items @ ${formatWithSeparator(Math.round(profitData.outputPrice))}${baseOutputMissingNote} each → ${formatLargeNumber(Math.round(totalGourmetRevenue))}`;
         primaryOutputContent.appendChild(gourmetLine);
     }
 
@@ -2194,7 +2194,7 @@ function buildProductionActionsBreakdown(profitData, actionsCount) {
         const essenceFindBonus = profitData.bonusRevenue?.essenceFindBonus || 0;
         essenceSection = createCollapsibleSection(
             '',
-            `Essence Drops: ${essenceRevenueLabel} (${essenceDrops.length} item${essenceDrops.length !== 1 ? 's' : ''}, ${essenceFindBonus.toFixed(1)}% essence find)`,
+            `Essence Drops: ${essenceRevenueLabel} (${essenceDrops.length} item${essenceDrops.length !== 1 ? 's' : ''}, ${essenceFindBonus.toFixed(2)}% essence find)`,
             null,
             essenceContent,
             false,
@@ -2262,12 +2262,12 @@ function buildProductionActionsBreakdown(profitData, actionsCount) {
             const line = document.createElement('div');
             line.style.marginLeft = '8px';
 
-            let materialText = `• ${material.itemName}: ${totalMaterial.toFixed(1)} items`;
+            let materialText = `• ${material.itemName}: ${totalMaterial.toFixed(2)} items`;
 
             // Add Artisan reduction info if present
             if (profitData.artisanBonus > 0 && material.baseAmount && material.amount !== material.baseAmount) {
                 const baseTotalAmount = material.baseAmount * actionsCount;
-                materialText += ` (${baseTotalAmount.toFixed(1)} base -${formatPercentage(profitData.artisanBonus, 1)} 🍵)`;
+                materialText += ` (${baseTotalAmount.toFixed(2)} base -${formatPercentage(profitData.artisanBonus, 1)} 🍵)`;
             }
 
             const missingPriceNote = getMissingPriceIndicator(material.missingPrice);
@@ -2298,7 +2298,7 @@ function buildProductionActionsBreakdown(profitData, actionsCount) {
             const line = document.createElement('div');
             line.style.marginLeft = '8px';
             const missingPriceNote = getMissingPriceIndicator(tea.missingPrice);
-            line.textContent = `• ${tea.itemName}: ${totalDrinks.toFixed(1)} drinks @ ${formatWithSeparator(Math.round(tea.pricePerDrink))}${missingPriceNote} → ${formatLargeNumber(Math.round(totalTeaCost))}`;
+            line.textContent = `• ${tea.itemName}: ${totalDrinks.toFixed(2)} drinks @ ${formatWithSeparator(Math.round(tea.pricePerDrink))}${missingPriceNote} → ${formatLargeNumber(Math.round(totalTeaCost))}`;
             teaCostsContent.appendChild(line);
         }
     }
