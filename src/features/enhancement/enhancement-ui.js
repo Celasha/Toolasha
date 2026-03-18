@@ -385,6 +385,9 @@ class EnhancementUI {
         titleContainer.style.display = 'flex';
         titleContainer.style.alignItems = 'center';
         titleContainer.style.gap = '10px';
+        titleContainer.style.overflow = 'hidden';
+        titleContainer.style.minWidth = '0';
+        titleContainer.style.textOverflow = 'ellipsis';
 
         const title = document.createElement('span');
         title.textContent = 'Enhancement Tracker';
@@ -406,6 +409,7 @@ class EnhancementUI {
             gap: '5px',
             alignItems: 'center',
             marginLeft: 'auto',
+            flexShrink: '0',
         });
 
         // Previous session button
