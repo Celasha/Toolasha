@@ -2,10 +2,9 @@
 
 ## [1.43.0](https://github.com/Celasha/Toolasha/compare/v1.42.3...v1.43.0) (2026-03-19)
 
-
 ### Features
 
-* add networth history chart with 24h item breakdown ([2f6012b](https://github.com/Celasha/Toolasha/commit/2f6012b145713ca85bea120639d3cf7182ad6a9c))
+- add networth history chart with 24h item breakdown ([2f6012b](https://github.com/Celasha/Toolasha/commit/2f6012b145713ca85bea120639d3cf7182ad6a9c))
 
 ## [1.42.3](https://github.com/Celasha/Toolasha/compare/v1.42.2...v1.42.3) (2026-03-19)
 
