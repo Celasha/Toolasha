@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 1.43.0
+ * Version: 1.43.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2585,9 +2585,10 @@
                             const keyCountsMap = this.parseKeyCountsFromMessage(text);
 
                             if (Object.keys(keyCountsMap).length > 0) {
-                                // Try to extract timestamp from message display format: [MM/DD HH:MM:SS AM/PM] or [DD-M HH:MM:SS]
+                                // Try to extract timestamp from message display format:
+                                // [MM/DD HH:MM:SS AM/PM], [DD-M HH:MM:SS], or [D.M. HH:MM:SS]
                                 const timestampMatch = text.match(
-                                    /\[(\d{1,2})([-/])(\d{1,2})\s+(\d{1,2}):(\d{2}):(\d{2})\s*([AP]M)?\]/
+                                    /\[(\d{1,2})([-/.])(\d{1,2})\.?\s+(\d{1,2}):(\d{2}):(\d{2})\s*([AP]M)?\]/
                                 );
 
                                 if (timestampMatch) {
@@ -2606,7 +2607,7 @@
                                         month = part1;
                                         day = part2;
                                     } else {
-                                        // DD-M format (dash separator)
+                                        // DD-M or D.M. format (dash or dot separator)
                                         day = part1;
                                         month = part2;
                                     }
@@ -4347,7 +4348,8 @@
 
         /**
          * Get timestamp from message DOM element
-         * Handles both American (M/D HH:MM:SS AM/PM) and international (DD-M HH:MM:SS) formats
+         * Handles American (M/D HH:MM:SS AM/PM), international (DD-M HH:MM:SS),
+         * and European dot (D.M. HH:MM:SS) formats
          * @param {HTMLElement} msg - Message element
          * @param {boolean} warnOnFailure - Whether to log warning if parsing fails (default: false)
          * @returns {Date|null} Parsed timestamp or null
@@ -4364,6 +4366,12 @@
                 // Try international format: [DD-M HH:MM:SS] (24-hour)
                 // Use \s* to handle potential spacing variations in dungeon chat
                 match = text.match(/\[(\d{1,2})-(\d{1,2})\s*(\d{1,2}):(\d{2}):(\d{2})\]/);
+                isAmerican = false;
+            }
+
+            if (!match) {
+                // Try European dot format: [D.M. HH:MM:SS] (24-hour, trailing dot optional)
+                match = text.match(/\[(\d{1,2})\.(\d{1,2})\.?\s*(\d{1,2}):(\d{2}):(\d{2})\]/);
                 isAmerican = false;
             }
 
