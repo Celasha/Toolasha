@@ -2,10 +2,9 @@
 
 ## [1.43.1](https://github.com/Celasha/Toolasha/compare/v1.43.0...v1.43.1) (2026-03-19)
 
-
 ### Bug Fixes
 
-* parse European dot dates and clean up activity count display ([48d2b33](https://github.com/Celasha/Toolasha/commit/48d2b33d603e6fe9bd41b6870a4404b6ee1cd14b))
+- parse European dot dates and clean up activity count display ([48d2b33](https://github.com/Celasha/Toolasha/commit/48d2b33d603e6fe9bd41b6870a4404b6ee1cd14b))
 
 ## [1.43.0](https://github.com/Celasha/Toolasha/compare/v1.42.3...v1.43.0) (2026-03-19)
 
