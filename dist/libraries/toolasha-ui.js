@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 1.42.2
+ * Version: 1.42.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -4620,7 +4620,7 @@
                 return;
             }
 
-            if (!config.getSetting('taskProfitCalculator')) {
+            if (!config.getSetting('taskProfitCalculator') && !config.getSetting('taskGoMerge')) {
                 return;
             }
 
@@ -4690,75 +4690,97 @@
 
             // Watch for individual tasks appearing
             const unregisterTask = domObserver.onClass('TaskProfitDisplay-Task', 'RandomTask_randomTask', (taskNode) => {
-                // Small delay to let task data settle
-                const taskTimeout = setTimeout(() => this.updateTaskProfits(), 100);
-                this.timerRegistry.registerTimeout(taskTimeout);
-
-                // Merge duplicate task Go buttons: sum goalCount - currentCount across all
-                // in-progress tasks with the same actionHrid/monsterHrid and overwrite the input
-                const goBtn = taskNode.querySelector('button.Button_success__6d6kU');
-                if (goBtn) {
-                    goBtn.addEventListener(
-                        'click',
-                        () => {
-                            if (!config.getSetting('taskGoMerge')) return;
-
-                            // Extract the quest for this task card from the fiber tree
-                            const rootEl = document.getElementById('root');
-                            const rootFiber =
-                                rootEl?._reactRootContainer?.current || rootEl?._reactRootContainer?._internalRoot?.current;
-                            if (!rootFiber) return;
-
-                            function walk(fiber, target) {
-                                if (!fiber) return null;
-                                if (fiber.stateNode === target) return fiber;
-                                return walk(fiber.child, target) || walk(fiber.sibling, target);
-                            }
-
-                            const btnFiber = walk(rootFiber, goBtn);
-                            if (!btnFiber) return;
-
-                            let f = btnFiber.return;
-                            let thisQuest = null;
-                            while (f) {
-                                if (f.memoizedProps?.characterQuest && f.memoizedProps?.rerollRandomTaskHandler) {
-                                    thisQuest = f.memoizedProps.characterQuest;
-                                    break;
-                                }
-                                f = f.return;
-                            }
-                            if (!thisQuest) return;
-
-                            const hrid = thisQuest.actionHrid || thisQuest.monsterHrid;
-                            if (!hrid) return;
-
-                            const allQuests = dataManager.characterQuests || [];
-                            const matchingQuests = allQuests.filter(
-                                (q) =>
-                                    q.status === '/quest_status/in_progress' &&
-                                    q.category === '/quest_category/random_task' &&
-                                    (q.actionHrid === hrid || q.monsterHrid === hrid)
-                            );
-
-                            if (matchingQuests.length <= 1) return;
-
-                            const total = matchingQuests.reduce((sum, q) => sum + (q.goalCount - q.currentCount), 0);
-                            const isBoss = thisQuest.monsterHrid && dataManager.isBossMonster(thisQuest.monsterHrid);
-                            const adjustedTotal = isBoss ? total * 10 : total;
-
-                            // Wait for the game to navigate and render the input field
-                            setTimeout(() => {
-                                const inputEl = actionPanelHelper_js.findActionInput(document);
-                                if (inputEl) {
-                                    reactInput_js.setReactInputValue(inputEl, adjustedTotal);
-                                }
-                            }, 300);
-                        },
-                        true
-                    );
-                }
+                this._setupTaskNode(taskNode);
             });
             this.unregisterHandlers.push(unregisterTask);
+
+            // Initial scan for task nodes already in the DOM (handles race condition
+            // where tasks render before observer registers)
+            const existingTaskNodes = document.querySelectorAll('[class*="RandomTask_randomTask"]');
+            for (const taskNode of existingTaskNodes) {
+                this._setupTaskNode(taskNode);
+            }
+        }
+
+        /**
+         * Set up a task node with profit display and Go button merge handler
+         * @param {HTMLElement} taskNode
+         */
+        _setupTaskNode(taskNode) {
+            // Small delay to let task data settle
+            const taskTimeout = setTimeout(() => this.updateTaskProfits(), 100);
+            this.timerRegistry.registerTimeout(taskTimeout);
+
+            // Merge duplicate task Go buttons: sum goalCount - currentCount across all
+            // in-progress tasks with the same actionHrid/monsterHrid and overwrite the input
+            const goBtn = taskNode.querySelector('button.Button_success__6d6kU');
+            if (goBtn) {
+                // Skip if already attached
+                if (goBtn.dataset.mwiGoMerge) return;
+                goBtn.dataset.mwiGoMerge = '1';
+
+                goBtn.addEventListener(
+                    'click',
+                    () => {
+                        if (!config.getSetting('taskGoMerge')) return;
+
+                        // Extract the quest for this task card from the fiber tree
+                        const rootEl = document.getElementById('root');
+                        const rootFiber =
+                            rootEl?._reactRootContainer?.current || rootEl?._reactRootContainer?._internalRoot?.current;
+                        if (!rootFiber) return;
+
+                        function walk(fiber, target) {
+                            if (!fiber) return null;
+                            if (fiber.stateNode === target) return fiber;
+                            return walk(fiber.child, target) || walk(fiber.sibling, target);
+                        }
+
+                        const btnFiber = walk(rootFiber, goBtn);
+                        if (!btnFiber) return;
+
+                        let f = btnFiber.return;
+                        let thisQuest = null;
+                        while (f) {
+                            if (f.memoizedProps?.characterQuest && f.memoizedProps?.rerollRandomTaskHandler) {
+                                thisQuest = f.memoizedProps.characterQuest;
+                                break;
+                            }
+                            f = f.return;
+                        }
+                        if (!thisQuest) return;
+
+                        const hrid = thisQuest.actionHrid || thisQuest.monsterHrid;
+                        if (!hrid) return;
+
+                        const allQuests = dataManager.characterQuests || [];
+
+                        const matchingQuests = allQuests.filter(
+                            (q) =>
+                                q.status === '/quest_status/in_progress' &&
+                                q.category === '/quest_category/random_task' &&
+                                (q.actionHrid === hrid || q.monsterHrid === hrid)
+                        );
+
+                        if (matchingQuests.length <= 1) {
+                            return;
+                        }
+
+                        const total = matchingQuests.reduce((sum, q) => sum + (q.goalCount - q.currentCount), 0);
+                        const isBoss = thisQuest.monsterHrid && dataManager.isBossMonster(thisQuest.monsterHrid);
+                        const adjustedTotal = isBoss ? total * 10 : total;
+
+                        // Wait for the game to navigate and render the input field
+                        setTimeout(() => {
+                            const inputEl = actionPanelHelper_js.findActionInput(document);
+                            if (inputEl) {
+                                reactInput_js.setReactInputValue(inputEl, adjustedTotal);
+                            }
+                        }, 300);
+                    },
+                    true
+                );
+            }
         }
 
         /**
@@ -20079,14 +20101,22 @@
          * Handle guild_characters_updated — record per-member XP.
          * @param {Object} data - guild_characters_updated message
          */
-        _onMembersUpdated(data) {
+        async _onMembersUpdated(data) {
             const guildCharacterMap = data.guildCharacterMap || {};
             const sharableMap = data.guildSharableCharacterMap || {};
 
-            // Update guild ID
+            // Detect guild change (same character, different guild)
             const charIds = Object.keys(guildCharacterMap);
-            if (charIds.length > 0) {
-                this.ownGuildID = guildCharacterMap[charIds[0]].guildID;
+            const newGuildID = charIds.length > 0 ? guildCharacterMap[charIds[0]].guildID : null;
+
+            if (newGuildID && this.ownGuildID && newGuildID !== this.ownGuildID) {
+                // Guild switched — clear stale member data and load fresh from storage
+                this.memberXPHistory = await storage.get(`memberXP_${newGuildID}`, STORE_NAME, {});
+                this.memberMeta = {};
+            }
+
+            if (newGuildID) {
+                this.ownGuildID = newGuildID;
             }
 
             // Update member metadata
@@ -20253,6 +20283,16 @@
         }
 
         /**
+         * Reset member XP history for the current guild.
+         * Used to clear corrupted data (e.g., after a guild switch).
+         */
+        async resetMemberData() {
+            if (!this.ownGuildID) return;
+            this.memberXPHistory = {};
+            await storage.set(`memberXP_${this.ownGuildID}`, {}, STORE_NAME);
+        }
+
+        /**
          * Cleanup when disabled.
          */
         disable() {
@@ -20277,6 +20317,7 @@
         name: 'Guild XP Tracker',
         initialize: () => guildXPTracker.initialize(),
         cleanup: () => guildXPTracker.disable(),
+        resetMemberData: () => guildXPTracker.resetMemberData(),
     };
 
     /**
