@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.44.1](https://github.com/Celasha/Toolasha/compare/v1.44.0...v1.44.1) (2026-03-20)
+
+### Bug Fixes
+
+- apply display changes directly in action filter ([58c62db](https://github.com/Celasha/Toolasha/commit/58c62db45041d47809f3603be4d598b2e29215e3))
+- tear down pinned page before navigating to action ([c98666e](https://github.com/Celasha/Toolasha/commit/c98666e8441a5b8c724016b62e523bf20d892e7d))
+
 ## [1.44.0](https://github.com/Celasha/Toolasha/compare/v1.43.2...v1.44.0) (2026-03-20)
 
 ### Features
