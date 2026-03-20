@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.44.3](https://github.com/Celasha/Toolasha/compare/v1.44.2...v1.44.3) (2026-03-20)
+
+### Reverts
+
+- undo nav bar icon shrinking fix (caused overlapping XP displays) ([3893e7b](https://github.com/Celasha/Toolasha/commit/3893e7b5363c10deb912588daeedb7d6d913d390))
+
 ## [1.44.2](https://github.com/Celasha/Toolasha/compare/v1.44.1...v1.44.2) (2026-03-20)
 
 ### Bug Fixes
