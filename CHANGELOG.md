@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.44.4](https://github.com/Celasha/Toolasha/compare/v1.44.3...v1.44.4) (2026-03-20)
+
+### Bug Fixes
+
+- constrain nav content width to prevent skill icon shrinking ([8e4e220](https://github.com/Celasha/Toolasha/commit/8e4e2207ff0b38d9154cb24a21cc8b385a0113c2))
+
 ## [1.44.3](https://github.com/Celasha/Toolasha/compare/v1.44.2...v1.44.3) (2026-03-20)
 
 ### Reverts
