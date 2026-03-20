@@ -128,14 +128,6 @@ class RemainingXP {
      */
     addRemainingXP(progressBar) {
         try {
-            // Protect the nav SVG icon from being flex-shrunk by our injected elements
-            const navEl = progressBar.closest('[class*="NavigationBar_nav"]');
-            if (navEl) {
-                const svgIcon = navEl.querySelector(':scope > svg');
-                if (svgIcon) {
-                    svgIcon.style.flexShrink = '0';
-                }
-            }
             // Try to find skill name - handle both navigation bar and combat skill displays
             let skillName = null;
 
