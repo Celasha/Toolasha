@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 1.44.1
+ * Version: 1.44.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1782,9 +1782,8 @@ self.onmessage = function (e) {
                 }
                 const materialCost = pricePerItem * bulkMultiplier;
 
-                // Get coin cost per action attempt
-                // If not in action data, calculate as 1/5 of item's sell price per item
-                const coinCost = actionDetails.coinCost || Math.floor((itemDetails.sellPrice || 0) * 0.2) * bulkMultiplier;
+                // Coinify has no coin cost — items go in, coins come out
+                const coinCost = 0;
 
                 // Calculate output value (coins produced)
                 // Formula: sellPrice × bulkMultiplier × 5
@@ -1859,16 +1858,7 @@ self.onmessage = function (e) {
                 ];
 
                 // Add coin cost entry if applicable
-                if (coinCost > 0) {
-                    requirementCosts.push({
-                        itemHrid: '/items/coin',
-                        count: coinCost,
-                        price: 1,
-                        costPerAction: coinCost,
-                        costPerHour: coinCost * actionsPerHourWithEfficiency,
-                        enhancementLevel: 0,
-                    });
-                }
+                if (coinCost > 0) ;
 
                 const coinRevenuePerHour = revenuePerAttempt * actionsPerHourWithEfficiency;
 
