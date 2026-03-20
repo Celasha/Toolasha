@@ -2,10 +2,9 @@
 
 ## [1.44.0](https://github.com/Celasha/Toolasha/compare/v1.43.2...v1.44.0) (2026-03-20)
 
-
 ### Features
 
-* add pinned actions page to navigation bar ([3ed89c6](https://github.com/Celasha/Toolasha/commit/3ed89c68df9d052abae79894f4a66c6cb2b29112))
+- add pinned actions page to navigation bar ([3ed89c6](https://github.com/Celasha/Toolasha/commit/3ed89c68df9d052abae79894f4a66c6cb2b29112))
 
 ## [1.43.2](https://github.com/Celasha/Toolasha/compare/v1.43.1...v1.43.2) (2026-03-20)
 
