@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.44.2](https://github.com/Celasha/Toolasha/compare/v1.44.1...v1.44.2) (2026-03-20)
+
+### Bug Fixes
+
+- prevent nav bar skill icons from shrinking ([7d28fda](https://github.com/Celasha/Toolasha/commit/7d28fda7a1d8e0d7bc41f4aae61e1f1fa4364bdb))
+- remove bogus coin cost from coinify profit calculation ([017e9f1](https://github.com/Celasha/Toolasha/commit/017e9f188a13ee18bc29b374d0a23e1941f4539f))
+
 ## [1.44.1](https://github.com/Celasha/Toolasha/compare/v1.44.0...v1.44.1) (2026-03-20)
 
 ### Bug Fixes
