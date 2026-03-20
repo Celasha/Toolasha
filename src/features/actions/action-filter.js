@@ -253,9 +253,6 @@ class ActionFilter {
 
         // Check if action name matches filter
         const matches = data.actionName.includes(this.filterValue);
-
-        // Mark panel as hidden by filter (but don't actually hide it here)
-        // The actual hiding is done in applyFilter() to respect other hiding mechanisms
         actionPanel.dataset.mwiFilterHidden = matches ? 'false' : 'true';
     }
 
@@ -293,6 +290,13 @@ class ActionFilter {
             if (!isFilterHidden) {
                 visiblePanels++;
                 containerStats.visible++;
+            }
+
+            // Apply display directly — don't rely on other features to read the data attribute
+            if (isFilterHidden) {
+                actionPanel.style.display = 'none';
+            } else if (actionPanel.style.display === 'none') {
+                actionPanel.style.display = '';
             }
         }
 
