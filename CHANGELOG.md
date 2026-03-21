@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.45.2](https://github.com/Celasha/Toolasha/compare/v1.45.1...v1.45.2) (2026-03-21)
+
+
+### Bug Fixes
+
+* resolve double scrollbar in pinned nav and settings panel ([619e69f](https://github.com/Celasha/Toolasha/commit/619e69f0ea796b0a1045dbef11efaf48b5f002fd))
+
 ## [1.45.1](https://github.com/Celasha/Toolasha/compare/v1.45.0...v1.45.1) (2026-03-21)
 
 ### Bug Fixes
