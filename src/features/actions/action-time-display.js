@@ -1102,7 +1102,10 @@ class ActionTimeDisplay {
     }
 
     buildItemHridFromName(itemName) {
-        return `/items/${itemName.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, '_')}`;
+        return `/items/${itemName
+            .toLowerCase()
+            .replace(/[^a-z0-9\s]/g, '')
+            .replace(/\s+/g, '_')}`;
     }
 
     /**
