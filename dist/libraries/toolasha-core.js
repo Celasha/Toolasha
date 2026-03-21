@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 1.44.6
+ * Version: 1.44.7
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1879,6 +1879,46 @@
                         if (savedValue.hasOwnProperty('value')) {
                             settings[settingId].value = savedValue.value;
                         }
+                    }
+                }
+            }
+
+            return settings;
+        }
+
+        /**
+         * Build default settings from schema without touching storage
+         * Used during early initialization before character ID is known
+         * @returns {Object} Settings map with schema defaults only
+         */
+        buildDefaults() {
+            const settings = {};
+
+            for (const group of Object.values(settingsGroups)) {
+                for (const [settingId, settingDef] of Object.entries(group.settings)) {
+                    settings[settingId] = {
+                        id: settingId,
+                        desc: settingDef.label,
+                        type: settingDef.type || 'checkbox',
+                    };
+
+                    if (settingDef.type === 'checkbox') {
+                        settings[settingId].isTrue = settingDef.default ?? false;
+                    } else {
+                        settings[settingId].value = settingDef.default ?? '';
+                    }
+
+                    if (settingDef.options) {
+                        settings[settingId].options = settingDef.options;
+                    }
+                    if (settingDef.min !== undefined) {
+                        settings[settingId].min = settingDef.min;
+                    }
+                    if (settingDef.max !== undefined) {
+                        settings[settingId].max = settingDef.max;
+                    }
+                    if (settingDef.step !== undefined) {
+                        settings[settingId].step = settingDef.step;
                     }
                 }
             }
@@ -4223,9 +4263,15 @@
         async loadSettings() {
             // Set character ID in settings storage for per-character settings
             const characterId = dataManager.getCurrentCharacterId();
-            if (characterId) {
-                settingsStorage.setCharacterId(characterId);
+
+            // Before character ID is known, only populate schema defaults (no storage access)
+            // This prevents loading from the wrong storage key during early initialization
+            if (!characterId) {
+                this.settingsMap = settingsStorage.buildDefaults();
+                return;
             }
+
+            settingsStorage.setCharacterId(characterId);
 
             // Load settings from settings-storage (which uses settings-schema as source of truth)
             this.settingsMap = await settingsStorage.loadSettings();
