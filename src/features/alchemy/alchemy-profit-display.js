@@ -60,6 +60,18 @@ class AlchemyProfitDisplay {
         };
         dataManager.on('items_updated', this.equipmentChangeHandler);
 
+        // Listen for tea/drink slot changes
+        this.consumablesChangeHandler = () => {
+            clearTimeout(this.consumablesChangeTimeout);
+            this.consumablesChangeTimeout = setTimeout(() => {
+                if (this.isActive) {
+                    this.lastFingerprint = null;
+                    this.checkAndUpdateDisplay();
+                }
+            }, 300);
+        };
+        dataManager.on('consumables_updated', this.consumablesChangeHandler);
+
         this.isActive = true;
     }
 
@@ -1400,6 +1412,16 @@ class AlchemyProfitDisplay {
         if (this.equipmentChangeHandler) {
             dataManager.off('items_updated', this.equipmentChangeHandler);
             this.equipmentChangeHandler = null;
+        }
+
+        if (this.consumablesChangeTimeout) {
+            clearTimeout(this.consumablesChangeTimeout);
+            this.consumablesChangeTimeout = null;
+        }
+
+        if (this.consumablesChangeHandler) {
+            dataManager.off('consumables_updated', this.consumablesChangeHandler);
+            this.consumablesChangeHandler = null;
         }
 
         if (this.contentObserver) {
