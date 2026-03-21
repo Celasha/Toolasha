@@ -2,17 +2,15 @@
 
 ## [1.45.1](https://github.com/Celasha/Toolasha/compare/v1.45.0...v1.45.1) (2026-03-21)
 
-
 ### Bug Fixes
 
-* show base and final success rate in enhancement calculator ([ab51598](https://github.com/Celasha/Toolasha/commit/ab515984333321f73fbb0223fa17d863e55beb97))
-* strip special characters from item names in action bar matching ([a04014e](https://github.com/Celasha/Toolasha/commit/a04014e2cd9ee053d9f6259c0def8f50285b67ea))
-* use fractional action level bonus in efficiency calculation ([621f4aa](https://github.com/Celasha/Toolasha/commit/621f4aa063684060830b14f673d52c0934b60a52))
-
+- show base and final success rate in enhancement calculator ([ab51598](https://github.com/Celasha/Toolasha/commit/ab515984333321f73fbb0223fa17d863e55beb97))
+- strip special characters from item names in action bar matching ([a04014e](https://github.com/Celasha/Toolasha/commit/a04014e2cd9ee053d9f6259c0def8f50285b67ea))
+- use fractional action level bonus in efficiency calculation ([621f4aa](https://github.com/Celasha/Toolasha/commit/621f4aa063684060830b14f673d52c0934b60a52))
 
 ### Styles
 
-* fix prettier formatting in action-time-display ([cb6a316](https://github.com/Celasha/Toolasha/commit/cb6a3168d06def6cc98dd7f4e45c0c53567d4c82))
+- fix prettier formatting in action-time-display ([cb6a316](https://github.com/Celasha/Toolasha/commit/cb6a3168d06def6cc98dd7f4e45c0c53567d4c82))
 
 ## [1.45.0](https://github.com/Celasha/Toolasha/compare/v1.44.7...v1.45.0) (2026-03-21)
 
