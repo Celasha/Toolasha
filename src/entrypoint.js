@@ -552,15 +552,12 @@ if (isCombatSimulatorPage()) {
     // Initialize action panel observer (special case - not a regular feature)
     Actions.initActionPanelObserver();
 
-    // Initialize storage and config THIRD (async)
-    // Store the promise so character_initialized can wait for storage readiness
+    // Initialize storage THIRD (async) — only opens IndexedDB
+    // Config is loaded later in character_initialized, once we know which character is playing
     const storageReady = (async () => {
         try {
             // Initialize storage (opens IndexedDB)
             await storage.initialize();
-
-            // Initialize config (loads settings from storage)
-            await config.initialize();
 
             // Add beforeunload handler to flush all pending writes
             window.addEventListener('beforeunload', () => {
@@ -571,7 +568,7 @@ if (isCombatSimulatorPage()) {
             // Don't wait for localStorageUtil - it handles missing data gracefully
             dataManager.initialize();
         } catch (error) {
-            console.error('[Toolasha] Storage/config initialization failed:', error);
+            console.error('[Toolasha] Storage initialization failed:', error);
             // Initialize anyway
             dataManager.initialize();
         }
