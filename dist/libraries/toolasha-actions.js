@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 1.45.1
+ * Version: 1.45.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -14266,8 +14266,8 @@
          * Inject the "Pinned" nav button above the first skill in the nav bar
          */
         injectNavButton() {
-            const firstNav = document.querySelector('[class*="NavigationBar_nav"]');
-            if (!firstNav) return;
+            const navLinks = document.querySelector('[class*="NavigationBar_navigationLinks"]');
+            if (!navLinks) return;
 
             this.navInjected = true;
 
@@ -14309,7 +14309,7 @@
                 }
             });
 
-            firstNav.parentElement.insertBefore(btn, firstNav);
+            navLinks.insertBefore(btn, navLinks.firstChild);
             this.navButton = btn;
         }
 
