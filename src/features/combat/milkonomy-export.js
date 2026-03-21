@@ -526,7 +526,7 @@ export async function constructMilkonomyExport(externalProfileId = null) {
         }
 
         // Character name and color
-        const name = characterData.name || 'Player';
+        const name = characterData.character?.name || 'Player';
         const color = '#90ee90'; // Default color (light green)
 
         // Build action config map for all 10 skills
