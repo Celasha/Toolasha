@@ -2,11 +2,10 @@
 
 ## [1.45.0](https://github.com/Celasha/Toolasha/compare/v1.44.7...v1.45.0) (2026-03-21)
 
-
 ### Features
 
-* add Patient Buy (Bid/Bid) pricing mode ([ca68823](https://github.com/Celasha/Toolasha/commit/ca68823150bd86a15df5951de23c8882ea7d7184))
-* add queued/active indicator on task cards ([d38e9c0](https://github.com/Celasha/Toolasha/commit/d38e9c02e8a23af2bf0f05132a352eef7eaed42c))
+- add Patient Buy (Bid/Bid) pricing mode ([ca68823](https://github.com/Celasha/Toolasha/commit/ca68823150bd86a15df5951de23c8882ea7d7184))
+- add queued/active indicator on task cards ([d38e9c0](https://github.com/Celasha/Toolasha/commit/d38e9c02e8a23af2bf0f05132a352eef7eaed42c))
 
 ## [1.44.7](https://github.com/Celasha/Toolasha/compare/v1.44.6...v1.44.7) (2026-03-21)
 
