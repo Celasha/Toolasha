@@ -768,6 +768,13 @@ export const settingsGroups = {
                 default: false,
                 help: 'Colors efficiency ratings relative to visible tasks.',
             },
+            taskQueuedIndicator: {
+                id: 'taskQueuedIndicator',
+                label: 'Show "Queued" indicator on task cards',
+                type: 'checkbox',
+                default: true,
+                help: 'Displays a status message on task cards when their action is in your action queue',
+            },
             taskRerollTracker: {
                 id: 'taskRerollTracker',
                 label: 'Track task reroll costs',

@@ -202,6 +202,19 @@ class TaskProfitDisplay {
             }
         });
 
+        config.onSettingChange('taskQueuedIndicator', (value) => {
+            if (this.isInitialized) {
+                if (value) {
+                    this.updateQueuedIndicators();
+                } else {
+                    // Remove all queued indicators
+                    document.querySelectorAll('.mwi-task-queued-indicator').forEach((el) => el.remove());
+                }
+            } else if (value) {
+                this.initialize();
+            }
+        });
+
         config.onSettingChange('color_accent', () => {
             if (this.isInitialized) {
                 this.refresh();
@@ -218,7 +231,11 @@ class TaskProfitDisplay {
             return;
         }
 
-        if (!config.getSetting('taskProfitCalculator') && !config.getSetting('taskGoMerge')) {
+        if (
+            !config.getSetting('taskProfitCalculator') &&
+            !config.getSetting('taskGoMerge') &&
+            !config.getSetting('taskQueuedIndicator')
+        ) {
             return;
         }
 
@@ -250,6 +267,7 @@ class TaskProfitDisplay {
 
         // Initial update
         this.updateTaskProfits();
+        this.updateQueuedIndicators();
 
         this.isActive = true;
         this.isInitialized = true;
@@ -274,6 +292,20 @@ class TaskProfitDisplay {
         this.unregisterHandlers.push(() => {
             webSocketHook.off('quests_updated', questsHandler);
         });
+
+        // Listen for action queue changes to update queued indicators
+        const actionsHandler = () => {
+            const indicatorTimeout = setTimeout(() => {
+                this.updateQueuedIndicators();
+            }, 250);
+            this.timerRegistry.registerTimeout(indicatorTimeout);
+        };
+
+        dataManager.on('actions_updated', actionsHandler);
+
+        this.unregisterHandlers.push(() => {
+            dataManager.off('actions_updated', actionsHandler);
+        });
     }
 
     /**
@@ -283,12 +315,15 @@ class TaskProfitDisplay {
         // Watch for task list appearing
         const unregisterTaskList = domObserver.onClass('TaskProfitDisplay-TaskList', 'TasksPanel_taskList', () => {
             this.updateTaskProfits();
+            this.updateQueuedIndicators();
         });
         this.unregisterHandlers.push(unregisterTaskList);
 
         // Watch for individual tasks appearing
         const unregisterTask = domObserver.onClass('TaskProfitDisplay-Task', 'RandomTask_randomTask', (taskNode) => {
             this._setupTaskNode(taskNode);
+            const queuedTimeout = setTimeout(() => this.updateQueuedIndicators(), 150);
+            this.timerRegistry.registerTimeout(queuedTimeout);
         });
         this.unregisterHandlers.push(unregisterTask);
 
@@ -1212,6 +1247,145 @@ class TaskProfitDisplay {
     }
 
     /**
+     * Update queued/active indicators on all task cards
+     * Compares task action HRIDs against the player's action queue
+     */
+    updateQueuedIndicators() {
+        if (!config.getSetting('taskQueuedIndicator')) {
+            document.querySelectorAll('.mwi-task-queued-indicator').forEach((el) => el.remove());
+            return;
+        }
+
+        const taskListNode = document.querySelector(GAME.TASK_LIST);
+        if (!taskListNode) return;
+
+        // Build a Set of actionHrids in the queue, and track which is first (active)
+        const currentActions = dataManager.getCurrentActions();
+        const queuedActionHrids = new Set(currentActions.map((a) => a.actionHrid));
+        const activeActionHrid = currentActions.length > 0 ? currentActions[0].actionHrid : null;
+
+        // Get React fiber root for quest extraction
+        const rootEl = document.getElementById('root');
+        const rootFiber = rootEl?._reactRootContainer?.current || rootEl?._reactRootContainer?._internalRoot?.current;
+
+        const taskCards = taskListNode.querySelectorAll(GAME.TASK_CARD);
+        for (const taskCard of taskCards) {
+            this._updateQueuedIndicatorForCard(taskCard, rootFiber, queuedActionHrids, activeActionHrid);
+        }
+    }
+
+    /**
+     * Update queued indicator for a single task card
+     * @param {HTMLElement} taskCard - Task card DOM element
+     * @param {Object|null} rootFiber - React fiber root
+     * @param {Set<string>} queuedActionHrids - Set of action HRIDs in the queue
+     * @param {string|null} activeActionHrid - The first (active) action HRID
+     */
+    _updateQueuedIndicatorForCard(taskCard, rootFiber, queuedActionHrids, activeActionHrid) {
+        const existingIndicator = taskCard.querySelector('.mwi-task-queued-indicator');
+
+        // Extract quest data from React fiber tree
+        const quest = this._getQuestFromFiber(taskCard, rootFiber);
+        if (!quest) {
+            if (existingIndicator) existingIndicator.remove();
+            return;
+        }
+
+        // Determine the actionHrid to match against the queue
+        let matchActionHrid = quest.actionHrid || null;
+
+        // For combat tasks, resolve monsterHrid to zone actionHrid
+        if (!matchActionHrid && quest.monsterHrid) {
+            matchActionHrid = dataManager.getCombatZoneForMonster(quest.monsterHrid);
+        }
+
+        if (!matchActionHrid || !queuedActionHrids.has(matchActionHrid)) {
+            // Not in queue — remove indicator if present
+            if (existingIndicator) existingIndicator.remove();
+            return;
+        }
+
+        // Determine if active (first in queue) or queued
+        const isActive = matchActionHrid === activeActionHrid;
+        const label = isActive ? '▶ Active' : '⏸ Queued';
+        const color = isActive ? config.COLOR_ACCENT : config.SCRIPT_COLOR_SECONDARY;
+
+        if (existingIndicator) {
+            // Update existing indicator's inner badge
+            const badge = existingIndicator.querySelector('.mwi-task-queued-badge') || existingIndicator;
+            badge.textContent = label;
+            badge.style.color = color;
+            return;
+        }
+
+        // Create wrapper for centering
+        const wrapper = document.createElement('div');
+        wrapper.className = 'mwi-task-queued-indicator';
+        wrapper.style.cssText = `
+            display: flex;
+            justify-content: center;
+            margin-top: 4px;
+        `;
+
+        // Create the label badge (shrink-to-fit)
+        const badge = document.createElement('span');
+        badge.className = 'mwi-task-queued-badge';
+        badge.style.cssText = `
+            font-size: 0.85rem;
+            padding: 2px 8px;
+            border-radius: 3px;
+            background: rgba(0, 0, 0, 0.3);
+        `;
+        badge.style.color = color;
+        badge.textContent = label;
+        wrapper.appendChild(badge);
+
+        // Insert after reroll cost display if present, otherwise as first child of content
+        const taskContent = taskCard.querySelector(GAME.TASK_CONTENT);
+        if (taskContent) {
+            const rerollDisplay = taskCard.querySelector(TOOLASHA.REROLL_COST_DISPLAY);
+            if (rerollDisplay && rerollDisplay.nextSibling) {
+                taskContent.insertBefore(wrapper, rerollDisplay.nextSibling);
+            } else if (rerollDisplay) {
+                taskContent.appendChild(wrapper);
+            } else {
+                taskContent.insertBefore(wrapper, taskContent.firstChild);
+            }
+        }
+    }
+
+    /**
+     * Extract quest data from a task card's React fiber tree
+     * @param {HTMLElement} taskCard - Task card DOM element
+     * @param {Object|null} rootFiber - React fiber root
+     * @returns {Object|null} Quest object or null
+     */
+    _getQuestFromFiber(taskCard, rootFiber) {
+        if (!rootFiber) return null;
+
+        const goBtn = taskCard.querySelector('button.Button_success__6d6kU');
+        if (!goBtn) return null;
+
+        function walk(fiber, target) {
+            if (!fiber) return null;
+            if (fiber.stateNode === target) return fiber;
+            return walk(fiber.child, target) || walk(fiber.sibling, target);
+        }
+
+        const btnFiber = walk(rootFiber, goBtn);
+        if (!btnFiber) return null;
+
+        let f = btnFiber.return;
+        while (f) {
+            if (f.memoizedProps?.characterQuest && f.memoizedProps?.rerollRandomTaskHandler) {
+                return f.memoizedProps.characterQuest;
+            }
+            f = f.return;
+        }
+        return null;
+    }
+
+    /**
      * Refresh colors on existing task profit displays
      */
     refresh() {
@@ -1259,6 +1433,9 @@ class TaskProfitDisplay {
             }
             el.remove();
         });
+
+        // Remove queued indicators
+        document.querySelectorAll('.mwi-task-queued-indicator').forEach((el) => el.remove());
 
         this.isActive = false;
         this.isInitialized = false;

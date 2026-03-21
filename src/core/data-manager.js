@@ -870,6 +870,29 @@ class DataManager {
     }
 
     /**
+     * Find the combat zone actionHrid that contains a given monster
+     * @param {string} monsterHrid - Monster HRID (e.g., "/monsters/bear")
+     * @returns {string|null} Zone actionHrid or null
+     */
+    getCombatZoneForMonster(monsterHrid) {
+        if (!this.initClientData?.actionDetailMap) return null;
+
+        for (const [zoneHrid, action] of Object.entries(this.initClientData.actionDetailMap)) {
+            if (action.type !== '/action_types/combat') continue;
+
+            const spawns = action.combatZoneInfo?.fightInfo?.randomSpawnInfo?.spawns || [];
+            const bosses = action.combatZoneInfo?.fightInfo?.bossSpawns || [];
+
+            for (const spawn of [...spawns, ...bosses]) {
+                if (spawn.combatMonsterHrid === monsterHrid) {
+                    return zoneHrid;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
      * Get zone sortIndex for a monster (for task sorting)
      * @param {string} monsterHrid - Monster HRID (e.g., "/monsters/rat")
      * @returns {number} Zone sortIndex (999 if not found)
