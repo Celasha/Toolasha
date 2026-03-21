@@ -2,11 +2,10 @@
 
 ## [1.44.5](https://github.com/Celasha/Toolasha/compare/v1.44.4...v1.44.5) (2026-03-21)
 
-
 ### Bug Fixes
 
-* await storage readiness before loading character settings on Steam ([a57b023](https://github.com/Celasha/Toolasha/commit/a57b023798aeac02d4d238dcc06682f33782c336))
-* update alchemy profit display when teas are changed ([105e085](https://github.com/Celasha/Toolasha/commit/105e0859e4b5ac251c7b3b7a4572c2c1e2215c06))
+- await storage readiness before loading character settings on Steam ([a57b023](https://github.com/Celasha/Toolasha/commit/a57b023798aeac02d4d238dcc06682f33782c336))
+- update alchemy profit display when teas are changed ([105e085](https://github.com/Celasha/Toolasha/commit/105e0859e4b5ac251c7b3b7a4572c2c1e2215c06))
 
 ## [1.44.4](https://github.com/Celasha/Toolasha/compare/v1.44.3...v1.44.4) (2026-03-20)
 
