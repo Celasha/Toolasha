@@ -735,6 +735,9 @@ class PinnedActionsPage {
         this.navClickInterceptor = (e) => {
             if (!this.isActive) return;
 
+            // Ignore clicks on the Pinned button itself (its handler manages show/hide)
+            if (this.navButton && this.navButton.contains(e.target)) return;
+
             const clickedNav = e.target.closest('[class*="NavigationBar_nav"]');
             if (!clickedNav) return;
 
