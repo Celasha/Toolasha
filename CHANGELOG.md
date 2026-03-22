@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.46.0](https://github.com/Celasha/Toolasha/compare/v1.45.3...v1.46.0) (2026-03-22)
+
+### Features
+
+- show top ask listing age on marketplace action button ([06a1356](https://github.com/Celasha/Toolasha/commit/06a135667f83e966ae5b3a1020e2ef70f5d9ca2d))
+
+### Bug Fixes
+
+- autofill inventory count for marketplace sell actions ([2c733e8](https://github.com/Celasha/Toolasha/commit/2c733e8e718bb4e81883672831ccb7b8783b4e78))
+- dismiss item action menu when executing marketplace shortcut ([7ff4c74](https://github.com/Celasha/Toolasha/commit/7ff4c74c4dea0c098671f9cdffe4308aeb0edd94))
+
 ## [1.45.3](https://github.com/Celasha/Toolasha/compare/v1.45.2...v1.45.3) (2026-03-22)
 
 ### Bug Fixes
