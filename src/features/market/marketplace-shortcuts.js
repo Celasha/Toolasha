@@ -265,6 +265,20 @@ class MarketplaceShortcuts {
             }
         }
 
+        // If no quantity was captured, default to inventory count for sell actions
+        if (!this.pendingQuantity && (actionType === 'sell' || actionType === 'sell-listing')) {
+            const inventory = dataManager.characterItems || [];
+            const match = inventory.find(
+                (item) =>
+                    item.itemHrid === itemHrid &&
+                    (item.enhancementLevel || 0) === enhancementLevel &&
+                    item.itemLocationHrid === '/item_locations/inventory'
+            );
+            if (match && match.count > 0) {
+                this.pendingQuantity = match.count;
+            }
+        }
+
         // Navigate to marketplace for this item
         navigateToMarketplace(itemHrid, enhancementLevel);
 
