@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.45.3](https://github.com/Celasha/Toolasha/compare/v1.45.2...v1.45.3) (2026-03-22)
+
+### Bug Fixes
+
+- prevent nav click interceptor from closing pinned actions page on open ([5ee18dc](https://github.com/Celasha/Toolasha/commit/5ee18dc094b5ce43d99ea4223429bdbafaae7121))
+
 ## [1.45.2](https://github.com/Celasha/Toolasha/compare/v1.45.1...v1.45.2) (2026-03-21)
 
 ### Bug Fixes
