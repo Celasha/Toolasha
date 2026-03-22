@@ -179,6 +179,17 @@ class MarketplaceShortcuts {
                 e.stopPropagation();
                 e.preventDefault();
                 closePanel();
+                // Dismiss the game's action menu by simulating Escape
+                document.dispatchEvent(
+                    new KeyboardEvent('keydown', {
+                        key: 'Escape',
+                        code: 'Escape',
+                        keyCode: 27,
+                        which: 27,
+                        bubbles: true,
+                        cancelable: true,
+                    })
+                );
                 this.executeAction(action.type, itemHrid, enhancementLevel);
             });
             panel.appendChild(btn);
