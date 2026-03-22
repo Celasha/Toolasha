@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 1.45.2
+ * Version: 1.45.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -14868,6 +14868,9 @@
 
             this.navClickInterceptor = (e) => {
                 if (!this.isActive) return;
+
+                // Ignore clicks on the Pinned button itself (its handler manages show/hide)
+                if (this.navButton && this.navButton.contains(e.target)) return;
 
                 const clickedNav = e.target.closest('[class*="NavigationBar_nav"]');
                 if (!clickedNav) return;
