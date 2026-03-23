@@ -2,10 +2,9 @@
 
 ## [1.46.1](https://github.com/Celasha/Toolasha/compare/v1.46.0...v1.46.1) (2026-03-23)
 
-
 ### Bug Fixes
 
-* validate item HRID before opening item dictionary ([6ddb694](https://github.com/Celasha/Toolasha/commit/6ddb6946e82704f68df343ad23f0ab98b9a4349b))
+- validate item HRID before opening item dictionary ([6ddb694](https://github.com/Celasha/Toolasha/commit/6ddb6946e82704f68df343ad23f0ab98b9a4349b))
 
 ## [1.46.0](https://github.com/Celasha/Toolasha/compare/v1.45.3...v1.46.0) (2026-03-22)
 
