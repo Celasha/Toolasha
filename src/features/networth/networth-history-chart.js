@@ -7,6 +7,7 @@
 import networthHistory, { GAP_THRESHOLD_MS } from './networth-history.js';
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
+import storage from '../../core/storage.js';
 import { networthFormatter } from '../../utils/formatters.js';
 
 const RANGE_MS = {
@@ -23,9 +24,33 @@ class NetworthHistoryChart {
         this.networthFeature = null;
         this.activeRange = '7d'; // Track current active range
         this.connectGaps = false; // Toggle for connecting gaps in chart
+        this.showBars = false; // Toggle for bar overlay on chart
+        this.movingAvgWindow = 0; // Moving average window in data points (0 = off)
         this.currentRange = '7d';
         this.currentCustomFrom = null;
         this.currentCustomTo = null;
+        this._loadChartPrefs();
+    }
+
+    /**
+     * Load persisted chart toggle preferences
+     */
+    async _loadChartPrefs() {
+        const prefs = await storage.get('networthChartPrefs', 'networthHistory', {});
+        if (prefs.connectGaps !== undefined) this.connectGaps = prefs.connectGaps;
+        if (prefs.showBars !== undefined) this.showBars = prefs.showBars;
+        if (prefs.movingAvgWindow !== undefined) this.movingAvgWindow = prefs.movingAvgWindow;
+    }
+
+    /**
+     * Save chart toggle preferences
+     */
+    _saveChartPrefs() {
+        storage.set(
+            'networthChartPrefs',
+            { connectGaps: this.connectGaps, showBars: this.showBars, movingAvgWindow: this.movingAvgWindow },
+            'networthHistory'
+        );
     }
 
     /**
@@ -39,7 +64,10 @@ class NetworthHistoryChart {
     /**
      * Open the chart modal
      */
-    openModal() {
+    async openModal() {
+        // Ensure preferences are loaded before building UI
+        await this._loadChartPrefs();
+
         // Remove existing modal if any
         const existing = document.getElementById('mwi-nw-chart-modal');
         if (existing) {
@@ -147,9 +175,74 @@ class NetworthHistoryChart {
         gapToggle.addEventListener('click', () => {
             this.connectGaps = !this.connectGaps;
             updateGapToggleStyle();
+            this._saveChartPrefs();
             this.renderChart(this.currentRange, this.currentCustomFrom, this.currentCustomTo);
         });
         rangeRow.appendChild(gapToggle);
+
+        // Show Bars toggle
+        const barToggle = document.createElement('button');
+        barToggle.textContent = 'Show Bars';
+        barToggle.className = 'mwi-nw-bar-toggle';
+        const updateBarToggleStyle = () => {
+            barToggle.style.cssText = `
+                background: ${this.showBars ? '#444' : '#2a2a2a'};
+                color: ${this.showBars ? '#fff' : '#999'};
+                border: 1px solid #555;
+                cursor: pointer;
+                padding: 4px 14px;
+                border-radius: 4px;
+                font-size: 13px;
+                margin-left: 4px;
+            `;
+        };
+        updateBarToggleStyle();
+        barToggle.addEventListener('click', () => {
+            this.showBars = !this.showBars;
+            updateBarToggleStyle();
+            this._saveChartPrefs();
+            this.renderChart(this.currentRange, this.currentCustomFrom, this.currentCustomTo);
+        });
+        rangeRow.appendChild(barToggle);
+
+        // Moving Average dropdown
+        const maLabel = document.createElement('span');
+        maLabel.textContent = 'Avg:';
+        maLabel.style.cssText = 'color: #999; font-size: 12px; margin-left: 8px;';
+        rangeRow.appendChild(maLabel);
+
+        const maSelect = document.createElement('select');
+        maSelect.className = 'mwi-nw-ma-select';
+        maSelect.style.cssText = `
+            background: #2a2a2a;
+            color: #ccc;
+            border: 1px solid #555;
+            border-radius: 4px;
+            padding: 3px 6px;
+            font-size: 13px;
+            cursor: pointer;
+            color-scheme: dark;
+        `;
+        const maOptions = [
+            { value: 0, label: 'Off' },
+            { value: 3, label: '3h' },
+            { value: 6, label: '6h' },
+            { value: 12, label: '12h' },
+            { value: 24, label: '24h' },
+        ];
+        for (const opt of maOptions) {
+            const option = document.createElement('option');
+            option.value = opt.value;
+            option.textContent = opt.label;
+            if (opt.value === this.movingAvgWindow) option.selected = true;
+            maSelect.appendChild(option);
+        }
+        maSelect.addEventListener('change', () => {
+            this.movingAvgWindow = parseInt(maSelect.value, 10);
+            this._saveChartPrefs();
+            this.renderChart(this.currentRange, this.currentCustomFrom, this.currentCustomTo);
+        });
+        rangeRow.appendChild(maSelect);
 
         // Spacer
         const spacer = document.createElement('div');
@@ -377,23 +470,77 @@ class NetworthHistoryChart {
 
         // Create chart
         const ctx = canvas.getContext('2d');
+
+        // Build datasets array
+        const datasets = [];
+
+        // Bar overlay dataset (rendered first = behind line)
+        if (this.showBars) {
+            const barData = chartData.filter((p) => !isNaN(p.y));
+            datasets.push({
+                type: 'bar',
+                label: 'Networth (bars)',
+                data: barData,
+                backgroundColor: 'rgba(34, 197, 94, 0.3)',
+                borderColor: 'transparent',
+                borderWidth: 0,
+                barThickness: 6,
+                minBarLength: 2,
+                order: 2,
+            });
+        }
+
+        // Line dataset (rendered on top)
+        datasets.push({
+            type: 'line',
+            label: 'Total Networth',
+            data: chartData,
+            borderColor: config.COLOR_ACCENT || '#22c55e',
+            backgroundColor: 'rgba(34, 197, 94, 0.1)',
+            borderWidth: 2,
+            pointRadius: filtered.length > 200 ? 0 : 2,
+            pointHoverRadius: 5,
+            tension: 0.1,
+            fill: true,
+            spanGaps: this.connectGaps,
+            order: 1,
+        });
+
+        // Moving average line dataset
+        if (this.movingAvgWindow > 0) {
+            const realPoints = chartData.filter((p) => !isNaN(p.y));
+            const maData = [];
+            for (let i = 0; i < realPoints.length; i++) {
+                const windowStart = Math.max(0, i - this.movingAvgWindow + 1);
+                let sum = 0;
+                let count = 0;
+                for (let j = windowStart; j <= i; j++) {
+                    sum += realPoints[j].y;
+                    count++;
+                }
+                maData.push({ x: realPoints[i].x, y: sum / count });
+            }
+            datasets.push({
+                type: 'line',
+                label: `${this.movingAvgWindow}h Moving Avg`,
+                data: maData,
+                borderColor: '#f59e0b',
+                backgroundColor: 'transparent',
+                borderWidth: 2,
+                borderDash: [6, 3],
+                pointRadius: 0,
+                pointHoverRadius: 4,
+                tension: 0.2,
+                fill: false,
+                spanGaps: true,
+                order: 0,
+            });
+        }
+
         this.chartInstance = new Chart(ctx, {
             type: 'line',
             data: {
-                datasets: [
-                    {
-                        label: 'Total Networth',
-                        data: chartData,
-                        borderColor: config.COLOR_ACCENT || '#22c55e',
-                        backgroundColor: 'rgba(34, 197, 94, 0.1)',
-                        borderWidth: 2,
-                        pointRadius: filtered.length > 200 ? 0 : 2,
-                        pointHoverRadius: 5,
-                        tension: 0.1,
-                        fill: true,
-                        spanGaps: this.connectGaps,
-                    },
-                ],
+                datasets,
             },
             options: {
                 responsive: true,
@@ -408,6 +555,9 @@ class NetworthHistoryChart {
                     datalabels: { display: false },
                     tooltip: {
                         filter: (tooltipItem) => {
+                            // Only show tooltip for the main networth line
+                            if (tooltipItem.dataset.type === 'bar') return false;
+                            if (tooltipItem.dataset.label !== 'Total Networth') return false;
                             return !isNaN(tooltipItem.raw.y);
                         },
                         callbacks: {
