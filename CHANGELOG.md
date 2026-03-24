@@ -2,10 +2,9 @@
 
 ## [1.47.1](https://github.com/Celasha/Toolasha/compare/v1.47.0...v1.47.1) (2026-03-24)
 
-
 ### Bug Fixes
 
-* use live tea bonus for alchemy action page profitability ([c863d8f](https://github.com/Celasha/Toolasha/commit/c863d8f4a57c2206e6bdafa152724acdd67c54bd))
+- use live tea bonus for alchemy action page profitability ([c863d8f](https://github.com/Celasha/Toolasha/commit/c863d8f4a57c2206e6bdafa152724acdd67c54bd))
 
 ## [1.47.0](https://github.com/Celasha/Toolasha/compare/v1.46.1...v1.47.0) (2026-03-23)
 
