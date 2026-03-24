@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.47.2](https://github.com/Celasha/Toolasha/compare/v1.47.1...v1.47.2) (2026-03-24)
+
+### Bug Fixes
+
+- show per-item material cost breakdown in enhancement tooltip ([0234846](https://github.com/Celasha/Toolasha/commit/0234846f0c6434b88b64ef90b47bc99d49fb796c))
+
 ## [1.47.1](https://github.com/Celasha/Toolasha/compare/v1.47.0...v1.47.1) (2026-03-24)
 
 ### Bug Fixes
