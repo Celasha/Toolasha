@@ -144,6 +144,7 @@ export function calculateEnhancementPath(itemHrid, currentEnhancementLevel, conf
             totalTime: optimalTraditional.totalTime,
             baseCost: optimalTraditional.baseCost,
             materialCost: optimalTraditional.materialCost,
+            materialBreakdown: optimalTraditional.materialBreakdown,
             protectionCost: optimalTraditional.protectionCost,
             protectionItemHrid: optimalTraditional.protectionItemHrid,
             protectionCount: optimalTraditional.protectionCount,
@@ -357,6 +358,7 @@ function calculateTotalCost(itemHrid, targetLevel, protectFrom, config) {
     // Calculate per-action material cost (same for all enhancement levels)
     // enhancementCosts is a flat array of materials needed per attempt
     let perActionCost = 0;
+    const materialBreakdown = [];
     if (itemDetails.enhancementCosts) {
         for (const material of itemDetails.enhancementCosts) {
             const materialDetail = gameData.itemDetailMap[material.itemHrid];
@@ -389,6 +391,16 @@ function calculateTotalCost(itemHrid, targetLevel, protectFrom, config) {
                 }
             }
             perActionCost += price * material.count;
+
+            const totalQuantity = material.count * pathResult.attempts;
+            materialBreakdown.push({
+                itemHrid: material.itemHrid,
+                name: materialDetail?.name || material.itemHrid,
+                countPerAction: material.count,
+                totalQuantity,
+                unitPrice: price,
+                totalCost: price * totalQuantity,
+            });
         }
     }
 
@@ -414,6 +426,7 @@ function calculateTotalCost(itemHrid, targetLevel, protectFrom, config) {
     return {
         baseCost,
         materialCost,
+        materialBreakdown,
         protectionCost,
         protectionItemHrid,
         protectionCount,
@@ -670,6 +683,27 @@ export function buildEnhancementTooltipHTML(enhancementData) {
         // Traditional (non-mirror) breakdown
         html += 'Base Item: ' + formatLargeNumber(optimalStrategy.baseCost);
         html += '<br>Materials: ' + formatLargeNumber(optimalStrategy.materialCost);
+
+        // Per-item material breakdown
+        if (optimalStrategy.materialBreakdown && optimalStrategy.materialBreakdown.length > 0) {
+            html += '<div style="margin-left: 12px;">';
+            optimalStrategy.materialBreakdown.forEach((mat, index) => {
+                if (index > 0) html += '<br>';
+                if (mat.itemHrid === '/items/coin') {
+                    html += mat.name + ': ' + formatLargeNumber(mat.totalCost);
+                } else {
+                    html +=
+                        mat.name +
+                        ': ' +
+                        formatLargeNumber(mat.totalQuantity.toFixed(1)) +
+                        ' × ' +
+                        formatLargeNumber(mat.unitPrice) +
+                        ' = ' +
+                        formatLargeNumber(mat.totalCost);
+                }
+            });
+            html += '</div>';
+        }
 
         if (optimalStrategy.protectionCost > 0) {
             let protectionDisplay = formatLargeNumber(optimalStrategy.protectionCost);
