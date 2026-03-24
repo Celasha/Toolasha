@@ -190,6 +190,7 @@ export function calculateEnhancementPath(itemHrid, currentEnhancementLevel, conf
     }
 
     return {
+        itemHrid,
         targetLevel: currentEnhancementLevel,
         itemLevel,
         optimalStrategy,
@@ -607,7 +608,7 @@ export function buildEnhancementTooltipHTML(enhancementData) {
         return '';
     }
 
-    const { targetLevel, optimalStrategy, xpPerHour, totalExpectedXP } = enhancementData;
+    const { itemHrid, targetLevel, optimalStrategy, xpPerHour, totalExpectedXP } = enhancementData;
 
     // Validate required fields
     if (
@@ -674,11 +675,6 @@ export function buildEnhancementTooltipHTML(enhancementData) {
                 html += ' (' + optimalStrategy.mirrorCount + 'x @ ' + formatLargeNumber(mirrorPrice) + ' each)';
             }
         }
-
-        html +=
-            '<br><span style="font-weight: bold;">Total: ' +
-            formatLargeNumber(optimalStrategy.totalCost, 3) +
-            '</span>';
     } else {
         // Traditional (non-mirror) breakdown
         html += 'Base Item: ' + formatLargeNumber(optimalStrategy.baseCost);
@@ -725,11 +721,6 @@ export function buildEnhancementTooltipHTML(enhancementData) {
 
             html += '<br>Protection: ' + protectionDisplay;
         }
-
-        html +=
-            '<br><span style="font-weight: bold;">Total: ' +
-            formatLargeNumber(optimalStrategy.totalCost, 3) +
-            '</span>';
     }
 
     html += '</div>';
@@ -760,6 +751,17 @@ export function buildEnhancementTooltipHTML(enhancementData) {
     if (totalExpectedXP !== null && totalExpectedXP > 0) {
         html += '<div>Total XP: ~' + totalExpectedXP.toLocaleString() + '</div>';
     }
+
+    // Total cost at the bottom, colored by comparison to market ask price
+    let totalColor = '';
+    if (itemHrid) {
+        const marketPrice = getItemPrices(itemHrid, targetLevel);
+        if (marketPrice && marketPrice.ask > 0) {
+            totalColor = optimalStrategy.totalCost < marketPrice.ask ? '#4ade80' : '#f87171';
+        }
+    }
+    const totalStyle = 'font-weight: bold; margin-top: 4px;' + (totalColor ? ' color: ' + totalColor + ';' : '');
+    html += '<div style="' + totalStyle + '">Total: ' + formatLargeNumber(optimalStrategy.totalCost, 3) + '</div>';
 
     html += '</div>'; // Close margin-left div
     html += '</div>'; // Close main container
