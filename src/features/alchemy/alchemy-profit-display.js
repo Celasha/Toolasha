@@ -314,7 +314,7 @@ class AlchemyProfitDisplay {
                     const enhancementLevel = requirements[0].enhancementLevel || 0;
 
                     // Call unified calculator
-                    profitData = alchemyProfitCalculator.calculateCoinifyProfit(itemHrid, enhancementLevel);
+                    profitData = alchemyProfitCalculator.calculateCoinifyProfit(itemHrid, enhancementLevel, true);
                 }
             } else if (isTransmute) {
                 // Use unified calculator for transmute
@@ -322,7 +322,7 @@ class AlchemyProfitDisplay {
                     const itemHrid = requirements[0].itemHrid;
 
                     // Call unified calculator
-                    profitData = alchemyProfitCalculator.calculateTransmuteProfit(itemHrid);
+                    profitData = alchemyProfitCalculator.calculateTransmuteProfit(itemHrid, true);
                 }
             } else if ((isDecompose || (!isCoinify && !isTransmute)) && requirements && requirements.length > 0) {
                 // Use unified calculator for decompose
@@ -330,7 +330,7 @@ class AlchemyProfitDisplay {
                 const enhancementLevel = requirements[0].enhancementLevel || 0;
 
                 // Call unified calculator
-                profitData = alchemyProfitCalculator.calculateDecomposeProfit(itemHrid, enhancementLevel);
+                profitData = alchemyProfitCalculator.calculateDecomposeProfit(itemHrid, enhancementLevel, true);
             }
 
             if (!profitData) {
