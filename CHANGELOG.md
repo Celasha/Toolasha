@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.48.0](https://github.com/Celasha/Toolasha/compare/v1.47.4...v1.48.0) (2026-03-24)
+
+### Features
+
+- auto-focus quantity input on buy marketplace modals ([0cad615](https://github.com/Celasha/Toolasha/commit/0cad61511988aeba2cb6bc260ad43275710ee0bc))
+
+### Bug Fixes
+
+- correct multi-action profit setting description wording ([05bc518](https://github.com/Celasha/Toolasha/commit/05bc51889b4ca33909304231127d42655a70ed98))
+
 ## [1.47.4](https://github.com/Celasha/Toolasha/compare/v1.47.3...v1.47.4) (2026-03-24)
 
 ### Bug Fixes
