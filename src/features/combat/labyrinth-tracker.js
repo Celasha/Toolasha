@@ -82,7 +82,7 @@ class LabyrinthTracker {
         }
 
         // Deep-copy to snapshot current state
-        this.prevRoomData = roomData.map((row) => row.map((cell) => ({ ...cell })));
+        this.prevRoomData = roomData.map((row) => row.map((cell) => (cell ? { ...cell } : null)));
     }
 
     /**

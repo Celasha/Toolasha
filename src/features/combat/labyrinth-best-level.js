@@ -36,6 +36,17 @@ class LabyrinthBestLevel {
         );
         this.unregisterHandlers.push(unregister);
 
+        // Watch for skip threshold cells to appear and inject badges
+        const unregisterSkip = domObserver.onClass(
+            'LabyrinthBestLevel_skipThreshold',
+            'LabyrinthPanel_skipThreshold',
+            () => this.refreshAll()
+        );
+        this.unregisterHandlers.push(unregisterSkip);
+
+        // Catch cells that were already in the DOM before observers registered
+        this.catchupTimer = setTimeout(() => this.refreshAll(), 500);
+
         // Re-inject all badges when tracker records a new best
         this.updateHandler = () => this.refreshAll();
         labyrinthTracker.onUpdate(this.updateHandler);
@@ -47,6 +58,11 @@ class LabyrinthBestLevel {
      * Disable and clean up
      */
     disable() {
+        if (this.catchupTimer) {
+            clearTimeout(this.catchupTimer);
+            this.catchupTimer = null;
+        }
+
         if (this.updateHandler) {
             labyrinthTracker.offUpdate(this.updateHandler);
             this.updateHandler = null;
@@ -90,6 +106,11 @@ class LabyrinthBestLevel {
         };
 
         automationBtn.addEventListener('click', this.automationClickHandler);
+
+        // If the Automation tab is already active, inject badges immediately
+        if (automationBtn.getAttribute('aria-selected') === 'true') {
+            setTimeout(() => this.refreshAll(), 100);
+        }
     }
 
     /**
