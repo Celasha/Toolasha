@@ -35,5 +35,22 @@ export const mergeMarketListings = (currentListings = [], updatedListings = []) 
         }
     }
 
-    return merged;
+    // Remove dead listings: cancelled/expired immediately, filled once fully claimed
+    return merged.filter((listing) => {
+        if (!listing) return false;
+        if (
+            listing.status === '/market_listing_status/cancelled' ||
+            listing.status === '/market_listing_status/expired'
+        ) {
+            return false;
+        }
+        if (
+            listing.status === '/market_listing_status/filled' &&
+            (listing.unclaimedItemCount || 0) === 0 &&
+            (listing.unclaimedCoinCount || 0) === 0
+        ) {
+            return false;
+        }
+        return true;
+    });
 };
