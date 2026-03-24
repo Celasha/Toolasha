@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.47.3](https://github.com/Celasha/Toolasha/compare/v1.47.2...v1.47.3) (2026-03-24)
+
+### Bug Fixes
+
+- labyrinth best level badges not displaying after page refresh ([88a5b3c](https://github.com/Celasha/Toolasha/commit/88a5b3cab367968bbb5a50d543481a97803082d9))
+
 ## [1.47.2](https://github.com/Celasha/Toolasha/compare/v1.47.1...v1.47.2) (2026-03-24)
 
 ### Bug Fixes
