@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 1.47.3
+ * Version: 1.47.4
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -4118,7 +4118,24 @@ self.onmessage = function (e) {
             }
         }
 
-        return merged;
+        // Remove dead listings: cancelled/expired immediately, filled once fully claimed
+        return merged.filter((listing) => {
+            if (!listing) return false;
+            if (
+                listing.status === '/market_listing_status/cancelled' ||
+                listing.status === '/market_listing_status/expired'
+            ) {
+                return false;
+            }
+            if (
+                listing.status === '/market_listing_status/filled' &&
+                (listing.unclaimedItemCount || 0) === 0 &&
+                (listing.unclaimedCoinCount || 0) === 0
+            ) {
+                return false;
+            }
+            return true;
+        });
     };
 
     var marketListings = /*#__PURE__*/Object.freeze({
