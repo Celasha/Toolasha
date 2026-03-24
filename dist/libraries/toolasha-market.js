@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 1.47.0
+ * Version: 1.47.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1699,14 +1699,46 @@ self.onmessage = function (e) {
             return best;
         }
 
+        _liveSetupCombo({
+            baseSuccessRate,
+            actionsPerHour,
+            efficiencyDecimal,
+            actionTime,
+            alchemyBonusRevenue,
+            computeNetProfit,
+            computeTeaCost,
+            levelPenalty = 0,
+        }) {
+            const liveTeaBonus = buffParser_js.getAlchemySuccessBonus();
+            const successRateBreakdown = this.calculateSuccessRateBreakdown(baseSuccessRate, 0, liveTeaBonus, levelPenalty);
+            const successRate = successRateBreakdown.total;
+            const catalystCostPerAttempt = 0;
+            const catalystCostPerHour = 0;
+            const teaCostPerHour = liveTeaBonus > 0 ? computeTeaCost(liveTeaBonus) : 0;
+            const netProfitPerAttempt = computeNetProfit(successRate);
+            const profitPerSecond = (netProfitPerAttempt * (1 + efficiencyDecimal)) / actionTime;
+            const profitPerHour = profitPerSecond * profitConstants_js.SECONDS_PER_HOUR + alchemyBonusRevenue - teaCostPerHour;
+            return {
+                catalystBonus: 0,
+                catalystHrid: null,
+                catalystPrice: 0,
+                teaBonus: liveTeaBonus,
+                successRateBreakdown,
+                successRate,
+                catalystCostPerAttempt,
+                catalystCostPerHour,
+                teaCostPerHour,
+                netProfitPerAttempt,
+                profitPerHour,
+            };
+        }
+
         /**
-         * Calculate coinify profit for an item with full detailed breakdown
-         * This is the SINGLE source of truth used by both tooltip and action panel
          * @param {string} itemHrid - Item HRID
          * @param {number} enhancementLevel - Enhancement level (default 0)
          * @returns {Object|null} Detailed profit data or null if not coinifiable
          */
-        calculateCoinifyProfit(itemHrid, enhancementLevel = 0) {
+        calculateCoinifyProfit(itemHrid, enhancementLevel = 0, useLiveSetup = false) {
             try {
                 const gameData = dataManager.getInitClientData();
                 const itemDetails = dataManager.getItemDetails(itemHrid);
@@ -1812,8 +1844,9 @@ self.onmessage = function (e) {
                     getItemPrice: (hrid) => marketData_js.getItemPrice(hrid, { context: 'profit', side: 'buy' }),
                 });
 
-                // Find the best catalyst+tea combination
-                const combo = this._bestCatalystCombo({
+                // Find the best catalyst+tea combination (tooltip) or use live setup (action page)
+                const _comboFn = useLiveSetup ? this._liveSetupCombo.bind(this) : this._bestCatalystCombo.bind(this);
+                const combo = _comboFn({
                     actionType: 'coinify',
                     baseSuccessRate: BASE_SUCCESS_RATES.COINIFY,
                     actionsPerHour: actionsPerHourWithEfficiency,
@@ -1961,7 +1994,7 @@ self.onmessage = function (e) {
          * @param {number} enhancementLevel - Enhancement level (default 0)
          * @returns {Object|null} Profit data or null if not decomposable
          */
-        calculateDecomposeProfit(itemHrid, enhancementLevel = 0) {
+        calculateDecomposeProfit(itemHrid, enhancementLevel = 0, useLiveSetup = false) {
             try {
                 const gameData = dataManager.getInitClientData();
                 const itemDetails = dataManager.getItemDetails(itemHrid);
@@ -2105,8 +2138,9 @@ self.onmessage = function (e) {
                     getItemPrice: (hrid) => marketData_js.getItemPrice(hrid, { context: 'profit', side: 'buy' }),
                 });
 
-                // Find the best catalyst+tea combination
-                const combo = this._bestCatalystCombo({
+                // Find the best catalyst+tea combination (tooltip) or use live setup (action page)
+                const _comboFn = useLiveSetup ? this._liveSetupCombo.bind(this) : this._bestCatalystCombo.bind(this);
+                const combo = _comboFn({
                     actionType: 'decompose',
                     baseSuccessRate: BASE_SUCCESS_RATES.DECOMPOSE,
                     actionsPerHour: actionsPerHourWithEfficiency,
@@ -2258,7 +2292,7 @@ self.onmessage = function (e) {
          * @param {string} itemHrid - Item HRID
          * @returns {Object|null} Profit data or null if not transmutable
          */
-        calculateTransmuteProfit(itemHrid) {
+        calculateTransmuteProfit(itemHrid, useLiveSetup = false) {
             try {
                 const gameData = dataManager.getInitClientData();
                 const itemDetails = dataManager.getItemDetails(itemHrid);
@@ -2416,9 +2450,10 @@ self.onmessage = function (e) {
                     getItemPrice: (hrid) => marketData_js.getItemPrice(hrid, { context: 'profit', side: 'buy' }),
                 });
 
-                // Find the best catalyst+tea combination.
+                // Find the best catalyst+tea combination (tooltip) or use live setup (action page).
                 // Note: selfReturnValue depends on successRate so it must be computed inside the combo loop.
-                const combo = this._bestCatalystCombo({
+                const _comboFn = useLiveSetup ? this._liveSetupCombo.bind(this) : this._bestCatalystCombo.bind(this);
+                const combo = _comboFn({
                     actionType: 'transmute',
                     baseSuccessRate,
                     actionsPerHour: actionsPerHourWithEfficiency,

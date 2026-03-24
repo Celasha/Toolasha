@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 1.47.0
+ * Version: 1.47.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -16196,7 +16196,7 @@
                         const enhancementLevel = requirements[0].enhancementLevel || 0;
 
                         // Call unified calculator
-                        profitData = alchemyProfitCalculator.calculateCoinifyProfit(itemHrid, enhancementLevel);
+                        profitData = alchemyProfitCalculator.calculateCoinifyProfit(itemHrid, enhancementLevel, true);
                     }
                 } else if (isTransmute) {
                     // Use unified calculator for transmute
@@ -16204,7 +16204,7 @@
                         const itemHrid = requirements[0].itemHrid;
 
                         // Call unified calculator
-                        profitData = alchemyProfitCalculator.calculateTransmuteProfit(itemHrid);
+                        profitData = alchemyProfitCalculator.calculateTransmuteProfit(itemHrid, true);
                     }
                 } else if ((isDecompose || (!isCoinify && !isTransmute)) && requirements && requirements.length > 0) {
                     // Use unified calculator for decompose
@@ -16212,7 +16212,7 @@
                     const enhancementLevel = requirements[0].enhancementLevel || 0;
 
                     // Call unified calculator
-                    profitData = alchemyProfitCalculator.calculateDecomposeProfit(itemHrid, enhancementLevel);
+                    profitData = alchemyProfitCalculator.calculateDecomposeProfit(itemHrid, enhancementLevel, true);
                 }
 
                 if (!profitData) {
