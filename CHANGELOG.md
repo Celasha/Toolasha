@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.48.1](https://github.com/Celasha/Toolasha/compare/v1.48.0...v1.48.1) (2026-03-24)
+
+
+### Bug Fixes
+
+* move enhancement total to bottom with profit color indicator ([c4968aa](https://github.com/Celasha/Toolasha/commit/c4968aa30e91d0da228dd36433368d852a74d07b))
+
 ## [1.48.0](https://github.com/Celasha/Toolasha/compare/v1.47.4...v1.48.0) (2026-03-24)
 
 ### Features
