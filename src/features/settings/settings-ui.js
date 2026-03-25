@@ -8,10 +8,13 @@ import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import { settingsGroups } from '../../core/settings-schema.js';
 import settingsStorage from '../../core/settings-storage.js';
+import storage from '../../core/storage.js';
 import settingsCSS from './settings-styles.css?raw';
 import marketAPI from '../../api/marketplace.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
+
+const COLLAPSED_GROUPS_KEY = 'toolasha_collapsedGroups';
 
 class SettingsUI {
     constructor() {
@@ -24,6 +27,7 @@ class SettingsUI {
         this.characterSwitchHandler = null; // Store listener reference to prevent duplicates
         this.settingsPanelCallbacks = []; // Callbacks to run when settings panel appears
         this.timerRegistry = createTimerRegistry();
+        this.collapsedGroups = new Set();
     }
 
     /**
@@ -37,6 +41,10 @@ class SettingsUI {
 
         // Load current settings
         this.currentSettings = await settingsStorage.loadSettings();
+
+        // Load collapsed groups state
+        const savedCollapsed = await storage.get(COLLAPSED_GROUPS_KEY, 'settings', []);
+        this.collapsedGroups = new Set(Array.isArray(savedCollapsed) ? savedCollapsed : []);
 
         // Set up handler for character switching (ONLY if not already registered)
         if (!this.characterSwitchHandler) {
@@ -361,6 +369,11 @@ class SettingsUI {
 
             groupContainer.appendChild(header);
             groupContainer.appendChild(content);
+
+            if (this.collapsedGroups.has(groupKey)) {
+                groupContainer.classList.add('collapsed');
+            }
+
             container.appendChild(groupContainer);
         }
     }
@@ -375,6 +388,13 @@ class SettingsUI {
      */
     toggleGroup(groupContainer) {
         groupContainer.classList.toggle('collapsed');
+        const groupKey = groupContainer.dataset.group;
+        if (groupContainer.classList.contains('collapsed')) {
+            this.collapsedGroups.add(groupKey);
+        } else {
+            this.collapsedGroups.delete(groupKey);
+        }
+        storage.set(COLLAPSED_GROUPS_KEY, [...this.collapsedGroups], 'settings');
     }
 
     /**
