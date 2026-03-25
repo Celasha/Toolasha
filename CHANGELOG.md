@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.49.0](https://github.com/Celasha/Toolasha/compare/v1.48.1...v1.49.0) (2026-03-25)
+
+
+### Features
+
+* add missing mats marketplace button to enhancement panels ([ba55e1a](https://github.com/Celasha/Toolasha/commit/ba55e1aeda0aaae5168e3bff1f906142277825ac))
+
 ## [1.48.1](https://github.com/Celasha/Toolasha/compare/v1.48.0...v1.48.1) (2026-03-24)
 
 ### Bug Fixes
