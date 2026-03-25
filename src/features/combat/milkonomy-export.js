@@ -252,9 +252,10 @@ function getActiveTeas(actionType) {
  * @param {Object} wearableItemMap - Profile's equipped items
  * @param {Object} gameData - Game data
  * @param {string} slotType - Equipment slot type (e.g., '/equipment_types/milking_tool')
+ * @param {string|null} skillName - If provided, only include item if it has stats for this skill
  * @returns {Object} Equipment object or empty object with just type
  */
-function getProfileEquipment(wearableItemMap, gameData, slotType) {
+function getProfileEquipment(wearableItemMap, gameData, slotType, skillName = null) {
     if (!wearableItemMap) return { type: mapSlotType(slotType) };
 
     // wearableItemMap keys are item location HRIDs (e.g., '/item_locations/milking_tool')
@@ -262,6 +263,14 @@ function getProfileEquipment(wearableItemMap, gameData, slotType) {
         const itemSlotType = locationToSlotType(locationHrid);
 
         if (itemSlotType === slotType) {
+            // If skillName is provided, only include the item if it has stats for that skill
+            if (skillName) {
+                const itemDetail = gameData?.itemDetailMap?.[item.itemHrid];
+                if (!itemHasSkillStats(itemDetail, skillName)) {
+                    return { type: mapSlotType(slotType) };
+                }
+            }
+
             const equipment = {
                 type: mapSlotType(slotType),
                 hrid: item.itemHrid,
@@ -323,9 +332,9 @@ function constructActionConfigFromProfile(skillName, skills, wearableItemMap, ho
         action: skillName,
         playerLevel: getSkillLevel(skills, actionType),
         tool: getProfileEquipment(wearableItemMap, gameData, toolType),
-        legs: getProfileEquipment(wearableItemMap, gameData, legsType),
-        body: getProfileEquipment(wearableItemMap, gameData, bodyType),
-        charm: getProfileEquipment(wearableItemMap, gameData, charmType),
+        legs: getProfileEquipment(wearableItemMap, gameData, legsType, skillName),
+        body: getProfileEquipment(wearableItemMap, gameData, bodyType, skillName),
+        charm: getProfileEquipment(wearableItemMap, gameData, charmType, skillName),
         houseLevel: getProfileHouseLevel(houseRoomMap, actionType),
         tea: [], // Not available from profile
     };
