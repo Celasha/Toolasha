@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 1.49.2
+ * Version: 1.49.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -763,10 +763,10 @@
             settings: {
                 enhanceSim_autoDetect: {
                     id: 'enhanceSim_autoDetect',
-                    label: 'Auto-detect your stats (false = use market defaults)',
+                    label: 'Auto-detect your stats (false = use settings below)',
                     type: 'checkbox',
                     default: false,
-                    help: 'Most players should use market defaults to see realistic professional enhancer costs',
+                    help: 'Most players should leave this off to see realistic professional enhancer costs',
                 },
                 enhanceSim_enhancingLevel: {
                     id: 'enhanceSim_enhancingLevel',
@@ -776,6 +776,7 @@
                     min: 1,
                     max: 150,
                     help: 'Default: 140 (professional enhancer level)',
+                    disabledBy: 'enhanceSim_autoDetect',
                 },
                 enhanceSim_houseLevel: {
                     id: 'enhanceSim_houseLevel',
@@ -785,6 +786,7 @@
                     min: 0,
                     max: 8,
                     help: 'Default: 8 (max level)',
+                    disabledBy: 'enhanceSim_autoDetect',
                 },
                 enhanceSim_toolBonus: {
                     id: 'enhanceSim_toolBonus',
@@ -795,6 +797,7 @@
                     max: 30,
                     step: 0.01,
                     help: 'Default: 6.05 (Celestial Enhancer +13)',
+                    disabledBy: 'enhanceSim_autoDetect',
                 },
                 enhanceSim_speedBonus: {
                     id: 'enhanceSim_speedBonus',
@@ -805,6 +808,7 @@
                     max: 100,
                     step: 0.1,
                     help: "Default: 48.5 (All enhancing gear +10: Body/Legs/Hands + Philosopher's Necklace)",
+                    disabledBy: 'enhanceSim_autoDetect',
                 },
                 enhanceSim_blessedTea: {
                     id: 'enhanceSim_blessedTea',
@@ -812,6 +816,7 @@
                     type: 'checkbox',
                     default: true,
                     help: 'Professional enhancers use this to reduce attempts',
+                    disabledBy: 'enhanceSim_autoDetect',
                 },
                 enhanceSim_ultraEnhancingTea: {
                     id: 'enhanceSim_ultraEnhancingTea',
@@ -819,6 +824,7 @@
                     type: 'checkbox',
                     default: true,
                     help: 'Provides +8 base skill levels (scales with drink concentration)',
+                    disabledBy: 'enhanceSim_autoDetect',
                 },
                 enhanceSim_superEnhancingTea: {
                     id: 'enhanceSim_superEnhancingTea',
@@ -826,6 +832,7 @@
                     type: 'checkbox',
                     default: false,
                     help: 'Provides +6 base skill levels (Ultra is better)',
+                    disabledBy: 'enhanceSim_autoDetect',
                 },
                 enhanceSim_enhancingTea: {
                     id: 'enhanceSim_enhancingTea',
@@ -833,6 +840,7 @@
                     type: 'checkbox',
                     default: false,
                     help: 'Provides +3 base skill levels (Ultra is better)',
+                    disabledBy: 'enhanceSim_autoDetect',
                 },
                 enhanceSim_drinkConcentration: {
                     id: 'enhanceSim_drinkConcentration',
@@ -843,6 +851,7 @@
                     max: 20,
                     step: 0.1,
                     help: 'Default: 12.9 (Guzzling Pouch +10)',
+                    disabledBy: 'enhanceSim_autoDetect',
                 },
             },
         },

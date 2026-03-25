@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 1.49.2
+ * Version: 1.49.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1701,7 +1701,6 @@ self.onmessage = function (e) {
 
         _liveSetupCombo({
             baseSuccessRate,
-            actionsPerHour,
             efficiencyDecimal,
             actionTime,
             alchemyBonusRevenue,

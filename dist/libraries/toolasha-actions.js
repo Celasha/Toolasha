@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 1.49.2
+ * Version: 1.49.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -353,6 +353,7 @@
                 panel,
                 params,
                 perActionTime,
+                baseTime,
                 itemDetails,
                 effectiveProtectFrom,
                 itemDetails.enhancementCosts || [],
@@ -691,6 +692,7 @@
      * @param {HTMLElement} panel - Enhancement action panel element (for reading protection slot)
      * @param {Object} params - Auto-detected parameters
      * @param {number} perActionTime - Per-action time in seconds
+     * @param {number} baseTime - Base action time in seconds (before speed bonuses)
      * @param {Object} itemDetails - Item being enhanced
      * @param {number} protectFromLevel - Protection level from UI
      * @param {Array} enhancementCosts - Array of {itemHrid, count} for materials
@@ -701,6 +703,7 @@
         panel,
         params,
         perActionTime,
+        baseTime,
         itemDetails,
         protectFromLevel,
         enhancementCosts,
@@ -878,6 +881,11 @@
         } else {
             lines.push(`<div style="color: #88ccff;"><span style="color: #888;">Speed:</span> +0.0%</div>`);
         }
+
+        // Base → effective action time
+        lines.push(
+            `<div style="color: #aaddff; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">Base:</span> ${baseTime.toFixed(2)}s → ${perActionTime.toFixed(2)}s</div>`
+        );
 
         if (params.teas.blessed) {
             // Calculate Blessed Tea bonus with Guzzling Pouch concentration
@@ -11183,12 +11191,21 @@
             statusText = 'Not Tradeable';
         } else if (material.missing > 0) {
             statusColor = '#ef4444'; // Red - missing materials
+            console.debug('[MissingMats] Tab initial badge — missing:', {
+                item: material.itemName,
+                itemHrid: material.itemHrid,
+                required: material.required,
+                have: material.have,
+                queued: material.queued,
+                available: material.available,
+                missing: material.missing,
+            });
             // Show queued amount if any materials are reserved by queue
             const queuedText = material.queued > 0 ? ` (${formatters_js.formatWithSeparator(material.queued)} Q'd)` : '';
             statusText = `Missing: ${formatters_js.formatWithSeparator(material.missing)}${queuedText}`;
         } else {
             statusColor = '#4ade80'; // Green - sufficient materials
-            statusText = 'Sufficient';
+            statusText = `Sufficient (${formatters_js.formatWithSeparator(material.required)})`;
         }
 
         // Update text content
@@ -11825,7 +11842,6 @@
 
             button.addEventListener('click', async () => {
                 await handleEnhancementMissingMaterialsClick(
-                    missingMaterials,
                     itemHrid,
                     startLevel,
                     targetLevel,
@@ -11848,7 +11864,6 @@
      * @param {number} protectFromLevel - Protect from level
      */
     async function handleEnhancementMissingMaterialsClick(
-        missingMaterials,
         itemHrid,
         startLevel,
         targetLevel,
@@ -11873,8 +11888,17 @@
             timerRegistry.registerTimeout(delayTimeout);
         });
 
+        // Recalculate materials fresh (inventory may have changed since button was rendered)
+        const freshMaterials = materialCalculator_js.calculateEnhancementMaterialRequirements(
+            itemHrid,
+            startLevel,
+            targetLevel,
+            protectionItemHrid,
+            protectFromLevel
+        );
+
         // Create custom tabs
-        createMissingMaterialTabs(missingMaterials);
+        createMissingMaterialTabs(freshMaterials);
 
         // Setup inventory listener for live updates
         setupInventoryListener();
@@ -11929,7 +11953,7 @@
 
             // Click handler
             button.addEventListener('click', async () => {
-                await handleMissingMaterialsClick(missingMaterials, actionHrid, numActions);
+                await handleMissingMaterialsClick(actionHrid, numActions);
             });
         }
 
@@ -11942,7 +11966,7 @@
      * @param {string} actionHrid - Action HRID for recalculating materials
      * @param {number} numActions - Number of actions for recalculating materials
      */
-    async function handleMissingMaterialsClick(missingMaterials, actionHrid, numActions) {
+    async function handleMissingMaterialsClick(actionHrid, numActions) {
         // Store context for live updates
         storedActionHrid = actionHrid;
         storedNumActions = numActions;
@@ -11961,8 +11985,13 @@
             timerRegistry.registerTimeout(delayTimeout);
         });
 
+        // Recalculate materials fresh (inventory may have changed since button was rendered)
+        const ignoreQueue = config.getSetting('actions_missingMaterialsButton_ignoreQueue') || false;
+        const accountForQueue = !ignoreQueue;
+        const freshMaterials = materialCalculator_js.calculateMaterialRequirements(actionHrid, numActions, accountForQueue);
+
         // Create custom tabs
-        createMissingMaterialTabs(missingMaterials);
+        createMissingMaterialTabs(freshMaterials);
 
         // Setup inventory listener for live updates
         setupInventoryListener();
@@ -12179,7 +12208,7 @@
             statusText = `Missing: ${formatters_js.formatWithSeparator(material.missing)}${queuedText}`;
         } else {
             statusColor = '#4ade80'; // Green - sufficient materials
-            statusText = 'Sufficient';
+            statusText = `Sufficient (${formatters_js.formatWithSeparator(material.required)})`;
         }
 
         // Title case: capitalize first letter of each word

@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 1.49.2
+ * Version: 1.49.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -10857,12 +10857,21 @@
             statusText = 'Not Tradeable';
         } else if (material.missing > 0) {
             statusColor = '#ef4444'; // Red - missing materials
+            console.debug('[MissingMats] Tab initial badge — missing:', {
+                item: material.itemName,
+                itemHrid: material.itemHrid,
+                required: material.required,
+                have: material.have,
+                queued: material.queued,
+                available: material.available,
+                missing: material.missing,
+            });
             // Show queued amount if any materials are reserved by queue
             const queuedText = material.queued > 0 ? ` (${formatters_js.formatWithSeparator(material.queued)} Q'd)` : '';
             statusText = `Missing: ${formatters_js.formatWithSeparator(material.missing)}${queuedText}`;
         } else {
             statusColor = '#4ade80'; // Green - sufficient materials
-            statusText = 'Sufficient';
+            statusText = `Sufficient (${formatters_js.formatWithSeparator(material.required)})`;
         }
 
         // Update text content
@@ -11953,6 +11962,8 @@
      */
 
 
+    const COLLAPSED_GROUPS_KEY = 'toolasha_collapsedGroups';
+
     class SettingsUI {
         constructor() {
             this.config = config;
@@ -11964,6 +11975,7 @@
             this.characterSwitchHandler = null; // Store listener reference to prevent duplicates
             this.settingsPanelCallbacks = []; // Callbacks to run when settings panel appears
             this.timerRegistry = timerRegistry_js.createTimerRegistry();
+            this.collapsedGroups = new Set();
         }
 
         /**
@@ -11977,6 +11989,10 @@
 
             // Load current settings
             this.currentSettings = await settingsStorage.loadSettings();
+
+            // Load collapsed groups state
+            const savedCollapsed = await storage.get(COLLAPSED_GROUPS_KEY, 'settings', []);
+            this.collapsedGroups = new Set(Array.isArray(savedCollapsed) ? savedCollapsed : []);
 
             // Set up handler for character switching (ONLY if not already registered)
             if (!this.characterSwitchHandler) {
@@ -12301,7 +12317,39 @@
 
                 groupContainer.appendChild(header);
                 groupContainer.appendChild(content);
+
+                if (this.collapsedGroups.has(groupKey)) {
+                    groupContainer.classList.add('collapsed');
+                }
+
                 container.appendChild(groupContainer);
+            }
+
+            // Apply initial disabled state for settings with disabledBy
+            this.applyDisabledByState();
+        }
+
+        /**
+         * Apply disabled/greyed-out state for settings controlled by a parent checkbox
+         * Reads disabledBy from schema and applies opacity + pointer-events
+         */
+        applyDisabledByState() {
+            for (const group of Object.values(settingsSchema_js.settingsGroups)) {
+                for (const [settingId, settingDef] of Object.entries(group.settings)) {
+                    if (!settingDef.disabledBy) continue;
+
+                    const parentValue = this.config.getSetting(settingDef.disabledBy);
+                    const settingEl = document.querySelector(`.toolasha-setting[data-setting-id="${settingId}"]`);
+                    if (!settingEl) continue;
+
+                    if (parentValue) {
+                        settingEl.style.opacity = '0.4';
+                        settingEl.style.pointerEvents = 'none';
+                    } else {
+                        settingEl.style.opacity = '';
+                        settingEl.style.pointerEvents = '';
+                    }
+                }
             }
         }
 
@@ -12315,6 +12363,13 @@
          */
         toggleGroup(groupContainer) {
             groupContainer.classList.toggle('collapsed');
+            const groupKey = groupContainer.dataset.group;
+            if (groupContainer.classList.contains('collapsed')) {
+                this.collapsedGroups.add(groupKey);
+            } else {
+                this.collapsedGroups.delete(groupKey);
+            }
+            storage.set(COLLAPSED_GROUPS_KEY, [...this.collapsedGroups], 'settings');
         }
 
         /**
@@ -12784,6 +12839,11 @@
             // Apply color settings immediately if this is a color setting
             if (type === 'color') {
                 this.config.applyColorSettings();
+            }
+
+            // Update disabled state for dependent settings
+            if (type === 'checkbox') {
+                this.applyDisabledByState();
             }
         }
 
