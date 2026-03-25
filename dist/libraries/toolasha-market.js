@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 1.49.1
+ * Version: 1.49.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2788,11 +2788,15 @@ self.onmessage = function (e) {
                 expectedAttempts: optimalTraditional.expectedAttempts,
                 totalTime: optimalTraditional.totalTime,
                 baseCost: optimalTraditional.baseCost,
+                baseAskPrice: optimalTraditional.baseAskPrice,
+                baseBidPrice: optimalTraditional.baseBidPrice,
                 materialCost: optimalTraditional.materialCost,
                 materialBreakdown: optimalTraditional.materialBreakdown,
                 protectionCost: optimalTraditional.protectionCost,
                 protectionItemHrid: optimalTraditional.protectionItemHrid,
                 protectionCount: optimalTraditional.protectionCount,
+                protectionAskPrice: optimalTraditional.protectionAskPrice,
+                protectionBidPrice: optimalTraditional.protectionBidPrice,
                 totalCost: optimalTraditional.totalCost,
                 usedMirror: false,
                 mirrorStartLevel: null,
@@ -3009,12 +3013,15 @@ self.onmessage = function (e) {
             for (const material of itemDetails.enhancementCosts) {
                 const materialDetail = gameData.itemDetailMap[material.itemHrid];
                 let price;
+                let bidPrice = 0;
 
                 // Special case: Trainee charms have fixed 250k price (untradeable)
                 if (material.itemHrid.startsWith('/items/trainee_')) {
                     price = 250000;
+                    bidPrice = 250000;
                 } else if (material.itemHrid === '/items/coin') {
                     price = 1; // Coins have face value of 1
+                    bidPrice = 1;
                 } else {
                     const marketPrice = marketData_js.getItemPrices(material.itemHrid, 0);
                     if (marketPrice) {
@@ -3031,9 +3038,11 @@ self.onmessage = function (e) {
 
                         // MCS uses just ask for material prices
                         price = ask;
+                        bidPrice = bid;
                     } else {
                         // Fallback to sellPrice if no market data
                         price = materialDetail?.sellPrice || 0;
+                        bidPrice = price;
                     }
                 }
                 perActionCost += price * material.count;
@@ -3045,6 +3054,7 @@ self.onmessage = function (e) {
                     countPerAction: material.count,
                     totalQuantity,
                     unitPrice: price,
+                    bidPrice,
                     totalCost: price * totalQuantity,
                 });
             }
@@ -3057,25 +3067,37 @@ self.onmessage = function (e) {
         let protectionCost = 0;
         let protectionItemHrid = null;
         let protectionCount = 0;
+        let protectionAskPrice = 0;
+        let protectionBidPrice = 0;
         if (protectFrom > 0 && pathResult.protectionCount > 0) {
             const protectionInfo = getCheapestProtectionPrice(itemHrid);
             if (protectionInfo.price > 0) {
                 protectionCost = protectionInfo.price * pathResult.protectionCount;
                 protectionItemHrid = protectionInfo.itemHrid;
                 protectionCount = pathResult.protectionCount;
+                protectionAskPrice = protectionInfo.price;
+                const protPrices = marketData_js.getItemPrices(protectionInfo.itemHrid, 0);
+                protectionBidPrice = protPrices?.bid > 0 ? protPrices.bid : protectionInfo.price;
             }
         }
 
         // Base item cost (initial investment) using realistic pricing
         const baseCost = getRealisticBaseItemPrice(itemHrid);
+        const baseItemPrices = marketData_js.getItemPrices(itemHrid, 0);
+        const baseAskPrice = baseItemPrices?.ask > 0 ? baseItemPrices.ask : baseCost;
+        const baseBidPrice = baseItemPrices?.bid > 0 ? baseItemPrices.bid : baseCost;
 
         return {
             baseCost,
+            baseAskPrice,
+            baseBidPrice,
             materialCost,
             materialBreakdown,
             protectionCost,
             protectionItemHrid,
             protectionCount,
+            protectionAskPrice,
+            protectionBidPrice,
             totalCost: baseCost + materialCost + protectionCost,
         };
     }
@@ -3283,91 +3305,181 @@ self.onmessage = function (e) {
 
         html += '<div>Expected Attempts: ' + formatters_js.formatLargeNumber(optimalStrategy.expectedAttempts.toFixed(1)) + '</div>';
 
-        // Costs
-        html += '<div>';
+        // Costs table
+        html += '<div style="margin-top: 8px;">';
+        html += `<table style="width: 100%; border-collapse: collapse; font-size: 0.85em; color: ${config.COLOR_TOOLTIP_INFO};">`;
+
+        // Table header
+        html += `<tr style="border-bottom: 1px solid ${config.COLOR_BORDER};">`;
+        html += '<th style="padding: 2px 4px; text-align: left;">Material</th>';
+        html += '<th style="padding: 2px 4px; text-align: center;">Count</th>';
+        html += '<th style="padding: 2px 4px; text-align: right;">Ask</th>';
+        html += '<th style="padding: 2px 4px; text-align: right;">Bid</th>';
+        html += '</tr>';
 
         // Check if using mirror optimization
         if (optimalStrategy.usedMirror && optimalStrategy.consumedItems && optimalStrategy.consumedItems.length > 0) {
             // Mirror-optimized breakdown
-            // For mirror phase, we ONLY show consumed items and mirrors (no base/materials/protection)
-            // Consumed items section (Fibonacci-based quantities)
-            html += "Consumed Items (Philosopher's Mirror):";
-            html += '<div style="margin-left: 12px;">';
+            // Calculate totals for mirror path
+            let totalAsk = 0;
+            let totalBid = 0;
 
-            // Show consumed items in descending order (higher level first), filter out zero quantities
+            // Consumed items (enhanced items at specific levels)
             const sortedConsumed = [...optimalStrategy.consumedItems]
                 .filter((item) => item.quantity > 0)
                 .sort((a, b) => b.level - a.level);
-            sortedConsumed.forEach((item, index) => {
-                if (index > 0) html += '<br>'; // Add line break before items after the first
-                html +=
-                    '+' +
-                    item.level +
-                    ': ' +
-                    item.quantity +
-                    ' × ' +
-                    formatters_js.formatLargeNumber(item.costEach) +
-                    ' = ' +
-                    formatters_js.formatLargeNumber(item.totalCost);
+
+            const gameData = dataManager.getInitClientData();
+            const baseItemDetails = gameData?.itemDetailMap[itemHrid];
+            const baseItemName = baseItemDetails?.name || itemHrid;
+
+            const consumedRows = sortedConsumed.map((item) => {
+                const prices = marketData_js.getItemPrices(itemHrid, item.level);
+                const askPrice = prices?.ask > 0 ? prices.ask : item.costEach;
+                const bidPrice = prices?.bid > 0 ? prices.bid : item.costEach;
+                totalAsk += askPrice * item.quantity;
+                totalBid += bidPrice * item.quantity;
+                return { name: baseItemName + ' +' + item.level, count: item.quantity, askPrice, bidPrice };
             });
 
-            html += '</div>';
-            // Philosopher's Mirror cost
-            if (optimalStrategy.philosopherMirrorCost > 0) {
-                const mirrorPrice = getRealisticBaseItemPrice('/items/philosophers_mirror');
-                html += "Philosopher's Mirror: " + formatters_js.formatLargeNumber(optimalStrategy.philosopherMirrorCost);
-                if (optimalStrategy.mirrorCount > 0 && mirrorPrice > 0) {
-                    html += ' (' + optimalStrategy.mirrorCount + 'x @ ' + formatters_js.formatLargeNumber(mirrorPrice) + ' each)';
-                }
+            // Philosopher's Mirror row
+            if (optimalStrategy.philosopherMirrorCost > 0 && optimalStrategy.mirrorCount > 0) {
+                const mirrorPrices = marketData_js.getItemPrices('/items/philosophers_mirror', 0);
+                const mirrorAsk = mirrorPrices?.ask > 0 ? mirrorPrices.ask : 0;
+                const mirrorBid = mirrorPrices?.bid > 0 ? mirrorPrices.bid : 0;
+                totalAsk += mirrorAsk * optimalStrategy.mirrorCount;
+                totalBid += mirrorBid * optimalStrategy.mirrorCount;
+                consumedRows.push({
+                    name: "Philosopher's Mirror",
+                    count: optimalStrategy.mirrorCount,
+                    askPrice: mirrorAsk,
+                    bidPrice: mirrorBid,
+                });
+            }
+
+            // Color total ask/bid by comparison to market price of enhanced item
+            const enhancedPrices = marketData_js.getItemPrices(itemHrid, targetLevel);
+            const totalAskColor =
+                enhancedPrices?.ask > 0
+                    ? totalAsk < enhancedPrices.ask
+                        ? config.COLOR_TOOLTIP_PROFIT
+                        : config.COLOR_TOOLTIP_LOSS
+                    : '';
+            const totalBidColor =
+                enhancedPrices?.bid > 0
+                    ? totalBid < enhancedPrices.bid
+                        ? config.COLOR_TOOLTIP_PROFIT
+                        : config.COLOR_TOOLTIP_LOSS
+                    : '';
+
+            // Total row
+            html += `<tr style="border-bottom: 1px solid ${config.COLOR_BORDER};">`;
+            html += '<td style="padding: 2px 4px; font-weight: bold;">Total</td>';
+            html += '<td style="padding: 2px 4px; text-align: center;"></td>';
+            html += `<td style="padding: 2px 4px; text-align: right; font-weight: bold;${totalAskColor ? ' color: ' + totalAskColor + ';' : ''}">${formatters_js.formatKMB(totalAsk)}</td>`;
+            html += `<td style="padding: 2px 4px; text-align: right; font-weight: bold;${totalBidColor ? ' color: ' + totalBidColor + ';' : ''}">${formatters_js.formatKMB(totalBid)}</td>`;
+            html += '</tr>';
+
+            // Item rows
+            for (const row of consumedRows) {
+                html += '<tr>';
+                html += `<td style="padding: 2px 4px;">${row.name}</td>`;
+                html += `<td style="padding: 2px 4px; text-align: center;">${formatters_js.formatKMB(row.count)}</td>`;
+                html += `<td style="padding: 2px 4px; text-align: right;">${formatters_js.formatKMB(row.askPrice)}</td>`;
+                html += `<td style="padding: 2px 4px; text-align: right;">${formatters_js.formatKMB(row.bidPrice)}</td>`;
+                html += '</tr>';
             }
         } else {
             // Traditional (non-mirror) breakdown
-            html += 'Base Item: ' + formatters_js.formatLargeNumber(optimalStrategy.baseCost);
-            html += '<br>Materials: ' + formatters_js.formatLargeNumber(optimalStrategy.materialCost);
+            // Calculate totals
+            let totalCount = 1; // Base item counts as 1
+            let totalAsk = optimalStrategy.baseAskPrice || optimalStrategy.baseCost;
+            let totalBid = optimalStrategy.baseBidPrice || optimalStrategy.baseCost;
 
-            // Per-item material breakdown
+            const rows = [];
+
+            // Base item row
+            rows.push({
+                name: 'Base Item',
+                count: 1,
+                askPrice: optimalStrategy.baseAskPrice || optimalStrategy.baseCost,
+                bidPrice: optimalStrategy.baseBidPrice || optimalStrategy.baseCost,
+            });
+
+            // Material rows
             if (optimalStrategy.materialBreakdown && optimalStrategy.materialBreakdown.length > 0) {
-                html += '<div style="margin-left: 12px;">';
-                optimalStrategy.materialBreakdown.forEach((mat, index) => {
-                    if (index > 0) html += '<br>';
-                    if (mat.itemHrid === '/items/coin') {
-                        html += mat.name + ': ' + formatters_js.formatLargeNumber(mat.totalCost);
-                    } else {
-                        html +=
-                            mat.name +
-                            ': ' +
-                            formatters_js.formatLargeNumber(mat.totalQuantity.toFixed(1)) +
-                            ' × ' +
-                            formatters_js.formatLargeNumber(mat.unitPrice) +
-                            ' = ' +
-                            formatters_js.formatLargeNumber(mat.totalCost);
-                    }
-                });
-                html += '</div>';
+                for (const mat of optimalStrategy.materialBreakdown) {
+                    const count = mat.totalQuantity;
+                    const askPrice = mat.unitPrice;
+                    const bidPrice = mat.bidPrice || mat.unitPrice;
+                    totalCount += count;
+                    totalAsk += askPrice * count;
+                    totalBid += bidPrice * count;
+                    rows.push({ name: mat.name, count, askPrice, bidPrice, isCoin: mat.itemHrid === '/items/coin' });
+                }
             }
 
-            if (optimalStrategy.protectionCost > 0) {
-                let protectionDisplay = formatters_js.formatLargeNumber(optimalStrategy.protectionCost);
+            // Protection row
+            if (optimalStrategy.protectionCost > 0 && optimalStrategy.protectionCount > 0) {
+                const count = optimalStrategy.protectionCount;
+                const askPrice = optimalStrategy.protectionAskPrice || 0;
+                const bidPrice = optimalStrategy.protectionBidPrice || askPrice;
+                totalCount += count;
+                totalAsk += askPrice * count;
+                totalBid += bidPrice * count;
 
-                // Show protection count and item name if available
-                if (optimalStrategy.protectionCount > 0) {
-                    protectionDisplay += ' (' + optimalStrategy.protectionCount.toFixed(1) + '×';
-
-                    if (optimalStrategy.protectionItemHrid) {
-                        const gameData = dataManager.getInitClientData();
-                        const itemDetails = gameData?.itemDetailMap[optimalStrategy.protectionItemHrid];
-                        if (itemDetails?.name) {
-                            protectionDisplay += ' ' + itemDetails.name;
-                        }
+                let protName = 'Protection';
+                if (optimalStrategy.protectionItemHrid) {
+                    const gameData = dataManager.getInitClientData();
+                    const protDetails = gameData?.itemDetailMap[optimalStrategy.protectionItemHrid];
+                    if (protDetails?.name) {
+                        protName = protDetails.name;
                     }
-
-                    protectionDisplay += ')';
                 }
+                rows.push({ name: protName, count, askPrice, bidPrice });
+            }
 
-                html += '<br>Protection: ' + protectionDisplay;
+            // Color total ask/bid by comparison to market price of enhanced item
+            const enhancedPrices = marketData_js.getItemPrices(itemHrid, targetLevel);
+            const totalAskColor =
+                enhancedPrices?.ask > 0
+                    ? totalAsk < enhancedPrices.ask
+                        ? config.COLOR_TOOLTIP_PROFIT
+                        : config.COLOR_TOOLTIP_LOSS
+                    : '';
+            const totalBidColor =
+                enhancedPrices?.bid > 0
+                    ? totalBid < enhancedPrices.bid
+                        ? config.COLOR_TOOLTIP_PROFIT
+                        : config.COLOR_TOOLTIP_LOSS
+                    : '';
+
+            // Total row
+            html += `<tr style="border-bottom: 1px solid ${config.COLOR_BORDER};">`;
+            html += '<td style="padding: 2px 4px; font-weight: bold;">Total</td>';
+            html += `<td style="padding: 2px 4px; text-align: center;">${formatters_js.formatKMB(totalCount)}</td>`;
+            html += `<td style="padding: 2px 4px; text-align: right; font-weight: bold;${totalAskColor ? ' color: ' + totalAskColor + ';' : ''}">${formatters_js.formatKMB(totalAsk)}</td>`;
+            html += `<td style="padding: 2px 4px; text-align: right; font-weight: bold;${totalBidColor ? ' color: ' + totalBidColor + ';' : ''}">${formatters_js.formatKMB(totalBid)}</td>`;
+            html += '</tr>';
+
+            // Item rows
+            for (const row of rows) {
+                html += '<tr>';
+                html += `<td style="padding: 2px 4px;">${row.name}</td>`;
+                if (row.isCoin) {
+                    html += '<td style="padding: 2px 4px; text-align: center;">—</td>';
+                    html += `<td style="padding: 2px 4px; text-align: right;">${formatters_js.formatKMB(row.count)}</td>`;
+                    html += `<td style="padding: 2px 4px; text-align: right;">${formatters_js.formatKMB(row.count)}</td>`;
+                } else {
+                    html += `<td style="padding: 2px 4px; text-align: center;">${formatters_js.formatKMB(row.count)}</td>`;
+                    html += `<td style="padding: 2px 4px; text-align: right;">${formatters_js.formatKMB(row.askPrice)}</td>`;
+                    html += `<td style="padding: 2px 4px; text-align: right;">${formatters_js.formatKMB(row.bidPrice)}</td>`;
+                }
+                html += '</tr>';
             }
         }
 
+        html += '</table>';
         html += '</div>';
 
         // Time estimate
@@ -3396,18 +3508,6 @@ self.onmessage = function (e) {
         if (totalExpectedXP !== null && totalExpectedXP > 0) {
             html += '<div>Total XP: ~' + totalExpectedXP.toLocaleString() + '</div>';
         }
-
-        // Total cost at the bottom, colored by comparison to market ask price
-        let totalColor = '';
-        if (itemHrid) {
-            const marketPrice = marketData_js.getItemPrices(itemHrid, targetLevel);
-            if (marketPrice && marketPrice.ask > 0) {
-                totalColor =
-                    optimalStrategy.totalCost < marketPrice.ask ? config.COLOR_TOOLTIP_PROFIT : config.COLOR_TOOLTIP_LOSS;
-            }
-        }
-        const totalStyle = 'font-weight: bold; margin-top: 4px;' + (totalColor ? ' color: ' + totalColor + ';' : '');
-        html += '<div style="' + totalStyle + '">Total: ' + formatters_js.formatLargeNumber(optimalStrategy.totalCost, 3) + '</div>';
 
         html += '</div>'; // Close margin-left div
         html += '</div>'; // Close main container
