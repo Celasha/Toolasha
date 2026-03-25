@@ -14,6 +14,8 @@ import { calculateProductionProfit } from './production-profit.js';
 import { calculateExpPerHour } from '../../utils/experience-calculator.js';
 import { numberFormatter } from '../../utils/formatters.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
+import { calculateMaterialRequirements } from '../../utils/material-calculator.js';
+import assetManifest from '../../utils/asset-manifest.js';
 
 const GATHERING_TYPES = ['/action_types/foraging', '/action_types/woodcutting', '/action_types/milking'];
 
@@ -102,6 +104,13 @@ class PinnedActionsPage {
 
         // Cached action data (computed once per showPage, re-sorted/filtered in place)
         this.allActions = [];
+
+        // Tab state
+        this.activeTab = 'overview'; // 'overview' | 'materials'
+        this.itemsSpriteUrl = null; // cached items sprite URL
+
+        // Content area div (child of pageContainer, replaced on tab switch)
+        this.contentArea = null;
 
         // Game nav deactivation (so clicking the previously-active skill re-triggers navigation)
         this.deactivatedNavItem = null;
@@ -236,6 +245,8 @@ class PinnedActionsPage {
                 actionHrid,
                 name: details.name,
                 skill: formatSkillName(details.type),
+                type: details.type,
+                outputItemHrid: details.outputItems?.[0]?.itemHrid || null,
                 level: details.levelRequirement?.level ?? 0,
                 profitPerHour: stats?.profitPerHour ?? null,
                 expPerHour: stats?.expPerHour ?? null,
@@ -281,7 +292,8 @@ class PinnedActionsPage {
     }
 
     /**
-     * Render the full table (header + rows) from current state
+     * Render the full page (header + tab bar + content area)
+     * Called on initial load, filter change, sort change
      */
     renderTable() {
         if (!this.pageContainer) return;
@@ -293,6 +305,7 @@ class PinnedActionsPage {
         while (this.pageContainer.firstChild) {
             this.pageContainer.removeChild(this.pageContainer.firstChild);
         }
+        this.contentArea = null;
 
         // Title
         const header = document.createElement('div');
@@ -300,7 +313,7 @@ class PinnedActionsPage {
             display: flex;
             align-items: center;
             gap: 8px;
-            margin-bottom: 12px;
+            margin-bottom: 8px;
             padding-bottom: 8px;
             border-bottom: 1px solid #444;
         `;
@@ -310,6 +323,77 @@ class PinnedActionsPage {
             <span style="color: #888; font-size: 0.85em;">(${actions.length})</span>
         `;
         this.pageContainer.appendChild(header);
+
+        // Tab bar
+        const tabBar = document.createElement('div');
+        tabBar.style.cssText = `
+            display: flex;
+            gap: 0;
+            margin-bottom: 12px;
+            border-bottom: 1px solid #444;
+        `;
+
+        for (const tab of ['overview', 'materials']) {
+            const label = tab === 'overview' ? 'Overview' : 'Materials';
+            const btn = document.createElement('button');
+            btn.dataset.tab = tab;
+            btn.textContent = label;
+            const isActive = this.activeTab === tab;
+            btn.style.cssText = `
+                background: none;
+                border: none;
+                border-bottom: 2px solid ${isActive ? config.COLOR_ACCENT : 'transparent'};
+                color: ${isActive ? '#fff' : '#888'};
+                padding: 6px 16px;
+                cursor: pointer;
+                font-size: 0.9em;
+                font-weight: ${isActive ? '600' : '400'};
+                margin-bottom: -1px;
+                transition: color 0.15s, border-color 0.15s;
+            `;
+            btn.addEventListener('click', () => {
+                if (this.activeTab === tab) return;
+                this.activeTab = tab;
+                // Update tab button styles
+                tabBar.querySelectorAll('button').forEach((b) => {
+                    const active = b.dataset.tab === tab;
+                    b.style.borderBottomColor = active ? config.COLOR_ACCENT : 'transparent';
+                    b.style.color = active ? '#fff' : '#888';
+                    b.style.fontWeight = active ? '600' : '400';
+                });
+                this.renderContent();
+            });
+            tabBar.appendChild(btn);
+        }
+        this.pageContainer.appendChild(tabBar);
+
+        // Content area
+        this.contentArea = document.createElement('div');
+        this.pageContainer.appendChild(this.contentArea);
+
+        this.renderContent();
+    }
+
+    /**
+     * Render only the content area (tab switch — no header/tab bar rebuild)
+     */
+    renderContent() {
+        if (!this.contentArea) return;
+        while (this.contentArea.firstChild) {
+            this.contentArea.removeChild(this.contentArea.firstChild);
+        }
+        if (this.activeTab === 'materials') {
+            this.renderMaterialsTab();
+        } else {
+            this.renderOverviewTab();
+        }
+    }
+
+    /**
+     * Render the overview tab (profit/hr, XP/hr table)
+     */
+    renderOverviewTab() {
+        const actions = this.getFilteredSorted();
 
         if (this.allActions.length === 0) {
             const empty = document.createElement('div');
@@ -321,7 +405,7 @@ class PinnedActionsPage {
                     Pin actions using the 📌 icon on action tiles to see them here.
                 </div>
             `;
-            this.pageContainer.appendChild(empty);
+            this.contentArea.appendChild(empty);
             return;
         }
 
@@ -396,7 +480,7 @@ class PinnedActionsPage {
             headerRow.appendChild(th);
         }
 
-        this.pageContainer.appendChild(headerRow);
+        this.contentArea.appendChild(headerRow);
 
         // Data rows
         for (let ri = 0; ri < actions.length; ri++) {
@@ -452,7 +536,7 @@ class PinnedActionsPage {
                 }
             });
 
-            this.pageContainer.appendChild(row);
+            this.contentArea.appendChild(row);
         }
 
         // No results after filtering
@@ -460,7 +544,109 @@ class PinnedActionsPage {
             const noResults = document.createElement('div');
             noResults.style.cssText = 'text-align: center; padding: 20px; color: #888;';
             noResults.textContent = 'No actions match the current filter.';
-            this.pageContainer.appendChild(noResults);
+            this.contentArea.appendChild(noResults);
+        }
+    }
+
+    /**
+     * Render the materials tab (per-production-action material breakdown)
+     */
+    async renderMaterialsTab() {
+        const contentArea = this.contentArea;
+        if (!contentArea) return;
+
+        // Fetch/use cached sprite URL
+        if (!this.itemsSpriteUrl) {
+            this.itemsSpriteUrl = await assetManifest.getSpriteUrl('items');
+            // Guard: content area may have changed while awaiting
+            if (contentArea !== this.contentArea) return;
+        }
+
+        const actions = this.getFilteredSorted();
+        const productionActions = actions.filter((a) => !GATHERING_TYPES.includes(a.type));
+
+        if (productionActions.length === 0) {
+            const empty = document.createElement('div');
+            empty.style.cssText = 'text-align: center; padding: 40px 20px; color: #999;';
+            empty.textContent = 'No production actions pinned';
+            contentArea.appendChild(empty);
+            return;
+        }
+
+        let first = true;
+        for (const action of productionActions) {
+            const materials = calculateMaterialRequirements(action.actionHrid, 1, false);
+            if (!materials || materials.length === 0) continue;
+
+            const canProduce = Math.max(0, Math.min(...materials.map((m) => Math.floor(m.have / m.required))));
+
+            // Action group header row
+            const groupHeader = document.createElement('div');
+            groupHeader.style.cssText = `
+                display: grid;
+                grid-template-columns: 36px 1fr auto;
+                align-items: center;
+                gap: 8px;
+                padding: 8px;
+                border-bottom: 1px solid #fff;
+                ${first ? '' : 'border-top: 1px solid #333;'}
+            `;
+            first = false;
+
+            // Output item icon
+            const iconEl = document.createElement('div');
+            iconEl.style.cssText =
+                'display: flex; align-items: center; justify-content: center; width: 36px; height: 36px;';
+            if (this.itemsSpriteUrl && action.outputItemHrid) {
+                const slug = action.outputItemHrid.split('/').pop();
+                iconEl.innerHTML = `<svg width="28" height="28"><use href="${this.itemsSpriteUrl}#${slug}"></use></svg>`;
+            }
+
+            // Action name
+            const nameEl = document.createElement('div');
+            nameEl.style.cssText = 'font-weight: 500;';
+            nameEl.textContent = action.name;
+
+            // Can produce count
+            const canProduceEl = document.createElement('div');
+            canProduceEl.style.cssText = `font-size: 0.85em; color: ${canProduce > 0 ? config.COLOR_PROFIT : config.COLOR_LOSS};`;
+            canProduceEl.textContent = `Can produce: ${canProduce.toLocaleString()}`;
+
+            groupHeader.appendChild(iconEl);
+            groupHeader.appendChild(nameEl);
+            groupHeader.appendChild(canProduceEl);
+            contentArea.appendChild(groupHeader);
+
+            // Material rows
+            for (let i = 0; i < materials.length; i++) {
+                const m = materials[i];
+                const rowBg = i % 2 === 1 ? 'rgba(255, 255, 255, 0.03)' : 'transparent';
+                const matRow = document.createElement('div');
+                matRow.style.cssText = `
+                    display: grid;
+                    grid-template-columns: 16px 1fr 100px;
+                    align-items: center;
+                    gap: 8px;
+                    padding: 4px 8px;
+                    background: ${rowBg};
+                `;
+
+                const spacer = document.createElement('div');
+
+                const matName = document.createElement('div');
+                matName.style.cssText = 'font-size: 0.85em; color: #ccc; text-align: left;';
+                matName.textContent = m.itemName;
+
+                const haveNeeded = document.createElement('div');
+                const sufficient = m.have >= m.required;
+                haveNeeded.style.cssText = `font-size: 0.85em; text-align: right; color: ${sufficient ? config.COLOR_PROFIT : config.COLOR_LOSS};`;
+                haveNeeded.textContent = `${m.have.toLocaleString()} / ${m.required.toLocaleString()}`;
+
+                matRow.appendChild(spacer);
+                matRow.appendChild(matName);
+                matRow.appendChild(haveNeeded);
+                contentArea.appendChild(matRow);
+            }
         }
     }
 
