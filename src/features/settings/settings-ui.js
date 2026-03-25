@@ -376,6 +376,33 @@ class SettingsUI {
 
             container.appendChild(groupContainer);
         }
+
+        // Apply initial disabled state for settings with disabledBy
+        this.applyDisabledByState();
+    }
+
+    /**
+     * Apply disabled/greyed-out state for settings controlled by a parent checkbox
+     * Reads disabledBy from schema and applies opacity + pointer-events
+     */
+    applyDisabledByState() {
+        for (const group of Object.values(settingsGroups)) {
+            for (const [settingId, settingDef] of Object.entries(group.settings)) {
+                if (!settingDef.disabledBy) continue;
+
+                const parentValue = this.config.getSetting(settingDef.disabledBy);
+                const settingEl = document.querySelector(`.toolasha-setting[data-setting-id="${settingId}"]`);
+                if (!settingEl) continue;
+
+                if (parentValue) {
+                    settingEl.style.opacity = '0.4';
+                    settingEl.style.pointerEvents = 'none';
+                } else {
+                    settingEl.style.opacity = '';
+                    settingEl.style.pointerEvents = '';
+                }
+            }
+        }
     }
 
     /**
@@ -864,6 +891,11 @@ class SettingsUI {
         // Apply color settings immediately if this is a color setting
         if (type === 'color') {
             this.config.applyColorSettings();
+        }
+
+        // Update disabled state for dependent settings
+        if (type === 'checkbox') {
+            this.applyDisabledByState();
         }
     }
 

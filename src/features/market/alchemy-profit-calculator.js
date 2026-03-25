@@ -339,7 +339,6 @@ class AlchemyProfitCalculator {
 
     _liveSetupCombo({
         baseSuccessRate,
-        actionsPerHour,
         efficiencyDecimal,
         actionTime,
         alchemyBonusRevenue,

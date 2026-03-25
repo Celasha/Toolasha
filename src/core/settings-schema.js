@@ -320,10 +320,10 @@ export const settingsGroups = {
         settings: {
             enhanceSim_autoDetect: {
                 id: 'enhanceSim_autoDetect',
-                label: 'Auto-detect your stats (false = use market defaults)',
+                label: 'Auto-detect your stats (false = use settings below)',
                 type: 'checkbox',
                 default: false,
-                help: 'Most players should use market defaults to see realistic professional enhancer costs',
+                help: 'Most players should leave this off to see realistic professional enhancer costs',
             },
             enhanceSim_enhancingLevel: {
                 id: 'enhanceSim_enhancingLevel',
@@ -333,6 +333,7 @@ export const settingsGroups = {
                 min: 1,
                 max: 150,
                 help: 'Default: 140 (professional enhancer level)',
+                disabledBy: 'enhanceSim_autoDetect',
             },
             enhanceSim_houseLevel: {
                 id: 'enhanceSim_houseLevel',
@@ -342,6 +343,7 @@ export const settingsGroups = {
                 min: 0,
                 max: 8,
                 help: 'Default: 8 (max level)',
+                disabledBy: 'enhanceSim_autoDetect',
             },
             enhanceSim_toolBonus: {
                 id: 'enhanceSim_toolBonus',
@@ -352,6 +354,7 @@ export const settingsGroups = {
                 max: 30,
                 step: 0.01,
                 help: 'Default: 6.05 (Celestial Enhancer +13)',
+                disabledBy: 'enhanceSim_autoDetect',
             },
             enhanceSim_speedBonus: {
                 id: 'enhanceSim_speedBonus',
@@ -362,6 +365,7 @@ export const settingsGroups = {
                 max: 100,
                 step: 0.1,
                 help: "Default: 48.5 (All enhancing gear +10: Body/Legs/Hands + Philosopher's Necklace)",
+                disabledBy: 'enhanceSim_autoDetect',
             },
             enhanceSim_blessedTea: {
                 id: 'enhanceSim_blessedTea',
@@ -369,6 +373,7 @@ export const settingsGroups = {
                 type: 'checkbox',
                 default: true,
                 help: 'Professional enhancers use this to reduce attempts',
+                disabledBy: 'enhanceSim_autoDetect',
             },
             enhanceSim_ultraEnhancingTea: {
                 id: 'enhanceSim_ultraEnhancingTea',
@@ -376,6 +381,7 @@ export const settingsGroups = {
                 type: 'checkbox',
                 default: true,
                 help: 'Provides +8 base skill levels (scales with drink concentration)',
+                disabledBy: 'enhanceSim_autoDetect',
             },
             enhanceSim_superEnhancingTea: {
                 id: 'enhanceSim_superEnhancingTea',
@@ -383,6 +389,7 @@ export const settingsGroups = {
                 type: 'checkbox',
                 default: false,
                 help: 'Provides +6 base skill levels (Ultra is better)',
+                disabledBy: 'enhanceSim_autoDetect',
             },
             enhanceSim_enhancingTea: {
                 id: 'enhanceSim_enhancingTea',
@@ -390,6 +397,7 @@ export const settingsGroups = {
                 type: 'checkbox',
                 default: false,
                 help: 'Provides +3 base skill levels (Ultra is better)',
+                disabledBy: 'enhanceSim_autoDetect',
             },
             enhanceSim_drinkConcentration: {
                 id: 'enhanceSim_drinkConcentration',
@@ -400,6 +408,7 @@ export const settingsGroups = {
                 max: 20,
                 step: 0.1,
                 help: 'Default: 12.9 (Guzzling Pouch +10)',
+                disabledBy: 'enhanceSim_autoDetect',
             },
         },
     },

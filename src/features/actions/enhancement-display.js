@@ -120,6 +120,7 @@ export async function displayEnhancementStats(panel, itemHrid) {
             panel,
             params,
             perActionTime,
+            baseTime,
             itemDetails,
             effectiveProtectFrom,
             itemDetails.enhancementCosts || [],
@@ -458,6 +459,7 @@ export function getProtectFromLevelFromUI(panel) {
  * @param {HTMLElement} panel - Enhancement action panel element (for reading protection slot)
  * @param {Object} params - Auto-detected parameters
  * @param {number} perActionTime - Per-action time in seconds
+ * @param {number} baseTime - Base action time in seconds (before speed bonuses)
  * @param {Object} itemDetails - Item being enhanced
  * @param {number} protectFromLevel - Protection level from UI
  * @param {Array} enhancementCosts - Array of {itemHrid, count} for materials
@@ -468,6 +470,7 @@ function formatEnhancementDisplay(
     panel,
     params,
     perActionTime,
+    baseTime,
     itemDetails,
     protectFromLevel,
     enhancementCosts,
@@ -645,6 +648,11 @@ function formatEnhancementDisplay(
     } else {
         lines.push(`<div style="color: #88ccff;"><span style="color: #888;">Speed:</span> +0.0%</div>`);
     }
+
+    // Base → effective action time
+    lines.push(
+        `<div style="color: #aaddff; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">Base:</span> ${baseTime.toFixed(2)}s → ${perActionTime.toFixed(2)}s</div>`
+    );
 
     if (params.teas.blessed) {
         // Calculate Blessed Tea bonus with Guzzling Pouch concentration

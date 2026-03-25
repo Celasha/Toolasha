@@ -483,7 +483,6 @@ function createEnhancementMissingMaterialsButton(
 
         button.addEventListener('click', async () => {
             await handleEnhancementMissingMaterialsClick(
-                missingMaterials,
                 itemHrid,
                 startLevel,
                 targetLevel,
@@ -506,7 +505,6 @@ function createEnhancementMissingMaterialsButton(
  * @param {number} protectFromLevel - Protect from level
  */
 async function handleEnhancementMissingMaterialsClick(
-    missingMaterials,
     itemHrid,
     startLevel,
     targetLevel,
@@ -531,8 +529,17 @@ async function handleEnhancementMissingMaterialsClick(
         timerRegistry.registerTimeout(delayTimeout);
     });
 
+    // Recalculate materials fresh (inventory may have changed since button was rendered)
+    const freshMaterials = calculateEnhancementMaterialRequirements(
+        itemHrid,
+        startLevel,
+        targetLevel,
+        protectionItemHrid,
+        protectFromLevel
+    );
+
     // Create custom tabs
-    createMissingMaterialTabs(missingMaterials);
+    createMissingMaterialTabs(freshMaterials);
 
     // Setup inventory listener for live updates
     setupInventoryListener();
@@ -587,7 +594,7 @@ function createMissingMaterialsButton(missingMaterials, actionHrid, numActions, 
 
         // Click handler
         button.addEventListener('click', async () => {
-            await handleMissingMaterialsClick(missingMaterials, actionHrid, numActions);
+            await handleMissingMaterialsClick(actionHrid, numActions);
         });
     }
 
@@ -600,7 +607,7 @@ function createMissingMaterialsButton(missingMaterials, actionHrid, numActions, 
  * @param {string} actionHrid - Action HRID for recalculating materials
  * @param {number} numActions - Number of actions for recalculating materials
  */
-async function handleMissingMaterialsClick(missingMaterials, actionHrid, numActions) {
+async function handleMissingMaterialsClick(actionHrid, numActions) {
     // Store context for live updates
     storedActionHrid = actionHrid;
     storedNumActions = numActions;
@@ -619,8 +626,13 @@ async function handleMissingMaterialsClick(missingMaterials, actionHrid, numActi
         timerRegistry.registerTimeout(delayTimeout);
     });
 
+    // Recalculate materials fresh (inventory may have changed since button was rendered)
+    const ignoreQueue = config.getSetting('actions_missingMaterialsButton_ignoreQueue') || false;
+    const accountForQueue = !ignoreQueue;
+    const freshMaterials = calculateMaterialRequirements(actionHrid, numActions, accountForQueue);
+
     // Create custom tabs
-    createMissingMaterialTabs(missingMaterials);
+    createMissingMaterialTabs(freshMaterials);
 
     // Setup inventory listener for live updates
     setupInventoryListener();
@@ -837,7 +849,7 @@ function updateTabBadge(tab, material) {
         statusText = `Missing: ${formatWithSeparator(material.missing)}${queuedText}`;
     } else {
         statusColor = '#4ade80'; // Green - sufficient materials
-        statusText = 'Sufficient';
+        statusText = `Sufficient (${formatWithSeparator(material.required)})`;
     }
 
     // Title case: capitalize first letter of each word
