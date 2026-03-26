@@ -11,6 +11,7 @@ import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
 import { formatPercentage } from '../../utils/formatters.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
+import { registerFloatingPanel, unregisterFloatingPanel, bringPanelToFront } from '../../utils/panel-z-index.js';
 
 // UI Style Constants (matching Ultimate Enhancement Tracker)
 const STYLE = {
@@ -321,7 +322,7 @@ class EnhancementUI {
             position: 'fixed',
             top: '50px',
             right: '50px',
-            zIndex: '9998',
+            zIndex: String(config.Z_FLOATING_PANEL),
             fontSize: '14px',
             padding: '0',
             borderRadius: STYLE.borderRadius.medium,
@@ -358,6 +359,7 @@ class EnhancementUI {
 
         // Add to page
         document.body.appendChild(this.floatingUI);
+        registerFloatingPanel(this.floatingUI);
 
         return this.floatingUI;
     }
@@ -565,6 +567,7 @@ class EnhancementUI {
         };
 
         const onMouseDown = (event) => {
+            bringPanelToFront(this.floatingUI);
             this.isDragging = true;
 
             // Calculate offset from panel's current screen position
@@ -1181,6 +1184,7 @@ class EnhancementUI {
 
         // Remove floating UI from DOM
         if (this.floatingUI && this.floatingUI.parentNode) {
+            unregisterFloatingPanel(this.floatingUI);
             this.floatingUI.parentNode.removeChild(this.floatingUI);
             this.floatingUI = null;
         }

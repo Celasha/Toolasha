@@ -14,6 +14,7 @@ import dataManager from '../../core/data-manager.js';
 import storage from '../../core/storage.js';
 import config from '../../core/config.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
+import { registerFloatingPanel, unregisterFloatingPanel } from '../../utils/panel-z-index.js';
 
 class DungeonTrackerUI {
     constructor() {
@@ -380,6 +381,7 @@ class DungeonTrackerUI {
 
         // Add to page
         document.body.appendChild(this.container);
+        registerFloatingPanel(this.container);
 
         // Setup all interactions with callbacks
         this.interactions.setupAll(this.container, {
@@ -706,6 +708,10 @@ class DungeonTrackerUI {
             );
         }
         allContainers.forEach((container) => container.remove());
+
+        if (this.container) {
+            unregisterFloatingPanel(this.container);
+        }
 
         if (this.interactions && this.interactions.cleanup) {
             this.interactions.cleanup();

@@ -4,6 +4,7 @@
  */
 
 import config from '../../core/config.js';
+import { registerFloatingPanel, unregisterFloatingPanel, bringPanelToFront } from '../../utils/panel-z-index.js';
 
 class MentionPopup {
     constructor() {
@@ -95,7 +96,7 @@ class MentionPopup {
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            z-index: 9999;
+            z-index: ${config.Z_FLOATING_PANEL};
             min-width: 420px;
             max-width: 600px;
             background: rgba(0, 0, 0, 0.92);
@@ -162,6 +163,7 @@ class MentionPopup {
         this.container.appendChild(header);
         this.container.appendChild(body);
         document.body.appendChild(this.container);
+        registerFloatingPanel(this.container);
 
         this._setupDragging(header);
         this._setupClickOutside();
@@ -261,6 +263,7 @@ class MentionPopup {
     _setupDragging(header) {
         header.addEventListener('mousedown', (e) => {
             if (e.target.tagName === 'BUTTON') return;
+            bringPanelToFront(this.container);
             this.isDragging = true;
 
             // Switch from transform-based centering to explicit coordinates
@@ -319,6 +322,7 @@ class MentionPopup {
         }
 
         if (this.container) {
+            unregisterFloatingPanel(this.container);
             this.container.remove();
             this.container = null;
         }

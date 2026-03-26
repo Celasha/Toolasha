@@ -169,7 +169,7 @@ class CollectionNavigation {
         popover.className = 'mwi-collection-popover';
         popover.style.cssText = `
             position: fixed;
-            z-index: 9999;
+            z-index: ${config.Z_FLOATING_PANEL};
             background: #1a1a2e;
             border: 1px solid rgba(255,255,255,0.15);
             border-radius: 4px;

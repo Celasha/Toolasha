@@ -178,7 +178,7 @@ class CombatScore {
             min-width: 180px;
             max-width: 280px;
             font-size: 0.875rem;
-            z-index: 10001;
+            z-index: ${config.Z_FLOATING_PANEL};
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
         `;
 
@@ -517,7 +517,7 @@ class CombatScore {
             max-width: 400px;
             max-height: 200px;
             font-size: 0.875rem;
-            z-index: 10001;
+            z-index: ${config.Z_FLOATING_PANEL};
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
             display: flex;
             flex-direction: column;

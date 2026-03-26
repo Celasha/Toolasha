@@ -47,6 +47,12 @@ class Config {
         this.SCRIPT_COLOR_TOOLTIP = this.COLOR_ACCENT;
         this.SCRIPT_COLOR_ALERT = 'red';
 
+        // Z-index tiers
+        this.Z_FLOATING_PANEL = 1100; // Persistent panels — below MUI modals (game = ~1300)
+        this.Z_POPUP = 9000; // Contextual popups / short-lived overlays
+        this.Z_MODAL = 9000; // Full-screen intentional modals
+        this.Z_NOTIFICATION = 99999; // Transient notifications (above everything)
+
         // Market API URL
         this.MARKET_API_URL = 'https://www.milkywayidle.com/game_data/marketplace.json';
 

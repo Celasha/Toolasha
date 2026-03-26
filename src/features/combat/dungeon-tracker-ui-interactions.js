@@ -5,8 +5,10 @@
 
 import dungeonTracker from './dungeon-tracker.js';
 import dungeonTrackerChatAnnotations from './dungeon-tracker-chat-annotations.js';
+import config from '../../core/config.js';
 import storage from '../../core/storage.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
+import { bringPanelToFront } from '../../utils/panel-z-index.js';
 
 class DungeonTrackerUIInteractions {
     constructor(state, chartRef, historyRef) {
@@ -53,6 +55,7 @@ class DungeonTrackerUIInteractions {
             // Don't drag if clicking collapse button
             if (e.target.id === 'mwi-dt-collapse-btn') return;
 
+            bringPanelToFront(this.container);
             this.isDragging = true;
             const rect = this.container.getBoundingClientRect();
             this.dragOffset = {
@@ -529,7 +532,7 @@ class DungeonTrackerUIInteractions {
             font-family: 'Segoe UI', sans-serif;
             font-size: 14px;
             font-weight: bold;
-            z-index: 99999;
+            z-index: ${config.Z_NOTIFICATION};
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
             pointer-events: none;
         `;
