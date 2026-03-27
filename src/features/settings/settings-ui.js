@@ -259,6 +259,9 @@ class SettingsUI {
             tabsContainer.appendChild(tabButton);
             tabPanelsContainer.appendChild(tabPanel);
 
+            // Apply disabled state now that elements are in the document
+            this.applyDisabledByState();
+
             // Store reference
             this.settingsPanel = tabPanel;
         } catch (error) {
@@ -376,9 +379,6 @@ class SettingsUI {
 
             container.appendChild(groupContainer);
         }
-
-        // Apply initial disabled state for settings with disabledBy
-        this.applyDisabledByState();
     }
 
     /**
