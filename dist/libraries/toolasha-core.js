@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 1.52.0
+ * Version: 1.53.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1352,6 +1352,13 @@
                     type: 'checkbox',
                     default: true,
                 },
+                loadoutSnapshot: {
+                    id: 'loadoutSnapshot',
+                    label: 'Loadout panel: Use saved loadout snapshots in profit calculations',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Saves your loadout equipment when you view loadouts, so profit/hr calculations use the correct tool bonuses even when that loadout is not equipped. Disable to always use currently-equipped gear.',
+                },
                 showsKeyInfoInIcon: {
                     id: 'showsKeyInfoInIcon',
                     label: 'Bottom left corner of key icons: Show zone index',
@@ -2456,7 +2463,8 @@
                 messageType === 'action_type_consumable_slots_updated' ||
                 messageType === 'consumable_buffs_updated' ||
                 messageType === 'character_info_updated' ||
-                messageType === 'labyrinth_updated';
+                messageType === 'labyrinth_updated' ||
+                messageType === 'loadouts_updated';
 
             if (!skipDedup) {
                 // Deduplicate by message content to prevent 4x JSON.parse on same message
