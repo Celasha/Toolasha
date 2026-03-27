@@ -909,6 +909,13 @@ export const settingsGroups = {
                 type: 'checkbox',
                 default: true,
             },
+            loadoutSnapshot: {
+                id: 'loadoutSnapshot',
+                label: 'Loadout panel: Use saved loadout snapshots in profit calculations',
+                type: 'checkbox',
+                default: true,
+                help: 'Saves your loadout equipment when you view loadouts, so profit/hr calculations use the correct tool bonuses even when that loadout is not equipped. Disable to always use currently-equipped gear.',
+            },
             showsKeyInfoInIcon: {
                 id: 'showsKeyInfoInIcon',
                 label: 'Bottom left corner of key icons: Show zone index',

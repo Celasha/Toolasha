@@ -7,6 +7,7 @@
  */
 
 import config from '../../core/config.js';
+import dataManager from '../../core/data-manager.js';
 import { calculateGatheringProfit } from './gathering-profit.js';
 import { calculateProductionProfit } from './production-profit.js';
 import { formatWithSeparator, formatPercentage, formatLargeNumber } from '../../utils/formatters.js';
@@ -18,6 +19,7 @@ import {
     calculateGatheringActionTotalsFromBase,
 } from '../../utils/profit-helpers.js';
 import { MARKET_TAX } from '../../utils/profit-constants.js';
+import loadoutSnapshot from '../combat/loadout-snapshot.js';
 
 const getMissingPriceIndicator = (isMissing) => (isMissing ? ' ⚠' : '');
 export const formatMissingLabel = (isMissing, value) => (isMissing ? '-- ⚠' : value);
@@ -450,7 +452,14 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
         color: #888;
         font-size: 0.85em;
     `;
-    modeDiv.textContent = `Pricing Mode: ${modeLabel}`;
+    const gatheringActionType = dataManager.getActionDetails(actionHrid)?.type;
+    const gatheringSnapshotInfo = gatheringActionType
+        ? loadoutSnapshot.getSnapshotInfoForSkill(gatheringActionType)
+        : null;
+    const gatheringLoadoutLabel = gatheringSnapshotInfo
+        ? `${gatheringSnapshotInfo.name}${gatheringSnapshotInfo.isDefault ? ' (Default)' : ''}`
+        : 'Equipped';
+    modeDiv.textContent = `Pricing Mode: ${modeLabel}  •  Loadout: ${gatheringLoadoutLabel}`;
     topLevelContent.appendChild(modeDiv);
 
     const detailedBreakdownSection = createCollapsibleSection(
@@ -1054,7 +1063,14 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
         color: #888;
         font-size: 0.85em;
     `;
-    modeDiv.textContent = `Pricing Mode: ${modeLabel}`;
+    const productionActionType = dataManager.getActionDetails(actionHrid)?.type;
+    const productionSnapshotInfo = productionActionType
+        ? loadoutSnapshot.getSnapshotInfoForSkill(productionActionType)
+        : null;
+    const productionLoadoutLabel = productionSnapshotInfo
+        ? `${productionSnapshotInfo.name}${productionSnapshotInfo.isDefault ? ' (Default)' : ''}`
+        : 'Equipped';
+    modeDiv.textContent = `Pricing Mode: ${modeLabel}  •  Loadout: ${productionLoadoutLabel}`;
     topLevelContent.appendChild(modeDiv);
 
     const detailedBreakdownSection = createCollapsibleSection(

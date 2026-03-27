@@ -335,7 +335,8 @@ class WebSocketHook {
             messageType === 'action_type_consumable_slots_updated' ||
             messageType === 'consumable_buffs_updated' ||
             messageType === 'character_info_updated' ||
-            messageType === 'labyrinth_updated';
+            messageType === 'labyrinth_updated' ||
+            messageType === 'loadouts_updated';
 
         if (!skipDedup) {
             // Deduplicate by message content to prevent 4x JSON.parse on same message

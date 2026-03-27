@@ -368,6 +368,13 @@ function registerFeatures() {
             module: Combat.loadoutSort,
             async: false,
         },
+        {
+            key: 'loadoutSnapshot',
+            name: 'Loadout Snapshots',
+            category: 'Combat',
+            module: Combat.loadoutSnapshot,
+            async: false,
+        },
     ];
 
     // UI Features

@@ -11,6 +11,7 @@
  */
 
 import dataManager from '../../core/data-manager.js';
+import loadoutSnapshot from '../combat/loadout-snapshot.js';
 import {
     parseEquipmentSpeedBonuses,
     parseEquipmentEfficiencyBonuses,
@@ -121,7 +122,7 @@ export async function calculateGatheringProfit(actionHrid) {
     // No need to check or fetch here
 
     // Get character data
-    const equipment = dataManager.getEquipment();
+    const equipment = loadoutSnapshot.getSnapshotForSkill(actionDetail.type) ?? dataManager.getEquipment();
     const skills = dataManager.getSkills();
     const houseRooms = Array.from(dataManager.getHouseRooms().values());
     const _activeBuffs = []; // Not currently used
@@ -137,7 +138,9 @@ export async function calculateGatheringProfit(actionHrid) {
     const actionsPerHour = calculateActionsPerHour(actualTimePerActionSec);
 
     // Get character's actual equipped drink slots for this action type (from WebSocket data)
-    const drinkSlots = dataManager.getActionDrinkSlots(actionDetail.type);
+    const drinkSlots =
+        loadoutSnapshot.getSnapshotDrinksForSkill(actionDetail.type) ??
+        dataManager.getActionDrinkSlots(actionDetail.type);
 
     // Get drink concentration from equipment
     const drinkConcentration = getDrinkConcentration(equipment, gameData.itemDetailMap);

@@ -5,6 +5,7 @@
 
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
+import loadoutSnapshot from '../combat/loadout-snapshot.js';
 import marketAPI from '../../api/marketplace.js';
 import {
     parseEquipmentSpeedBonuses,
@@ -133,14 +134,17 @@ class ProfitCalculator {
         const skillLevel = this.getSkillLevel(skills, actionDetails.type);
 
         // Get equipped items for efficiency bonus calculation
-        const characterEquipment = dataManager.getEquipment();
+        const characterEquipment =
+            loadoutSnapshot.getSnapshotForSkill(actionDetails.type) ?? dataManager.getEquipment();
         const itemDetailMap = this.getItemDetailMap();
 
         // Get Drink Concentration from equipment
         const drinkConcentration = getDrinkConcentration(characterEquipment, itemDetailMap);
 
         // Get active drinks for this action type
-        const activeDrinks = dataManager.getActionDrinkSlots(actionDetails.type);
+        const activeDrinks =
+            loadoutSnapshot.getSnapshotDrinksForSkill(actionDetails.type) ??
+            dataManager.getActionDrinkSlots(actionDetails.type);
 
         // Calculate Action Level bonus from teas (e.g., Artisan Tea: +5 Action Level)
         // This lowers the effective requirement, not increases skill level
