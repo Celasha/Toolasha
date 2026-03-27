@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 1.53.0
+ * Version: 1.53.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -12622,7 +12622,8 @@
                 for (const [settingId, settingDef] of Object.entries(group.settings)) {
                     if (!settingDef.disabledBy) continue;
 
-                    const parentValue = this.config.getSetting(settingDef.disabledBy);
+                    const parentSetting = this.currentSettings[settingDef.disabledBy];
+                    const parentValue = parentSetting?.isTrue ?? false;
                     const settingEl = document.querySelector(`.toolasha-setting[data-setting-id="${settingId}"]`);
                     if (!settingEl) continue;
 
@@ -18680,7 +18681,7 @@
     class EnhancementUI {
         constructor() {
             this.floatingUI = null;
-            this.currentViewingIndex = 0; // Index in sessions array
+            this.currentViewingIndex = -1; // Index in sessions array (-1 = default to latest)
             this.updateDebounce = null;
             this.isDragging = false;
             this.unregisterScreenObserver = null;
@@ -18895,6 +18896,11 @@
         getCurrentSession() {
             const sessions = Object.values(enhancementTracker.getAllSessions());
             if (sessions.length === 0) return null;
+
+            // Default to latest session on first load
+            if (this.currentViewingIndex === -1) {
+                this.currentViewingIndex = sessions.length - 1;
+            }
 
             // Ensure index is valid
             if (this.currentViewingIndex >= sessions.length) {
