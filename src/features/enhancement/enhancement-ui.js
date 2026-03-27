@@ -67,7 +67,7 @@ const compactCellStyle = `
 class EnhancementUI {
     constructor() {
         this.floatingUI = null;
-        this.currentViewingIndex = 0; // Index in sessions array
+        this.currentViewingIndex = -1; // Index in sessions array (-1 = default to latest)
         this.updateDebounce = null;
         this.isDragging = false;
         this.unregisterScreenObserver = null;
@@ -282,6 +282,11 @@ class EnhancementUI {
     getCurrentSession() {
         const sessions = Object.values(enhancementTracker.getAllSessions());
         if (sessions.length === 0) return null;
+
+        // Default to latest session on first load
+        if (this.currentViewingIndex === -1) {
+            this.currentViewingIndex = sessions.length - 1;
+        }
 
         // Ensure index is valid
         if (this.currentViewingIndex >= sessions.length) {
