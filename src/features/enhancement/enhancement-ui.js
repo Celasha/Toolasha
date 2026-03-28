@@ -742,6 +742,10 @@ class EnhancementUI {
         const content = document.getElementById('enhancementPanelContent');
         if (!content) return;
 
+        // Resolve current session index before updating counter
+        // (getCurrentSession resolves the -1 sentinel to the latest index)
+        const session = this.getCurrentSession();
+
         // Update session counter
         this.updateSessionCounter();
 
@@ -757,8 +761,6 @@ class EnhancementUI {
             `;
             return;
         }
-
-        const session = this.getCurrentSession();
         if (!session) {
             content.innerHTML = '<div style="text-align: center; color: ${STYLE.colors.danger};">Invalid session</div>';
             return;
