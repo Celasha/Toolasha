@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 1.54.0
+ * Version: 1.55.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -16694,6 +16694,15 @@ self.onmessage = function (e) {
         all: Infinity,
     };
 
+    const CATEGORIES = [
+        { key: 'gold', label: 'Gold', color: '#eab308' },
+        { key: 'inventory', label: 'Inventory', color: '#3b82f6' },
+        { key: 'equipment', label: 'Equipment', color: '#ef4444' },
+        { key: 'listings', label: 'Listings', color: '#8b5cf6' },
+        { key: 'house', label: 'House', color: '#f97316' },
+        { key: 'abilities', label: 'Abilities', color: '#06b6d4' },
+    ];
+
     class NetworthHistoryChart {
         constructor() {
             this.chartInstance = null;
@@ -16703,6 +16712,15 @@ self.onmessage = function (e) {
             this.connectGaps = false; // Toggle for connecting gaps in chart
             this.showBars = false; // Toggle for bar overlay on chart
             this.movingAvgWindow = 0; // Moving average window in data points (0 = off)
+            this.categoryVisibility = {
+                showTotal: true,
+                gold: false,
+                inventory: false,
+                equipment: false,
+                listings: false,
+                house: false,
+                abilities: false,
+            };
             this.currentRange = '7d';
             this.currentCustomFrom = null;
             this.currentCustomTo = null;
@@ -16717,6 +16735,8 @@ self.onmessage = function (e) {
             if (prefs.connectGaps !== undefined) this.connectGaps = prefs.connectGaps;
             if (prefs.showBars !== undefined) this.showBars = prefs.showBars;
             if (prefs.movingAvgWindow !== undefined) this.movingAvgWindow = prefs.movingAvgWindow;
+            if (prefs.categoryVisibility !== undefined)
+                this.categoryVisibility = { ...this.categoryVisibility, ...prefs.categoryVisibility };
         }
 
         /**
@@ -16725,7 +16745,12 @@ self.onmessage = function (e) {
         _saveChartPrefs() {
             storage.set(
                 'networthChartPrefs',
-                { connectGaps: this.connectGaps, showBars: this.showBars, movingAvgWindow: this.movingAvgWindow },
+                {
+                    connectGaps: this.connectGaps,
+                    showBars: this.showBars,
+                    movingAvgWindow: this.movingAvgWindow,
+                    categoryVisibility: this.categoryVisibility,
+                },
                 'networthHistory'
             );
         }
@@ -16968,6 +16993,94 @@ self.onmessage = function (e) {
             });
             rangeRow.appendChild(toInput);
 
+            // Category toggle row
+            const categoryRow = document.createElement('div');
+            categoryRow.style.cssText = `
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-bottom: 10px;
+        `;
+
+            const categoryButtons = {};
+
+            // Total toggle chip (controls the main networth line)
+            const totalColor = config.COLOR_ACCENT || '#22c55e';
+            const totalBtn = document.createElement('button');
+            const updateTotalBtnStyle = () => {
+                const active = this.categoryVisibility.showTotal;
+                totalBtn.style.cssText = `
+                background: ${active ? totalColor + '33' : '#2a2a2a'};
+                color: ${active ? '#fff' : '#999'};
+                border: 1px solid ${active ? totalColor : '#555'};
+                cursor: pointer;
+                padding: 3px 8px;
+                border-radius: 4px;
+                font-size: 0.8em;
+                display: flex;
+                align-items: center;
+                gap: 5px;
+            `;
+            };
+            const totalDot = document.createElement('span');
+            totalDot.style.cssText = `
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 2px;
+            background: ${totalColor};
+            flex-shrink: 0;
+        `;
+            totalBtn.appendChild(totalDot);
+            totalBtn.appendChild(document.createTextNode('Total'));
+            updateTotalBtnStyle();
+            totalBtn.addEventListener('click', () => {
+                this.categoryVisibility.showTotal = !this.categoryVisibility.showTotal;
+                updateTotalBtnStyle();
+                this._saveChartPrefs();
+                this.renderChart(this.currentRange, this.currentCustomFrom, this.currentCustomTo);
+            });
+            categoryRow.appendChild(totalBtn);
+
+            for (const cat of CATEGORIES) {
+                const btn = document.createElement('button');
+                categoryButtons[cat.key] = btn;
+                const updateCatBtnStyle = () => {
+                    const active = this.categoryVisibility[cat.key];
+                    btn.style.cssText = `
+                    background: ${active ? cat.color + '33' : '#2a2a2a'};
+                    color: ${active ? '#fff' : '#999'};
+                    border: 1px solid ${active ? cat.color : '#555'};
+                    cursor: pointer;
+                    padding: 3px 8px;
+                    border-radius: 4px;
+                    font-size: 0.8em;
+                    display: flex;
+                    align-items: center;
+                    gap: 5px;
+                `;
+                };
+                const dot = document.createElement('span');
+                dot.style.cssText = `
+                display: inline-block;
+                width: 8px;
+                height: 8px;
+                border-radius: 2px;
+                background: ${cat.color};
+                flex-shrink: 0;
+            `;
+                btn.appendChild(dot);
+                btn.appendChild(document.createTextNode(cat.label));
+                updateCatBtnStyle();
+                btn.addEventListener('click', () => {
+                    this.categoryVisibility[cat.key] = !this.categoryVisibility[cat.key];
+                    updateCatBtnStyle();
+                    this._saveChartPrefs();
+                    this.renderChart(this.currentRange, this.currentCustomFrom, this.currentCustomTo);
+                });
+                categoryRow.appendChild(btn);
+            }
+
             // Summary stats row
             const statsRow = document.createElement('div');
             statsRow.id = 'mwi-nw-chart-stats';
@@ -16994,6 +17107,7 @@ self.onmessage = function (e) {
             // Assemble modal
             modal.appendChild(header);
             modal.appendChild(rangeRow);
+            modal.appendChild(categoryRow);
             modal.appendChild(statsRow);
             modal.appendChild(canvasContainer);
             document.body.appendChild(modal);
@@ -17168,20 +17282,43 @@ self.onmessage = function (e) {
             }
 
             // Line dataset (rendered on top)
-            datasets.push({
-                type: 'line',
-                label: 'Total Networth',
-                data: chartData,
-                borderColor: config.COLOR_ACCENT || '#22c55e',
-                backgroundColor: 'rgba(34, 197, 94, 0.1)',
-                borderWidth: 2,
-                pointRadius: filtered.length > 200 ? 0 : 2,
-                pointHoverRadius: 5,
-                tension: 0.1,
-                fill: true,
-                spanGaps: this.connectGaps,
-                order: 1,
-            });
+            if (this.categoryVisibility.showTotal) {
+                datasets.push({
+                    type: 'line',
+                    label: 'Total Networth',
+                    data: chartData,
+                    borderColor: config.COLOR_ACCENT || '#22c55e',
+                    backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                    borderWidth: 2,
+                    pointRadius: filtered.length > 200 ? 0 : 2,
+                    pointHoverRadius: 5,
+                    tension: 0.1,
+                    fill: true,
+                    spanGaps: this.connectGaps,
+                    order: 1,
+                });
+            }
+
+            // Category line datasets (one per visible category)
+            for (const cat of CATEGORIES) {
+                if (!this.categoryVisibility[cat.key]) continue;
+
+                const catData = chartData.map((p) => ({ x: p.x, y: p._raw ? p._raw[cat.key] : NaN }));
+                datasets.push({
+                    type: 'line',
+                    label: cat.label,
+                    data: catData,
+                    borderColor: cat.color,
+                    backgroundColor: 'transparent',
+                    borderWidth: 1.5,
+                    pointRadius: 0,
+                    pointHoverRadius: 0,
+                    tension: 0.1,
+                    fill: false,
+                    spanGaps: this.connectGaps,
+                    parsing: false,
+                });
+            }
 
             // Moving average line dataset
             if (this.movingAvgWindow > 0) {
