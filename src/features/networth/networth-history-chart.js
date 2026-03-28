@@ -780,53 +780,68 @@ class NetworthHistoryChart {
             return;
         }
 
-        // Current networth (prefer live data)
-        const currentTotal = this.networthFeature?.currentData?.totalNetworth ?? filtered[filtered.length - 1].total;
-
-        // 24h change
-        const now = Date.now();
-        const oneDayAgo = now - 24 * 60 * 60 * 1000;
-        const fullHistory = networthHistory.getHistory();
-        const oldestIn24h = fullHistory.find((p) => p.t >= oneDayAgo);
-        let change24h = null;
-        let changePercent = null;
-        if (oldestIn24h) {
-            change24h = currentTotal - oldestIn24h.total;
-            changePercent = oldestIn24h.total > 0 ? (change24h / oldestIn24h.total) * 100 : 0;
-        }
-
-        // Rate/hr for selected range
+        const parts = [];
         const first = filtered[0];
         const last = filtered[filtered.length - 1];
         const hoursElapsed = (last.t - first.t) / 3_600_000;
-        const ratePerHour = hoursElapsed > 0 ? (last.total - first.total) / hoursElapsed : 0;
 
-        // Build stats HTML
-        const parts = [];
+        // Total stats — Current, 24h change, Rate
+        if (this.categoryVisibility.showTotal) {
+            const currentTotal = this.networthFeature?.currentData?.totalNetworth ?? last.total;
 
-        // Current
-        parts.push(
-            `<span>Current: <strong style="color: ${config.COLOR_ACCENT};">${networthFormatter(Math.round(currentTotal))}</strong></span>`
-        );
+            // 24h change (always from full history)
+            const now = Date.now();
+            const oneDayAgo = now - 24 * 60 * 60 * 1000;
+            const fullHistory = networthHistory.getHistory();
+            const oldestIn24h = fullHistory.find((p) => p.t >= oneDayAgo);
+            let change24h = null;
+            let changePercent = null;
+            if (oldestIn24h) {
+                change24h = currentTotal - oldestIn24h.total;
+                changePercent = oldestIn24h.total > 0 ? (change24h / oldestIn24h.total) * 100 : 0;
+            }
 
-        // 24h change (clickable for item breakdown)
-        if (change24h !== null) {
-            const isPositive = change24h >= 0;
-            const color = isPositive ? config.COLOR_PROFIT : config.COLOR_LOSS;
-            const sign = isPositive ? '+' : '';
+            const ratePerHour = hoursElapsed > 0 ? (last.total - first.total) / hoursElapsed : 0;
+
             parts.push(
-                `<span id="mwi-nw-24h-toggle" style="cursor: pointer;" title="Click for item breakdown">24h: <strong style="color: ${color};">${sign}${networthFormatter(Math.round(change24h))} (${sign}${changePercent.toFixed(1)}%)</strong> <span style="font-size: 10px; color: #666;">▼</span></span>`
+                `<span>Current: <strong style="color: ${config.COLOR_ACCENT};">${networthFormatter(Math.round(currentTotal))}</strong></span>`
             );
+
+            if (change24h !== null) {
+                const color = change24h >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
+                const sign = change24h >= 0 ? '+' : '';
+                parts.push(
+                    `<span id="mwi-nw-24h-toggle" style="cursor: pointer;" title="Click for item breakdown">24h: <strong style="color: ${color};">${sign}${networthFormatter(Math.round(change24h))} (${sign}${changePercent.toFixed(1)}%)</strong> <span style="font-size: 10px; color: #666;">▼</span></span>`
+                );
+            }
+
+            if (hoursElapsed >= 1) {
+                const color = ratePerHour >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
+                const sign = ratePerHour >= 0 ? '+' : '';
+                parts.push(
+                    `<span>Rate: <strong style="color: ${color};">${sign}${networthFormatter(Math.round(ratePerHour))}/hr</strong></span>`
+                );
+            }
         }
 
-        // Rate/hr
+        // Per-category rate stats for each visible category line
         if (hoursElapsed >= 1) {
-            const isPositive = ratePerHour >= 0;
-            const color = isPositive ? config.COLOR_PROFIT : config.COLOR_LOSS;
-            const sign = isPositive ? '+' : '';
-            parts.push(
-                `<span>Rate: <strong style="color: ${color};">${sign}${networthFormatter(Math.round(ratePerHour))}/hr</strong></span>`
-            );
+            for (const cat of CATEGORIES) {
+                if (!this.categoryVisibility[cat.key]) continue;
+                const firstVal = first[cat.key] ?? 0;
+                const lastVal = last[cat.key] ?? 0;
+                const rate = (lastVal - firstVal) / hoursElapsed;
+                const color = rate >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
+                const sign = rate >= 0 ? '+' : '';
+                parts.push(
+                    `<span>${cat.label}: <strong style="color: ${color};">${sign}${networthFormatter(Math.round(rate))}/hr</strong></span>`
+                );
+            }
+        }
+
+        if (parts.length === 0) {
+            statsRow.innerHTML = '<span style="color: #666;">No data available for this range</span>';
+            return;
         }
 
         statsRow.innerHTML = parts.join('');
