@@ -663,7 +663,9 @@ export function buildEnhancementTooltipHTML(enhancementData) {
     // Show Philosopher's Mirror usage if applicable
     if (optimalStrategy.usedMirror && optimalStrategy.mirrorStartLevel) {
         html +=
-            '<div style="color: #ffd700;">Uses Philosopher\'s Mirror from +' +
+            '<div style="color: ' +
+            config.COLOR_MIRROR +
+            ';">Uses Philosopher\'s Mirror from +' +
             optimalStrategy.mirrorStartLevel +
             '</div>';
     }

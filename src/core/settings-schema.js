@@ -1297,6 +1297,13 @@ export const settingsGroups = {
                 default: '#ffa500',
                 help: 'Color used for gold and currency displays',
             },
+            color_mirror: {
+                id: 'color_mirror',
+                label: "Philosopher's Mirror",
+                type: 'color',
+                default: '#ffd700',
+                help: "Color for the Philosopher's Mirror usage line in enhancement tooltips",
+            },
             color_accent: {
                 id: 'color_accent',
                 label: 'Script Accent Color',
