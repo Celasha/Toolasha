@@ -343,7 +343,13 @@ class MaxProduceable {
         // Calculate max crafts per input (using O(1) Map lookup instead of O(n) array find)
         const maxCraftsPerInput = actionDetails.inputItems.map((input) => {
             const invItem = inventoryIndex.get(input.itemHrid);
-            const invCount = invItem?.count || 0;
+            let invCount = invItem?.count || 0;
+
+            // If this input item is also the upgrade item, 1 unit per craft is reserved
+            // for the upgrade slot and is not available for the input requirement.
+            if (actionDetails.upgradeItemHrid === input.itemHrid) {
+                invCount = Math.max(0, invCount - 1);
+            }
 
             // Apply Artisan reduction (10% base, scaled by Drink Concentration)
             // Materials consumed per action = base requirement × (1 - artisan bonus)
