@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 1.53.3
+ * Version: 1.54.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -8215,11 +8215,10 @@
             const orderA = this.getTaskOrder(cardA);
             const orderB = this.getTaskOrder(cardB);
 
-            // Completed tasks always last
+            // Completed tasks always first
             if (orderA.isCompleted !== orderB.isCompleted) {
-                return orderA.isCompleted ? 1 : -1;
+                return orderA.isCompleted ? -1 : 1;
             }
-
             const profitA = cardA.querySelector(selectors_js.TOOLASHA.TASK_PROFIT);
             const profitB = cardB.querySelector(selectors_js.TOOLASHA.TASK_PROFIT);
             const secondsA = profitA?.dataset.completionSeconds ? parseFloat(profitA.dataset.completionSeconds) : null;
@@ -8249,9 +8248,9 @@
             const orderA = this.getTaskOrder(cardA);
             const orderB = this.getTaskOrder(cardB);
 
-            // First: Sort by completion status (incomplete tasks first, completed tasks last)
+            // First: Sort by completion status (completed tasks first, incomplete tasks last)
             if (orderA.isCompleted !== orderB.isCompleted) {
-                return orderA.isCompleted ? 1 : -1;
+                return orderA.isCompleted ? -1 : 1;
             }
 
             // Second: Sort by skill type (combat vs non-combat)
