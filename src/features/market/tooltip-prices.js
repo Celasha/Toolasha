@@ -589,8 +589,8 @@ class TooltipPrices {
                 if (marketPrice?.ask > 0 || marketPrice?.bid > 0) {
                     return {
                         ...material,
-                        askPrice: marketPrice.ask > 0 ? marketPrice.ask : 0,
-                        bidPrice: marketPrice.bid > 0 ? marketPrice.bid : 0,
+                        askPrice: marketPrice.ask > 0 ? marketPrice.ask : getProductionCost(itemHrid, 'ask') || 0,
+                        bidPrice: marketPrice.bid > 0 ? marketPrice.bid : getProductionCost(itemHrid, 'bid') || 0,
                     };
                 }
 
