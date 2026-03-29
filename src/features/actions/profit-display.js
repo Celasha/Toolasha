@@ -1520,18 +1520,18 @@ function buildProductionPerActionBreakdown(profitData) {
     const bonusRevenueTotal = profitData.bonusRevenue?.totalBonusRevenue || 0;
     const outputAmount = profitData.outputAmount || 1;
 
-    // Per-action values
-    const baseItemsPerAction = outputAmount * efficiencyMultiplier;
+    // Per-action values (base, no efficiency multiplier — this section shows one action's true cost/revenue)
+    const baseItemsPerAction = outputAmount;
     const baseRevenuePerAction = baseItemsPerAction * profitData.outputPrice;
     const gourmetItemsPerAction = baseItemsPerAction * (profitData.gourmetBonus || 0);
     const gourmetRevenuePerAction = gourmetItemsPerAction * profitData.outputPrice;
-    const bonusRevenuePerAction = (bonusRevenueTotal * efficiencyMultiplier) / actionsPerHour;
+    const bonusRevenuePerAction = bonusRevenueTotal / actionsPerHour;
     const revenuePerAction = baseRevenuePerAction + gourmetRevenuePerAction + bonusRevenuePerAction;
     const marketTaxPerAction = revenuePerAction * MARKET_TAX;
     const materialCostPerAction = profitData.totalMaterialCost; // per-action cost is fixed, unaffected by efficiency
     const teaCostPerAction = profitData.totalTeaCostPerHour / actionsPerHour;
     const costsPerAction = materialCostPerAction + teaCostPerAction + marketTaxPerAction;
-    const profitPerAction = profitData.profitPerAction;
+    const profitPerAction = revenuePerAction - costsPerAction;
 
     const detailsContent = document.createElement('div');
 
@@ -2103,6 +2103,7 @@ function buildGatheringActionsBreakdown(profitData, actionsCount) {
  */
 function buildProductionActionsBreakdown(profitData, actionsCount) {
     // Calculate queued actions breakdown
+    const efficiencyMultiplier = profitData.efficiencyMultiplier || 1;
     const outputMissing = profitData.outputPriceMissing || false;
     const outputEstimated = profitData.outputPriceEstimated || false;
     const bonusMissing = profitData.bonusRevenue?.hasMissingPrices || false;
@@ -2279,8 +2280,8 @@ function buildProductionActionsBreakdown(profitData, actionsCount) {
     const materialCostsContent = document.createElement('div');
     if (profitData.materialCosts && profitData.materialCosts.length > 0) {
         for (const material of profitData.materialCosts) {
-            const totalMaterial = material.amount * actionsCount;
-            const totalMaterialCost = material.totalCost * actionsCount;
+            const totalMaterial = material.amount * actionsCount * efficiencyMultiplier;
+            const totalMaterialCost = material.totalCost * actionsCount * efficiencyMultiplier;
             const line = document.createElement('div');
             line.style.marginLeft = '8px';
 
@@ -2288,7 +2289,7 @@ function buildProductionActionsBreakdown(profitData, actionsCount) {
 
             // Add Artisan reduction info if present
             if (profitData.artisanBonus > 0 && material.baseAmount && material.amount !== material.baseAmount) {
-                const baseTotalAmount = material.baseAmount * actionsCount;
+                const baseTotalAmount = material.baseAmount * actionsCount * efficiencyMultiplier;
                 materialText += ` (${baseTotalAmount.toFixed(2)} base -${formatPercentage(profitData.artisanBonus, 1)} 🍵)`;
             }
 

@@ -271,14 +271,17 @@ export function calculateProductionActionTotalsFromBase({
             hoursNeeded: 0,
         };
     }
-    const totalBaseItems = outputAmount * actionsCount;
-    const totalGourmetItems = outputAmount * gourmetBonus * actionsCount;
+    const totalBaseItems = outputAmount * actionsCount * efficiencyMultiplier;
+    const totalGourmetItems = outputAmount * gourmetBonus * actionsCount * efficiencyMultiplier;
     const totalBaseRevenue = totalBaseItems * outputPrice;
     const totalGourmetRevenue = totalGourmetItems * outputPrice;
     const totalBonusRevenue = bonusDrops.reduce((sum, drop) => sum + (drop.revenuePerAction || 0) * actionsCount, 0);
     const totalRevenue = totalBaseRevenue + totalGourmetRevenue + totalBonusRevenue;
     const totalMarketTax = totalRevenue * MARKET_TAX;
-    const totalMaterialCost = materialCosts.reduce((sum, material) => sum + material.totalCost * actionsCount, 0);
+    const totalMaterialCost = materialCosts.reduce(
+        (sum, material) => sum + material.totalCost * actionsCount * efficiencyMultiplier,
+        0
+    );
     const hoursNeeded = calculateHoursForActions(actionsCount, effectiveActionsPerHour);
     const totalTeaCost = totalTeaCostPerHour * hoursNeeded;
     const totalCosts = totalMaterialCost + totalTeaCost + totalMarketTax;

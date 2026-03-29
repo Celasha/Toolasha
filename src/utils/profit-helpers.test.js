@@ -393,8 +393,8 @@ describe('Real-world profit scenarios', () => {
             efficiencyMultiplier,
         });
 
-        // 100 actions × 50 profit per action minus tax = 4,800
-        expect(result.totalProfit).toBe(4800);
+        // 100 actions × 2.5x efficiency: revenue = 25,000, materials = 12,500, tax = 500 → profit = 12,000
+        expect(result.totalProfit).toBe(12000);
     });
 
     test('Gathering with 50% efficiency', () => {
