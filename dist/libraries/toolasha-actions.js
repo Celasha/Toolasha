@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 1.60.2
+ * Version: 1.60.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2464,11 +2464,11 @@
         const pricingMode = profitData.pricingMode || 'hybrid';
         const modeLabel =
             {
-                conservative: 'Conservative',
-                hybrid: 'Hybrid',
-                optimistic: 'Optimistic',
-                patientBuy: 'Patient Buy',
-            }[pricingMode] || 'Hybrid';
+                conservative: 'Buy: Ask / Sell: Bid',
+                hybrid: 'Buy: Ask / Sell: Ask',
+                optimistic: 'Buy: Bid / Sell: Ask',
+                patientBuy: 'Buy: Bid / Sell: Bid',
+            }[pricingMode] || 'Buy: Ask / Sell: Ask';
 
         const modeDiv = document.createElement('div');
         modeDiv.style.cssText = `
@@ -3075,11 +3075,11 @@
         const pricingMode = profitData.pricingMode || 'hybrid';
         const modeLabel =
             {
-                conservative: 'Conservative',
-                hybrid: 'Hybrid',
-                optimistic: 'Optimistic',
-                patientBuy: 'Patient Buy',
-            }[pricingMode] || 'Hybrid';
+                conservative: 'Buy: Ask / Sell: Bid',
+                hybrid: 'Buy: Ask / Sell: Ask',
+                optimistic: 'Buy: Bid / Sell: Ask',
+                patientBuy: 'Buy: Bid / Sell: Bid',
+            }[pricingMode] || 'Buy: Ask / Sell: Ask';
 
         const modeDiv = document.createElement('div');
         modeDiv.style.cssText = `
@@ -3544,18 +3544,18 @@
         const bonusRevenueTotal = profitData.bonusRevenue?.totalBonusRevenue || 0;
         const outputAmount = profitData.outputAmount || 1;
 
-        // Per-action values
-        const baseItemsPerAction = outputAmount * efficiencyMultiplier;
+        // Per-action values (base, no efficiency multiplier — this section shows one action's true cost/revenue)
+        const baseItemsPerAction = outputAmount;
         const baseRevenuePerAction = baseItemsPerAction * profitData.outputPrice;
         const gourmetItemsPerAction = baseItemsPerAction * (profitData.gourmetBonus || 0);
         const gourmetRevenuePerAction = gourmetItemsPerAction * profitData.outputPrice;
-        const bonusRevenuePerAction = (bonusRevenueTotal * efficiencyMultiplier) / actionsPerHour;
+        const bonusRevenuePerAction = bonusRevenueTotal / actionsPerHour;
         const revenuePerAction = baseRevenuePerAction + gourmetRevenuePerAction + bonusRevenuePerAction;
         const marketTaxPerAction = revenuePerAction * profitConstants_js.MARKET_TAX;
         const materialCostPerAction = profitData.totalMaterialCost; // per-action cost is fixed, unaffected by efficiency
         const teaCostPerAction = profitData.totalTeaCostPerHour / actionsPerHour;
         const costsPerAction = materialCostPerAction + teaCostPerAction + marketTaxPerAction;
-        const profitPerAction = profitData.profitPerAction;
+        const profitPerAction = revenuePerAction - costsPerAction;
 
         const detailsContent = document.createElement('div');
 
@@ -4127,6 +4127,7 @@
      */
     function buildProductionActionsBreakdown(profitData, actionsCount) {
         // Calculate queued actions breakdown
+        const efficiencyMultiplier = profitData.efficiencyMultiplier || 1;
         const outputMissing = profitData.outputPriceMissing || false;
         const outputEstimated = profitData.outputPriceEstimated || false;
         const bonusMissing = profitData.bonusRevenue?.hasMissingPrices || false;
@@ -4303,8 +4304,8 @@
         const materialCostsContent = document.createElement('div');
         if (profitData.materialCosts && profitData.materialCosts.length > 0) {
             for (const material of profitData.materialCosts) {
-                const totalMaterial = material.amount * actionsCount;
-                const totalMaterialCost = material.totalCost * actionsCount;
+                const totalMaterial = material.amount * actionsCount * efficiencyMultiplier;
+                const totalMaterialCost = material.totalCost * actionsCount * efficiencyMultiplier;
                 const line = document.createElement('div');
                 line.style.marginLeft = '8px';
 
@@ -4312,7 +4313,7 @@
 
                 // Add Artisan reduction info if present
                 if (profitData.artisanBonus > 0 && material.baseAmount && material.amount !== material.baseAmount) {
-                    const baseTotalAmount = material.baseAmount * actionsCount;
+                    const baseTotalAmount = material.baseAmount * actionsCount * efficiencyMultiplier;
                     materialText += ` (${baseTotalAmount.toFixed(2)} base -${formatters_js.formatPercentage(profitData.artisanBonus, 1)} 🍵)`;
                 }
 
@@ -4914,10 +4915,10 @@
             // Create profit mode toggle button
             const PROFIT_MODES = ['hybrid', 'conservative', 'optimistic', 'patientBuy'];
             const PROFIT_MODE_LABELS = {
-                hybrid: 'Mode: Hybrid',
-                conservative: 'Mode: Conservative',
-                optimistic: 'Mode: Optimistic',
-                patientBuy: 'Mode: Patient Buy',
+                hybrid: 'Mode: Buy: Ask / Sell: Ask',
+                conservative: 'Mode: Buy: Ask / Sell: Bid',
+                optimistic: 'Mode: Buy: Bid / Sell: Ask',
+                patientBuy: 'Mode: Buy: Bid / Sell: Bid',
             };
             const modeBtn = document.createElement('button');
             modeBtn.id = 'mwi-action-profit-mode';
@@ -17719,11 +17720,11 @@
             const pricingMode = profitData.pricingMode || 'hybrid';
             const modeLabel =
                 {
-                    conservative: 'Conservative',
-                    hybrid: 'Hybrid',
-                    optimistic: 'Optimistic',
-                    patientBuy: 'Patient Buy',
-                }[pricingMode] || 'Hybrid';
+                    conservative: 'Buy: Ask / Sell: Bid',
+                    hybrid: 'Buy: Ask / Sell: Ask',
+                    optimistic: 'Buy: Bid / Sell: Ask',
+                    patientBuy: 'Buy: Bid / Sell: Bid',
+                }[pricingMode] || 'Buy: Ask / Sell: Ask';
 
             const modeDiv = document.createElement('div');
             modeDiv.style.cssText = `

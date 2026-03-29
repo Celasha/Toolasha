@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 1.60.2
+ * Version: 1.60.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -3326,15 +3326,15 @@ self.onmessage = function (e) {
         const marketAsk = baseItemPrices?.ask > 0 ? baseItemPrices.ask : 0;
         const marketBid = baseItemPrices?.bid > 0 ? baseItemPrices.bid : 0;
         const useCraftingCost = toolashaConfig.isFeatureEnabled('enhanceSim_baseItemCraftingCost');
-        const baseAskPrice = useCraftingCost
-            ? Math.min(craftingCostAsk || Infinity, marketAsk || Infinity) || getRealisticBaseItemPrice(itemHrid)
-            : marketAsk || getRealisticBaseItemPrice(itemHrid);
-        const baseBidPrice = useCraftingCost
-            ? Math.min(craftingCostBid || Infinity, marketBid || Infinity) || getRealisticBaseItemPrice(itemHrid)
-            : marketBid || getProductionCost(itemHrid, 'bid');
+        // Ask drives the decision: use crafted if ask is missing OR crafted ask is cheaper
+        const askIsCrafted = useCraftingCost && craftingCostAsk > 0 && (marketAsk === 0 || craftingCostAsk < marketAsk);
+        const baseAskPrice = askIsCrafted ? craftingCostAsk : marketAsk || getRealisticBaseItemPrice(itemHrid);
+        const baseBidPrice = askIsCrafted
+            ? craftingCostBid || craftingCostAsk
+            : marketBid || getProductionCost(itemHrid, 'bid') || getRealisticBaseItemPrice(itemHrid);
         const baseCost = baseAskPrice;
-        const baseAskIsCrafted = useCraftingCost && craftingCostAsk > 0 && craftingCostAsk <= (marketAsk || Infinity);
-        const baseBidIsCrafted = useCraftingCost && craftingCostBid > 0 && craftingCostBid <= (marketBid || Infinity);
+        const baseAskIsCrafted = askIsCrafted;
+        const baseBidIsCrafted = askIsCrafted;
 
         return {
             baseCost,
@@ -3661,16 +3661,7 @@ self.onmessage = function (e) {
             const rows = [];
 
             // Base item row
-            const baseAskLabel = optimalStrategy.baseAskIsCrafted
-                ? ' <span style="color:' + toolashaConfig.COLOR_MIRROR + ';font-size:10px;">(Crafted)</span>'
-                : ' <span style="color:' + toolashaConfig.COLOR_MIRROR + ';font-size:10px;">(Market)</span>';
-            const baseBidLabel = optimalStrategy.baseBidIsCrafted
-                ? ' <span style="color:' + toolashaConfig.COLOR_MIRROR + ';font-size:10px;">(Crafted)</span>'
-                : ' <span style="color:' + toolashaConfig.COLOR_MIRROR + ';font-size:10px;">(Market)</span>';
-            const baseItemLabel =
-                baseAskLabel === baseBidLabel
-                    ? `Base Item${baseAskLabel}`
-                    : `Base Item <span style="color:${toolashaConfig.COLOR_MIRROR};font-size:10px;">(Ask: ${optimalStrategy.baseAskIsCrafted ? 'Crafted' : 'Market'} / Bid: ${optimalStrategy.baseBidIsCrafted ? 'Crafted' : 'Market'})</span>`;
+            const baseItemLabel = optimalStrategy.baseAskIsCrafted ? 'Craft Item' : 'Buy Item';
             rows.push({
                 name: toolashaConfig.isFeatureEnabled('enhanceSim_baseItemCraftingCost') ? baseItemLabel : 'Base Item',
                 count: 1,
