@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 1.60.1
+ * Version: 1.60.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -4981,8 +4981,8 @@ self.onmessage = function (e) {
                     if (marketPrice?.ask > 0 || marketPrice?.bid > 0) {
                         return {
                             ...material,
-                            askPrice: marketPrice.ask > 0 ? marketPrice.ask : 0,
-                            bidPrice: marketPrice.bid > 0 ? marketPrice.bid : 0,
+                            askPrice: marketPrice.ask > 0 ? marketPrice.ask : getProductionCost(itemHrid, 'ask') || 0,
+                            bidPrice: marketPrice.bid > 0 ? marketPrice.bid : getProductionCost(itemHrid, 'bid') || 0,
                         };
                     }
 
