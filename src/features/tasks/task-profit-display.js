@@ -12,7 +12,7 @@ import { setReactInputValue } from '../../utils/react-input.js';
 import { findActionInput } from '../../utils/action-panel-helper.js';
 import { calculateTaskProfit } from './task-profit-calculator.js';
 import expectedValueCalculator from '../market/expected-value-calculator.js';
-import { numberFormatter, timeReadable, formatPercentage, formatKMB } from '../../utils/formatters.js';
+import { timeReadable, formatPercentage, formatKMB } from '../../utils/formatters.js';
 import { GAME, TOOLASHA } from '../../utils/selectors.js';
 import { calculateSecondsForActions, calculateEffectiveActionsPerHour } from '../../utils/profit-helpers.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
@@ -810,7 +810,7 @@ class TaskProfitDisplay {
                 ratingLine.style.color = config.COLOR_WARNING;
                 ratingLine.textContent = `⚡ --${warningText} ${ratingData?.unitLabel || ''}`.trim();
             } else {
-                const ratingValue = numberFormatter(ratingData.value, 2);
+                const ratingValue = formatKMB(ratingData.value);
                 ratingLine.dataset.ratingValue = `${ratingData.value}`;
                 ratingLine.dataset.ratingMode = ratingMode;
                 ratingLine.style.color = config.COLOR_ACCENT;
