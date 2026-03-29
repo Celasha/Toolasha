@@ -744,7 +744,7 @@ class CollectionFilters {
         // --- Apply sorting ---
         this._applySorting(catsEl);
 
-        // --- Watch catsEl for tiles being added (tiles load after controls bar) ---
+        // --- Watch for tiles being added (tiles load after controls bar) ---
         if (this.catsObserver) {
             this.catsObserver.disconnect();
             this.catsObserver = null;
@@ -752,17 +752,23 @@ class CollectionFilters {
         // Only register when catsEl is empty — once tiles are present there is no need to watch
         // for further mutations, and doing so causes spurious re-renders (e.g. when the game
         // adds/removes tiles in response to the Show Uncollected toggle).
+        // Observe panelEl.parentElement (not just catsEl) so we detect tiles even when the game
+        // replaces the catsEl element entirely on first data load (React reconciliation).
         const hasTiles = catsEl.querySelectorAll('.Collection_collectionContainer__3ZlUO').length > 0;
-        if (catsEl && !hasTiles) {
+        if (!hasTiles) {
+            const observeTarget = panelEl.parentElement ?? catsEl;
             this.catsObserver = new MutationObserver(() => {
-                const tileCount = catsEl.querySelectorAll('.Collection_collectionContainer__3ZlUO').length;
+                const liveCatsEl = observeTarget.querySelector('.AchievementsPanel_categories__34hno');
+                if (!liveCatsEl) return;
+                const tileCount = liveCatsEl.querySelectorAll('.Collection_collectionContainer__3ZlUO').length;
                 if (tileCount > 0) {
                     this.catsObserver.disconnect();
                     this.catsObserver = null;
-                    this._rerenderPanel(panelEl);
+                    const livePanelEl = observeTarget.querySelector('.AchievementsPanel_controls__3bGFT') ?? panelEl;
+                    this._rerenderPanel(livePanelEl);
                 }
             });
-            this.catsObserver.observe(catsEl, { childList: true, subtree: true });
+            this.catsObserver.observe(observeTarget, { childList: true, subtree: true });
         }
     }
 
