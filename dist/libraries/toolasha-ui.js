@@ -1,11 +1,11 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 1.58.0
+ * Version: 1.59.0
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (config, dataManager, domObserver, formatters_js, timerRegistry_js, domObserverHelpers_js, storage, webSocketHook, reactInput_js, actionPanelHelper_js, expectedValueCalculator, equipmentParser_js, teaParser_js, bonusRevenueCalculator_js, marketData_js, profitConstants_js, efficiency_js, profitHelpers_js, profitCalculator, selectors_js, marketAPI, cleanupRegistry_js, settingsSchema_js, settingsStorage, enhancementCalculator_js, enhancementConfig_js) {
+(function (config, dataManager, domObserver, formatters_js, timerRegistry_js, domObserverHelpers_js, storage, marketAPI, webSocketHook, reactInput_js, actionPanelHelper_js, expectedValueCalculator, equipmentParser_js, teaParser_js, bonusRevenueCalculator_js, marketData_js, profitConstants_js, efficiency_js, profitHelpers_js, profitCalculator, selectors_js, cleanupRegistry_js, settingsSchema_js, settingsStorage, enhancementCalculator_js, enhancementConfig_js) {
     'use strict';
 
     window.Toolasha = window.Toolasha || {}; window.Toolasha.__buildTarget = "browser";
@@ -1579,6 +1579,8 @@
     function unformatNumber(s) {
         if (!s) return 0;
         const t = s.trim();
+        if (t.endsWith('T')) return parseFloat(t) * 1_000_000_000_000;
+        if (t.endsWith('B')) return parseFloat(t) * 1_000_000_000;
         if (t.endsWith('M')) return parseFloat(t) * 1_000_000;
         if (t.endsWith('K')) return parseFloat(t) * 1000;
         return parseFloat(t) || 0;
@@ -1618,6 +1620,31 @@
         if (n < 100_000) return 'Collection_tierRed__3dV_1';
         if (n < 1_000_000) return 'Collection_tierOrange__2wpdX';
         return 'Collection_tierRainbow__1eS_P';
+    }
+
+    /**
+     * Return the next tier threshold for a given count.
+     * Returns Infinity if already at max tier (≥ 1,000,000).
+     * @param {number} n
+     * @returns {number}
+     */
+    function nextTierThreshold(n) {
+        if (n < 10) return 10;
+        if (n < 100) return 100;
+        if (n < 1_000) return 1_000;
+        if (n < 10_000) return 10_000;
+        if (n < 100_000) return 100_000;
+        if (n < 1_000_000) return 1_000_000;
+        if (n < 10_000_000) return 10_000_000;
+        if (n < 100_000_000) return 100_000_000;
+        if (n < 1_000_000_000) return 1_000_000_000;
+        if (n < 10_000_000_000) return 10_000_000_000;
+        if (n < 100_000_000_000) return 100_000_000_000;
+        if (n < 1_000_000_000_000) return 1_000_000_000_000;
+        if (n < 10_000_000_000_000) return 10_000_000_000_000;
+        if (n < 100_000_000_000_000) return 100_000_000_000_000;
+        if (n < 1_000_000_000_000_000) return 1_000_000_000_000_000;
+        return Infinity;
     }
 
     /**
@@ -1820,6 +1847,7 @@ ${hideRules}
             this.collections = {};
             this.favorites = {};
             this.showUncollected = false;
+            this.sortMode = 'default'; // 'default' | 'items-needed' | 'gold-cost'
             this.catsObserver = null;
         }
 
@@ -1918,6 +1946,10 @@ ${hideRules}
                 }
             });
 
+            if (savedFlags.__sortMode) {
+                this.sortMode = savedFlags.__sortMode;
+            }
+
             this.favorites = savedFavorites;
             this.collections = savedCollections;
             this.showUncollected = savedShowUncollected;
@@ -1928,6 +1960,7 @@ ${hideRules}
             this.flags.forEach((f) => {
                 fs[f.className] = f.checked;
             });
+            fs.__sortMode = this.sortMode;
             await storage.setJSON(this._charKey('flags'), fs, 'collections');
         }
 
@@ -2048,6 +2081,23 @@ ${hideRules}
             // Inject checkbox HTML
             panelEl.insertAdjacentHTML('beforeend', this.flags.map((f) => buildCheckboxHtml(f)).join(''));
 
+            // Inject sort dropdown
+            panelEl.insertAdjacentHTML(
+                'beforeend',
+                `<div class="toolasha-cf cf-sort-row" style="display:flex;align-items:center;gap:6px;margin-top:4px;">` +
+                    `<span style="font-size:12px;color:#aaa;">Sort:</span>` +
+                    `<select class="toolasha-cf cf-sort-select" style="font-size:12px;background:#222;color:#eee;border:1px solid #444;border-radius:4px;padding:1px 4px;">` +
+                    `<option value="default"${this.sortMode === 'default' ? ' selected' : ''}>Default</option>` +
+                    `<option value="items-needed"${this.sortMode === 'items-needed' ? ' selected' : ''}>Items to next tier</option>` +
+                    `<option value="gold-cost"${this.sortMode === 'gold-cost' ? ' selected' : ''}>Gold cost to next tier</option>` +
+                    `</select></div>`
+            );
+            panelEl.querySelector('.cf-sort-select').addEventListener('change', (e) => {
+                this.sortMode = e.target.value;
+                this._saveFlags();
+                this._applySorting(catsEl);
+            });
+
             // Wire click handlers on each injected checkbox
             this.flags.forEach((f) => {
                 const checkEl = panelEl.querySelector('.' + f.className + '.toolasha-cf');
@@ -2100,6 +2150,9 @@ ${hideRules}
                 });
             }
 
+            // --- Apply sorting ---
+            this._applySorting(catsEl);
+
             // --- Watch catsEl for tiles being added (tiles load after controls bar) ---
             if (this.catsObserver) {
                 this.catsObserver.disconnect();
@@ -2116,6 +2169,48 @@ ${hideRules}
                 });
                 this.catsObserver.observe(catsEl, { childList: true, subtree: true });
             }
+        }
+
+        // -------------------------------------------------------------------------
+        // Sorting
+        // -------------------------------------------------------------------------
+
+        /**
+         * Apply CSS order to collection tiles based on the current sortMode.
+         * @param {Element} catsEl — the .AchievementsPanel_categories__34hno element
+         */
+        _applySorting(catsEl) {
+            const tiles = Array.from(catsEl.querySelectorAll('.Collection_collectionContainer__3ZlUO'));
+
+            if (this.sortMode === 'default') {
+                tiles.forEach((el) => el.style.removeProperty('order'));
+                return;
+            }
+
+            const scored = tiles.map((el) => {
+                const useEl = el.querySelector('use');
+                const href = useEl?.getAttribute('href') || useEl?.getAttribute('xlink:href') || '';
+                const itemId = href.split('#')[1] || '';
+                const n = this.collections[itemId] ?? 0;
+                const threshold = nextTierThreshold(n);
+                const needed = threshold === Infinity ? Infinity : threshold - n;
+
+                let score;
+                if (this.sortMode === 'items-needed') {
+                    score = needed;
+                } else {
+                    // gold-cost
+                    const price = marketAPI.getPrice('/items/' + itemId, 0);
+                    const ask = price?.ask ?? 0;
+                    score = ask > 0 && needed !== Infinity ? needed * ask : Infinity;
+                }
+                return { el, score };
+            });
+
+            scored.sort((a, b) => a.score - b.score);
+            scored.forEach(({ el }, i) => {
+                el.style.order = i;
+            });
         }
 
         // -------------------------------------------------------------------------
@@ -22671,4 +22766,4 @@ ${hideRules}
 
     console.log('[Toolasha] UI library loaded');
 
-})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Utils.formatters, Toolasha.Utils.timerRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Core.storage, Toolasha.Core.webSocketHook, Toolasha.Utils.reactInput, Toolasha.Utils.actionPanelHelper, Toolasha.Market.expectedValueCalculator, Toolasha.Utils.equipmentParser, Toolasha.Utils.teaParser, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.marketData, Toolasha.Utils.profitConstants, Toolasha.Utils.efficiency, Toolasha.Utils.profitHelpers, Toolasha.Market.profitCalculator, Toolasha.Utils.selectors, Toolasha.Core.marketAPI, Toolasha.Utils.cleanupRegistry, Toolasha.Core, Toolasha.Core.settingsStorage, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.enhancementConfig);
+})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Utils.formatters, Toolasha.Utils.timerRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Core.storage, Toolasha.Core.marketAPI, Toolasha.Core.webSocketHook, Toolasha.Utils.reactInput, Toolasha.Utils.actionPanelHelper, Toolasha.Market.expectedValueCalculator, Toolasha.Utils.equipmentParser, Toolasha.Utils.teaParser, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.marketData, Toolasha.Utils.profitConstants, Toolasha.Utils.efficiency, Toolasha.Utils.profitHelpers, Toolasha.Market.profitCalculator, Toolasha.Utils.selectors, Toolasha.Utils.cleanupRegistry, Toolasha.Core, Toolasha.Core.settingsStorage, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.enhancementConfig);
