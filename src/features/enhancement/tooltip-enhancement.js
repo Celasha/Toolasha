@@ -570,6 +570,10 @@ export function getProductionCost(itemHrid, mode = 'ask') {
     // Sum up input material costs (artisan tea reduces material quantities, not upgrade items)
     if (action.inputItems) {
         for (const input of action.inputItems) {
+            if (input.itemHrid === '/items/coin') {
+                totalPrice += input.count * (1 - artisanBonus);
+                continue;
+            }
             let inputPrice = getItemPrice(input.itemHrid, { mode }) || 0;
             if (inputPrice === 0) {
                 inputPrice = getProductionCost(input.itemHrid, mode);
