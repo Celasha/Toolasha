@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 1.61.0
+ * Version: 1.61.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -12734,6 +12734,10 @@ self.onmessage = function (e) {
         // Sum up input material costs (artisan tea reduces material quantities, not upgrade items)
         if (action.inputItems) {
             for (const input of action.inputItems) {
+                if (input.itemHrid === '/items/coin') {
+                    totalPrice += input.count * (1 - artisanBonus);
+                    continue;
+                }
                 let inputPrice = marketData_js.getItemPrice(input.itemHrid, { mode }) || 0;
                 if (inputPrice === 0) {
                     inputPrice = getProductionCost(input.itemHrid, mode);
