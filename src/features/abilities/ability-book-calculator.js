@@ -10,6 +10,8 @@ import marketAPI from '../../api/marketplace.js';
 import { numberFormatter, formatKMB } from '../../utils/formatters.js';
 import dom from '../../utils/dom.js';
 import domObserver from '../../core/dom-observer.js';
+import { navigateToMarketplace } from '../../utils/marketplace-tabs.js';
+import { createAutofillManager } from '../../utils/marketplace-autofill.js';
 
 /**
  * AbilityBookCalculator class handles ability book calculations in Item Dictionary
@@ -19,6 +21,7 @@ class AbilityBookCalculator {
         this.unregisterObserver = null; // Unregister function from centralized observer
         this.isActive = false;
         this.isInitialized = false;
+        this.autofillManager = createAutofillManager('AbilityBookCalculator');
     }
 
     /**
@@ -54,6 +57,8 @@ class AbilityBookCalculator {
         }
 
         this.isInitialized = true;
+
+        this.autofillManager.initialize();
 
         // Register with centralized observer to watch for Item Dictionary modal
         this.unregisterObserver = domObserver.onClass(
@@ -247,23 +252,48 @@ class AbilityBookCalculator {
         const input = calculatorDiv.querySelector('#tillLevelInput');
         const display = calculatorDiv.querySelector('#tillLevelNumber');
 
+        let currentBooks = booksNeeded;
+
         const updateDisplay = () => {
             const target = parseInt(input.value);
 
             if (target > currentLevel && target <= 200) {
                 const books = this.calculateBooksNeeded(currentLevel, currentXp, target, xpPerBook);
+                currentBooks = books;
                 display.innerHTML = `
                     Books needed: <strong>${numberFormatter(books)}</strong>
                     <br>
                     Cost: ${formatKMB(Math.ceil(books * ask))} / ${formatKMB(Math.ceil(books * bid))} (ask / bid)
                 `;
             } else {
+                currentBooks = 0;
                 display.innerHTML = '<span style="color: ${config.COLOR_LOSS};">Invalid target level</span>';
             }
         };
 
         input.addEventListener('change', updateDisplay);
         input.addEventListener('keyup', updateDisplay);
+
+        // Buy on Marketplace button
+        const buyButton = document.createElement('button');
+        buyButton.textContent = 'Buy on Marketplace';
+        buyButton.style.cssText = `
+            margin-top: 8px;
+            padding: 4px 10px;
+            font-size: 0.85em;
+            background: #2a2a2a;
+            color: white;
+            border: 1px solid #555;
+            border-radius: 3px;
+            cursor: pointer;
+        `;
+        buyButton.addEventListener('click', () => {
+            if (currentBooks > 0) {
+                this.autofillManager.setQuantity(Math.ceil(currentBooks));
+                navigateToMarketplace(itemHrid);
+            }
+        });
+        calculatorDiv.appendChild(buyButton);
 
         // Try to find the left column by looking for the modal's main content structure
         // The Item Dictionary modal typically has its content in direct children of the panel
@@ -307,6 +337,7 @@ class AbilityBookCalculator {
             this.unregisterObserver();
             this.unregisterObserver = null;
         }
+        this.autofillManager.cleanup();
         this.isActive = false;
         this.isInitialized = false;
     }
