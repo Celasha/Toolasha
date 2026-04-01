@@ -891,10 +891,11 @@ class AlchemyProfit {
                 .join('|');
 
             // Get catalyst (from the catalyst input container)
-            const catalyst =
-                document
-                    .querySelector('[class*="SkillActionDetail_catalystItemInputContainer"] svg use')
-                    ?.getAttribute('href') || 'none';
+            // Use Item_itemContainer to avoid the info icon's use[href]; item icons use xlink:href
+            const catalystUse = document.querySelector(
+                '[class*="SkillActionDetail_catalystItemInputContainer"] [class*="Item_itemContainer"] svg use'
+            );
+            const catalyst = catalystUse?.getAttribute('xlink:href') || catalystUse?.getAttribute('href') || 'none';
 
             // Get requirements (input materials)
             const requirements = Array.from(

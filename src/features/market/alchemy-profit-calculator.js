@@ -339,6 +339,7 @@ class AlchemyProfitCalculator {
 
     _liveSetupCombo({
         baseSuccessRate,
+        actionsPerHour,
         efficiencyDecimal,
         actionTime,
         alchemyBonusRevenue,
@@ -347,18 +348,47 @@ class AlchemyProfitCalculator {
         levelPenalty = 0,
     }) {
         const liveTeaBonus = getAlchemySuccessBonus();
-        const successRateBreakdown = this.calculateSuccessRateBreakdown(baseSuccessRate, 0, liveTeaBonus, levelPenalty);
+
+        // Read the live catalyst from the DOM slot
+        const catalystUse = document.querySelector(
+            '[class*="SkillActionDetail_catalystItemInputContainer"] [class*="Item_itemContainer"] svg use'
+        );
+        const iconName = catalystUse?.getAttribute('href')?.match(/#(.+)$/)?.[1] || null;
+        const liveCatalystHrid = iconName ? `/items/${iconName}` : null;
+
+        let catalystBonus = 0;
+        let catalystHrid = null;
+        let catalystPrice = 0;
+
+        if (liveCatalystHrid === CATALYST_HRIDS.prime) {
+            catalystBonus = CATALYST_BONUSES.prime;
+            catalystHrid = liveCatalystHrid;
+        } else if (liveCatalystHrid && Object.values(CATALYST_HRIDS).includes(liveCatalystHrid)) {
+            catalystBonus = CATALYST_BONUSES.typeSpecific;
+            catalystHrid = liveCatalystHrid;
+        }
+        if (catalystHrid) {
+            catalystPrice = getItemPrice(catalystHrid, { context: 'profit', side: 'buy' }) ?? 0;
+        }
+
+        const successRateBreakdown = this.calculateSuccessRateBreakdown(
+            baseSuccessRate,
+            catalystBonus,
+            liveTeaBonus,
+            levelPenalty
+        );
         const successRate = successRateBreakdown.total;
-        const catalystCostPerAttempt = 0;
-        const catalystCostPerHour = 0;
+        const catalystCostPerAttempt = catalystPrice * successRate;
+        const catalystCostPerHour = catalystCostPerAttempt * actionsPerHour;
         const teaCostPerHour = liveTeaBonus > 0 ? computeTeaCost(liveTeaBonus) : 0;
-        const netProfitPerAttempt = computeNetProfit(successRate);
+        const netProfitPerAttempt = computeNetProfit(successRate) - catalystCostPerAttempt;
         const profitPerSecond = (netProfitPerAttempt * (1 + efficiencyDecimal)) / actionTime;
-        const profitPerHour = profitPerSecond * SECONDS_PER_HOUR + alchemyBonusRevenue - teaCostPerHour;
+        const profitPerHour =
+            profitPerSecond * SECONDS_PER_HOUR + alchemyBonusRevenue - teaCostPerHour - catalystCostPerHour;
         return {
-            catalystBonus: 0,
-            catalystHrid: null,
-            catalystPrice: 0,
+            catalystBonus,
+            catalystHrid,
+            catalystPrice,
             teaBonus: liveTeaBonus,
             successRateBreakdown,
             successRate,

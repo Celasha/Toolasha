@@ -150,6 +150,17 @@ class AlchemyProfitDisplay {
             for (const mutation of mutations) {
                 // Watch for childList changes (sections being added/removed)
                 if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+                    // Trigger when mutation happens inside the catalyst container
+                    // (React replaces ItemSelector nodes when catalyst is selected/cleared)
+                    let el = mutation.target;
+                    while (el && el !== alchemyComponent) {
+                        if (typeof el.className === 'string' && el.className.includes('catalystItemInputContainer')) {
+                            triggerUpdate();
+                            break;
+                        }
+                        el = el.parentElement;
+                    }
+
                     for (const node of mutation.addedNodes) {
                         if (node.nodeType === Node.ELEMENT_NODE) {
                             const className = node.className || '';
@@ -170,8 +181,10 @@ class AlchemyProfitDisplay {
                 // Watch for attribute changes (SVG href changes when item selected)
                 if (mutation.type === 'attributes') {
                     const target = mutation.target;
-                    if (target.tagName === 'use' && mutation.attributeName === 'href') {
-                        // SVG use element href changed - item was selected
+                    if (
+                        target.tagName === 'use' &&
+                        (mutation.attributeName === 'href' || mutation.attributeName === 'xlink:href')
+                    ) {
                         triggerUpdate();
                         return;
                     }
@@ -184,7 +197,7 @@ class AlchemyProfitDisplay {
             childList: true,
             subtree: true,
             attributes: true,
-            attributeFilter: ['href'],
+            attributeFilter: ['href', 'xlink:href'],
         });
     }
 
