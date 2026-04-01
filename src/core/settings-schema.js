@@ -515,6 +515,13 @@ export const settingsGroups = {
                     { value: 'patientBuy', label: 'Buy: Bid / Sell: Bid (Patient Buy / Instant Sell)' },
                 ],
             },
+            profitCalc_pricingNaming: {
+                id: 'profitCalc_pricingNaming',
+                label: 'Pricing mode naming convention',
+                type: 'checkbox',
+                default: false,
+                help: 'Show pricing modes as "Instant Buy / Instant Sell" instead of "Buy: Ask / Sell: Bid"',
+            },
             actions_artisanMaterialMode: {
                 id: 'actions_artisanMaterialMode',
                 label: 'Missing materials: Artisan requirement mode',

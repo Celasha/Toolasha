@@ -431,6 +431,29 @@ class Config {
     }
 
     /**
+     * Get the display label for a pricing mode key, respecting the naming convention setting.
+     * @param {string} mode - Pricing mode key ('conservative', 'hybrid', 'optimistic', 'patientBuy')
+     * @returns {string} Display label
+     */
+    getPricingModeLabel(mode) {
+        const useInstant = this.getSetting('profitCalc_pricingNaming');
+        const labels = useInstant
+            ? {
+                  conservative: 'Instant Buy / Instant Sell',
+                  hybrid: 'Instant Buy / Patient Sell',
+                  optimistic: 'Patient Buy / Patient Sell',
+                  patientBuy: 'Patient Buy / Instant Sell',
+              }
+            : {
+                  conservative: 'Buy: Ask / Sell: Bid',
+                  hybrid: 'Buy: Ask / Sell: Ask',
+                  optimistic: 'Buy: Bid / Sell: Ask',
+                  patientBuy: 'Buy: Bid / Sell: Bid',
+              };
+        return labels[mode] || labels.hybrid;
+    }
+
+    /**
      * Get a setting value (for non-boolean settings)
      * @param {string} key - Setting key
      * @param {*} defaultValue - Default value if key doesn't exist

@@ -884,13 +884,7 @@ class AlchemyProfitDisplay {
 
         // Add pricing mode label
         const pricingMode = profitData.pricingMode || 'hybrid';
-        const modeLabel =
-            {
-                conservative: 'Buy: Ask / Sell: Bid',
-                hybrid: 'Buy: Ask / Sell: Ask',
-                optimistic: 'Buy: Bid / Sell: Ask',
-                patientBuy: 'Buy: Bid / Sell: Bid',
-            }[pricingMode] || 'Buy: Ask / Sell: Ask';
+        const modeLabel = config.getPricingModeLabel(pricingMode);
 
         const modeDiv = document.createElement('div');
         modeDiv.style.cssText = `
