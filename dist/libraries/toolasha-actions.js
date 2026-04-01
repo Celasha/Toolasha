@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 1.63.0
+ * Version: 1.63.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -16794,10 +16794,11 @@
                     .join('|');
 
                 // Get catalyst (from the catalyst input container)
-                const catalyst =
-                    document
-                        .querySelector('[class*="SkillActionDetail_catalystItemInputContainer"] svg use')
-                        ?.getAttribute('href') || 'none';
+                // Use Item_itemContainer to avoid the info icon's use[href]; item icons use xlink:href
+                const catalystUse = document.querySelector(
+                    '[class*="SkillActionDetail_catalystItemInputContainer"] [class*="Item_itemContainer"] svg use'
+                );
+                const catalyst = catalystUse?.getAttribute('xlink:href') || catalystUse?.getAttribute('href') || 'none';
 
                 // Get requirements (input materials)
                 const requirements = Array.from(
@@ -16966,6 +16967,17 @@
                 for (const mutation of mutations) {
                     // Watch for childList changes (sections being added/removed)
                     if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+                        // Trigger when mutation happens inside the catalyst container
+                        // (React replaces ItemSelector nodes when catalyst is selected/cleared)
+                        let el = mutation.target;
+                        while (el && el !== alchemyComponent) {
+                            if (typeof el.className === 'string' && el.className.includes('catalystItemInputContainer')) {
+                                triggerUpdate();
+                                break;
+                            }
+                            el = el.parentElement;
+                        }
+
                         for (const node of mutation.addedNodes) {
                             if (node.nodeType === Node.ELEMENT_NODE) {
                                 const className = node.className || '';
@@ -16986,8 +16998,10 @@
                     // Watch for attribute changes (SVG href changes when item selected)
                     if (mutation.type === 'attributes') {
                         const target = mutation.target;
-                        if (target.tagName === 'use' && mutation.attributeName === 'href') {
-                            // SVG use element href changed - item was selected
+                        if (
+                            target.tagName === 'use' &&
+                            (mutation.attributeName === 'href' || mutation.attributeName === 'xlink:href')
+                        ) {
                             triggerUpdate();
                             return;
                         }
@@ -17000,7 +17014,7 @@
                 childList: true,
                 subtree: true,
                 attributes: true,
-                attributeFilter: ['href'],
+                attributeFilter: ['href', 'xlink:href'],
             });
         }
 
