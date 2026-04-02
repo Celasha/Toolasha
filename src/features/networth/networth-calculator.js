@@ -668,6 +668,7 @@ export async function calculateNetworth() {
             count: item.count,
             itemHrid: item.itemHrid,
             enhancementLevel: item.enhancementLevel || 0,
+            isOpenable: itemDetails?.isOpenable === true,
         };
 
         // Check if this is an ability book

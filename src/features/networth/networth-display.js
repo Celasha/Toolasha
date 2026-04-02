@@ -6,9 +6,13 @@
  */
 
 import config from '../../core/config.js';
+import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
+import marketAPI from '../../api/marketplace.js';
 import { networthFormatter, formatKMB } from '../../utils/formatters.js';
 import networthHistoryChart from './networth-history-chart.js';
+import expectedValueCalculator from '../market/expected-value-calculator.js';
+import { DUNGEON_CHEST_CHEST_KEYS } from '../combat-stats/combat-stats-calculator.js';
 
 /**
  * Header Display Component
@@ -313,6 +317,17 @@ class NetworthInventoryDisplay {
             sectionsToPreserve.push(categoryId);
         });
 
+        // Preserve chest item expand states
+        const byCatForState = networthData.currentAssets.inventory.byCategory || {};
+        for (const categoryData of Object.values(byCatForState)) {
+            for (const item of categoryData.items) {
+                if (item.isOpenable && item.itemHrid) {
+                    const slug = item.itemHrid.split('/').pop();
+                    sectionsToPreserve.push(`mwi-chest-${slug}-detail`);
+                }
+            }
+        }
+
         sectionsToPreserve.forEach((id) => {
             const elem = this.container.querySelector(`#${id}`);
             if (elem) {
@@ -424,8 +439,17 @@ class NetworthInventoryDisplay {
             if (elem && expandedStates[id]) {
                 elem.style.display = 'block';
 
-                // Update the corresponding toggle button text (+ to -)
-                const toggleId = id.replace('-details', '-toggle').replace('-breakdown', '-toggle');
+                // Derive the toggle button ID from the detail ID.
+                // Fixed sections use suffixes like -details, -breakdown, -detail → strip and append -toggle.
+                // Dynamic sections (e.g. inventory categories: mwi-inventory-loot) use id + '-toggle'.
+                let toggleId = id
+                    .replace('-details', '-toggle')
+                    .replace('-breakdown', '-toggle')
+                    .replace('-detail', '-toggle');
+                if (toggleId === id) {
+                    toggleId = id + '-toggle';
+                }
+
                 const toggleBtn = this.container.querySelector(`#${toggleId}`);
                 if (toggleBtn) {
                     const currentText = toggleBtn.textContent;
@@ -542,18 +566,21 @@ class NetworthInventoryDisplay {
                 const categoryId = `mwi-inventory-${categoryName.toLowerCase().replace(/\s+/g, '-')}`;
                 const categoryToggleId = `${categoryId}-toggle`;
 
-                // Build items HTML with newlines
+                // Build items HTML
                 const itemsHTML = categoryData.items
                     .map((item) => {
-                        return `${item.name} x${formatKMB(item.count)}: ${networthFormatter(Math.round(item.value))}`;
+                        if (item.isOpenable && item.itemHrid) {
+                            return this.renderOpenableItemRow(item);
+                        }
+                        return `<div>${item.name} x${formatKMB(item.count)}: ${networthFormatter(Math.round(item.value))}</div>`;
                     })
-                    .join('\n');
+                    .join('');
 
                 return `
                 <div style="cursor: pointer; margin-top: 4px; font-size: 0.85rem;" id="${categoryToggleId}">
                     + ${categoryName}: ${networthFormatter(Math.round(categoryData.totalValue))}
                 </div>
-                <div id="${categoryId}" style="display: none; margin-left: 20px; font-size: 0.75rem; color: #999; white-space: pre-line;">
+                <div id="${categoryId}" style="display: none; margin-left: 20px; font-size: 0.75rem; color: #999;">
                     ${itemsHTML}
                 </div>
             `;
@@ -621,6 +648,20 @@ class NetworthInventoryDisplay {
             );
         });
 
+        // Per-chest item toggles (openable items)
+        for (const categoryData of Object.values(byCategory)) {
+            for (const item of categoryData.items) {
+                if (item.isOpenable && item.itemHrid) {
+                    const slug = item.itemHrid.split('/').pop();
+                    this.setupToggle(
+                        `mwi-chest-${slug}-toggle`,
+                        `mwi-chest-${slug}-detail`,
+                        `${item.name} x${formatKMB(item.count)}: ${networthFormatter(Math.round(item.value))}`
+                    );
+                }
+            }
+        }
+
         // Market Listings toggle
         this.setupToggle(
             'mwi-listings-toggle',
@@ -673,6 +714,69 @@ class NetworthInventoryDisplay {
                 `Ability Books: ${networthFormatter(Math.round(networthData.fixedAssets.abilityBooks.totalCost))}`
             );
         }
+    }
+
+    /**
+     * Render an expandable row for an openable item (chest, cache, crate)
+     * @param {Object} item - Item data including itemHrid and isOpenable
+     * @returns {string} HTML string
+     */
+    renderOpenableItemRow(item) {
+        const slug = item.itemHrid.split('/').pop();
+        const toggleId = `mwi-chest-${slug}-toggle`;
+        const detailId = `mwi-chest-${slug}-detail`;
+
+        const evData = expectedValueCalculator.isInitialized
+            ? expectedValueCalculator.calculateExpectedValue(item.itemHrid)
+            : null;
+
+        let detailsHTML = '';
+        if (evData) {
+            const chestKeyHrid = DUNGEON_CHEST_CHEST_KEYS[item.itemHrid];
+            let keyPrice = 0;
+            let keyName = null;
+            if (chestKeyHrid) {
+                const setting = config.getSettingValue('combatStats_keyPricing') || 'ask';
+                const keyPrices = marketAPI.getPrice(chestKeyHrid);
+                keyPrice = keyPrices?.[setting] ?? keyPrices?.ask ?? 0;
+                keyName = dataManager.getItemDetails(chestKeyHrid)?.name;
+            }
+            detailsHTML = this.buildChestDropsHTML(evData, keyPrice, keyName);
+        }
+
+        return `
+            <div id="${toggleId}" style="cursor: pointer; padding: 1px 0;">
+                + ${item.name} x${formatKMB(item.count)}: ${networthFormatter(Math.round(item.value))}
+            </div>
+            <div id="${detailId}" style="display: none; margin-left: 16px; color: #bbb; margin-bottom: 2px;">
+                ${detailsHTML}
+            </div>`;
+    }
+
+    /**
+     * Build the drop breakdown HTML for an expanded chest row
+     * @param {Object} evData - Expected value data from expectedValueCalculator
+     * @param {number} keyPrice - Chest key market price (0 for non-dungeon chests)
+     * @param {string|null} keyName - Chest key item name
+     * @returns {string} HTML string
+     */
+    buildChestDropsHTML(evData, keyPrice, keyName) {
+        let html = `<div>EV: ${networthFormatter(Math.round(evData.expectedValue))}/chest</div>`;
+        if (keyPrice > 0) {
+            const label = keyName ? `Key (${keyName})` : 'Key Cost';
+            html += `<div>\u2212 ${label}: ${networthFormatter(Math.round(keyPrice))}</div>`;
+            html += `<div>Net: ${networthFormatter(Math.round(evData.expectedValue - keyPrice))}/chest</div>`;
+        }
+        const pricedDrops = evData.drops.filter((d) => d.hasPriceData);
+        if (pricedDrops.length > 0) {
+            html += '<div style="margin-top: 3px;">';
+            for (const drop of pricedDrops) {
+                const pct = (drop.dropRate * 100).toFixed(1);
+                html += `<div>\u2022 ${drop.itemName} (${pct}%): ${networthFormatter(Math.round(drop.expectedValue))}</div>`;
+            }
+            html += '</div>';
+        }
+        return html;
     }
 
     /**
