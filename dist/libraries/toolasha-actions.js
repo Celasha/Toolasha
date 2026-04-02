@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 1.65.1
+ * Version: 1.65.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -11886,7 +11886,14 @@
         // Watch for changes (item swap, level change, protection change) with debounce
         domObserverHelpers_js.createMutationWatcher(
             panel,
-            () => {
+            (mutations) => {
+                // Ignore mutations caused by our own button insertion/removal
+                const isOwnButton = mutations.every((m) => {
+                    const nodes = [...m.addedNodes, ...m.removedNodes];
+                    return nodes.length > 0 && nodes.every((n) => n.id === 'mwi-missing-mats-button');
+                });
+                if (isOwnButton) return;
+
                 if (enhancementDebounceTimeout) {
                     clearTimeout(enhancementDebounceTimeout);
                 }
