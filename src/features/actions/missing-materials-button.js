@@ -705,8 +705,9 @@ function createMissingMaterialTabs(missingMaterials) {
         return;
     }
 
-    // Remove any existing custom tabs first
-    handleMarketplaceCleanup();
+    // Remove any existing custom tabs first (preserve stored context — we're recreating, not leaving)
+    removeMaterialTabs();
+    currentMaterialsTabs.length = 0;
 
     // Get reference tab for cloning (use "My Listings" as template)
     const referenceTab = Array.from(tabsContainer.children).find((btn) => btn.textContent.includes('My Listings'));
@@ -738,9 +739,26 @@ function createMissingMaterialTabs(missingMaterials) {
     currentMaterialsTabs.length = 0; // Clear without reassigning (preserves observer reference)
     for (const material of missingMaterials) {
         const tab = createMaterialTab(material, referenceTab, (_e, mat) => {
-            // Store the missing quantity for auto-fill when buy modal opens
-            autofillManager.setQuantity(mat.missing);
-            // Navigate to marketplace
+            // Store a lazy recalculation function — called each time a buy modal opens,
+            // so the quantity always reflects current inventory state at that moment.
+            autofillManager.setPendingCalculation(() => {
+                if (storedEnhancementContext) {
+                    const ctx = storedEnhancementContext;
+                    const mats = calculateEnhancementMaterialRequirements(
+                        ctx.itemHrid,
+                        ctx.startLevel,
+                        ctx.targetLevel,
+                        ctx.protectionItemHrid,
+                        ctx.protectFromLevel
+                    );
+                    return mats.find((m) => m.itemHrid === mat.itemHrid)?.missing ?? 0;
+                } else if (storedActionHrid && storedNumActions > 0) {
+                    const ignoreQueue = config.getSetting('actions_missingMaterialsButton_ignoreQueue') || false;
+                    const mats = calculateMaterialRequirements(storedActionHrid, storedNumActions, !ignoreQueue);
+                    return mats.find((m) => m.itemHrid === mat.itemHrid)?.missing ?? 0;
+                }
+                return parseInt(tab.getAttribute('data-missing-quantity') || '0', 10);
+            });
             navigateToMarketplace(mat.itemHrid, 0);
         });
         tabsContainer.appendChild(tab);
@@ -868,6 +886,9 @@ function updateTabBadge(tab, material) {
         </div>
     `;
 
+    // Keep data-missing-quantity in sync so the click handler autofills the current amount
+    tab.setAttribute('data-missing-quantity', material.missing.toString());
+
     // Update tab styling based on state
     if (!material.isTradeable) {
         tab.style.opacity = '0.5';
@@ -893,7 +914,7 @@ function handleMarketplaceCleanup() {
         inventoryUpdateHandler = null;
     }
 
-    // Clear stored context
+    // Clear stored context — only when genuinely leaving the marketplace
     storedActionHrid = null;
     storedNumActions = 0;
     storedEnhancementContext = null;

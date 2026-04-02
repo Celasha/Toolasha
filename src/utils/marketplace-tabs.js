@@ -40,15 +40,6 @@ export function createMaterialTab(material, referenceTab, onClickCallback) {
         statusText = 'Not Tradeable';
     } else if (material.missing > 0) {
         statusColor = '#ef4444'; // Red - missing materials
-        console.debug('[MissingMats] Tab initial badge — missing:', {
-            item: material.itemName,
-            itemHrid: material.itemHrid,
-            required: material.required,
-            have: material.have,
-            queued: material.queued,
-            available: material.available,
-            missing: material.missing,
-        });
         // Show queued amount if any materials are reserved by queue
         const queuedText = material.queued > 0 ? ` (${formatWithSeparator(material.queued)} Q'd)` : '';
         statusText = `Missing: ${formatWithSeparator(material.missing)}${queuedText}`;
