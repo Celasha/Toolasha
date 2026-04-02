@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 1.65.0
+ * Version: 1.65.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -11286,11 +11286,15 @@
     /**
      * Handle buy modal appearance and auto-fill quantity if available
      * @param {HTMLElement} modal - Modal container element
-     * @param {number|null} activeQuantity - Quantity to auto-fill (null if none)
+     * @param {number|null} activeQuantity - Static quantity to auto-fill (null if using pending fn)
+     * @param {Function|null} pendingCalculation - Lazy fn that returns current quantity (takes priority)
      */
-    function handleBuyModal(modal, activeQuantity) {
-        // Check if we have an active quantity to fill
-        if (!activeQuantity || activeQuantity <= 0) {
+    function handleBuyModal(modal, activeQuantity, pendingCalculation) {
+        // Resolve quantity: prefer lazy recalculation over stored static value
+        const quantity = pendingCalculation ? pendingCalculation() : activeQuantity;
+
+        // Check if we have a quantity to fill
+        if (!quantity || quantity <= 0) {
             return;
         }
 
@@ -11313,7 +11317,7 @@
 
         // Set the quantity value
         const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-        nativeInputValueSetter.call(quantityInput, activeQuantity.toString());
+        nativeInputValueSetter.call(quantityInput, quantity.toString());
 
         // Trigger input event to notify React
         const inputEvent = new Event('input', { bubbles: true });
@@ -11324,19 +11328,32 @@
      * Create an autofill manager instance
      * Manages storing quantity to autofill and observing buy modals
      * @param {string} observerId - Unique ID for this observer (e.g., 'MissingMats-Actions')
-     * @returns {Object} Autofill manager with methods: setQuantity, clearQuantity, initialize, cleanup
+     * @returns {Object} Autofill manager with methods: setQuantity, setPendingCalculation, clearQuantity, initialize, cleanup
      */
     function createAutofillManager(observerId) {
         let activeQuantity = null;
+        let pendingCalculation = null;
         let observerUnregister = null;
 
         return {
             /**
-             * Set the quantity to auto-fill in the next buy modal
+             * Set a static quantity to auto-fill in the next buy modal
              * @param {number} quantity - Quantity to auto-fill
              */
             setQuantity(quantity) {
                 activeQuantity = quantity;
+                pendingCalculation = null;
+            },
+
+            /**
+             * Set a lazy calculation function that is called each time a buy modal opens.
+             * Takes priority over setQuantity — quantity is recomputed fresh on every modal open,
+             * so subsequent purchases within the same session always autofill the remaining needed amount.
+             * @param {Function} fn - Function returning the current quantity to fill
+             */
+            setPendingCalculation(fn) {
+                pendingCalculation = fn;
+                activeQuantity = null;
             },
 
             /**
@@ -11344,6 +11361,7 @@
              */
             clearQuantity() {
                 activeQuantity = null;
+                pendingCalculation = null;
             },
 
             /**
@@ -11351,7 +11369,7 @@
              * @returns {number|null} Current quantity or null
              */
             getQuantity() {
-                return activeQuantity;
+                return pendingCalculation ? pendingCalculation() : activeQuantity;
             },
 
             /**
@@ -11360,7 +11378,7 @@
              */
             initialize() {
                 observerUnregister = domObserver.onClass(observerId, 'Modal_modalContainer', (modal) => {
-                    handleBuyModal(modal, activeQuantity);
+                    handleBuyModal(modal, activeQuantity, pendingCalculation);
                 });
             },
 
@@ -11374,6 +11392,7 @@
                     observerUnregister = null;
                 }
                 activeQuantity = null;
+                pendingCalculation = null;
             },
         };
     }
@@ -11418,15 +11437,6 @@
             statusText = 'Not Tradeable';
         } else if (material.missing > 0) {
             statusColor = '#ef4444'; // Red - missing materials
-            console.debug('[MissingMats] Tab initial badge — missing:', {
-                item: material.itemName,
-                itemHrid: material.itemHrid,
-                required: material.required,
-                have: material.have,
-                queued: material.queued,
-                available: material.available,
-                missing: material.missing,
-            });
             // Show queued amount if any materials are reserved by queue
             const queuedText = material.queued > 0 ? ` (${formatters_js.formatWithSeparator(material.queued)} Q'd)` : '';
             statusText = `Missing: ${formatters_js.formatWithSeparator(material.missing)}${queuedText}`;
@@ -12291,8 +12301,9 @@
             return;
         }
 
-        // Remove any existing custom tabs first
-        handleMarketplaceCleanup();
+        // Remove any existing custom tabs first (preserve stored context — we're recreating, not leaving)
+        removeMaterialTabs();
+        currentMaterialsTabs.length = 0;
 
         // Get reference tab for cloning (use "My Listings" as template)
         const referenceTab = Array.from(tabsContainer.children).find((btn) => btn.textContent.includes('My Listings'));
@@ -12324,9 +12335,26 @@
         currentMaterialsTabs.length = 0; // Clear without reassigning (preserves observer reference)
         for (const material of missingMaterials) {
             const tab = createMaterialTab(material, referenceTab, (_e, mat) => {
-                // Store the missing quantity for auto-fill when buy modal opens
-                autofillManager.setQuantity(mat.missing);
-                // Navigate to marketplace
+                // Store a lazy recalculation function — called each time a buy modal opens,
+                // so the quantity always reflects current inventory state at that moment.
+                autofillManager.setPendingCalculation(() => {
+                    if (storedEnhancementContext) {
+                        const ctx = storedEnhancementContext;
+                        const mats = materialCalculator_js.calculateEnhancementMaterialRequirements(
+                            ctx.itemHrid,
+                            ctx.startLevel,
+                            ctx.targetLevel,
+                            ctx.protectionItemHrid,
+                            ctx.protectFromLevel
+                        );
+                        return mats.find((m) => m.itemHrid === mat.itemHrid)?.missing ?? 0;
+                    } else if (storedActionHrid && storedNumActions > 0) {
+                        const ignoreQueue = config.getSetting('actions_missingMaterialsButton_ignoreQueue') || false;
+                        const mats = materialCalculator_js.calculateMaterialRequirements(storedActionHrid, storedNumActions, !ignoreQueue);
+                        return mats.find((m) => m.itemHrid === mat.itemHrid)?.missing ?? 0;
+                    }
+                    return parseInt(tab.getAttribute('data-missing-quantity') || '0', 10);
+                });
                 navigateToMarketplace(mat.itemHrid, 0);
             });
             tabsContainer.appendChild(tab);
@@ -12454,6 +12482,9 @@
         </div>
     `;
 
+        // Keep data-missing-quantity in sync so the click handler autofills the current amount
+        tab.setAttribute('data-missing-quantity', material.missing.toString());
+
         // Update tab styling based on state
         if (!material.isTradeable) {
             tab.style.opacity = '0.5';
@@ -12479,7 +12510,7 @@
             inventoryUpdateHandler = null;
         }
 
-        // Clear stored context
+        // Clear stored context — only when genuinely leaving the marketplace
         storedActionHrid = null;
         storedNumActions = 0;
         storedEnhancementContext = null;
