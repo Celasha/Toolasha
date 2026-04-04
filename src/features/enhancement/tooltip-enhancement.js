@@ -163,7 +163,7 @@ export function calculateEnhancementPath(itemHrid, currentEnhancementLevel, conf
     if (mirrorPrice > 0) {
         for (let level = 3; level <= currentEnhancementLevel; level++) {
             const traditionalCost = targetCosts[level];
-            const mirrorCost = mirrorTargetCosts[level - 2] + mirrorTargetCosts[level - 1] + mirrorPrice;
+            const mirrorCost = targetCosts[level - 2] + targetCosts[level - 1] + mirrorPrice;
 
             if (mirrorCost < traditionalCost) {
                 if (mirrorStartLevel === null) {
