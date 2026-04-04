@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 1.65.2
+ * Version: 1.65.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2700,6 +2700,61 @@ self.onmessage = function (e) {
             targetAttempts[level] = minResult.expectedAttempts;
         }
 
+        // Find the base (non-refined) item HRID for the Philosopher's Mirror path.
+        // The mirror path consumes copies of the item at lower enhancement levels; for refined items
+        // those copies are the non-refined base item, so we compute a separate cost array for it.
+        let mirrorItemHrid = itemHrid;
+        for (const action of Object.values(gameData.actionDetailMap)) {
+            if (action.outputItems?.[0]?.itemHrid === itemHrid && action.upgradeItemHrid) {
+                mirrorItemHrid = action.upgradeItemHrid;
+                break;
+            }
+        }
+
+        let mirrorTargetCosts = targetCosts;
+        let mirrorTargetTimes = targetTimes;
+        let mirrorTargetAttempts = targetAttempts;
+
+        if (mirrorItemHrid !== itemHrid) {
+            const mirrorItemDetails = gameData.itemDetailMap[mirrorItemHrid];
+            const mirrorItemLevel = mirrorItemDetails?.itemLevel || 1;
+            const mirrorAllResults = [];
+            for (let targetLevel = 1; targetLevel <= currentEnhancementLevel; targetLevel++) {
+                const resultsForLevel = [];
+                const neverProtect = calculateCostForStrategy(mirrorItemHrid, targetLevel, 0, mirrorItemLevel, config);
+                if (neverProtect) resultsForLevel.push({ protectFrom: 0, ...neverProtect });
+                for (let protectFrom = 2; protectFrom <= targetLevel; protectFrom++) {
+                    const result = calculateCostForStrategy(
+                        mirrorItemHrid,
+                        targetLevel,
+                        protectFrom,
+                        mirrorItemLevel,
+                        config
+                    );
+                    if (result) resultsForLevel.push({ protectFrom, ...result });
+                }
+                mirrorAllResults.push(resultsForLevel);
+            }
+            mirrorTargetCosts = new Array(currentEnhancementLevel + 1);
+            mirrorTargetTimes = new Array(currentEnhancementLevel + 1);
+            mirrorTargetAttempts = new Array(currentEnhancementLevel + 1);
+            mirrorTargetCosts[0] = toolashaConfig.isFeatureEnabled('enhanceSim_baseItemCraftingCost')
+                ? Math.min(
+                      getProductionCost(mirrorItemHrid) || Infinity,
+                      marketData_js.getItemPrices(mirrorItemHrid, 0)?.ask || Infinity
+                  ) || getRealisticBaseItemPrice(mirrorItemHrid)
+                : getRealisticBaseItemPrice(mirrorItemHrid);
+            mirrorTargetTimes[0] = 0;
+            mirrorTargetAttempts[0] = 0;
+            for (let level = 1; level <= currentEnhancementLevel; level++) {
+                const resultsForLevel = mirrorAllResults[level - 1];
+                const minResult = resultsForLevel.reduce((best, curr) => (curr.totalCost < best.totalCost ? curr : best));
+                mirrorTargetCosts[level] = minResult.totalCost;
+                mirrorTargetTimes[level] = minResult.totalTime;
+                mirrorTargetAttempts[level] = minResult.expectedAttempts;
+            }
+        }
+
         // Step 3: Apply Philosopher's Mirror optimization (single pass, in-place)
         // Like Enhancelator lines 456-465
         const mirrorPrice = getRealisticBaseItemPrice('/items/philosophers_mirror');
@@ -2708,7 +2763,7 @@ self.onmessage = function (e) {
         if (mirrorPrice > 0) {
             for (let level = 3; level <= currentEnhancementLevel; level++) {
                 const traditionalCost = targetCosts[level];
-                const mirrorCost = targetCosts[level - 2] + targetCosts[level - 1] + mirrorPrice;
+                const mirrorCost = mirrorTargetCosts[level - 2] + mirrorTargetCosts[level - 1] + mirrorPrice;
 
                 if (mirrorCost < traditionalCost) {
                     if (mirrorStartLevel === null) {
@@ -2737,8 +2792,10 @@ self.onmessage = function (e) {
                 currentEnhancementLevel,
                 mirrorStartLevel,
                 targetCosts,
-                targetTimes,
-                targetAttempts,
+                mirrorItemHrid,
+                mirrorTargetCosts,
+                mirrorTargetTimes,
+                mirrorTargetAttempts,
                 optimalTraditional,
                 mirrorPrice);
         } else {
@@ -2861,8 +2918,10 @@ self.onmessage = function (e) {
         targetLevel,
         mirrorStartLevel,
         targetCosts,
-        targetTimes,
-        targetAttempts,
+        mirrorItemHrid,
+        mirrorTargetCosts,
+        mirrorTargetTimes,
+        mirrorTargetAttempts,
         optimalTraditional,
         mirrorPrice,
         _config
@@ -2879,17 +2938,17 @@ self.onmessage = function (e) {
         const lowerTierLevel = mirrorStartLevel - 2;
         const upperTierLevel = mirrorStartLevel - 1;
 
-        // Get cost of one item at each level from targetCosts
-        const costLowerTier = targetCosts[lowerTierLevel];
-        const costUpperTier = targetCosts[upperTierLevel];
+        // Get cost of one item at each level from mirrorTargetCosts (base item for refined items)
+        const costLowerTier = mirrorTargetCosts[lowerTierLevel];
+        const costUpperTier = mirrorTargetCosts[upperTierLevel];
 
-        // Get time to make one item at each level from targetTimes
-        const timeLowerTier = targetTimes[lowerTierLevel];
-        const timeUpperTier = targetTimes[upperTierLevel];
+        // Get time to make one item at each level from mirrorTargetTimes
+        const timeLowerTier = mirrorTargetTimes[lowerTierLevel];
+        const timeUpperTier = mirrorTargetTimes[upperTierLevel];
 
-        // Get attempts to make one item at each level from targetAttempts
-        const attemptsLowerTier = targetAttempts[lowerTierLevel];
-        const attemptsUpperTier = targetAttempts[upperTierLevel];
+        // Get attempts to make one item at each level from mirrorTargetAttempts
+        const attemptsLowerTier = mirrorTargetAttempts[lowerTierLevel];
+        const attemptsUpperTier = mirrorTargetAttempts[upperTierLevel];
 
         // Calculate total costs for consumed items and mirrors
         const totalLowerTierCost = numLowerTier * costLowerTier;
@@ -2942,6 +3001,7 @@ self.onmessage = function (e) {
             traditionalCost: optimalTraditional.totalCost,
             consumedItems: consumedItems,
             mirrorCount: numMirrors,
+            consumedItemHrid: mirrorItemHrid,
         };
     }
 
@@ -3204,12 +3264,15 @@ self.onmessage = function (e) {
         const gameData = dataManager.getInitClientData();
         const itemDetails = gameData.itemDetailMap[itemHrid];
 
-        // Build list of protection options: [item itself, mirror, ...specific items]
-        const protectionOptions = [itemHrid, '/items/mirror_of_protection'];
+        // Build list of protection options: [mirror, ...specific items]
+        // Exclude the item itself if it is a refined item (refined items should never be used as protection)
+        const protectionOptions = itemHrid.includes('_refined')
+            ? ['/items/mirror_of_protection']
+            : [itemHrid, '/items/mirror_of_protection'];
 
-        // Add specific protection items if they exist
+        // Add specific protection items if they exist (excluding refined items)
         if (itemDetails.protectionItemHrids && itemDetails.protectionItemHrids.length > 0) {
-            protectionOptions.push(...itemDetails.protectionItemHrids);
+            protectionOptions.push(...itemDetails.protectionItemHrids.filter((h) => !h.includes('_refined')));
         }
 
         // Find cheapest option
@@ -3321,11 +3384,12 @@ self.onmessage = function (e) {
                 .sort((a, b) => b.level - a.level);
 
             const gameData = dataManager.getInitClientData();
-            const baseItemDetails = gameData?.itemDetailMap[itemHrid];
-            const baseItemName = baseItemDetails?.name || itemHrid;
+            const consumedHrid = optimalStrategy.consumedItemHrid ?? itemHrid;
+            const baseItemDetails = gameData?.itemDetailMap[consumedHrid];
+            const baseItemName = baseItemDetails?.name || consumedHrid;
 
             const consumedRows = sortedConsumed.map((item) => {
-                const prices = marketData_js.getItemPrices(itemHrid, item.level);
+                const prices = marketData_js.getItemPrices(consumedHrid, item.level);
                 const askPrice = prices?.ask > 0 ? prices.ask : item.costEach;
                 const bidPrice = prices?.bid > 0 ? prices.bid : item.costEach;
                 totalAsk += askPrice * item.quantity;
@@ -15112,7 +15176,10 @@ function calculateStrategyRealCost(
     // Get protection item price using realistic pricing (like main thread)
     let protectionPrice = 0;
     if (protections > 0) {
-        protectionPrice = getRealisticPrice(itemHrid, baseItemPrice, priceMap, actionDetailMap);
+        // Only use the item itself as protection if it is not a refined item
+        if (!itemHrid.includes('_refined')) {
+            protectionPrice = getRealisticPrice(itemHrid, baseItemPrice, priceMap, actionDetailMap);
+        }
 
         // Check mirror of protection
         const mirrorPrice = getRealisticPrice('/items/mirror_of_protection', null, priceMap, actionDetailMap);
@@ -15120,9 +15187,10 @@ function calculateStrategyRealCost(
             protectionPrice = mirrorPrice;
         }
 
-        // Check specific protection items
+        // Check specific protection items (excluding refined items)
         if (itemDetails.protectionItemHrids && itemDetails.protectionItemHrids.length > 0) {
             for (const protHrid of itemDetails.protectionItemHrids) {
+                if (protHrid.includes('_refined')) continue;
                 const protPrice = getRealisticPrice(protHrid, null, priceMap, actionDetailMap);
                 if (protPrice > 0 && protPrice < protectionPrice) {
                     protectionPrice = protPrice;

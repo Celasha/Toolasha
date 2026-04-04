@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 1.65.2
+ * Version: 1.65.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2508,6 +2508,7 @@
             const skipDedup =
                 messageType === 'quests_updated' ||
                 messageType === 'action_completed' ||
+                messageType === 'actions_updated' ||
                 messageType === 'items_updated' ||
                 messageType === 'market_item_order_books_updated' ||
                 messageType === 'market_listings_updated' ||
