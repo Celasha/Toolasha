@@ -11,7 +11,6 @@
 import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
 import config from '../../core/config.js';
-import estimatedListingAge from './estimated-listing-age.js';
 import { formatKMB } from '../../utils/formatters.js';
 import { createCleanupRegistry } from '../../utils/cleanup-registry.js';
 
@@ -21,6 +20,7 @@ class QueueLengthEstimator {
         this.unregisterObserver = null;
         this.isInitialized = false;
         this.cleanupRegistry = createCleanupRegistry();
+        this.orderBooksCache = {}; // itemHrid → { data: marketItemOrderBooks, lastUpdated }
     }
 
     /**
@@ -32,12 +32,6 @@ class QueueLengthEstimator {
         }
 
         if (!config.getSetting('market_showQueueLength')) {
-            return;
-        }
-
-        // Dependency check - requires estimated listing age feature
-        if (!config.getSetting('market_showEstimatedListingAge')) {
-            console.warn('[QueueLengthEstimator] Requires "Market: Show estimated listing age" to be enabled');
             return;
         }
 
@@ -53,6 +47,14 @@ class QueueLengthEstimator {
     setupWebSocketListeners() {
         const orderBookHandler = (data) => {
             if (data.marketItemOrderBooks) {
+                const itemHrid = data.marketItemOrderBooks.itemHrid;
+                if (itemHrid) {
+                    this.orderBooksCache[itemHrid] = {
+                        data: data.marketItemOrderBooks,
+                        lastUpdated: Date.now(),
+                    };
+                }
+
                 // Clear processed flags to re-render with new data
                 document.querySelectorAll('.mwi-queue-length-set').forEach((container) => {
                     container.classList.remove('mwi-queue-length-set');
@@ -122,7 +124,7 @@ class QueueLengthEstimator {
             return;
         }
 
-        const orderBooksCache = estimatedListingAge.orderBooksCache;
+        const orderBooksCache = this.orderBooksCache;
         if (!orderBooksCache[currentItemHrid]) {
             return;
         }
