@@ -532,6 +532,12 @@ export default class CustomTabsUI {
             if (this._isActive) this._applyLayout();
         });
         this._unregisterHandlers.push(unregisterSort);
+
+        // Inject "Add to Tab" button into item action menus
+        const unregisterItemAction = domObserver.onClass('CustomTabs_itemAction', 'Item_actionMenu', (menu) => {
+            this._injectAddToTabButton(menu);
+        });
+        this._unregisterHandlers.push(unregisterItemAction);
     }
 
     cleanup() {
@@ -551,6 +557,7 @@ export default class CustomTabsUI {
 
         this._tabBtn?.remove();
         this._styleEl?.remove();
+        document.querySelectorAll('.toolasha-ct-add-to-tab').forEach((el) => el.remove());
         this._isActive = false;
     }
 
@@ -1978,6 +1985,167 @@ export default class CustomTabsUI {
     // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
+
+    // -----------------------------------------------------------------------
+    // Item action menu: "Add to Tab" button
+    // -----------------------------------------------------------------------
+
+    /**
+     * Inject an "Add to Tab" dropdown into the game's item action menu.
+     * @param {HTMLElement} actionMenu
+     */
+    _injectAddToTabButton(actionMenu) {
+        if (actionMenu.querySelector('.toolasha-ct-add-to-tab')) return;
+        if (!this._config?.tabs?.length) return;
+
+        // Resolve item HRID and enhancement level from the action menu DOM
+        const nameEl = actionMenu.querySelector('[class*="Item_name"]');
+        if (!nameEl) return;
+        const itemName = nameEl.textContent.trim();
+        const hrid = this._nameToHrid(itemName);
+        if (!hrid) return;
+
+        const enhEl = actionMenu.querySelector('[class*="Item_enhancementLevel"]');
+        const enhLevel = enhEl ? parseInt(enhEl.textContent.trim().replace('+', ''), 10) : 0;
+        const itemHrid = !isNaN(enhLevel) && enhLevel > 0 ? `${hrid}+${enhLevel}` : hrid;
+
+        // Build wrapper in the same style as marketplace shortcuts
+        const wrapper = document.createElement('div');
+        wrapper.className = 'toolasha-ct-add-to-tab';
+        wrapper.style.cssText = 'position: relative; width: 100%;';
+
+        const toggle = document.createElement('button');
+        const existingBtn = actionMenu.querySelector('button');
+        if (existingBtn) toggle.className = existingBtn.className;
+        toggle.style.cssText = 'display: flex; justify-content: space-between; align-items: center; width: 100%;';
+
+        const label = document.createElement('span');
+        label.style.cssText = 'flex: 1; text-align: center;';
+        label.textContent = 'Add to Tab';
+        const chevron = document.createElement('span');
+        chevron.style.cssText = 'font-size: 0.65em; transition: transform 0.15s; display: inline-block;';
+        chevron.textContent = '▼';
+        toggle.appendChild(label);
+        toggle.appendChild(chevron);
+
+        const panel = document.createElement('div');
+        panel.style.cssText = `
+            display: none;
+            position: absolute;
+            top: calc(100% + 4px);
+            left: 0;
+            width: 100%;
+            z-index: 9999;
+            flex-direction: column;
+            background: var(--color-surface, #1e1e2e);
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 6px;
+            overflow: hidden;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.6);
+            padding: 4px;
+            gap: 3px;
+            box-sizing: border-box;
+        `;
+
+        // Populate panel with all tabs (depth-first)
+        const flatTabs = this._flattenTabs(this._config.tabs);
+        for (const { tab, depth } of flatTabs) {
+            const alreadyAdded = tab.items.includes(itemHrid);
+            const btn = document.createElement('button');
+            btn.textContent = '\u00a0'.repeat(depth * 2) + tab.name;
+            btn.style.cssText = `
+                display: block;
+                width: 100%;
+                padding: 6px 12px;
+                border: none;
+                border-radius: 4px;
+                cursor: ${alreadyAdded ? 'default' : 'pointer'};
+                font-size: 0.85rem;
+                font-weight: 600;
+                color: ${alreadyAdded ? '#888' : '#fff'};
+                background: ${tab.color ? tab.color + '55' : 'rgba(255,255,255,0.08)'};
+                text-align: left;
+                transition: opacity 0.15s;
+            `;
+            if (tab.color && !alreadyAdded) btn.style.borderLeft = `3px solid ${tab.color}`;
+            if (alreadyAdded) {
+                btn.title = 'Already in this tab';
+            } else {
+                btn.addEventListener('mouseenter', () => {
+                    btn.style.opacity = '0.8';
+                });
+                btn.addEventListener('mouseleave', () => {
+                    btn.style.opacity = '1';
+                });
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    this._config = addItem(this._config, tab.id, itemHrid);
+                    this._save();
+                    if (this._isActive) {
+                        this._removeInjectedEls();
+                        this._applyLayout();
+                    }
+                    closePanel();
+                    document.dispatchEvent(
+                        new KeyboardEvent('keydown', {
+                            key: 'Escape',
+                            code: 'Escape',
+                            keyCode: 27,
+                            which: 27,
+                            bubbles: true,
+                            cancelable: true,
+                        })
+                    );
+                });
+            }
+            panel.appendChild(btn);
+        }
+
+        let open = false;
+        const closePanel = () => {
+            open = false;
+            panel.style.display = 'none';
+            chevron.style.transform = '';
+        };
+        const outsideClick = () => closePanel();
+        document.addEventListener('click', outsideClick);
+
+        toggle.addEventListener('click', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            open = !open;
+            panel.style.display = open ? 'flex' : 'none';
+            chevron.style.transform = open ? 'rotate(180deg)' : '';
+            if (open) {
+                // Defer adding the outside-click listener so this click doesn't immediately close it
+                setTimeout(() => document.addEventListener('click', outsideClick), 0);
+            } else {
+                document.removeEventListener('click', outsideClick);
+            }
+        });
+
+        wrapper.appendChild(toggle);
+        wrapper.appendChild(panel);
+        actionMenu.appendChild(wrapper);
+    }
+
+    /**
+     * Flatten the tab tree depth-first into [{tab, depth}] pairs.
+     * @param {Array} tabs
+     * @param {number} depth
+     * @returns {Array<{tab: Object, depth: number}>}
+     */
+    _flattenTabs(tabs, depth = 0) {
+        const result = [];
+        for (const tab of tabs) {
+            result.push({ tab, depth });
+            if (tab.children.length > 0) {
+                result.push(...this._flattenTabs(tab.children, depth + 1));
+            }
+        }
+        return result;
+    }
 
     _escHtml(str) {
         const div = document.createElement('div');
