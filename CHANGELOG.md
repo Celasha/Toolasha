@@ -2,14 +2,13 @@
 
 ## [2.0.0](https://github.com/Celasha/Toolasha/compare/v1.67.0...v2.0.0) (2026-04-08)
 
-
 ### ⚠ BREAKING CHANGES
 
-* add Custom Inventory Tabs with drag-and-drop reordering
+- add Custom Inventory Tabs with drag-and-drop reordering
 
 ### Features
 
-* add Custom Inventory Tabs with drag-and-drop reordering ([9d03ca5](https://github.com/Celasha/Toolasha/commit/9d03ca541b5e00470fb1f7610eff849d52fb13ce))
+- add Custom Inventory Tabs with drag-and-drop reordering ([9d03ca5](https://github.com/Celasha/Toolasha/commit/9d03ca541b5e00470fb1f7610eff849d52fb13ce))
 
 ## [1.67.0](https://github.com/Celasha/Toolasha/compare/v1.66.0...v1.67.0) (2026-04-05)
 
