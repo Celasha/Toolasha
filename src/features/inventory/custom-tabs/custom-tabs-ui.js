@@ -25,6 +25,7 @@ import {
     moveTab,
     addItem,
     removeItem,
+    reorderItem,
     setTabOpen,
     findTab,
     getAssignedItemSet,
@@ -267,6 +268,7 @@ const PANEL_CSS = `
     border-radius: 3px;
 }
 .toolasha-ct-assigned-item:hover { background: rgba(255,255,255,0.05); }
+.toolasha-ct-assigned-item.toolasha-ct-drag-over { background: rgba(255,255,255,0.12); outline: 1px dashed #888; }
 .toolasha-ct-assigned-item svg {
     width: 20px;
     height: 20px;
@@ -275,6 +277,15 @@ const PANEL_CSS = `
 .toolasha-ct-assigned-item .toolasha-ct-node-btn {
     margin-left: auto;
 }
+.toolasha-ct-drag-handle {
+    cursor: grab;
+    color: #555;
+    font-size: 14px;
+    flex-shrink: 0;
+    user-select: none;
+    padding: 0 2px;
+}
+.toolasha-ct-drag-handle:active { cursor: grabbing; }
 .toolasha-ct-modal-footer {
     display: flex;
     justify-content: space-between;
@@ -1333,7 +1344,9 @@ export default class CustomTabsUI {
             return;
         }
 
-        for (const hrid of tab.items) {
+        let dragFromIndex = null;
+
+        tab.items.forEach((hrid, index) => {
             const details = dataManager.getItemDetails(hrid);
             const name = details?.name || hrid;
             const iconId = hrid.replace('/items/', '');
@@ -1342,7 +1355,54 @@ export default class CustomTabsUI {
 
             const row = document.createElement('div');
             row.className = 'toolasha-ct-assigned-item';
-            row.innerHTML = `<svg viewBox="0 0 32 32"><use href="${iconHref}"></use></svg><span>${this._escHtml(name)}</span>`;
+            row.draggable = true;
+
+            const handle = document.createElement('span');
+            handle.className = 'toolasha-ct-drag-handle';
+            handle.textContent = '⠿';
+            row.appendChild(handle);
+
+            const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            icon.setAttribute('viewBox', '0 0 32 32');
+            icon.innerHTML = `<use href="${iconHref}"></use>`;
+            row.appendChild(icon);
+
+            const label = document.createElement('span');
+            label.textContent = name;
+            row.appendChild(label);
+
+            row.addEventListener('dragstart', (e) => {
+                dragFromIndex = index;
+                e.dataTransfer.effectAllowed = 'move';
+                row.style.opacity = '0.4';
+            });
+            row.addEventListener('dragend', () => {
+                row.style.opacity = '';
+                container
+                    .querySelectorAll('.toolasha-ct-drag-over')
+                    .forEach((el) => el.classList.remove('toolasha-ct-drag-over'));
+            });
+            row.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                container
+                    .querySelectorAll('.toolasha-ct-drag-over')
+                    .forEach((el) => el.classList.remove('toolasha-ct-drag-over'));
+                row.classList.add('toolasha-ct-drag-over');
+            });
+            row.addEventListener('dragleave', () => {
+                row.classList.remove('toolasha-ct-drag-over');
+            });
+            row.addEventListener('drop', (e) => {
+                e.preventDefault();
+                row.classList.remove('toolasha-ct-drag-over');
+                if (dragFromIndex !== null && dragFromIndex !== index) {
+                    this._config = reorderItem(this._config, tabId, dragFromIndex, index);
+                    this._save();
+                    this._renderAssignedItems(container, tabId);
+                }
+                dragFromIndex = null;
+            });
 
             const removeBtn = document.createElement('button');
             removeBtn.className = 'toolasha-ct-node-btn';
@@ -1355,7 +1415,7 @@ export default class CustomTabsUI {
             });
             row.appendChild(removeBtn);
             container.appendChild(row);
-        }
+        });
     }
 
     // -----------------------------------------------------------------------

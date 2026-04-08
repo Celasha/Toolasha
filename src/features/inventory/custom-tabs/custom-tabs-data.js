@@ -192,6 +192,26 @@ export function addItem(config, tabId, itemHrid) {
 }
 
 /**
+ * Reorder an item within a tab's items array
+ * @param {Object} config
+ * @param {string} tabId
+ * @param {number} fromIndex
+ * @param {number} toIndex
+ * @returns {Object} new config
+ */
+export function reorderItem(config, tabId, fromIndex, toIndex) {
+    const c = clone(config);
+    const result = _findNode(c.tabs, tabId);
+    if (!result) return c;
+    const items = result.tab.items;
+    if (fromIndex < 0 || fromIndex >= items.length) return c;
+    const clamped = Math.max(0, Math.min(toIndex, items.length - 1));
+    const [removed] = items.splice(fromIndex, 1);
+    items.splice(clamped, 0, removed);
+    return c;
+}
+
+/**
  * Remove an item from a tab
  * @param {Object} config
  * @param {string} tabId
