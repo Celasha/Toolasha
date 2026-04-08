@@ -19342,6 +19342,7 @@ self.onmessage = function (e) {
     class InventorySort {
         constructor() {
             this.currentMode = 'none'; // 'ask', 'bid', 'none'
+            this.modeChangeListeners = [];
             this.unregisterHandlers = [];
             this.controlsContainer = null;
             this.currentInventoryElem = null;
@@ -19634,7 +19635,21 @@ self.onmessage = function (e) {
             const badges = document.querySelectorAll('.mwi-stack-price');
             badges.forEach((badge) => badge.remove());
 
+            this.modeChangeListeners.forEach((fn) => fn(mode));
             this.applyCurrentSort();
+        }
+
+        /**
+         * Register a callback to be called when sort mode changes.
+         * Returns an unregister function.
+         * @param {Function} fn
+         * @returns {Function}
+         */
+        onModeChange(fn) {
+            this.modeChangeListeners.push(fn);
+            return () => {
+                this.modeChangeListeners = this.modeChangeListeners.filter((f) => f !== fn);
+            };
         }
 
         /**
@@ -21422,6 +21437,16 @@ self.onmessage = function (e) {
     font-size: 12px;
 }
 .toolasha-ct-close-btn:hover { background: #444; }
+.toolasha-ct-clear-btn {
+    background: #3a2a0a;
+    color: #f0b040;
+    border: 1px solid #6a4a10;
+    border-radius: 4px;
+    padding: 4px 10px;
+    cursor: pointer;
+    font-size: 12px;
+}
+.toolasha-ct-clear-btn:hover { background: #5a3a10; }
 
 /* ---------- Category buttons ---------- */
 .toolasha-ct-categories {
@@ -21445,9 +21470,9 @@ self.onmessage = function (e) {
     background: #1a3a2a;
     color: #6c6;
     border-color: #2a5a3a;
-    cursor: default;
-    opacity: 0.7;
+    cursor: pointer;
 }
+.toolasha-ct-cat-btn--added:hover { background: #2a5a3a; }
 
 /* ---------- Category filter ---------- */
 .toolasha-ct-search-row {
@@ -21559,6 +21584,12 @@ self.onmessage = function (e) {
                 }, 200);
             };
             dataManager.on('items_updated', this._onItemsUpdated);
+
+            // Re-apply layout when sort mode changes
+            const unregisterSort = inventorySort.onModeChange(() => {
+                if (this._isActive) this._applyLayout();
+            });
+            this._unregisterHandlers.push(unregisterSort);
         }
 
         cleanup() {
@@ -22256,6 +22287,7 @@ self.onmessage = function (e) {
             overlay.addEventListener('click', (e) => {
                 if (e.target === overlay && mousedownOnOverlay) {
                     overlay.remove();
+                    this._removeInjectedEls();
                     this._applyLayout();
                 }
             });
@@ -22286,6 +22318,7 @@ self.onmessage = function (e) {
 
             <div class="toolasha-ct-modal-footer">
                 <button class="toolasha-ct-delete-btn">Delete Tab</button>
+                <button class="toolasha-ct-clear-btn">Clear All</button>
                 <button class="toolasha-ct-close-btn">Close</button>
             </div>
         `;
@@ -22345,6 +22378,7 @@ self.onmessage = function (e) {
                     this._config = removeTab(this._config, tabId);
                     this._save();
                     overlay.remove();
+                    this._removeInjectedEls();
                     this._applyLayout();
                 } else {
                     this._deleteConfirmId = tabId;
@@ -22353,8 +22387,32 @@ self.onmessage = function (e) {
                 }
             });
 
+            let clearConfirm = false;
+            const clearBtn = modal.querySelector('.toolasha-ct-clear-btn');
+            clearBtn.addEventListener('click', () => {
+                if (clearConfirm) {
+                    const currentTab = findTab(this._config, tabId)?.tab;
+                    if (currentTab) {
+                        for (const hrid of [...currentTab.items]) {
+                            this._config = removeItem(this._config, tabId, hrid);
+                        }
+                        this._save();
+                        this._renderCategoryButtons(modal.querySelector('.toolasha-ct-categories'), tabId);
+                        this._renderAssignedItems(modal.querySelector('.toolasha-ct-assigned-list'), tabId);
+                    }
+                    clearBtn.textContent = 'Clear All';
+                    clearBtn.style.background = '';
+                    clearConfirm = false;
+                } else {
+                    clearConfirm = true;
+                    clearBtn.textContent = 'Confirm Clear?';
+                    clearBtn.style.background = '#6a3a00';
+                }
+            });
+
             modal.querySelector('.toolasha-ct-close-btn').addEventListener('click', () => {
                 overlay.remove();
+                this._removeInjectedEls();
                 this._applyLayout();
             });
         }
@@ -22487,10 +22545,23 @@ self.onmessage = function (e) {
                 btn.className = 'toolasha-ct-cat-btn' + (allAlreadyAdded ? ' toolasha-ct-cat-btn--added' : '');
                 btn.textContent = cat.name;
                 btn.title = allAlreadyAdded
-                    ? `All ${catItems.length} items already added`
+                    ? `Click to remove ${catItems.length} items from ${cat.name}`
                     : `Add ${catItems.length} items from ${cat.name}`;
 
-                if (!allAlreadyAdded) {
+                if (allAlreadyAdded) {
+                    btn.addEventListener('click', () => {
+                        for (const hrid of catItems) {
+                            if (currentItems.has(hrid)) {
+                                this._config = removeItem(this._config, tabId, hrid);
+                                currentItems.delete(hrid);
+                            }
+                        }
+                        this._save();
+                        this._renderCategoryButtons(container, tabId);
+                        const modal = container.closest('.toolasha-ct-modal');
+                        if (modal) this._renderAssignedItems(modal.querySelector('.toolasha-ct-assigned-list'), tabId);
+                    });
+                } else {
                     btn.addEventListener('click', () => {
                         for (const hrid of catItems) {
                             if (!currentItems.has(hrid)) {
