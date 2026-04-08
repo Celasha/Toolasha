@@ -449,6 +449,12 @@ export default class CustomTabsUI {
             }, 200);
         };
         dataManager.on('items_updated', this._onItemsUpdated);
+
+        // Re-apply layout when sort mode changes
+        const unregisterSort = inventorySort.onModeChange(() => {
+            if (this._isActive) this._applyLayout();
+        });
+        this._unregisterHandlers.push(unregisterSort);
     }
 
     cleanup() {

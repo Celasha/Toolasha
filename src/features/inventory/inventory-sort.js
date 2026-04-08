@@ -18,6 +18,7 @@ import { createTimerRegistry } from '../../utils/timer-registry.js';
 class InventorySort {
     constructor() {
         this.currentMode = 'none'; // 'ask', 'bid', 'none'
+        this.modeChangeListeners = [];
         this.unregisterHandlers = [];
         this.controlsContainer = null;
         this.currentInventoryElem = null;
@@ -310,7 +311,21 @@ class InventorySort {
         const badges = document.querySelectorAll('.mwi-stack-price');
         badges.forEach((badge) => badge.remove());
 
+        this.modeChangeListeners.forEach((fn) => fn(mode));
         this.applyCurrentSort();
+    }
+
+    /**
+     * Register a callback to be called when sort mode changes.
+     * Returns an unregister function.
+     * @param {Function} fn
+     * @returns {Function}
+     */
+    onModeChange(fn) {
+        this.modeChangeListeners.push(fn);
+        return () => {
+            this.modeChangeListeners = this.modeChangeListeners.filter((f) => f !== fn);
+        };
     }
 
     /**
