@@ -16,6 +16,7 @@ import dataManager from '../../../core/data-manager.js';
 import inventorySort from '../inventory-sort.js';
 import inventoryBadgeManager from '../inventory-badge-manager.js';
 import loadoutSnapshot from '../../combat/loadout-snapshot.js';
+import { formatKMB } from '../../../utils/formatters.js';
 import {
     loadConfig,
     saveConfig,
@@ -134,6 +135,11 @@ const PANEL_CSS = `
     font-size: 11px;
     color: #666;
     margin-left: 4px;
+}
+.toolasha-ct-section-value {
+    font-size: 11px;
+    color: #aaa;
+    margin-left: 6px;
 }
 .toolasha-ct-section-actions {
     display: none;
@@ -1200,6 +1206,30 @@ export default class CustomTabsUI {
                 const actionsEl = header.querySelector('.toolasha-ct-section-actions');
                 if (actionsEl) header.insertBefore(warn, actionsEl);
                 else header.appendChild(warn);
+            }
+
+            // Sum badge values across all tiles in this section
+            const valueKey = (() => {
+                const mode = inventorySort.currentMode;
+                if (mode === 'ask' || mode === 'bid') {
+                    return config.getSetting('invSort_showBadges') ? mode + 'Value' : null;
+                }
+                if (mode === 'none') {
+                    const badgesOnNone = config.getSettingValue('invSort_badgesOnNone', 'None');
+                    return badgesOnNone !== 'None' ? badgesOnNone.toLowerCase() + 'Value' : null;
+                }
+                return null;
+            })();
+            if (valueKey) {
+                const total = sectionTiles.reduce((sum, t) => sum + (parseFloat(t.dataset[valueKey]) || 0), 0);
+                if (total > 0) {
+                    const valueBadge = document.createElement('span');
+                    valueBadge.className = 'toolasha-ct-section-value';
+                    valueBadge.textContent = formatKMB(total, 2);
+                    const actionsEl = header.querySelector('.toolasha-ct-section-actions');
+                    if (actionsEl) header.insertBefore(valueBadge, actionsEl);
+                    else header.appendChild(valueBadge);
+                }
             }
 
             // Sort tiles by value if a sort mode is active, then assign orders
