@@ -554,7 +554,7 @@ export default class CustomTabsUI {
             }
 
             for (const tab of tabList.querySelectorAll('[role="tab"]:not(.toolasha-inv-tab)')) {
-                tab.addEventListener('click', () => this._deactivatePanel());
+                tab.addEventListener('click', () => this._deactivatePanel(tab));
             }
 
             this._applyDefaultTabSetting();
@@ -605,12 +605,18 @@ export default class CustomTabsUI {
         this._applyLayout();
     }
 
-    _deactivatePanel() {
+    _deactivatePanel(clickedTab = null) {
         if (!this._isActive) return;
         this._isActive = false;
         if (this._tabBtn) this._tabBtn.classList.remove('Mui-selected');
         this._clearLayout();
         this._showGameContent();
+        // Restore the selected state on the clicked native tab. React won't re-render because
+        // MUI still thinks this tab was selected (we bypassed its state when activating Toolasha).
+        if (clickedTab) {
+            clickedTab.classList.add('Mui-selected');
+            clickedTab.setAttribute('aria-selected', 'true');
+        }
     }
 
     /**
