@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 1.67.0
+ * Version: 2.0.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1071,6 +1071,41 @@
                     type: 'checkbox',
                     default: true,
                     help: 'When enabled, Seal of... items from the Labyrinth are not auto-opened',
+                },
+            },
+        },
+
+        inventoryTabs: {
+            title: 'Custom Inventory Tabs',
+            icon: '🗂️',
+            settings: {
+                inventoryTabs: {
+                    id: 'inventoryTabs',
+                    label: 'Custom Inventory Tabs: Enable',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Adds a Toolasha tab to the character panel where you can organize inventory items into personal tabs.',
+                },
+                inventoryTabs_showUnorganized: {
+                    id: 'inventoryTabs_showUnorganized',
+                    label: 'Custom Inventory Tabs: Show Unorganized bucket',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Show an "Unorganized" section containing all items not assigned to any tab.',
+                },
+                inventoryTabs_categoryAddAll: {
+                    id: 'inventoryTabs_categoryAddAll',
+                    label: 'Custom Inventory Tabs: Add all items when adding category',
+                    type: 'checkbox',
+                    default: false,
+                    help: 'When adding a category to a tab, add every item in that category (including items not in your inventory). When disabled, only items currently in your inventory are added.',
+                },
+                inventoryTabs_defaultTab: {
+                    id: 'inventoryTabs_defaultTab',
+                    label: 'Custom Inventory Tabs: Show Toolasha tab by default',
+                    type: 'checkbox',
+                    default: false,
+                    help: 'Hides the native Inventory tab and automatically activates the Toolasha tab whenever the character panel opens.',
                 },
             },
         },
