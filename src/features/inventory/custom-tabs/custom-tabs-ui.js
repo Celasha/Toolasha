@@ -1153,6 +1153,18 @@ export default class CustomTabsUI {
                 for (const tile of this._claimTilesForHrid(hrid, tileMap)) sectionTiles.push(tile);
             }
 
+            // Warn when items are assigned but none found in the DOM (collapsed game category)
+            if (tab.items.length > 0 && sectionTiles.length === 0) {
+                const warn = document.createElement('span');
+                warn.textContent = '⚠';
+                warn.title =
+                    'Items are hidden — expand the relevant categories in the Inventory tab to show them here.';
+                warn.style.cssText = 'color:#ff3333;margin-left:4px;cursor:default;font-size:13px;flex-shrink:0;';
+                const actionsEl = header.querySelector('.toolasha-ct-section-actions');
+                if (actionsEl) header.insertBefore(warn, actionsEl);
+                else header.appendChild(warn);
+            }
+
             // Sort tiles by value if a sort mode is active, then assign orders
             orderCounter = this._assignTileOrders(sectionTiles, orderCounter);
 
