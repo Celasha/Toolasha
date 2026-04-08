@@ -109,17 +109,46 @@ class RemainingXP {
      * @param {HTMLElement} progressBar - The progress bar element
      */
     updateSingleSkillBar(progressBar) {
-        // Remove existing XP display for this progress bar
         const progressContainer = progressBar.parentNode;
-        if (progressContainer) {
-            const existingDisplay = progressContainer.querySelector('.mwi-remaining-xp');
-            if (existingDisplay) {
-                existingDisplay.remove();
+        if (!progressContainer) return;
+
+        const existingDisplay = progressContainer.querySelector('.mwi-remaining-xp');
+        if (existingDisplay) {
+            // Update in-place to avoid removing the container (which also holds the
+            // xp/h span injected by xp-tracker) and causing a visible flash.
+            const skillName = this._getSkillName(progressBar);
+            if (!skillName) return;
+            const remainingXP = this.calculateRemainingXPFromProgressBar(progressBar, skillName);
+            if (remainingXP === null) return;
+            // Update only the text node — leave child spans (xp/h rate) untouched.
+            for (const node of existingDisplay.childNodes) {
+                if (node.nodeType === Node.TEXT_NODE) {
+                    node.textContent = `${formatLargeNumber(remainingXP)} XP left`;
+                    return;
+                }
             }
+            // No text node found — fall back to prepending one.
+            existingDisplay.prepend(`${formatLargeNumber(remainingXP)} XP left`);
+            return;
         }
 
-        // Add updated XP display
+        // First time — full create path.
         this.addRemainingXP(progressBar);
+    }
+
+    /**
+     * Extract skill name from a progress bar element (shared by update and add paths).
+     * @param {HTMLElement} progressBar
+     * @returns {string|null}
+     */
+    _getSkillName(progressBar) {
+        const subSkillsContainer = progressBar.closest('[class*="NavigationBar_subSkills"]');
+        if (subSkillsContainer) {
+            const navContainer = progressBar.closest('[class*="NavigationBar_nav"]');
+            return navContainer?.querySelector('[class*="NavigationBar_label"]')?.textContent.trim() ?? null;
+        }
+        const navLink = progressBar.closest('[class*="NavigationBar_navigationLink"]');
+        return navLink?.querySelector('[class*="NavigationBar_label"]')?.textContent.trim() ?? null;
     }
 
     /**
@@ -128,33 +157,7 @@ class RemainingXP {
      */
     addRemainingXP(progressBar) {
         try {
-            // Try to find skill name - handle both navigation bar and combat skill displays
-            let skillName = null;
-
-            // Check if we're in a sub-skills container (combat skills)
-            const subSkillsContainer = progressBar.closest('[class*="NavigationBar_subSkills"]');
-
-            if (subSkillsContainer) {
-                // We're in combat sub-skills - look for label in immediate parent structure
-                // The label should be in a sibling or nearby element, not in the parent navigationLink
-                const navContainer = progressBar.closest('[class*="NavigationBar_nav"]');
-                if (navContainer) {
-                    const skillNameElement = navContainer.querySelector('[class*="NavigationBar_label"]');
-                    if (skillNameElement) {
-                        skillName = skillNameElement.textContent.trim();
-                    }
-                }
-            } else {
-                // Regular skill (not a sub-skill) - use standard navigation link approach
-                const navLink = progressBar.closest('[class*="NavigationBar_navigationLink"]');
-                if (navLink) {
-                    const skillNameElement = navLink.querySelector('[class*="NavigationBar_label"]');
-                    if (skillNameElement) {
-                        skillName = skillNameElement.textContent.trim();
-                    }
-                }
-            }
-
+            const skillName = this._getSkillName(progressBar);
             if (!skillName) return;
 
             // Calculate remaining XP for this skill using progress bar width (like XP percentage does)
