@@ -229,6 +229,7 @@ const PANEL_CSS = `
 .toolasha-ct-swatches {
     display: flex;
     gap: 6px;
+    align-items: center;
     margin-bottom: 12px;
 }
 .toolasha-ct-swatch {
@@ -239,6 +240,41 @@ const PANEL_CSS = `
     cursor: pointer;
 }
 .toolasha-ct-swatch--active { border-color: #fff; }
+.toolasha-ct-swatch-divider {
+    width: 1px;
+    height: 18px;
+    background: #555;
+    margin: 0 2px;
+}
+.toolasha-ct-color-picker {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    cursor: pointer;
+    padding: 0;
+    appearance: none;
+    -webkit-appearance: none;
+    background: none;
+    overflow: hidden;
+}
+.toolasha-ct-color-picker--active { border-color: #fff; }
+.toolasha-ct-color-picker::-webkit-color-swatch-wrapper { padding: 0; }
+.toolasha-ct-color-picker::-webkit-color-swatch { border: none; border-radius: 50%; }
+.toolasha-ct-color-picker::-moz-color-swatch { border: none; border-radius: 50%; }
+.toolasha-ct-modal input.toolasha-ct-hex-input {
+    width: 72px;
+    height: 22px;
+    box-sizing: border-box;
+    background: #333;
+    border: 1px solid #555;
+    border-radius: 3px;
+    color: #eee;
+    font-size: 11px;
+    padding: 0 5px;
+    font-family: monospace;
+    margin: 0;
+}
 .toolasha-ct-search-results {
     max-height: 160px;
     overflow-y: auto;
@@ -1341,25 +1377,80 @@ export default class CustomTabsUI {
         });
 
         const swatchContainer = modal.querySelector('.toolasha-ct-swatches');
+        const isPreset = (color) => color === null || COLOR_PRESETS.includes(color);
+
+        const applyColor = (color) => {
+            this._config = setTabColor(this._config, tabId, color);
+            this._save();
+            this._applyLayout();
+        };
+
+        const updateActiveStates = (activeColor) => {
+            swatchContainer.querySelectorAll('.toolasha-ct-swatch').forEach((s) => {
+                s.classList.toggle('toolasha-ct-swatch--active', s.dataset.color === (activeColor ?? '__null__'));
+            });
+            colorPicker.classList.toggle('toolasha-ct-color-picker--active', !!activeColor && !isPreset(activeColor));
+        };
+
+        // Preset swatches (null = clear)
         for (const color of [null, ...COLOR_PRESETS]) {
             const sw = document.createElement('span');
-            sw.className = 'toolasha-ct-swatch' + (tab.color === color ? ' toolasha-ct-swatch--active' : '');
+            sw.className = 'toolasha-ct-swatch';
+            sw.dataset.color = color ?? '__null__';
             sw.style.background = color || '#555';
-            if (!color) sw.textContent = '×';
-            sw.style.textAlign = 'center';
-            sw.style.lineHeight = '18px';
-            sw.style.fontSize = '12px';
+            if (!color) {
+                sw.textContent = '×';
+                sw.style.textAlign = 'center';
+                sw.style.lineHeight = '18px';
+                sw.style.fontSize = '12px';
+            }
             sw.addEventListener('click', () => {
-                this._config = setTabColor(this._config, tabId, color);
-                this._save();
-                this._applyLayout();
-                swatchContainer
-                    .querySelectorAll('.toolasha-ct-swatch')
-                    .forEach((s) => s.classList.remove('toolasha-ct-swatch--active'));
-                sw.classList.add('toolasha-ct-swatch--active');
+                applyColor(color);
+                colorPicker.value = color || '#555555';
+                hexInput.value = color || '';
+                updateActiveStates(color);
             });
             swatchContainer.appendChild(sw);
         }
+
+        // Divider
+        const divider = document.createElement('span');
+        divider.className = 'toolasha-ct-swatch-divider';
+        swatchContainer.appendChild(divider);
+
+        // Native color picker
+        const colorPicker = document.createElement('input');
+        colorPicker.type = 'color';
+        colorPicker.className = 'toolasha-ct-color-picker';
+        colorPicker.title = 'Custom color';
+        colorPicker.value = tab.color && tab.color.startsWith('#') ? tab.color : '#888888';
+        colorPicker.addEventListener('input', () => {
+            const hex = colorPicker.value;
+            hexInput.value = hex;
+            applyColor(hex);
+            updateActiveStates(hex);
+        });
+        swatchContainer.appendChild(colorPicker);
+
+        // Hex text input
+        const hexInput = document.createElement('input');
+        hexInput.type = 'text';
+        hexInput.className = 'toolasha-ct-hex-input';
+        hexInput.placeholder = '#rrggbb';
+        hexInput.maxLength = 7;
+        hexInput.value = tab.color || '';
+        hexInput.addEventListener('input', () => {
+            const val = hexInput.value.trim();
+            if (/^#[0-9a-fA-F]{6}$/.test(val)) {
+                colorPicker.value = val;
+                applyColor(val);
+                updateActiveStates(val);
+            }
+        });
+        swatchContainer.appendChild(hexInput);
+
+        // Set initial active state
+        updateActiveStates(tab.color);
 
         this._renderCategoryButtons(modal.querySelector('.toolasha-ct-categories'), tabId);
         this._renderLoadoutButtons(modal.querySelector('.toolasha-ct-loadouts'), tabId);
