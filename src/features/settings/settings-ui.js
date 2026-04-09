@@ -370,6 +370,7 @@ class SettingsUI {
 
             // Add settings in this group
             for (const [settingId, settingDef] of Object.entries(group.settings)) {
+                if (settingDef.hidden) continue;
                 const settingEl = this.createSettingElement(settingId, settingDef);
                 content.appendChild(settingEl);
             }
