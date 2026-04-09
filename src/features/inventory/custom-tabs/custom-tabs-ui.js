@@ -1383,6 +1383,7 @@ export default class CustomTabsUI {
         headerEl.style.order = orderCounter++;
         headerEl.addEventListener('click', () => {
             this._unorgOpen = !this._unorgOpen;
+            headerEl.querySelector('span').textContent = this._unorgOpen ? '▼' : '▶';
             this._applyLayout();
         });
         invContainer.appendChild(headerEl);
