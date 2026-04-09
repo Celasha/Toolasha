@@ -1343,6 +1343,22 @@ export default class CustomTabsUI {
         this._injectedEls.push(headerEl);
 
         if (this._unorgOpen) {
+            // Sort remaining entries by category sortIndex then item sortIndex
+            const initData = dataManager.getInitClientData();
+            const itemDetailMap = initData?.itemDetailMap || {};
+            const categoryDetailMap = initData?.itemCategoryDetailMap || {};
+            remainingEntries.sort((a, b) => {
+                const baseA = a.hrid.replace(/\+\d+$/, '');
+                const baseB = b.hrid.replace(/\+\d+$/, '');
+                const detA = itemDetailMap[baseA];
+                const detB = itemDetailMap[baseB];
+                const catSortA = categoryDetailMap[detA?.categoryHrid]?.sortIndex ?? 9999;
+                const catSortB = categoryDetailMap[detB?.categoryHrid]?.sortIndex ?? 9999;
+                if (catSortA !== catSortB) return catSortA - catSortB;
+                const itemSortA = detA?.sortIndex ?? 9999;
+                const itemSortB = detB?.sortIndex ?? 9999;
+                return itemSortA - itemSortB;
+            });
             const unorgTiles = remainingEntries.flatMap(({ tiles }) => tiles);
             orderCounter = this._assignTileOrders(unorgTiles, orderCounter);
         }
