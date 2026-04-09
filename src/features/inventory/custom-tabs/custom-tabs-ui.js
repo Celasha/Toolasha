@@ -1210,16 +1210,38 @@ export default class CustomTabsUI {
                 for (const tile of this._claimTilesForHrid(hrid, tileMap)) sectionTiles.push(tile);
             }
 
-            // Warn when items are assigned but none found in the DOM (collapsed game category)
+            // Warn when items are owned but missing from the DOM (collapsed game category).
+            // Do NOT warn when the items simply aren't in the inventory.
             if (tab.items.length > 0 && sectionTiles.length === 0) {
-                const warn = document.createElement('span');
-                warn.textContent = '⚠';
-                warn.title =
-                    'Items are hidden — expand the relevant categories in the Inventory tab to show them here.';
-                warn.style.cssText = 'color:#ff3333;margin-left:4px;cursor:default;font-size:13px;flex-shrink:0;';
-                const actionsEl = header.querySelector('.toolasha-ct-section-actions');
-                if (actionsEl) header.insertBefore(warn, actionsEl);
-                else header.appendChild(warn);
+                const ownedHrids = new Set(
+                    (dataManager.getInventory() || [])
+                        .filter((i) => i.itemLocationHrid === '/item_locations/inventory')
+                        .map((i) => {
+                            const base = i.itemHrid;
+                            const lvl = i.enhancementLevel || 0;
+                            return lvl > 0 ? `${base}+${lvl}` : base;
+                        })
+                );
+                const anyOwned = tab.items.some((hrid) => {
+                    if (ownedHrids.has(hrid)) return true;
+                    // Base hrid matches any owned enhanced variant
+                    if (!/\+\d+$/.test(hrid)) {
+                        for (const owned of ownedHrids) {
+                            if (owned.startsWith(hrid + '+')) return true;
+                        }
+                    }
+                    return false;
+                });
+                if (anyOwned) {
+                    const warn = document.createElement('span');
+                    warn.textContent = '⚠';
+                    warn.title =
+                        'Items are hidden — expand the relevant categories in the Inventory tab to show them here.';
+                    warn.style.cssText = 'color:#ff3333;margin-left:4px;cursor:default;font-size:13px;flex-shrink:0;';
+                    const actionsEl = header.querySelector('.toolasha-ct-section-actions');
+                    if (actionsEl) header.insertBefore(warn, actionsEl);
+                    else header.appendChild(warn);
+                }
             }
 
             // Sum badge values across all tiles in this section
