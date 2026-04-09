@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.2.2
+ * Version: 2.3.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1106,6 +1106,16 @@
                     type: 'checkbox',
                     default: false,
                     help: 'Hides the native Inventory tab and automatically activates the Toolasha tab whenever the character panel opens.',
+                },
+                inventoryTabs_tileGap: {
+                    id: 'inventoryTabs_tileGap',
+                    label: 'Custom Inventory Tabs: Item spacing (px)',
+                    type: 'number',
+                    default: 4,
+                    min: 0,
+                    max: 20,
+                    step: 1,
+                    help: 'Pixel gap between item tiles on the Toolasha tab.',
                 },
                 inventoryTabs_loadoutIncludeConsumables: {
                     id: 'inventoryTabs_loadoutIncludeConsumables',

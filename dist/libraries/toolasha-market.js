@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.2.2
+ * Version: 2.3.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -17830,7 +17830,8 @@ self.onmessage = function (e) {
             text-align: left;
             color: ${config.COLOR_ACCENT};
             font-size: 0.875rem;
-            margin-bottom: 12px;
+            margin-top: -10px;
+            margin-bottom: 0;
         `;
 
             // Insert before inventory items
@@ -17842,7 +17843,7 @@ self.onmessage = function (e) {
             } else {
                 this.container.innerHTML = `
                 <div style="font-weight: bold; cursor: pointer;">
-                    + Total Networth: Loading...
+                    Networth: Loading...
                 </div>
             `;
             }
@@ -17905,7 +17906,7 @@ self.onmessage = function (e) {
             this.container.innerHTML = `
             <div style="display: flex; align-items: center; gap: 6px;">
                 <div style="cursor: pointer; font-weight: bold; flex: 1;" id="mwi-networth-toggle">
-                    + Total Networth: ${totalNetworth}
+                    Networth: ${totalNetworth}
                 </div>
                 ${
                     showChartBtn
@@ -19544,15 +19545,16 @@ self.onmessage = function (e) {
             color: ${config.COLOR_ACCENT};
             font-size: 0.875rem;
             text-align: left;
-            margin-bottom: 8px;
+            margin-top: -8px;
+            margin-bottom: 0;
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 3px;
         `;
 
             // Sort label and buttons
             const sortLabel = document.createElement('span');
-            sortLabel.textContent = 'Sort: ';
+            sortLabel.textContent = 'Sort:';
 
             const askButton = this.createSortButton('Ask', 'ask');
             const bidButton = this.createSortButton('Bid', 'bid');
@@ -19582,11 +19584,11 @@ self.onmessage = function (e) {
             button.textContent = label;
             button.dataset.mode = mode;
             button.style.cssText = `
-            border-radius: 3px;
-            padding: 4px 12px;
+            border-radius: 4px;
+            padding: 2px 8px;
             border: none;
             cursor: pointer;
-            font-size: 0.875rem;
+            font-size: 12px;
             transition: all 0.2s;
         `;
 
@@ -19613,7 +19615,7 @@ self.onmessage = function (e) {
                     button.style.fontWeight = 'bold';
                 } else {
                     button.style.backgroundColor = '#444';
-                    button.style.color = '${config.COLOR_TEXT_SECONDARY}';
+                    button.style.color = '#aaa';
                     button.style.fontWeight = 'normal';
                 }
             });
@@ -21424,6 +21426,7 @@ self.onmessage = function (e) {
     flex-wrap: wrap;
     align-content: flex-start;
     gap: 0;
+    padding-top: 0 !important;
 }
 /* Flatten game category wrappers so tiles become direct flex children.
    Exclude our own injected elements (they have class starting with toolasha-). */
@@ -21450,37 +21453,33 @@ self.onmessage = function (e) {
     display: flex !important;
 }
 
-/* ---------- Top bar (injected into Inventory_items) ---------- */
+/* ---------- Top bar (injected into Inventory_items, Toolasha tab only) ---------- */
 .toolasha-ct-topbar {
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    padding: 6px 10px;
-    border-bottom: 1px solid #333;
+    padding: 2px 0 4px;
     flex-basis: 100%;
     flex-shrink: 0;
     box-sizing: border-box;
-    color: #d4d4d4;
-    font-family: inherit;
-    font-size: 13px;
+    gap: 4px;
 }
 .toolasha-ct-add-btn {
-    background: #2a5a3a;
-    color: #9fd;
-    border: 1px solid #3a7a4a;
+    background: #444;
+    color: #aaa;
+    border: none;
     border-radius: 4px;
     padding: 2px 8px;
     cursor: pointer;
     font-size: 12px;
 }
-.toolasha-ct-add-btn:hover { background: #3a7a4a; }
+.toolasha-ct-add-btn:hover { background: #555; }
 
 /* ---------- Accordion header (injected into Inventory_items) ---------- */
 .toolasha-ct-section-header {
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 6px 10px 6px calc(10px + var(--depth, 0) * 20px);
+    padding: 3px 10px 3px calc(10px + var(--depth, 0) * 20px);
     cursor: pointer;
     user-select: none;
     flex-basis: 100%;
@@ -21855,6 +21854,9 @@ self.onmessage = function (e) {
             this._dragInProgress = false; // Suppress click-toggles immediately after a drag-drop
             this._inventoryTabEl = null; // Ref to native Inventory tab button (for restore on cleanup)
             this._expandedSearchHrids = null; // Set of base hrids expanded in the item picker
+            this._isApplying = false; // Guard against concurrent _applyLayout calls
+            this._needsAnotherPass = false; // Deferred layout re-run flag
+            this._actionBtnsEl = null; // +Tab/Export/Import appended to sort controls row on Toolasha tab
         }
 
         // -----------------------------------------------------------------------
@@ -21893,6 +21895,12 @@ self.onmessage = function (e) {
                 this._applyDefaultTabSetting();
             });
             this._unregisterHandlers.push(unregisterDefaultTab);
+
+            // Live setting change for tile gap
+            const unregisterTileGap = config.onSettingChange('inventoryTabs_tileGap', () => {
+                if (this._isActive) this._applyTileGap();
+            });
+            this._unregisterHandlers.push(unregisterTileGap);
 
             // Re-apply layout when inventory changes
             let debounceTimer = null;
@@ -21933,6 +21941,8 @@ self.onmessage = function (e) {
             this._unregisterHandlers = [];
 
             this._tabBtn?.remove();
+            this._actionBtnsEl?.remove();
+            this._actionBtnsEl = null;
             this._styleEl?.remove();
             document.querySelectorAll('.toolasha-ct-add-to-tab').forEach((el) => el.remove());
             this._isActive = false;
@@ -22018,6 +22028,16 @@ self.onmessage = function (e) {
                 this._hideGameContent();
                 this._applyLayout();
             }
+        }
+
+        /**
+         * Apply tile gap to the active inventory container based on the setting.
+         * @param {HTMLElement} [container]
+         */
+        _applyTileGap(container) {
+            const el = container || this._invContainer;
+            if (!el) return;
+            el.style.gap = `${config.getSettingValue('inventoryTabs_tileGap', 4)}px`;
         }
 
         _activatePanel() {
@@ -22106,79 +22126,104 @@ self.onmessage = function (e) {
          * then selectively shown by adding .toolasha-ct-visible.
          */
         async _applyLayout() {
-            const invContainer = this._findInvContainer();
-            if (!invContainer) return;
-
-            const isSameNode = invContainer === this._invContainer;
-            const injectedStillPresent =
-                this._injectedEls.length > 0 && this._injectedEls[0].parentElement === invContainer;
-            const needsFullRebuild = !isSameNode || !injectedStillPresent;
-
-            this._invContainer = invContainer;
-
-            // Add the active class — this makes Inventory_items a flex container,
-            // applies display:contents to category wrappers, hides category labels,
-            // and hides ALL tiles by default (via CSS).
-            invContainer.classList.add('toolasha-ct-active');
-
-            // Ensure the Inventory panel is visible
-            this._showInventoryPanel();
-
-            if (needsFullRebuild) {
-                this._removeInjectedEls();
+            // Guard against concurrent calls — defer and re-run after current pass
+            if (this._isApplying) {
+                this._needsAnotherPass = true;
+                return;
             }
+            this._isApplying = true;
+            this._needsAnotherPass = false;
 
-            // Ensure badge manager has prices calculated before we sort tiles.
-            // On mobile the inventory panel is created fresh each time "My Stuff" opens —
-            // the badge manager's DOM observer fires a render concurrently with _applyLayout,
-            // causing isRendering/isCalculating guards to block our call. Wait for any
-            // in-progress render to finish, then force a fresh calculation.
-            if (!inventoryBadgeManager.currentInventoryElem) {
-                inventoryBadgeManager.currentInventoryElem = invContainer;
-            }
-            while (inventoryBadgeManager.isRendering || inventoryBadgeManager.isCalculating) {
-                await new Promise((resolve) => setTimeout(resolve, 20));
-            }
-            inventoryBadgeManager.lastRenderTime = 0;
-            inventoryBadgeManager.lastCalculationTime = 0;
-            await inventoryBadgeManager.renderAllBadges();
+            try {
+                const invContainer = this._findInvContainer();
+                if (!invContainer) return;
 
-            // Build tile map from all tiles currently in invContainer
-            const tileMap = this._buildTileMap(invContainer);
+                const isSameNode = invContainer === this._invContainer;
+                const injectedStillPresent =
+                    this._injectedEls.length > 0 && this._injectedEls[0].parentElement === invContainer;
+                const needsFullRebuild = !isSameNode || !injectedStillPresent;
 
-            // Reset all tiles: remove visible class and clear inline order
-            const allTiles = invContainer.querySelectorAll('[class*="Item_itemContainer"]');
-            for (const tile of allTiles) {
-                tile.classList.remove('toolasha-ct-visible');
-                tile.style.order = '';
-            }
+                this._invContainer = invContainer;
 
-            if (needsFullRebuild) {
-                // Full rebuild: inject topbar, headers, and set tile order/visibility
-                let orderCounter = 0;
+                // Add the active class — this makes Inventory_items a flex container,
+                // applies display:contents to category wrappers, hides category labels,
+                // and hides ALL tiles by default (via CSS).
+                invContainer.classList.add('toolasha-ct-active');
+                this._applyTileGap(invContainer);
 
-                const topbar = this._createTopbar();
-                topbar.style.order = orderCounter++;
-                invContainer.appendChild(topbar);
-                this._injectedEls.push(topbar);
+                // Ensure the Inventory panel is visible
+                this._showInventoryPanel();
 
-                if (this._config.tabs.length === 0) {
-                    const empty = document.createElement('div');
-                    empty.className = 'toolasha-ct-empty';
-                    empty.textContent = 'No custom tabs yet. Click "+ Tab" to create one.';
-                    empty.style.order = orderCounter++;
-                    invContainer.appendChild(empty);
-                    this._injectedEls.push(empty);
+                if (needsFullRebuild) {
+                    this._removeInjectedEls();
+                }
+
+                // Ensure badge manager has prices calculated before we sort tiles.
+                // On mobile the inventory panel is created fresh each time "My Stuff" opens —
+                // the badge manager's DOM observer fires a render concurrently with _applyLayout,
+                // causing isRendering/isCalculating guards to block our call. Wait for any
+                // in-progress render to finish, then force a fresh calculation.
+                if (!inventoryBadgeManager.currentInventoryElem) {
+                    inventoryBadgeManager.currentInventoryElem = invContainer;
+                }
+                while (inventoryBadgeManager.isRendering || inventoryBadgeManager.isCalculating) {
+                    await new Promise((resolve) => setTimeout(resolve, 20));
+                }
+                inventoryBadgeManager.lastRenderTime = 0;
+                inventoryBadgeManager.lastCalculationTime = 0;
+                await inventoryBadgeManager.renderAllBadges();
+
+                // Build tile map from all tiles currently in invContainer
+                const tileMap = this._buildTileMap(invContainer);
+
+                // Reset all tiles: remove visible class and clear inline order
+                const allTiles = invContainer.querySelectorAll('[class*="Item_itemContainer"]');
+                for (const tile of allTiles) {
+                    tile.classList.remove('toolasha-ct-visible');
+                    tile.style.order = '';
+                }
+
+                if (needsFullRebuild) {
+                    // Full rebuild: inject action buttons + headers
+                    let orderCounter = 0;
+
+                    const topbar = this._injectActionButtons();
+                    if (topbar) {
+                        topbar.style.order = orderCounter++;
+                        invContainer.appendChild(topbar);
+                        this._injectedEls.push(topbar);
+                    }
+
+                    if (this._config.tabs.length === 0) {
+                        const empty = document.createElement('div');
+                        empty.className = 'toolasha-ct-empty';
+                        empty.textContent = 'No custom tabs yet. Click "+ Tab" to create one.';
+                        empty.style.order = orderCounter++;
+                        invContainer.appendChild(empty);
+                        this._injectedEls.push(empty);
+                    } else {
+                        orderCounter = this._injectAccordionHeaders(
+                            invContainer,
+                            this._config.tabs,
+                            0,
+                            tileMap,
+                            orderCounter
+                        );
+                    }
+
+                    if (config.getSettingValue('inventoryTabs_showUnorganized')) {
+                        orderCounter = this._injectUnorganized(invContainer, tileMap, orderCounter);
+                    }
                 } else {
-                    orderCounter = this._injectAccordionHeaders(invContainer, this._config.tabs, 0, tileMap, orderCounter);
+                    // Lightweight update: headers already exist, just re-apply tile order/visibility
+                    this._updateTileVisibility(invContainer, tileMap);
                 }
-
-                if (config.getSettingValue('inventoryTabs_showUnorganized')) {
-                    orderCounter = this._injectUnorganized(invContainer, tileMap, orderCounter);
+            } finally {
+                this._isApplying = false;
+                if (this._needsAnotherPass) {
+                    this._needsAnotherPass = false;
+                    this._applyLayout();
                 }
-            } else {
-                // Lightweight update: headers already exist, just re-apply tile order/visibility
-                this._updateTileVisibility(invContainer, tileMap);
             }
         }
 
@@ -22206,9 +22251,22 @@ self.onmessage = function (e) {
                 const assignedSet = getAssignedItemSet(this._config);
                 const unorgTiles = [];
                 for (const [hrid, tiles] of tileMap) {
-                    const baseHrid = hrid.replace(/\+\d+$/, '');
-                    if (!assignedSet.has(hrid) && !assignedSet.has(baseHrid)) {
-                        for (const tile of tiles) unorgTiles.push(tile);
+                    if (/\+\d+$/.test(hrid)) {
+                        // Enhanced key: skip if exact hrid or its base is assigned
+                        const baseHrid = hrid.replace(/\+\d+$/, '');
+                        if (!assignedSet.has(hrid) && !assignedSet.has(baseHrid)) {
+                            for (const tile of tiles) unorgTiles.push(tile);
+                        }
+                    } else {
+                        // Base key: skip if base hrid is assigned; otherwise filter per-tile
+                        // so only tiles whose specific enhancement level is assigned are excluded
+                        if (assignedSet.has(hrid)) continue;
+                        for (const tile of tiles) {
+                            const enhEl = tile.querySelector('[class*="Item_enhancementLevel"]');
+                            const level = enhEl ? parseInt(enhEl.textContent.trim().replace('+', ''), 10) : 0;
+                            const tileHrid = level > 0 ? `${hrid}+${level}` : hrid;
+                            if (!assignedSet.has(tileHrid)) unorgTiles.push(tile);
+                        }
                     }
                 }
                 this._assignTileOrders(unorgTiles, unorgOrder + 1);
@@ -22294,20 +22352,30 @@ self.onmessage = function (e) {
          * Remove all elements we injected into invContainer
          */
         _removeInjectedEls() {
+            this._actionBtnsEl?.remove();
+            this._actionBtnsEl = null;
             for (const el of this._injectedEls) {
                 el.remove();
             }
             this._injectedEls = [];
         }
-
         /**
-         * Create the top bar element
+         * Create the top bar with sort proxy buttons and tab action buttons.
+         * Shown only on the Toolasha tab; hides the external sort controls row.
          * @returns {HTMLElement}
          */
-        _createTopbar() {
-            const topbar = document.createElement('div');
-            topbar.className = 'toolasha-ct-topbar';
-            topbar.innerHTML = '<span style="font-size:12px;color:#888;">Custom Tabs</span>';
+        /**
+         * Create the tab action buttons and place them to the right of the sort controls row.
+         * Falls back to a topbar inside the inventory container if sort controls aren't present.
+         * @param {HTMLElement} invContainer
+         * @returns {HTMLElement|null} topbar element if fallback was used, null if appended to sort controls
+         */
+        _injectActionButtons() {
+            this._actionBtnsEl?.remove();
+
+            const actionsDiv = document.createElement('div');
+            actionsDiv.className = 'toolasha-ct-action-btns';
+            actionsDiv.style.cssText = 'display:flex;gap:4px;flex-shrink:0;';
 
             const addBtn = document.createElement('button');
             addBtn.className = 'toolasha-ct-add-btn';
@@ -22324,9 +22392,22 @@ self.onmessage = function (e) {
             importBtn.textContent = 'Import';
             importBtn.addEventListener('click', () => this._importLayout());
 
-            topbar.appendChild(addBtn);
-            topbar.appendChild(exportBtn);
-            topbar.appendChild(importBtn);
+            actionsDiv.appendChild(addBtn);
+            actionsDiv.appendChild(exportBtn);
+            actionsDiv.appendChild(importBtn);
+            this._actionBtnsEl = actionsDiv;
+
+            const sortControls = document.querySelector('.mwi-inventory-sort-controls');
+            if (sortControls) {
+                actionsDiv.style.marginLeft = 'auto';
+                sortControls.appendChild(actionsDiv);
+                return null; // no topbar needed
+            }
+
+            // Fallback: no sort controls — use a topbar inside the container
+            const topbar = document.createElement('div');
+            topbar.className = 'toolasha-ct-topbar';
+            topbar.appendChild(actionsDiv);
             return topbar;
         }
 
@@ -22587,16 +22668,38 @@ self.onmessage = function (e) {
                     for (const tile of this._claimTilesForHrid(hrid, tileMap)) sectionTiles.push(tile);
                 }
 
-                // Warn when items are assigned but none found in the DOM (collapsed game category)
+                // Warn when items are owned but missing from the DOM (collapsed game category).
+                // Do NOT warn when the items simply aren't in the inventory.
                 if (tab.items.length > 0 && sectionTiles.length === 0) {
-                    const warn = document.createElement('span');
-                    warn.textContent = '⚠';
-                    warn.title =
-                        'Items are hidden — expand the relevant categories in the Inventory tab to show them here.';
-                    warn.style.cssText = 'color:#ff3333;margin-left:4px;cursor:default;font-size:13px;flex-shrink:0;';
-                    const actionsEl = header.querySelector('.toolasha-ct-section-actions');
-                    if (actionsEl) header.insertBefore(warn, actionsEl);
-                    else header.appendChild(warn);
+                    const ownedHrids = new Set(
+                        (dataManager.getInventory() || [])
+                            .filter((i) => i.itemLocationHrid === '/item_locations/inventory')
+                            .map((i) => {
+                                const base = i.itemHrid;
+                                const lvl = i.enhancementLevel || 0;
+                                return lvl > 0 ? `${base}+${lvl}` : base;
+                            })
+                    );
+                    const anyOwned = tab.items.some((hrid) => {
+                        if (ownedHrids.has(hrid)) return true;
+                        // Base hrid matches any owned enhanced variant
+                        if (!/\+\d+$/.test(hrid)) {
+                            for (const owned of ownedHrids) {
+                                if (owned.startsWith(hrid + '+')) return true;
+                            }
+                        }
+                        return false;
+                    });
+                    if (anyOwned) {
+                        const warn = document.createElement('span');
+                        warn.textContent = '⚠';
+                        warn.title =
+                            'Items are hidden — expand the relevant categories in the Inventory tab to show them here.';
+                        warn.style.cssText = 'color:#ff3333;margin-left:4px;cursor:default;font-size:13px;flex-shrink:0;';
+                        const actionsEl = header.querySelector('.toolasha-ct-section-actions');
+                        if (actionsEl) header.insertBefore(warn, actionsEl);
+                        else header.appendChild(warn);
+                    }
                 }
 
                 // Sum badge values across all tiles in this section
@@ -22698,10 +22801,25 @@ self.onmessage = function (e) {
             const assignedSet = getAssignedItemSet(this._config);
             const remainingEntries = [];
             for (const [hrid, tiles] of tileMap) {
-                // An enhanced key (e.g. /items/foo+3) is also covered if the base hrid is assigned
-                const baseHrid = hrid.replace(/\+\d+$/, '');
-                if (!assignedSet.has(hrid) && !assignedSet.has(baseHrid)) {
-                    remainingEntries.push({ hrid, tiles });
+                if (/\+\d+$/.test(hrid)) {
+                    // Enhanced key: skip if exact hrid or its base is assigned
+                    const baseHrid = hrid.replace(/\+\d+$/, '');
+                    if (!assignedSet.has(hrid) && !assignedSet.has(baseHrid)) {
+                        remainingEntries.push({ hrid, tiles });
+                    }
+                } else {
+                    // Base key: skip if base hrid is assigned; otherwise filter per-tile
+                    // so only tiles whose specific enhancement level is assigned are excluded
+                    if (assignedSet.has(hrid)) continue;
+                    const unassignedTiles = tiles.filter((tile) => {
+                        const enhEl = tile.querySelector('[class*="Item_enhancementLevel"]');
+                        const level = enhEl ? parseInt(enhEl.textContent.trim().replace('+', ''), 10) : 0;
+                        const tileHrid = level > 0 ? `${hrid}+${level}` : hrid;
+                        return !assignedSet.has(tileHrid);
+                    });
+                    if (unassignedTiles.length > 0) {
+                        remainingEntries.push({ hrid, tiles: unassignedTiles });
+                    }
                 }
             }
             if (remainingEntries.length === 0) return orderCounter;
@@ -22714,6 +22832,7 @@ self.onmessage = function (e) {
             headerEl.style.order = orderCounter++;
             headerEl.addEventListener('click', () => {
                 this._unorgOpen = !this._unorgOpen;
+                headerEl.querySelector('span').textContent = this._unorgOpen ? '▼' : '▶';
                 this._applyLayout();
             });
             invContainer.appendChild(headerEl);
@@ -22937,6 +23056,7 @@ self.onmessage = function (e) {
                         this._save();
                         this._renderCategoryButtons(modal.querySelector('.toolasha-ct-categories'), tabId);
                         this._renderAssignedItems(modal.querySelector('.toolasha-ct-assigned-list'), tabId);
+                        if (this._isActive) this._applyLayout();
                     }
                     clearBtn.textContent = 'Clear All';
                     clearBtn.style.background = '';
@@ -23020,6 +23140,7 @@ self.onmessage = function (e) {
                                     container.parentElement.querySelector('.toolasha-ct-assigned-list'),
                                     tabId
                                 );
+                                if (this._isActive) this._applyLayout();
                             });
                             container.appendChild(levelRow);
                         }
@@ -23051,6 +23172,7 @@ self.onmessage = function (e) {
                             container.parentElement.querySelector('.toolasha-ct-assigned-list'),
                             tabId
                         );
+                        if (this._isActive) this._applyLayout();
                     });
                     container.appendChild(row);
                 }
@@ -23131,6 +23253,7 @@ self.onmessage = function (e) {
                         this._config = reorderItem(this._config, tabId, dragFromIndex, index);
                         this._save();
                         this._renderAssignedItems(container, tabId);
+                        if (this._isActive) this._applyLayout();
                     }
                     dragFromIndex = null;
                 });
@@ -23143,6 +23266,7 @@ self.onmessage = function (e) {
                     this._config = removeItem(this._config, tabId, hrid);
                     this._save();
                     this._renderAssignedItems(container, tabId);
+                    if (this._isActive) this._applyLayout();
                 });
                 row.appendChild(removeBtn);
                 container.appendChild(row);
@@ -23222,6 +23346,7 @@ self.onmessage = function (e) {
                         this._renderCategoryButtons(container, tabId);
                         const modal = container.closest('.toolasha-ct-modal');
                         if (modal) this._renderAssignedItems(modal.querySelector('.toolasha-ct-assigned-list'), tabId);
+                        if (this._isActive) this._applyLayout();
                     });
                 } else {
                     btn.addEventListener('click', () => {
@@ -23235,6 +23360,7 @@ self.onmessage = function (e) {
                         this._renderCategoryButtons(container, tabId);
                         const modal = container.closest('.toolasha-ct-modal');
                         if (modal) this._renderAssignedItems(modal.querySelector('.toolasha-ct-assigned-list'), tabId);
+                        if (this._isActive) this._applyLayout();
                     });
                 }
                 container.appendChild(btn);
@@ -23303,6 +23429,7 @@ self.onmessage = function (e) {
                     this._renderLoadoutButtons(container, tabId);
                     const modal = container.closest('.toolasha-ct-modal');
                     if (modal) this._renderAssignedItems(modal.querySelector('.toolasha-ct-assigned-list'), tabId);
+                    if (this._isActive) this._applyLayout();
                 });
 
                 container.appendChild(btn);
