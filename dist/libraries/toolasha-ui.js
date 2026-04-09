@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.3.0
+ * Version: 2.3.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -13395,6 +13395,7 @@ ${hideRules}
 
                 // Add settings in this group
                 for (const [settingId, settingDef] of Object.entries(group.settings)) {
+                    if (settingDef.hidden) continue;
                     const settingEl = this.createSettingElement(settingId, settingDef);
                     content.appendChild(settingEl);
                 }

@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.3.0
+ * Version: 2.3.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1098,6 +1098,7 @@
                     label: 'Custom Inventory Tabs: Add all items when adding category',
                     type: 'checkbox',
                     default: false,
+                    hidden: true,
                     help: 'When adding a category to a tab, add every item in that category (including items not in your inventory). When disabled, only items currently in your inventory are added.',
                 },
                 inventoryTabs_defaultTab: {

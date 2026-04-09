@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.3.0
+ * Version: 2.3.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -21766,6 +21766,11 @@ self.onmessage = function (e) {
 .toolasha-ct-clear-btn:hover { background: #5a3a10; }
 
 /* ---------- Category buttons ---------- */
+.toolasha-ct-addall-label {
+    margin-left: 6px;
+    color: #aaa;
+    cursor: pointer;
+}
 .toolasha-ct-categories {
     display: flex;
     flex-wrap: wrap;
@@ -22900,7 +22905,7 @@ self.onmessage = function (e) {
                 <label>Color</label>
                 <div class="toolasha-ct-swatches"></div>
 
-                <label>Add Category</label>
+                <label>Add Category <span class="toolasha-ct-addall-label"><input type="checkbox" class="toolasha-ct-addall-cb"${config.getSetting('inventoryTabs_categoryAddAll') ? ' checked' : ''}> All items</span></label>
                 <div class="toolasha-ct-categories"></div>
 
                 <label>From Loadout</label>
@@ -23011,6 +23016,13 @@ self.onmessage = function (e) {
             updateActiveStates(tab.color);
 
             this._renderCategoryButtons(modal.querySelector('.toolasha-ct-categories'), tabId);
+
+            const addAllCb = modal.querySelector('.toolasha-ct-addall-cb');
+            addAllCb.addEventListener('change', () => {
+                config.setSetting('inventoryTabs_categoryAddAll', addAllCb.checked);
+                this._renderCategoryButtons(modal.querySelector('.toolasha-ct-categories'), tabId);
+            });
+
             this._renderLoadoutButtons(modal.querySelector('.toolasha-ct-loadouts'), tabId);
             this._populateCategoryFilter(modal.querySelector('.toolasha-ct-cat-filter'));
 
