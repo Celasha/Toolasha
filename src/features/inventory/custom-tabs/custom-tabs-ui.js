@@ -1111,7 +1111,7 @@ export default class CustomTabsUI {
         header.dataset.tabId = tab.id;
         header.style.setProperty('--depth', depth);
         header.style.order = orderCounter++;
-        if (tab.color) header.style.background = `${tab.color}30`;
+        if (tab.color) header.style.background = `${tab.color}60`;
 
         // Drag for reordering
         header.draggable = true;
@@ -1588,9 +1588,6 @@ export default class CustomTabsUI {
         const lowerQuery = query ? query.toLowerCase() : '';
         const currentTab = findTab(this._config, tabId)?.tab;
         const currentItems = new Set(currentTab?.items || []);
-        const addAllItems = config.getSettingValue('inventoryTabs_categoryAddAll');
-        const ownedHrids = addAllItems ? null : this._getOwnedItemHrids();
-
         // Build map: baseHrid → Set<enhancementLevel> from current inventory
         const levelMap = new Map();
         for (const item of dataManager.getInventory() || []) {
@@ -1608,7 +1605,6 @@ export default class CustomTabsUI {
             if (currentItems.has(hrid)) continue;
             if (categoryFilter && details.categoryHrid !== categoryFilter) continue;
             if (lowerQuery && !details.name.toLowerCase().includes(lowerQuery)) continue;
-            if (ownedHrids && !ownedHrids.has(hrid)) continue;
 
             const iconId = hrid.replace('/items/', '');
             const spriteUrl = getSpriteBaseUrl();
