@@ -26,11 +26,14 @@ import {
     setTabColor,
     moveTab,
     addItem,
+    addLineBreak,
     removeItem,
+    removeItemAtIndex,
     reorderItem,
     setTabOpen,
     findTab,
     getAssignedItemSet,
+    LINEBREAK_HRID,
 } from './custom-tabs-data.js';
 
 // ---------------------------------------------------------------------------
@@ -184,6 +187,14 @@ const PANEL_CSS = `
 /* Drag indicator */
 .toolasha-ct-section-header.toolasha-ct-section--drag-over {
     border-top: 2px solid #4a9eff;
+}
+
+/* Line break injected between tiles to force a flex row wrap */
+.toolasha-ct-linebreak {
+    flex-basis: 100%;
+    width: 100%;
+    height: 0;
+    flex-shrink: 0;
 }
 
 /* ---------- Editor modal ---------- */
@@ -911,11 +922,33 @@ export default class CustomTabsUI {
             if (headerOrder === undefined) continue;
 
             if (tab.open) {
-                const sectionTiles = [];
-                for (const hrid of tab.items) {
-                    for (const tile of this._claimTilesForHrid(hrid, tileMap)) sectionTiles.push(tile);
+                const hasLineBreaks = tab.items.includes(LINEBREAK_HRID);
+
+                if (hasLineBreaks) {
+                    let currentOrder = headerOrder + 1;
+                    let lbIndex = 0;
+                    for (const hrid of tab.items) {
+                        if (hrid === LINEBREAK_HRID) {
+                            const lb = this._invContainer?.querySelector(
+                                `.toolasha-ct-linebreak[data-tab-id="${tab.id}"][data-lb-index="${lbIndex}"]`
+                            );
+                            if (lb) lb.style.order = String(currentOrder);
+                            currentOrder++;
+                            lbIndex++;
+                        } else {
+                            for (const tile of this._claimTilesForHrid(hrid, tileMap)) {
+                                tile.classList.add('toolasha-ct-visible');
+                                tile.style.order = String(currentOrder++);
+                            }
+                        }
+                    }
+                } else {
+                    const sectionTiles = [];
+                    for (const hrid of tab.items) {
+                        for (const tile of this._claimTilesForHrid(hrid, tileMap)) sectionTiles.push(tile);
+                    }
+                    this._assignTileOrders(sectionTiles, headerOrder + 1);
                 }
-                this._assignTileOrders(sectionTiles, headerOrder + 1);
 
                 if (tab.children.length > 0) {
                     this._applyTileOrderForTabs(tab.children, tileMap, headerOrderMap);
@@ -1238,10 +1271,10 @@ export default class CustomTabsUI {
         name.textContent = tab.name;
         header.appendChild(name);
 
-        if (tab.items.length > 0) {
+        if (tab.items.filter((h) => h !== LINEBREAK_HRID).length > 0) {
             const countBadge = document.createElement('span');
             countBadge.className = 'toolasha-ct-section-count';
-            countBadge.textContent = `(${tab.items.length})`;
+            countBadge.textContent = `(${tab.items.filter((h) => h !== LINEBREAK_HRID).length})`;
             header.appendChild(countBadge);
         }
 
@@ -1288,15 +1321,42 @@ export default class CustomTabsUI {
         this._injectedEls.push(header);
 
         if (tab.open) {
-            // Collect all tiles for this tab's items
+            const hasLineBreaks = tab.items.includes(LINEBREAK_HRID);
             const sectionTiles = [];
-            for (const hrid of tab.items) {
-                for (const tile of this._claimTilesForHrid(hrid, tileMap)) sectionTiles.push(tile);
+
+            if (hasLineBreaks) {
+                // Inline assignment: preserve user-specified positions and line breaks.
+                // Price-sort is intentionally skipped when line breaks are present, since
+                // the user has explicitly arranged their items.
+                let lbIndex = 0;
+                for (const hrid of tab.items) {
+                    if (hrid === LINEBREAK_HRID) {
+                        const lb = document.createElement('div');
+                        lb.className = 'toolasha-ct-linebreak';
+                        lb.dataset.tabId = tab.id;
+                        lb.dataset.lbIndex = String(lbIndex++);
+                        lb.style.order = String(orderCounter++);
+                        invContainer.appendChild(lb);
+                        this._injectedEls.push(lb);
+                    } else {
+                        for (const tile of this._claimTilesForHrid(hrid, tileMap)) {
+                            tile.classList.add('toolasha-ct-visible');
+                            tile.style.order = String(orderCounter++);
+                            sectionTiles.push(tile);
+                        }
+                    }
+                }
+            } else {
+                // Collect all tiles, then sort by price and assign orders
+                for (const hrid of tab.items) {
+                    for (const tile of this._claimTilesForHrid(hrid, tileMap)) sectionTiles.push(tile);
+                }
             }
 
             // Warn when items are owned but missing from the DOM (collapsed game category).
             // Do NOT warn when the items simply aren't in the inventory.
-            if (tab.items.length > 0 && sectionTiles.length === 0) {
+            const realItems = tab.items.filter((h) => h !== LINEBREAK_HRID);
+            if (realItems.length > 0 && sectionTiles.length === 0) {
                 const ownedHrids = new Set(
                     (dataManager.getInventory() || [])
                         .filter((i) => i.itemLocationHrid === '/item_locations/inventory')
@@ -1306,7 +1366,7 @@ export default class CustomTabsUI {
                             return lvl > 0 ? `${base}+${lvl}` : base;
                         })
                 );
-                const anyOwned = tab.items.some((hrid) => {
+                const anyOwned = realItems.some((hrid) => {
                     if (ownedHrids.has(hrid)) return true;
                     // Base hrid matches any owned enhanced variant
                     if (!/\+\d+$/.test(hrid)) {
@@ -1352,8 +1412,10 @@ export default class CustomTabsUI {
                 }
             }
 
-            // Sort tiles by value if a sort mode is active, then assign orders
-            orderCounter = this._assignTileOrders(sectionTiles, orderCounter);
+            // For sections without line breaks, sort tiles by price and assign orders now
+            if (!hasLineBreaks) {
+                orderCounter = this._assignTileOrders(sectionTiles, orderCounter);
+            }
 
             // Recurse into children
             if (tab.children.length > 0) {
@@ -1541,6 +1603,9 @@ export default class CustomTabsUI {
                 </div>
                 <div class="toolasha-ct-search-results"></div>
                 <div class="toolasha-ct-assigned-list"></div>
+                <div style="margin-top:6px;">
+                    <button class="toolasha-ct-add-linebreak-btn" style="background:#2a2a3a;color:#888;border:1px solid #444;border-radius:4px;padding:3px 10px;cursor:pointer;font-size:11px;">+ Line Break</button>
+                </div>
             </div>
 
             <div class="toolasha-ct-modal-footer">
@@ -1661,6 +1726,13 @@ export default class CustomTabsUI {
         catFilter.addEventListener('change', doSearch);
 
         this._renderAssignedItems(modal.querySelector('.toolasha-ct-assigned-list'), tabId);
+
+        modal.querySelector('.toolasha-ct-add-linebreak-btn').addEventListener('click', () => {
+            this._config = addLineBreak(this._config, tabId);
+            this._save();
+            this._renderAssignedItems(modal.querySelector('.toolasha-ct-assigned-list'), tabId);
+            if (this._isActive) this._applyLayout();
+        });
 
         const deleteBtn = modal.querySelector('.toolasha-ct-delete-btn');
         deleteBtn.addEventListener('click', () => {
@@ -1829,16 +1901,6 @@ export default class CustomTabsUI {
         let dragFromIndex = null;
 
         tab.items.forEach((hrid, index) => {
-            const enhanceMatch = hrid.match(/\+(\d+)$/);
-            const baseHrid = enhanceMatch ? hrid.slice(0, hrid.length - enhanceMatch[0].length) : hrid;
-            const level = enhanceMatch ? parseInt(enhanceMatch[1], 10) : 0;
-            const details = dataManager.getItemDetails(baseHrid);
-            const baseName = details?.name || baseHrid;
-            const name = level > 0 ? `${baseName} +${level}` : baseName;
-            const iconId = baseHrid.replace('/items/', '');
-            const spriteUrl = getSpriteBaseUrl();
-            const iconHref = spriteUrl ? `${spriteUrl}#${iconId}` : `#${iconId}`;
-
             const row = document.createElement('div');
             row.className = 'toolasha-ct-assigned-item';
             row.draggable = true;
@@ -1848,14 +1910,31 @@ export default class CustomTabsUI {
             handle.textContent = '⠿';
             row.appendChild(handle);
 
-            const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-            icon.setAttribute('viewBox', '0 0 32 32');
-            icon.innerHTML = `<use href="${iconHref}"></use>`;
-            row.appendChild(icon);
+            if (hrid === LINEBREAK_HRID) {
+                const label = document.createElement('span');
+                label.textContent = '─── Line Break ───';
+                label.style.cssText = 'color:#555;font-style:italic;font-size:11px;flex:1;text-align:center;';
+                row.appendChild(label);
+            } else {
+                const enhanceMatch = hrid.match(/\+(\d+)$/);
+                const baseHrid = enhanceMatch ? hrid.slice(0, hrid.length - enhanceMatch[0].length) : hrid;
+                const level = enhanceMatch ? parseInt(enhanceMatch[1], 10) : 0;
+                const details = dataManager.getItemDetails(baseHrid);
+                const baseName = details?.name || baseHrid;
+                const name = level > 0 ? `${baseName} +${level}` : baseName;
+                const iconId = baseHrid.replace('/items/', '');
+                const spriteUrl = getSpriteBaseUrl();
+                const iconHref = spriteUrl ? `${spriteUrl}#${iconId}` : `#${iconId}`;
 
-            const label = document.createElement('span');
-            label.textContent = name;
-            row.appendChild(label);
+                const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                icon.setAttribute('viewBox', '0 0 32 32');
+                icon.innerHTML = `<use href="${iconHref}"></use>`;
+                row.appendChild(icon);
+
+                const label = document.createElement('span');
+                label.textContent = name;
+                row.appendChild(label);
+            }
 
             row.addEventListener('dragstart', (e) => {
                 dragFromIndex = index;
@@ -1891,12 +1970,27 @@ export default class CustomTabsUI {
                 dragFromIndex = null;
             });
 
+            if (index > 0) {
+                const toTopBtn = document.createElement('button');
+                toTopBtn.className = 'toolasha-ct-node-btn';
+                toTopBtn.textContent = '⇈';
+                toTopBtn.title = 'Move to top';
+                toTopBtn.style.marginLeft = '0';
+                toTopBtn.addEventListener('click', () => {
+                    this._config = reorderItem(this._config, tabId, index, 0);
+                    this._save();
+                    this._renderAssignedItems(container, tabId);
+                    if (this._isActive) this._applyLayout();
+                });
+                row.appendChild(toTopBtn);
+            }
+
             const removeBtn = document.createElement('button');
             removeBtn.className = 'toolasha-ct-node-btn';
             removeBtn.textContent = '×';
             removeBtn.title = 'Remove';
             removeBtn.addEventListener('click', () => {
-                this._config = removeItem(this._config, tabId, hrid);
+                this._config = removeItemAtIndex(this._config, tabId, index);
                 this._save();
                 this._renderAssignedItems(container, tabId);
                 if (this._isActive) this._applyLayout();

@@ -10,6 +10,8 @@ const STORAGE_KEY = 'inventoryTabs_config';
 const STORE = 'settings';
 const CONFIG_VERSION = 1;
 
+export const LINEBREAK_HRID = '__linebreak__';
+
 /**
  * Generate a unique ID
  * @returns {string}
@@ -192,6 +194,20 @@ export function addItem(config, tabId, itemHrid) {
 }
 
 /**
+ * Append a line break sentinel to a tab's items array.
+ * Multiple line breaks are allowed, so no duplicate check is performed.
+ * @param {Object} config
+ * @param {string} tabId
+ * @returns {Object} new config
+ */
+export function addLineBreak(config, tabId) {
+    const c = clone(config);
+    const result = _findNode(c.tabs, tabId);
+    if (result) result.tab.items.push(LINEBREAK_HRID);
+    return c;
+}
+
+/**
  * Reorder an item within a tab's items array
  * @param {Object} config
  * @param {string} tabId
@@ -223,6 +239,23 @@ export function removeItem(config, tabId, itemHrid) {
     const result = _findNode(c.tabs, tabId);
     if (result) {
         result.tab.items = result.tab.items.filter((h) => h !== itemHrid);
+    }
+    return c;
+}
+
+/**
+ * Remove a single item at a specific index from a tab.
+ * Preferred over removeItem when duplicates may exist (e.g. line breaks).
+ * @param {Object} config
+ * @param {string} tabId
+ * @param {number} index
+ * @returns {Object} new config
+ */
+export function removeItemAtIndex(config, tabId, index) {
+    const c = clone(config);
+    const result = _findNode(c.tabs, tabId);
+    if (result && index >= 0 && index < result.tab.items.length) {
+        result.tab.items.splice(index, 1);
     }
     return c;
 }
@@ -263,7 +296,9 @@ export function findTab(config, tabId) {
 export function getAssignedItemSet(config) {
     const set = new Set();
     _walkTabs(config.tabs, (tab) => {
-        for (const hrid of tab.items) set.add(hrid);
+        for (const hrid of tab.items) {
+            if (hrid !== LINEBREAK_HRID) set.add(hrid);
+        }
     });
     return set;
 }
