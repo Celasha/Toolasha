@@ -375,6 +375,9 @@ class SettingsUI {
                 content.appendChild(settingEl);
             }
 
+            // Skip groups with no visible settings (all hidden or group is empty)
+            if (content.children.length === 0) continue;
+
             groupContainer.appendChild(header);
             groupContainer.appendChild(content);
 

@@ -13,6 +13,7 @@ export const settingsGroups = {
                 label: 'Iron Cow Mode',
                 type: 'checkbox',
                 default: false,
+                hidden: true,
                 help: 'Disable all market and profit features for a no-marketplace playthrough.',
             },
         },
