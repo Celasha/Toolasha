@@ -218,8 +218,14 @@ class EstimatedListingAge {
                         // New listing being created - mark as unknown (history viewer will set to active)
                         listing._toolashaStatus = 'unknown';
                     } else if (listing.status === '/market_listing_status/cancelled') {
-                        // User canceled the listing
-                        listing._toolashaStatus = 'canceled';
+                        if (listing.filledQuantity > 0) {
+                            // Partially filled before cancel (e.g. Missing Materials split) — record as filled for the amount received
+                            listing._toolashaStatus = 'filled';
+                            listing.orderQuantity = listing.filledQuantity;
+                        } else {
+                            // User canceled the listing with nothing filled
+                            listing._toolashaStatus = 'canceled';
+                        }
                     } else if (listing.status === '/market_listing_status/filled') {
                         // Listing was filled
                         listing._toolashaStatus = 'filled';
