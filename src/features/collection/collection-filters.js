@@ -450,6 +450,27 @@ class CollectionFilters {
     // Feature interface
     // -------------------------------------------------------------------------
 
+    setupSettingListener() {
+        config.onSettingChange('collectionFilters', (value) => {
+            if (value) {
+                this.initialize();
+            } else {
+                this.disable();
+            }
+        });
+
+        config.onSettingChange('collectionFilters_skillingBadges', (value) => {
+            if (!this.isInitialized) return;
+            if (value) {
+                // Re-initialize to register the skilling observer
+                this.disable();
+                this.initialize();
+            } else {
+                document.querySelectorAll('.toolasha-cf.collection-badge').forEach((el) => el.remove());
+            }
+        });
+    }
+
     async initialize() {
         if (this.isInitialized) return;
         if (!config.isFeatureEnabled('collectionFilters')) return;
@@ -926,4 +947,6 @@ class CollectionFilters {
     }
 }
 
-export default new CollectionFilters();
+const collectionFilters = new CollectionFilters();
+collectionFilters.setupSettingListener();
+export default collectionFilters;
