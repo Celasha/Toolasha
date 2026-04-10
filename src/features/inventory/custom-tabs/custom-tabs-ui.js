@@ -1433,6 +1433,31 @@ export default class CustomTabsUI {
             // Unorganized bucket already filters assigned items via getAssignedItemSet,
             // so we don't need to delete them here to keep them out of unorganized.
             // Children are still hidden (parent is closed), so remove them.
+
+            // Show rolled-up value on the collapsed header (own items + all descendants)
+            const valueKey = (() => {
+                const mode = inventorySort.currentMode;
+                if (mode === 'ask' || mode === 'bid') {
+                    return config.getSetting('invSort_showBadges') ? mode + 'Value' : null;
+                }
+                if (mode === 'none') {
+                    const badgesOnNone = config.getSettingValue('invSort_badgesOnNone', 'None');
+                    return badgesOnNone !== 'None' ? badgesOnNone.toLowerCase() + 'Value' : null;
+                }
+                return null;
+            })();
+            if (valueKey) {
+                const total = this._peekTileValue(tab, tileMap, valueKey);
+                if (total > 0) {
+                    const valueBadge = document.createElement('span');
+                    valueBadge.className = 'toolasha-ct-section-value';
+                    valueBadge.textContent = formatKMB(total, 2);
+                    const actionsEl = header.querySelector('.toolasha-ct-section-actions');
+                    if (actionsEl) header.insertBefore(valueBadge, actionsEl);
+                    else header.appendChild(valueBadge);
+                }
+            }
+
             this._removeTilesFromMapForChildren(tab.children, tileMap);
         }
 
@@ -1449,6 +1474,29 @@ export default class CustomTabsUI {
             for (const hrid of tab.items) this._claimTilesForHrid(hrid, tileMap);
             if (tab.children.length > 0) this._removeTilesFromMapForChildren(tab.children, tileMap);
         }
+    }
+
+    /**
+     * Recursively sum a badge value across a tab's own items and all descendant tabs,
+     * peeking at tileMap without claiming tiles.
+     * @param {object} tab
+     * @param {Map} tileMap
+     * @param {string} valueKey - dataset key to sum (e.g. 'askValue', 'bidValue')
+     * @returns {number}
+     */
+    _peekTileValue(tab, tileMap, valueKey) {
+        let total = 0;
+        for (const hrid of tab.items) {
+            if (hrid === LINEBREAK_HRID) continue;
+            const tiles = tileMap.get(hrid);
+            if (tiles) {
+                for (const tile of tiles) total += parseFloat(tile.dataset[valueKey]) || 0;
+            }
+        }
+        for (const child of tab.children) {
+            total += this._peekTileValue(child, tileMap, valueKey);
+        }
+        return total;
     }
 
     /**
