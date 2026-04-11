@@ -332,6 +332,13 @@ export const settingsGroups = {
                 default: false,
                 help: 'Shows expected cost and XP to reach +5, +7, +10, and +12 on unenhanced equipment tooltips',
             },
+            itemTooltip_enhancementPath: {
+                id: 'itemTooltip_enhancementPath',
+                label: 'Show enhancement path on enhanced items',
+                type: 'checkbox',
+                default: true,
+                help: 'Shows the optimal enhancement path cost breakdown when hovering over enhanced (+1 to +20) items',
+            },
             itemTooltip_pinTop: {
                 id: 'itemTooltip_pinTop',
                 label: 'Pin tooltips to top-center of screen',

@@ -17,6 +17,10 @@ import {
     MARKET_TAX,
     MIN_ACTION_TIME_SECONDS,
 } from './profit-constants.js';
+import { getItemPrice } from './market-data.js';
+import { getCustomPrice } from '../features/settings/custom-price-overrides.js';
+import { getShopCoinCost } from './game-lookups.js';
+import { getProductionCost } from '../features/enhancement/tooltip-enhancement.js';
 
 /**
  * Calculate actions per hour from action time
@@ -401,6 +405,52 @@ export function calculateGatheringActionTotalsFromBase({
     };
 }
 
+/**
+ * Resolve the best available price for an item through the full resolution chain:
+ * custom override → shop floor → market price → production cost fallback
+ *
+ * @param {string} itemHrid - Item HRID
+ * @param {Object} options - Configuration options
+ * @param {number} [options.enhancementLevel=0] - Enhancement level
+ * @param {string} [options.mode] - Pricing mode ('ask'|'bid'|'average')
+ * @param {string} [options.context] - Context for pricing mode ('profit'|'networth')
+ * @param {string} [options.side='sell'] - Transaction side ('buy'|'sell')
+ * @returns {{ price: number, custom: boolean, missing: boolean }}
+ */
+export function resolveItemPrice(itemHrid, options = {}) {
+    const { enhancementLevel = 0, mode, context, side = 'sell' } = options;
+
+    // 1. Custom override — absolute priority
+    const customPrice = getCustomPrice(itemHrid, enhancementLevel, side);
+    if (customPrice !== null) {
+        return { price: customPrice, custom: true, missing: false };
+    }
+
+    // 2. Market price (via getItemPrice which handles pricing mode)
+    const marketPrice = getItemPrice(itemHrid, { enhancementLevel, mode, context, side });
+
+    // 3. Shop price floor (buy-side only)
+    if (side === 'buy') {
+        const shopCost = getShopCoinCost(itemHrid);
+        if (shopCost > 0 && (marketPrice === null || shopCost < marketPrice)) {
+            return { price: shopCost, custom: false, missing: false };
+        }
+    }
+
+    if (marketPrice !== null) {
+        return { price: marketPrice, custom: false, missing: false };
+    }
+
+    // 4. Production cost fallback
+    const prodCost = getProductionCost(itemHrid, mode || 'ask');
+    if (prodCost > 0) {
+        return { price: prodCost, custom: false, missing: false };
+    }
+
+    // 5. No price found
+    return { price: 0, custom: false, missing: true };
+}
+
 export default {
     // Rate conversions
     calculateActionsPerHour,
@@ -418,6 +468,7 @@ export default {
     calculateTeaCostsPerHour,
     calculatePriceAfterTax,
     createPriceCache,
+    resolveItemPrice,
 
     calculateProductionActionTotalsFromBase,
     calculateGatheringActionTotalsFromBase,

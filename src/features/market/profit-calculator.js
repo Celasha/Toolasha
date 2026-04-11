@@ -10,8 +10,6 @@ import { calculateHouseEfficiency } from '../../utils/house-efficiency.js';
 import { getActionEfficiencyContext } from '../../utils/efficiency.js';
 import { calculateBonusRevenue } from '../../utils/bonus-revenue-calculator.js';
 import { getItemPrice } from '../../utils/market-data.js';
-import { getShopCoinCost } from '../../utils/game-lookups.js';
-import { getCustomPrice } from '../settings/custom-price-overrides.js';
 import { MARKET_TAX } from '../../utils/profit-constants.js';
 import {
     calculateActionsPerHour,
@@ -20,6 +18,7 @@ import {
     calculateProfitPerDay,
     calculateTeaCostsPerHour,
     createPriceCache,
+    resolveItemPrice,
 } from '../../utils/profit-helpers.js';
 
 /**
@@ -166,7 +165,7 @@ class ProfitCalculator {
         const totalItemsPerHour = itemsPerHour + gourmetBonusItems;
 
         // Calculate material costs (with artisan reduction if applicable)
-        const materialCosts = this.calculateMaterialCosts(actionDetails, artisanBonus, getCachedPrice);
+        const materialCosts = this.calculateMaterialCosts(actionDetails, artisanBonus);
 
         // Total material cost per action
         const totalMaterialCost = materialCosts.reduce((sum, mat) => sum + mat.totalCost, 0);
@@ -347,10 +346,9 @@ class ProfitCalculator {
      * Calculate material costs for an action
      * @param {Object} actionDetails - Action details from game data
      * @param {number} artisanBonus - Artisan material reduction (0 to 1, e.g., 0.112 for 11.2% reduction)
-     * @param {Function} getCachedPrice - Price lookup function with caching
      * @returns {Array} Array of material cost objects
      */
-    calculateMaterialCosts(actionDetails, artisanBonus = 0, getCachedPrice) {
+    calculateMaterialCosts(actionDetails, artisanBonus = 0) {
         const costs = [];
 
         // Check for upgrade item (e.g., Crimson Bulwark → Rainbow Bulwark)
@@ -358,27 +356,11 @@ class ProfitCalculator {
             const itemDetails = dataManager.getItemDetails(actionDetails.upgradeItemHrid);
 
             if (itemDetails) {
-                // Get material price based on pricing mode (uses 'profit' context with 'buy' side)
-                const materialPrice = getCachedPrice(actionDetails.upgradeItemHrid, { context: 'profit', side: 'buy' });
-                const isPriceMissing = materialPrice === null;
-                const resolvedPrice = isPriceMissing ? 0 : materialPrice;
-
-                // Special case: Coins have no market price but have face value of 1
-                let finalPrice = resolvedPrice;
-                let isMissing = isPriceMissing;
-                if (actionDetails.upgradeItemHrid === '/items/coin' && finalPrice === 0) {
-                    finalPrice = 1;
-                    isMissing = false;
-                }
-
-                // Use shop price if cheaper than marketplace (skip if custom override is set)
-                const hasCustomPrice = getCustomPrice(actionDetails.upgradeItemHrid, 0, 'buy') !== null;
-                if (!hasCustomPrice) {
-                    const shopCost = getShopCoinCost(actionDetails.upgradeItemHrid);
-                    if (shopCost > 0 && (isMissing || shopCost < finalPrice)) {
-                        finalPrice = shopCost;
-                        isMissing = false;
-                    }
+                let resolved;
+                if (actionDetails.upgradeItemHrid === '/items/coin') {
+                    resolved = { price: 1, custom: false, missing: false };
+                } else {
+                    resolved = resolveItemPrice(actionDetails.upgradeItemHrid, { context: 'profit', side: 'buy' });
                 }
 
                 // Upgrade items are NOT affected by Artisan Tea (only regular inputItems are)
@@ -389,10 +371,10 @@ class ProfitCalculator {
                     itemName: itemDetails.name,
                     baseAmount: 1,
                     amount: reducedAmount,
-                    askPrice: finalPrice,
-                    totalCost: finalPrice * reducedAmount,
-                    missingPrice: isMissing,
-                    customPrice: hasCustomPrice,
+                    askPrice: resolved.price,
+                    totalCost: resolved.price * reducedAmount,
+                    missingPrice: resolved.missing,
+                    customPrice: resolved.custom,
                 });
             }
         }
@@ -412,27 +394,11 @@ class ProfitCalculator {
                 // Apply artisan reduction
                 const reducedAmount = baseAmount * (1 - artisanBonus);
 
-                // Get material price based on pricing mode (uses 'profit' context with 'buy' side)
-                const materialPrice = getCachedPrice(input.itemHrid, { context: 'profit', side: 'buy' });
-                const isPriceMissing = materialPrice === null;
-                const resolvedPrice = isPriceMissing ? 0 : materialPrice;
-
-                // Special case: Coins have no market price but have face value of 1
-                let finalPrice = resolvedPrice;
-                let isMissing = isPriceMissing;
-                if (input.itemHrid === '/items/coin' && finalPrice === 0) {
-                    finalPrice = 1; // 1 coin = 1 gold value
-                    isMissing = false;
-                }
-
-                // Use shop price if cheaper than marketplace (skip if custom override is set)
-                const hasCustomPrice = getCustomPrice(input.itemHrid, 0, 'buy') !== null;
-                if (!hasCustomPrice) {
-                    const shopCost = getShopCoinCost(input.itemHrid);
-                    if (shopCost > 0 && (isMissing || shopCost < finalPrice)) {
-                        finalPrice = shopCost;
-                        isMissing = false;
-                    }
+                let resolved;
+                if (input.itemHrid === '/items/coin') {
+                    resolved = { price: 1, custom: false, missing: false };
+                } else {
+                    resolved = resolveItemPrice(input.itemHrid, { context: 'profit', side: 'buy' });
                 }
 
                 costs.push({
@@ -440,10 +406,10 @@ class ProfitCalculator {
                     itemName: itemDetails.name,
                     baseAmount: baseAmount,
                     amount: reducedAmount,
-                    askPrice: finalPrice,
-                    totalCost: finalPrice * reducedAmount,
-                    missingPrice: isMissing,
-                    customPrice: hasCustomPrice,
+                    askPrice: resolved.price,
+                    totalCost: resolved.price * reducedAmount,
+                    missingPrice: resolved.missing,
+                    customPrice: resolved.custom,
                 });
             }
         }

@@ -14,12 +14,12 @@ import {
     calculateEnhancementPath,
     buildEnhancementTooltipHTML,
     buildEnhancementMilestonesHTML,
-    getProductionCost,
 } from '../enhancement/tooltip-enhancement.js';
 import { calculateGatheringProfit } from '../actions/gathering-profit.js';
 import { getEnhancingParams } from '../../utils/enhancement-config.js';
 import { numberFormatter, formatKMB, networthFormatter, formatPercentage } from '../../utils/formatters.js';
 import { getItemPrices } from '../../utils/market-data.js';
+import { resolveItemPrice } from '../../utils/profit-helpers.js';
 import dom from '../../utils/dom.js';
 import { parseItemCount } from '../../utils/number-parser.js';
 import { DUNGEON_CHEST_CHEST_KEYS } from '../combat-stats/combat-stats-calculator.js';
@@ -27,6 +27,7 @@ import { DUNGEON_CHEST_CHEST_KEYS } from '../combat-stats/combat-stats-calculato
 // Compiled regex patterns (created once, reused for performance)
 const REGEX_ENHANCEMENT_LEVEL = /\+(\d+)$/;
 const REGEX_ENHANCEMENT_STRIP = /\s*\+\d+$/;
+const REGEX_REFINED_STAR = /\s*★/g;
 
 /**
  * Get the items sprite URL from the DOM (matches pattern used across other display modules)
@@ -317,7 +318,7 @@ class TooltipPrices {
         }
 
         // Show enhancement path for enhanced items (1-20)
-        if (enhancementLevel > 0) {
+        if (enhancementLevel > 0 && config.getSetting('itemTooltip_enhancementPath')) {
             // Get enhancement configuration
             const enhancementConfig = getEnhancingParams();
             if (enhancementConfig) {
@@ -402,9 +403,9 @@ class TooltipPrices {
 
         let itemName = nameElement.textContent.trim();
 
-        // Strip enhancement level (e.g., "+10" from "Griffin Bulwark +10")
-        // This is critical - enhanced items need to lookup the base item
-        itemName = itemName.replace(REGEX_ENHANCEMENT_STRIP, '');
+        // Strip enhancement level only (e.g., "+10" from "Griffin Bulwark ★ +10")
+        // Leave ★ intact so extractItemHridFromName can try the (R) variant first
+        itemName = itemName.replace(REGEX_ENHANCEMENT_STRIP, '').trim();
 
         return this.extractItemHridFromName(itemName);
     }
@@ -415,34 +416,45 @@ class TooltipPrices {
      * @returns {string|null} Item HRID or null
      */
     extractItemHridFromName(itemName) {
-        // Strip enhancement level (e.g., "+10" from "Griffin Bulwark +10")
-        // This is critical - enhanced items need to lookup the base item
-        itemName = itemName.replace(REGEX_ENHANCEMENT_STRIP, '');
+        // Strip enhancement level (e.g., "+10" from "Griffin Bulwark ★ +10")
+        itemName = itemName.replace(REGEX_ENHANCEMENT_STRIP, '').trim();
 
         const initData = dataManager.getInitClientData();
         if (!initData || !initData.itemDetailMap) {
             return null;
         }
 
-        // Return cached map if source data hasn't changed (handles character switch)
+        // Build or return cached itemName -> HRID map
+        let map;
         if (this.itemNameToHridCache && this.itemNameToHridCacheSource === initData.itemDetailMap) {
-            return this.itemNameToHridCache.get(itemName) || null;
+            map = this.itemNameToHridCache;
+        } else {
+            map = new Map();
+            for (const [hrid, item] of Object.entries(initData.itemDetailMap)) {
+                map.set(item.name, hrid);
+            }
+
+            // Only cache if we got actual entries (avoid poisoning with empty map)
+            if (map.size > 0) {
+                this.itemNameToHridCache = map;
+                this.itemNameToHridCacheSource = initData.itemDetailMap;
+            }
         }
 
-        // Build itemName -> HRID map
-        const map = new Map();
-        for (const [hrid, item] of Object.entries(initData.itemDetailMap)) {
-            map.set(item.name, hrid);
+        // 1. Exact match (handles base items and items already in "(R)" form)
+        if (map.has(itemName)) return map.get(itemName);
+
+        // 2. ★ → (R) substitution for refined items ("Dodocamel Gauntlets ★" → "Dodocamel Gauntlets (R)")
+        if (itemName.includes('★')) {
+            const refinedVariant = itemName.replace(/\s*★/g, ' (R)').replace(/\s+/g, ' ').trim();
+            if (map.has(refinedVariant)) return map.get(refinedVariant);
+
+            // 3. Strip ★ entirely as a last-resort fallback
+            const baseName = itemName.replace(REGEX_REFINED_STAR, '').trim();
+            return map.get(baseName) || null;
         }
 
-        // Only cache if we got actual entries (avoid poisoning with empty map)
-        if (map.size > 0) {
-            this.itemNameToHridCache = map;
-            this.itemNameToHridCacheSource = initData.itemDetailMap;
-        }
-
-        // Return result from newly built map
-        return map.get(itemName) || null;
+        return null;
     }
 
     /**
@@ -589,36 +601,19 @@ class TooltipPrices {
             html += '<th style="padding: 2px 4px; text-align: right;">Bid</th>';
             html += '</tr>';
 
-            // Fetch market prices for all materials (profit calculator only stores one price based on mode)
+            // Resolve prices for all materials through unified chain
             const materialsWithPrices = profitData.materialCosts.map((material) => {
-                const itemHrid = material.itemHrid;
-
-                // Special case: Coins have no market price but have face value of 1
-                if (itemHrid === '/items/coin') {
-                    return {
-                        ...material,
-                        askPrice: 1,
-                        bidPrice: 1,
-                    };
+                if (material.itemHrid === '/items/coin') {
+                    return { ...material, askPrice: 1, bidPrice: 1 };
                 }
 
-                const marketPrice = marketAPI.getPrice(itemHrid, 0);
+                const askResult = resolveItemPrice(material.itemHrid, { mode: 'ask', side: 'buy' });
+                const bidResult = resolveItemPrice(material.itemHrid, { mode: 'bid', side: 'buy' });
 
-                if (marketPrice?.ask > 0 || marketPrice?.bid > 0) {
-                    return {
-                        ...material,
-                        askPrice: marketPrice.ask > 0 ? marketPrice.ask : getProductionCost(itemHrid, 'ask') || 0,
-                        bidPrice: marketPrice.bid > 0 ? marketPrice.bid : getProductionCost(itemHrid, 'bid') || 0,
-                    };
-                }
-
-                // Fallback: production cost, then 0
-                const prodAsk = getProductionCost(itemHrid, 'ask') || 0;
-                const prodBid = getProductionCost(itemHrid, 'bid') || 0;
                 return {
                     ...material,
-                    askPrice: prodAsk,
-                    bidPrice: prodBid,
+                    askPrice: askResult.price,
+                    bidPrice: bidResult.price,
                 };
             });
 
