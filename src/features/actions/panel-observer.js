@@ -17,6 +17,7 @@ import { getOriginalText } from '../../utils/dom.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import actionFilter from './action-filter.js';
+import { getActionHridFromName, getItemHridFromName } from '../../utils/game-lookups.js';
 
 /**
  * Action types for gathering skills (3 skills)
@@ -327,8 +328,8 @@ async function handleActionPanel(panel) {
     }
 
     const actionName = getOriginalText(actionNameElement);
-
     const actionHrid = getActionHridFromName(actionName);
+
     if (!actionHrid) {
         return;
     }
@@ -349,10 +350,7 @@ async function handleActionPanel(panel) {
 
     // Check if this is a production action
     if (PRODUCTION_TYPES.includes(actionDetail.type)) {
-        const dropTableElement = panel.querySelector(SELECTORS.DROP_TABLE);
-        if (dropTableElement) {
-            await displayProductionProfit(panel, actionHrid, SELECTORS.DROP_TABLE);
-        }
+        await displayProductionProfit(panel, actionHrid, SELECTORS.DROP_TABLE);
     }
 }
 
@@ -476,7 +474,7 @@ async function handleEnhancingPanel(panel) {
 
     // Find the item HRID from the name
     const gameData = dataManager.getInitClientData();
-    const itemHrid = getItemHridFromName(itemName, gameData);
+    const itemHrid = getItemHridFromName(itemName);
 
     if (!itemHrid) {
         return;
@@ -592,48 +590,6 @@ function setupInputObservers(panel, itemHrid) {
     inputs.forEach((input) => {
         addInputListener(input, panel, itemHrid);
     });
-}
-
-/**
- * Convert action name to HRID
- * @param {string} actionName - Display name of action
- * @returns {string|null} Action HRID or null if not found
- */
-function getActionHridFromName(actionName) {
-    const gameData = dataManager.getInitClientData();
-    if (!gameData?.actionDetailMap) {
-        return null;
-    }
-
-    // Search for action by name
-    for (const [hrid, detail] of Object.entries(gameData.actionDetailMap)) {
-        if (detail.name === actionName) {
-            return hrid;
-        }
-    }
-
-    return null;
-}
-
-/**
- * Convert item name to HRID
- * @param {string} itemName - Display name of item
- * @param {Object} gameData - Game data from dataManager
- * @returns {string|null} Item HRID or null if not found
- */
-function getItemHridFromName(itemName, gameData) {
-    if (!gameData?.itemDetailMap) {
-        return null;
-    }
-
-    // Search for item by name
-    for (const [hrid, detail] of Object.entries(gameData.itemDetailMap)) {
-        if (detail.name === itemName) {
-            return hrid;
-        }
-    }
-
-    return null;
 }
 
 /**

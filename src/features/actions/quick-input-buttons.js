@@ -37,6 +37,7 @@ import { setReactInputValue } from '../../utils/react-input.js';
 import { calculateExpPerHour, calculateMultiLevelProgress } from '../../utils/experience-calculator.js';
 import { createCollapsibleSection } from '../../utils/ui-components.js';
 import { calculateActionsPerHour, calculateEffectiveActionsPerHour } from '../../utils/profit-helpers.js';
+import { getActionHridFromName } from '../../utils/game-lookups.js';
 import { MIN_ACTION_TIME_SECONDS } from '../../utils/profit-constants.js';
 import { createCleanupRegistry } from '../../utils/cleanup-registry.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
@@ -646,20 +647,18 @@ class QuickInputButtons {
      * @returns {Object|null} Action details or null if not found
      */
     getActionDetailsByName(actionName, gameData) {
-        const actionDetailMap = gameData?.actionDetailMap;
-        if (!actionDetailMap) {
+        const hrid = getActionHridFromName(actionName);
+        if (!hrid) {
             return null;
         }
 
-        // Find action by matching name
-        for (const [hrid, details] of Object.entries(actionDetailMap)) {
-            if (details.name === actionName) {
-                // Include hrid in returned object for task detection
-                return { ...details, hrid };
-            }
+        const details = gameData?.actionDetailMap?.[hrid];
+        if (!details) {
+            return null;
         }
 
-        return null;
+        // Include hrid in returned object for task detection
+        return { ...details, hrid };
     }
 
     /**

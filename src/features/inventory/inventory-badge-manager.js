@@ -563,6 +563,12 @@ class InventoryBadgeManager {
         for (const [hrid, item] of Object.entries(gameData.itemDetailMap)) {
             if (item.name) {
                 this.nameToHridMap.set(item.name, hrid);
+                // Add ★ ↔ (R) variants so both display formats resolve
+                if (item.name.includes('(R)')) {
+                    this.nameToHridMap.set(item.name.replace(/\s*\(R\)/, ' ★'), hrid);
+                } else if (item.name.includes('★')) {
+                    this.nameToHridMap.set(item.name.replace(/\s*★/, ' (R)'), hrid);
+                }
             }
         }
     }

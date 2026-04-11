@@ -566,6 +566,8 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
         const dropTableElement = panel.querySelector(dropTableSelector);
         if (dropTableElement) {
             dropTableElement.parentNode.insertBefore(profitSection, dropTableElement.nextSibling);
+        } else {
+            panel.appendChild(profitSection);
         }
     }
 
@@ -651,6 +653,14 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
     const materialMissing = profitData.materialCosts?.some((material) => material.missingPrice) || false;
     const teaMissing = profitData.teaCosts?.some((tea) => tea.missingPrice) || false;
     const revenueMissing = (outputMissing && !outputEstimated) || bonusMissing;
+
+    // Skip profit display entirely for untradable items (e.g. tailoring back slot items).
+    // Action Speed & Time and Level Progress already cover these.
+    const outputItemDetails = dataManager.getItemDetails(profitData.itemHrid);
+    if (outputItemDetails && !outputItemDetails.isTradable) {
+        return;
+    }
+
     const revenueEstimated = outputEstimated && !revenueMissing;
     const costsMissing = materialMissing || teaMissing || revenueMissing;
     const costsEstimated = revenueEstimated && !costsMissing;
@@ -1170,6 +1180,8 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
         const dropTableElement = panel.querySelector(dropTableSelector);
         if (dropTableElement) {
             dropTableElement.parentNode.insertBefore(profitSection, dropTableElement.nextSibling);
+        } else {
+            panel.appendChild(profitSection);
         }
     }
 

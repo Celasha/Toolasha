@@ -1164,7 +1164,11 @@ class ActionTimeDisplay {
             const dropTable = actionDetails.dropTable || [];
             const matchesOutput = outputItems.some((item) => item.itemHrid === itemHridFromDom);
             const matchesDrop = dropTable.some((drop) => drop.itemHrid === itemHridFromDom);
-            const matchesName = actionDetails.name === actionNameFromDom;
+            const matchesName =
+                actionDetails.name === actionNameFromDom ||
+                (actionNameFromDom.includes('★') && actionDetails.name === actionNameFromDom.replace(/\s*★/, ' (R)')) ||
+                (actionNameFromDom.includes('(R)') &&
+                    actionDetails.name === actionNameFromDom.replace(/\s*\(R\)/, ' ★'));
 
             if (!matchesName && !matchesOutput && !matchesDrop) {
                 return false;

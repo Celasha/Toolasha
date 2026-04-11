@@ -9,6 +9,7 @@ import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
 import config from '../../core/config.js';
 import { formatKMB } from '../../utils/formatters.js';
+import { getActionHridFromName } from '../../utils/game-lookups.js';
 
 const GATHERING_TYPES = ['/action_types/foraging', '/action_types/woodcutting', '/action_types/milking'];
 const PRODUCTION_TYPES = [
@@ -206,7 +207,7 @@ class InventoryCountDisplay {
         if (!nameEl) return;
 
         const actionName = nameEl.textContent.trim();
-        const actionHrid = this._getActionHridFromName(actionName);
+        const actionHrid = getActionHridFromName(actionName);
         if (!actionHrid) return;
 
         const actionDetails = dataManager.getActionDetails(actionHrid);
@@ -284,16 +285,7 @@ class InventoryCountDisplay {
             .map((n) => n.textContent)
             .join('')
             .trim();
-        return this._getActionHridFromName(name);
-    }
-
-    _getActionHridFromName(name) {
-        const initData = dataManager.getInitClientData();
-        if (!initData) return null;
-        for (const [hrid, action] of Object.entries(initData.actionDetailMap)) {
-            if (action.name === name) return hrid;
-        }
-        return null;
+        return getActionHridFromName(name);
     }
 
     disable() {

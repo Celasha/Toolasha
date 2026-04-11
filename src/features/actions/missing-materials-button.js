@@ -23,6 +23,7 @@ import {
 } from '../../utils/marketplace-tabs.js';
 import { getProtectionItemFromUI, getProtectFromLevelFromUI } from './enhancement-display.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
+import { getActionHridFromName } from '../../utils/game-lookups.js';
 
 /**
  * Module-level state
@@ -245,27 +246,6 @@ function getActionHridFromPanel(panel) {
         .join('')
         .trim();
     return getActionHridFromName(actionName);
-}
-
-/**
- * Convert action name to HRID
- * @param {string} actionName - Display name of action
- * @returns {string|null} Action HRID or null if not found
- */
-function getActionHridFromName(actionName) {
-    const gameData = dataManager.getInitClientData();
-    if (!gameData?.actionDetailMap) {
-        return null;
-    }
-
-    // Search for action by name
-    for (const [hrid, detail] of Object.entries(gameData.actionDetailMap)) {
-        if (detail.name === actionName) {
-            return hrid;
-        }
-    }
-
-    return null;
 }
 
 /**

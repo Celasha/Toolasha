@@ -11,6 +11,7 @@ import webSocketHook from '../../core/websocket.js';
 import taskIconFilters from './task-icon-filters.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import assetManifest from '../../utils/asset-manifest.js';
+import { getActionHridFromName } from '../../utils/game-lookups.js';
 
 class TaskIcons {
     constructor() {
@@ -372,13 +373,7 @@ class TaskIcons {
      * Find action HRID by display name
      */
     findActionHrid(actionName) {
-        // Search through actions to find matching name
-        for (const [hrid, action] of this.actionsByHrid) {
-            if (action.name === actionName) {
-                return hrid;
-            }
-        }
-        return null;
+        return getActionHridFromName(actionName);
     }
 
     /**

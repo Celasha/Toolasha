@@ -6,9 +6,9 @@
 import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
 import { numberFormatter } from '../../utils/formatters.js';
-import dataManager from '../../core/data-manager.js';
 import { calculateMaterialRequirements } from '../../utils/material-calculator.js';
 import { findActionInput, attachInputListeners, performInitialUpdate } from '../../utils/action-panel-helper.js';
+import { getActionHridFromName } from '../../utils/game-lookups.js';
 
 class RequiredMaterials {
     constructor() {
@@ -230,29 +230,9 @@ class RequiredMaterials {
             .map((node) => node.textContent)
             .join('')
             .trim();
-        return this.getActionHridFromName(actionName);
+        return getActionHridFromName(actionName);
     }
 
-    /**
-     * Convert action name to HRID
-     * @param {string} actionName - Display name of action
-     * @returns {string|null} Action HRID or null if not found
-     */
-    getActionHridFromName(actionName) {
-        const gameData = dataManager.getInitClientData();
-        if (!gameData?.actionDetailMap) {
-            return null;
-        }
-
-        // Search for action by name
-        for (const [hrid, detail] of Object.entries(gameData.actionDetailMap)) {
-            if (detail.name === actionName) {
-                return hrid;
-            }
-        }
-
-        return null;
-    }
     cleanup() {
         this.observers.forEach((unregister) => unregister());
         this.observers = [];

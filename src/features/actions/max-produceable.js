@@ -306,6 +306,12 @@ class MaxProduceable {
             this.actionNameToHridCache = new Map();
             for (const [hrid, action] of Object.entries(initData.actionDetailMap)) {
                 this.actionNameToHridCache.set(action.name, hrid);
+                // Add ★ ↔ (R) variants so both display formats resolve
+                if (action.name.includes('(R)')) {
+                    this.actionNameToHridCache.set(action.name.replace(/\s*\(R\)/, ' ★'), hrid);
+                } else if (action.name.includes('★')) {
+                    this.actionNameToHridCache.set(action.name.replace(/\s*★/, ' (R)'), hrid);
+                }
             }
         }
 

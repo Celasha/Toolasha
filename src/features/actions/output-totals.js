@@ -15,6 +15,7 @@ import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import { findActionInput, attachInputListeners, performInitialUpdate } from '../../utils/action-panel-helper.js';
 import { calculateExperienceMultiplier } from '../../utils/experience-parser.js';
+import { getActionHridFromName } from '../../utils/game-lookups.js';
 
 class OutputTotals {
     constructor() {
@@ -268,19 +269,7 @@ class OutputTotals {
 
         const actionName = nameElement.textContent.trim();
 
-        // Look up action by name in game data
-        const initData = dataManager.getInitClientData();
-        if (!initData) {
-            return null;
-        }
-
-        for (const [hrid, action] of Object.entries(initData.actionDetailMap)) {
-            if (action.name === actionName) {
-                return hrid;
-            }
-        }
-
-        return null;
+        return getActionHridFromName(actionName);
     }
 
     /**

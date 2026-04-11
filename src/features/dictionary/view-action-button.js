@@ -7,8 +7,8 @@ import domObserver from '../../core/dom-observer.js';
 import { navigateToItem, findActionForItem } from '../../utils/item-navigation.js';
 import { setReactInputValue } from '../../utils/react-input.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
-import dataManager from '../../core/data-manager.js';
 import { calculateMaterialRequirements } from '../../utils/material-calculator.js';
+import { getActionHridFromName } from '../../utils/game-lookups.js';
 
 /**
  * ViewActionButton class manages action button in Item Dictionary
@@ -256,14 +256,7 @@ class ViewActionButton {
             .trim();
 
         // Resolve action HRID from name
-        const gameData = dataManager.getInitClientData();
-        let actionHrid = null;
-        for (const [hrid, detail] of Object.entries(gameData?.actionDetailMap || {})) {
-            if (detail.name === actionName) {
-                actionHrid = hrid;
-                break;
-            }
-        }
+        const actionHrid = getActionHridFromName(actionName);
         if (!actionHrid) return null;
 
         // Read current numActions from the count input

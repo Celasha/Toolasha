@@ -13,6 +13,7 @@ import actionFilter from './action-filter.js';
 import { calculateGatheringProfit } from './gathering-profit.js';
 import { formatKMB } from '../../utils/formatters.js';
 import { calculateExpPerHour } from '../../utils/experience-calculator.js';
+import { getActionHridFromName } from '../../utils/game-lookups.js';
 
 class GatheringStats {
     constructor() {
@@ -212,19 +213,7 @@ class GatheringStats {
             .join('')
             .trim();
 
-        // Look up action by name in game data
-        const initData = dataManager.getInitClientData();
-        if (!initData) {
-            return null;
-        }
-
-        for (const [hrid, action] of Object.entries(initData.actionDetailMap)) {
-            if (action.name === actionName) {
-                return hrid;
-            }
-        }
-
-        return null;
+        return getActionHridFromName(actionName);
     }
 
     /**

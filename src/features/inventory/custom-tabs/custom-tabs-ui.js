@@ -1197,7 +1197,15 @@ export default class CustomTabsUI {
             const initData = dataManager.getInitClientData();
             if (initData?.itemDetailMap) {
                 for (const [hrid, details] of Object.entries(initData.itemDetailMap)) {
-                    if (details.name) this._nameHridCache.set(details.name, hrid);
+                    if (details.name) {
+                        this._nameHridCache.set(details.name, hrid);
+                        // Add ★ ↔ (R) variants so both display formats resolve
+                        if (details.name.includes('(R)')) {
+                            this._nameHridCache.set(details.name.replace(/\s*\(R\)/, ' ★'), hrid);
+                        } else if (details.name.includes('★')) {
+                            this._nameHridCache.set(details.name.replace(/\s*★/, ' (R)'), hrid);
+                        }
+                    }
                 }
             }
         }

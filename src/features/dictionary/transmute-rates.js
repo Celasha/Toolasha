@@ -104,6 +104,12 @@ class TransmuteRates {
         if (this.nameToHridCache.size === 0) {
             for (const [hrid, item] of Object.entries(gameData.itemDetailMap)) {
                 this.nameToHridCache.set(item.name, hrid);
+                // Add ★ ↔ (R) variants so both display formats resolve
+                if (item.name.includes('(R)')) {
+                    this.nameToHridCache.set(item.name.replace(/\s*\(R\)/, ' ★'), hrid);
+                } else if (item.name.includes('★')) {
+                    this.nameToHridCache.set(item.name.replace(/\s*★/, ' (R)'), hrid);
+                }
             }
         }
 
