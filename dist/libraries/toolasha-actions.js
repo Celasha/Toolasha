@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.7.0
+ * Version: 2.7.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2633,7 +2633,7 @@
         const baseRevenue = profitData.itemsPerHour * profitData.outputPrice;
         const gourmetRevenue = profitData.gourmetBonusItems * profitData.outputPrice;
         const primaryRevenue = baseRevenue + gourmetRevenue;
-        const primaryRevenueLabel = outputMissing ? '-- ⚠' : formatters_js.formatWithSeparator(Math.round(primaryRevenue));
+        const primaryRevenueLabel = outputMissing ? '-- ⚠' : formatters_js.formatLargeNumber(Math.round(primaryRevenue));
         const gourmetLabel =
             profitData.gourmetBonus > 0 ? ` (${formatters_js.formatPercentage(profitData.gourmetBonus, 1)} gourmet)` : '';
         const primaryOutputSection = uiComponents_js.createCollapsibleSection(
@@ -4047,7 +4047,7 @@
             bonusDrops,
             materialCosts: profitData.materialCosts,
             totalTeaCostPerHour: profitData.totalTeaCostPerHour,
-            efficiencyMultiplier: profitData.efficiencyMultiplier || 1,
+            efficiencyMultiplier,
         });
         const totalRevenue = Math.round(totals.totalRevenue);
         const totalMarketTax = Math.round(totals.totalMarketTax);
@@ -4200,8 +4200,8 @@
         const materialCostsContent = document.createElement('div');
         if (profitData.materialCosts && profitData.materialCosts.length > 0) {
             for (const material of profitData.materialCosts) {
-                const totalMaterial = material.amount * actionsCount * efficiencyMultiplier;
-                const totalMaterialCost = material.totalCost * actionsCount * efficiencyMultiplier;
+                const totalMaterial = material.amount * actionsCount;
+                const totalMaterialCost = material.totalCost * actionsCount;
                 const line = document.createElement('div');
                 line.style.marginLeft = '8px';
 
@@ -4209,7 +4209,7 @@
 
                 // Add Artisan reduction info if present
                 if (profitData.artisanBonus > 0 && material.baseAmount && material.amount !== material.baseAmount) {
-                    const baseTotalAmount = material.baseAmount * actionsCount * efficiencyMultiplier;
+                    const baseTotalAmount = material.baseAmount * actionsCount;
                     materialText += ` (${baseTotalAmount.toFixed(2)} base -${formatters_js.formatPercentage(profitData.artisanBonus, 1)} 🍵)`;
                 }
 
@@ -7821,7 +7821,7 @@
                                         ? config.getSettingValue('color_profit', '#4ade80')
                                         : config.getSettingValue('color_loss', '#f87171');
                                 const profitSign = actionProfit >= 0 ? '+' : '';
-                                profitDiv.innerHTML = `Profit: <span style="color: ${profitColor};">${profitSign}${formatters_js.formatWithSeparator(Math.round(actionProfit))}</span>`;
+                                profitDiv.innerHTML = `Profit: <span style="color: ${profitColor};">${profitSign}${this.formatLargeNumber(Math.abs(Math.round(actionProfit)))}</span>`;
                             }
                         }
                     }
@@ -7841,7 +7841,7 @@
                             : config.getSettingValue('color_loss', '#f87171');
                     const valueSign = totalProfit >= 0 ? '+' : '';
                     const valueLabel = isEstimatedValue ? 'Estimated value' : 'Total profit';
-                    const valueText = `<br>${valueLabel}: <span style="color: ${valueColor};">${valueSign}${formatters_js.formatWithSeparator(Math.round(totalProfit))}</span>`;
+                    const valueText = `<br>${valueLabel}: <span style="color: ${valueColor};">${valueSign}${this.formatLargeNumber(Math.abs(Math.round(totalProfit)))}</span>`;
                     totalDiv.innerHTML = baseText + valueText;
                 }
             } catch (error) {
@@ -9450,7 +9450,11 @@
                     minimumFractionDigits: 1,
                     maximumFractionDigits: 1,
                 });
-                clone.innerText = `${expectedMin} - ${expectedMax}`;
+                const expectedAvg = (((minOutput + maxOutput) / 2) * amount * dropRate).toLocaleString('en-US', {
+                    minimumFractionDigits: 1,
+                    maximumFractionDigits: 1,
+                });
+                clone.innerText = `${expectedMin} - ${expectedMax} (${expectedAvg})`;
             } else {
                 // Single value output
                 const value = parseFloat(output[0].trim());
