@@ -11,6 +11,7 @@ import { getActionEfficiencyContext } from '../../utils/efficiency.js';
 import { calculateBonusRevenue } from '../../utils/bonus-revenue-calculator.js';
 import { getItemPrice } from '../../utils/market-data.js';
 import { getShopCoinCost } from '../../utils/game-lookups.js';
+import { getCustomPrice } from '../settings/custom-price-overrides.js';
 import { MARKET_TAX } from '../../utils/profit-constants.js';
 import {
     calculateActionsPerHour,
@@ -370,11 +371,14 @@ class ProfitCalculator {
                     isMissing = false;
                 }
 
-                // Use shop price if cheaper than marketplace
-                const shopCost = getShopCoinCost(actionDetails.upgradeItemHrid);
-                if (shopCost > 0 && (isMissing || shopCost < finalPrice)) {
-                    finalPrice = shopCost;
-                    isMissing = false;
+                // Use shop price if cheaper than marketplace (skip if custom override is set)
+                const hasCustomPrice = getCustomPrice(actionDetails.upgradeItemHrid, 0, 'buy') !== null;
+                if (!hasCustomPrice) {
+                    const shopCost = getShopCoinCost(actionDetails.upgradeItemHrid);
+                    if (shopCost > 0 && (isMissing || shopCost < finalPrice)) {
+                        finalPrice = shopCost;
+                        isMissing = false;
+                    }
                 }
 
                 // Upgrade items are NOT affected by Artisan Tea (only regular inputItems are)
@@ -388,6 +392,7 @@ class ProfitCalculator {
                     askPrice: finalPrice,
                     totalCost: finalPrice * reducedAmount,
                     missingPrice: isMissing,
+                    customPrice: hasCustomPrice,
                 });
             }
         }
@@ -420,11 +425,14 @@ class ProfitCalculator {
                     isMissing = false;
                 }
 
-                // Use shop price if cheaper than marketplace
-                const shopCost = getShopCoinCost(input.itemHrid);
-                if (shopCost > 0 && (isMissing || shopCost < finalPrice)) {
-                    finalPrice = shopCost;
-                    isMissing = false;
+                // Use shop price if cheaper than marketplace (skip if custom override is set)
+                const hasCustomPrice = getCustomPrice(input.itemHrid, 0, 'buy') !== null;
+                if (!hasCustomPrice) {
+                    const shopCost = getShopCoinCost(input.itemHrid);
+                    if (shopCost > 0 && (isMissing || shopCost < finalPrice)) {
+                        finalPrice = shopCost;
+                        isMissing = false;
+                    }
                 }
 
                 costs.push({
@@ -435,6 +443,7 @@ class ProfitCalculator {
                     askPrice: finalPrice,
                     totalCost: finalPrice * reducedAmount,
                     missingPrice: isMissing,
+                    customPrice: hasCustomPrice,
                 });
             }
         }

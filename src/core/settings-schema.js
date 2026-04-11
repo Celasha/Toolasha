@@ -551,6 +551,13 @@ export const settingsGroups = {
                 options: ['ask', 'bid'],
                 help: 'Whether to use ask (instant buy) or bid (patient buy) prices when valuing dungeon keys in tooltips, networth, and combat income calculations.',
             },
+            profitCalc_customPriceOverrides: {
+                id: 'profitCalc_customPriceOverrides',
+                label: 'Custom price overrides',
+                type: 'customPriceOverrides',
+                default: {},
+                help: 'Set custom buy/sell prices for specific items. Overrides marketplace prices in profit calculations.',
+            },
             actions_artisanMaterialMode: {
                 id: 'actions_artisanMaterialMode',
                 label: 'Missing materials: Artisan requirement mode',

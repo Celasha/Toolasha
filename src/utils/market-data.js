@@ -5,6 +5,7 @@
 
 import marketAPI from '../api/marketplace.js';
 import config from '../core/config.js';
+import { getCustomPrice } from '../features/settings/custom-price-overrides.js';
 
 // Track logged warnings to prevent console spam
 const loggedWarnings = new Set();
@@ -36,6 +37,12 @@ export function getItemPrice(itemHrid, options = {}) {
     }
 
     const { enhancementLevel = 0, mode, context, side = 'sell' } = options;
+
+    // Check for custom price override
+    const customPrice = getCustomPrice(itemHrid, enhancementLevel, side);
+    if (customPrice !== null) {
+        return customPrice;
+    }
 
     // Get raw price data from API
     const priceData = marketAPI.getPrice(itemHrid, enhancementLevel);

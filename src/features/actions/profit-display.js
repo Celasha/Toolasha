@@ -830,7 +830,8 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
             }
 
             const missingPriceNote = getMissingPriceIndicator(material.missingPrice);
-            materialText += ` @ ${formatWithSeparator(Math.round(material.askPrice))}${missingPriceNote} → ${formatLargeNumber(Math.round(material.totalCost * profitData.actionsPerHour * efficiencyMultiplier))}/hr`;
+            const customPriceNote = material.customPrice ? ' *' : '';
+            materialText += ` @ ${formatWithSeparator(Math.round(material.askPrice))}${missingPriceNote}${customPriceNote} → ${formatLargeNumber(Math.round(material.totalCost * profitData.actionsPerHour * efficiencyMultiplier))}/hr`;
 
             line.textContent = materialText;
             materialCostsContent.appendChild(line);
@@ -1684,7 +1685,8 @@ function buildProductionPerActionBreakdown(profitData) {
             }
 
             const missingPriceNote = getMissingPriceIndicator(material.missingPrice);
-            materialText += ` @ ${formatWithSeparator(Math.round(material.askPrice))}${missingPriceNote} → ${formatPerAction(costPerAction)}/action`;
+            const customPriceNote = material.customPrice ? ' *' : '';
+            materialText += ` @ ${formatWithSeparator(Math.round(material.askPrice))}${missingPriceNote}${customPriceNote} → ${formatPerAction(costPerAction)}/action`;
 
             line.textContent = materialText;
             materialCostsContent.appendChild(line);
@@ -2294,7 +2296,8 @@ function buildProductionActionsBreakdown(profitData, actionsCount) {
             }
 
             const missingPriceNote = getMissingPriceIndicator(material.missingPrice);
-            materialText += ` @ ${formatWithSeparator(Math.round(material.askPrice))}${missingPriceNote} → ${formatLargeNumber(Math.round(totalMaterialCost))}`;
+            const customPriceNote = material.customPrice ? ' *' : '';
+            materialText += ` @ ${formatWithSeparator(Math.round(material.askPrice))}${missingPriceNote}${customPriceNote} → ${formatLargeNumber(Math.round(totalMaterialCost))}`;
 
             line.textContent = materialText;
             materialCostsContent.appendChild(line);

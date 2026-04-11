@@ -14,6 +14,13 @@ import marketAPI from '../../api/marketplace.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import ironCowMode, { IRON_COW_SETTINGS } from './iron-cow-mode.js';
+import {
+    getCustomPriceOverrides,
+    getCustomPriceOverridesAsync,
+    setCustomPriceOverride,
+    removeCustomPriceOverride,
+    initCustomPriceOverrides,
+} from './custom-price-overrides.js';
 
 const COLLAPSED_GROUPS_KEY = 'toolasha_collapsedGroups';
 
@@ -39,6 +46,9 @@ class SettingsUI {
         if (!document.getElementById('toolasha-settings-styles')) {
             this.injectStyles();
         }
+
+        // Load custom price overrides cache
+        await initCustomPriceOverrides();
 
         // Load current settings
         this.currentSettings = await settingsStorage.loadSettings();
@@ -337,6 +347,9 @@ class SettingsUI {
                 const settingId = e.target.dataset.settingId;
                 this.openTemplateEditor(settingId);
             }
+            if (e.target.classList.contains('toolasha-custom-price-edit-btn')) {
+                this.openCustomPriceOverridesEditor();
+            }
         });
 
         return panel;
@@ -626,6 +639,32 @@ class SettingsUI {
                             style="flex: 1;">
                         <span id="${settingId}_value" class="toolasha-slider-value" style="min-width: 50px; color: #aaa; font-size: 0.9em;">${value}</span>
                     </div>
+                `;
+            }
+
+            case 'customPriceOverrides': {
+                const overrides = getCustomPriceOverrides();
+                const count = Object.keys(overrides).length;
+                return `
+                    <input type="hidden"
+                        id="${settingId}"
+                        value="">
+                    <button type="button"
+                        class="toolasha-custom-price-edit-btn"
+                        data-setting-id="${settingId}"
+                        style="
+                            background: #4a7c59;
+                            border: 1px solid #5a8c69;
+                            border-radius: 4px;
+                            padding: 6px 12px;
+                            color: #e0e0e0;
+                            cursor: pointer;
+                            font-size: 13px;
+                            white-space: nowrap;
+                            transition: all 0.2s;
+                        ">
+                        Manage Overrides${count > 0 ? ` (${count})` : ''}
+                    </button>
                 `;
             }
 
@@ -1382,7 +1421,574 @@ class SettingsUI {
     }
 
     /**
-     * Create a draggable template list item
+     * Open custom price overrides editor modal
+     */
+    async openCustomPriceOverridesEditor() {
+        const overrides = await getCustomPriceOverridesAsync();
+        const gameData = dataManager.getInitClientData();
+        const itemDetailMap = gameData?.itemDetailMap || {};
+
+        // Build item list for search
+        const allItems = Object.entries(itemDetailMap).map(([hrid, detail]) => ({
+            hrid,
+            name: detail.name || hrid.replace('/items/', ''),
+        }));
+
+        // Get sprite URL for item icons
+        const spriteEl = document.querySelector('use[href*="items_sprite"]');
+        const itemsSpriteUrl = spriteEl ? spriteEl.getAttribute('href').split('#')[0] : null;
+
+        const createItemIcon = (itemHrid, size = 20) => {
+            if (!itemsSpriteUrl) return null;
+            const iconName = itemHrid.split('/').pop();
+            const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svg.setAttribute('width', String(size));
+            svg.setAttribute('height', String(size));
+            svg.style.flexShrink = '0';
+            const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+            use.setAttribute('href', `${itemsSpriteUrl}#${iconName}`);
+            svg.appendChild(use);
+            return svg;
+        };
+
+        // Working copy of overrides
+        const workingOverrides = JSON.parse(JSON.stringify(overrides));
+
+        // Create overlay
+        const overlay = document.createElement('div');
+        overlay.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 100000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        `;
+
+        // Create modal
+        const modal = document.createElement('div');
+        modal.style.cssText = `
+            background: #1a1a1a;
+            border: 2px solid #3a3a3a;
+            border-radius: 8px;
+            padding: 20px;
+            max-width: 700px;
+            width: 90%;
+            max-height: 90%;
+            overflow-y: auto;
+            color: #e0e0e0;
+        `;
+
+        // Header
+        const header = document.createElement('div');
+        header.style.cssText = `
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #3a3a3a;
+            padding-bottom: 10px;
+        `;
+        header.innerHTML = `
+            <h3 style="margin: 0; color: #e0e0e0;">Custom Price Overrides</h3>
+            <button class="toolasha-cpo-close-btn" style="
+                background: none;
+                border: none;
+                color: #e0e0e0;
+                font-size: 32px;
+                cursor: pointer;
+                padding: 0;
+                line-height: 1;
+            ">&times;</button>
+        `;
+
+        // Help text
+        const helpText = document.createElement('div');
+        helpText.style.cssText = `
+            color: #888;
+            font-size: 12px;
+            margin-bottom: 16px;
+            line-height: 1.4;
+        `;
+        helpText.textContent =
+            'Set custom buy/sell prices for items. Leave a field blank to use the marketplace price. ' +
+            'Overridden prices show * in profit displays.';
+
+        // Search section
+        const searchSection = document.createElement('div');
+        searchSection.style.cssText = `
+            display: flex;
+            gap: 8px;
+            margin-bottom: 16px;
+            align-items: flex-end;
+            position: relative;
+        `;
+
+        // Search input wrapper (for dropdown positioning)
+        const searchWrapper = document.createElement('div');
+        searchWrapper.style.cssText = 'flex: 1; position: relative;';
+
+        const searchLabel = document.createElement('div');
+        searchLabel.style.cssText = 'font-size: 11px; color: #888; margin-bottom: 4px;';
+        searchLabel.textContent = 'Item';
+
+        const searchInput = document.createElement('input');
+        searchInput.type = 'text';
+        searchInput.placeholder = 'Search items...';
+        searchInput.style.cssText = `
+            width: 100%;
+            padding: 6px 10px;
+            background: #2a2a2a;
+            color: #e0e0e0;
+            border: 1px solid #4a4a4a;
+            border-radius: 4px;
+            font-size: 13px;
+            box-sizing: border-box;
+        `;
+
+        const dropdown = document.createElement('div');
+        dropdown.style.cssText = `
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: #2a2a2a;
+            border: 1px solid #4a4a4a;
+            border-radius: 0 0 4px 4px;
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 10;
+            display: none;
+        `;
+
+        searchWrapper.appendChild(searchLabel);
+        searchWrapper.appendChild(searchInput);
+        searchWrapper.appendChild(dropdown);
+
+        // Enhancement level input
+        const enhWrapper = document.createElement('div');
+        const enhLabel = document.createElement('div');
+        enhLabel.style.cssText = 'font-size: 11px; color: #888; margin-bottom: 4px;';
+        enhLabel.textContent = 'Enh';
+
+        const enhInput = document.createElement('input');
+        enhInput.type = 'number';
+        enhInput.min = '0';
+        enhInput.max = '20';
+        enhInput.value = '0';
+        enhInput.style.cssText = `
+            width: 50px;
+            padding: 6px 6px;
+            background: #2a2a2a;
+            color: #e0e0e0;
+            border: 1px solid #4a4a4a;
+            border-radius: 4px;
+            font-size: 13px;
+            text-align: center;
+        `;
+
+        enhWrapper.appendChild(enhLabel);
+        enhWrapper.appendChild(enhInput);
+
+        // Add button
+        const addBtnWrapper = document.createElement('div');
+        addBtnWrapper.style.cssText = 'padding-top: 15px;';
+
+        const addBtn = document.createElement('button');
+        addBtn.type = 'button';
+        addBtn.textContent = '+';
+        addBtn.style.cssText = `
+            background: #4a7c59;
+            border: 1px solid #5a8c69;
+            border-radius: 4px;
+            padding: 6px 12px;
+            color: #e0e0e0;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+        `;
+
+        addBtnWrapper.appendChild(addBtn);
+
+        searchSection.appendChild(searchWrapper);
+        searchSection.appendChild(enhWrapper);
+        searchSection.appendChild(addBtnWrapper);
+
+        // Selected item tracker (object to avoid no-loop-func lint warning)
+        const selection = { itemHrid: null };
+
+        // Search functionality
+        searchInput.addEventListener('input', () => {
+            const query = searchInput.value.toLowerCase().trim();
+            if (query.length < 2) {
+                dropdown.style.display = 'none';
+                return;
+            }
+
+            const matches = allItems.filter((item) => item.name.toLowerCase().includes(query)).slice(0, 15);
+
+            if (matches.length === 0) {
+                dropdown.style.display = 'none';
+                return;
+            }
+
+            dropdown.innerHTML = '';
+            dropdown.style.display = 'block';
+
+            for (const match of matches) {
+                const option = document.createElement('div');
+                option.style.cssText = `
+                    padding: 6px 10px;
+                    cursor: pointer;
+                    font-size: 13px;
+                    border-bottom: 1px solid #333;
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                `;
+                const optIcon = createItemIcon(match.hrid, 16);
+                if (optIcon) option.appendChild(optIcon);
+                const optName = document.createElement('span');
+                optName.textContent = match.name;
+                option.appendChild(optName);
+                option.dataset.hrid = match.hrid;
+                option.addEventListener('mouseover', () => {
+                    option.style.background = '#3a3a3a';
+                });
+                option.addEventListener('mouseout', () => {
+                    option.style.background = 'transparent';
+                });
+                option.addEventListener('click', (e) => {
+                    const clickedOption = e.currentTarget;
+                    searchInput.value = clickedOption.querySelector('span').textContent;
+                    selection.itemHrid = clickedOption.dataset.hrid;
+                    dropdown.style.display = 'none';
+                });
+                dropdown.appendChild(option);
+            }
+        });
+
+        // Hide dropdown when clicking outside
+        modal.addEventListener('click', (e) => {
+            if (!searchWrapper.contains(e.target)) {
+                dropdown.style.display = 'none';
+            }
+        });
+
+        // Override table
+        const tableContainer = document.createElement('div');
+        tableContainer.style.cssText = `
+            background: #2a2a2a;
+            border: 1px solid #4a4a4a;
+            border-radius: 4px;
+            min-height: 60px;
+            max-height: 350px;
+            overflow-y: auto;
+        `;
+
+        const renderTable = () => {
+            tableContainer.innerHTML = '';
+
+            const entries = Object.entries(workingOverrides);
+            if (entries.length === 0) {
+                const empty = document.createElement('div');
+                empty.style.cssText = 'padding: 20px; text-align: center; color: #666; font-size: 13px;';
+                empty.textContent = 'No custom price overrides. Use the search bar above to add items.';
+                tableContainer.appendChild(empty);
+                return;
+            }
+
+            // Table header
+            const headerRow = document.createElement('div');
+            headerRow.style.cssText = `
+                display: flex;
+                align-items: center;
+                padding: 8px 10px;
+                border-bottom: 1px solid #4a4a4a;
+                font-size: 11px;
+                color: #888;
+                font-weight: 600;
+                gap: 8px;
+            `;
+            headerRow.innerHTML = `
+                <div style="flex: 1;">Item</div>
+                <div style="width: 80px; text-align: center;">Buy Price</div>
+                <div style="width: 80px; text-align: center;">Sell Price</div>
+                <div style="width: 28px;"></div>
+            `;
+            tableContainer.appendChild(headerRow);
+
+            for (const [key, override] of entries) {
+                const [itemHrid, enhLevel] = key.split(':');
+                const enhNum = parseInt(enhLevel) || 0;
+                const itemDetail = itemDetailMap[itemHrid];
+                const itemName = itemDetail?.name || itemHrid.replace('/items/', '');
+                const enhSuffix = enhNum > 0 ? ` +${enhNum}` : '';
+
+                const row = document.createElement('div');
+                row.style.cssText = `
+                    display: flex;
+                    align-items: center;
+                    padding: 6px 10px;
+                    border-bottom: 1px solid #333;
+                    font-size: 13px;
+                    gap: 8px;
+                `;
+
+                // Item name with icon
+                const nameDiv = document.createElement('div');
+                nameDiv.style.cssText =
+                    'flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: flex; align-items: center; gap: 6px;';
+                const icon = createItemIcon(itemHrid);
+                if (icon) nameDiv.appendChild(icon);
+                const nameSpan = document.createElement('span');
+                nameSpan.textContent = itemName + enhSuffix;
+                nameDiv.appendChild(nameSpan);
+
+                // Buy price input
+                const buyInput = document.createElement('input');
+                buyInput.type = 'number';
+                buyInput.min = '0';
+                buyInput.placeholder = '--';
+                buyInput.value = override.buy ?? '';
+                buyInput.style.cssText = `
+                    width: 80px;
+                    padding: 4px 6px;
+                    background: #1a1a1a;
+                    color: #e0e0e0;
+                    border: 1px solid #4a4a4a;
+                    border-radius: 3px;
+                    font-size: 13px;
+                    text-align: right;
+                `;
+                buyInput.addEventListener('change', () => {
+                    const val = buyInput.value.trim();
+                    if (val === '') {
+                        delete workingOverrides[key].buy;
+                    } else {
+                        workingOverrides[key].buy = Number(val);
+                    }
+                    // If both empty, remove the entry
+                    if (!workingOverrides[key].buy && !workingOverrides[key].sell) {
+                        delete workingOverrides[key];
+                        renderTable();
+                    }
+                });
+
+                // Sell price input
+                const sellInput = document.createElement('input');
+                sellInput.type = 'number';
+                sellInput.min = '0';
+                sellInput.placeholder = '--';
+                sellInput.value = override.sell ?? '';
+                sellInput.style.cssText = `
+                    width: 80px;
+                    padding: 4px 6px;
+                    background: #1a1a1a;
+                    color: #e0e0e0;
+                    border: 1px solid #4a4a4a;
+                    border-radius: 3px;
+                    font-size: 13px;
+                    text-align: right;
+                `;
+                sellInput.addEventListener('change', () => {
+                    const val = sellInput.value.trim();
+                    if (val === '') {
+                        delete workingOverrides[key].sell;
+                    } else {
+                        workingOverrides[key].sell = Number(val);
+                    }
+                    if (!workingOverrides[key].buy && !workingOverrides[key].sell) {
+                        delete workingOverrides[key];
+                        renderTable();
+                    }
+                });
+
+                // Remove button
+                const removeBtn = document.createElement('button');
+                removeBtn.type = 'button';
+                removeBtn.textContent = '\u00d7';
+                removeBtn.style.cssText = `
+                    background: none;
+                    border: none;
+                    color: #888;
+                    font-size: 18px;
+                    cursor: pointer;
+                    padding: 0 4px;
+                    line-height: 1;
+                `;
+                removeBtn.addEventListener('mouseover', () => {
+                    removeBtn.style.color = '#ff6b6b';
+                });
+                removeBtn.addEventListener('mouseout', () => {
+                    removeBtn.style.color = '#888';
+                });
+                removeBtn.addEventListener('click', () => {
+                    delete workingOverrides[key];
+                    renderTable();
+                });
+
+                row.appendChild(nameDiv);
+                row.appendChild(buyInput);
+                row.appendChild(sellInput);
+                row.appendChild(removeBtn);
+                tableContainer.appendChild(row);
+            }
+        };
+
+        renderTable();
+
+        // Add button handler
+        addBtn.addEventListener('click', () => {
+            if (!selection.itemHrid) {
+                // Try exact match from search text
+                const searchText = searchInput.value.toLowerCase().trim();
+                const exactMatch = allItems.find((item) => item.name.toLowerCase() === searchText);
+                if (exactMatch) {
+                    selection.itemHrid = exactMatch.hrid;
+                } else {
+                    return;
+                }
+            }
+
+            const enhLevel = parseInt(enhInput.value) || 0;
+            const key = `${selection.itemHrid}:${enhLevel}`;
+
+            if (!workingOverrides[key]) {
+                workingOverrides[key] = {};
+            }
+
+            // Reset search
+            searchInput.value = '';
+            enhInput.value = '0';
+            selection.itemHrid = null;
+            dropdown.style.display = 'none';
+
+            renderTable();
+        });
+
+        // Buttons section
+        const buttonsSection = document.createElement('div');
+        buttonsSection.style.cssText = `
+            display: flex;
+            gap: 10px;
+            justify-content: space-between;
+            margin-top: 20px;
+        `;
+
+        const clearAllBtn = document.createElement('button');
+        clearAllBtn.type = 'button';
+        clearAllBtn.textContent = 'Clear All';
+        clearAllBtn.style.cssText = `
+            background: #6b3a3a;
+            border: 1px solid #8b5a5a;
+            border-radius: 4px;
+            padding: 8px 16px;
+            color: #e0e0e0;
+            cursor: pointer;
+            font-size: 14px;
+        `;
+        clearAllBtn.addEventListener('click', () => {
+            if (Object.keys(workingOverrides).length === 0) return;
+            if (!confirm('Remove all custom price overrides?')) return;
+            for (const key of Object.keys(workingOverrides)) {
+                delete workingOverrides[key];
+            }
+            renderTable();
+        });
+
+        const rightButtons = document.createElement('div');
+        rightButtons.style.cssText = 'display: flex; gap: 10px;';
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.type = 'button';
+        cancelBtn.textContent = 'Cancel';
+        cancelBtn.style.cssText = `
+            background: #2a2a2a;
+            border: 1px solid #4a4a4a;
+            border-radius: 4px;
+            padding: 8px 16px;
+            color: #e0e0e0;
+            cursor: pointer;
+            font-size: 14px;
+        `;
+        cancelBtn.addEventListener('click', () => overlay.remove());
+
+        const saveBtn = document.createElement('button');
+        saveBtn.type = 'button';
+        saveBtn.textContent = 'Save';
+        saveBtn.style.cssText = `
+            background: #4a7c59;
+            border: 1px solid #5a8c69;
+            border-radius: 4px;
+            padding: 8px 16px;
+            color: #e0e0e0;
+            cursor: pointer;
+            font-size: 14px;
+        `;
+        saveBtn.addEventListener('click', async () => {
+            // Determine what to add, update, and remove
+            const currentOverrides = getCustomPriceOverrides();
+
+            // Remove overrides that are no longer in working copy
+            for (const key of Object.keys(currentOverrides)) {
+                if (!workingOverrides[key]) {
+                    const [itemHrid, enhLevel] = key.split(':');
+                    await removeCustomPriceOverride(itemHrid, parseInt(enhLevel) || 0);
+                }
+            }
+
+            // Add/update overrides
+            for (const [key, override] of Object.entries(workingOverrides)) {
+                const [itemHrid, enhLevel] = key.split(':');
+                await setCustomPriceOverride(
+                    itemHrid,
+                    parseInt(enhLevel) || 0,
+                    override.buy ?? null,
+                    override.sell ?? null
+                );
+            }
+
+            // Update the button text
+            const btn = document.querySelector('.toolasha-custom-price-edit-btn');
+            if (btn) {
+                const count = Object.keys(workingOverrides).length;
+                btn.textContent = `Manage Overrides${count > 0 ? ` (${count})` : ''}`;
+            }
+
+            overlay.remove();
+        });
+
+        rightButtons.appendChild(cancelBtn);
+        rightButtons.appendChild(saveBtn);
+
+        buttonsSection.appendChild(clearAllBtn);
+        buttonsSection.appendChild(rightButtons);
+
+        // Assemble modal
+        modal.appendChild(header);
+        modal.appendChild(helpText);
+        modal.appendChild(searchSection);
+        modal.appendChild(tableContainer);
+        modal.appendChild(buttonsSection);
+        overlay.appendChild(modal);
+
+        // Close handlers
+        header.querySelector('.toolasha-cpo-close-btn').addEventListener('click', () => overlay.remove());
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) {
+                overlay.remove();
+            }
+        });
+
+        document.body.appendChild(overlay);
+    }
+
+    /**
      * @param {Object} item - Template item
      * @param {number} index - Item index
      * @param {Array} items - All items
