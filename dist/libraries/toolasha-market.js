@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.6.1
+ * Version: 2.6.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -19294,6 +19294,12 @@ self.onmessage = function (e) {
             for (const [hrid, item] of Object.entries(gameData.itemDetailMap)) {
                 if (item.name) {
                     this.nameToHridMap.set(item.name, hrid);
+                    // Add ★ ↔ (R) variants so both display formats resolve
+                    if (item.name.includes('(R)')) {
+                        this.nameToHridMap.set(item.name.replace(/\s*\(R\)/, ' ★'), hrid);
+                    } else if (item.name.includes('★')) {
+                        this.nameToHridMap.set(item.name.replace(/\s*★/, ' (R)'), hrid);
+                    }
                 }
             }
         }
@@ -22616,7 +22622,15 @@ self.onmessage = function (e) {
                 const initData = dataManager.getInitClientData();
                 if (initData?.itemDetailMap) {
                     for (const [hrid, details] of Object.entries(initData.itemDetailMap)) {
-                        if (details.name) this._nameHridCache.set(details.name, hrid);
+                        if (details.name) {
+                            this._nameHridCache.set(details.name, hrid);
+                            // Add ★ ↔ (R) variants so both display formats resolve
+                            if (details.name.includes('(R)')) {
+                                this._nameHridCache.set(details.name.replace(/\s*\(R\)/, ' ★'), hrid);
+                            } else if (details.name.includes('★')) {
+                                this._nameHridCache.set(details.name.replace(/\s*★/, ' (R)'), hrid);
+                            }
+                        }
                     }
                 }
             }
@@ -23579,18 +23593,6 @@ self.onmessage = function (e) {
             const loadoutSnapshot = getLoadoutSnapshot();
             const snapshots = loadoutSnapshot.snapshots;
             const entries = Object.values(snapshots);
-
-            console.log(
-                '[CustomTabs] _renderLoadoutButtons:',
-                'isInitialized=',
-                loadoutSnapshot.isInitialized,
-                'snapshotKeys=',
-                Object.keys(snapshots),
-                'entryCount=',
-                entries.length,
-                'snapshotsRef===loadoutSnapshot.snapshots?',
-                snapshots === loadoutSnapshot.snapshots
-            );
 
             if (entries.length === 0) {
                 const msg = document.createElement('span');

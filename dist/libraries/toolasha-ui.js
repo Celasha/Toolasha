@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.6.1
+ * Version: 2.6.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -7842,6 +7842,62 @@ ${hideRules}
     const taskIconFilters = new TaskIconFilters();
 
     /**
+     * Game Data Lookup Utilities
+     *
+     * Centralized functions for resolving display names to HRIDs.
+     * Handles the ★ ↔ (R) refined item display name difference between
+     * test server and live server.
+     */
+
+
+    /**
+     * Generate alternate display names to handle ★ ↔ (R) refined item naming.
+     * @param {string} name - Original display name
+     * @returns {string[]} Array of alternate names to try (may be empty)
+     */
+    function getRefinedNameVariants(name) {
+        const variants = [];
+        if (name.includes('★')) {
+            variants.push(name.replace(/\s*★/, ' (R)'));
+        }
+        if (name.includes('(R)')) {
+            variants.push(name.replace(/\s*\(R\)/, ' ★'));
+        }
+        return variants;
+    }
+
+    /**
+     * Find an action HRID from its display name.
+     * Tries exact match first, then ★ ↔ (R) variants for refined items.
+     * @param {string} actionName - Display name of the action
+     * @returns {string|null} Action HRID or null if not found
+     */
+    function getActionHridFromName(actionName) {
+        const gameData = dataManager.getInitClientData();
+        if (!gameData?.actionDetailMap) {
+            return null;
+        }
+
+        // Try exact match first
+        for (const [hrid, detail] of Object.entries(gameData.actionDetailMap)) {
+            if (detail.name === actionName) {
+                return hrid;
+            }
+        }
+
+        // Try ★ ↔ (R) variants for refined items
+        for (const variant of getRefinedNameVariants(actionName)) {
+            for (const [hrid, detail] of Object.entries(gameData.actionDetailMap)) {
+                if (detail.name === variant) {
+                    return hrid;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Task Icons
      * Adds visual icon overlays to task cards
      */
@@ -8207,13 +8263,7 @@ ${hideRules}
          * Find action HRID by display name
          */
         findActionHrid(actionName) {
-            // Search through actions to find matching name
-            for (const [hrid, action] of this.actionsByHrid) {
-                if (action.name === actionName) {
-                    return hrid;
-                }
-            }
-            return null;
+            return getActionHridFromName(actionName);
         }
 
         /**
@@ -14809,6 +14859,12 @@ ${hideRules}
             if (this.nameToHridCache.size === 0) {
                 for (const [hrid, item] of Object.entries(gameData.itemDetailMap)) {
                     this.nameToHridCache.set(item.name, hrid);
+                    // Add ★ ↔ (R) variants so both display formats resolve
+                    if (item.name.includes('(R)')) {
+                        this.nameToHridCache.set(item.name.replace(/\s*\(R\)/, ' ★'), hrid);
+                    } else if (item.name.includes('★')) {
+                        this.nameToHridCache.set(item.name.replace(/\s*★/, ' (R)'), hrid);
+                    }
                 }
             }
 
@@ -15182,14 +15238,7 @@ ${hideRules}
                 .trim();
 
             // Resolve action HRID from name
-            const gameData = dataManager.getInitClientData();
-            let actionHrid = null;
-            for (const [hrid, detail] of Object.entries(gameData?.actionDetailMap || {})) {
-                if (detail.name === actionName) {
-                    actionHrid = hrid;
-                    break;
-                }
-            }
+            const actionHrid = getActionHridFromName(actionName);
             if (!actionHrid) return null;
 
             // Read current numActions from the count input

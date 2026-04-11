@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.6.1
+ * Version: 2.6.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2484,6 +2484,8 @@
             const dropTableElement = panel.querySelector(dropTableSelector);
             if (dropTableElement) {
                 dropTableElement.parentNode.insertBefore(profitSection, dropTableElement.nextSibling);
+            } else {
+                panel.appendChild(profitSection);
             }
         }
 
@@ -2569,6 +2571,14 @@
         const materialMissing = profitData.materialCosts?.some((material) => material.missingPrice) || false;
         const teaMissing = profitData.teaCosts?.some((tea) => tea.missingPrice) || false;
         const revenueMissing = (outputMissing && !outputEstimated) || bonusMissing;
+
+        // Skip profit display entirely for untradable items (e.g. tailoring back slot items).
+        // Action Speed & Time and Level Progress already cover these.
+        const outputItemDetails = dataManager.getItemDetails(profitData.itemHrid);
+        if (outputItemDetails && !outputItemDetails.isTradable) {
+            return;
+        }
+
         const revenueEstimated = outputEstimated && !revenueMissing;
         const costsMissing = materialMissing || teaMissing || revenueMissing;
         const costsEstimated = revenueEstimated && !costsMissing;
@@ -3088,6 +3098,8 @@
             const dropTableElement = panel.querySelector(dropTableSelector);
             if (dropTableElement) {
                 dropTableElement.parentNode.insertBefore(profitSection, dropTableElement.nextSibling);
+            } else {
+                panel.appendChild(profitSection);
             }
         }
 
@@ -5122,6 +5134,93 @@
     const actionFilter = new ActionFilter();
 
     /**
+     * Game Data Lookup Utilities
+     *
+     * Centralized functions for resolving display names to HRIDs.
+     * Handles the ★ ↔ (R) refined item display name difference between
+     * test server and live server.
+     */
+
+
+    /**
+     * Generate alternate display names to handle ★ ↔ (R) refined item naming.
+     * @param {string} name - Original display name
+     * @returns {string[]} Array of alternate names to try (may be empty)
+     */
+    function getRefinedNameVariants(name) {
+        const variants = [];
+        if (name.includes('★')) {
+            variants.push(name.replace(/\s*★/, ' (R)'));
+        }
+        if (name.includes('(R)')) {
+            variants.push(name.replace(/\s*\(R\)/, ' ★'));
+        }
+        return variants;
+    }
+
+    /**
+     * Find an action HRID from its display name.
+     * Tries exact match first, then ★ ↔ (R) variants for refined items.
+     * @param {string} actionName - Display name of the action
+     * @returns {string|null} Action HRID or null if not found
+     */
+    function getActionHridFromName(actionName) {
+        const gameData = dataManager.getInitClientData();
+        if (!gameData?.actionDetailMap) {
+            return null;
+        }
+
+        // Try exact match first
+        for (const [hrid, detail] of Object.entries(gameData.actionDetailMap)) {
+            if (detail.name === actionName) {
+                return hrid;
+            }
+        }
+
+        // Try ★ ↔ (R) variants for refined items
+        for (const variant of getRefinedNameVariants(actionName)) {
+            for (const [hrid, detail] of Object.entries(gameData.actionDetailMap)) {
+                if (detail.name === variant) {
+                    return hrid;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Find an item HRID from its display name.
+     * Tries exact match first, then ★ ↔ (R) variants for refined items.
+     * @param {string} itemName - Display name of the item
+     * @returns {string|null} Item HRID or null if not found
+     */
+    function getItemHridFromName(itemName) {
+        const gameData = dataManager.getInitClientData();
+        if (!gameData?.itemDetailMap) {
+            return null;
+        }
+
+        // Try exact match first
+        for (const [hrid, detail] of Object.entries(gameData.itemDetailMap)) {
+            if (detail.name === itemName) {
+                return hrid;
+            }
+        }
+
+        // Try ★ ↔ (R) variants for refined items
+        for (const variant of getRefinedNameVariants(itemName)) {
+            for (const [hrid, detail] of Object.entries(gameData.itemDetailMap)) {
+                if (detail.name === variant) {
+                    return hrid;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Action Panel Observer
      *
      * Detects when action panels appear and enhances them with:
@@ -5427,8 +5526,8 @@
         }
 
         const actionName = dom_js.getOriginalText(actionNameElement);
+        const actionHrid = getActionHridFromName(actionName);
 
-        const actionHrid = getActionHridFromName$1(actionName);
         if (!actionHrid) {
             return;
         }
@@ -5449,10 +5548,7 @@
 
         // Check if this is a production action
         if (PRODUCTION_TYPES$3.includes(actionDetail.type)) {
-            const dropTableElement = panel.querySelector(SELECTORS.DROP_TABLE);
-            if (dropTableElement) {
-                await displayProductionProfit(panel, actionHrid, SELECTORS.DROP_TABLE);
-            }
+            await displayProductionProfit(panel, actionHrid, SELECTORS.DROP_TABLE);
         }
     }
 
@@ -5576,7 +5672,7 @@
 
         // Find the item HRID from the name
         const gameData = dataManager.getInitClientData();
-        const itemHrid = getItemHridFromName(itemName, gameData);
+        const itemHrid = getItemHridFromName(itemName);
 
         if (!itemHrid) {
             return;
@@ -5692,48 +5788,6 @@
         inputs.forEach((input) => {
             addInputListener(input, panel, itemHrid);
         });
-    }
-
-    /**
-     * Convert action name to HRID
-     * @param {string} actionName - Display name of action
-     * @returns {string|null} Action HRID or null if not found
-     */
-    function getActionHridFromName$1(actionName) {
-        const gameData = dataManager.getInitClientData();
-        if (!gameData?.actionDetailMap) {
-            return null;
-        }
-
-        // Search for action by name
-        for (const [hrid, detail] of Object.entries(gameData.actionDetailMap)) {
-            if (detail.name === actionName) {
-                return hrid;
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * Convert item name to HRID
-     * @param {string} itemName - Display name of item
-     * @param {Object} gameData - Game data from dataManager
-     * @returns {string|null} Item HRID or null if not found
-     */
-    function getItemHridFromName(itemName, gameData) {
-        if (!gameData?.itemDetailMap) {
-            return null;
-        }
-
-        // Search for item by name
-        for (const [hrid, detail] of Object.entries(gameData.itemDetailMap)) {
-            if (detail.name === itemName) {
-                return hrid;
-            }
-        }
-
-        return null;
     }
 
     /**
@@ -6877,7 +6931,11 @@
                 const dropTable = actionDetails.dropTable || [];
                 const matchesOutput = outputItems.some((item) => item.itemHrid === itemHridFromDom);
                 const matchesDrop = dropTable.some((drop) => drop.itemHrid === itemHridFromDom);
-                const matchesName = actionDetails.name === actionNameFromDom;
+                const matchesName =
+                    actionDetails.name === actionNameFromDom ||
+                    (actionNameFromDom.includes('★') && actionDetails.name === actionNameFromDom.replace(/\s*★/, ' (R)')) ||
+                    (actionNameFromDom.includes('(R)') &&
+                        actionDetails.name === actionNameFromDom.replace(/\s*\(R\)/, ' ★'));
 
                 if (!matchesName && !matchesOutput && !matchesDrop) {
                     return false;
@@ -8495,20 +8553,18 @@
          * @returns {Object|null} Action details or null if not found
          */
         getActionDetailsByName(actionName, gameData) {
-            const actionDetailMap = gameData?.actionDetailMap;
-            if (!actionDetailMap) {
+            const hrid = getActionHridFromName(actionName);
+            if (!hrid) {
                 return null;
             }
 
-            // Find action by matching name
-            for (const [hrid, details] of Object.entries(actionDetailMap)) {
-                if (details.name === actionName) {
-                    // Include hrid in returned object for task detection
-                    return { ...details, hrid };
-                }
+            const details = gameData?.actionDetailMap?.[hrid];
+            if (!details) {
+                return null;
             }
 
-            return null;
+            // Include hrid in returned object for task detection
+            return { ...details, hrid };
         }
 
         /**
@@ -9420,19 +9476,7 @@
 
             const actionName = nameElement.textContent.trim();
 
-            // Look up action by name in game data
-            const initData = dataManager.getInitClientData();
-            if (!initData) {
-                return null;
-            }
-
-            for (const [hrid, action] of Object.entries(initData.actionDetailMap)) {
-                if (action.name === actionName) {
-                    return hrid;
-                }
-            }
-
-            return null;
+            return getActionHridFromName(actionName);
         }
 
         /**
@@ -9811,6 +9855,12 @@
                 this.actionNameToHridCache = new Map();
                 for (const [hrid, action] of Object.entries(initData.actionDetailMap)) {
                     this.actionNameToHridCache.set(action.name, hrid);
+                    // Add ★ ↔ (R) variants so both display formats resolve
+                    if (action.name.includes('(R)')) {
+                        this.actionNameToHridCache.set(action.name.replace(/\s*\(R\)/, ' ★'), hrid);
+                    } else if (action.name.includes('★')) {
+                        this.actionNameToHridCache.set(action.name.replace(/\s*★/, ' (R)'), hrid);
+                    }
                 }
             }
 
@@ -10550,19 +10600,7 @@
                 .join('')
                 .trim();
 
-            // Look up action by name in game data
-            const initData = dataManager.getInitClientData();
-            if (!initData) {
-                return null;
-            }
-
-            for (const [hrid, action] of Object.entries(initData.actionDetailMap)) {
-                if (action.name === actionName) {
-                    return hrid;
-                }
-            }
-
-            return null;
+            return getActionHridFromName(actionName);
         }
 
         /**
@@ -11164,29 +11202,9 @@
                 .map((node) => node.textContent)
                 .join('')
                 .trim();
-            return this.getActionHridFromName(actionName);
+            return getActionHridFromName(actionName);
         }
 
-        /**
-         * Convert action name to HRID
-         * @param {string} actionName - Display name of action
-         * @returns {string|null} Action HRID or null if not found
-         */
-        getActionHridFromName(actionName) {
-            const gameData = dataManager.getInitClientData();
-            if (!gameData?.actionDetailMap) {
-                return null;
-            }
-
-            // Search for action by name
-            for (const [hrid, detail] of Object.entries(gameData.actionDetailMap)) {
-                if (detail.name === actionName) {
-                    return hrid;
-                }
-            }
-
-            return null;
-        }
         cleanup() {
             this.observers.forEach((unregister) => unregister());
             this.observers = [];
@@ -11841,27 +11859,6 @@
             .join('')
             .trim();
         return getActionHridFromName(actionName);
-    }
-
-    /**
-     * Convert action name to HRID
-     * @param {string} actionName - Display name of action
-     * @returns {string|null} Action HRID or null if not found
-     */
-    function getActionHridFromName(actionName) {
-        const gameData = dataManager.getInitClientData();
-        if (!gameData?.actionDetailMap) {
-            return null;
-        }
-
-        // Search for action by name
-        for (const [hrid, detail] of Object.entries(gameData.actionDetailMap)) {
-            if (detail.name === actionName) {
-                return hrid;
-            }
-        }
-
-        return null;
     }
 
     /**
@@ -14648,7 +14645,7 @@
             if (!nameEl) return;
 
             const actionName = nameEl.textContent.trim();
-            const actionHrid = this._getActionHridFromName(actionName);
+            const actionHrid = getActionHridFromName(actionName);
             if (!actionHrid) return;
 
             const actionDetails = dataManager.getActionDetails(actionHrid);
@@ -14726,16 +14723,7 @@
                 .map((n) => n.textContent)
                 .join('')
                 .trim();
-            return this._getActionHridFromName(name);
-        }
-
-        _getActionHridFromName(name) {
-            const initData = dataManager.getInitClientData();
-            if (!initData) return null;
-            for (const [hrid, action] of Object.entries(initData.actionDetailMap)) {
-                if (action.name === name) return hrid;
-            }
-            return null;
+            return getActionHridFromName(name);
         }
 
         disable() {
