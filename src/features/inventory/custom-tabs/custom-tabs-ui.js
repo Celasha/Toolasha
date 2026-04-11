@@ -15,7 +15,13 @@ import domObserver from '../../../core/dom-observer.js';
 import dataManager from '../../../core/data-manager.js';
 import inventorySort from '../inventory-sort.js';
 import inventoryBadgeManager from '../inventory-badge-manager.js';
-import loadoutSnapshot from '../../combat/loadout-snapshot.js';
+// Lazy accessor: in production multi-bundle builds, the Market bundle can't statically import
+// from Combat (it loads first). Resolve at runtime via window.Toolasha.Combat, with a fallback
+// to the static import for dev single-bundle builds.
+import loadoutSnapshotLocal from '../../combat/loadout-snapshot.js';
+function getLoadoutSnapshot() {
+    return window.Toolasha?.Combat?.loadoutSnapshot || loadoutSnapshotLocal;
+}
 import { formatKMB } from '../../../utils/formatters.js';
 import {
     loadConfig,
@@ -2151,8 +2157,21 @@ export default class CustomTabsUI {
 
     _renderLoadoutButtons(container, tabId) {
         container.innerHTML = '';
+        const loadoutSnapshot = getLoadoutSnapshot();
         const snapshots = loadoutSnapshot.snapshots;
         const entries = Object.values(snapshots);
+
+        console.log(
+            '[CustomTabs] _renderLoadoutButtons:',
+            'isInitialized=',
+            loadoutSnapshot.isInitialized,
+            'snapshotKeys=',
+            Object.keys(snapshots),
+            'entryCount=',
+            entries.length,
+            'snapshotsRef===loadoutSnapshot.snapshots?',
+            snapshots === loadoutSnapshot.snapshots
+        );
 
         if (entries.length === 0) {
             const msg = document.createElement('span');
