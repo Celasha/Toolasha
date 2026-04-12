@@ -316,7 +316,7 @@ export async function calculateGatheringProfit(actionHrid) {
 
     return {
         profitPerHour,
-        profitPerAction: calculateProfitPerAction(profitPerHour, actionsPerHour), // Profit per action
+        profitPerAction: calculateProfitPerAction(profitPerHour, actionsPerHour * efficiencyMultiplier), // Profit per action
         profitPerDay: calculateProfitPerDay(profitPerHour), // Profit per day
         revenuePerHour,
         drinkCostPerHour,

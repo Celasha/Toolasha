@@ -259,7 +259,7 @@ class ProfitCalculator {
             revenuePerHour,
             profitPerItem,
             profitPerHour,
-            profitPerAction: calculateProfitPerAction(profitPerHour, actionsPerHour), // Profit per action
+            profitPerAction: calculateProfitPerAction(profitPerHour, actionsPerHour * efficiencyMultiplier), // Profit per action
             profitPerDay: calculateProfitPerDay(profitPerHour), // Profit per day
             bonusRevenue, // Bonus revenue from essences and rare finds
             hasMissingPrices,
