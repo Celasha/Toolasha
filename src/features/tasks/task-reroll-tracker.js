@@ -291,9 +291,10 @@ class TaskRerollTracker {
     /**
      * Get task ID from DOM element by matching task description
      * @param {Element} taskElement - Task DOM element
+     * @param {Set<number>} [claimedIds] - Task IDs already matched to other DOM elements this pass
      * @returns {number|null} Task ID or null if not found
      */
-    getTaskIdFromElement(taskElement) {
+    getTaskIdFromElement(taskElement, claimedIds) {
         // Get task description and goal count from DOM
         const nameEl = taskElement.querySelector(GAME.TASK_NAME);
         const description = nameEl ? nameEl.textContent.trim() : '';
@@ -325,10 +326,14 @@ class TaskRerollTracker {
             // Description format: "Kill X" or "Do action X times"
             const descLower = description.toLowerCase();
 
+            // Skip if already matched to another DOM element this pass
+            if (claimedIds?.has(taskId)) continue;
+
             // For monster tasks, check monsterHrid
             if (taskData.monsterHrid) {
                 const monsterName = taskData.monsterHrid.replace('/monsters/', '').replace(/_/g, ' ');
                 if (descLower.includes(monsterName.toLowerCase())) {
+                    claimedIds?.add(taskId);
                     return taskId;
                 }
             }
@@ -338,6 +343,7 @@ class TaskRerollTracker {
                 const actionParts = taskData.actionHrid.split('/');
                 const actionName = actionParts[actionParts.length - 1].replace(/_/g, ' ');
                 if (descLower.includes(actionName.toLowerCase())) {
+                    claimedIds?.add(taskId);
                     return taskId;
                 }
             }
@@ -349,9 +355,10 @@ class TaskRerollTracker {
     /**
      * Update display for a specific task
      * @param {Element} taskElement - Task DOM element
+     * @param {Set<number>} [claimedIds] - Task IDs already matched to other DOM elements this pass
      */
-    updateTaskDisplay(taskElement) {
-        const taskId = this.getTaskIdFromElement(taskElement);
+    updateTaskDisplay(taskElement, claimedIds) {
+        const taskId = this.getTaskIdFromElement(taskElement, claimedIds);
         if (!taskId) {
             // Remove display if task not found in our data
             const existingDisplay = taskElement.querySelector('.mwi-reroll-cost-display');
@@ -420,9 +427,10 @@ class TaskRerollTracker {
             return;
         }
 
+        const claimedIds = new Set();
         const allTasks = taskList.querySelectorAll(GAME.TASK_CARD);
         allTasks.forEach((task) => {
-            this.updateTaskDisplay(task);
+            this.updateTaskDisplay(task, claimedIds);
         });
     }
 }
