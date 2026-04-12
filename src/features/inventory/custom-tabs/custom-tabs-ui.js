@@ -109,7 +109,7 @@ const PANEL_CSS = `
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 3px 10px 3px calc(10px + var(--depth, 0) * 20px);
+    padding: 2px 10px 2px calc(10px + var(--depth, 0) * 20px);
     cursor: pointer;
     user-select: none;
     flex-basis: 100%;
@@ -118,7 +118,7 @@ const PANEL_CSS = `
     border-bottom: 1px solid #2a2a2a;
     color: #d4d4d4;
     font-family: inherit;
-    font-size: 13px;
+    font-size: 12px;
 }
 .toolasha-ct-section-header:hover { background: rgba(255,255,255,0.04); }
 .toolasha-ct-chevron {
