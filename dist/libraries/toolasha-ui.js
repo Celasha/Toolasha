@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.7.3
+ * Version: 2.8.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -4868,7 +4868,7 @@ ${hideRules}
 
         return {
             profitPerHour,
-            profitPerAction: profitHelpers_js.calculateProfitPerAction(profitPerHour, actionsPerHour), // Profit per action
+            profitPerAction: profitHelpers_js.calculateProfitPerAction(profitPerHour, actionsPerHour * efficiencyMultiplier), // Profit per action
             profitPerDay: profitHelpers_js.calculateProfitPerDay(profitPerHour), // Profit per day
             revenuePerHour,
             drinkCostPerHour,

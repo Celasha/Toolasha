@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.7.3
+ * Version: 2.8.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -273,7 +273,7 @@
                 revenuePerHour,
                 profitPerItem,
                 profitPerHour,
-                profitPerAction: profitHelpers_js.calculateProfitPerAction(profitPerHour, actionsPerHour), // Profit per action
+                profitPerAction: profitHelpers_js.calculateProfitPerAction(profitPerHour, actionsPerHour * efficiencyMultiplier), // Profit per action
                 profitPerDay: profitHelpers_js.calculateProfitPerDay(profitPerHour), // Profit per day
                 bonusRevenue, // Bonus revenue from essences and rare finds
                 hasMissingPrices,
@@ -3940,7 +3940,7 @@ self.onmessage = function (e) {
 
         return {
             profitPerHour,
-            profitPerAction: profitHelpers_js.calculateProfitPerAction(profitPerHour, actionsPerHour), // Profit per action
+            profitPerAction: profitHelpers_js.calculateProfitPerAction(profitPerHour, actionsPerHour * efficiencyMultiplier), // Profit per action
             profitPerDay: profitHelpers_js.calculateProfitPerDay(profitPerHour), // Profit per day
             revenuePerHour,
             drinkCostPerHour,
@@ -16426,6 +16426,18 @@ self.onmessage = function (e) {
         }
 
         /**
+         * Delete a snapshot by timestamp and persist the change to storage.
+         * @param {number} timestamp - The `t` value of the snapshot to remove
+         */
+        async deleteSnapshot(timestamp) {
+            const idx = this.history.findIndex((s) => s.t === timestamp);
+            if (idx === -1) return;
+            this.history.splice(idx, 1);
+            const storageKey = `networth_${this.characterId}`;
+            await storage.set(storageKey, this.history, STORE_NAME);
+        }
+
+        /**
          * Cleanup when disabled
          */
         disable() {
@@ -16483,6 +16495,8 @@ self.onmessage = function (e) {
             this.currentRange = '7d';
             this.currentCustomFrom = null;
             this.currentCustomTo = null;
+            this._deletePopup = null;
+            this._deletePopupOutsideHandler = null;
             this._loadChartPrefs();
         }
 
@@ -17138,6 +17152,9 @@ self.onmessage = function (e) {
                     responsive: true,
                     maintainAspectRatio: false,
                     parsing: false,
+                    onClick: (event, elements) => {
+                        this._onChartClick(event, elements);
+                    },
                     interaction: {
                         mode: 'nearest',
                         intersect: false,
@@ -17551,7 +17568,107 @@ self.onmessage = function (e) {
         /**
          * Close the modal and clean up
          */
+        /**
+         * Handle a click on the chart — show delete popup for the nearest data point.
+         * @param {Object} event - Chart.js event object
+         * @param {Array} elements - Active elements at click position
+         */
+        _onChartClick(event, elements) {
+            this._dismissDeletePopup();
+            if (!elements || elements.length === 0) return;
+
+            const raw = elements[0].element.$context?.raw;
+            if (!raw || isNaN(raw.x)) return;
+
+            // _raw is present on Total line points; category lines share the same timestamp
+            const snapshot = raw._raw || networthHistory.getHistory().find((s) => s.t === raw.x);
+            if (!snapshot) return;
+
+            this._showDeletePopup(event.native, snapshot);
+        }
+
+        /**
+         * Show a small popup near the click offering to delete the datapoint.
+         * @param {MouseEvent} nativeEvent - Native DOM mouse event for positioning
+         * @param {Object} snapshot - The snapshot object to potentially delete
+         */
+        _showDeletePopup(nativeEvent, snapshot) {
+            const popup = document.createElement('div');
+            popup.id = 'mwi-nw-delete-popup';
+
+            const left = Math.min(nativeEvent.clientX + 12, window.innerWidth - 210);
+            const top = nativeEvent.clientY - 10;
+
+            popup.style.cssText = `
+            position: fixed;
+            z-index: 100002;
+            background: #1e1e2e;
+            border: 1px solid #555;
+            border-radius: 6px;
+            padding: 10px 12px;
+            font-size: 12px;
+            color: #ccc;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.6);
+            left: ${left}px;
+            top: ${top}px;
+            min-width: 180px;
+        `;
+
+            const date = new Date(snapshot.t).toLocaleString([], {
+                month: 'short',
+                day: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit',
+            });
+
+            popup.innerHTML = `
+            <div style="margin-bottom:4px;font-weight:500;color:#fff;">${date}</div>
+            <div style="margin-bottom:10px;color:${config.COLOR_ACCENT};">${formatters_js.networthFormatter(snapshot.total)}</div>
+            <button id="mwi-nw-delete-confirm" style="background:#ef4444;color:#fff;border:none;border-radius:4px;padding:3px 10px;cursor:pointer;font-size:11px;margin-right:6px;">Delete point</button>
+            <button id="mwi-nw-delete-cancel" style="background:#2a2a2a;color:#999;border:1px solid #444;border-radius:4px;padding:3px 10px;cursor:pointer;font-size:11px;">Cancel</button>
+        `;
+
+            document.body.appendChild(popup);
+            this._deletePopup = popup;
+
+            popup.querySelector('#mwi-nw-delete-confirm').addEventListener('click', async () => {
+                await networthHistory.deleteSnapshot(snapshot.t);
+                this._dismissDeletePopup();
+                this.renderChart(this.currentRange, this.currentCustomFrom, this.currentCustomTo);
+            });
+
+            popup.querySelector('#mwi-nw-delete-cancel').addEventListener('click', () => {
+                this._dismissDeletePopup();
+            });
+
+            // Dismiss on outside click (defer to avoid catching the current click)
+            setTimeout(() => {
+                this._deletePopupOutsideHandler = (e) => {
+                    if (!popup.contains(e.target)) {
+                        this._dismissDeletePopup();
+                    }
+                };
+                document.addEventListener('click', this._deletePopupOutsideHandler);
+            }, 0);
+        }
+
+        /**
+         * Remove the delete popup and clean up its outside-click listener.
+         */
+        _dismissDeletePopup() {
+            if (this._deletePopup) {
+                this._deletePopup.remove();
+                this._deletePopup = null;
+            }
+            if (this._deletePopupOutsideHandler) {
+                document.removeEventListener('click', this._deletePopupOutsideHandler);
+                this._deletePopupOutsideHandler = null;
+            }
+        }
+
         closeModal() {
+            this._dismissDeletePopup();
+
             if (this.chartInstance) {
                 this.chartInstance.destroy();
                 this.chartInstance = null;
@@ -21920,6 +22037,7 @@ self.onmessage = function (e) {
             this._expandedSearchHrids = null; // Set of base hrids expanded in the item picker
             this._isApplying = false; // Guard against concurrent _applyLayout calls
             this._needsAnotherPass = false; // Deferred layout re-run flag
+            this._lastRebuildTileCount = 0; // Tile count at last full rebuild (detects inventory changes)
             this._actionBtnsEl = null; // +Tab/Export/Import appended to sort controls row on Toolasha tab
         }
 
@@ -22205,7 +22323,7 @@ self.onmessage = function (e) {
                 const isSameNode = invContainer === this._invContainer;
                 const injectedStillPresent =
                     this._injectedEls.length > 0 && this._injectedEls[0].parentElement === invContainer;
-                const needsFullRebuild = !isSameNode || !injectedStillPresent;
+                let needsFullRebuild = !isSameNode || !injectedStillPresent;
 
                 this._invContainer = invContainer;
 
@@ -22247,6 +22365,14 @@ self.onmessage = function (e) {
                     tile.style.order = '';
                 }
 
+                // Force full rebuild when tile count changed — the lightweight path
+                // reuses stale header order values that don't have enough order-space
+                // for new tiles, causing items to visually cascade into wrong sections.
+                if (!needsFullRebuild && allTiles.length !== this._lastRebuildTileCount) {
+                    needsFullRebuild = true;
+                    this._removeInjectedEls();
+                }
+
                 if (needsFullRebuild) {
                     // Full rebuild: inject action buttons + headers
                     let orderCounter = 0;
@@ -22278,6 +22404,8 @@ self.onmessage = function (e) {
                     if (config.getSettingValue('inventoryTabs_showUnorganized')) {
                         orderCounter = this._injectUnorganized(invContainer, tileMap, orderCounter);
                     }
+
+                    this._lastRebuildTileCount = allTiles.length;
                 } else {
                     // Lightweight update: headers already exist, just re-apply tile order/visibility
                     this._updateTileVisibility(invContainer, tileMap);

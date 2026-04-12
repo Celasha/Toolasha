@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.7.3
+ * Version: 2.8.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1604,7 +1604,7 @@
 
         return {
             profitPerHour,
-            profitPerAction: profitHelpers_js.calculateProfitPerAction(profitPerHour, actionsPerHour), // Profit per action
+            profitPerAction: profitHelpers_js.calculateProfitPerAction(profitPerHour, actionsPerHour * efficiencyMultiplier), // Profit per action
             profitPerDay: profitHelpers_js.calculateProfitPerDay(profitPerHour), // Profit per day
             revenuePerHour,
             drinkCostPerHour,
@@ -12625,13 +12625,17 @@
      * @param {Object} teaGroups - { skillTeas: [], generalTeas: [] }
      * @returns {Array<Array<string>>} Array of valid tea combinations
      */
-    function generateCombinations(teaGroups) {
+    function generateCombinations(teaGroups, constraints = null) {
         const { skillTeas, generalTeas } = teaGroups;
         const combinations = [];
 
         // Helper to add combination if valid
         const addCombo = (combo) => {
             if (combo.length > 0 && combo.length <= 3) {
+                if (constraints) {
+                    if ([...constraints.pinned].some((t) => !combo.includes(t))) return;
+                    if (combo.some((t) => constraints.banned.has(t))) return;
+                }
                 combinations.push(combo);
             }
         };
@@ -13185,7 +13189,7 @@
      * @param {string|null} actionNameFilter - Optional action name to restrict optimization to a single action
      * @returns {Object} Optimization result
      */
-    function findOptimalTeas(skillName, goal, locationName = null, actionNameFilter = null) {
+    function findOptimalTeas(skillName, goal, locationName = null, actionNameFilter = null, constraints = null) {
         const normalizedSkill = skillName.toLowerCase();
         const isGathering = GATHERING_SKILLS.includes(normalizedSkill);
         const isProduction = PRODUCTION_SKILLS.includes(normalizedSkill);
@@ -13216,7 +13220,7 @@
 
         // Get relevant teas and generate combinations
         const relevantTeas = getRelevantTeas(normalizedSkill, goal);
-        const combinations = generateCombinations(relevantTeas);
+        const combinations = generateCombinations(relevantTeas, constraints);
 
         // Get actions for this skill (available and excluded)
         const actionData = getActionsForSkill(normalizedSkill, playerLevel);
@@ -13541,6 +13545,8 @@
             this.currentPopup = null;
             this.buttonContainer = null;
             this.closeHandlerCleanup = null;
+            this.pinnedTeas = new Set();
+            this.bannedTeas = new Set();
         }
 
         /**
@@ -13783,44 +13789,58 @@
             popup.appendChild(header);
             this.makeDraggable(popup, header);
 
-            // Optimal teas list
-            const teaList = document.createElement('div');
-            teaList.style.cssText = 'margin-bottom: 12px;';
+            // Optimal teas list (or "no valid combinations" warning when constraints eliminate all combos)
+            if (!result.optimal) {
+                const noResult = document.createElement('div');
+                noResult.style.cssText = `
+                color: ${config.COLOR_WARNING};
+                font-size: 12px;
+                margin-bottom: 12px;
+                padding: 8px;
+                background: rgba(0, 0, 0, 0.3);
+                border-radius: 4px;
+            `;
+                noResult.textContent = 'No valid combinations with current constraints.';
+                popup.appendChild(noResult);
+            } else {
+                const teaList = document.createElement('div');
+                teaList.style.cssText = 'margin-bottom: 12px;';
 
-            for (const tea of result.optimal.teas) {
-                const teaRow = document.createElement('div');
-                teaRow.style.cssText = `
+                for (const tea of result.optimal.teas) {
+                    const teaRow = document.createElement('div');
+                    teaRow.style.cssText = `
                 display: flex;
                 justify-content: space-between;
                 align-items: center;
                 padding: 6px 0;
             `;
 
-                const teaName = document.createElement('span');
-                teaName.style.cssText = `
+                    const teaName = document.createElement('span');
+                    teaName.style.cssText = `
                 color: #fff;
                 font-weight: 500;
             `;
-                teaName.textContent = tea.name;
+                    teaName.textContent = tea.name;
 
-                const teaBuffs = document.createElement('span');
-                teaBuffs.style.cssText = `
+                    const teaBuffs = document.createElement('span');
+                    teaBuffs.style.cssText = `
                 color: rgba(255, 255, 255, 0.6);
                 font-size: 11px;
             `;
-                // Pass drink concentration to get scaled values with DC bonus shown
-                const buffText = getTeaBuffDescription(tea.hrid, result.drinkConcentration || 0);
-                // Style the DC bonus portion in dimmer color
-                teaBuffs.innerHTML = buffText.replace(
-                    /\(([^)]+)\)/g,
-                    '<span style="color: rgba(255, 255, 255, 0.4);">($1)</span>'
-                );
+                    // Pass drink concentration to get scaled values with DC bonus shown
+                    const buffText = getTeaBuffDescription(tea.hrid, result.drinkConcentration || 0);
+                    // Style the DC bonus portion in dimmer color
+                    teaBuffs.innerHTML = buffText.replace(
+                        /\(([^)]+)\)/g,
+                        '<span style="color: rgba(255, 255, 255, 0.4);">($1)</span>'
+                    );
 
-                teaRow.appendChild(teaName);
-                teaRow.appendChild(teaBuffs);
-                teaList.appendChild(teaRow);
-            }
-            popup.appendChild(teaList);
+                    teaRow.appendChild(teaName);
+                    teaRow.appendChild(teaBuffs);
+                    teaList.appendChild(teaRow);
+                }
+                popup.appendChild(teaList);
+            } // end if result.optimal
 
             // Stats
             const stats = document.createElement('div');
@@ -14143,6 +14163,104 @@
                 popup.appendChild(altSection);
             }
 
+            // Tea Constraints panel
+            const constraintSection = document.createElement('div');
+            constraintSection.style.cssText = `
+            margin-top: 12px;
+            padding-top: 8px;
+            border-top: 1px solid ${config.COLOR_BORDER};
+        `;
+
+            const constraintHeader = document.createElement('div');
+            constraintHeader.style.cssText = `font-size: 11px; color: rgba(255,255,255,0.5); margin-bottom: 6px;`;
+            constraintHeader.textContent = 'Tea Constraints:';
+            constraintSection.appendChild(constraintHeader);
+
+            const relevantTeas = getRelevantTeas(skillName.toLowerCase(), goal);
+            const allConstraintTeas = [...relevantTeas.skillTeas, ...relevantTeas.generalTeas];
+            const gameData = dataManager.getInitClientData();
+
+            for (const hrid of allConstraintTeas) {
+                const isPinned = this.pinnedTeas.has(hrid);
+                const isBanned = this.bannedTeas.has(hrid);
+                const teaDisplayName = gameData?.itemDetailMap?.[hrid]?.name || hrid;
+
+                const row = document.createElement('div');
+                row.style.cssText = `
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                padding: 2px 0;
+                font-size: 11px;
+            `;
+
+                const teaLabel = document.createElement('span');
+                teaLabel.textContent = teaDisplayName;
+                teaLabel.style.color = isPinned
+                    ? config.COLOR_GOLD
+                    : isBanned
+                      ? 'rgba(255,255,255,0.25)'
+                      : 'rgba(255,255,255,0.7)';
+                if (isBanned) teaLabel.style.textDecoration = 'line-through';
+
+                const btnContainer = document.createElement('div');
+                btnContainer.style.cssText = 'display:flex; gap:4px;';
+
+                // Pin button ⊕
+                const pinBtn = document.createElement('button');
+                pinBtn.textContent = '⊕';
+                pinBtn.title = isPinned ? 'Remove pin' : 'Pin (force include)';
+                pinBtn.style.cssText = `
+                background: transparent;
+                border: 1px solid ${isPinned ? config.COLOR_GOLD : 'rgba(255,255,255,0.2)'};
+                color: ${isPinned ? config.COLOR_GOLD : 'rgba(255,255,255,0.4)'};
+                border-radius: 3px;
+                padding: 1px 5px;
+                font-size: 11px;
+                cursor: pointer;
+            `;
+                pinBtn.addEventListener('click', () => {
+                    if (isPinned) {
+                        this.pinnedTeas.delete(hrid);
+                    } else {
+                        this.pinnedTeas.add(hrid);
+                        this.bannedTeas.delete(hrid);
+                    }
+                    this._rerunWithConstraints(popup, goal, skillName, locationTab, drilldownAction);
+                });
+
+                // Ban button ⊘
+                const banBtn = document.createElement('button');
+                banBtn.textContent = '⊘';
+                banBtn.title = isBanned ? 'Remove ban' : 'Ban (force exclude)';
+                banBtn.style.cssText = `
+                background: transparent;
+                border: 1px solid ${isBanned ? config.COLOR_LOSS : 'rgba(255,255,255,0.2)'};
+                color: ${isBanned ? config.COLOR_LOSS : 'rgba(255,255,255,0.4)'};
+                border-radius: 3px;
+                padding: 1px 5px;
+                font-size: 11px;
+                cursor: pointer;
+            `;
+                banBtn.addEventListener('click', () => {
+                    if (isBanned) {
+                        this.bannedTeas.delete(hrid);
+                    } else {
+                        this.bannedTeas.add(hrid);
+                        this.pinnedTeas.delete(hrid);
+                    }
+                    this._rerunWithConstraints(popup, goal, skillName, locationTab, drilldownAction);
+                });
+
+                btnContainer.appendChild(pinBtn);
+                btnContainer.appendChild(banBtn);
+                row.appendChild(teaLabel);
+                row.appendChild(btnContainer);
+                constraintSection.appendChild(row);
+            }
+
+            popup.appendChild(constraintSection);
+
             // Close button
             const closeBtn = document.createElement('button');
             closeBtn.style.cssText = `
@@ -14366,6 +14484,21 @@
         }
 
         /**
+         * Re-run optimizer with current pin/ban constraints and re-render popup
+         * @param {HTMLElement} popup - Popup container
+         * @param {string} goal - 'xp' or 'gold'
+         * @param {string} skillName - Current skill name
+         * @param {string|null} locationTab - Current location tab
+         * @param {string|null} drilldownAction - Current drilldown action name, or null
+         */
+        _rerunWithConstraints(popup, goal, skillName, locationTab, drilldownAction) {
+            const constraints = { pinned: this.pinnedTeas, banned: this.bannedTeas };
+            const result = findOptimalTeas(skillName, goal, locationTab, drilldownAction || null, constraints);
+            if (result.error) return;
+            this.buildPopupContent(popup, result, goal, skillName, locationTab, drilldownAction);
+        }
+
+        /**
          * Close the current popup
          */
         closePopup() {
@@ -14377,6 +14510,8 @@
                 this.currentPopup.remove();
                 this.currentPopup = null;
             }
+            this.pinnedTeas.clear();
+            this.bannedTeas.clear();
         }
 
         /**
