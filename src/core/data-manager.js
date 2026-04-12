@@ -274,10 +274,11 @@ class DataManager {
         this.webSocketHook.on('actions_updated', (data) => {
             // Update action list
             for (const action of data.endCharacterActions) {
+                // Always remove the old entry first to prevent duplicates —
+                // endCharacterActions can contain existing actions alongside new ones.
+                this.characterActions = this.characterActions.filter((a) => a.id !== action.id);
                 if (action.isDone === false) {
                     this.characterActions.push(action);
-                } else {
-                    this.characterActions = this.characterActions.filter((a) => a.id !== action.id);
                 }
             }
 
