@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.8.1
+ * Version: 2.9.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1068,10 +1068,10 @@
                 },
                 networth_historyChart: {
                     id: 'networth_historyChart',
-                    label: 'Enable networth history chart',
+                    label: 'Enable net worth history chart',
                     type: 'checkbox',
                     default: true,
-                    help: 'Records hourly networth snapshots and shows a chart icon next to Total Networth. Disable to stop tracking and hide the chart button.',
+                    help: 'Records hourly net worth snapshots and shows a chart icon next to Total Net Worth. Disable to stop tracking and hide the chart button.',
                 },
                 autoAllButton: {
                     id: 'autoAllButton',

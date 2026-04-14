@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 2.8.1
+ * Version: 2.9.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -653,6 +653,14 @@
             // Filter out empty slots so callers get only actual items
             const filled = (snapshot.drinks || []).filter((d) => d.itemHrid);
             return filled.length > 0 ? filled : null;
+        }
+
+        /**
+         * Get all saved loadout snapshots as a flat array.
+         * @returns {Array<Object>} Array of snapshot objects
+         */
+        getAllSnapshots() {
+            return Object.values(this.snapshots);
         }
 
         /**

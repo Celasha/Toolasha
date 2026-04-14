@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.8.1
+ * Version: 2.9.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1904,6 +1904,14 @@
             // Filter out empty slots so callers get only actual items
             const filled = (snapshot.drinks || []).filter((d) => d.itemHrid);
             return filled.length > 0 ? filled : null;
+        }
+
+        /**
+         * Get all saved loadout snapshots as a flat array.
+         * @returns {Array<Object>} Array of snapshot objects
+         */
+        getAllSnapshots() {
+            return Object.values(this.snapshots);
         }
 
         /**
@@ -12621,9 +12629,14 @@
         // Artisan tea - action level helps everyone, artisan buff helps production gold
         generalTeas.add('/items/artisan_tea');
 
+        // Wisdom tea - always shown so users can evaluate the XP/gold trade-off in any mode
+        generalTeas.add('/items/wisdom_tea');
+
         if (goal === 'xp') {
-            // Wisdom tea for XP multiplier
-            generalTeas.add('/items/wisdom_tea');
+            if (skill === 'cooking' || skill === 'brewing') {
+                // Gourmet tea shown on XP tab too — users may want to run it alongside XP teas
+                generalTeas.add('/items/gourmet_tea');
+            }
         } else if (goal === 'gold') {
             if (isGathering) {
                 // Gathering-specific gold teas

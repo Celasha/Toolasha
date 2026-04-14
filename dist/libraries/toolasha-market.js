@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.8.1
+ * Version: 2.9.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -15478,6 +15478,337 @@ self.onmessage = function (e) {
     }
 
     /**
+     * Networth Exclusions
+     * Manages the list of assets to exclude from net worth calculation.
+     * Persisted per character to IndexedDB (settings store).
+     *
+     * Exclusion types:
+     *   assetType  - entire section ('houses', 'abilities', 'abilityBooks', 'listings', 'equipped')
+     *   category   - all items in an inventory category ('/item_categories/food', etc.)
+     *   item       - all stacks of a specific item type ('/items/...')
+     *   houseRoom  - one specific house room ('/house_rooms/...')
+     *   ability    - one specific ability ('/abilities/...')
+     *   loadout    - all equipment items in a named loadout snapshot
+     */
+
+
+    const STORAGE_KEY_PREFIX$1 = 'networth_exclusions';
+
+    /** @type {Array<{type: string, value: string}>|null} In-memory cache */
+    let cache = null;
+
+    /**
+     * Get the character-scoped storage key.
+     * @returns {string}
+     */
+    function getStorageKey$2() {
+        const charId = dataManager.getCurrentCharacterId() || 'default';
+        return `${STORAGE_KEY_PREFIX$1}_${charId}`;
+    }
+
+    /**
+     * Load exclusions from storage into memory.
+     * @returns {Promise<Array<{type: string, value: string}>>}
+     */
+    async function loadExclusions() {
+        if (cache === null) {
+            cache = (await storage.getJSON(getStorageKey$2(), 'settings', [])) || [];
+        }
+        return cache;
+    }
+
+    /**
+     * Initialize exclusions — call at feature startup to warm the cache.
+     * @returns {Promise<void>}
+     */
+    async function initExclusions() {
+        await loadExclusions();
+    }
+
+    /**
+     * Get all current exclusions synchronously (may be empty before initExclusions completes).
+     * @returns {Array<{type: string, value: string}>}
+     */
+    function getExclusions() {
+        return cache ?? [];
+    }
+
+    /**
+     * Check whether a given type/value pair is currently excluded.
+     * @param {string} type - 'assetType' | 'category' | 'item' | 'houseRoom' | 'ability' | 'loadout'
+     * @param {string} value - HRID or loadout name
+     * @returns {boolean}
+     */
+    function isExcluded(type, value) {
+        const list = cache ?? [];
+        return list.some((e) => e.type === type && e.value === value);
+    }
+
+    /**
+     * Add an exclusion if it does not already exist. Persists to storage.
+     * @param {string} type
+     * @param {string} value
+     * @returns {Promise<void>}
+     */
+    async function addExclusion(type, value) {
+        const list = await loadExclusions();
+        if (!list.some((e) => e.type === type && e.value === value)) {
+            list.push({ type, value });
+            cache = list;
+            await storage.setJSON(getStorageKey$2(), list, 'settings');
+        }
+    }
+
+    /**
+     * Remove an exclusion. Persists to storage.
+     * @param {string} type
+     * @param {string} value
+     * @returns {Promise<void>}
+     */
+    async function removeExclusion(type, value) {
+        const list = await loadExclusions();
+        const idx = list.findIndex((e) => e.type === type && e.value === value);
+        if (idx !== -1) {
+            list.splice(idx, 1);
+            cache = list;
+            await storage.setJSON(getStorageKey$2(), list, 'settings');
+        }
+    }
+
+    /**
+     * Loadout Snapshot
+     *
+     * Listens for `loadouts_updated` WebSocket messages to capture all loadout configurations
+     * (equipment, abilities, consumables, enhancement levels) in real time.
+     *
+     * Stored snapshots are used by profit calculators to apply the correct tool/equipment
+     * bonuses for a skill even when that loadout is not currently equipped.
+     *
+     * Skill matching: the loadout's actionTypeHrid (e.g. "/action_types/brewing") is compared
+     * to the action type of the profit calculation. An "All Skills" loadout (empty actionTypeHrid)
+     * is used as a fallback when no skill-specific snapshot is found.
+     *
+     * Priority: skill default > all skills default > skill non-default > all skills non-default
+     */
+
+
+    const STORAGE_KEY_PREFIX = 'loadout_snapshots';
+
+    /**
+     * Get character-scoped storage key.
+     * @returns {string}
+     */
+    function getStorageKey$1() {
+        const charId = dataManager.getCurrentCharacterId() || 'default';
+        return `${STORAGE_KEY_PREFIX}_${charId}`;
+    }
+
+    /**
+     * Parse a wearable hash string into itemLocationHrid, itemHrid, and enhancementLevel.
+     * Format: "characterId::/item_locations/location::/items/item_hrid::enhancementLevel"
+     * Empty string means no item in that slot.
+     * @param {string} itemLocationHrid - The equipment slot key (e.g. "/item_locations/body")
+     * @param {string} wearableHash - The wearable hash value
+     * @returns {{ itemLocationHrid: string, itemHrid: string, enhancementLevel: number }|null}
+     */
+    function parseWearable(itemLocationHrid, wearableHash) {
+        if (!wearableHash) return null;
+
+        const parts = wearableHash.split('::');
+        const itemHrid = parts.find((p) => p.startsWith('/items/'));
+        if (!itemHrid) return null;
+
+        const lastPart = parts[parts.length - 1];
+        const enhancementLevel = !lastPart.startsWith('/') ? parseInt(lastPart, 10) || 0 : 0;
+
+        return { itemLocationHrid, itemHrid, enhancementLevel };
+    }
+
+    /**
+     * Convert a server loadout object into our snapshot format.
+     * @param {Object} loadout - A loadout entry from characterLoadoutMap
+     * @returns {Object} snapshot
+     */
+    function buildSnapshot(loadout) {
+        // Parse equipment from wearableMap
+        const equipment = [];
+        for (const [locationHrid, hash] of Object.entries(loadout.wearableMap || {})) {
+            const parsed = parseWearable(locationHrid, hash);
+            if (parsed) equipment.push(parsed);
+        }
+
+        // Parse drinks
+        const drinks = (loadout.drinkItemHrids || []).map((hrid) => ({
+            itemHrid: hrid || '',
+        }));
+
+        // Parse food
+        const food = (loadout.foodItemHrids || []).map((hrid) => ({
+            itemHrid: hrid || '',
+        }));
+
+        // Parse abilities
+        const abilities = [];
+        for (const [slot, hrid] of Object.entries(loadout.abilityMap || {})) {
+            if (hrid) abilities.push({ abilityHrid: hrid, slot: parseInt(slot, 10) });
+        }
+
+        return {
+            name: loadout.name,
+            actionTypeHrid: loadout.actionTypeHrid || '',
+            isDefault: !!loadout.isDefault,
+            equipment,
+            abilities,
+            food,
+            drinks,
+            savedAt: Date.now(),
+        };
+    }
+
+    class LoadoutSnapshot {
+        constructor() {
+            this.snapshots = {}; // In-memory cache: { [loadoutName]: snapshot }
+            this.loadoutsUpdatedHandler = null;
+            this.isInitialized = false;
+        }
+
+        async initialize() {
+            if (this.isInitialized) return;
+            this.isInitialized = true;
+
+            // Load existing snapshots into memory
+            this.snapshots = (await storage.getJSON(getStorageKey$1(), 'settings', null)) || {};
+            console.log(`[LoadoutSnapshot] initialize() — loaded ${Object.keys(this.snapshots).length} existing snapshots`);
+
+            // Listen for loadouts_updated WebSocket messages
+            this.loadoutsUpdatedHandler = (data) => this._onLoadoutsUpdated(data);
+            webSocketHook.on('loadouts_updated', this.loadoutsUpdatedHandler);
+        }
+
+        /**
+         * Handle a loadouts_updated WebSocket message.
+         * Replaces all snapshots with the server's current state.
+         * @param {Object} data - The WebSocket message payload
+         */
+        _onLoadoutsUpdated(data) {
+            console.log('[LoadoutSnapshot] loadouts_updated WebSocket message received');
+            const loadoutMap = data.characterLoadoutMap;
+            if (!loadoutMap) {
+                console.log('[LoadoutSnapshot] no characterLoadoutMap in message');
+                return;
+            }
+
+            const newSnapshots = {};
+            for (const [id, loadout] of Object.entries(loadoutMap)) {
+                if (!loadout.name) continue;
+                newSnapshots[id] = buildSnapshot(loadout);
+                console.log(
+                    `[LoadoutSnapshot]   → ${loadout.name} (id=${id}): type=${loadout.actionTypeHrid || 'All Skills'}, default=${loadout.isDefault}`
+                );
+            }
+
+            this.snapshots = newSnapshots;
+            storage.setJSON(getStorageKey$1(), this.snapshots, 'settings');
+            console.log(
+                `[LoadoutSnapshot] Synced ${Object.keys(newSnapshots).length} snapshots:`,
+                Object.values(newSnapshots).map((s) => s.name)
+            );
+        }
+
+        /**
+         * Find the best snapshot for a given action type.
+         * Priority: skill default > all skills default > skill non-default > all skills non-default
+         * @param {string} actionTypeHrid - e.g. "/action_types/brewing"
+         * @returns {Object|null} snapshot entry or null
+         */
+        _findSnapshot(actionTypeHrid) {
+            if (!config.getSetting('loadoutSnapshot')) return null;
+
+            let skillDefault = null;
+            let allSkillsDefault = null;
+            let skillNonDefault = null;
+            let allSkillsNonDefault = null;
+
+            for (const snapshot of Object.values(this.snapshots)) {
+                if (snapshot.actionTypeHrid === actionTypeHrid) {
+                    if (snapshot.isDefault) {
+                        skillDefault = snapshot;
+                    } else {
+                        skillNonDefault = snapshot;
+                    }
+                } else if (snapshot.actionTypeHrid === '') {
+                    if (snapshot.isDefault) {
+                        allSkillsDefault = snapshot;
+                    } else {
+                        allSkillsNonDefault = snapshot;
+                    }
+                }
+            }
+
+            return skillDefault || allSkillsDefault || skillNonDefault || allSkillsNonDefault || null;
+        }
+
+        /**
+         * Get a Map<itemLocationHrid, item> for the best loadout snapshot matching the given
+         * action type. Returns null if no snapshot exists or the feature is disabled.
+         * The returned Map has the same format as dataManager.getEquipment().
+         * @param {string} actionTypeHrid
+         * @returns {Map<string, Object>|null}
+         */
+        getSnapshotForSkill(actionTypeHrid) {
+            const snapshot = this._findSnapshot(actionTypeHrid);
+            if (!snapshot || !snapshot.equipment?.length) return null;
+            return new Map(snapshot.equipment.map((e) => [e.itemLocationHrid, e]));
+        }
+
+        /**
+         * Get the drink slots array for the best loadout snapshot matching the given
+         * action type. Returns null if no snapshot exists or the feature is disabled.
+         * The returned array has the same format as dataManager.getActionDrinkSlots().
+         * @param {string} actionTypeHrid
+         * @returns {Array<{itemHrid: string}>|null}
+         */
+        getSnapshotDrinksForSkill(actionTypeHrid) {
+            const snapshot = this._findSnapshot(actionTypeHrid);
+            if (!snapshot) return null;
+            // Filter out empty slots so callers get only actual items
+            const filled = (snapshot.drinks || []).filter((d) => d.itemHrid);
+            return filled.length > 0 ? filled : null;
+        }
+
+        /**
+         * Get all saved loadout snapshots as a flat array.
+         * @returns {Array<Object>} Array of snapshot objects
+         */
+        getAllSnapshots() {
+            return Object.values(this.snapshots);
+        }
+
+        /**
+         * Get the name and default status of the saved loadout being used for a given action type.
+         * Returns an object with name and isDefault, or null if no snapshot exists or feature is disabled.
+         * @param {string} actionTypeHrid
+         * @returns {{ name: string, isDefault: boolean }|null}
+         */
+        getSnapshotInfoForSkill(actionTypeHrid) {
+            const snapshot = this._findSnapshot(actionTypeHrid);
+            if (!snapshot) return null;
+            return { name: snapshot.name, isDefault: !!snapshot.isDefault };
+        }
+
+        disable() {
+            if (this.loadoutsUpdatedHandler) {
+                webSocketHook.off('loadouts_updated', this.loadoutsUpdatedHandler);
+                this.loadoutsUpdatedHandler = null;
+            }
+
+            this.isInitialized = false;
+        }
+    }
+
+    const loadoutSnapshot = new LoadoutSnapshot();
+
+    /**
      * Networth Calculator
      * Calculates total character networth including:
      * - Equipped items
@@ -15768,6 +16099,7 @@ self.onmessage = function (e) {
             const houseName = houseDetail?.name || houseRoomHrid.replace('/house_rooms/', '');
 
             breakdown.push({
+                hrid: houseRoomHrid,
                 name: houseName,
                 level: level,
                 cost: cost,
@@ -15820,6 +16152,7 @@ self.onmessage = function (e) {
                 .join(' ');
 
             const abilityData = {
+                hrid: ability.abilityHrid,
                 name: `${abilityName} ${ability.level}`,
                 cost: cost,
             };
@@ -16048,23 +16381,65 @@ self.onmessage = function (e) {
         // Batch fetch all prices at once (eliminates ~400 redundant lookups)
         const priceCache = marketAPI.getPricesBatch(itemsToPrice);
 
+        // Precompute loadout-excluded item hrids: Map<itemHrid → loadoutName>
+        const loadoutExcludedHridToName = new Map();
+        const loadoutExclusions = getExclusions().filter((e) => e.type === 'loadout');
+        if (loadoutExclusions.length > 0) {
+            const allSnapshots = loadoutSnapshot.getAllSnapshots();
+            for (const exc of loadoutExclusions) {
+                const snapshot = allSnapshots.find((s) => s.name === exc.value);
+                if (snapshot) {
+                    for (const eq of snapshot.equipment) {
+                        if (!loadoutExcludedHridToName.has(eq.itemHrid)) {
+                            loadoutExcludedHridToName.set(eq.itemHrid, exc.value);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Accumulate excluded amounts keyed by type:value
+        const excludedByKey = new Map();
+        const trackExcluded = (type, value, name, amount) => {
+            const key = `${type}:${value}`;
+            if (!excludedByKey.has(key)) {
+                excludedByKey.set(key, { type, value, name, amount: 0 });
+            }
+            excludedByKey.get(key).amount += amount;
+        };
+
         // Calculate equipped items value using workers
         let equippedValue = 0;
         const equippedBreakdown = [];
 
+        const entireEquippedExcluded = isExcluded('assetType', 'equipped');
         const equippedItems = characterItems.filter((item) => item.itemLocationHrid !== '/item_locations/inventory');
         const equippedValues = await calculateItemValuesParallel(equippedItems, priceCache, gameData);
 
         for (let i = 0; i < equippedItems.length; i++) {
             const item = equippedItems[i];
             const value = equippedValues[i];
-            equippedValue += value;
 
-            // Add to breakdown
             const itemDetails = gameData.itemDetailMap[item.itemHrid];
             const itemName = itemDetails?.name || item.itemHrid.replace('/items/', '');
             const displayName = item.enhancementLevel > 0 ? `${itemName} +${item.enhancementLevel}` : itemName;
 
+            // Check exclusions in priority order: assetType > item > loadout
+            if (entireEquippedExcluded) {
+                trackExcluded('assetType', 'equipped', 'All Equipped Items', value);
+                continue;
+            }
+            if (isExcluded('item', item.itemHrid)) {
+                trackExcluded('item', item.itemHrid, displayName, value);
+                continue;
+            }
+            const loadoutName = loadoutExcludedHridToName.get(item.itemHrid);
+            if (loadoutName) {
+                trackExcluded('loadout', loadoutName, `Loadout: ${loadoutName}`, value);
+                continue;
+            }
+
+            equippedValue += value;
             equippedBreakdown.push({
                 name: displayName,
                 value,
@@ -16092,7 +16467,7 @@ self.onmessage = function (e) {
             const item = inventoryItems[i];
             const value = inventoryValues[i];
 
-            // Extract coin count for header display
+            // Extract coin count for header display (always track regardless of exclusion)
             if (item.itemHrid === '/items/coin') {
                 coinCount = item.count || 0;
             }
@@ -16116,6 +16491,21 @@ self.onmessage = function (e) {
             const isAbilityBook = categoryHrid === '/item_categories/ability_book';
             const booksAsInventory = config.getSetting('networth_abilityBooksAsInventory') === true;
 
+            // Check item-level and category-level exclusions
+            if (isExcluded('item', item.itemHrid)) {
+                trackExcluded('item', item.itemHrid, displayName, value);
+                continue;
+            }
+            if (isExcluded('category', categoryHrid)) {
+                const categoryName = gameData.itemCategoryDetailMap?.[categoryHrid]?.name || 'Other';
+                trackExcluded('category', categoryHrid, `${categoryName} (category)`, value);
+                continue;
+            }
+            if (isAbilityBook && !booksAsInventory && isExcluded('assetType', 'abilityBooks')) {
+                trackExcluded('assetType', 'abilityBooks', 'All Ability Books', value);
+                continue;
+            }
+
             if (isAbilityBook && !booksAsInventory) {
                 // Add to ability books (Fixed Assets)
                 abilityBooksValue += value;
@@ -16132,6 +16522,7 @@ self.onmessage = function (e) {
                     inventoryByCategory[categoryName] = {
                         items: [],
                         totalValue: 0,
+                        categoryHrid,
                     };
                 }
 
@@ -16178,11 +16569,81 @@ self.onmessage = function (e) {
             }
         }
 
-        // Calculate houses value
-        const housesData = calculateAllHousesCost(characterHouseRooms);
+        // Apply listings exclusion
+        if (isExcluded('assetType', 'listings') && listingsValue > 0) {
+            trackExcluded('assetType', 'listings', 'All Market Listings', listingsValue);
+            listingsValue = 0;
+        }
 
-        // Calculate abilities value
-        const abilitiesData = calculateAllAbilitiesCost(characterAbilities, abilityCombatTriggersMap);
+        // Calculate houses value — apply per-room and whole-section exclusions
+        let housesData = calculateAllHousesCost(characterHouseRooms);
+        if (isExcluded('assetType', 'houses') && housesData.totalCost > 0) {
+            trackExcluded('assetType', 'houses', 'All Houses', housesData.totalCost);
+            housesData = { totalCost: 0, breakdown: [] };
+        } else {
+            let excludedRoomCost = 0;
+            const remainingRooms = [];
+            for (const room of housesData.breakdown) {
+                if (isExcluded('houseRoom', room.hrid)) {
+                    trackExcluded('houseRoom', room.hrid, room.name, room.cost);
+                    excludedRoomCost += room.cost;
+                } else {
+                    remainingRooms.push(room);
+                }
+            }
+            if (excludedRoomCost > 0) {
+                housesData = { totalCost: housesData.totalCost - excludedRoomCost, breakdown: remainingRooms };
+            }
+        }
+
+        // Calculate abilities value — apply per-ability and whole-section exclusions
+        let abilitiesData = calculateAllAbilitiesCost(characterAbilities, abilityCombatTriggersMap);
+        if (isExcluded('assetType', 'abilities') && abilitiesData.totalCost > 0) {
+            trackExcluded('assetType', 'abilities', 'All Abilities', abilitiesData.totalCost);
+            abilitiesData = {
+                totalCost: 0,
+                equippedCost: 0,
+                breakdown: [],
+                equippedBreakdown: [],
+                otherBreakdown: [],
+            };
+        } else {
+            let excludedAbilityCost = 0;
+            let excludedEquippedCost = 0;
+            const remainingBreakdown = [];
+            const remainingEquipped = [];
+            const remainingOther = [];
+            const equippedHridSet = new Set(abilitiesData.equippedBreakdown.map((a) => a.hrid));
+            for (const ability of abilitiesData.breakdown) {
+                if (isExcluded('ability', ability.hrid)) {
+                    trackExcluded('ability', ability.hrid, ability.name, ability.cost);
+                    excludedAbilityCost += ability.cost;
+                    if (equippedHridSet.has(ability.hrid)) {
+                        excludedEquippedCost += ability.cost;
+                    }
+                } else {
+                    remainingBreakdown.push(ability);
+                    if (equippedHridSet.has(ability.hrid)) {
+                        remainingEquipped.push(ability);
+                    } else {
+                        remainingOther.push(ability);
+                    }
+                }
+            }
+            if (excludedAbilityCost > 0) {
+                abilitiesData = {
+                    totalCost: abilitiesData.totalCost - excludedAbilityCost,
+                    equippedCost: abilitiesData.equippedCost - excludedEquippedCost,
+                    breakdown: remainingBreakdown,
+                    equippedBreakdown: remainingEquipped,
+                    otherBreakdown: remainingOther,
+                };
+            }
+        }
+
+        // Build excluded summary
+        const excludedItems = [...excludedByKey.values()].sort((a, b) => b.amount - a.amount);
+        const excludedTotal = excludedItems.reduce((sum, e) => sum + e.amount, 0);
 
         // Calculate totals
         const currentAssetsTotal = equippedValue + inventoryValue + listingsValue;
@@ -16196,6 +16657,7 @@ self.onmessage = function (e) {
         return {
             totalNetworth,
             coins: coinCount,
+            excluded: { total: excludedTotal, items: excludedItems },
             currentAssets: {
                 total: currentAssetsTotal,
                 equipped: { value: equippedValue, breakdown: equippedBreakdown },
@@ -16226,6 +16688,7 @@ self.onmessage = function (e) {
         return {
             totalNetworth: 0,
             coins: 0,
+            excluded: { total: 0, items: [] },
             currentAssets: {
                 total: 0,
                 equipped: { value: 0, breakdown: [] },
@@ -16314,7 +16777,8 @@ self.onmessage = function (e) {
 
             const snapshot = {
                 t: Date.now(),
-                total: Math.round(data.totalNetworth),
+                total: Math.round(data.totalNetworth + (data.excluded?.total ?? 0)),
+                nonExcluded: Math.round(data.totalNetworth),
                 gold: Math.round(data.coins),
                 inventory: Math.round(data.currentAssets.inventory.value),
                 equipment: Math.round(data.currentAssets.equipped.value),
@@ -16485,6 +16949,7 @@ self.onmessage = function (e) {
             this.movingAvgWindow = 0; // Moving average window in data points (0 = off)
             this.categoryVisibility = {
                 showTotal: true,
+                showNonExcluded: true,
                 gold: false,
                 inventory: false,
                 equipment: false,
@@ -16517,6 +16982,7 @@ self.onmessage = function (e) {
          */
         _hasAnyVisible() {
             if (this.categoryVisibility.showTotal) return true;
+            if (this.categoryVisibility.showNonExcluded) return true;
             return CATEGORIES.some((c) => this.categoryVisibility[c.key]);
         }
 
@@ -16588,7 +17054,7 @@ self.onmessage = function (e) {
         `;
 
             const title = document.createElement('h3');
-            title.textContent = 'Networth History';
+            title.textContent = 'Net Worth History';
             title.style.cssText = 'color: #ccc; margin: 0; font-size: 18px;';
 
             const closeBtn = document.createElement('button');
@@ -16826,6 +17292,48 @@ self.onmessage = function (e) {
             });
             categoryRow.appendChild(totalBtn);
 
+            // Non-Excluded toggle chip (only shown when exclusions exist)
+            const nonExclColor = '#a78bfa';
+            const nonExclBtn = document.createElement('button');
+            nonExclBtn.id = 'mwi-nw-nonexcl-chip';
+            const updateNonExclBtnStyle = () => {
+                const active = this.categoryVisibility.showNonExcluded;
+                nonExclBtn.style.cssText = `
+                background: ${active ? nonExclColor + '33' : '#2a2a2a'};
+                color: ${active ? '#fff' : '#999'};
+                border: 1px solid ${active ? nonExclColor : '#555'};
+                cursor: pointer;
+                padding: 3px 8px;
+                border-radius: 4px;
+                font-size: 0.8em;
+                display: flex;
+                align-items: center;
+                gap: 5px;
+            `;
+            };
+            const nonExclDot = document.createElement('span');
+            nonExclDot.style.cssText = `
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 2px;
+            background: ${nonExclColor};
+            flex-shrink: 0;
+        `;
+            nonExclBtn.appendChild(nonExclDot);
+            nonExclBtn.appendChild(document.createTextNode('Non-Excluded'));
+            updateNonExclBtnStyle();
+            nonExclBtn.addEventListener('click', () => {
+                this.categoryVisibility.showNonExcluded = !this.categoryVisibility.showNonExcluded;
+                if (!this._hasAnyVisible()) {
+                    this.categoryVisibility.showNonExcluded = true;
+                }
+                updateNonExclBtnStyle();
+                this._saveChartPrefs();
+                this.renderChart(this.currentRange, this.currentCustomFrom, this.currentCustomTo);
+            });
+            categoryRow.appendChild(nonExclBtn);
+
             for (const cat of CATEGORIES) {
                 const btn = document.createElement('button');
                 categoryButtons[cat.key] = btn;
@@ -17053,12 +17561,15 @@ self.onmessage = function (e) {
             // Build datasets array
             const datasets = [];
 
+            // Check if non-excluded data diverges from total (i.e., exclusions were active)
+            const hasNonExcludedData = filtered.some((p) => p.nonExcluded != null && p.nonExcluded !== p.total);
+
             // Bar overlay dataset (rendered first = behind line)
             if (this.showBars) {
                 const barData = chartData.filter((p) => !isNaN(p.y));
                 datasets.push({
                     type: 'bar',
-                    label: 'Networth (bars)',
+                    label: 'Net Worth (bars)',
                     data: barData,
                     backgroundColor: 'rgba(34, 197, 94, 0.3)',
                     borderColor: 'transparent',
@@ -17073,7 +17584,7 @@ self.onmessage = function (e) {
             if (this.categoryVisibility.showTotal) {
                 datasets.push({
                     type: 'line',
-                    label: 'Total Networth',
+                    label: 'Total Net Worth',
                     data: chartData,
                     borderColor: config.COLOR_ACCENT || '#22c55e',
                     backgroundColor: 'rgba(34, 197, 94, 0.1)',
@@ -17082,6 +17593,28 @@ self.onmessage = function (e) {
                     pointHoverRadius: 5,
                     tension: 0.1,
                     fill: true,
+                    spanGaps: this.connectGaps,
+                    order: 1,
+                });
+            }
+
+            // Non-Excluded line dataset (only when exclusion data diverges from total)
+            if (this.categoryVisibility.showNonExcluded && hasNonExcludedData) {
+                const neData = chartData.map((p) => ({
+                    x: p.x,
+                    y: p._raw?.nonExcluded != null ? p._raw.nonExcluded : NaN,
+                }));
+                datasets.push({
+                    type: 'line',
+                    label: 'Non-Excluded',
+                    data: neData,
+                    borderColor: '#a78bfa',
+                    backgroundColor: 'transparent',
+                    borderWidth: 2,
+                    pointRadius: filtered.length > 200 ? 0 : 2,
+                    pointHoverRadius: 5,
+                    tension: 0.1,
+                    fill: false,
                     spanGaps: this.connectGaps,
                     order: 1,
                 });
@@ -17141,7 +17674,7 @@ self.onmessage = function (e) {
 
             const visibleCategories = CATEGORIES.filter((c) => this.categoryVisibility[c.key]);
             const yAxisTitle =
-                !this.categoryVisibility.showTotal && visibleCategories.length > 0 ? 'Category Value' : 'Networth';
+                !this.categoryVisibility.showTotal && visibleCategories.length > 0 ? 'Category Value' : 'Net Worth';
 
             this.chartInstance = new Chart(ctx, {
                 type: 'line',
@@ -17166,7 +17699,8 @@ self.onmessage = function (e) {
                             filter: (tooltipItem) => {
                                 if (tooltipItem.dataset.type === 'bar') return false;
                                 if (isNaN(tooltipItem.raw?.y)) return false;
-                                if (tooltipItem.dataset.label === 'Total Networth') return true;
+                                if (tooltipItem.dataset.label === 'Total Net Worth') return true;
+                                if (tooltipItem.dataset.label === 'Non-Excluded') return true;
                                 const cat = CATEGORIES.find((c) => c.label === tooltipItem.dataset.label);
                                 return cat ? this.categoryVisibility[cat.key] : false;
                             },
@@ -17182,14 +17716,18 @@ self.onmessage = function (e) {
                                     });
                                 },
                                 label: (context) => {
-                                    if (context.dataset.label === 'Total Networth') {
+                                    if (context.dataset.label === 'Total Net Worth') {
                                         const raw = context.raw._raw;
                                         return raw ? `Total: ${formatters_js.networthFormatter(raw.total)}` : '';
+                                    }
+                                    if (context.dataset.label === 'Non-Excluded') {
+                                        const val = context.raw.y;
+                                        return !isNaN(val) ? `Non-Excluded: ${formatters_js.networthFormatter(Math.round(val))}` : '';
                                     }
                                     return `${context.dataset.label}: ${formatters_js.networthFormatter(Math.round(context.raw.y))}`;
                                 },
                                 afterLabel: (context) => {
-                                    if (context.dataset.label !== 'Total Networth') return [];
+                                    if (context.dataset.label !== 'Total Net Worth') return [];
                                     const raw = context.raw._raw;
                                     if (!raw) return [];
                                     const lines = [];
@@ -17199,6 +17737,9 @@ self.onmessage = function (e) {
                                     if (raw.listings) lines.push(`Listings: ${formatters_js.networthFormatter(raw.listings)}`);
                                     if (raw.house) lines.push(`House: ${formatters_js.networthFormatter(raw.house)}`);
                                     if (raw.abilities) lines.push(`Abilities: ${formatters_js.networthFormatter(raw.abilities)}`);
+                                    if (raw.nonExcluded != null && raw.nonExcluded !== raw.total) {
+                                        lines.push(`Excluded: ${formatters_js.networthFormatter(raw.total - raw.nonExcluded)}`);
+                                    }
                                     return lines;
                                 },
                             },
@@ -17261,22 +17802,20 @@ self.onmessage = function (e) {
             const last = filtered[filtered.length - 1];
             const hoursElapsed = (last.t - first.t) / 3_600_000;
 
-            // Hoist 24h baseline (used by both Total and category stats)
-            const now = Date.now();
-            const oneDayAgo = now - 24 * 60 * 60 * 1000;
-            const fullHistory = networthHistory.getHistory();
-            const oldestIn24h = fullHistory.find((p) => p.t >= oneDayAgo);
+            // Range label for the change stat
+            const rangeLabelMap = { '24h': '24H', '7d': '7D', '30d': '30D', all: 'All', custom: 'Range' };
+            const rangeLabel = rangeLabelMap[this.currentRange] || '24H';
+            const is24hRange = this.currentRange === '24h';
 
-            // Total stats — Current, 24h change, Rate
+            // Total stats — Current, range change, Rate
             if (this.categoryVisibility.showTotal) {
-                const currentTotal = this.networthFeature?.currentData?.totalNetworth ?? last.total;
+                const liveData = this.networthFeature?.currentData;
+                const currentTotal = liveData
+                    ? Math.round(liveData.totalNetworth + (liveData.excluded?.total ?? 0))
+                    : last.total;
 
-                let change24h = null;
-                let changePercent = null;
-                if (oldestIn24h) {
-                    change24h = currentTotal - oldestIn24h.total;
-                    changePercent = oldestIn24h.total > 0 ? (change24h / oldestIn24h.total) * 100 : 0;
-                }
+                const rangeChange = currentTotal - first.total;
+                const rangePercent = first.total > 0 ? (rangeChange / first.total) * 100 : 0;
 
                 const ratePerHour = hoursElapsed > 0 ? (last.total - first.total) / hoursElapsed : 0;
 
@@ -17284,11 +17823,15 @@ self.onmessage = function (e) {
                     `<span>Current: <strong style="color: ${config.COLOR_ACCENT};">${formatters_js.networthFormatter(Math.round(currentTotal))}</strong></span>`
                 );
 
-                if (change24h !== null) {
-                    const color = change24h >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
-                    const sign = change24h >= 0 ? '+' : '';
+                if (filtered.length >= 2) {
+                    const color = rangeChange >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
+                    const sign = rangeChange >= 0 ? '+' : '';
+                    const breakdownAttr = is24hRange
+                        ? ' id="mwi-nw-24h-toggle" style="cursor: pointer;" title="Click for item breakdown"'
+                        : '';
+                    const breakdownArrow = is24hRange ? ' <span style="font-size: 10px; color: #666;">▼</span>' : '';
                     parts.push(
-                        `<span id="mwi-nw-24h-toggle" style="cursor: pointer;" title="Click for item breakdown">24h: <strong style="color: ${color};">${sign}${formatters_js.networthFormatter(Math.round(change24h))} (${sign}${changePercent.toFixed(1)}%)</strong> <span style="font-size: 10px; color: #666;">▼</span></span>`
+                        `<span${breakdownAttr}>Last ${rangeLabel}: <strong style="color: ${color};">${sign}${formatters_js.networthFormatter(Math.round(rangeChange))} (${sign}${rangePercent.toFixed(1)}%)</strong>${breakdownArrow}</span>`
                     );
                 }
 
@@ -17301,21 +17844,48 @@ self.onmessage = function (e) {
                 }
             }
 
+            // Non-Excluded stats (when visible and data exists)
+            const hasNonExclStats = filtered.some((p) => p.nonExcluded != null && p.nonExcluded !== p.total);
+            if (this.categoryVisibility.showNonExcluded && hasNonExclStats) {
+                const currentNE = this.networthFeature?.currentData?.totalNetworth ?? last.nonExcluded ?? last.total;
+                const firstNE = first.nonExcluded ?? first.total;
+                const lastNE = last.nonExcluded ?? last.total;
+                const neRate = hoursElapsed > 0 ? (lastNE - firstNE) / hoursElapsed : 0;
+
+                let neStatHtml = `<span style="color: #a78bfa;">Non-Excl</span>: <strong style="color: #a78bfa;">${formatters_js.networthFormatter(Math.round(currentNE))}</strong>`;
+
+                if (filtered.length >= 2) {
+                    const neChange = currentNE - firstNE;
+                    const neChangeColor = neChange >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
+                    const neChangeSign = neChange >= 0 ? '+' : '';
+                    neStatHtml += ` <span style="font-size: 11px; color: #aaa;">(${neChangeSign}<span style="color: ${neChangeColor};">${formatters_js.networthFormatter(Math.round(neChange))}</span> ${rangeLabel})</span>`;
+                }
+
+                if (hoursElapsed >= 1) {
+                    const neRateColor = neRate >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
+                    const neRateSign = neRate >= 0 ? '+' : '';
+                    neStatHtml += ` <span style="font-size: 11px; color: #aaa;">${neRateSign}<span style="color: ${neRateColor};">${formatters_js.networthFormatter(Math.round(neRate))}/hr</span></span>`;
+                }
+
+                parts.push(`<span>${neStatHtml}</span>`);
+            }
+
             // Per-category rate stats for each visible category line
             for (const cat of CATEGORIES) {
                 if (!this.categoryVisibility[cat.key]) continue;
                 const firstVal = first[cat.key] ?? 0;
                 const lastVal = last[cat.key] ?? 0;
-                const rate = hoursElapsed > 0 ? (lastVal - firstVal) / hoursElapsed : 0;
+                const catChange = lastVal - firstVal;
+                const rate = hoursElapsed > 0 ? catChange / hoursElapsed : 0;
                 const rateColor = rate >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
                 const rateSign = rate >= 0 ? '+' : '';
+                const catChangeColor = catChange >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
+                const catChangeSign = catChange >= 0 ? '+' : '';
 
-                let statHtml = `${cat.label}: <strong style="color: ${rateColor};">${rateSign}${formatters_js.networthFormatter(Math.round(rate))}/hr</strong>`;
+                let statHtml = `${cat.label}: <strong style="color: ${catChangeColor};">Last ${rangeLabel}: ${catChangeSign}${formatters_js.networthFormatter(Math.round(catChange))}</strong>`;
 
-                if (oldestIn24h?.[cat.key] != null) {
-                    const change24h = lastVal - (oldestIn24h[cat.key] ?? 0);
-                    const c24Sign = change24h >= 0 ? '+' : '';
-                    statHtml += ` <span style="font-size: 11px; color: #aaa;">(${c24Sign}${formatters_js.networthFormatter(Math.round(change24h))} 24h)</span>`;
+                if (hoursElapsed >= 1) {
+                    statHtml += ` <span style="font-size: 11px; color: #aaa;">${rateSign}<span style="color: ${rateColor};">${formatters_js.networthFormatter(Math.round(rate))}/hr</span></span>`;
                 }
 
                 parts.push(`<span>${statHtml}</span>`);
@@ -17695,6 +18265,575 @@ self.onmessage = function (e) {
     const networthHistoryChart = new NetworthHistoryChart();
 
     /**
+     * Floating Panel Z-Index Manager
+     * Manages bring-to-front ordering for persistent floating panels.
+     * All panels are capped below config.Z_FLOATING_PANEL + 99 (1199)
+     * so they never cross the game's MUI modal layer (~1300).
+     */
+
+
+    const panels = new Set();
+
+    /**
+     * Register a floating panel element for z-index management
+     * @param {HTMLElement} el - The panel element
+     */
+    function registerFloatingPanel(el) {
+        panels.add(el);
+    }
+
+    /**
+     * Unregister a floating panel element
+     * @param {HTMLElement} el - The panel element
+     */
+    function unregisterFloatingPanel(el) {
+        panels.delete(el);
+    }
+
+    /**
+     * Bring a panel to the front among all registered panels,
+     * without exceeding config.Z_FLOATING_PANEL + 99.
+     * @param {HTMLElement} el - The panel to bring forward
+     */
+    function bringPanelToFront(el) {
+        const base = config.Z_FLOATING_PANEL;
+        const cap = base + 99;
+
+        let maxZ = base;
+        for (const p of panels) {
+            const z = parseInt(p.style.zIndex) || base;
+            if (z > maxZ) maxZ = z;
+        }
+
+        const next = maxZ + 1;
+        if (next > cap) {
+            // Overflow — reassign all from base upward, put el last
+            let i = base;
+            for (const p of panels) {
+                if (p !== el) p.style.zIndex = String(i++);
+            }
+            el.style.zIndex = String(i);
+        } else {
+            el.style.zIndex = String(next);
+        }
+    }
+
+    /**
+     * Networth Exclusion Popup
+     * Draggable modal for managing net worth exclusions.
+     * Shows current exclusions as removable chips and a searchable list of all excludable entries.
+     */
+
+
+    class NetworthExclusionPopup {
+        constructor() {
+            this.container = null;
+            this.networthData = null;
+            this.onChangeFn = null;
+            this.searchList = [];
+            this.searchTimeout = null;
+
+            // Dragging state
+            this.isDragging = false;
+            this.dragOffset = { x: 0, y: 0 };
+            this.dragMoveHandler = null;
+            this.dragUpHandler = null;
+            this.clickOutsideHandler = null;
+        }
+
+        /**
+         * Open (or refresh) the popup.
+         * @param {Object} networthData - Current net worth data from calculator
+         * @param {Function} onChangeFn - Called after an exclusion is added/removed
+         */
+        open(networthData, onChangeFn) {
+            this.networthData = networthData;
+            this.onChangeFn = onChangeFn;
+            this.searchList = this._buildSearchList(networthData);
+
+            if (this.container) {
+                bringPanelToFront(this.container);
+                this._refreshContent();
+                return;
+            }
+
+            this._build();
+        }
+
+        /**
+         * Close and remove the popup.
+         */
+        close() {
+            this._teardown();
+        }
+
+        /**
+         * Refresh the popup content (called after add/remove exclusion).
+         * @param {Object} [networthData] - Updated net worth data (optional)
+         */
+        refresh(networthData) {
+            if (networthData) {
+                this.networthData = networthData;
+                this.searchList = this._buildSearchList(networthData);
+            }
+            if (this.container) {
+                this._refreshContent();
+            }
+        }
+
+        // ─── Private ────────────────────────────────────────────────
+
+        /**
+         * Build the flat list of all excludable entries for the search.
+         * @param {Object} networthData
+         * @returns {Array<{type, value, name, amount}>}
+         */
+        _buildSearchList(networthData) {
+            const entries = [];
+            const seen = new Set();
+            const add = (entry) => {
+                const key = `${entry.type}:${entry.value}`;
+                if (!seen.has(key)) {
+                    seen.add(key);
+                    entries.push(entry);
+                }
+            };
+
+            // Asset types (always present, value from networthData where available)
+            const ca = networthData?.currentAssets;
+            const fa = networthData?.fixedAssets;
+            add({ type: 'assetType', value: 'equipped', name: 'All Equipped Items', amount: ca?.equipped?.value ?? 0 });
+            add({ type: 'assetType', value: 'listings', name: 'All Market Listings', amount: ca?.listings?.value ?? 0 });
+            add({ type: 'assetType', value: 'houses', name: 'All Houses', amount: fa?.houses?.totalCost ?? 0 });
+            add({ type: 'assetType', value: 'abilities', name: 'All Abilities', amount: fa?.abilities?.totalCost ?? 0 });
+            add({
+                type: 'assetType',
+                value: 'abilityBooks',
+                name: 'All Ability Books',
+                amount: fa?.abilityBooks?.totalCost ?? 0,
+            });
+
+            // Inventory categories
+            for (const [catName, catData] of Object.entries(ca?.inventory?.byCategory ?? {})) {
+                add({
+                    type: 'category',
+                    value: catData.categoryHrid,
+                    name: `${catName} (category)`,
+                    amount: catData.totalValue,
+                });
+            }
+
+            // Individual items — inventory + equipped breakdowns (deduplicated by hrid)
+            const itemAmounts = new Map();
+            for (const item of [...(ca?.inventory?.breakdown ?? []), ...(ca?.equipped?.breakdown ?? [])]) {
+                if (!item.itemHrid) continue;
+                const cur = itemAmounts.get(item.itemHrid) ?? { name: item.name, amount: 0 };
+                cur.amount += item.value;
+                itemAmounts.set(item.itemHrid, cur);
+            }
+            for (const [itemHrid, { name, amount }] of itemAmounts) {
+                add({ type: 'item', value: itemHrid, name, amount });
+            }
+
+            // Individual house rooms
+            for (const room of fa?.houses?.breakdown ?? []) {
+                if (!room.hrid) continue;
+                add({ type: 'houseRoom', value: room.hrid, name: room.name, amount: room.cost });
+            }
+
+            // Individual abilities
+            for (const ability of fa?.abilities?.breakdown ?? []) {
+                if (!ability.hrid) continue;
+                add({ type: 'ability', value: ability.hrid, name: ability.name, amount: ability.cost });
+            }
+
+            // Loadout snapshots
+            for (const snapshot of loadoutSnapshot.getAllSnapshots()) {
+                if (!snapshot.name) continue;
+                // Estimate value: sum ask prices of equipment items
+                const amount = snapshot.equipment.reduce((sum, eq) => {
+                    const price = marketAPI.getPrice(eq.itemHrid);
+                    return sum + (price?.ask ?? 0);
+                }, 0);
+                add({ type: 'loadout', value: snapshot.name, name: `Loadout: ${snapshot.name}`, amount });
+            }
+
+            // Also include entries that are currently excluded (so they still appear in search)
+            const excluded = networthData?.excluded?.items ?? [];
+            for (const exc of excluded) {
+                add({ type: exc.type, value: exc.value, name: exc.name, amount: exc.amount });
+            }
+
+            // Sort by amount descending
+            entries.sort((a, b) => b.amount - a.amount);
+            return entries;
+        }
+
+        /**
+         * Filter search list by query string.
+         * @param {string} query
+         * @returns {Array}
+         */
+        _filterEntries(query) {
+            if (!query) return this.searchList.slice(0, 40);
+            const lower = query.toLowerCase();
+            return this.searchList.filter((e) => e.name.toLowerCase().includes(lower)).slice(0, 40);
+        }
+
+        /**
+         * Build and insert the popup DOM.
+         */
+        _build() {
+            this.container = document.createElement('div');
+            this.container.id = 'mwi-networth-exclusion-popup';
+            this.container.style.cssText = `
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: ${config.Z_FLOATING_PANEL};
+            width: 400px;
+            max-height: 580px;
+            display: flex;
+            flex-direction: column;
+            background: rgba(10, 10, 20, 0.96);
+            border: 2px solid ${config.COLOR_ACCENT};
+            border-radius: 8px;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.8);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: #fff;
+            user-select: none;
+            overflow: hidden;
+        `;
+
+            // Header
+            const header = document.createElement('div');
+            header.style.cssText = `
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 14px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            cursor: grab;
+            background: rgba(255,255,255,0.04);
+            flex-shrink: 0;
+        `;
+
+            const title = document.createElement('span');
+            title.style.cssText = `font-size: 0.9rem; font-weight: 600; color: ${config.COLOR_ACCENT};`;
+            title.textContent = 'Net Worth Exclusions';
+
+            const closeBtn = document.createElement('button');
+            closeBtn.textContent = '×';
+            closeBtn.style.cssText = `
+            background: none; border: none; color: #aaa;
+            font-size: 1.2rem; line-height: 1; cursor: pointer; padding: 0 2px;
+        `;
+            closeBtn.addEventListener('mouseenter', () => (closeBtn.style.color = '#fff'));
+            closeBtn.addEventListener('mouseleave', () => (closeBtn.style.color = '#aaa'));
+            closeBtn.addEventListener('click', () => this.close());
+
+            header.appendChild(title);
+            header.appendChild(closeBtn);
+
+            // Scrollable body
+            const body = document.createElement('div');
+            body.id = 'mwi-nex-body';
+            body.style.cssText = `flex: 1; overflow-y: auto; padding: 10px 14px;`;
+
+            this.container.appendChild(header);
+            this.container.appendChild(body);
+            document.body.appendChild(this.container);
+            registerFloatingPanel(this.container);
+
+            this._renderBody(body);
+            this._setupDragging(header);
+            this._setupClickOutside();
+        }
+
+        /**
+         * Refresh the body contents without rebuilding the whole popup.
+         */
+        _refreshContent() {
+            const body = this.container?.querySelector('#mwi-nex-body');
+            if (!body) return;
+            body.innerHTML = '';
+            this._renderBody(body);
+        }
+
+        /**
+         * Render the full body: current exclusions + search.
+         * @param {HTMLElement} body
+         */
+        _renderBody(body) {
+            const exclusions = getExclusions();
+
+            // ── Current exclusions section ──
+            const currentSection = document.createElement('div');
+            currentSection.style.cssText = `margin-bottom: 10px;`;
+
+            const currentLabel = document.createElement('div');
+            currentLabel.style.cssText = `font-size: 0.75rem; color: rgba(255,255,255,0.45); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px;`;
+            currentLabel.textContent = exclusions.length > 0 ? 'Current Exclusions' : 'No exclusions configured';
+            currentSection.appendChild(currentLabel);
+
+            if (exclusions.length > 0) {
+                const chips = document.createElement('div');
+                chips.style.cssText = `display: flex; flex-wrap: wrap; gap: 6px;`;
+                for (const exc of exclusions) {
+                    const entry = this.searchList.find((e) => e.type === exc.type && e.value === exc.value);
+                    const displayName = entry?.name ?? exc.value;
+                    const chip = this._makeChip(displayName, exc.type, exc.value);
+                    chips.appendChild(chip);
+                }
+                currentSection.appendChild(chips);
+            }
+
+            body.appendChild(currentSection);
+
+            // Divider
+            const divider = document.createElement('div');
+            divider.style.cssText = `border-top: 1px solid rgba(255,255,255,0.08); margin-bottom: 10px;`;
+            body.appendChild(divider);
+
+            // ── Search section ──
+            const searchInput = document.createElement('input');
+            searchInput.type = 'search';
+            searchInput.placeholder = 'Search items, categories, houses, loadouts...';
+            searchInput.style.cssText = `
+            width: 100%;
+            box-sizing: border-box;
+            padding: 7px 10px;
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 4px;
+            color: #fff;
+            font-size: 0.85rem;
+            outline: none;
+            margin-bottom: 8px;
+        `;
+            searchInput.addEventListener('focus', () => (searchInput.style.borderColor = config.COLOR_ACCENT));
+            searchInput.addEventListener('blur', () => (searchInput.style.borderColor = 'rgba(255,255,255,0.15)'));
+            body.appendChild(searchInput);
+
+            const results = document.createElement('div');
+            results.id = 'mwi-nex-results';
+            body.appendChild(results);
+
+            this._renderResults(results, '');
+
+            searchInput.addEventListener('input', () => {
+                clearTimeout(this.searchTimeout);
+                this.searchTimeout = setTimeout(() => {
+                    this._renderResults(results, searchInput.value.trim());
+                }, 150);
+            });
+
+            // Focus the search input
+            setTimeout(() => searchInput.focus(), 50);
+        }
+
+        /**
+         * Render the search results list.
+         * @param {HTMLElement} container
+         * @param {string} query
+         */
+        _renderResults(container, query) {
+            container.innerHTML = '';
+            const filtered = this._filterEntries(query);
+
+            if (filtered.length === 0) {
+                const empty = document.createElement('div');
+                empty.style.cssText = `color: rgba(255,255,255,0.3); font-size: 0.8rem; text-align: center; padding: 12px 0;`;
+                empty.textContent = 'No results';
+                container.appendChild(empty);
+                return;
+            }
+
+            for (const entry of filtered) {
+                const alreadyExcluded = isExcluded(entry.type, entry.value);
+                const row = document.createElement('div');
+                row.style.cssText = `
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                padding: 5px 6px;
+                border-radius: 3px;
+                font-size: 0.82rem;
+                gap: 8px;
+                ${alreadyExcluded ? 'opacity: 0.55;' : ''}
+            `;
+                row.addEventListener('mouseenter', () => {
+                    row.style.background = 'rgba(255,255,255,0.05)';
+                });
+                row.addEventListener('mouseleave', () => {
+                    row.style.background = '';
+                });
+
+                const nameSpan = document.createElement('span');
+                nameSpan.style.cssText = `flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;`;
+                nameSpan.textContent = entry.name;
+
+                const amountSpan = document.createElement('span');
+                amountSpan.style.cssText = `color: rgba(255,255,255,0.5); white-space: nowrap; font-size: 0.78rem;`;
+                amountSpan.textContent = entry.amount > 0 ? formatters_js.networthFormatter(Math.round(entry.amount)) : '';
+
+                const actionBtn = document.createElement('button');
+                actionBtn.style.cssText = `
+                background: transparent;
+                border: 1px solid ${alreadyExcluded ? 'rgba(255,100,100,0.5)' : 'rgba(255,255,255,0.2)'};
+                color: ${alreadyExcluded ? 'rgba(255,100,100,0.8)' : 'rgba(255,255,255,0.6)'};
+                border-radius: 3px;
+                padding: 2px 8px;
+                font-size: 0.75rem;
+                cursor: pointer;
+                white-space: nowrap;
+                flex-shrink: 0;
+            `;
+                actionBtn.textContent = alreadyExcluded ? '✕ Remove' : '+ Exclude';
+                actionBtn.addEventListener('mouseenter', () => {
+                    actionBtn.style.opacity = '1';
+                    actionBtn.style.borderColor = alreadyExcluded ? 'rgba(255,100,100,0.9)' : config.COLOR_ACCENT;
+                });
+                actionBtn.addEventListener('mouseleave', () => {
+                    actionBtn.style.opacity = '';
+                    actionBtn.style.borderColor = alreadyExcluded ? 'rgba(255,100,100,0.5)' : 'rgba(255,255,255,0.2)';
+                });
+                actionBtn.addEventListener('click', () => this._toggleExclusion(entry.type, entry.value));
+
+                row.appendChild(nameSpan);
+                row.appendChild(amountSpan);
+                row.appendChild(actionBtn);
+                container.appendChild(row);
+            }
+        }
+
+        /**
+         * Create a chip element representing an active exclusion.
+         * @param {string} label
+         * @param {string} type
+         * @param {string} value
+         * @returns {HTMLElement}
+         */
+        _makeChip(label, type, value) {
+            const chip = document.createElement('div');
+            chip.style.cssText = `
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 3px 8px;
+            background: rgba(255,255,255,0.07);
+            border: 1px solid rgba(255,255,255,0.18);
+            border-radius: 12px;
+            font-size: 0.78rem;
+            color: rgba(255,255,255,0.8);
+            cursor: default;
+        `;
+            const text = document.createElement('span');
+            text.textContent = label;
+
+            const removeBtn = document.createElement('span');
+            removeBtn.textContent = '×';
+            removeBtn.title = 'Remove exclusion';
+            removeBtn.style.cssText = `cursor: pointer; color: rgba(255,100,100,0.7); font-size: 0.9rem; line-height: 1;`;
+            removeBtn.addEventListener('mouseenter', () => (removeBtn.style.color = 'rgba(255,100,100,1)'));
+            removeBtn.addEventListener('mouseleave', () => (removeBtn.style.color = 'rgba(255,100,100,0.7)'));
+            removeBtn.addEventListener('click', () => this._toggleExclusion(type, value));
+
+            chip.appendChild(text);
+            chip.appendChild(removeBtn);
+            return chip;
+        }
+
+        /**
+         * Toggle an exclusion on/off, then refresh.
+         * @param {string} type
+         * @param {string} value
+         */
+        async _toggleExclusion(type, value) {
+            if (isExcluded(type, value)) {
+                await removeExclusion(type, value);
+            } else {
+                await addExclusion(type, value);
+            }
+            // Immediately refresh the popup UI so button states and chips update
+            this._refreshContent();
+            // Trigger background recalculation to update the inventory panel
+            if (this.onChangeFn) this.onChangeFn();
+        }
+
+        // ─── Drag ────────────────────────────────────────────────────
+
+        _setupDragging(header) {
+            header.addEventListener('mousedown', (e) => {
+                if (e.target.tagName === 'BUTTON') return;
+                bringPanelToFront(this.container);
+                this.isDragging = true;
+                const rect = this.container.getBoundingClientRect();
+                this.container.style.transform = 'none';
+                this.container.style.top = `${rect.top}px`;
+                this.container.style.left = `${rect.left}px`;
+                this.dragOffset = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+                header.style.cursor = 'grabbing';
+                e.preventDefault();
+            });
+
+            this.dragMoveHandler = (e) => {
+                if (!this.isDragging) return;
+                let x = e.clientX - this.dragOffset.x;
+                let y = e.clientY - this.dragOffset.y;
+                const minVisible = 80;
+                y = Math.max(0, Math.min(y, window.innerHeight - minVisible));
+                x = Math.max(-this.container.offsetWidth + minVisible, Math.min(x, window.innerWidth - minVisible));
+                this.container.style.top = `${y}px`;
+                this.container.style.left = `${x}px`;
+            };
+
+            this.dragUpHandler = () => {
+                if (!this.isDragging) return;
+                this.isDragging = false;
+                header.style.cursor = 'grab';
+            };
+
+            document.addEventListener('mousemove', this.dragMoveHandler);
+            document.addEventListener('mouseup', this.dragUpHandler);
+        }
+
+        _setupClickOutside() {
+            this.clickOutsideHandler = (e) => {
+                if (this.container && !this.container.contains(e.target)) {
+                    this.close();
+                }
+            };
+            document.addEventListener('mousedown', this.clickOutsideHandler);
+        }
+
+        _teardown() {
+            clearTimeout(this.searchTimeout);
+            if (this.dragMoveHandler) {
+                document.removeEventListener('mousemove', this.dragMoveHandler);
+                this.dragMoveHandler = null;
+            }
+            if (this.dragUpHandler) {
+                document.removeEventListener('mouseup', this.dragUpHandler);
+                this.dragUpHandler = null;
+            }
+            if (this.clickOutsideHandler) {
+                document.removeEventListener('mousedown', this.clickOutsideHandler);
+                this.clickOutsideHandler = null;
+            }
+            if (this.container) {
+                unregisterFloatingPanel(this.container);
+                this.container.remove();
+                this.container = null;
+            }
+            this.isDragging = false;
+        }
+    }
+
+    const networthExclusionPopup = new NetworthExclusionPopup();
+
+    /**
      * Networth Display Components
      * Handles UI rendering for networth in two locations:
      * 1. Header (top right) - Gold: [amount]
@@ -17911,6 +19050,15 @@ self.onmessage = function (e) {
             this.unregisterHandlers = [];
             this.currentData = null;
             this.isInitialized = false;
+            this.networthFeature = null;
+        }
+
+        /**
+         * Set reference to parent networth feature for recalculation.
+         * @param {Object} feature - NetworthFeature instance
+         */
+        setNetworthFeature(feature) {
+            this.networthFeature = feature;
         }
 
         /**
@@ -17997,6 +19145,7 @@ self.onmessage = function (e) {
                 'mwi-equipped-abilities-breakdown',
                 'mwi-other-abilities-breakdown',
                 'mwi-ability-books-breakdown',
+                'mwi-excluded-details',
             ];
 
             // Also preserve inventory category states
@@ -18026,15 +19175,27 @@ self.onmessage = function (e) {
 
             const totalNetworth = formatters_js.networthFormatter(Math.round(networthData.totalNetworth));
             const showChartBtn = config.getSetting('networth_historyChart');
+            const ca = networthData.currentAssets;
+            const fa = networthData.fixedAssets;
+            const excl = networthData.excluded ?? { total: 0, items: [] };
+
+            const showCurrentAssets = ca.total > 0;
+            const showEquipped = ca.equipped.value > 0;
+            const showInventory = ca.inventory.value > 0;
+            const showListings = ca.listings.value > 0;
+            const showFixedAssets = fa.total > 0;
+            const showHouses = fa.houses.totalCost > 0;
+            const showAbilities = fa.abilities.totalCost > 0;
+            const showExcluded = excl.total > 0;
 
             this.container.innerHTML = `
             <div style="display: flex; align-items: center; gap: 6px;">
                 <div style="cursor: pointer; font-weight: bold; flex: 1;" id="mwi-networth-toggle">
-                    Networth: ${totalNetworth}
+                    Net Worth: ${totalNetworth}
                 </div>
                 ${
                     showChartBtn
-                        ? `<span id="mwi-networth-chart-btn" title="Networth History Chart" style="
+                        ? `<span id="mwi-networth-chart-btn" title="Net Worth History Chart" style="
                     cursor: pointer;
                     font-size: 14px;
                     opacity: 0.7;
@@ -18044,81 +19205,152 @@ self.onmessage = function (e) {
                 ">&#x1F4C8;</span>`
                         : ''
                 }
+                <span id="mwi-networth-exclusions-btn" title="Configure Net Worth Exclusions" style="
+                    cursor: pointer;
+                    font-size: 12px;
+                    opacity: 0.6;
+                    padding: 2px 4px;
+                    border-radius: 3px;
+                    line-height: 1;
+                ">🔧</span>
             </div>
             <div id="mwi-networth-details" style="display: none; margin-left: 20px;">
+                ${
+                    showCurrentAssets
+                        ? `
                 <!-- Current Assets -->
                 <div style="cursor: pointer; margin-top: 8px;" id="mwi-current-assets-toggle">
-                    + Current Assets: ${formatters_js.networthFormatter(Math.round(networthData.currentAssets.total))}
+                    + Current Assets: ${formatters_js.networthFormatter(Math.round(ca.total))}
                 </div>
                 <div id="mwi-current-assets-details" style="display: none; margin-left: 20px;">
+                    ${
+                        showEquipped
+                            ? `
                     <!-- Equipment Value -->
                     <div style="cursor: pointer; margin-top: 4px;" id="mwi-equipment-toggle">
-                        + Equipment value: ${formatters_js.networthFormatter(Math.round(networthData.currentAssets.equipped.value))}
+                        + Equipment value: ${formatters_js.networthFormatter(Math.round(ca.equipped.value))}
                     </div>
-                    <div id="mwi-equipment-breakdown" style="display: none; margin-left: 20px; font-size: 0.8rem; color: #bbb; white-space: pre-line;">${this.renderEquipmentBreakdown(networthData.currentAssets.equipped.breakdown)}</div>
+                    <div id="mwi-equipment-breakdown" style="display: none; margin-left: 20px; font-size: 0.8rem; color: #bbb; white-space: pre-line;">${this.renderEquipmentBreakdown(ca.equipped.breakdown)}</div>
+                    `
+                            : ''
+                    }
 
+                    ${
+                        showInventory
+                            ? `
                     <!-- Inventory Value -->
                     <div style="cursor: pointer; margin-top: 4px;" id="mwi-inventory-toggle">
-                        + Inventory value: ${formatters_js.networthFormatter(Math.round(networthData.currentAssets.inventory.value))}
+                        + Inventory value: ${formatters_js.networthFormatter(Math.round(ca.inventory.value))}
                     </div>
                     <div id="mwi-inventory-breakdown" style="display: none; margin-left: 20px;">
-                        ${this.renderInventoryBreakdown(networthData.currentAssets.inventory.byCategory)}
+                        ${this.renderInventoryBreakdown(ca.inventory.byCategory)}
                     </div>
+                    `
+                            : ''
+                    }
 
+                    ${
+                        showListings
+                            ? `
                     <!-- Market Listings -->
                     <div style="cursor: pointer; margin-top: 4px;" id="mwi-listings-toggle">
-                        + Market listings: ${formatters_js.networthFormatter(Math.round(networthData.currentAssets.listings.value))}
+                        + Market listings: ${formatters_js.networthFormatter(Math.round(ca.listings.value))}
                     </div>
-                    <div id="mwi-listings-breakdown" style="display: none; margin-left: 20px; font-size: 0.8rem; color: #bbb; white-space: pre-line;">${this.renderListingsBreakdown(networthData.currentAssets.listings.breakdown)}</div>
-                </div>
-
-                <!-- Fixed Assets -->
-                <div style="cursor: pointer; margin-top: 8px;" id="mwi-fixed-assets-toggle">
-                    + Fixed Assets: ${formatters_js.networthFormatter(Math.round(networthData.fixedAssets.total))}
-                </div>
-                <div id="mwi-fixed-assets-details" style="display: none; margin-left: 20px;">
-                    <!-- Houses -->
-                    <div style="cursor: pointer; margin-top: 4px;" id="mwi-houses-toggle">
-                        + Houses: ${formatters_js.networthFormatter(Math.round(networthData.fixedAssets.houses.totalCost))}
-                    </div>
-                    <div id="mwi-houses-breakdown" style="display: none; margin-left: 20px; font-size: 0.8rem; color: #bbb; white-space: pre-line;">${this.renderHousesBreakdown(networthData.fixedAssets.houses.breakdown)}</div>
-
-                    <!-- Abilities -->
-                    <div style="cursor: pointer; margin-top: 4px;" id="mwi-abilities-toggle">
-                        + Abilities: ${formatters_js.networthFormatter(Math.round(networthData.fixedAssets.abilities.totalCost))}
-                    </div>
-                    <div id="mwi-abilities-details" style="display: none; margin-left: 20px;">
-                        <!-- Equipped Abilities -->
-                        <div style="cursor: pointer; margin-top: 4px;" id="mwi-equipped-abilities-toggle">
-                            + Equipped (${networthData.fixedAssets.abilities.equippedBreakdown.length}): ${formatters_js.networthFormatter(Math.round(networthData.fixedAssets.abilities.equippedCost))}
-                        </div>
-                        <div id="mwi-equipped-abilities-breakdown" style="display: none; margin-left: 20px; font-size: 0.8rem; color: #bbb; white-space: pre-line;">${this.renderAbilitiesBreakdown(networthData.fixedAssets.abilities.equippedBreakdown)}</div>
-
-                        <!-- Other Abilities -->
-                        ${
-                            networthData.fixedAssets.abilities.otherBreakdown.length > 0
-                                ? `
-                            <div style="cursor: pointer; margin-top: 4px;" id="mwi-other-abilities-toggle">
-                                + Other (${networthData.fixedAssets.abilities.otherBreakdown.length}): ${formatters_js.networthFormatter(Math.round(networthData.fixedAssets.abilities.totalCost - networthData.fixedAssets.abilities.equippedCost))}
-                            </div>
-                            <div id="mwi-other-abilities-breakdown" style="display: none; margin-left: 20px; font-size: 0.8rem; color: #bbb; white-space: pre-line;">${this.renderAbilitiesBreakdown(networthData.fixedAssets.abilities.otherBreakdown)}</div>
-                        `
-                                : ''
-                        }
-                    </div>
-
-                    <!-- Ability Books -->
-                    ${
-                        networthData.fixedAssets.abilityBooks.breakdown.length > 0
-                            ? `
-                        <div style="cursor: pointer; margin-top: 4px;" id="mwi-ability-books-toggle">
-                            + Ability Books (${networthData.fixedAssets.abilityBooks.breakdown.length}): ${formatters_js.networthFormatter(Math.round(networthData.fixedAssets.abilityBooks.totalCost))}
-                        </div>
-                        <div id="mwi-ability-books-breakdown" style="display: none; margin-left: 20px; font-size: 0.8rem; color: #bbb; white-space: pre-line;">${this.renderAbilityBooksBreakdown(networthData.fixedAssets.abilityBooks.breakdown)}</div>
+                    <div id="mwi-listings-breakdown" style="display: none; margin-left: 20px; font-size: 0.8rem; color: #bbb; white-space: pre-line;">${this.renderListingsBreakdown(ca.listings.breakdown)}</div>
                     `
                             : ''
                     }
                 </div>
+                `
+                        : ''
+                }
+
+                ${
+                    showFixedAssets
+                        ? `
+                <!-- Fixed Assets -->
+                <div style="cursor: pointer; margin-top: 8px;" id="mwi-fixed-assets-toggle">
+                    + Fixed Assets: ${formatters_js.networthFormatter(Math.round(fa.total))}
+                </div>
+                <div id="mwi-fixed-assets-details" style="display: none; margin-left: 20px;">
+                    ${
+                        showHouses
+                            ? `
+                    <!-- Houses -->
+                    <div style="cursor: pointer; margin-top: 4px;" id="mwi-houses-toggle">
+                        + Houses: ${formatters_js.networthFormatter(Math.round(fa.houses.totalCost))}
+                    </div>
+                    <div id="mwi-houses-breakdown" style="display: none; margin-left: 20px; font-size: 0.8rem; color: #bbb; white-space: pre-line;">${this.renderHousesBreakdown(fa.houses.breakdown)}</div>
+                    `
+                            : ''
+                    }
+
+                    ${
+                        showAbilities
+                            ? `
+                    <!-- Abilities -->
+                    <div style="cursor: pointer; margin-top: 4px;" id="mwi-abilities-toggle">
+                        + Abilities: ${formatters_js.networthFormatter(Math.round(fa.abilities.totalCost))}
+                    </div>
+                    <div id="mwi-abilities-details" style="display: none; margin-left: 20px;">
+                        <!-- Equipped Abilities -->
+                        <div style="cursor: pointer; margin-top: 4px;" id="mwi-equipped-abilities-toggle">
+                            + Equipped (${fa.abilities.equippedBreakdown.length}): ${formatters_js.networthFormatter(Math.round(fa.abilities.equippedCost))}
+                        </div>
+                        <div id="mwi-equipped-abilities-breakdown" style="display: none; margin-left: 20px; font-size: 0.8rem; color: #bbb; white-space: pre-line;">${this.renderAbilitiesBreakdown(fa.abilities.equippedBreakdown)}</div>
+
+                        ${
+                            fa.abilities.otherBreakdown.length > 0
+                                ? `
+                            <div style="cursor: pointer; margin-top: 4px;" id="mwi-other-abilities-toggle">
+                                + Other (${fa.abilities.otherBreakdown.length}): ${formatters_js.networthFormatter(Math.round(fa.abilities.totalCost - fa.abilities.equippedCost))}
+                            </div>
+                            <div id="mwi-other-abilities-breakdown" style="display: none; margin-left: 20px; font-size: 0.8rem; color: #bbb; white-space: pre-line;">${this.renderAbilitiesBreakdown(fa.abilities.otherBreakdown)}</div>
+                        `
+                                : ''
+                        }
+                    </div>
+                    `
+                            : ''
+                    }
+
+                    ${
+                        fa.abilityBooks.breakdown.length > 0
+                            ? `
+                        <div style="cursor: pointer; margin-top: 4px;" id="mwi-ability-books-toggle">
+                            + Ability Books (${fa.abilityBooks.breakdown.length}): ${formatters_js.networthFormatter(Math.round(fa.abilityBooks.totalCost))}
+                        </div>
+                        <div id="mwi-ability-books-breakdown" style="display: none; margin-left: 20px; font-size: 0.8rem; color: #bbb; white-space: pre-line;">${this.renderAbilityBooksBreakdown(fa.abilityBooks.breakdown)}</div>
+                    `
+                            : ''
+                    }
+                </div>
+                `
+                        : ''
+                }
+
+                ${
+                    showExcluded
+                        ? `
+                <!-- Excluded -->
+                <div style="cursor: pointer; margin-top: 8px; opacity: 0.6;" id="mwi-excluded-toggle">
+                    + Excluded: ${formatters_js.networthFormatter(Math.round(excl.total))}
+                </div>
+                <div id="mwi-excluded-details" style="display: none; margin-left: 20px; font-size: 0.8rem;">
+                    ${excl.items
+                        .map(
+                            (item) => `
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 3px; color: rgba(255,255,255,0.45);">
+                            <span style="text-decoration: line-through;">${item.name}: ${formatters_js.networthFormatter(Math.round(item.amount))}</span>
+                            <span class="mwi-excluded-remove" data-type="${item.type}" data-value="${item.value.replace(/"/g, '&quot;')}" style="cursor: pointer; color: rgba(255,100,100,0.7); margin-left: 8px; font-size: 0.75rem;" title="Remove exclusion">✕</span>
+                        </div>
+                    `
+                        )
+                        .join('')}
+                </div>
+                `
+                        : ''
+                }
             </div>
         `;
 
@@ -18282,11 +19514,15 @@ self.onmessage = function (e) {
          * @param {Object} networthData - Networth data
          */
         setupToggleListeners(networthData) {
+            const ca = networthData.currentAssets;
+            const fa = networthData.fixedAssets;
+            const excl = networthData.excluded ?? { total: 0};
+
             // Main networth toggle
             this.setupToggle(
                 'mwi-networth-toggle',
                 'mwi-networth-details',
-                `Total Networth: ${formatters_js.networthFormatter(Math.round(networthData.totalNetworth))}`
+                `Total Net Worth: ${formatters_js.networthFormatter(Math.round(networthData.totalNetworth))}`
             );
 
             // Chart button
@@ -18304,104 +19540,159 @@ self.onmessage = function (e) {
                 });
             }
 
+            // Exclusions button
+            const exclusionsBtn = this.container.querySelector('#mwi-networth-exclusions-btn');
+            if (exclusionsBtn) {
+                exclusionsBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    networthExclusionPopup.open(networthData, () => {
+                        if (this.networthFeature) this.networthFeature.recalculate();
+                    });
+                });
+                exclusionsBtn.addEventListener('mouseenter', () => {
+                    exclusionsBtn.style.opacity = '1';
+                });
+                exclusionsBtn.addEventListener('mouseleave', () => {
+                    exclusionsBtn.style.opacity = '0.6';
+                });
+            }
+
             // Current assets toggle
-            this.setupToggle(
-                'mwi-current-assets-toggle',
-                'mwi-current-assets-details',
-                `Current Assets: ${formatters_js.networthFormatter(Math.round(networthData.currentAssets.total))}`
-            );
+            if (ca.total > 0) {
+                this.setupToggle(
+                    'mwi-current-assets-toggle',
+                    'mwi-current-assets-details',
+                    `Current Assets: ${formatters_js.networthFormatter(Math.round(ca.total))}`
+                );
+            }
 
             // Equipment toggle
-            this.setupToggle(
-                'mwi-equipment-toggle',
-                'mwi-equipment-breakdown',
-                `Equipment value: ${formatters_js.networthFormatter(Math.round(networthData.currentAssets.equipped.value))}`
-            );
+            if (ca.equipped.value > 0) {
+                this.setupToggle(
+                    'mwi-equipment-toggle',
+                    'mwi-equipment-breakdown',
+                    `Equipment value: ${formatters_js.networthFormatter(Math.round(ca.equipped.value))}`
+                );
+            }
 
             // Inventory toggle
-            this.setupToggle(
-                'mwi-inventory-toggle',
-                'mwi-inventory-breakdown',
-                `Inventory value: ${formatters_js.networthFormatter(Math.round(networthData.currentAssets.inventory.value))}`
-            );
-
-            // Inventory category toggles
-            const byCategory = networthData.currentAssets.inventory.byCategory || {};
-            Object.entries(byCategory).forEach(([categoryName, categoryData]) => {
-                const categoryId = `mwi-inventory-${categoryName.toLowerCase().replace(/\s+/g, '-')}`;
-                const categoryToggleId = `${categoryId}-toggle`;
+            if (ca.inventory.value > 0) {
                 this.setupToggle(
-                    categoryToggleId,
-                    categoryId,
-                    `${categoryName}: ${formatters_js.networthFormatter(Math.round(categoryData.totalValue))}`
+                    'mwi-inventory-toggle',
+                    'mwi-inventory-breakdown',
+                    `Inventory value: ${formatters_js.networthFormatter(Math.round(ca.inventory.value))}`
                 );
-            });
 
-            // Per-chest item toggles (openable items)
-            for (const categoryData of Object.values(byCategory)) {
-                for (const item of categoryData.items) {
-                    if (item.isOpenable && item.itemHrid) {
-                        const slug = item.itemHrid.split('/').pop();
-                        this.setupToggle(
-                            `mwi-chest-${slug}-toggle`,
-                            `mwi-chest-${slug}-detail`,
-                            `${item.name} x${formatters_js.formatKMB(item.count)}: ${formatters_js.networthFormatter(Math.round(item.value))}`
-                        );
+                // Inventory category toggles
+                Object.entries(ca.inventory.byCategory || {}).forEach(([categoryName, categoryData]) => {
+                    const categoryId = `mwi-inventory-${categoryName.toLowerCase().replace(/\s+/g, '-')}`;
+                    const categoryToggleId = `${categoryId}-toggle`;
+                    this.setupToggle(
+                        categoryToggleId,
+                        categoryId,
+                        `${categoryName}: ${formatters_js.networthFormatter(Math.round(categoryData.totalValue))}`
+                    );
+                });
+
+                // Per-chest item toggles (openable items)
+                for (const categoryData of Object.values(ca.inventory.byCategory || {})) {
+                    for (const item of categoryData.items) {
+                        if (item.isOpenable && item.itemHrid) {
+                            const slug = item.itemHrid.split('/').pop();
+                            this.setupToggle(
+                                `mwi-chest-${slug}-toggle`,
+                                `mwi-chest-${slug}-detail`,
+                                `${item.name} x${formatters_js.formatKMB(item.count)}: ${formatters_js.networthFormatter(Math.round(item.value))}`
+                            );
+                        }
                     }
                 }
             }
 
             // Market Listings toggle
-            this.setupToggle(
-                'mwi-listings-toggle',
-                'mwi-listings-breakdown',
-                `Market listings: ${formatters_js.networthFormatter(Math.round(networthData.currentAssets.listings.value))}`
-            );
-
-            // Fixed assets toggle
-            this.setupToggle(
-                'mwi-fixed-assets-toggle',
-                'mwi-fixed-assets-details',
-                `Fixed Assets: ${formatters_js.networthFormatter(Math.round(networthData.fixedAssets.total))}`
-            );
-
-            // Houses toggle
-            this.setupToggle(
-                'mwi-houses-toggle',
-                'mwi-houses-breakdown',
-                `Houses: ${formatters_js.networthFormatter(Math.round(networthData.fixedAssets.houses.totalCost))}`
-            );
-
-            // Abilities toggle
-            this.setupToggle(
-                'mwi-abilities-toggle',
-                'mwi-abilities-details',
-                `Abilities: ${formatters_js.networthFormatter(Math.round(networthData.fixedAssets.abilities.totalCost))}`
-            );
-
-            // Equipped abilities toggle
-            this.setupToggle(
-                'mwi-equipped-abilities-toggle',
-                'mwi-equipped-abilities-breakdown',
-                `Equipped (${networthData.fixedAssets.abilities.equippedBreakdown.length}): ${formatters_js.networthFormatter(Math.round(networthData.fixedAssets.abilities.equippedCost))}`
-            );
-
-            // Other abilities toggle (if exists)
-            if (networthData.fixedAssets.abilities.otherBreakdown.length > 0) {
+            if (ca.listings.value > 0) {
                 this.setupToggle(
-                    'mwi-other-abilities-toggle',
-                    'mwi-other-abilities-breakdown',
-                    `Other Abilities: ${formatters_js.networthFormatter(Math.round(networthData.fixedAssets.abilities.totalCost - networthData.fixedAssets.abilities.equippedCost))}`
+                    'mwi-listings-toggle',
+                    'mwi-listings-breakdown',
+                    `Market listings: ${formatters_js.networthFormatter(Math.round(ca.listings.value))}`
                 );
             }
 
+            // Fixed assets toggle
+            if (fa.total > 0) {
+                this.setupToggle(
+                    'mwi-fixed-assets-toggle',
+                    'mwi-fixed-assets-details',
+                    `Fixed Assets: ${formatters_js.networthFormatter(Math.round(fa.total))}`
+                );
+            }
+
+            // Houses toggle
+            if (fa.houses.totalCost > 0) {
+                this.setupToggle(
+                    'mwi-houses-toggle',
+                    'mwi-houses-breakdown',
+                    `Houses: ${formatters_js.networthFormatter(Math.round(fa.houses.totalCost))}`
+                );
+            }
+
+            // Abilities toggle
+            if (fa.abilities.totalCost > 0) {
+                this.setupToggle(
+                    'mwi-abilities-toggle',
+                    'mwi-abilities-details',
+                    `Abilities: ${formatters_js.networthFormatter(Math.round(fa.abilities.totalCost))}`
+                );
+
+                // Equipped abilities toggle
+                this.setupToggle(
+                    'mwi-equipped-abilities-toggle',
+                    'mwi-equipped-abilities-breakdown',
+                    `Equipped (${fa.abilities.equippedBreakdown.length}): ${formatters_js.networthFormatter(Math.round(fa.abilities.equippedCost))}`
+                );
+
+                // Other abilities toggle (if exists)
+                if (fa.abilities.otherBreakdown.length > 0) {
+                    this.setupToggle(
+                        'mwi-other-abilities-toggle',
+                        'mwi-other-abilities-breakdown',
+                        `Other Abilities: ${formatters_js.networthFormatter(Math.round(fa.abilities.totalCost - fa.abilities.equippedCost))}`
+                    );
+                }
+            }
+
             // Ability books toggle (if exists)
-            if (networthData.fixedAssets.abilityBooks.breakdown.length > 0) {
+            if (fa.abilityBooks.breakdown.length > 0) {
                 this.setupToggle(
                     'mwi-ability-books-toggle',
                     'mwi-ability-books-breakdown',
-                    `Ability Books: ${formatters_js.networthFormatter(Math.round(networthData.fixedAssets.abilityBooks.totalCost))}`
+                    `Ability Books: ${formatters_js.networthFormatter(Math.round(fa.abilityBooks.totalCost))}`
                 );
+            }
+
+            // Excluded toggle
+            if (excl.total > 0) {
+                this.setupToggle(
+                    'mwi-excluded-toggle',
+                    'mwi-excluded-details',
+                    `Excluded: ${formatters_js.networthFormatter(Math.round(excl.total))}`
+                );
+
+                // ✕ remove buttons on excluded rows
+                this.container.querySelectorAll('.mwi-excluded-remove').forEach((btn) => {
+                    btn.addEventListener('mouseenter', () => {
+                        btn.style.color = 'rgba(255,100,100,1)';
+                    });
+                    btn.addEventListener('mouseleave', () => {
+                        btn.style.color = 'rgba(255,100,100,0.7)';
+                    });
+                    btn.addEventListener('click', async () => {
+                        const type = btn.dataset.type;
+                        const value = btn.dataset.value;
+                        await removeExclusion(type, value);
+                        if (this.networthFeature) this.networthFeature.recalculate();
+                    });
+                });
             }
         }
 
@@ -18681,6 +19972,10 @@ self.onmessage = function (e) {
 
             // Set reference in display components so they can trigger recalculation
             networthHeaderDisplay.setNetworthFeature(this);
+            networthInventoryDisplay.setNetworthFeature(this);
+
+            // Initialize exclusions from storage
+            await initExclusions();
 
             // Initialize header display (always enabled with networth feature)
             if (config.isFeatureEnabled('networth')) {
@@ -18741,8 +20036,8 @@ self.onmessage = function (e) {
                 clearTimeout(this.itemsUpdateDebounceTimer);
                 this.itemsUpdateDebounceTimer = setTimeout(() => {
                     if (this.isActive && connectionState.isConnected()) {
-                        this.itemsUpdateMaxWaitTimer = null;
                         clearTimeout(this.itemsUpdateMaxWaitTimer);
+                        this.itemsUpdateMaxWaitTimer = null;
                         this.recalculate();
                     }
                 }, 500); // 500ms debounce for inventory changes
@@ -18805,6 +20100,9 @@ self.onmessage = function (e) {
                 if (config.isFeatureEnabled('inventorySummary')) {
                     networthInventoryDisplay.update(networthData);
                 }
+
+                // Refresh exclusion popup if open (updates amounts after recalculation)
+                networthExclusionPopup.refresh(networthData);
             } catch (error) {
                 console.error('[Networth] Error calculating networth:', error);
             }
@@ -18843,6 +20141,7 @@ self.onmessage = function (e) {
             networthInventoryDisplay.disable();
             networthHistory.disable();
             networthHistoryChart.closeModal();
+            networthExclusionPopup.close();
 
             // Clear the enhancement cost cache (character-specific)
             networthCache.clear();
@@ -20982,231 +22281,6 @@ self.onmessage = function (e) {
     }
 
     const inventoryCategoryTotals = new InventoryCategoryTotals();
-
-    /**
-     * Loadout Snapshot
-     *
-     * Listens for `loadouts_updated` WebSocket messages to capture all loadout configurations
-     * (equipment, abilities, consumables, enhancement levels) in real time.
-     *
-     * Stored snapshots are used by profit calculators to apply the correct tool/equipment
-     * bonuses for a skill even when that loadout is not currently equipped.
-     *
-     * Skill matching: the loadout's actionTypeHrid (e.g. "/action_types/brewing") is compared
-     * to the action type of the profit calculation. An "All Skills" loadout (empty actionTypeHrid)
-     * is used as a fallback when no skill-specific snapshot is found.
-     *
-     * Priority: skill default > all skills default > skill non-default > all skills non-default
-     */
-
-
-    const STORAGE_KEY_PREFIX = 'loadout_snapshots';
-
-    /**
-     * Get character-scoped storage key.
-     * @returns {string}
-     */
-    function getStorageKey$1() {
-        const charId = dataManager.getCurrentCharacterId() || 'default';
-        return `${STORAGE_KEY_PREFIX}_${charId}`;
-    }
-
-    /**
-     * Parse a wearable hash string into itemLocationHrid, itemHrid, and enhancementLevel.
-     * Format: "characterId::/item_locations/location::/items/item_hrid::enhancementLevel"
-     * Empty string means no item in that slot.
-     * @param {string} itemLocationHrid - The equipment slot key (e.g. "/item_locations/body")
-     * @param {string} wearableHash - The wearable hash value
-     * @returns {{ itemLocationHrid: string, itemHrid: string, enhancementLevel: number }|null}
-     */
-    function parseWearable(itemLocationHrid, wearableHash) {
-        if (!wearableHash) return null;
-
-        const parts = wearableHash.split('::');
-        const itemHrid = parts.find((p) => p.startsWith('/items/'));
-        if (!itemHrid) return null;
-
-        const lastPart = parts[parts.length - 1];
-        const enhancementLevel = !lastPart.startsWith('/') ? parseInt(lastPart, 10) || 0 : 0;
-
-        return { itemLocationHrid, itemHrid, enhancementLevel };
-    }
-
-    /**
-     * Convert a server loadout object into our snapshot format.
-     * @param {Object} loadout - A loadout entry from characterLoadoutMap
-     * @returns {Object} snapshot
-     */
-    function buildSnapshot(loadout) {
-        // Parse equipment from wearableMap
-        const equipment = [];
-        for (const [locationHrid, hash] of Object.entries(loadout.wearableMap || {})) {
-            const parsed = parseWearable(locationHrid, hash);
-            if (parsed) equipment.push(parsed);
-        }
-
-        // Parse drinks
-        const drinks = (loadout.drinkItemHrids || []).map((hrid) => ({
-            itemHrid: hrid || '',
-        }));
-
-        // Parse food
-        const food = (loadout.foodItemHrids || []).map((hrid) => ({
-            itemHrid: hrid || '',
-        }));
-
-        // Parse abilities
-        const abilities = [];
-        for (const [slot, hrid] of Object.entries(loadout.abilityMap || {})) {
-            if (hrid) abilities.push({ abilityHrid: hrid, slot: parseInt(slot, 10) });
-        }
-
-        return {
-            name: loadout.name,
-            actionTypeHrid: loadout.actionTypeHrid || '',
-            isDefault: !!loadout.isDefault,
-            equipment,
-            abilities,
-            food,
-            drinks,
-            savedAt: Date.now(),
-        };
-    }
-
-    class LoadoutSnapshot {
-        constructor() {
-            this.snapshots = {}; // In-memory cache: { [loadoutName]: snapshot }
-            this.loadoutsUpdatedHandler = null;
-            this.isInitialized = false;
-        }
-
-        async initialize() {
-            if (this.isInitialized) return;
-            this.isInitialized = true;
-
-            // Load existing snapshots into memory
-            this.snapshots = (await storage.getJSON(getStorageKey$1(), 'settings', null)) || {};
-            console.log(`[LoadoutSnapshot] initialize() — loaded ${Object.keys(this.snapshots).length} existing snapshots`);
-
-            // Listen for loadouts_updated WebSocket messages
-            this.loadoutsUpdatedHandler = (data) => this._onLoadoutsUpdated(data);
-            webSocketHook.on('loadouts_updated', this.loadoutsUpdatedHandler);
-        }
-
-        /**
-         * Handle a loadouts_updated WebSocket message.
-         * Replaces all snapshots with the server's current state.
-         * @param {Object} data - The WebSocket message payload
-         */
-        _onLoadoutsUpdated(data) {
-            console.log('[LoadoutSnapshot] loadouts_updated WebSocket message received');
-            const loadoutMap = data.characterLoadoutMap;
-            if (!loadoutMap) {
-                console.log('[LoadoutSnapshot] no characterLoadoutMap in message');
-                return;
-            }
-
-            const newSnapshots = {};
-            for (const [id, loadout] of Object.entries(loadoutMap)) {
-                if (!loadout.name) continue;
-                newSnapshots[id] = buildSnapshot(loadout);
-                console.log(
-                    `[LoadoutSnapshot]   → ${loadout.name} (id=${id}): type=${loadout.actionTypeHrid || 'All Skills'}, default=${loadout.isDefault}`
-                );
-            }
-
-            this.snapshots = newSnapshots;
-            storage.setJSON(getStorageKey$1(), this.snapshots, 'settings');
-            console.log(
-                `[LoadoutSnapshot] Synced ${Object.keys(newSnapshots).length} snapshots:`,
-                Object.values(newSnapshots).map((s) => s.name)
-            );
-        }
-
-        /**
-         * Find the best snapshot for a given action type.
-         * Priority: skill default > all skills default > skill non-default > all skills non-default
-         * @param {string} actionTypeHrid - e.g. "/action_types/brewing"
-         * @returns {Object|null} snapshot entry or null
-         */
-        _findSnapshot(actionTypeHrid) {
-            if (!config.getSetting('loadoutSnapshot')) return null;
-
-            let skillDefault = null;
-            let allSkillsDefault = null;
-            let skillNonDefault = null;
-            let allSkillsNonDefault = null;
-
-            for (const snapshot of Object.values(this.snapshots)) {
-                if (snapshot.actionTypeHrid === actionTypeHrid) {
-                    if (snapshot.isDefault) {
-                        skillDefault = snapshot;
-                    } else {
-                        skillNonDefault = snapshot;
-                    }
-                } else if (snapshot.actionTypeHrid === '') {
-                    if (snapshot.isDefault) {
-                        allSkillsDefault = snapshot;
-                    } else {
-                        allSkillsNonDefault = snapshot;
-                    }
-                }
-            }
-
-            return skillDefault || allSkillsDefault || skillNonDefault || allSkillsNonDefault || null;
-        }
-
-        /**
-         * Get a Map<itemLocationHrid, item> for the best loadout snapshot matching the given
-         * action type. Returns null if no snapshot exists or the feature is disabled.
-         * The returned Map has the same format as dataManager.getEquipment().
-         * @param {string} actionTypeHrid
-         * @returns {Map<string, Object>|null}
-         */
-        getSnapshotForSkill(actionTypeHrid) {
-            const snapshot = this._findSnapshot(actionTypeHrid);
-            if (!snapshot || !snapshot.equipment?.length) return null;
-            return new Map(snapshot.equipment.map((e) => [e.itemLocationHrid, e]));
-        }
-
-        /**
-         * Get the drink slots array for the best loadout snapshot matching the given
-         * action type. Returns null if no snapshot exists or the feature is disabled.
-         * The returned array has the same format as dataManager.getActionDrinkSlots().
-         * @param {string} actionTypeHrid
-         * @returns {Array<{itemHrid: string}>|null}
-         */
-        getSnapshotDrinksForSkill(actionTypeHrid) {
-            const snapshot = this._findSnapshot(actionTypeHrid);
-            if (!snapshot) return null;
-            // Filter out empty slots so callers get only actual items
-            const filled = (snapshot.drinks || []).filter((d) => d.itemHrid);
-            return filled.length > 0 ? filled : null;
-        }
-
-        /**
-         * Get the name and default status of the saved loadout being used for a given action type.
-         * Returns an object with name and isDefault, or null if no snapshot exists or feature is disabled.
-         * @param {string} actionTypeHrid
-         * @returns {{ name: string, isDefault: boolean }|null}
-         */
-        getSnapshotInfoForSkill(actionTypeHrid) {
-            const snapshot = this._findSnapshot(actionTypeHrid);
-            if (!snapshot) return null;
-            return { name: snapshot.name, isDefault: !!snapshot.isDefault };
-        }
-
-        disable() {
-            if (this.loadoutsUpdatedHandler) {
-                webSocketHook.off('loadouts_updated', this.loadoutsUpdatedHandler);
-                this.loadoutsUpdatedHandler = null;
-            }
-
-            this.isInitialized = false;
-        }
-    }
-
-    const loadoutSnapshot = new LoadoutSnapshot();
 
     /**
      * Custom Inventory Tabs — Data Module
