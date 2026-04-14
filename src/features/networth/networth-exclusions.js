@@ -78,7 +78,8 @@ export async function addExclusion(type, value) {
     if (!list.some((e) => e.type === type && e.value === value)) {
         list.push({ type, value });
         cache = list;
-        await storage.setJSON(getStorageKey(), list, 'settings');
+        // Fire-and-forget: persist in background so the UI updates instantly
+        storage.setJSON(getStorageKey(), list, 'settings');
     }
 }
 
@@ -94,6 +95,7 @@ export async function removeExclusion(type, value) {
     if (idx !== -1) {
         list.splice(idx, 1);
         cache = list;
-        await storage.setJSON(getStorageKey(), list, 'settings');
+        // Fire-and-forget: persist in background so the UI updates instantly
+        storage.setJSON(getStorageKey(), list, 'settings');
     }
 }
