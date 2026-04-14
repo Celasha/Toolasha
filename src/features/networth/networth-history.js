@@ -66,7 +66,8 @@ class NetworthHistory {
 
         const snapshot = {
             t: Date.now(),
-            total: Math.round(data.totalNetworth),
+            total: Math.round(data.totalNetworth + (data.excluded?.total ?? 0)),
+            nonExcluded: Math.round(data.totalNetworth),
             gold: Math.round(data.coins),
             inventory: Math.round(data.currentAssets.inventory.value),
             equipment: Math.round(data.currentAssets.equipped.value),

@@ -14,6 +14,8 @@ import { createPauseRegistry } from '../../utils/pause-registry.js';
 import networthCache from './networth-cache.js';
 import networthHistory from './networth-history.js';
 import networthHistoryChart from './networth-history-chart.js';
+import { initExclusions } from './networth-exclusions.js';
+import networthExclusionPopup from './networth-exclusion-popup.js';
 
 class NetworthFeature {
     constructor() {
@@ -35,6 +37,10 @@ class NetworthFeature {
 
         // Set reference in display components so they can trigger recalculation
         networthHeaderDisplay.setNetworthFeature(this);
+        networthInventoryDisplay.setNetworthFeature(this);
+
+        // Initialize exclusions from storage
+        await initExclusions();
 
         // Initialize header display (always enabled with networth feature)
         if (config.isFeatureEnabled('networth')) {
@@ -95,8 +101,8 @@ class NetworthFeature {
             clearTimeout(this.itemsUpdateDebounceTimer);
             this.itemsUpdateDebounceTimer = setTimeout(() => {
                 if (this.isActive && connectionState.isConnected()) {
-                    this.itemsUpdateMaxWaitTimer = null;
                     clearTimeout(this.itemsUpdateMaxWaitTimer);
+                    this.itemsUpdateMaxWaitTimer = null;
                     this.recalculate();
                 }
             }, 500); // 500ms debounce for inventory changes
@@ -159,6 +165,9 @@ class NetworthFeature {
             if (config.isFeatureEnabled('inventorySummary')) {
                 networthInventoryDisplay.update(networthData);
             }
+
+            // Refresh exclusion popup if open (updates amounts after recalculation)
+            networthExclusionPopup.refresh(networthData);
         } catch (error) {
             console.error('[Networth] Error calculating networth:', error);
         }
@@ -197,6 +206,7 @@ class NetworthFeature {
         networthInventoryDisplay.disable();
         networthHistory.disable();
         networthHistoryChart.closeModal();
+        networthExclusionPopup.close();
 
         // Clear the enhancement cost cache (character-specific)
         networthCache.clear();

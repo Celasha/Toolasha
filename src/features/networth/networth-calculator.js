@@ -23,6 +23,8 @@ import { getItemPrice, getItemPrices } from '../../utils/market-data.js';
 import { calculateItemValueBatch } from '../../utils/networth-worker-manager.js';
 import { DUNGEON_CHEST_CHEST_KEYS } from '../combat-stats/combat-stats-calculator.js';
 import { getShopCoinCost } from '../../utils/game-lookups.js';
+import { isExcluded, getExclusions } from './networth-exclusions.js';
+import loadoutSnapshot from '../combat/loadout-snapshot.js';
 
 /**
  * Calculate the value of a single item
@@ -304,6 +306,7 @@ export function calculateAllHousesCost(characterHouseRooms) {
         const houseName = houseDetail?.name || houseRoomHrid.replace('/house_rooms/', '');
 
         breakdown.push({
+            hrid: houseRoomHrid,
             name: houseName,
             level: level,
             cost: cost,
@@ -356,6 +359,7 @@ export function calculateAllAbilitiesCost(characterAbilities, abilityCombatTrigg
             .join(' ');
 
         const abilityData = {
+            hrid: ability.abilityHrid,
             name: `${abilityName} ${ability.level}`,
             cost: cost,
         };
@@ -584,23 +588,65 @@ export async function calculateNetworth() {
     // Batch fetch all prices at once (eliminates ~400 redundant lookups)
     const priceCache = marketAPI.getPricesBatch(itemsToPrice);
 
+    // Precompute loadout-excluded item hrids: Map<itemHrid → loadoutName>
+    const loadoutExcludedHridToName = new Map();
+    const loadoutExclusions = getExclusions().filter((e) => e.type === 'loadout');
+    if (loadoutExclusions.length > 0) {
+        const allSnapshots = loadoutSnapshot.getAllSnapshots();
+        for (const exc of loadoutExclusions) {
+            const snapshot = allSnapshots.find((s) => s.name === exc.value);
+            if (snapshot) {
+                for (const eq of snapshot.equipment) {
+                    if (!loadoutExcludedHridToName.has(eq.itemHrid)) {
+                        loadoutExcludedHridToName.set(eq.itemHrid, exc.value);
+                    }
+                }
+            }
+        }
+    }
+
+    // Accumulate excluded amounts keyed by type:value
+    const excludedByKey = new Map();
+    const trackExcluded = (type, value, name, amount) => {
+        const key = `${type}:${value}`;
+        if (!excludedByKey.has(key)) {
+            excludedByKey.set(key, { type, value, name, amount: 0 });
+        }
+        excludedByKey.get(key).amount += amount;
+    };
+
     // Calculate equipped items value using workers
     let equippedValue = 0;
     const equippedBreakdown = [];
 
+    const entireEquippedExcluded = isExcluded('assetType', 'equipped');
     const equippedItems = characterItems.filter((item) => item.itemLocationHrid !== '/item_locations/inventory');
     const equippedValues = await calculateItemValuesParallel(equippedItems, priceCache, gameData);
 
     for (let i = 0; i < equippedItems.length; i++) {
         const item = equippedItems[i];
         const value = equippedValues[i];
-        equippedValue += value;
 
-        // Add to breakdown
         const itemDetails = gameData.itemDetailMap[item.itemHrid];
         const itemName = itemDetails?.name || item.itemHrid.replace('/items/', '');
         const displayName = item.enhancementLevel > 0 ? `${itemName} +${item.enhancementLevel}` : itemName;
 
+        // Check exclusions in priority order: assetType > item > loadout
+        if (entireEquippedExcluded) {
+            trackExcluded('assetType', 'equipped', 'All Equipped Items', value);
+            continue;
+        }
+        if (isExcluded('item', item.itemHrid)) {
+            trackExcluded('item', item.itemHrid, displayName, value);
+            continue;
+        }
+        const loadoutName = loadoutExcludedHridToName.get(item.itemHrid);
+        if (loadoutName) {
+            trackExcluded('loadout', loadoutName, `Loadout: ${loadoutName}`, value);
+            continue;
+        }
+
+        equippedValue += value;
         equippedBreakdown.push({
             name: displayName,
             value,
@@ -628,7 +674,7 @@ export async function calculateNetworth() {
         const item = inventoryItems[i];
         const value = inventoryValues[i];
 
-        // Extract coin count for header display
+        // Extract coin count for header display (always track regardless of exclusion)
         if (item.itemHrid === '/items/coin') {
             coinCount = item.count || 0;
         }
@@ -652,6 +698,21 @@ export async function calculateNetworth() {
         const isAbilityBook = categoryHrid === '/item_categories/ability_book';
         const booksAsInventory = config.getSetting('networth_abilityBooksAsInventory') === true;
 
+        // Check item-level and category-level exclusions
+        if (isExcluded('item', item.itemHrid)) {
+            trackExcluded('item', item.itemHrid, displayName, value);
+            continue;
+        }
+        if (isExcluded('category', categoryHrid)) {
+            const categoryName = gameData.itemCategoryDetailMap?.[categoryHrid]?.name || 'Other';
+            trackExcluded('category', categoryHrid, `${categoryName} (category)`, value);
+            continue;
+        }
+        if (isAbilityBook && !booksAsInventory && isExcluded('assetType', 'abilityBooks')) {
+            trackExcluded('assetType', 'abilityBooks', 'All Ability Books', value);
+            continue;
+        }
+
         if (isAbilityBook && !booksAsInventory) {
             // Add to ability books (Fixed Assets)
             abilityBooksValue += value;
@@ -668,6 +729,7 @@ export async function calculateNetworth() {
                 inventoryByCategory[categoryName] = {
                     items: [],
                     totalValue: 0,
+                    categoryHrid,
                 };
             }
 
@@ -714,11 +776,81 @@ export async function calculateNetworth() {
         }
     }
 
-    // Calculate houses value
-    const housesData = calculateAllHousesCost(characterHouseRooms);
+    // Apply listings exclusion
+    if (isExcluded('assetType', 'listings') && listingsValue > 0) {
+        trackExcluded('assetType', 'listings', 'All Market Listings', listingsValue);
+        listingsValue = 0;
+    }
 
-    // Calculate abilities value
-    const abilitiesData = calculateAllAbilitiesCost(characterAbilities, abilityCombatTriggersMap);
+    // Calculate houses value — apply per-room and whole-section exclusions
+    let housesData = calculateAllHousesCost(characterHouseRooms);
+    if (isExcluded('assetType', 'houses') && housesData.totalCost > 0) {
+        trackExcluded('assetType', 'houses', 'All Houses', housesData.totalCost);
+        housesData = { totalCost: 0, breakdown: [] };
+    } else {
+        let excludedRoomCost = 0;
+        const remainingRooms = [];
+        for (const room of housesData.breakdown) {
+            if (isExcluded('houseRoom', room.hrid)) {
+                trackExcluded('houseRoom', room.hrid, room.name, room.cost);
+                excludedRoomCost += room.cost;
+            } else {
+                remainingRooms.push(room);
+            }
+        }
+        if (excludedRoomCost > 0) {
+            housesData = { totalCost: housesData.totalCost - excludedRoomCost, breakdown: remainingRooms };
+        }
+    }
+
+    // Calculate abilities value — apply per-ability and whole-section exclusions
+    let abilitiesData = calculateAllAbilitiesCost(characterAbilities, abilityCombatTriggersMap);
+    if (isExcluded('assetType', 'abilities') && abilitiesData.totalCost > 0) {
+        trackExcluded('assetType', 'abilities', 'All Abilities', abilitiesData.totalCost);
+        abilitiesData = {
+            totalCost: 0,
+            equippedCost: 0,
+            breakdown: [],
+            equippedBreakdown: [],
+            otherBreakdown: [],
+        };
+    } else {
+        let excludedAbilityCost = 0;
+        let excludedEquippedCost = 0;
+        const remainingBreakdown = [];
+        const remainingEquipped = [];
+        const remainingOther = [];
+        const equippedHridSet = new Set(abilitiesData.equippedBreakdown.map((a) => a.hrid));
+        for (const ability of abilitiesData.breakdown) {
+            if (isExcluded('ability', ability.hrid)) {
+                trackExcluded('ability', ability.hrid, ability.name, ability.cost);
+                excludedAbilityCost += ability.cost;
+                if (equippedHridSet.has(ability.hrid)) {
+                    excludedEquippedCost += ability.cost;
+                }
+            } else {
+                remainingBreakdown.push(ability);
+                if (equippedHridSet.has(ability.hrid)) {
+                    remainingEquipped.push(ability);
+                } else {
+                    remainingOther.push(ability);
+                }
+            }
+        }
+        if (excludedAbilityCost > 0) {
+            abilitiesData = {
+                totalCost: abilitiesData.totalCost - excludedAbilityCost,
+                equippedCost: abilitiesData.equippedCost - excludedEquippedCost,
+                breakdown: remainingBreakdown,
+                equippedBreakdown: remainingEquipped,
+                otherBreakdown: remainingOther,
+            };
+        }
+    }
+
+    // Build excluded summary
+    const excludedItems = [...excludedByKey.values()].sort((a, b) => b.amount - a.amount);
+    const excludedTotal = excludedItems.reduce((sum, e) => sum + e.amount, 0);
 
     // Calculate totals
     const currentAssetsTotal = equippedValue + inventoryValue + listingsValue;
@@ -732,6 +864,7 @@ export async function calculateNetworth() {
     return {
         totalNetworth,
         coins: coinCount,
+        excluded: { total: excludedTotal, items: excludedItems },
         currentAssets: {
             total: currentAssetsTotal,
             equipped: { value: equippedValue, breakdown: equippedBreakdown },
@@ -762,6 +895,7 @@ function createEmptyNetworthData() {
     return {
         totalNetworth: 0,
         coins: 0,
+        excluded: { total: 0, items: [] },
         currentAssets: {
             total: 0,
             equipped: { value: 0, breakdown: [] },

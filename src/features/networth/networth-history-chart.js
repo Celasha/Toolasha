@@ -37,6 +37,7 @@ class NetworthHistoryChart {
         this.movingAvgWindow = 0; // Moving average window in data points (0 = off)
         this.categoryVisibility = {
             showTotal: true,
+            showNonExcluded: true,
             gold: false,
             inventory: false,
             equipment: false,
@@ -69,6 +70,7 @@ class NetworthHistoryChart {
      */
     _hasAnyVisible() {
         if (this.categoryVisibility.showTotal) return true;
+        if (this.categoryVisibility.showNonExcluded) return true;
         return CATEGORIES.some((c) => this.categoryVisibility[c.key]);
     }
 
@@ -378,6 +380,48 @@ class NetworthHistoryChart {
         });
         categoryRow.appendChild(totalBtn);
 
+        // Non-Excluded toggle chip (only shown when exclusions exist)
+        const nonExclColor = '#a78bfa';
+        const nonExclBtn = document.createElement('button');
+        nonExclBtn.id = 'mwi-nw-nonexcl-chip';
+        const updateNonExclBtnStyle = () => {
+            const active = this.categoryVisibility.showNonExcluded;
+            nonExclBtn.style.cssText = `
+                background: ${active ? nonExclColor + '33' : '#2a2a2a'};
+                color: ${active ? '#fff' : '#999'};
+                border: 1px solid ${active ? nonExclColor : '#555'};
+                cursor: pointer;
+                padding: 3px 8px;
+                border-radius: 4px;
+                font-size: 0.8em;
+                display: flex;
+                align-items: center;
+                gap: 5px;
+            `;
+        };
+        const nonExclDot = document.createElement('span');
+        nonExclDot.style.cssText = `
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 2px;
+            background: ${nonExclColor};
+            flex-shrink: 0;
+        `;
+        nonExclBtn.appendChild(nonExclDot);
+        nonExclBtn.appendChild(document.createTextNode('Non-Excluded'));
+        updateNonExclBtnStyle();
+        nonExclBtn.addEventListener('click', () => {
+            this.categoryVisibility.showNonExcluded = !this.categoryVisibility.showNonExcluded;
+            if (!this._hasAnyVisible()) {
+                this.categoryVisibility.showNonExcluded = true;
+            }
+            updateNonExclBtnStyle();
+            this._saveChartPrefs();
+            this.renderChart(this.currentRange, this.currentCustomFrom, this.currentCustomTo);
+        });
+        categoryRow.appendChild(nonExclBtn);
+
         for (const cat of CATEGORIES) {
             const btn = document.createElement('button');
             categoryButtons[cat.key] = btn;
@@ -605,6 +649,9 @@ class NetworthHistoryChart {
         // Build datasets array
         const datasets = [];
 
+        // Check if non-excluded data diverges from total (i.e., exclusions were active)
+        const hasNonExcludedData = filtered.some((p) => p.nonExcluded != null && p.nonExcluded !== p.total);
+
         // Bar overlay dataset (rendered first = behind line)
         if (this.showBars) {
             const barData = chartData.filter((p) => !isNaN(p.y));
@@ -634,6 +681,28 @@ class NetworthHistoryChart {
                 pointHoverRadius: 5,
                 tension: 0.1,
                 fill: true,
+                spanGaps: this.connectGaps,
+                order: 1,
+            });
+        }
+
+        // Non-Excluded line dataset (only when exclusion data diverges from total)
+        if (this.categoryVisibility.showNonExcluded && hasNonExcludedData) {
+            const neData = chartData.map((p) => ({
+                x: p.x,
+                y: p._raw?.nonExcluded != null ? p._raw.nonExcluded : NaN,
+            }));
+            datasets.push({
+                type: 'line',
+                label: 'Non-Excluded',
+                data: neData,
+                borderColor: '#a78bfa',
+                backgroundColor: 'transparent',
+                borderWidth: 2,
+                pointRadius: filtered.length > 200 ? 0 : 2,
+                pointHoverRadius: 5,
+                tension: 0.1,
+                fill: false,
                 spanGaps: this.connectGaps,
                 order: 1,
             });
@@ -719,6 +788,7 @@ class NetworthHistoryChart {
                             if (tooltipItem.dataset.type === 'bar') return false;
                             if (isNaN(tooltipItem.raw?.y)) return false;
                             if (tooltipItem.dataset.label === 'Total Net Worth') return true;
+                            if (tooltipItem.dataset.label === 'Non-Excluded') return true;
                             const cat = CATEGORIES.find((c) => c.label === tooltipItem.dataset.label);
                             return cat ? this.categoryVisibility[cat.key] : false;
                         },
@@ -738,6 +808,10 @@ class NetworthHistoryChart {
                                     const raw = context.raw._raw;
                                     return raw ? `Total: ${networthFormatter(raw.total)}` : '';
                                 }
+                                if (context.dataset.label === 'Non-Excluded') {
+                                    const val = context.raw.y;
+                                    return !isNaN(val) ? `Non-Excluded: ${networthFormatter(Math.round(val))}` : '';
+                                }
                                 return `${context.dataset.label}: ${networthFormatter(Math.round(context.raw.y))}`;
                             },
                             afterLabel: (context) => {
@@ -751,6 +825,9 @@ class NetworthHistoryChart {
                                 if (raw.listings) lines.push(`Listings: ${networthFormatter(raw.listings)}`);
                                 if (raw.house) lines.push(`House: ${networthFormatter(raw.house)}`);
                                 if (raw.abilities) lines.push(`Abilities: ${networthFormatter(raw.abilities)}`);
+                                if (raw.nonExcluded != null && raw.nonExcluded !== raw.total) {
+                                    lines.push(`Excluded: ${networthFormatter(raw.total - raw.nonExcluded)}`);
+                                }
                                 return lines;
                             },
                         },
@@ -813,22 +890,20 @@ class NetworthHistoryChart {
         const last = filtered[filtered.length - 1];
         const hoursElapsed = (last.t - first.t) / 3_600_000;
 
-        // Hoist 24h baseline (used by both Total and category stats)
-        const now = Date.now();
-        const oneDayAgo = now - 24 * 60 * 60 * 1000;
-        const fullHistory = networthHistory.getHistory();
-        const oldestIn24h = fullHistory.find((p) => p.t >= oneDayAgo);
+        // Range label for the change stat
+        const rangeLabelMap = { '24h': '24H', '7d': '7D', '30d': '30D', all: 'All', custom: 'Range' };
+        const rangeLabel = rangeLabelMap[this.currentRange] || '24H';
+        const is24hRange = this.currentRange === '24h';
 
-        // Total stats — Current, 24h change, Rate
+        // Total stats — Current, range change, Rate
         if (this.categoryVisibility.showTotal) {
-            const currentTotal = this.networthFeature?.currentData?.totalNetworth ?? last.total;
+            const liveData = this.networthFeature?.currentData;
+            const currentTotal = liveData
+                ? Math.round(liveData.totalNetworth + (liveData.excluded?.total ?? 0))
+                : last.total;
 
-            let change24h = null;
-            let changePercent = null;
-            if (oldestIn24h) {
-                change24h = currentTotal - oldestIn24h.total;
-                changePercent = oldestIn24h.total > 0 ? (change24h / oldestIn24h.total) * 100 : 0;
-            }
+            const rangeChange = currentTotal - first.total;
+            const rangePercent = first.total > 0 ? (rangeChange / first.total) * 100 : 0;
 
             const ratePerHour = hoursElapsed > 0 ? (last.total - first.total) / hoursElapsed : 0;
 
@@ -836,11 +911,15 @@ class NetworthHistoryChart {
                 `<span>Current: <strong style="color: ${config.COLOR_ACCENT};">${networthFormatter(Math.round(currentTotal))}</strong></span>`
             );
 
-            if (change24h !== null) {
-                const color = change24h >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
-                const sign = change24h >= 0 ? '+' : '';
+            if (filtered.length >= 2) {
+                const color = rangeChange >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
+                const sign = rangeChange >= 0 ? '+' : '';
+                const breakdownAttr = is24hRange
+                    ? ' id="mwi-nw-24h-toggle" style="cursor: pointer;" title="Click for item breakdown"'
+                    : '';
+                const breakdownArrow = is24hRange ? ' <span style="font-size: 10px; color: #666;">▼</span>' : '';
                 parts.push(
-                    `<span id="mwi-nw-24h-toggle" style="cursor: pointer;" title="Click for item breakdown">24h: <strong style="color: ${color};">${sign}${networthFormatter(Math.round(change24h))} (${sign}${changePercent.toFixed(1)}%)</strong> <span style="font-size: 10px; color: #666;">▼</span></span>`
+                    `<span${breakdownAttr}>Last ${rangeLabel}: <strong style="color: ${color};">${sign}${networthFormatter(Math.round(rangeChange))} (${sign}${rangePercent.toFixed(1)}%)</strong>${breakdownArrow}</span>`
                 );
             }
 
@@ -853,21 +932,48 @@ class NetworthHistoryChart {
             }
         }
 
+        // Non-Excluded stats (when visible and data exists)
+        const hasNonExclStats = filtered.some((p) => p.nonExcluded != null && p.nonExcluded !== p.total);
+        if (this.categoryVisibility.showNonExcluded && hasNonExclStats) {
+            const currentNE = this.networthFeature?.currentData?.totalNetworth ?? last.nonExcluded ?? last.total;
+            const firstNE = first.nonExcluded ?? first.total;
+            const lastNE = last.nonExcluded ?? last.total;
+            const neRate = hoursElapsed > 0 ? (lastNE - firstNE) / hoursElapsed : 0;
+
+            let neStatHtml = `<span style="color: #a78bfa;">Non-Excl</span>: <strong style="color: #a78bfa;">${networthFormatter(Math.round(currentNE))}</strong>`;
+
+            if (filtered.length >= 2) {
+                const neChange = currentNE - firstNE;
+                const neChangeColor = neChange >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
+                const neChangeSign = neChange >= 0 ? '+' : '';
+                neStatHtml += ` <span style="font-size: 11px; color: #aaa;">(${neChangeSign}<span style="color: ${neChangeColor};">${networthFormatter(Math.round(neChange))}</span> ${rangeLabel})</span>`;
+            }
+
+            if (hoursElapsed >= 1) {
+                const neRateColor = neRate >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
+                const neRateSign = neRate >= 0 ? '+' : '';
+                neStatHtml += ` <span style="font-size: 11px; color: #aaa;">${neRateSign}<span style="color: ${neRateColor};">${networthFormatter(Math.round(neRate))}/hr</span></span>`;
+            }
+
+            parts.push(`<span>${neStatHtml}</span>`);
+        }
+
         // Per-category rate stats for each visible category line
         for (const cat of CATEGORIES) {
             if (!this.categoryVisibility[cat.key]) continue;
             const firstVal = first[cat.key] ?? 0;
             const lastVal = last[cat.key] ?? 0;
-            const rate = hoursElapsed > 0 ? (lastVal - firstVal) / hoursElapsed : 0;
+            const catChange = lastVal - firstVal;
+            const rate = hoursElapsed > 0 ? catChange / hoursElapsed : 0;
             const rateColor = rate >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
             const rateSign = rate >= 0 ? '+' : '';
+            const catChangeColor = catChange >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
+            const catChangeSign = catChange >= 0 ? '+' : '';
 
-            let statHtml = `${cat.label}: <strong style="color: ${rateColor};">${rateSign}${networthFormatter(Math.round(rate))}/hr</strong>`;
+            let statHtml = `${cat.label}: <strong style="color: ${catChangeColor};">Last ${rangeLabel}: ${catChangeSign}${networthFormatter(Math.round(catChange))}</strong>`;
 
-            if (oldestIn24h?.[cat.key] != null) {
-                const change24h = lastVal - (oldestIn24h[cat.key] ?? 0);
-                const c24Sign = change24h >= 0 ? '+' : '';
-                statHtml += ` <span style="font-size: 11px; color: #aaa;">(${c24Sign}${networthFormatter(Math.round(change24h))} 24h)</span>`;
+            if (hoursElapsed >= 1) {
+                statHtml += ` <span style="font-size: 11px; color: #aaa;">${rateSign}<span style="color: ${rateColor};">${networthFormatter(Math.round(rate))}/hr</span></span>`;
             }
 
             parts.push(`<span>${statHtml}</span>`);

@@ -13,6 +13,8 @@ import { networthFormatter, formatKMB } from '../../utils/formatters.js';
 import networthHistoryChart from './networth-history-chart.js';
 import expectedValueCalculator from '../market/expected-value-calculator.js';
 import { DUNGEON_CHEST_CHEST_KEYS } from '../combat-stats/combat-stats-calculator.js';
+import networthExclusionPopup from './networth-exclusion-popup.js';
+import { removeExclusion } from './networth-exclusions.js';
 
 /**
  * Header Display Component
@@ -223,6 +225,15 @@ class NetworthInventoryDisplay {
         this.unregisterHandlers = [];
         this.currentData = null;
         this.isInitialized = false;
+        this.networthFeature = null;
+    }
+
+    /**
+     * Set reference to parent networth feature for recalculation.
+     * @param {Object} feature - NetworthFeature instance
+     */
+    setNetworthFeature(feature) {
+        this.networthFeature = feature;
     }
 
     /**
@@ -309,6 +320,7 @@ class NetworthInventoryDisplay {
             'mwi-equipped-abilities-breakdown',
             'mwi-other-abilities-breakdown',
             'mwi-ability-books-breakdown',
+            'mwi-excluded-details',
         ];
 
         // Also preserve inventory category states
@@ -338,11 +350,23 @@ class NetworthInventoryDisplay {
 
         const totalNetworth = networthFormatter(Math.round(networthData.totalNetworth));
         const showChartBtn = config.getSetting('networth_historyChart');
+        const ca = networthData.currentAssets;
+        const fa = networthData.fixedAssets;
+        const excl = networthData.excluded ?? { total: 0, items: [] };
+
+        const showCurrentAssets = ca.total > 0;
+        const showEquipped = ca.equipped.value > 0;
+        const showInventory = ca.inventory.value > 0;
+        const showListings = ca.listings.value > 0;
+        const showFixedAssets = fa.total > 0;
+        const showHouses = fa.houses.totalCost > 0;
+        const showAbilities = fa.abilities.totalCost > 0;
+        const showExcluded = excl.total > 0;
 
         this.container.innerHTML = `
             <div style="display: flex; align-items: center; gap: 6px;">
                 <div style="cursor: pointer; font-weight: bold; flex: 1;" id="mwi-networth-toggle">
-                    Networth: ${totalNetworth}
+                    Net Worth: ${totalNetworth}
                 </div>
                 ${
                     showChartBtn
@@ -356,81 +380,152 @@ class NetworthInventoryDisplay {
                 ">&#x1F4C8;</span>`
                         : ''
                 }
+                <span id="mwi-networth-exclusions-btn" title="Configure Net Worth Exclusions" style="
+                    cursor: pointer;
+                    font-size: 12px;
+                    opacity: 0.6;
+                    padding: 2px 4px;
+                    border-radius: 3px;
+                    line-height: 1;
+                ">🔧</span>
             </div>
             <div id="mwi-networth-details" style="display: none; margin-left: 20px;">
+                ${
+                    showCurrentAssets
+                        ? `
                 <!-- Current Assets -->
                 <div style="cursor: pointer; margin-top: 8px;" id="mwi-current-assets-toggle">
-                    + Current Assets: ${networthFormatter(Math.round(networthData.currentAssets.total))}
+                    + Current Assets: ${networthFormatter(Math.round(ca.total))}
                 </div>
                 <div id="mwi-current-assets-details" style="display: none; margin-left: 20px;">
+                    ${
+                        showEquipped
+                            ? `
                     <!-- Equipment Value -->
                     <div style="cursor: pointer; margin-top: 4px;" id="mwi-equipment-toggle">
-                        + Equipment value: ${networthFormatter(Math.round(networthData.currentAssets.equipped.value))}
+                        + Equipment value: ${networthFormatter(Math.round(ca.equipped.value))}
                     </div>
-                    <div id="mwi-equipment-breakdown" style="display: none; margin-left: 20px; font-size: 0.8rem; color: #bbb; white-space: pre-line;">${this.renderEquipmentBreakdown(networthData.currentAssets.equipped.breakdown)}</div>
+                    <div id="mwi-equipment-breakdown" style="display: none; margin-left: 20px; font-size: 0.8rem; color: #bbb; white-space: pre-line;">${this.renderEquipmentBreakdown(ca.equipped.breakdown)}</div>
+                    `
+                            : ''
+                    }
 
+                    ${
+                        showInventory
+                            ? `
                     <!-- Inventory Value -->
                     <div style="cursor: pointer; margin-top: 4px;" id="mwi-inventory-toggle">
-                        + Inventory value: ${networthFormatter(Math.round(networthData.currentAssets.inventory.value))}
+                        + Inventory value: ${networthFormatter(Math.round(ca.inventory.value))}
                     </div>
                     <div id="mwi-inventory-breakdown" style="display: none; margin-left: 20px;">
-                        ${this.renderInventoryBreakdown(networthData.currentAssets.inventory.byCategory)}
+                        ${this.renderInventoryBreakdown(ca.inventory.byCategory)}
                     </div>
+                    `
+                            : ''
+                    }
 
+                    ${
+                        showListings
+                            ? `
                     <!-- Market Listings -->
                     <div style="cursor: pointer; margin-top: 4px;" id="mwi-listings-toggle">
-                        + Market listings: ${networthFormatter(Math.round(networthData.currentAssets.listings.value))}
+                        + Market listings: ${networthFormatter(Math.round(ca.listings.value))}
                     </div>
-                    <div id="mwi-listings-breakdown" style="display: none; margin-left: 20px; font-size: 0.8rem; color: #bbb; white-space: pre-line;">${this.renderListingsBreakdown(networthData.currentAssets.listings.breakdown)}</div>
-                </div>
-
-                <!-- Fixed Assets -->
-                <div style="cursor: pointer; margin-top: 8px;" id="mwi-fixed-assets-toggle">
-                    + Fixed Assets: ${networthFormatter(Math.round(networthData.fixedAssets.total))}
-                </div>
-                <div id="mwi-fixed-assets-details" style="display: none; margin-left: 20px;">
-                    <!-- Houses -->
-                    <div style="cursor: pointer; margin-top: 4px;" id="mwi-houses-toggle">
-                        + Houses: ${networthFormatter(Math.round(networthData.fixedAssets.houses.totalCost))}
-                    </div>
-                    <div id="mwi-houses-breakdown" style="display: none; margin-left: 20px; font-size: 0.8rem; color: #bbb; white-space: pre-line;">${this.renderHousesBreakdown(networthData.fixedAssets.houses.breakdown)}</div>
-
-                    <!-- Abilities -->
-                    <div style="cursor: pointer; margin-top: 4px;" id="mwi-abilities-toggle">
-                        + Abilities: ${networthFormatter(Math.round(networthData.fixedAssets.abilities.totalCost))}
-                    </div>
-                    <div id="mwi-abilities-details" style="display: none; margin-left: 20px;">
-                        <!-- Equipped Abilities -->
-                        <div style="cursor: pointer; margin-top: 4px;" id="mwi-equipped-abilities-toggle">
-                            + Equipped (${networthData.fixedAssets.abilities.equippedBreakdown.length}): ${networthFormatter(Math.round(networthData.fixedAssets.abilities.equippedCost))}
-                        </div>
-                        <div id="mwi-equipped-abilities-breakdown" style="display: none; margin-left: 20px; font-size: 0.8rem; color: #bbb; white-space: pre-line;">${this.renderAbilitiesBreakdown(networthData.fixedAssets.abilities.equippedBreakdown)}</div>
-
-                        <!-- Other Abilities -->
-                        ${
-                            networthData.fixedAssets.abilities.otherBreakdown.length > 0
-                                ? `
-                            <div style="cursor: pointer; margin-top: 4px;" id="mwi-other-abilities-toggle">
-                                + Other (${networthData.fixedAssets.abilities.otherBreakdown.length}): ${networthFormatter(Math.round(networthData.fixedAssets.abilities.totalCost - networthData.fixedAssets.abilities.equippedCost))}
-                            </div>
-                            <div id="mwi-other-abilities-breakdown" style="display: none; margin-left: 20px; font-size: 0.8rem; color: #bbb; white-space: pre-line;">${this.renderAbilitiesBreakdown(networthData.fixedAssets.abilities.otherBreakdown)}</div>
-                        `
-                                : ''
-                        }
-                    </div>
-
-                    <!-- Ability Books -->
-                    ${
-                        networthData.fixedAssets.abilityBooks.breakdown.length > 0
-                            ? `
-                        <div style="cursor: pointer; margin-top: 4px;" id="mwi-ability-books-toggle">
-                            + Ability Books (${networthData.fixedAssets.abilityBooks.breakdown.length}): ${networthFormatter(Math.round(networthData.fixedAssets.abilityBooks.totalCost))}
-                        </div>
-                        <div id="mwi-ability-books-breakdown" style="display: none; margin-left: 20px; font-size: 0.8rem; color: #bbb; white-space: pre-line;">${this.renderAbilityBooksBreakdown(networthData.fixedAssets.abilityBooks.breakdown)}</div>
+                    <div id="mwi-listings-breakdown" style="display: none; margin-left: 20px; font-size: 0.8rem; color: #bbb; white-space: pre-line;">${this.renderListingsBreakdown(ca.listings.breakdown)}</div>
                     `
                             : ''
                     }
                 </div>
+                `
+                        : ''
+                }
+
+                ${
+                    showFixedAssets
+                        ? `
+                <!-- Fixed Assets -->
+                <div style="cursor: pointer; margin-top: 8px;" id="mwi-fixed-assets-toggle">
+                    + Fixed Assets: ${networthFormatter(Math.round(fa.total))}
+                </div>
+                <div id="mwi-fixed-assets-details" style="display: none; margin-left: 20px;">
+                    ${
+                        showHouses
+                            ? `
+                    <!-- Houses -->
+                    <div style="cursor: pointer; margin-top: 4px;" id="mwi-houses-toggle">
+                        + Houses: ${networthFormatter(Math.round(fa.houses.totalCost))}
+                    </div>
+                    <div id="mwi-houses-breakdown" style="display: none; margin-left: 20px; font-size: 0.8rem; color: #bbb; white-space: pre-line;">${this.renderHousesBreakdown(fa.houses.breakdown)}</div>
+                    `
+                            : ''
+                    }
+
+                    ${
+                        showAbilities
+                            ? `
+                    <!-- Abilities -->
+                    <div style="cursor: pointer; margin-top: 4px;" id="mwi-abilities-toggle">
+                        + Abilities: ${networthFormatter(Math.round(fa.abilities.totalCost))}
+                    </div>
+                    <div id="mwi-abilities-details" style="display: none; margin-left: 20px;">
+                        <!-- Equipped Abilities -->
+                        <div style="cursor: pointer; margin-top: 4px;" id="mwi-equipped-abilities-toggle">
+                            + Equipped (${fa.abilities.equippedBreakdown.length}): ${networthFormatter(Math.round(fa.abilities.equippedCost))}
+                        </div>
+                        <div id="mwi-equipped-abilities-breakdown" style="display: none; margin-left: 20px; font-size: 0.8rem; color: #bbb; white-space: pre-line;">${this.renderAbilitiesBreakdown(fa.abilities.equippedBreakdown)}</div>
+
+                        ${
+                            fa.abilities.otherBreakdown.length > 0
+                                ? `
+                            <div style="cursor: pointer; margin-top: 4px;" id="mwi-other-abilities-toggle">
+                                + Other (${fa.abilities.otherBreakdown.length}): ${networthFormatter(Math.round(fa.abilities.totalCost - fa.abilities.equippedCost))}
+                            </div>
+                            <div id="mwi-other-abilities-breakdown" style="display: none; margin-left: 20px; font-size: 0.8rem; color: #bbb; white-space: pre-line;">${this.renderAbilitiesBreakdown(fa.abilities.otherBreakdown)}</div>
+                        `
+                                : ''
+                        }
+                    </div>
+                    `
+                            : ''
+                    }
+
+                    ${
+                        fa.abilityBooks.breakdown.length > 0
+                            ? `
+                        <div style="cursor: pointer; margin-top: 4px;" id="mwi-ability-books-toggle">
+                            + Ability Books (${fa.abilityBooks.breakdown.length}): ${networthFormatter(Math.round(fa.abilityBooks.totalCost))}
+                        </div>
+                        <div id="mwi-ability-books-breakdown" style="display: none; margin-left: 20px; font-size: 0.8rem; color: #bbb; white-space: pre-line;">${this.renderAbilityBooksBreakdown(fa.abilityBooks.breakdown)}</div>
+                    `
+                            : ''
+                    }
+                </div>
+                `
+                        : ''
+                }
+
+                ${
+                    showExcluded
+                        ? `
+                <!-- Excluded -->
+                <div style="cursor: pointer; margin-top: 8px; opacity: 0.6;" id="mwi-excluded-toggle">
+                    + Excluded: ${networthFormatter(Math.round(excl.total))}
+                </div>
+                <div id="mwi-excluded-details" style="display: none; margin-left: 20px; font-size: 0.8rem;">
+                    ${excl.items
+                        .map(
+                            (item) => `
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 3px; color: rgba(255,255,255,0.45);">
+                            <span style="text-decoration: line-through;">${item.name}: ${networthFormatter(Math.round(item.amount))}</span>
+                            <span class="mwi-excluded-remove" data-type="${item.type}" data-value="${item.value.replace(/"/g, '&quot;')}" style="cursor: pointer; color: rgba(255,100,100,0.7); margin-left: 8px; font-size: 0.75rem;" title="Remove exclusion">✕</span>
+                        </div>
+                    `
+                        )
+                        .join('')}
+                </div>
+                `
+                        : ''
+                }
             </div>
         `;
 
@@ -594,6 +689,10 @@ class NetworthInventoryDisplay {
      * @param {Object} networthData - Networth data
      */
     setupToggleListeners(networthData) {
+        const ca = networthData.currentAssets;
+        const fa = networthData.fixedAssets;
+        const excl = networthData.excluded ?? { total: 0, items: [] };
+
         // Main networth toggle
         this.setupToggle(
             'mwi-networth-toggle',
@@ -616,104 +715,159 @@ class NetworthInventoryDisplay {
             });
         }
 
+        // Exclusions button
+        const exclusionsBtn = this.container.querySelector('#mwi-networth-exclusions-btn');
+        if (exclusionsBtn) {
+            exclusionsBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                networthExclusionPopup.open(networthData, () => {
+                    if (this.networthFeature) this.networthFeature.recalculate();
+                });
+            });
+            exclusionsBtn.addEventListener('mouseenter', () => {
+                exclusionsBtn.style.opacity = '1';
+            });
+            exclusionsBtn.addEventListener('mouseleave', () => {
+                exclusionsBtn.style.opacity = '0.6';
+            });
+        }
+
         // Current assets toggle
-        this.setupToggle(
-            'mwi-current-assets-toggle',
-            'mwi-current-assets-details',
-            `Current Assets: ${networthFormatter(Math.round(networthData.currentAssets.total))}`
-        );
+        if (ca.total > 0) {
+            this.setupToggle(
+                'mwi-current-assets-toggle',
+                'mwi-current-assets-details',
+                `Current Assets: ${networthFormatter(Math.round(ca.total))}`
+            );
+        }
 
         // Equipment toggle
-        this.setupToggle(
-            'mwi-equipment-toggle',
-            'mwi-equipment-breakdown',
-            `Equipment value: ${networthFormatter(Math.round(networthData.currentAssets.equipped.value))}`
-        );
+        if (ca.equipped.value > 0) {
+            this.setupToggle(
+                'mwi-equipment-toggle',
+                'mwi-equipment-breakdown',
+                `Equipment value: ${networthFormatter(Math.round(ca.equipped.value))}`
+            );
+        }
 
         // Inventory toggle
-        this.setupToggle(
-            'mwi-inventory-toggle',
-            'mwi-inventory-breakdown',
-            `Inventory value: ${networthFormatter(Math.round(networthData.currentAssets.inventory.value))}`
-        );
-
-        // Inventory category toggles
-        const byCategory = networthData.currentAssets.inventory.byCategory || {};
-        Object.entries(byCategory).forEach(([categoryName, categoryData]) => {
-            const categoryId = `mwi-inventory-${categoryName.toLowerCase().replace(/\s+/g, '-')}`;
-            const categoryToggleId = `${categoryId}-toggle`;
+        if (ca.inventory.value > 0) {
             this.setupToggle(
-                categoryToggleId,
-                categoryId,
-                `${categoryName}: ${networthFormatter(Math.round(categoryData.totalValue))}`
+                'mwi-inventory-toggle',
+                'mwi-inventory-breakdown',
+                `Inventory value: ${networthFormatter(Math.round(ca.inventory.value))}`
             );
-        });
 
-        // Per-chest item toggles (openable items)
-        for (const categoryData of Object.values(byCategory)) {
-            for (const item of categoryData.items) {
-                if (item.isOpenable && item.itemHrid) {
-                    const slug = item.itemHrid.split('/').pop();
-                    this.setupToggle(
-                        `mwi-chest-${slug}-toggle`,
-                        `mwi-chest-${slug}-detail`,
-                        `${item.name} x${formatKMB(item.count)}: ${networthFormatter(Math.round(item.value))}`
-                    );
+            // Inventory category toggles
+            Object.entries(ca.inventory.byCategory || {}).forEach(([categoryName, categoryData]) => {
+                const categoryId = `mwi-inventory-${categoryName.toLowerCase().replace(/\s+/g, '-')}`;
+                const categoryToggleId = `${categoryId}-toggle`;
+                this.setupToggle(
+                    categoryToggleId,
+                    categoryId,
+                    `${categoryName}: ${networthFormatter(Math.round(categoryData.totalValue))}`
+                );
+            });
+
+            // Per-chest item toggles (openable items)
+            for (const categoryData of Object.values(ca.inventory.byCategory || {})) {
+                for (const item of categoryData.items) {
+                    if (item.isOpenable && item.itemHrid) {
+                        const slug = item.itemHrid.split('/').pop();
+                        this.setupToggle(
+                            `mwi-chest-${slug}-toggle`,
+                            `mwi-chest-${slug}-detail`,
+                            `${item.name} x${formatKMB(item.count)}: ${networthFormatter(Math.round(item.value))}`
+                        );
+                    }
                 }
             }
         }
 
         // Market Listings toggle
-        this.setupToggle(
-            'mwi-listings-toggle',
-            'mwi-listings-breakdown',
-            `Market listings: ${networthFormatter(Math.round(networthData.currentAssets.listings.value))}`
-        );
-
-        // Fixed assets toggle
-        this.setupToggle(
-            'mwi-fixed-assets-toggle',
-            'mwi-fixed-assets-details',
-            `Fixed Assets: ${networthFormatter(Math.round(networthData.fixedAssets.total))}`
-        );
-
-        // Houses toggle
-        this.setupToggle(
-            'mwi-houses-toggle',
-            'mwi-houses-breakdown',
-            `Houses: ${networthFormatter(Math.round(networthData.fixedAssets.houses.totalCost))}`
-        );
-
-        // Abilities toggle
-        this.setupToggle(
-            'mwi-abilities-toggle',
-            'mwi-abilities-details',
-            `Abilities: ${networthFormatter(Math.round(networthData.fixedAssets.abilities.totalCost))}`
-        );
-
-        // Equipped abilities toggle
-        this.setupToggle(
-            'mwi-equipped-abilities-toggle',
-            'mwi-equipped-abilities-breakdown',
-            `Equipped (${networthData.fixedAssets.abilities.equippedBreakdown.length}): ${networthFormatter(Math.round(networthData.fixedAssets.abilities.equippedCost))}`
-        );
-
-        // Other abilities toggle (if exists)
-        if (networthData.fixedAssets.abilities.otherBreakdown.length > 0) {
+        if (ca.listings.value > 0) {
             this.setupToggle(
-                'mwi-other-abilities-toggle',
-                'mwi-other-abilities-breakdown',
-                `Other Abilities: ${networthFormatter(Math.round(networthData.fixedAssets.abilities.totalCost - networthData.fixedAssets.abilities.equippedCost))}`
+                'mwi-listings-toggle',
+                'mwi-listings-breakdown',
+                `Market listings: ${networthFormatter(Math.round(ca.listings.value))}`
             );
         }
 
+        // Fixed assets toggle
+        if (fa.total > 0) {
+            this.setupToggle(
+                'mwi-fixed-assets-toggle',
+                'mwi-fixed-assets-details',
+                `Fixed Assets: ${networthFormatter(Math.round(fa.total))}`
+            );
+        }
+
+        // Houses toggle
+        if (fa.houses.totalCost > 0) {
+            this.setupToggle(
+                'mwi-houses-toggle',
+                'mwi-houses-breakdown',
+                `Houses: ${networthFormatter(Math.round(fa.houses.totalCost))}`
+            );
+        }
+
+        // Abilities toggle
+        if (fa.abilities.totalCost > 0) {
+            this.setupToggle(
+                'mwi-abilities-toggle',
+                'mwi-abilities-details',
+                `Abilities: ${networthFormatter(Math.round(fa.abilities.totalCost))}`
+            );
+
+            // Equipped abilities toggle
+            this.setupToggle(
+                'mwi-equipped-abilities-toggle',
+                'mwi-equipped-abilities-breakdown',
+                `Equipped (${fa.abilities.equippedBreakdown.length}): ${networthFormatter(Math.round(fa.abilities.equippedCost))}`
+            );
+
+            // Other abilities toggle (if exists)
+            if (fa.abilities.otherBreakdown.length > 0) {
+                this.setupToggle(
+                    'mwi-other-abilities-toggle',
+                    'mwi-other-abilities-breakdown',
+                    `Other Abilities: ${networthFormatter(Math.round(fa.abilities.totalCost - fa.abilities.equippedCost))}`
+                );
+            }
+        }
+
         // Ability books toggle (if exists)
-        if (networthData.fixedAssets.abilityBooks.breakdown.length > 0) {
+        if (fa.abilityBooks.breakdown.length > 0) {
             this.setupToggle(
                 'mwi-ability-books-toggle',
                 'mwi-ability-books-breakdown',
-                `Ability Books: ${networthFormatter(Math.round(networthData.fixedAssets.abilityBooks.totalCost))}`
+                `Ability Books: ${networthFormatter(Math.round(fa.abilityBooks.totalCost))}`
             );
+        }
+
+        // Excluded toggle
+        if (excl.total > 0) {
+            this.setupToggle(
+                'mwi-excluded-toggle',
+                'mwi-excluded-details',
+                `Excluded: ${networthFormatter(Math.round(excl.total))}`
+            );
+
+            // ✕ remove buttons on excluded rows
+            this.container.querySelectorAll('.mwi-excluded-remove').forEach((btn) => {
+                btn.addEventListener('mouseenter', () => {
+                    btn.style.color = 'rgba(255,100,100,1)';
+                });
+                btn.addEventListener('mouseleave', () => {
+                    btn.style.color = 'rgba(255,100,100,0.7)';
+                });
+                btn.addEventListener('click', async () => {
+                    const type = btn.dataset.type;
+                    const value = btn.dataset.value;
+                    await removeExclusion(type, value);
+                    if (this.networthFeature) this.networthFeature.recalculate();
+                });
+            });
         }
     }
 

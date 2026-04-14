@@ -204,6 +204,14 @@ class LoadoutSnapshot {
     }
 
     /**
+     * Get all saved loadout snapshots as a flat array.
+     * @returns {Array<Object>} Array of snapshot objects
+     */
+    getAllSnapshots() {
+        return Object.values(this.snapshots);
+    }
+
+    /**
      * Get the name and default status of the saved loadout being used for a given action type.
      * Returns an object with name and isDefault, or null if no snapshot exists or feature is disabled.
      * @param {string} actionTypeHrid
