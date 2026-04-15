@@ -44,18 +44,26 @@ function annotateLoadout() {
     const equipDiv = selectedLoadout.querySelector('[class*="LoadoutsPanel_equipment"]');
     if (!equipDiv) return;
 
-    // Remove any stale overlays from a previous loadout selection
+    // Guard: inventory not ready — don't disturb existing overlays
+    if (!dataManager.getInventory()) return;
+
+    // Guard: use elements exist but none have item hrefs yet — React is mid-render
+    const allUses = equipDiv.querySelectorAll('use');
+    const validUses = Array.from(allUses).filter((use) => {
+        const href = use.getAttribute('href') || use.getAttribute('xlink:href') || '';
+        return href.includes('items_sprite');
+    });
+    if (allUses.length > 0 && validUses.length === 0) return;
+
+    // DOM and data are ready — clear stale overlays and re-inject
     for (const el of equipDiv.querySelectorAll(`.${OVERLAY_CLASS}`)) {
         el.remove();
     }
 
     const enhancementMap = buildEnhancementLevelMap();
 
-    const uses = equipDiv.querySelectorAll('use');
-    for (const use of uses) {
+    for (const use of validUses) {
         const href = use.getAttribute('href') || use.getAttribute('xlink:href') || '';
-        if (!href.includes('items_sprite')) continue;
-
         const fragment = href.split('#')[1];
         if (!fragment) continue;
         const itemHrid = `/items/${fragment}`;
