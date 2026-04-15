@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.10.0
+ * Version: 2.10.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -18637,8 +18637,7 @@ self.onmessage = function (e) {
                 const chips = document.createElement('div');
                 chips.style.cssText = `display: flex; flex-wrap: wrap; gap: 6px;`;
                 for (const exc of exclusions) {
-                    const entry = this.searchList.find((e) => e.type === exc.type && e.value === exc.value);
-                    const displayName = entry?.name ?? exc.value;
+                    const displayName = this._resolveExclusionName(exc);
                     const chip = this._makeChip(displayName, exc.type, exc.value);
                     chips.appendChild(chip);
                 }
@@ -18893,6 +18892,39 @@ self.onmessage = function (e) {
 
                 container.appendChild(wrapper);
             }
+        }
+
+        /**
+         * Resolve a human-readable display name for an exclusion entry.
+         * Used for chips so names show correctly even when the entry is no longer in searchList.
+         * @param {{type: string, value: string}} exc
+         * @returns {string}
+         */
+        _resolveExclusionName(exc) {
+            const entry = this.searchList.find((e) => e.type === exc.type && e.value === exc.value);
+            if (entry) return entry.name;
+
+            const ASSET_TYPE_NAMES = {
+                equipped: 'All Equipped Items',
+                listings: 'All Market Listings',
+                houses: 'All Houses',
+                abilities: 'All Abilities',
+                abilityBooks: 'All Ability Books',
+            };
+            if (exc.type === 'assetType') return ASSET_TYPE_NAMES[exc.value] ?? exc.value;
+            if (exc.type === 'loadout') return `Loadout: ${exc.value}`;
+
+            const gd = dataManager.getInitClientData();
+            if (!gd) return exc.value;
+
+            if (exc.type === 'category') {
+                const name = gd.itemCategoryDetailMap?.[exc.value]?.name;
+                return name ? `${name} (category)` : exc.value;
+            }
+            if (exc.type === 'item') return gd.itemDetailMap?.[exc.value]?.name ?? exc.value;
+            if (exc.type === 'houseRoom') return gd.houseRoomDetailMap?.[exc.value]?.name ?? exc.value;
+            if (exc.type === 'ability') return gd.abilityDetailMap?.[exc.value]?.name ?? exc.value;
+            return exc.value;
         }
 
         /**
