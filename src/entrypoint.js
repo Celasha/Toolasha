@@ -340,6 +340,13 @@ function registerFeatures() {
             async: false,
         },
         {
+            key: 'combatBattleCounter',
+            name: 'Combat Battle Counter',
+            category: 'Combat',
+            module: Combat.combatBattleCounter,
+            async: false,
+        },
+        {
             key: 'combatSummary',
             name: 'Combat Summary',
             category: 'Combat',

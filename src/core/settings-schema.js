@@ -795,6 +795,13 @@ export const settingsGroups = {
                 default: true,
                 help: 'Shows ask/bid market prices on tradeable items in the Labyrinth Shop tab',
             },
+            combatBattleCounter: {
+                id: 'combatBattleCounter',
+                label: 'Show battle/wave counter in current action panel during combat',
+                type: 'checkbox',
+                default: true,
+                help: 'Displays "Battle #N" for regular zones or "Wave N" for dungeons in the top-left action panel',
+            },
             combatSummary: {
                 id: 'combatSummary',
                 label: 'Combat Summary: Show detailed statistics on return',
