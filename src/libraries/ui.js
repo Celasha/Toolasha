@@ -29,6 +29,7 @@ import taskSorter from '../features/tasks/task-sorter.js';
 import taskIcons from '../features/tasks/task-icons.js';
 import taskInventoryHighlighter from '../features/tasks/task-inventory-highlighter.js';
 import taskStatistics from '../features/tasks/task-statistics.js';
+import taskClaimCollector from '../features/tasks/task-claim-collector.js';
 
 // Skills
 import remainingXP from '../features/skills/remaining-xp.js';
@@ -89,6 +90,7 @@ toolashaRoot.UI = {
     taskIcons,
     taskInventoryHighlighter,
     taskStatistics,
+    taskClaimCollector,
     remainingXP,
     xpTracker,
     lootLogStats,

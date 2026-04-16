@@ -463,6 +463,13 @@ function registerFeatures() {
             module: UI.taskStatistics,
             async: false,
         },
+        {
+            key: 'taskClaimCollector',
+            name: 'Task Claim Collector',
+            category: 'Tasks',
+            module: UI.taskClaimCollector,
+            async: false,
+        },
         { key: 'skillRemainingXP', name: 'Remaining XP', category: 'Skills', module: UI.remainingXP, async: false },
         { key: 'xpTracker', name: 'XP/hr Tracker', category: 'Skills', module: UI.xpTracker, async: false },
         {

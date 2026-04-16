@@ -959,6 +959,13 @@ export const settingsGroups = {
                 default: true,
                 help: 'Adds a Statistics button to the Tasks panel showing overflow time, expected rewards, and completion estimates',
             },
+            taskClaimCollector: {
+                id: 'taskClaimCollector',
+                label: 'Move Claim Reward buttons to top of task list',
+                type: 'checkbox',
+                default: true,
+                help: 'Moves all Claim Reward buttons to a stack at the top of the task list so you can click the same spot repeatedly to claim all completed tasks',
+            },
             taskGoMerge: {
                 id: 'taskGoMerge',
                 label: 'Merge duplicate tasks on Go',
