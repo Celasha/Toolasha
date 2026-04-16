@@ -366,7 +366,7 @@ class NetworthInventoryDisplay {
         this.container.innerHTML = `
             <div style="display: flex; align-items: center; gap: 6px;">
                 <div style="cursor: pointer; font-weight: bold; flex: 1;" id="mwi-networth-toggle">
-                    Net Worth: ${totalNetworth}
+                    + Net Worth: ${totalNetworth}
                 </div>
                 ${
                     showChartBtn
@@ -697,7 +697,7 @@ class NetworthInventoryDisplay {
         this.setupToggle(
             'mwi-networth-toggle',
             'mwi-networth-details',
-            `Total Net Worth: ${networthFormatter(Math.round(networthData.totalNetworth))}`
+            `Net Worth: ${networthFormatter(Math.round(networthData.totalNetworth))}`
         );
 
         // Chart button
