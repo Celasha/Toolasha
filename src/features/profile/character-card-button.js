@@ -8,6 +8,7 @@ import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import { buildCharacterSheetLink } from './character-sheet.js';
 import { calculateCombatScore } from './score-calculator.js';
+import loadoutSnapshot from '../combat/loadout-snapshot.js';
 
 /**
  * Convert combatConsumables array to actionTypeFoodSlotsMap/actionTypeDrinkSlotsMap format
@@ -115,6 +116,106 @@ export async function handleViewCardClick(profileData) {
         window.open(url, '_blank');
     } catch (error) {
         console.error('[CharacterCardButton] Failed to open character card:', error);
+    }
+}
+
+/**
+ * Handle View Card click using a saved loadout snapshot for equipment/abilities/food.
+ * Skills, housing, achievements, and cosmetics are always taken from live character data.
+ * @param {string} snapshotName - Name of the loadout snapshot to use
+ */
+export async function handleViewCardFromSnapshot(snapshotName) {
+    try {
+        const clientData = dataManager.getInitClientData();
+        const characterData = dataManager.characterData;
+
+        if (!characterData) {
+            console.error('[CharacterCardButton] No character data available');
+            return;
+        }
+
+        const snapshot = loadoutSnapshot.getAllSnapshots().find((s) => s.name === snapshotName);
+        if (!snapshot) {
+            console.error('[CharacterCardButton] Snapshot not found:', snapshotName);
+            return;
+        }
+
+        // Build wearableItemMap: cosmetic slots from characterItems + combat equipment from snapshot
+        const wearableItemMap = {};
+        const COSMETIC_LOCATIONS = new Set([
+            '/item_locations/avatar',
+            '/item_locations/outfit',
+            '/item_locations/chat_icon',
+        ]);
+        for (const item of characterData.characterItems || []) {
+            if (COSMETIC_LOCATIONS.has(item.itemLocationHrid)) {
+                wearableItemMap[item.itemLocationHrid] = {
+                    itemLocationHrid: item.itemLocationHrid,
+                    itemHrid: item.itemHrid,
+                    enhancementLevel: item.enhancementLevel || 0,
+                };
+            }
+        }
+        for (const equip of snapshot.equipment) {
+            wearableItemMap[equip.itemLocationHrid] = {
+                itemLocationHrid: equip.itemLocationHrid,
+                itemHrid: equip.itemHrid,
+                enhancementLevel: equip.enhancementLevel || 0,
+            };
+        }
+
+        // Build ability level lookup from current character data (levels are character-scoped, not loadout-scoped)
+        const abilityLevelMap = {};
+        for (const ab of characterData.combatUnit?.combatAbilities || []) {
+            if (ab.abilityHrid) abilityLevelMap[ab.abilityHrid] = ab.level || 1;
+        }
+
+        // Map snapshot abilities to the format buildSegmentsFromCharacterData expects
+        const equippedAbilities = snapshot.abilities.map((ab) => ({
+            abilityHrid: ab.abilityHrid,
+            level: abilityLevelMap[ab.abilityHrid] || 1,
+        }));
+
+        // Build food/drink consumables in the format formatFoodData expects
+        const consumablesData = {
+            actionTypeFoodSlotsMap: {
+                '/action_types/combat': snapshot.food.map((f) => (f.itemHrid ? { itemHrid: f.itemHrid } : null)),
+            },
+            actionTypeDrinkSlotsMap: {
+                '/action_types/combat': snapshot.drinks.map((d) => (d.itemHrid ? { itemHrid: d.itemHrid } : null)),
+            },
+        };
+
+        // Synthetic character data: base character with snapshot overrides for equipment and abilities.
+        // Setting characterItems to undefined forces buildSegmentsFromCharacterData to use wearableItemMap.
+        const syntheticCharacterData = {
+            ...characterData,
+            wearableItemMap,
+            equippedAbilities,
+            characterItems: undefined,
+        };
+
+        // Calculate combat score using snapshot equipment
+        let combatScore = null;
+        try {
+            const scoreResult = await calculateCombatScore({ profile: syntheticCharacterData });
+            combatScore = scoreResult?.total || null;
+        } catch (error) {
+            console.warn('[CharacterCardButton] Failed to calculate combat score for snapshot:', error);
+        }
+
+        const url = buildCharacterSheetLink(
+            null,
+            'https://tib-san.gitlab.io/mwi-character-sheet/',
+            syntheticCharacterData,
+            clientData,
+            consumablesData,
+            combatScore
+        );
+
+        window.open(url, '_blank');
+    } catch (error) {
+        console.error('[CharacterCardButton] Failed to open character card from snapshot:', error);
     }
 }
 

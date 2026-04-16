@@ -4,15 +4,17 @@
  */
 
 import config from '../../core/config.js';
+import dataManager from '../../core/data-manager.js';
 import storage from '../../core/storage.js';
 import webSocketHook from '../../core/websocket.js';
 import { calculateCombatScore } from './score-calculator.js';
 import { numberFormatter } from '../../utils/formatters.js';
 import { constructExportObject } from '../combat/combat-sim-export.js';
 import { constructMilkonomyExport } from '../combat/milkonomy-export.js';
-import { handleViewCardClick } from './character-card-button.js';
+import { handleViewCardClick, handleViewCardFromSnapshot } from './character-card-button.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
+import loadoutSnapshot from '../combat/loadout-snapshot.js';
 
 /**
  * CombatScore class manages combat score display on profiles
@@ -216,7 +218,8 @@ class CombatScore {
 
         // Build View Card button HTML (only if characterCard setting is enabled)
         const viewCardButtonHTML = config.getSetting('characterCard')
-            ? `<button id="mwi-character-card-btn" style="
+            ? `<div id="mwi-view-card-wrapper" style="position: relative; display: flex; gap: 4px;">
+                <button id="mwi-character-card-btn" style="
                     padding: 8px 12px;
                     background: ${config.COLOR_ACCENT};
                     color: black;
@@ -225,8 +228,34 @@ class CombatScore {
                     cursor: pointer;
                     font-weight: bold;
                     font-size: 0.85rem;
-                    width: 100%;
-                ">View Card</button>`
+                    flex: 1;
+                ">View Card</button>
+                <button id="mwi-character-card-loadout-btn" style="
+                    padding: 8px 10px;
+                    background: ${config.COLOR_ACCENT};
+                    color: black;
+                    border: none;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    font-weight: bold;
+                    font-size: 0.85rem;
+                    display: none;
+                ">▾</button>
+                <div id="mwi-loadout-dropdown" style="
+                    display: none;
+                    position: absolute;
+                    top: 100%;
+                    left: 0;
+                    right: 0;
+                    background: rgba(30, 30, 30, 0.98);
+                    border: 1px solid #555;
+                    border-radius: 4px;
+                    z-index: 10001;
+                    margin-top: 2px;
+                    max-height: 160px;
+                    overflow-y: auto;
+                "></div>
+            </div>`
             : '';
 
         // Create panel HTML
@@ -479,6 +508,74 @@ class CombatScore {
             viewCardBtn.addEventListener('mouseleave', () => {
                 viewCardBtn.style.opacity = '1';
             });
+        }
+
+        // Loadout dropdown for own character only
+        const loadoutBtn = panel.querySelector('#mwi-character-card-loadout-btn');
+        const loadoutDropdown = panel.querySelector('#mwi-loadout-dropdown');
+        if (loadoutBtn && loadoutDropdown) {
+            const profileCharId =
+                profileData?.profile?.sharableCharacter?.id ||
+                profileData?.profile?.characterSkills?.[0]?.characterID ||
+                profileData?.profile?.character?.id;
+            const isOwnCharacter = profileCharId === dataManager.getCurrentCharacterId();
+            if (isOwnCharacter) {
+                const snapshots = loadoutSnapshot.getAllSnapshots();
+                if (snapshots.length > 0) {
+                    loadoutBtn.style.display = '';
+
+                    loadoutDropdown.innerHTML = snapshots
+                        .map(
+                            (s) =>
+                                `<div class="mwi-loadout-option" data-name="${s.name.replace(/"/g, '&quot;')}" style="
+                                padding: 6px 10px;
+                                cursor: pointer;
+                                font-size: 0.8rem;
+                                border-bottom: 1px solid #333;
+                                color: #ddd;
+                                white-space: nowrap;
+                                overflow: hidden;
+                                text-overflow: ellipsis;
+                            ">${s.name}</div>`
+                        )
+                        .join('');
+
+                    loadoutBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        loadoutDropdown.style.display = loadoutDropdown.style.display === 'none' ? 'block' : 'none';
+                    });
+                    loadoutBtn.addEventListener('mouseenter', () => {
+                        loadoutBtn.style.opacity = '0.8';
+                    });
+                    loadoutBtn.addEventListener('mouseleave', () => {
+                        loadoutBtn.style.opacity = '1';
+                    });
+
+                    loadoutDropdown.querySelectorAll('.mwi-loadout-option').forEach((opt) => {
+                        opt.addEventListener('click', () => {
+                            handleViewCardFromSnapshot(opt.dataset.name);
+                            loadoutDropdown.style.display = 'none';
+                        });
+                        opt.addEventListener('mouseenter', () => {
+                            opt.style.background = 'rgba(255,255,255,0.1)';
+                        });
+                        opt.addEventListener('mouseleave', () => {
+                            opt.style.background = '';
+                        });
+                    });
+
+                    const closeDropdown = (e) => {
+                        if (!document.body.contains(loadoutDropdown)) {
+                            document.removeEventListener('click', closeDropdown);
+                            return;
+                        }
+                        if (!loadoutDropdown.contains(e.target) && e.target !== loadoutBtn) {
+                            loadoutDropdown.style.display = 'none';
+                        }
+                    };
+                    document.addEventListener('click', closeDropdown);
+                }
+            }
         }
     }
 
