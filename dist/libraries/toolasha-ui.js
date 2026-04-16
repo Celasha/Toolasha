@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.10.1
+ * Version: 2.11.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -10155,6 +10155,137 @@ ${hideRules}
     const taskStatistics = new TaskStatistics();
 
     taskStatistics.setupSettingListener();
+
+    /**
+     * Task Claim Collector
+     * Adds a "Claim Reward" proxy button to the task panel header next to the
+     * "Highlight Task Items" button. One user click triggers one real click on the
+     * first available Claim Reward button in the task list. React manages the original
+     * buttons normally; this feature only reads and forwards clicks.
+     */
+
+
+    const PROXY_BTN_ID = 'mwi-claim-proxy-btn';
+    const CLAIM_BTN_SELECTOR = 'button.Button_button__1Fe9z.Button_buy__3s24l';
+
+    class TaskClaimCollector {
+        constructor() {
+            this.initialized = false;
+            this.unregisterObserver = null;
+            this.mutationObserver = null;
+            this.proxyButton = null;
+        }
+
+        initialize() {
+            if (this.initialized) return;
+            if (!config.getSetting('taskClaimCollector')) return;
+
+            this.unregisterObserver = domObserver.onClass(
+                'TaskClaimCollector',
+                'TasksPanel_taskSlotCount',
+                (headerElement) => this._onTaskPanelAppeared(headerElement)
+            );
+
+            this.initialized = true;
+        }
+
+        _onTaskPanelAppeared(headerElement) {
+            const taskList = document.querySelector(selectors_js.GAME.TASK_LIST);
+            if (!taskList) return;
+
+            this._ensureProxyButton(headerElement);
+            this._updateProxyButton(taskList);
+
+            if (this.mutationObserver) {
+                this.mutationObserver.disconnect();
+            }
+
+            this.mutationObserver = new MutationObserver(() => {
+                const list = document.querySelector(selectors_js.GAME.TASK_LIST);
+                if (list) this._updateProxyButton(list);
+            });
+
+            this.mutationObserver.observe(taskList, { childList: true, subtree: true });
+        }
+
+        /**
+         * Create the proxy button in the task panel header after "Highlight Task Items".
+         */
+        _ensureProxyButton(headerElement) {
+            if (document.getElementById(PROXY_BTN_ID)) return;
+
+            this.proxyButton = document.createElement('button');
+            this.proxyButton.id = PROXY_BTN_ID;
+            this.proxyButton.className = 'Button_button__1Fe9z Button_small__3fqC7';
+            this.proxyButton.style.marginLeft = '8px';
+            this.proxyButton.addEventListener('click', () => this._claimNext());
+
+            const highlightBtn = headerElement.querySelector('[data-mwi-task-highlight]');
+            if (highlightBtn) {
+                highlightBtn.after(this.proxyButton);
+            } else {
+                headerElement.appendChild(this.proxyButton);
+            }
+        }
+
+        /**
+         * Update the proxy button label and visibility based on how many claims are available.
+         */
+        _updateProxyButton(taskList) {
+            if (!this.proxyButton) return;
+
+            const count = this._getClaimableButtons(taskList).length;
+            if (count > 0) {
+                this.proxyButton.textContent = count > 1 ? `Claim Reward (${count})` : 'Claim Reward';
+                this.proxyButton.style.display = '';
+            } else {
+                this.proxyButton.style.display = 'none';
+            }
+        }
+
+        /**
+         * Return all enabled Claim Reward buttons in the task list.
+         */
+        _getClaimableButtons(taskList) {
+            return Array.from(taskList.querySelectorAll(CLAIM_BTN_SELECTOR)).filter(
+                (btn) => btn.textContent.trim() === 'Claim Reward' && !btn.disabled
+            );
+        }
+
+        /**
+         * Click the first available claim button in the task list.
+         */
+        _claimNext() {
+            const taskList = document.querySelector(selectors_js.GAME.TASK_LIST);
+            if (!taskList) return;
+
+            const claimable = this._getClaimableButtons(taskList);
+            if (claimable.length > 0) {
+                claimable[0].click();
+            }
+        }
+
+        disable() {
+            if (this.mutationObserver) {
+                this.mutationObserver.disconnect();
+                this.mutationObserver = null;
+            }
+
+            if (this.unregisterObserver) {
+                this.unregisterObserver();
+                this.unregisterObserver = null;
+            }
+
+            if (this.proxyButton) {
+                this.proxyButton.remove();
+                this.proxyButton = null;
+            }
+
+            this.initialized = false;
+        }
+    }
+
+    const taskClaimCollector = new TaskClaimCollector();
 
     /**
      * Remaining XP Display
@@ -22336,6 +22467,7 @@ ${hideRules}
             this.guildXPHistory = {}; // guildName → [{t, xp}]
             this.memberXPHistory = {}; // characterID → [{t, xp}]
             this.memberMeta = {}; // characterID → {name, gameMode, joinTime, invitedBy}
+            this.playerXPHistory = {}; // playerName → [{t, xp}] (main leaderboard)
             this.unregisterHandlers = [];
         }
 
@@ -22367,6 +22499,9 @@ ${hideRules}
             if (dataManager.characterData) {
                 await this._onCharacterInit(dataManager.characterData);
             }
+
+            // Load persisted player leaderboard history
+            this.playerXPHistory = await storage.get('playerXP_leaderboard', STORE_NAME, {});
 
             this.initialized = true;
         }
@@ -22505,31 +22640,45 @@ ${hideRules}
         }
 
         /**
-         * Handle leaderboard_updated — record XP for all guilds on leaderboard.
+         * Handle leaderboard_updated — record XP for all guilds on leaderboard,
+         * or player XP for the main leaderboard.
          * @param {Object} data - leaderboard_updated message
          */
         _onLeaderboardUpdated(data) {
-            if (data.leaderboardCategory !== 'guild') return;
-
             const rows = data.leaderboard?.rows;
             if (!rows || rows.length === 0) return;
 
             const t = Date.now();
 
-            for (const row of rows) {
-                const name = row.name;
-                const xp = row.value2;
-                if (!name || xp === undefined) continue;
+            if (data.leaderboardCategory === 'guild') {
+                for (const row of rows) {
+                    const name = row.name;
+                    const xp = row.value2;
+                    if (!name || xp === undefined) continue;
 
-                if (!this.guildXPHistory[name]) {
-                    this.guildXPHistory[name] = [];
+                    if (!this.guildXPHistory[name]) {
+                        this.guildXPHistory[name] = [];
+                    }
+                    pushXP(this.guildXPHistory[name], { t, xp });
                 }
-                pushXP(this.guildXPHistory[name], { t, xp });
-            }
 
-            // Persist using own guild name as key (all guild histories stored together)
-            if (this.ownGuildName) {
-                storage.set(`guildXP_${this.ownGuildName}`, this.guildXPHistory, STORE_NAME);
+                // Persist using own guild name as key (all guild histories stored together)
+                if (this.ownGuildName) {
+                    storage.set(`guildXP_${this.ownGuildName}`, this.guildXPHistory, STORE_NAME);
+                }
+            } else {
+                for (const row of rows) {
+                    const name = row.name;
+                    const xp = row.value2;
+                    if (!name || xp === undefined) continue;
+
+                    if (!this.playerXPHistory[name]) {
+                        this.playerXPHistory[name] = [];
+                    }
+                    pushXP(this.playerXPHistory[name], { t, xp });
+                }
+
+                storage.set('playerXP_leaderboard', this.playerXPHistory, STORE_NAME);
             }
         }
 
@@ -22595,6 +22744,15 @@ ${hideRules}
                 characterID: charId,
                 ...meta,
             }));
+        }
+
+        /**
+         * Get XP/hr stats for a player on the main leaderboard.
+         * @param {string} playerName
+         * @returns {{lastXPH: number, lastHourXPH: number, lastDayXPH: number, chart: Array}}
+         */
+        getPlayerStats(playerName) {
+            return calcStats(this.playerXPHistory[playerName]);
         }
 
         /**
@@ -22666,6 +22824,7 @@ ${hideRules}
             this.guildXPHistory = {};
             this.memberXPHistory = {};
             this.memberMeta = {};
+            this.playerXPHistory = {};
             this.initialized = false;
         }
     }
@@ -23062,8 +23221,8 @@ ${hideRules}
             // Live refresh on data updates
             this._boundRefreshOverview = () => this._refreshOverviewIfVisible();
             this._boundRefreshMembers = () => this._refreshMembersIfVisible();
-            this._boundRefreshLeaderboard = (data) => {
-                if (data.leaderboardCategory === 'guild') this._refreshLeaderboardIfVisible();
+            this._boundRefreshLeaderboard = (_data) => {
+                this._refreshLeaderboardIfVisible();
             };
 
             webSocketHook.on('guild_updated', this._boundRefreshOverview);
@@ -23377,8 +23536,12 @@ ${hideRules}
             // Skip if already rendered
             if (tableEl.querySelector(`.${CSS_PREFIX}`)) return;
 
-            const allHistories = guildXPTracker.getAllGuildHistories();
-            if (!allHistories || Object.keys(allHistories).length === 0) return;
+            const isGuildLeaderboard = !!tableEl.closest('[class*="GuildPanel"]');
+
+            if (isGuildLeaderboard) {
+                const allHistories = guildXPTracker.getAllGuildHistories();
+                if (!allHistories || Object.keys(allHistories).length === 0) return;
+            }
 
             // Widen container
             const containerEl = tableEl.closest('[class*="LeaderboardPanel_content"]');
@@ -23393,12 +23556,16 @@ ${hideRules}
             const theadTr = tableEl.querySelector('thead tr');
             if (!theadTr) return;
 
-            // Calculate stats for each guild row
+            // Calculate stats for each row
             const allStats = [];
             for (const row of rows) {
                 // Leaderboard: col[0]=Rank, col[1]=Name
                 const name = row.children[1]?.textContent?.trim();
-                const stats = name ? guildXPTracker.getGuildStats(name) : { lastXPH: 0, lastDayXPH: 0 };
+                const stats = name
+                    ? isGuildLeaderboard
+                        ? guildXPTracker.getGuildStats(name)
+                        : guildXPTracker.getPlayerStats(name)
+                    : { lastXPH: 0, lastDayXPH: 0 };
                 allStats.push({
                     name,
                     lastXPH: stats.lastXPH,
@@ -23720,6 +23887,7 @@ ${hideRules}
         taskIcons,
         taskInventoryHighlighter,
         taskStatistics,
+        taskClaimCollector,
         remainingXP,
         xpTracker: xpTracker$1,
         lootLogStats,

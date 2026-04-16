@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.10.1
+ * Version: 2.11.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1337,18 +1337,26 @@
         const equipDiv = selectedLoadout.querySelector('[class*="LoadoutsPanel_equipment"]');
         if (!equipDiv) return;
 
-        // Remove any stale overlays from a previous loadout selection
+        // Guard: inventory not ready — don't disturb existing overlays
+        if (!dataManager.getInventory()) return;
+
+        // Guard: use elements exist but none have item hrefs yet — React is mid-render
+        const allUses = equipDiv.querySelectorAll('use');
+        const validUses = Array.from(allUses).filter((use) => {
+            const href = use.getAttribute('href') || use.getAttribute('xlink:href') || '';
+            return href.includes('items_sprite');
+        });
+        if (allUses.length > 0 && validUses.length === 0) return;
+
+        // DOM and data are ready — clear stale overlays and re-inject
         for (const el of equipDiv.querySelectorAll(`.${OVERLAY_CLASS}`)) {
             el.remove();
         }
 
         const enhancementMap = buildEnhancementLevelMap();
 
-        const uses = equipDiv.querySelectorAll('use');
-        for (const use of uses) {
+        for (const use of validUses) {
             const href = use.getAttribute('href') || use.getAttribute('xlink:href') || '';
-            if (!href.includes('items_sprite')) continue;
-
             const fragment = href.split('#')[1];
             if (!fragment) continue;
             const itemHrid = `/items/${fragment}`;
@@ -14235,6 +14243,106 @@ self.onmessage = function (e) {
     }
 
     /**
+     * Handle View Card click using a saved loadout snapshot for equipment/abilities/food.
+     * Skills, housing, achievements, and cosmetics are always taken from live character data.
+     * @param {string} snapshotName - Name of the loadout snapshot to use
+     */
+    async function handleViewCardFromSnapshot(snapshotName) {
+        try {
+            const clientData = dataManager.getInitClientData();
+            const characterData = dataManager.characterData;
+
+            if (!characterData) {
+                console.error('[CharacterCardButton] No character data available');
+                return;
+            }
+
+            const snapshot = loadoutSnapshot.getAllSnapshots().find((s) => s.name === snapshotName);
+            if (!snapshot) {
+                console.error('[CharacterCardButton] Snapshot not found:', snapshotName);
+                return;
+            }
+
+            // Build wearableItemMap: cosmetic slots from characterItems + combat equipment from snapshot
+            const wearableItemMap = {};
+            const COSMETIC_LOCATIONS = new Set([
+                '/item_locations/avatar',
+                '/item_locations/outfit',
+                '/item_locations/chat_icon',
+            ]);
+            for (const item of characterData.characterItems || []) {
+                if (COSMETIC_LOCATIONS.has(item.itemLocationHrid)) {
+                    wearableItemMap[item.itemLocationHrid] = {
+                        itemLocationHrid: item.itemLocationHrid,
+                        itemHrid: item.itemHrid,
+                        enhancementLevel: item.enhancementLevel || 0,
+                    };
+                }
+            }
+            for (const equip of snapshot.equipment) {
+                wearableItemMap[equip.itemLocationHrid] = {
+                    itemLocationHrid: equip.itemLocationHrid,
+                    itemHrid: equip.itemHrid,
+                    enhancementLevel: equip.enhancementLevel || 0,
+                };
+            }
+
+            // Build ability level lookup from current character data (levels are character-scoped, not loadout-scoped)
+            const abilityLevelMap = {};
+            for (const ab of characterData.combatUnit?.combatAbilities || []) {
+                if (ab.abilityHrid) abilityLevelMap[ab.abilityHrid] = ab.level || 1;
+            }
+
+            // Map snapshot abilities to the format buildSegmentsFromCharacterData expects
+            const equippedAbilities = snapshot.abilities.map((ab) => ({
+                abilityHrid: ab.abilityHrid,
+                level: abilityLevelMap[ab.abilityHrid] || 1,
+            }));
+
+            // Build food/drink consumables in the format formatFoodData expects
+            const consumablesData = {
+                actionTypeFoodSlotsMap: {
+                    '/action_types/combat': snapshot.food.map((f) => (f.itemHrid ? { itemHrid: f.itemHrid } : null)),
+                },
+                actionTypeDrinkSlotsMap: {
+                    '/action_types/combat': snapshot.drinks.map((d) => (d.itemHrid ? { itemHrid: d.itemHrid } : null)),
+                },
+            };
+
+            // Synthetic character data: base character with snapshot overrides for equipment and abilities.
+            // Setting characterItems to undefined forces buildSegmentsFromCharacterData to use wearableItemMap.
+            const syntheticCharacterData = {
+                ...characterData,
+                wearableItemMap,
+                equippedAbilities,
+                characterItems: undefined,
+            };
+
+            // Calculate combat score using snapshot equipment
+            let combatScore = null;
+            try {
+                const scoreResult = await calculateCombatScore({ profile: syntheticCharacterData });
+                combatScore = scoreResult?.total || null;
+            } catch (error) {
+                console.warn('[CharacterCardButton] Failed to calculate combat score for snapshot:', error);
+            }
+
+            const url = buildCharacterSheetLink(
+                null,
+                'https://tib-san.gitlab.io/mwi-character-sheet/',
+                syntheticCharacterData,
+                clientData,
+                consumablesData,
+                combatScore
+            );
+
+            window.open(url, '_blank');
+        } catch (error) {
+            console.error('[CharacterCardButton] Failed to open character card from snapshot:', error);
+        }
+    }
+
+    /**
      * CharacterCardButton class - minimal feature registry interface.
      * The View Card button is now rendered directly in the combat score panel template.
      */
@@ -14515,7 +14623,8 @@ self.onmessage = function (e) {
 
             // Build View Card button HTML (only if characterCard setting is enabled)
             const viewCardButtonHTML = config.getSetting('characterCard')
-                ? `<button id="mwi-character-card-btn" style="
+                ? `<div id="mwi-view-card-wrapper" style="position: relative; display: flex; gap: 4px;">
+                <button id="mwi-character-card-btn" style="
                     padding: 8px 12px;
                     background: ${config.COLOR_ACCENT};
                     color: black;
@@ -14524,8 +14633,34 @@ self.onmessage = function (e) {
                     cursor: pointer;
                     font-weight: bold;
                     font-size: 0.85rem;
-                    width: 100%;
-                ">View Card</button>`
+                    flex: 1;
+                ">View Card</button>
+                <button id="mwi-character-card-loadout-btn" style="
+                    padding: 8px 10px;
+                    background: ${config.COLOR_ACCENT};
+                    color: black;
+                    border: none;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    font-weight: bold;
+                    font-size: 0.85rem;
+                    display: none;
+                ">▾</button>
+                <div id="mwi-loadout-dropdown" style="
+                    display: none;
+                    position: absolute;
+                    top: 100%;
+                    left: 0;
+                    right: 0;
+                    background: rgba(30, 30, 30, 0.98);
+                    border: 1px solid #555;
+                    border-radius: 4px;
+                    z-index: 10001;
+                    margin-top: 2px;
+                    max-height: 160px;
+                    overflow-y: auto;
+                "></div>
+            </div>`
                 : '';
 
             // Create panel HTML
@@ -14778,6 +14913,74 @@ self.onmessage = function (e) {
                 viewCardBtn.addEventListener('mouseleave', () => {
                     viewCardBtn.style.opacity = '1';
                 });
+            }
+
+            // Loadout dropdown for own character only
+            const loadoutBtn = panel.querySelector('#mwi-character-card-loadout-btn');
+            const loadoutDropdown = panel.querySelector('#mwi-loadout-dropdown');
+            if (loadoutBtn && loadoutDropdown) {
+                const profileCharId =
+                    profileData?.profile?.sharableCharacter?.id ||
+                    profileData?.profile?.characterSkills?.[0]?.characterID ||
+                    profileData?.profile?.character?.id;
+                const isOwnCharacter = profileCharId === dataManager.getCurrentCharacterId();
+                if (isOwnCharacter) {
+                    const snapshots = loadoutSnapshot.getAllSnapshots();
+                    if (snapshots.length > 0) {
+                        loadoutBtn.style.display = '';
+
+                        loadoutDropdown.innerHTML = snapshots
+                            .map(
+                                (s) =>
+                                    `<div class="mwi-loadout-option" data-name="${s.name.replace(/"/g, '&quot;')}" style="
+                                padding: 6px 10px;
+                                cursor: pointer;
+                                font-size: 0.8rem;
+                                border-bottom: 1px solid #333;
+                                color: #ddd;
+                                white-space: nowrap;
+                                overflow: hidden;
+                                text-overflow: ellipsis;
+                            ">${s.name}</div>`
+                            )
+                            .join('');
+
+                        loadoutBtn.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            loadoutDropdown.style.display = loadoutDropdown.style.display === 'none' ? 'block' : 'none';
+                        });
+                        loadoutBtn.addEventListener('mouseenter', () => {
+                            loadoutBtn.style.opacity = '0.8';
+                        });
+                        loadoutBtn.addEventListener('mouseleave', () => {
+                            loadoutBtn.style.opacity = '1';
+                        });
+
+                        loadoutDropdown.querySelectorAll('.mwi-loadout-option').forEach((opt) => {
+                            opt.addEventListener('click', () => {
+                                handleViewCardFromSnapshot(opt.dataset.name);
+                                loadoutDropdown.style.display = 'none';
+                            });
+                            opt.addEventListener('mouseenter', () => {
+                                opt.style.background = 'rgba(255,255,255,0.1)';
+                            });
+                            opt.addEventListener('mouseleave', () => {
+                                opt.style.background = '';
+                            });
+                        });
+
+                        const closeDropdown = (e) => {
+                            if (!document.body.contains(loadoutDropdown)) {
+                                document.removeEventListener('click', closeDropdown);
+                                return;
+                            }
+                            if (!loadoutDropdown.contains(e.target) && e.target !== loadoutBtn) {
+                                loadoutDropdown.style.display = 'none';
+                            }
+                        };
+                        document.addEventListener('click', closeDropdown);
+                    }
+                }
             }
         }
 

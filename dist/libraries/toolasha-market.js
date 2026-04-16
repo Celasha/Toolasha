@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.10.1
+ * Version: 2.11.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -8617,13 +8617,8 @@ self.onmessage = function (e) {
                 lastUpdated = cacheEntry.lastUpdated;
 
                 if (orderBookData && orderBookData.orderBooks) {
-                    // Find matching order book for this enhancement level
-                    let orderBook = orderBookData.orderBooks.find((ob) => ob.enhancementLevel === enhancementLevel);
-
-                    // For non-enhanceable items (enh level 0), use first entry
-                    if (!orderBook && enhancementLevel === 0 && orderBookData.orderBooks.length > 0) {
-                        orderBook = orderBookData.orderBooks[0];
-                    }
+                    // orderBooks is indexed by enhancement level (same structure as processOrderBook)
+                    const orderBook = orderBookData.orderBooks[enhancementLevel] ?? null;
 
                     if (orderBook) {
                         const topOrders = isSell ? orderBook.asks : orderBook.bids;
@@ -19410,7 +19405,7 @@ self.onmessage = function (e) {
             this.container.innerHTML = `
             <div style="display: flex; align-items: center; gap: 6px;">
                 <div style="cursor: pointer; font-weight: bold; flex: 1;" id="mwi-networth-toggle">
-                    Net Worth: ${totalNetworth}
+                    + Net Worth: ${totalNetworth}
                 </div>
                 ${
                     showChartBtn
@@ -19462,7 +19457,7 @@ self.onmessage = function (e) {
                         + Inventory value: ${formatters_js.networthFormatter(Math.round(ca.inventory.value))}
                     </div>
                     <div id="mwi-inventory-breakdown" style="display: none; margin-left: 20px;">
-                        ${this.renderInventoryBreakdown(ca.inventory.byCategory)}
+                        ${this.renderInventoryBreakdown(ca.inventory)}
                     </div>
                     `
                             : ''
@@ -19689,34 +19684,35 @@ self.onmessage = function (e) {
         }
 
         /**
-         * Render inventory breakdown HTML (grouped by category)
-         * @param {Object} byCategory - Object with category names as keys
+         * Render inventory breakdown HTML (grouped by category, with Coin as a top-level line item)
+         * @param {Object} inventory - inventory object with byCategory and breakdown
          * @returns {string} HTML string
          */
-        renderInventoryBreakdown(byCategory) {
-            if (!byCategory || Object.keys(byCategory).length === 0) {
+        renderInventoryBreakdown(inventory) {
+            const byCategory = inventory.byCategory ?? {};
+            const coinItem = inventory.breakdown?.find((item) => item.itemHrid === '/items/coin') ?? null;
+
+            if (Object.keys(byCategory).length === 0 && !coinItem) {
                 return '<div>No inventory</div>';
             }
 
             // Sort categories by total value descending
             const sortedCategories = Object.entries(byCategory).sort((a, b) => b[1].totalValue - a[1].totalValue);
 
-            return sortedCategories
-                .map(([categoryName, categoryData]) => {
-                    const categoryId = `mwi-inventory-${categoryName.toLowerCase().replace(/\s+/g, '-')}`;
-                    const categoryToggleId = `${categoryId}-toggle`;
+            const renderCategory = ([categoryName, categoryData]) => {
+                const categoryId = `mwi-inventory-${categoryName.toLowerCase().replace(/\s+/g, '-')}`;
+                const categoryToggleId = `${categoryId}-toggle`;
 
-                    // Build items HTML
-                    const itemsHTML = categoryData.items
-                        .map((item) => {
-                            if (item.isOpenable && item.itemHrid) {
-                                return this.renderOpenableItemRow(item);
-                            }
-                            return `<div>${item.name} x${formatters_js.formatKMB(item.count)}: ${formatters_js.networthFormatter(Math.round(item.value))}</div>`;
-                        })
-                        .join('');
+                const itemsHTML = categoryData.items
+                    .map((item) => {
+                        if (item.isOpenable && item.itemHrid) {
+                            return this.renderOpenableItemRow(item);
+                        }
+                        return `<div>${item.name} x${formatters_js.formatKMB(item.count)}: ${formatters_js.networthFormatter(Math.round(item.value))}</div>`;
+                    })
+                    .join('');
 
-                    return `
+                return `
                 <div style="cursor: pointer; margin-top: 4px; font-size: 0.85rem;" id="${categoryToggleId}">
                     + ${categoryName}: ${formatters_js.networthFormatter(Math.round(categoryData.totalValue))}
                 </div>
@@ -19724,8 +19720,27 @@ self.onmessage = function (e) {
                     ${itemsHTML}
                 </div>
             `;
-                })
-                .join('');
+            };
+
+            const coinHTML = coinItem
+                ? `<div style="margin-top: 4px; font-size: 0.85rem;">Coin x${formatters_js.formatKMB(coinItem.count)}: ${formatters_js.networthFormatter(Math.round(coinItem.value))}</div>`
+                : '';
+
+            // Insert coin at the right position based on value (sorted descending with categories)
+            let html = '';
+            let coinInserted = !coinItem;
+            for (const entry of sortedCategories) {
+                if (!coinInserted && coinItem.value >= entry[1].totalValue) {
+                    html += coinHTML;
+                    coinInserted = true;
+                }
+                html += renderCategory(entry);
+            }
+            if (!coinInserted) {
+                html += coinHTML;
+            }
+
+            return html;
         }
 
         /**
@@ -19741,7 +19756,7 @@ self.onmessage = function (e) {
             this.setupToggle(
                 'mwi-networth-toggle',
                 'mwi-networth-details',
-                `Total Net Worth: ${formatters_js.networthFormatter(Math.round(networthData.totalNetworth))}`
+                `Net Worth: ${formatters_js.networthFormatter(Math.round(networthData.totalNetworth))}`
             );
 
             // Chart button
