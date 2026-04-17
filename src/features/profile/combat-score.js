@@ -965,10 +965,10 @@ class CombatScore {
             playerObj.player.equipment = snapshot.equipment;
 
             // Override abilities from snapshot
-            // Build ability level lookup from current character data
+            // Build ability level lookup from all learned abilities (not just currently equipped)
             const characterData = dataManager.characterData;
             const abilityLevelMap = {};
-            for (const ab of characterData?.combatUnit?.combatAbilities || []) {
+            for (const ab of characterData?.characterAbilities || []) {
                 if (ab.abilityHrid) abilityLevelMap[ab.abilityHrid] = ab.level || 1;
             }
 
@@ -995,6 +995,12 @@ class CombatScore {
                     };
                 }
             }
+
+            // Override triggers from snapshot (includes all configured triggers regardless of equip state)
+            playerObj.triggerMap = {
+                ...(snapshot.abilityCombatTriggersMap || {}),
+                ...(snapshot.consumableCombatTriggersMap || {}),
+            };
 
             // Override food from snapshot
             playerObj.food = { '/action_types/combat': [] };

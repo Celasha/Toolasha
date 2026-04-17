@@ -88,6 +88,8 @@ function buildSnapshot(loadout) {
         abilities,
         food,
         drinks,
+        abilityCombatTriggersMap: loadout.abilityCombatTriggersMap || {},
+        consumableCombatTriggersMap: loadout.consumableCombatTriggersMap || {},
         savedAt: Date.now(),
     };
 }
