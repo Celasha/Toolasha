@@ -699,6 +699,14 @@ export const settingsGroups = {
         title: 'Skills',
         icon: '📚',
         settings: {
+            simulateScrollEffects: {
+                id: 'simulateScrollEffects',
+                label: 'Skills: Simulate missing scroll effects in calculations',
+                type: 'checkboxWithButton',
+                buttonLabel: 'Defaults...',
+                default: false,
+                help: 'When enabled, profit/XP/speed calculations show hypothetical results as if selected scrolls were active. Configure default scrolls with the button; override per-loadout from the Loadouts panel.',
+            },
             xpTracker: {
                 id: 'xpTracker',
                 label: 'Left sidebar: Show XP/hr rate on skill bars',

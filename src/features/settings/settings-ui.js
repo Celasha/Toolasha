@@ -13,6 +13,7 @@ import settingsCSS from './settings-styles.css?raw';
 import marketAPI from '../../api/marketplace.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
+import scrollSimulatorUI from '../combat/scroll-simulator-ui.js';
 import ironCowMode, { IRON_COW_SETTINGS } from './iron-cow-mode.js';
 import {
     getCustomPriceOverrides,
@@ -350,6 +351,9 @@ class SettingsUI {
             if (e.target.classList.contains('toolasha-custom-price-edit-btn')) {
                 this.openCustomPriceOverridesEditor();
             }
+            if (e.target.classList.contains('toolasha-scroll-defaults-btn')) {
+                scrollSimulatorUI.openDefaultsPopup();
+            }
         });
 
         return panel;
@@ -668,6 +672,34 @@ class SettingsUI {
                 `;
             }
 
+            case 'checkboxWithButton': {
+                const checkedCwb = currentSetting?.isTrue ?? settingDef.default ?? false;
+                const btnLabel = settingDef.buttonLabel ?? 'Configure...';
+                return `
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <button type="button"
+                            class="toolasha-scroll-defaults-btn"
+                            data-setting-id="${settingId}"
+                            style="
+                                background: #4a7c59;
+                                border: 1px solid #5a8c69;
+                                border-radius: 4px;
+                                padding: 4px 10px;
+                                color: #e0e0e0;
+                                cursor: pointer;
+                                font-size: 12px;
+                                white-space: nowrap;
+                            ">
+                            ${btnLabel}
+                        </button>
+                        <input type="checkbox"
+                            id="${settingId}"
+                            ${checkedCwb ? 'checked' : ''}
+                            style="width:18px; height:18px; cursor:pointer;">
+                    </div>
+                `;
+            }
+
             default:
                 return `<span style="color: red;">Unknown type: ${type}</span>`;
         }
@@ -909,11 +941,12 @@ class SettingsUI {
         // Block changes to locked settings while Iron Cow mode is active
         if (ironCowMode.isEnabled() && IRON_COW_SETTINGS.has(settingId)) return;
         const type = input.closest('.toolasha-setting')?.dataset.type || 'checkbox';
+        const isCheckboxType = type === 'checkbox' || type === 'checkboxWithButton';
 
         let value;
 
         // Get value based on type
-        if (type === 'checkbox') {
+        if (isCheckboxType) {
             value = input.checked;
         } else if (type === 'number' || type === 'slider') {
             value = parseFloat(input.value) || 0;
@@ -942,14 +975,14 @@ class SettingsUI {
         if (!this.currentSettings[settingId]) {
             this.currentSettings[settingId] = {};
         }
-        if (type === 'checkbox') {
+        if (isCheckboxType) {
             this.currentSettings[settingId].isTrue = value;
         } else {
             this.currentSettings[settingId].value = value;
         }
 
         // Update config module (for backward compatibility)
-        if (type === 'checkbox') {
+        if (isCheckboxType) {
             this.config.setSetting(settingId, value);
         } else {
             this.config.setSettingValue(settingId, value);
@@ -961,7 +994,7 @@ class SettingsUI {
         }
 
         // Update disabled state for dependent settings
-        if (type === 'checkbox') {
+        if (isCheckboxType) {
             this.applyDisabledByState();
         }
     }

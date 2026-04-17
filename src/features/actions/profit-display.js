@@ -20,9 +20,25 @@ import {
 } from '../../utils/profit-helpers.js';
 import { MARKET_TAX } from '../../utils/profit-constants.js';
 import loadoutSnapshot from '../combat/loadout-snapshot.js';
+import scrollSimulator from '../combat/scroll-simulator.js';
+import { SCROLL_BUFF_ITEMS } from '../../utils/scroll-buff-values.js';
 
 const getMissingPriceIndicator = (isMissing) => (isMissing ? ' ⚠' : '');
 export const formatMissingLabel = (isMissing, value) => (isMissing ? '-- ⚠' : value);
+
+let _spriteUrl = null;
+function scrollSpriteHtml(buffTypeHrid, size = 14) {
+    if (_spriteUrl === null) {
+        const el = document.querySelector('use[href*="items_sprite"]');
+        _spriteUrl = el ? el.getAttribute('href').split('#')[0] : '';
+    }
+    const itemSuffix = SCROLL_BUFF_ITEMS[buffTypeHrid];
+    if (!_spriteUrl || !itemSuffix) return '';
+    return (
+        `<svg width="${size}" height="${size}" style="vertical-align:middle;margin-right:3px">` +
+        `<use href="${_spriteUrl}#${itemSuffix}"></use></svg>`
+    );
+}
 
 export const getBonusDropPerHourTotals = (drop, efficiencyMultiplier = 1) => ({
     dropsPerHour: drop.dropsPerHour * efficiencyMultiplier,
@@ -55,9 +71,17 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
         return;
     }
 
+    // Arm scroll simulation before calculations
+    const gatheringActionType = dataManager.getActionDetails(actionHrid)?.type;
+    dataManager.setScrollSimulation(
+        gatheringActionType,
+        scrollSimulator.getScrollSetForActionType(gatheringActionType)
+    );
+
     // Calculate profit
     const profitData = await calculateGatheringProfit(actionHrid);
     if (!profitData) {
+        dataManager.clearScrollSimulation(gatheringActionType);
         console.error('❌ Gathering profit calculation failed for:', actionHrid);
         return;
     }
@@ -314,7 +338,7 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
         const content = document.createElement('div');
         for (const row of rows) {
             const line = document.createElement('div');
-            line.textContent = row;
+            line.innerHTML = row;
             content.appendChild(line);
         }
         return createCollapsibleSection(null, `${title}: +${total}`, null, content, false, 1);
@@ -346,7 +370,10 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
         effRows.push(`+${profitData.details.achievementEfficiency.toFixed(2)}% Achievement`);
     }
     if (profitData.details.personalEfficiency > 0) {
-        effRows.push(`+${profitData.details.personalEfficiency.toFixed(2)}% Scroll of Efficiency`);
+        const icon = dataManager.isBuffBeingSimulated(gatheringActionType, '/buff_types/efficiency')
+            ? scrollSpriteHtml('/buff_types/efficiency')
+            : '';
+        effRows.push(`${icon}+${profitData.details.personalEfficiency.toFixed(2)}% Scroll of Efficiency`);
     }
     if (effRows.length > 0) {
         modifierSummaryParts.push(`+${profitData.totalEfficiency.toFixed(2)}% eff`);
@@ -368,7 +395,10 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
             gatherRows.push(`+${(profitData.details.achievementGathering * 100).toFixed(2)}% Achievement`);
         }
         if (profitData.details.personalGathering > 0) {
-            gatherRows.push(`+${(profitData.details.personalGathering * 100).toFixed(2)}% Scroll of Gathering`);
+            const icon = dataManager.isBuffBeingSimulated(gatheringActionType, '/buff_types/gathering')
+                ? scrollSpriteHtml('/buff_types/gathering')
+                : '';
+            gatherRows.push(`${icon}+${(profitData.details.personalGathering * 100).toFixed(2)}% Scroll of Gathering`);
         }
         const gatherTotal = `${(profitData.gatheringQuantity * 100).toFixed(2)}%`;
         modifierSummaryParts.push(`+${(profitData.gatheringQuantity * 100).toFixed(2)}% gather`);
@@ -391,7 +421,10 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
             rareRows.push(`+${rareFindBreakdown.achievement.toFixed(2)}% Achievement`);
         }
         if (rareFindBreakdown.personal > 0) {
-            rareRows.push(`+${rareFindBreakdown.personal.toFixed(2)}% Scroll of Rare Find`);
+            const icon = dataManager.isBuffBeingSimulated(gatheringActionType, '/buff_types/rare_find')
+                ? scrollSpriteHtml('/buff_types/rare_find')
+                : '';
+            rareRows.push(`${icon}+${rareFindBreakdown.personal.toFixed(2)}% Scroll of Rare Find`);
         }
         modifierSummaryParts.push(`+${rareFindBonus.toFixed(2)}% rare`);
         modifierSubSections.push(makeModifierSection('Rare Find', `${rareFindBonus.toFixed(2)}%`, rareRows));
@@ -446,7 +479,6 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
         color: #888;
         font-size: 0.85em;
     `;
-    const gatheringActionType = dataManager.getActionDetails(actionHrid)?.type;
     const gatheringSnapshotInfo = gatheringActionType
         ? loadoutSnapshot.getSnapshotInfoForSkill(gatheringActionType)
         : null;
@@ -581,6 +613,7 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
             }
         });
     }
+    dataManager.clearScrollSimulation(gatheringActionType);
 }
 
 /**
@@ -594,6 +627,13 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
     if (!config.getSetting('actionPanel_showProfitPerHour')) {
         return;
     }
+
+    // Arm scroll simulation before calculation
+    const productionActionType = dataManager.getActionDetails(actionHrid)?.type;
+    dataManager.setScrollSimulation(
+        productionActionType,
+        scrollSimulator.getScrollSetForActionType(productionActionType)
+    );
 
     // Calculate profit
     const profitData = await calculateProductionProfit(actionHrid);
@@ -911,7 +951,7 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
         const content = document.createElement('div');
         for (const row of rows) {
             const line = document.createElement('div');
-            line.textContent = row;
+            line.innerHTML = row;
             content.appendChild(line);
         }
         return createCollapsibleSection(null, `${title}: +${total}`, null, content, false, 1);
@@ -943,7 +983,10 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
         effRows.push(`+${profitData.achievementEfficiency.toFixed(2)}% Achievement`);
     }
     if (profitData.personalEfficiency > 0) {
-        effRows.push(`+${profitData.personalEfficiency.toFixed(2)}% Scroll of Efficiency`);
+        const simSprite = dataManager.isBuffBeingSimulated(productionActionType, '/buff_types/efficiency')
+            ? scrollSpriteHtml('/buff_types/efficiency')
+            : '';
+        effRows.push(`${simSprite}+${profitData.personalEfficiency.toFixed(2)}% Scroll of Efficiency`);
     }
     if (effRows.length > 0) {
         modifierSummaryParts.push(`+${profitData.totalEfficiency.toFixed(2)}% eff`);
@@ -968,7 +1011,10 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
             rareRows.push(`+${productionRareFindBreakdown.achievement.toFixed(2)}% Achievement`);
         }
         if (productionRareFindBreakdown.personal > 0) {
-            rareRows.push(`+${productionRareFindBreakdown.personal.toFixed(2)}% Scroll of Rare Find`);
+            const simSprite = dataManager.isBuffBeingSimulated(productionActionType, '/buff_types/rare_find')
+                ? scrollSpriteHtml('/buff_types/rare_find')
+                : '';
+            rareRows.push(`${simSprite}+${productionRareFindBreakdown.personal.toFixed(2)}% Scroll of Rare Find`);
         }
         modifierSummaryParts.push(`+${productionRareFindBonus.toFixed(2)}% rare`);
         modifierSubSections.push(
@@ -1062,7 +1108,6 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
         color: #888;
         font-size: 0.85em;
     `;
-    const productionActionType = dataManager.getActionDetails(actionHrid)?.type;
     const productionSnapshotInfo = productionActionType
         ? loadoutSnapshot.getSnapshotInfoForSkill(productionActionType)
         : null;
@@ -1195,6 +1240,7 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
             }
         });
     }
+    dataManager.clearScrollSimulation(productionActionType);
 }
 
 /**

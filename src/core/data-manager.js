@@ -10,6 +10,7 @@ import webSocketHook from './websocket.js';
 import connectionState from './connection-state.js';
 import storage from './storage.js';
 import { mergeMarketListings } from '../utils/market-listings.js';
+import { SCROLL_BUFF_VALUES } from '../utils/scroll-buff-values.js';
 
 class DataManager {
     constructor() {
@@ -49,6 +50,9 @@ class DataManager {
 
         // Personal buffs from seals (personal_buffs_updated WebSocket message)
         this.personalActionTypeBuffsMap = {};
+
+        // Per-action-type scroll simulation (Set of buffTypeHrids to simulate)
+        this.scrollSimulationByActionType = {};
 
         // Retry interval for loading static game data
         this.loadRetryInterval = null;
@@ -710,19 +714,65 @@ class DataManager {
     }
 
     /**
-     * Get personal buff flat boost for an action type and buff type (seal buffs from Labyrinth)
+     * Get personal buff flat boost for an action type and buff type (seal buffs from Labyrinth).
+     * When scroll simulation is armed for this action type, returns max(active, simulated).
      * @param {string} actionTypeHrid - Action type HRID (e.g., "/action_types/foraging")
      * @param {string} buffTypeHrid - Buff type HRID (e.g., "/buff_types/efficiency")
      * @returns {number} Flat boost value (decimal) or 0 if not found
      */
     getPersonalBuffFlatBoost(actionTypeHrid, buffTypeHrid) {
-        const personalBuffs = this.personalActionTypeBuffsMap[actionTypeHrid];
-        if (!Array.isArray(personalBuffs)) {
-            return 0;
+        const activeValue = this._getActivePersonalBuff(actionTypeHrid, buffTypeHrid);
+        const simSet = this.scrollSimulationByActionType[actionTypeHrid];
+        if (simSet?.has(buffTypeHrid)) {
+            return Math.max(activeValue, SCROLL_BUFF_VALUES[buffTypeHrid] ?? 0);
         }
+        return activeValue;
+    }
 
+    /**
+     * @param {string} actionTypeHrid
+     * @param {string} buffTypeHrid
+     * @returns {number}
+     */
+    _getActivePersonalBuff(actionTypeHrid, buffTypeHrid) {
+        const personalBuffs = this.personalActionTypeBuffsMap[actionTypeHrid];
+        if (!Array.isArray(personalBuffs)) return 0;
         const buff = personalBuffs.find((entry) => entry?.typeHrid === buffTypeHrid);
         return buff?.flatBoost || 0;
+    }
+
+    /**
+     * Arm scroll simulation for a specific action type before running calculations.
+     * @param {string} actionTypeHrid
+     * @param {Set<string>} buffTypeSet - Set of buffTypeHrids to simulate
+     */
+    setScrollSimulation(actionTypeHrid, buffTypeSet) {
+        if (buffTypeSet?.size > 0) {
+            this.scrollSimulationByActionType[actionTypeHrid] = buffTypeSet;
+        } else {
+            delete this.scrollSimulationByActionType[actionTypeHrid];
+        }
+    }
+
+    /**
+     * Disarm scroll simulation for a specific action type after calculations are done.
+     * @param {string} actionTypeHrid
+     */
+    clearScrollSimulation(actionTypeHrid) {
+        delete this.scrollSimulationByActionType[actionTypeHrid];
+    }
+
+    /**
+     * Returns true when a scroll buff is being simulated (simulated value > active value).
+     * Used by display code to decide whether to show the scroll sprite on a buff row.
+     * @param {string} actionTypeHrid
+     * @param {string} buffTypeHrid
+     * @returns {boolean}
+     */
+    isBuffBeingSimulated(actionTypeHrid, buffTypeHrid) {
+        const simSet = this.scrollSimulationByActionType[actionTypeHrid];
+        if (!simSet?.has(buffTypeHrid)) return false;
+        return (SCROLL_BUFF_VALUES[buffTypeHrid] ?? 0) > this._getActivePersonalBuff(actionTypeHrid, buffTypeHrid);
     }
 
     /**

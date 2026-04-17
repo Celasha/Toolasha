@@ -389,6 +389,13 @@ function registerFeatures() {
             module: Combat.loadoutSnapshot,
             async: false,
         },
+        {
+            key: 'scrollSimulatorUI',
+            name: 'Scroll Simulator UI',
+            category: 'Combat',
+            module: Combat.scrollSimulatorUI,
+            async: false,
+        },
     ];
 
     // UI Features
@@ -640,6 +647,11 @@ if (isCombatSimulatorPage()) {
                 // Reload config settings with character-specific data
                 await config.loadSettings();
                 config.applyColorSettings();
+
+                // Initialize scroll simulator storage (character-specific)
+                await Combat.scrollSimulator.initialize().catch((error) => {
+                    console.error('[Toolasha] Scroll simulator initialization failed:', error);
+                });
 
                 // Initialize Settings UI after character data is loaded
                 await UI.settingsUI.initialize().catch((error) => {

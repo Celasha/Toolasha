@@ -41,6 +41,22 @@ import { getActionHridFromName } from '../../utils/game-lookups.js';
 import { MIN_ACTION_TIME_SECONDS } from '../../utils/profit-constants.js';
 import { createCleanupRegistry } from '../../utils/cleanup-registry.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
+import scrollSimulator from '../combat/scroll-simulator.js';
+import { SCROLL_BUFF_ITEMS } from '../../utils/scroll-buff-values.js';
+
+let _qibSpriteUrl = null;
+function scrollSpriteHtml(buffTypeHrid, size = 14) {
+    if (_qibSpriteUrl === null) {
+        const el = document.querySelector('use[href*="items_sprite"]');
+        _qibSpriteUrl = el ? el.getAttribute('href').split('#')[0] : '';
+    }
+    const itemSuffix = SCROLL_BUFF_ITEMS[buffTypeHrid];
+    if (!_qibSpriteUrl || !itemSuffix) return '';
+    return (
+        `<svg width="${size}" height="${size}" style="vertical-align:middle;margin-right:3px">` +
+        `<use href="${_qibSpriteUrl}#${itemSuffix}"></use></svg>`
+    );
+}
 
 /**
  * QuickInputButtons class manages quick input button injection
@@ -102,6 +118,7 @@ class QuickInputButtons {
      * @param {HTMLElement} panel - Action panel element
      */
     injectButtons(panel) {
+        let actionDetails = null;
         try {
             // Check if already injected
             if (panel.querySelector('.mwi-collapsible-section')) {
@@ -139,7 +156,7 @@ class QuickInputButtons {
             }
 
             const actionName = actionNameElement.textContent.trim();
-            const actionDetails = this.getActionDetailsByName(actionName, gameData);
+            actionDetails = this.getActionDetailsByName(actionName, gameData);
             if (!actionDetails) {
                 console.warn('[Quick Input Buttons] No action details found for:', actionName);
                 return;
@@ -148,6 +165,12 @@ class QuickInputButtons {
             // Check if this action has normal XP gain (skip speed section for combat)
             const experienceGain = actionDetails.experienceGain;
             const hasNormalXP = experienceGain && experienceGain.skillHrid && experienceGain.value > 0;
+
+            // Arm scroll simulation for this action type
+            dataManager.setScrollSimulation(
+                actionDetails.type,
+                scrollSimulator.getScrollSetForActionType(actionDetails.type)
+            );
 
             // Calculate action duration and efficiency
             const { actionTime, totalEfficiency, efficiencyBreakdown } = this.calculateActionMetrics(
@@ -234,7 +257,15 @@ class QuickInputButtons {
 
                     // Personal buff (Scroll of Action Speed)
                     if (personalSpeedBonus > 0) {
-                        speedLines.push(`  - Scroll of Action Speed: +${formatPercentage(personalSpeedBonus, 1)}`);
+                        const simSprite = dataManager.isBuffBeingSimulated(
+                            actionDetails.type,
+                            '/buff_types/action_speed'
+                        )
+                            ? scrollSpriteHtml('/buff_types/action_speed')
+                            : '';
+                        speedLines.push(
+                            `  - ${simSprite}Scroll of Action Speed: +${formatPercentage(personalSpeedBonus, 1)}`
+                        );
                     }
                 }
 
@@ -348,7 +379,10 @@ class QuickInputButtons {
                     );
                 }
                 if (efficiencyBreakdown.personalEfficiency > 0) {
-                    speedLines.push(`  - Seal: +${efficiencyBreakdown.personalEfficiency.toFixed(2)}%`);
+                    const simSprite = dataManager.isBuffBeingSimulated(actionDetails.type, '/buff_types/efficiency')
+                        ? scrollSpriteHtml('/buff_types/efficiency')
+                        : '';
+                    speedLines.push(`  - ${simSprite}Seal: +${efficiencyBreakdown.personalEfficiency.toFixed(2)}%`);
                 }
 
                 // Total time (dynamic)
@@ -627,6 +661,9 @@ class QuickInputButtons {
             }
         } catch (error) {
             console.error('[Toolasha] Error injecting quick input buttons:', error);
+        } finally {
+            // Clear scroll simulation regardless of success/failure
+            if (actionDetails?.type) dataManager.clearScrollSimulation(actionDetails.type);
         }
     }
 
@@ -1168,7 +1205,10 @@ class QuickInputButtons {
 
                 // Personal buff (Scroll of Wisdom)
                 if (xpData.breakdown.personalWisdom > 0) {
-                    lines.push(`    • Scroll of Wisdom: +${xpData.breakdown.personalWisdom.toFixed(2)}%`);
+                    const simSprite = dataManager.isBuffBeingSimulated(actionDetails.type, '/buff_types/wisdom')
+                        ? scrollSpriteHtml('/buff_types/wisdom')
+                        : '';
+                    lines.push(`    • ${simSprite}Scroll of Wisdom: +${xpData.breakdown.personalWisdom.toFixed(2)}%`);
                 }
             }
 
