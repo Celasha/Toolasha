@@ -63,6 +63,7 @@ class NetworthHistoryChart {
         if (prefs.movingAvgWindow !== undefined) this.movingAvgWindow = prefs.movingAvgWindow;
         if (prefs.categoryVisibility !== undefined)
             this.categoryVisibility = { ...this.categoryVisibility, ...prefs.categoryVisibility };
+        if (prefs.activeRange !== undefined) this.activeRange = prefs.activeRange;
     }
 
     /**
@@ -85,6 +86,7 @@ class NetworthHistoryChart {
                 showBars: this.showBars,
                 movingAvgWindow: this.movingAvgWindow,
                 categoryVisibility: this.categoryVisibility,
+                activeRange: this.activeRange,
             },
             'networthHistory'
         );
@@ -178,8 +180,8 @@ class NetworthHistoryChart {
             btn.dataset.range = range;
             btn.className = 'mwi-nw-range-btn';
             btn.style.cssText = `
-                background: ${range === '7d' ? '#444' : '#2a2a2a'};
-                color: ${range === '7d' ? '#fff' : '#999'};
+                background: ${range === this.activeRange ? '#444' : '#2a2a2a'};
+                color: ${range === this.activeRange ? '#fff' : '#999'};
                 border: 1px solid #555;
                 cursor: pointer;
                 padding: 4px 14px;
@@ -505,7 +507,7 @@ class NetworthHistoryChart {
         document.addEventListener('keydown', this.escHandler);
 
         // Render default view
-        this.renderChart('7d');
+        this.renderChart(this.activeRange);
     }
 
     /**
@@ -530,6 +532,7 @@ class NetworthHistoryChart {
         if (toInput) toInput.value = '';
 
         this.activeRange = range;
+        this._saveChartPrefs();
         this.renderChart(range);
     }
 
