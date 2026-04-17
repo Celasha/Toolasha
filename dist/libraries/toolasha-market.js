@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.12.1
+ * Version: 2.13.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -17031,6 +17031,7 @@ self.onmessage = function (e) {
             if (prefs.movingAvgWindow !== undefined) this.movingAvgWindow = prefs.movingAvgWindow;
             if (prefs.categoryVisibility !== undefined)
                 this.categoryVisibility = { ...this.categoryVisibility, ...prefs.categoryVisibility };
+            if (prefs.activeRange !== undefined) this.activeRange = prefs.activeRange;
         }
 
         /**
@@ -17053,6 +17054,7 @@ self.onmessage = function (e) {
                     showBars: this.showBars,
                     movingAvgWindow: this.movingAvgWindow,
                     categoryVisibility: this.categoryVisibility,
+                    activeRange: this.activeRange,
                 },
                 'networthHistory'
             );
@@ -17146,8 +17148,8 @@ self.onmessage = function (e) {
                 btn.dataset.range = range;
                 btn.className = 'mwi-nw-range-btn';
                 btn.style.cssText = `
-                background: ${range === '7d' ? '#444' : '#2a2a2a'};
-                color: ${range === '7d' ? '#fff' : '#999'};
+                background: ${range === this.activeRange ? '#444' : '#2a2a2a'};
+                color: ${range === this.activeRange ? '#fff' : '#999'};
                 border: 1px solid #555;
                 cursor: pointer;
                 padding: 4px 14px;
@@ -17473,7 +17475,7 @@ self.onmessage = function (e) {
             document.addEventListener('keydown', this.escHandler);
 
             // Render default view
-            this.renderChart('7d');
+            this.renderChart(this.activeRange);
         }
 
         /**
@@ -17498,6 +17500,7 @@ self.onmessage = function (e) {
             if (toInput) toInput.value = '';
 
             this.activeRange = range;
+            this._saveChartPrefs();
             this.renderChart(range);
         }
 
