@@ -684,7 +684,7 @@ class NetworthInventoryDisplay {
         };
 
         const coinHTML = coinItem
-            ? `<div style="margin-top: 4px; font-size: 0.85rem;">Coin x${formatKMB(coinItem.count)}: ${networthFormatter(Math.round(coinItem.value))}</div>`
+            ? `<div style="margin-top: 4px; font-size: 0.85rem;">Coin: ${networthFormatter(Math.round(coinItem.value))}</div>`
             : '';
 
         // Insert coin at the right position based on value (sorted descending with categories)
