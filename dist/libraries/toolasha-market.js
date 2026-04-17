@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.12.0
+ * Version: 2.12.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -10699,6 +10699,7 @@ self.onmessage = function (e) {
                 { key: 'orderQuantity', label: 'Quantity' },
                 { key: 'filledQuantity', label: 'Filled' },
                 { key: 'total', label: 'Total' },
+                { key: '_delete', label: '' },
             ];
 
             columns.forEach((col) => {
@@ -10722,24 +10723,29 @@ self.onmessage = function (e) {
                 // Label and sort indicator
                 const labelSpan = document.createElement('span');
                 labelSpan.textContent = col.label;
-                labelSpan.style.cursor = 'pointer';
 
-                // Sort indicator
-                if (this.sortColumn === col.key) {
-                    labelSpan.textContent += this.sortDirection === 'asc' ? ' ▲' : ' ▼';
-                }
+                if (col.key === '_delete') {
+                    th.style.width = '30px';
+                } else {
+                    labelSpan.style.cursor = 'pointer';
 
-                // Sort click handler
-                labelSpan.addEventListener('click', () => {
+                    // Sort indicator
                     if (this.sortColumn === col.key) {
-                        this.sortDirection = this.sortDirection === 'asc' ? 'desc' : 'asc';
-                    } else {
-                        this.sortColumn = col.key;
-                        this.sortDirection = 'desc';
+                        labelSpan.textContent += this.sortDirection === 'asc' ? ' ▲' : ' ▼';
                     }
-                    this.applyFilters();
-                    this.renderTable();
-                });
+
+                    // Sort click handler
+                    labelSpan.addEventListener('click', () => {
+                        if (this.sortColumn === col.key) {
+                            this.sortDirection = this.sortDirection === 'asc' ? 'desc' : 'asc';
+                        } else {
+                            this.sortColumn = col.key;
+                            this.sortDirection = 'desc';
+                        }
+                        this.applyFilters();
+                        this.renderTable();
+                    });
+                }
 
                 headerContent.appendChild(labelSpan);
 
@@ -10902,6 +10908,37 @@ self.onmessage = function (e) {
                     totalCell.textContent = this.formatNumber(totalValue);
                     totalCell.style.padding = '4px 10px';
                     row.appendChild(totalCell);
+
+                    // Delete button
+                    const deleteCell = document.createElement('td');
+                    deleteCell.style.cssText = 'padding: 4px 6px; text-align: center;';
+                    const deleteBtn = document.createElement('button');
+                    deleteBtn.textContent = '✕';
+                    deleteBtn.title = 'Delete this listing';
+                    deleteBtn.style.cssText = `
+                    background: none;
+                    border: none;
+                    color: #666;
+                    cursor: pointer;
+                    font-size: 13px;
+                    padding: 2px 5px;
+                    border-radius: 3px;
+                    line-height: 1;
+                `;
+                    deleteBtn.addEventListener('mouseenter', () => {
+                        deleteBtn.style.color = '#f87171';
+                        deleteBtn.style.background = 'rgba(248,113,113,0.15)';
+                    });
+                    deleteBtn.addEventListener('mouseleave', () => {
+                        deleteBtn.style.color = '#666';
+                        deleteBtn.style.background = 'none';
+                    });
+                    deleteBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        this.deleteListing(listing.id);
+                    });
+                    deleteCell.appendChild(deleteBtn);
+                    row.appendChild(deleteCell);
 
                     tbody.appendChild(row);
                 });
@@ -11378,6 +11415,17 @@ self.onmessage = function (e) {
                 console.error('[MarketHistoryViewer] Import error:', error);
                 throw error;
             }
+        }
+
+        /**
+         * Delete a single listing by its ID
+         * @param {number} listingId
+         */
+        async deleteListing(listingId) {
+            this.listings = this.listings.filter((l) => l.id !== listingId);
+            await storage.setJSON(this.storageKey, this.listings, 'marketListings', true);
+            this.applyFilters();
+            this.renderTable();
         }
 
         /**
@@ -23357,6 +23405,8 @@ self.onmessage = function (e) {
             this._needsAnotherPass = false; // Deferred layout re-run flag
             this._lastRebuildTileCount = 0; // Tile count at last full rebuild (detects inventory changes)
             this._actionBtnsEl = null; // +Tab/Export/Import appended to sort controls row on Toolasha tab
+            this._tileObserver = null; // MutationObserver for instant tile visibility on React swaps
+            this._observedContainer = null; // Container currently being observed by _tileObserver
         }
 
         // -----------------------------------------------------------------------
@@ -23402,13 +23452,18 @@ self.onmessage = function (e) {
             });
             this._unregisterHandlers.push(unregisterTileGap);
 
-            // Re-apply layout when inventory changes
-            let debounceTimer = null;
+            // Re-apply layout when inventory changes.
+            // Uses requestAnimationFrame instead of a long debounce — rAF fires at the next frame
+            // boundary (~16ms), by which point React has finished swapping tile elements for
+            // enhancement level changes. A 200ms debounce caused the enhanced item to disappear
+            // from the custom tab for ~200ms while the new tile had no toolasha-ct-visible class.
+            let rafId = null;
             this._onItemsUpdated = () => {
-                clearTimeout(debounceTimer);
-                debounceTimer = setTimeout(() => {
+                if (rafId) cancelAnimationFrame(rafId);
+                rafId = requestAnimationFrame(() => {
+                    rafId = null;
                     if (this._isActive) this._applyLayout();
-                }, 200);
+                });
             };
             dataManager.on('items_updated', this._onItemsUpdated);
 
@@ -23618,6 +23673,108 @@ self.onmessage = function (e) {
         }
 
         /**
+         * Synchronous layout pass — applies CSS order and visibility to all tiles.
+         * Extracted from _applyLayout so it can also be called from a MutationObserver
+         * callback (which fires before the browser paints, eliminating flicker when
+         * React swaps tile elements during enhancement).
+         * @param {HTMLElement} invContainer
+         */
+        _applyLayoutSync(invContainer) {
+            // Compare BEFORE assignment — otherwise isSameNode is always true
+            const isSameNode = invContainer === this._invContainer;
+            const injectedStillPresent =
+                this._injectedEls.length > 0 && this._injectedEls[0].parentElement === invContainer;
+            let needsFullRebuild = !isSameNode || !injectedStillPresent;
+
+            this._invContainer = invContainer;
+
+            // Add the active class — this makes Inventory_items a flex container,
+            // applies display:contents to category wrappers, hides category labels,
+            // and hides ALL tiles by default (via CSS).
+            invContainer.classList.add('toolasha-ct-active');
+            this._applyTileGap(invContainer);
+
+            // Ensure the Inventory panel is visible
+            this._showInventoryPanel();
+
+            if (needsFullRebuild) {
+                this._removeInjectedEls();
+            }
+
+            // Build tile map from all tiles currently in invContainer
+            const tileMap = this._buildTileMap(invContainer);
+
+            // Reset all tiles: remove visible class and clear inline order
+            const allTiles = invContainer.querySelectorAll('[class*="Item_itemContainer"]');
+            for (const tile of allTiles) {
+                tile.classList.remove('toolasha-ct-visible');
+                tile.style.order = '';
+            }
+
+            // Force full rebuild when tile count changed — the lightweight path
+            // reuses stale header order values that don't have enough order-space
+            // for new tiles, causing items to visually cascade into wrong sections.
+            if (!needsFullRebuild && allTiles.length !== this._lastRebuildTileCount) {
+                needsFullRebuild = true;
+                this._removeInjectedEls();
+            }
+
+            if (needsFullRebuild) {
+                // Full rebuild: inject action buttons + headers
+                let orderCounter = 0;
+
+                const topbar = this._injectActionButtons();
+                if (topbar) {
+                    topbar.style.order = orderCounter++;
+                    invContainer.appendChild(topbar);
+                    this._injectedEls.push(topbar);
+                }
+
+                if (this._config.tabs.length === 0) {
+                    const empty = document.createElement('div');
+                    empty.className = 'toolasha-ct-empty';
+                    empty.textContent = 'No custom tabs yet. Click "+ Tab" to create one.';
+                    empty.style.order = orderCounter++;
+                    invContainer.appendChild(empty);
+                    this._injectedEls.push(empty);
+                } else {
+                    orderCounter = this._injectAccordionHeaders(invContainer, this._config.tabs, 0, tileMap, orderCounter);
+                }
+
+                if (config.getSettingValue('inventoryTabs_showUnorganized')) {
+                    orderCounter = this._injectUnorganized(invContainer, tileMap, orderCounter);
+                }
+
+                this._lastRebuildTileCount = allTiles.length;
+            } else {
+                // Lightweight update: headers already exist, just re-apply tile order/visibility
+                this._updateTileVisibility(invContainer, tileMap);
+            }
+
+            // Attach tile observer if not already watching this container.
+            // The observer fires synchronously (as a microtask) after React swaps a tile
+            // element, BEFORE the browser paints — so we can restore toolasha-ct-visible
+            // with zero visible frames of invisibility.
+            if (this._tileObserver === null || this._observedContainer !== invContainer) {
+                this._tileObserver?.disconnect();
+                this._observedContainer = invContainer;
+                this._tileObserver = new MutationObserver((mutations) => {
+                    if (!this._isActive) return;
+                    const hasTileChange = mutations.some((m) =>
+                        [...m.addedNodes, ...m.removedNodes].some(
+                            (n) =>
+                                n.nodeType === Node.ELEMENT_NODE &&
+                                (n.className?.includes?.('Item_itemContainer') ||
+                                    n.querySelector?.('[class*="Item_itemContainer"]'))
+                        )
+                    );
+                    if (hasTileChange) this._applyLayoutSync(invContainer);
+                });
+                this._tileObserver.observe(invContainer, { childList: true, subtree: true });
+            }
+        }
+
+        /**
          * Apply the CSS order layout. Tiles never leave Inventory_items.
          * We add `display: contents` to flatten wrapper divs, inject accordion
          * headers, and set CSS `order` on each tile to group them visually.
@@ -23638,31 +23795,11 @@ self.onmessage = function (e) {
                 const invContainer = this._findInvContainer();
                 if (!invContainer) return;
 
-                const isSameNode = invContainer === this._invContainer;
-                const injectedStillPresent =
-                    this._injectedEls.length > 0 && this._injectedEls[0].parentElement === invContainer;
-                let needsFullRebuild = !isSameNode || !injectedStillPresent;
+                this._applyLayoutSync(invContainer);
 
-                this._invContainer = invContainer;
-
-                // Add the active class — this makes Inventory_items a flex container,
-                // applies display:contents to category wrappers, hides category labels,
-                // and hides ALL tiles by default (via CSS).
-                invContainer.classList.add('toolasha-ct-active');
-                this._applyTileGap(invContainer);
-
-                // Ensure the Inventory panel is visible
-                this._showInventoryPanel();
-
-                if (needsFullRebuild) {
-                    this._removeInjectedEls();
-                }
-
-                // Ensure badge manager has prices calculated before we sort tiles.
-                // On mobile the inventory panel is created fresh each time "My Stuff" opens —
-                // the badge manager's DOM observer fires a render concurrently with _applyLayout,
-                // causing isRendering/isCalculating guards to block our call. Wait for any
-                // in-progress render to finish, then force a fresh calculation.
+                // Run badge manager AFTER visibility is restored — badges are independent of tile
+                // order/visibility, and running them before caused React tile replacements (on
+                // enhancement level changes) to appear as a ~16ms flicker in the custom tab.
                 if (!inventoryBadgeManager.currentInventoryElem) {
                     inventoryBadgeManager.currentInventoryElem = invContainer;
                 }
@@ -23672,62 +23809,6 @@ self.onmessage = function (e) {
                 inventoryBadgeManager.lastRenderTime = 0;
                 inventoryBadgeManager.lastCalculationTime = 0;
                 await inventoryBadgeManager.renderAllBadges();
-
-                // Build tile map from all tiles currently in invContainer
-                const tileMap = this._buildTileMap(invContainer);
-
-                // Reset all tiles: remove visible class and clear inline order
-                const allTiles = invContainer.querySelectorAll('[class*="Item_itemContainer"]');
-                for (const tile of allTiles) {
-                    tile.classList.remove('toolasha-ct-visible');
-                    tile.style.order = '';
-                }
-
-                // Force full rebuild when tile count changed — the lightweight path
-                // reuses stale header order values that don't have enough order-space
-                // for new tiles, causing items to visually cascade into wrong sections.
-                if (!needsFullRebuild && allTiles.length !== this._lastRebuildTileCount) {
-                    needsFullRebuild = true;
-                    this._removeInjectedEls();
-                }
-
-                if (needsFullRebuild) {
-                    // Full rebuild: inject action buttons + headers
-                    let orderCounter = 0;
-
-                    const topbar = this._injectActionButtons();
-                    if (topbar) {
-                        topbar.style.order = orderCounter++;
-                        invContainer.appendChild(topbar);
-                        this._injectedEls.push(topbar);
-                    }
-
-                    if (this._config.tabs.length === 0) {
-                        const empty = document.createElement('div');
-                        empty.className = 'toolasha-ct-empty';
-                        empty.textContent = 'No custom tabs yet. Click "+ Tab" to create one.';
-                        empty.style.order = orderCounter++;
-                        invContainer.appendChild(empty);
-                        this._injectedEls.push(empty);
-                    } else {
-                        orderCounter = this._injectAccordionHeaders(
-                            invContainer,
-                            this._config.tabs,
-                            0,
-                            tileMap,
-                            orderCounter
-                        );
-                    }
-
-                    if (config.getSettingValue('inventoryTabs_showUnorganized')) {
-                        orderCounter = this._injectUnorganized(invContainer, tileMap, orderCounter);
-                    }
-
-                    this._lastRebuildTileCount = allTiles.length;
-                } else {
-                    // Lightweight update: headers already exist, just re-apply tile order/visibility
-                    this._updateTileVisibility(invContainer, tileMap);
-                }
             } finally {
                 this._isApplying = false;
                 if (this._needsAnotherPass) {
@@ -23858,6 +23939,10 @@ self.onmessage = function (e) {
          * Remove all CSS classes and injected elements; restore normal game layout.
          */
         _clearLayout() {
+            this._tileObserver?.disconnect();
+            this._tileObserver = null;
+            this._observedContainer = null;
+
             this._removeInjectedEls();
 
             if (this._invContainer) {

@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.12.0
+ * Version: 2.12.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -7906,6 +7906,37 @@ ${hideRules}
     }
 
     /**
+     * Find an item HRID from its display name.
+     * Tries exact match first, then ★ ↔ (R) variants for refined items.
+     * @param {string} itemName - Display name of the item
+     * @returns {string|null} Item HRID or null if not found
+     */
+    function getItemHridFromName(itemName) {
+        const gameData = dataManager.getInitClientData();
+        if (!gameData?.itemDetailMap) {
+            return null;
+        }
+
+        // Try exact match first
+        for (const [hrid, detail] of Object.entries(gameData.itemDetailMap)) {
+            if (detail.name === itemName) {
+                return hrid;
+            }
+        }
+
+        // Try ★ ↔ (R) variants for refined items
+        for (const variant of getRefinedNameVariants(itemName)) {
+            for (const [hrid, detail] of Object.entries(gameData.itemDetailMap)) {
+                if (detail.name === variant) {
+                    return hrid;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Task Icons
      * Adds visual icon overlays to task cards
      */
@@ -13742,6 +13773,10 @@ ${hideRules}
 
         const loadoutName = getLoadoutName(navButtons);
 
+        // Hide for combat loadouts — scroll buffs don't apply to combat
+        const snapshot = loadoutSnapshot.getAllSnapshots().find((s) => s.name === loadoutName);
+        if (snapshot?.actionTypeHrid === '/action_types/combat') return;
+
         const button = document.createElement('button');
         button.id = BUTTON_ID;
         button.textContent = 'Scroll Simulation';
@@ -16626,7 +16661,8 @@ ${hideRules}
             if (!nameEl) return;
 
             const itemName = nameEl.textContent.trim();
-            const itemHrid = `/items/${itemName.toLowerCase().replace(/'/g, '').replace(/\s+/g, '_')}`;
+            const itemHrid = getItemHridFromName(itemName);
+            if (!itemHrid) return;
 
             const actionInfo = findActionForItem(itemHrid);
             if (!actionInfo) return;
@@ -16668,8 +16704,9 @@ ${hideRules}
             // Get item name from title
             const itemName = titleElem.textContent.trim();
 
-            // Convert item name to HRID format (lowercase, spaces to underscores, remove apostrophes)
-            const itemHrid = `/items/${itemName.toLowerCase().replace(/'/g, '').replace(/\s+/g, '_')}`;
+            // Look up item HRID from display name (handles ★ ↔ (R) refined variants)
+            const itemHrid = getItemHridFromName(itemName);
+            if (!itemHrid) return;
 
             // Check if this item has an associated action
             const actionInfo = findActionForItem(itemHrid);
