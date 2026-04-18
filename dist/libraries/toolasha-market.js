@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.13.0
+ * Version: 2.13.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -15714,6 +15714,8 @@ self.onmessage = function (e) {
             abilities,
             food,
             drinks,
+            abilityCombatTriggersMap: loadout.abilityCombatTriggersMap || {},
+            consumableCombatTriggersMap: loadout.consumableCombatTriggersMap || {},
             savedAt: Date.now(),
         };
     }
@@ -16598,10 +16600,12 @@ self.onmessage = function (e) {
         // Calculate market listings value
         let listingsValue = 0;
         const listingsBreakdown = [];
+        const clientData = dataManager.getInitClientData();
 
         for (const listing of marketListings) {
             const quantity = listing.orderQuantity - listing.filledQuantity;
             const enhancementLevel = listing.enhancementLevel || 0;
+            const itemName = clientData?.itemDetailMap?.[listing.itemHrid]?.name || listing.itemHrid;
 
             if (listing.isSell) {
                 // Selling: value is locked in listing + unclaimed coins
@@ -16613,7 +16617,9 @@ self.onmessage = function (e) {
                     priceCache
                 );
 
-                listingsValue += value * (1 - fee) + listing.unclaimedCoinCount;
+                const listingValue = value * (1 - fee) + listing.unclaimedCoinCount;
+                listingsValue += listingValue;
+                listingsBreakdown.push({ name: itemName, isSell: true, value: listingValue });
             } else {
                 // Buying: value is locked coins + unclaimed items
                 const unclaimedValue = await calculateItemValue(
@@ -16621,9 +16627,13 @@ self.onmessage = function (e) {
                     priceCache
                 );
 
-                listingsValue += quantity * listing.price + unclaimedValue;
+                const listingValue = quantity * listing.price + unclaimedValue;
+                listingsValue += listingValue;
+                listingsBreakdown.push({ name: itemName, isSell: false, value: listingValue });
             }
         }
+
+        listingsBreakdown.sort((a, b) => b.value - a.value);
 
         // Apply listings exclusion
         if (isExcluded('assetType', 'listings') && listingsValue > 0) {

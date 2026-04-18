@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.13.0
+ * Version: 2.13.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -13148,6 +13148,8 @@ ${hideRules}
             abilities,
             food,
             drinks,
+            abilityCombatTriggersMap: loadout.abilityCombatTriggersMap || {},
+            consumableCombatTriggersMap: loadout.consumableCombatTriggersMap || {},
             savedAt: Date.now(),
         };
     }

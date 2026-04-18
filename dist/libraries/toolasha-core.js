@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.13.0
+ * Version: 2.13.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -3485,6 +3485,10 @@
             // Handle items_updated (inventory/equipment changes)
             this.webSocketHook.on('items_updated', (data) => {
                 if (data.endCharacterItems) {
+                    if (!this.characterItems) {
+                        this.emit('items_updated', data);
+                        return;
+                    }
                     // Update inventory items in-place (endCharacterItems contains only changed items, not full inventory)
                     for (const item of data.endCharacterItems) {
                         const index = this.characterItems.findIndex((invItem) => invItem.id === item.id);
@@ -4246,6 +4250,7 @@
             this.SCRIPT_COLOR_ALERT = 'red';
 
             // Z-index tiers
+            this.Z_HUD = 50; // In-game HUD overlays — below game interactive UI
             this.Z_FLOATING_PANEL = 1100; // Persistent panels — below MUI modals (game = ~1300)
             this.Z_POPUP = 9000; // Contextual popups / short-lived overlays
             this.Z_MODAL = 9000; // Full-screen intentional modals

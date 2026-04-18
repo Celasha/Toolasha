@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.13.0
+ * Version: 2.13.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -816,6 +816,8 @@
             abilities,
             food,
             drinks,
+            abilityCombatTriggersMap: loadout.abilityCombatTriggersMap || {},
+            consumableCombatTriggersMap: loadout.consumableCombatTriggersMap || {},
             savedAt: Date.now(),
         };
     }
@@ -4453,7 +4455,7 @@
         updatePosition(container) {
             const baseStyle = `
             position: fixed;
-            z-index: ${config.Z_FLOATING_PANEL};
+            z-index: ${config.Z_HUD};
             background: rgba(0, 0, 0, 0.85);
             border: 2px solid #4a9eff;
             border-radius: 8px;
@@ -15605,10 +15607,10 @@ self.onmessage = function (e) {
                 playerObj.player.equipment = snapshot.equipment;
 
                 // Override abilities from snapshot
-                // Build ability level lookup from current character data
+                // Build ability level lookup from all learned abilities (not just currently equipped)
                 const characterData = dataManager.characterData;
                 const abilityLevelMap = {};
-                for (const ab of characterData?.combatUnit?.combatAbilities || []) {
+                for (const ab of characterData?.characterAbilities || []) {
                     if (ab.abilityHrid) abilityLevelMap[ab.abilityHrid] = ab.level || 1;
                 }
 
@@ -15635,6 +15637,12 @@ self.onmessage = function (e) {
                         };
                     }
                 }
+
+                // Override triggers from snapshot (includes all configured triggers regardless of equip state)
+                playerObj.triggerMap = {
+                    ...(snapshot.abilityCombatTriggersMap || {}),
+                    ...(snapshot.consumableCombatTriggersMap || {}),
+                };
 
                 // Override food from snapshot
                 playerObj.food = { '/action_types/combat': [] };

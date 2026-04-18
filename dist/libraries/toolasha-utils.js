@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 2.13.0
+ * Version: 2.13.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -540,6 +540,8 @@
             abilities,
             food,
             drinks,
+            abilityCombatTriggersMap: loadout.abilityCombatTriggersMap || {},
+            consumableCombatTriggersMap: loadout.consumableCombatTriggersMap || {},
             savedAt: Date.now(),
         };
     }
@@ -7383,7 +7385,8 @@ self.onmessage = function (e) {
         startLevel,
         targetLevel,
         protectionItemHrid,
-        protectFromLevel
+        protectFromLevel,
+        repeatCount
     ) {
         const gameData = dataManager.getInitClientData();
         if (!gameData) {
@@ -7433,7 +7436,7 @@ self.onmessage = function (e) {
                 continue;
             }
 
-            const totalQuantity = Math.ceil(cost.count * calc.attempts);
+            const totalQuantity = Math.ceil(cost.count * (repeatCount ?? calc.attempts));
             const inventoryItem = inventory.find((i) => i.itemHrid === cost.itemHrid);
             const have = inventoryItem?.count || 0;
             const missing = Math.max(0, totalQuantity - have);

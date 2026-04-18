@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.13.0
+ * Version: 2.13.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1791,6 +1791,8 @@
             abilities,
             food,
             drinks,
+            abilityCombatTriggersMap: loadout.abilityCombatTriggersMap || {},
+            consumableCombatTriggersMap: loadout.consumableCombatTriggersMap || {},
             savedAt: Date.now(),
         };
     }
@@ -12133,6 +12135,29 @@
      * @param {HTMLElement} panel - Enhancing panel element
      * @returns {number|null} Target level (1-20) or null if not found
      */
+    /**
+     * Get repeat count from enhancement panel UI
+     * @param {HTMLElement} panel - Enhancing panel element
+     * @returns {number} Repeat count (defaults to 1 if not found)
+     */
+    function getRepeatCountFromUI(panel) {
+        const labels = Array.from(panel.querySelectorAll('*')).filter(
+            (el) => el.textContent.trim() === 'Repeat' && el.children.length === 0
+        );
+
+        if (labels.length > 0) {
+            const parent = labels[0].parentElement;
+            const input = parent.querySelector('input[type="number"], input[type="text"]');
+            if (input) {
+                if (input.value === '∞') return null;
+                const value = parseInt(input.value, 10);
+                if (!isNaN(value) && value > 0) return value;
+            }
+        }
+
+        return 1;
+    }
+
     function getTargetLevelFromUI(panel) {
         const labels = Array.from(panel.querySelectorAll('*')).filter(
             (el) => el.textContent.trim() === 'Target Level' && el.children.length === 0
@@ -12181,6 +12206,7 @@
         // Get protection settings from UI
         const protectionItemHrid = getProtectionItemFromUI(panel);
         const protectFromLevel = getProtectFromLevelFromUI(panel);
+        const repeatCount = getRepeatCountFromUI(panel);
 
         // Calculate missing materials
         const missingMaterials = materialCalculator_js.calculateEnhancementMaterialRequirements(
@@ -12188,7 +12214,8 @@
             startLevel,
             targetLevel,
             protectionItemHrid,
-            protectFromLevel
+            protectFromLevel,
+            repeatCount
         );
 
         const disabled = missingMaterials.length === 0;
@@ -12201,6 +12228,7 @@
             targetLevel,
             protectionItemHrid,
             protectFromLevel,
+            repeatCount,
             disabled
         );
 
@@ -12236,6 +12264,7 @@
         targetLevel,
         protectionItemHrid,
         protectFromLevel,
+        repeatCount,
         disabled
     ) {
         const button = document.createElement('button');
@@ -12280,7 +12309,8 @@
                     startLevel,
                     targetLevel,
                     protectionItemHrid,
-                    protectFromLevel
+                    protectFromLevel,
+                    repeatCount
                 );
             });
         }
@@ -12302,10 +12332,11 @@
         startLevel,
         targetLevel,
         protectionItemHrid,
-        protectFromLevel
+        protectFromLevel,
+        repeatCount
     ) {
         // Store context for live updates
-        storedEnhancementContext = { itemHrid, startLevel, targetLevel, protectionItemHrid, protectFromLevel };
+        storedEnhancementContext = { itemHrid, startLevel, targetLevel, protectionItemHrid, protectFromLevel, repeatCount };
         storedActionHrid = null;
         storedNumActions = 0;
 
@@ -12328,7 +12359,8 @@
             startLevel,
             targetLevel,
             protectionItemHrid,
-            protectFromLevel
+            protectFromLevel,
+            repeatCount
         );
 
         // Create custom tabs
@@ -12504,7 +12536,8 @@
                         ctx.startLevel,
                         ctx.targetLevel,
                         ctx.protectionItemHrid,
-                        ctx.protectFromLevel
+                        ctx.protectFromLevel,
+                        ctx.repeatCount
                     );
                     return mats.find((m) => m.itemHrid === mat.itemHrid)?.missing ?? 0;
                 } else if (storedActionHrid && storedNumActions > 0) {
@@ -12623,7 +12656,8 @@
                 ctx.startLevel,
                 ctx.targetLevel,
                 ctx.protectionItemHrid,
-                ctx.protectFromLevel
+                ctx.protectFromLevel,
+                ctx.repeatCount
             );
         } else if (storedActionHrid && storedNumActions > 0) {
             // Production mode
