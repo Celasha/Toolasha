@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.28.2
+ * Version: 2.29.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1428,6 +1428,13 @@
                     type: 'checkbox',
                     default: true,
                     help: 'Displays a color-graded efficiency score based on expected completion time.',
+                },
+                taskMaterialsIndicator: {
+                    id: 'taskMaterialsIndicator',
+                    label: 'Show materials availability on production tasks',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Shows how many task actions you can complete with current inventory.',
                 },
                 taskEfficiencyRatingMode: {
                     id: 'taskEfficiencyRatingMode',

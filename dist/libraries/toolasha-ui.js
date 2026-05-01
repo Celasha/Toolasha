@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.28.2
+ * Version: 2.29.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -7486,6 +7486,165 @@ ${hideRules}
         };
     }
 
+    /**
+     * Build a materials availability badge for production tasks
+     * Shows how many actions the player can complete with current inventory
+     * @param {Object} profitData - Profit calculation result
+     * @returns {HTMLElement|null} Badge element or null if not applicable
+     */
+    /**
+     * Build inventory lookup map (itemHrid → count) for inventory location only
+     * @returns {Object} Map of itemHrid to count
+     */
+    function buildInventoryMap() {
+        const inventory = dataManager.getInventory();
+        const invMap = {};
+        if (inventory) {
+            for (const item of inventory) {
+                if (item.itemLocationHrid === '/item_locations/inventory') {
+                    invMap[item.itemHrid] = (invMap[item.itemHrid] || 0) + item.count;
+                }
+            }
+        }
+        return invMap;
+    }
+
+    /**
+     * Calculate materials availability from material list and inventory map
+     * @param {Array} materials - Array of { h: itemHrid, a: amountPerAction, n: name }
+     * @param {number} remaining - Remaining actions needed
+     * @param {Object} invMap - Inventory map (itemHrid → count)
+     * @returns {Object} { craftable, details: [{ name, have, need, enough }] }
+     */
+    function calcMaterialsAvailability(materials, remaining, invMap) {
+        let craftable = Infinity;
+        const details = [];
+        for (const mat of materials) {
+            const have = invMap[mat.h] || 0;
+            const need = mat.a * remaining;
+            const canDo = Math.floor(have / mat.a);
+            if (canDo < craftable) craftable = canDo;
+            details.push({ name: mat.n, have, need, enough: have >= need });
+        }
+        if (craftable === Infinity) craftable = 0;
+        return { craftable, details };
+    }
+
+    function buildMaterialsBadge(profitData) {
+        if (profitData.type !== 'production') return null;
+
+        const materialCosts = profitData.action?.details?.materialCosts;
+        if (!materialCosts || materialCosts.length === 0) return null;
+
+        const remaining = Math.max((profitData.taskInfo?.quantity || 0) - (profitData.taskInfo?.currentProgress || 0), 0);
+        if (remaining <= 0) return null;
+
+        const invMap = buildInventoryMap();
+
+        // Build materials data with names for display
+        const materialsJson = [];
+        for (const mat of materialCosts) {
+            if (!mat.amount || mat.amount <= 0) continue;
+            materialsJson.push({ h: mat.itemHrid, a: mat.amount, n: mat.itemName || mat.itemHrid });
+        }
+        if (materialsJson.length === 0) return null;
+
+        const { craftable, details } = calcMaterialsAvailability(materialsJson, remaining, invMap);
+        const enough = craftable >= remaining;
+
+        // Container
+        const container = document.createElement('div');
+        container.className = 'mwi-task-materials';
+        container.style.cssText = 'margin-top: 2px; font-size: 0.7rem;';
+
+        // Store data for live inventory updates
+        container.dataset.materials = JSON.stringify(materialsJson);
+        container.dataset.remaining = remaining;
+
+        // Clickable summary line
+        const summary = document.createElement('div');
+        summary.style.cssText = 'cursor: pointer; user-select: none;';
+        summary.style.color = enough ? '#4ade80' : config.COLOR_WARNING;
+        summary.textContent = `\u{1F4E6} ${craftable}/${remaining} \u25B8`;
+        summary.setAttribute('data-materials-summary', 'true');
+        container.appendChild(summary);
+
+        // Expandable detail section (hidden by default)
+        const detailSection = document.createElement('div');
+        detailSection.setAttribute('data-materials-detail', 'true');
+        detailSection.style.cssText =
+            'display: none; margin-top: 4px; padding: 4px 6px; background: rgba(0,0,0,0.2); border-radius: 4px;';
+        renderMaterialDetails(detailSection, details);
+        container.appendChild(detailSection);
+
+        // Toggle detail on click
+        summary.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const hidden = detailSection.style.display === 'none';
+            detailSection.style.display = hidden ? 'block' : 'none';
+            const prefix = `\u{1F4E6} ${summary.dataset.craftable || craftable}/${remaining}`;
+            summary.textContent = `${prefix} ${hidden ? '\u25BE' : '\u25B8'}`;
+        });
+
+        summary.dataset.craftable = craftable;
+
+        return container;
+    }
+
+    /**
+     * Render material detail lines into a container
+     * @param {HTMLElement} container - Detail section element
+     * @param {Array} details - Array of { name, have, need, enough }
+     */
+    function renderMaterialDetails(container, details) {
+        container.innerHTML = '';
+        for (const d of details) {
+            const line = document.createElement('div');
+            line.style.color = d.enough ? '#4ade80' : config.COLOR_WARNING;
+            line.textContent = `${d.name}: ${formatters_js.formatKMB(d.have)} / ${formatters_js.formatKMB(d.need)}`;
+            container.appendChild(line);
+        }
+    }
+
+    /**
+     * Recalculate all visible materials badges using fresh inventory data
+     */
+    function refreshMaterialsBadges() {
+        const containers = document.querySelectorAll('.mwi-task-materials');
+        if (containers.length === 0) return;
+
+        const invMap = buildInventoryMap();
+
+        for (const container of containers) {
+            let materials;
+            try {
+                materials = JSON.parse(container.dataset.materials);
+            } catch {
+                continue;
+            }
+
+            const remaining = parseInt(container.dataset.remaining, 10) || 0;
+            const { craftable, details } = calcMaterialsAvailability(materials, remaining, invMap);
+            const enough = craftable >= remaining;
+
+            // Update summary line
+            const summary = container.querySelector('[data-materials-summary]');
+            if (summary) {
+                const detailSection = container.querySelector('[data-materials-detail]');
+                const expanded = detailSection && detailSection.style.display !== 'none';
+                summary.style.color = enough ? '#4ade80' : config.COLOR_WARNING;
+                summary.textContent = `\u{1F4E6} ${craftable}/${remaining} ${expanded ? '\u25BE' : '\u25B8'}`;
+                summary.dataset.craftable = craftable;
+            }
+
+            // Update detail section if visible
+            const detailSection = container.querySelector('[data-materials-detail]');
+            if (detailSection && detailSection.style.display !== 'none') {
+                renderMaterialDetails(detailSection, details);
+            }
+        }
+    }
+
     const HEX_COLOR_PATTERN = /^#?[0-9a-f]{6}$/i;
 
     /**
@@ -7710,6 +7869,18 @@ ${hideRules}
 
             this.unregisterHandlers.push(() => {
                 dataManager.off('actions_updated', actionsHandler);
+            });
+
+            // Refresh materials badges when inventory changes
+            const materialsHandler = () => {
+                const materialsTimeout = setTimeout(() => refreshMaterialsBadges(), 250);
+                this.timerRegistry.registerTimeout(materialsTimeout);
+            };
+
+            dataManager.on('items_updated', materialsHandler);
+
+            this.unregisterHandlers.push(() => {
+                dataManager.off('items_updated', materialsHandler);
             });
 
             // Refresh combat estimate loadout dropdowns when snapshots arrive
@@ -8536,6 +8707,13 @@ ${hideRules}
             profitContainer.appendChild(profitLine);
 
             profitContainer.appendChild(breakdownSection);
+
+            if (config.getSetting('taskMaterialsIndicator')) {
+                const materialsBadge = buildMaterialsBadge(profitData);
+                if (materialsBadge) {
+                    profitContainer.appendChild(materialsBadge);
+                }
+            }
 
             if (config.getSetting('taskEfficiencyRating')) {
                 const ratingMode = config.getSettingValue('taskEfficiencyRatingMode', RATING_MODE_TOKENS);
