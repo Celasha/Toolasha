@@ -133,7 +133,7 @@ if (isCombatSimulatorPage()) {
     const targetWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
     targetWindow.Toolasha = {
-        version: '2.30.1',
+        version: '2.30.2',
 
         // Feature toggle API (for users to manage settings via console)
         features: {
