@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.30.0
+ * Version: 2.30.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -20356,7 +20356,7 @@ self.onmessage = function (e) {
             }
 
             // Initialize inventory panel display (separate toggle)
-            if (config.getSetting('inventorySummary')) {
+            if (config.isFeatureEnabled('inventorySummary')) {
                 networthInventoryDisplay.initialize();
             }
 
@@ -20470,7 +20470,7 @@ self.onmessage = function (e) {
                     networthHeaderDisplay.update(networthData);
                 }
 
-                if (config.getSetting('inventorySummary')) {
+                if (config.isFeatureEnabled('inventorySummary')) {
                     networthInventoryDisplay.update(networthData);
                 }
 
