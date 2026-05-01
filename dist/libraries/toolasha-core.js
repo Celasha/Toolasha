@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.29.0
+ * Version: 2.30.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -671,6 +671,13 @@
                     type: 'checkbox',
                     default: true,
                     help: 'Displays profit/hour and profit/day for alchemy actions based on success rate and market prices',
+                },
+                alchemy_bestItems: {
+                    id: 'alchemy_bestItems',
+                    label: 'Alchemy panel: Show best items button',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Adds a button to see items ranked by profit or XP for each alchemy type.',
                 },
                 alchemy_transmuteHistory: {
                     id: 'alchemy_transmuteHistory',
