@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.28.0
+ * Version: 2.28.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -9924,7 +9924,7 @@ ${hideRules}
             this.filterBar.style.marginLeft = '8px';
 
             // Check if taskIconsDungeons setting is enabled
-            const isEnabled = config.isFeatureEnabled('taskIconsDungeons');
+            const isEnabled = config.getSetting('taskIconsDungeons');
             this.filterBar.style.display = isEnabled ? 'flex' : 'none';
 
             // Create battle icon (combat icon is in misc_sprite)
@@ -10792,7 +10792,7 @@ ${hideRules}
 
             // Count dungeons if dungeon icons are enabled
             let dungeonCount = 0;
-            if (config.isFeatureEnabled('taskIconsDungeons')) {
+            if (config.getSetting('taskIconsDungeons')) {
                 dungeonCount = this.countDungeonsForMonster(monsterHrid);
             }
 
