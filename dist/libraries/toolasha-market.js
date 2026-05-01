@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.30.2
+ * Version: 2.31.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -14632,6 +14632,94 @@ self.onmessage = function (e) {
     // Auto-initialize (always enabled feature)
     marketplaceShortcuts.initialize();
 
+    /**
+     * MilkyWay Market Link
+     * Adds a small link to view the current marketplace item on milkyway.market.
+     */
+
+
+    const LINK_ID = 'mwi-milkyway-market-link';
+
+    class MilkyWayMarketLink {
+        constructor() {
+            this.isInitialized = false;
+            this.unregisterHandler = null;
+            this.currentItemHrid = null;
+        }
+
+        initialize() {
+            if (this.isInitialized) return;
+            if (!config.getSetting('market_milkywayMarketLink')) return;
+
+            this.isInitialized = true;
+
+            const handler = (data) => {
+                if (!data.marketItemOrderBooks) return;
+                this.currentItemHrid = data.marketItemOrderBooks.itemHrid;
+                this._updateLink();
+            };
+
+            dataManager.on('market_item_order_books_updated', handler);
+            this.unregisterHandler = () => dataManager.off('market_item_order_books_updated', handler);
+        }
+
+        /**
+         * Get current enhancement level from DOM.
+         * @returns {number}
+         */
+        _getEnhancementLevel() {
+            const currentItem = document.querySelector('[class*="MarketplacePanel_currentItem"]');
+            if (!currentItem) return 0;
+            const el = currentItem.querySelector('[class*="Item_enhancementLevel"]');
+            if (!el) return 0;
+            const match = el.textContent.match(/\+(\d+)/);
+            return match ? parseInt(match[1], 10) : 0;
+        }
+
+        _updateLink() {
+            const existing = document.getElementById(LINK_ID);
+            if (existing) existing.remove();
+
+            if (!this.currentItemHrid) return;
+
+            const container = document.querySelector('[class*="MarketplacePanel_marketNavButtonContainer"]');
+            if (!container) return;
+
+            const enhancement = this._getEnhancementLevel();
+            const url = `https://milkyway.market/items${this.currentItemHrid}${enhancement > 0 ? `?enhancement=${enhancement}` : ''}`;
+
+            const link = document.createElement('a');
+            link.id = LINK_ID;
+            link.href = url;
+            link.target = '_blank';
+            link.rel = 'noopener noreferrer';
+            link.textContent = 'MilkyWay Market \u2197';
+            link.style.cssText = `
+            font-size: 10px;
+            color: #888;
+            text-decoration: none;
+            margin-left: 8px;
+            white-space: nowrap;
+        `;
+            link.addEventListener('mouseenter', () => (link.style.opacity = '0.7'));
+            link.addEventListener('mouseleave', () => (link.style.opacity = '1'));
+
+            container.appendChild(link);
+        }
+
+        disable() {
+            if (this.unregisterHandler) {
+                this.unregisterHandler();
+                this.unregisterHandler = null;
+            }
+            document.getElementById(LINK_ID)?.remove();
+            this.currentItemHrid = null;
+            this.isInitialized = false;
+        }
+    }
+
+    const milkywayMarketLink = new MilkyWayMarketLink();
+
     const CONNECTION_STATES = {
         CONNECTED: 'connected',
         DISCONNECTED: 'disconnected',
@@ -25776,6 +25864,7 @@ self.onmessage = function (e) {
         inventoryCategoryTotals,
         customTabsFeature: customTabsFeature$1,
         marketplaceShortcuts,
+        milkywayMarketLink,
     };
 
     console.log('[Toolasha] Market library loaded');

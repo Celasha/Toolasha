@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.30.2
+ * Version: 2.31.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -9679,6 +9679,7 @@
         const toolType = `/equipment_types/${skillName}_tool`;
         const legsType = '/equipment_types/legs';
         const bodyType = '/equipment_types/body';
+        const backType = '/equipment_types/back';
         const charmType = '/equipment_types/charm';
 
         return {
@@ -9687,6 +9688,7 @@
             tool: getProfileEquipment(wearableItemMap, gameData, toolType),
             legs: getProfileEquipment(wearableItemMap, gameData, legsType, skillName),
             body: getProfileEquipment(wearableItemMap, gameData, bodyType, skillName),
+            back: getProfileEquipment(wearableItemMap, gameData, backType, skillName),
             charm: getProfileEquipment(wearableItemMap, gameData, charmType, skillName),
             houseLevel: getProfileHouseLevel(houseRoomMap, actionType),
             tea: [], // Not available from profile
@@ -9706,6 +9708,7 @@
         const toolType = `/equipment_types/${skillName}_tool`;
         const legsType = '/equipment_types/legs';
         const bodyType = '/equipment_types/body';
+        const backType = '/equipment_types/back';
         const charmType = '/equipment_types/charm';
 
         return {
@@ -9714,6 +9717,7 @@
             tool: getBestEquipmentForSkill(inventory, gameData, skillName, toolType),
             legs: getBestEquipmentForSkill(inventory, gameData, skillName, legsType),
             body: getBestEquipmentForSkill(inventory, gameData, skillName, bodyType),
+            back: getBestEquipmentForSkill(inventory, gameData, skillName, backType),
             charm: getBestEquipmentForSkill(inventory, gameData, skillName, charmType),
             houseLevel: getHouseLevel(actionType),
             tea: getActiveTeas(actionType),
@@ -9764,6 +9768,72 @@
 
         // No equipment in this slot (or only combat-only items)
         return { type: mapSlotType(slotType) };
+    }
+
+    /**
+     * Get active seal item HRIDs from personal buffs.
+     * @returns {Array<string>} Array of seal item HRIDs (e.g., '/items/seal_of_gathering')
+     */
+    function getActiveSeals() {
+        const personalBuffMap = dataManager.personalActionTypeBuffsMap || {};
+        const activeBuffTypes = new Set();
+
+        for (const buffArray of Object.values(personalBuffMap)) {
+            if (!Array.isArray(buffArray)) continue;
+            for (const buff of buffArray) {
+                if (buff?.typeHrid && SCROLL_BUFF_ITEMS[buff.typeHrid]) {
+                    activeBuffTypes.add(buff.typeHrid);
+                }
+            }
+        }
+
+        return Array.from(activeBuffTypes).map((buffType) => `/items/${SCROLL_BUFF_ITEMS[buffType]}`);
+    }
+
+    /**
+     * Build achievement buff map for milkonomy export.
+     * Checks if all achievements in each tier are completed.
+     * @param {Object} characterData - Character data from init_character_data
+     * @param {Object} gameData - Game data (initClientData)
+     * @returns {Object} Achievement buff map with enabled flags per tier
+     */
+    function getAchievementBuffMap(characterData, gameData) {
+        const tiers = ['beginner', 'novice', 'adept', 'veteran', 'champion'];
+        const achievementBuffMap = {};
+
+        for (const tier of tiers) {
+            achievementBuffMap[tier] = { type: tier, enabled: false };
+        }
+
+        const achievements = characterData?.characterAchievements;
+        const detailMap = gameData?.achievementDetailMap;
+        if (!achievements || !detailMap) return achievementBuffMap;
+
+        // Count completed and total per tier
+        const tierCompleted = {};
+        const tierTotal = {};
+
+        for (const achData of Object.values(detailMap)) {
+            if (!achData.tierHrid) continue;
+            const tierName = achData.tierHrid.replace('/achievement_tiers/', '');
+            tierTotal[tierName] = (tierTotal[tierName] || 0) + 1;
+        }
+
+        for (const achievement of achievements) {
+            if (!achievement.isCompleted || !achievement.achievementHrid) continue;
+            const achDetails = detailMap[achievement.achievementHrid];
+            if (!achDetails?.tierHrid) continue;
+            const tierName = achDetails.tierHrid.replace('/achievement_tiers/', '');
+            tierCompleted[tierName] = (tierCompleted[tierName] || 0) + 1;
+        }
+
+        for (const tier of tiers) {
+            const completed = tierCompleted[tier] || 0;
+            const total = tierTotal[tier] || 0;
+            achievementBuffMap[tier].enabled = completed > 0 && completed === total;
+        }
+
+        return achievementBuffMap;
     }
 
     /**
@@ -9869,9 +9939,11 @@
                 return {
                     name,
                     color,
+                    seals: getActiveSeals(),
                     actionConfigMap,
                     specialEquimentMap: specialEquipmentMap,
                     communityBuffMap,
+                    achievementBuffMap: getAchievementBuffMap(characterData, gameData),
                 };
             }
 
@@ -9925,9 +9997,11 @@
             return {
                 name,
                 color,
+                seals: getActiveSeals(),
                 actionConfigMap,
                 specialEquimentMap: specialEquipmentMap,
                 communityBuffMap,
+                achievementBuffMap: getAchievementBuffMap(characterData, gameData),
             };
         } catch (error) {
             console.error('[Milkonomy Export] Export construction failed:', error);

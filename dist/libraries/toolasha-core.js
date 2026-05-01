@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.30.2
+ * Version: 2.31.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -720,6 +720,13 @@
                     type: 'checkbox',
                     default: true,
                     help: 'Adds a budget input below the Missing Mats button. Enter a gold budget (e.g. 50m) to calculate how many units you can produce by buying missing tradeable materials at ask price.',
+                },
+                actionPanel_bestCraftingPlan: {
+                    id: 'actionPanel_bestCraftingPlan',
+                    label: 'Action panel: Show best crafting plan',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Shows the cheapest way to obtain a crafted item by comparing buy vs craft at each material tier.',
                 },
                 lootLogStats: {
                     id: 'lootLogStats',
@@ -1840,6 +1847,13 @@
                     type: 'checkbox',
                     default: true,
                     help: 'Displays total quantity at best price below Buy/Sell buttons. Estimated values (20+ orders at same price) are shown in a different color.',
+                },
+                market_milkywayMarketLink: {
+                    id: 'market_milkywayMarketLink',
+                    label: 'Market: Show MilkyWay Market link',
+                    type: 'checkbox',
+                    default: false,
+                    help: 'Adds a small link to view the current item on milkyway.market',
                 },
                 itemDictionary_transmuteRates: {
                     id: 'itemDictionary_transmuteRates',

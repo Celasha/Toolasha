@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.30.2
+ * Version: 2.31.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1673,7 +1673,7 @@
     /**
      * Action types for production skills (5 skills)
      */
-    const PRODUCTION_TYPES$5 = [
+    const PRODUCTION_TYPES$6 = [
         '/action_types/brewing',
         '/action_types/cooking',
         '/action_types/cheesesmithing',
@@ -1695,7 +1695,7 @@
         }
 
         // Only process production actions with outputs
-        if (!PRODUCTION_TYPES$5.includes(actionDetail.type)) {
+        if (!PRODUCTION_TYPES$6.includes(actionDetail.type)) {
             return null;
         }
 
@@ -5486,7 +5486,7 @@
     /**
      * Action types for production skills (5 skills)
      */
-    const PRODUCTION_TYPES$4 = [
+    const PRODUCTION_TYPES$5 = [
         '/action_types/brewing',
         '/action_types/cooking',
         '/action_types/cheesesmithing',
@@ -5793,7 +5793,7 @@
         }
 
         // Check if this is a production action
-        if (PRODUCTION_TYPES$4.includes(actionDetail.type)) {
+        if (PRODUCTION_TYPES$5.includes(actionDetail.type)) {
             await displayProductionProfit(panel, actionHrid, SELECTORS.DROP_TABLE);
         }
     }
@@ -10402,7 +10402,7 @@
      * Action type constants for classification
      */
     const GATHERING_TYPES$2 = ['/action_types/foraging', '/action_types/woodcutting', '/action_types/milking'];
-    const PRODUCTION_TYPES$3 = [
+    const PRODUCTION_TYPES$4 = [
         '/action_types/brewing',
         '/action_types/cooking',
         '/action_types/cheesesmithing',
@@ -10791,7 +10791,7 @@
                     const profitData = await calculateGatheringProfit(data.actionHrid);
                     profitPerHour = profitData?.profitPerHour || null;
                     hasMissingPrices = profitData?.hasMissingPrices || false;
-                } else if (PRODUCTION_TYPES$3.includes(actionDetails.type)) {
+                } else if (PRODUCTION_TYPES$4.includes(actionDetails.type)) {
                     const profitData = await calculateProductionProfit(data.actionHrid);
                     profitPerHour = profitData?.profitPerHour || null;
                     hasMissingPrices = profitData?.hasMissingPrices || false;
@@ -12476,7 +12476,7 @@
     /**
      * Production action types (where button should appear)
      */
-    const PRODUCTION_TYPES$2 = [
+    const PRODUCTION_TYPES$3 = [
         '/action_types/brewing',
         '/action_types/cooking',
         '/action_types/cheesesmithing',
@@ -12599,7 +12599,7 @@
             return;
         }
 
-        const actionHrid = getActionHridFromPanel$1(panel);
+        const actionHrid = getActionHridFromPanel$2(panel);
         if (!actionHrid) {
             return;
         }
@@ -12611,7 +12611,7 @@
         }
 
         // Verify this is a production action
-        if (!PRODUCTION_TYPES$2.includes(actionDetail.type)) {
+        if (!PRODUCTION_TYPES$3.includes(actionDetail.type)) {
             return;
         }
 
@@ -12658,7 +12658,7 @@
      * @param {HTMLElement} panel - Action panel element
      * @returns {string|null} Action HRID or null
      */
-    function getActionHridFromPanel$1(panel) {
+    function getActionHridFromPanel$2(panel) {
         // Get action name from panel
         const actionNameElement = panel.querySelector('[class*="SkillActionDetail_name"]');
         if (!actionNameElement) {
@@ -13392,7 +13392,7 @@
      */
 
 
-    const PRODUCTION_TYPES$1 = [
+    const PRODUCTION_TYPES$2 = [
         '/action_types/brewing',
         '/action_types/cooking',
         '/action_types/cheesesmithing',
@@ -13400,7 +13400,7 @@
         '/action_types/tailoring',
     ];
 
-    const UI_ID = 'mwi-budget-calculator';
+    const UI_ID$1 = 'mwi-budget-calculator';
 
     /**
      * Parse a KMB shorthand string to a number.
@@ -13421,7 +13421,7 @@
      * @param {HTMLElement} panel
      * @returns {string|null}
      */
-    function getActionHridFromPanel(panel) {
+    function getActionHridFromPanel$1(panel) {
         const nameEl = panel.querySelector('[class*="SkillActionDetail_name"]');
         if (!nameEl) return null;
         const actionName = Array.from(nameEl.childNodes)
@@ -13451,7 +13451,7 @@
         const gameData = dataManager.getInitClientData();
         const actionDetail = gameData?.actionDetailMap[actionHrid];
         if (!actionDetail) return null;
-        if (!PRODUCTION_TYPES$1.includes(actionDetail.type)) return null;
+        if (!PRODUCTION_TYPES$2.includes(actionDetail.type)) return null;
         if (!actionDetail.inputItems?.length) return null;
 
         // Verify at least one tradeable material has a market price
@@ -13678,12 +13678,12 @@
             document.querySelectorAll('[class*="SkillActionDetail_skillActionDetail"]').forEach((panel) => {
                 if (this.processedPanels.has(panel)) return;
 
-                const actionHrid = getActionHridFromPanel(panel);
+                const actionHrid = getActionHridFromPanel$1(panel);
                 if (!actionHrid) return;
 
                 const gameData = dataManager.getInitClientData();
                 const actionDetail = gameData?.actionDetailMap[actionHrid];
-                if (!actionDetail || !PRODUCTION_TYPES$1.includes(actionDetail.type)) return;
+                if (!actionDetail || !PRODUCTION_TYPES$2.includes(actionDetail.type)) return;
                 if (!actionDetail.inputItems?.length) return;
 
                 this.processedPanels.add(panel);
@@ -13700,7 +13700,7 @@
             const ui = this._createUI(panel);
 
             const position = () => {
-                const existing = panel.querySelector(`#${UI_ID}`);
+                const existing = panel.querySelector(`#${UI_ID$1}`);
                 const missingMatsBtn = panel.querySelector('#mwi-missing-mats-button');
                 const itemRequirements = panel.querySelector('[class*="SkillActionDetail_itemRequirements"]');
                 const anchor = missingMatsBtn || itemRequirements;
@@ -13721,7 +13721,7 @@
             // Re-position whenever the panel's children change (e.g. missing mats button recreated)
             const obs = new MutationObserver((mutations) => {
                 const relevant = mutations.some((m) =>
-                    [...m.addedNodes, ...m.removedNodes].some((n) => n.id === 'mwi-missing-mats-button' || n.id === UI_ID)
+                    [...m.addedNodes, ...m.removedNodes].some((n) => n.id === 'mwi-missing-mats-button' || n.id === UI_ID$1)
                 );
                 if (relevant) position();
             });
@@ -13736,7 +13736,7 @@
          */
         _createUI(panel) {
             const wrapper = document.createElement('div');
-            wrapper.id = UI_ID;
+            wrapper.id = UI_ID$1;
             wrapper.style.cssText = 'display:flex; align-items:center; gap:6px; margin: 4px 0 8px 0; padding: 0 0;';
 
             const input = document.createElement('input');
@@ -13798,7 +13798,7 @@
                 }
                 input.style.borderColor = '#555';
 
-                const actionHrid = getActionHridFromPanel(panel);
+                const actionHrid = getActionHridFromPanel$1(panel);
                 if (!actionHrid) return;
 
                 const result = findMaxUnits(actionHrid, budget);
@@ -13846,7 +13846,7 @@
             this.unregisterHandlers = [];
             this.timerRegistry.clearAll();
 
-            document.querySelectorAll(`#${UI_ID}`).forEach((el) => el.remove());
+            document.querySelectorAll(`#${UI_ID$1}`).forEach((el) => el.remove());
             document.getElementById('mwi-budget-modal-overlay')?.remove();
 
             // Disconnect all panel observers
@@ -13858,6 +13858,624 @@
     }
 
     const budgetCalculator = new BudgetCalculator();
+
+    /**
+     * Crafting Plan Calculator
+     * Computes the optimal buy-vs-craft plan for a target item by recursively
+     * comparing market price against crafting cost at each material tier.
+     */
+
+
+    const MAX_DEPTH = 15;
+
+    /**
+     * Find the production action that creates a given item.
+     * @param {string} itemHrid
+     * @returns {{ actionHrid: string, action: Object, outputCount: number } | null}
+     */
+    function findProductionAction(itemHrid) {
+        const gameData = dataManager.getInitClientData();
+        if (!gameData?.actionDetailMap) return null;
+
+        for (const [actionHrid, action] of Object.entries(gameData.actionDetailMap)) {
+            if (!action.outputItems) continue;
+            for (const output of action.outputItems) {
+                if (output.itemHrid === itemHrid) {
+                    return { actionHrid, action, outputCount: output.count || 1 };
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Get artisan tea material reduction bonus for an action type.
+     * @param {string} actionType - e.g. '/action_types/brewing'
+     * @returns {number} Reduction as decimal (e.g. 0.112 for 11.2%)
+     */
+    function getArtisanBonus(actionType) {
+        try {
+            const gameData = dataManager.getInitClientData();
+            const equipment = dataManager.getEquipment();
+            const itemDetailMap = gameData?.itemDetailMap || {};
+            const drinkConcentration = teaParser_js.getDrinkConcentration(equipment, itemDetailMap);
+            const activeDrinks = dataManager.getActionDrinkSlots(actionType);
+            return teaParser_js.parseArtisanBonus(activeDrinks, itemDetailMap, drinkConcentration);
+        } catch {
+            return 0;
+        }
+    }
+
+    /**
+     * Compute the optimal crafting plan for an item.
+     * At each node, decides whether buying from market or crafting is cheaper.
+     *
+     * @param {string} itemHrid - Target item
+     * @param {number} quantity - How many needed
+     * @param {string} [mode='ask'] - Pricing mode for market lookups
+     * @param {Set} [visited] - Circular dependency guard
+     * @param {Map} [memo] - Memoization cache (unit cost per itemHrid)
+     * @param {number} [depth=0] - Current recursion depth
+     * @returns {CraftingPlanNode}
+     */
+    function computeBestCraftingPlan(
+        itemHrid,
+        quantity = 1,
+        mode = 'ask',
+        visited = new Set(),
+        memo = new Map(),
+        depth = 0
+    ) {
+        const itemDetails = dataManager.getItemDetails(itemHrid);
+        const itemName = itemDetails?.name || itemHrid.split('/').pop();
+        const isTradable = itemDetails?.isTradable ?? false;
+
+        // Get market buy price
+        let buyPrice = null;
+        if (isTradable) {
+            const marketPrice = marketData_js.getItemPrice(itemHrid, { mode, context: 'profit', side: 'buy' });
+            if (marketPrice !== null && marketPrice > 0) {
+                buyPrice = marketPrice;
+            }
+        }
+
+        // Coins always cost 1 each
+        if (itemHrid === '/items/coin') {
+            return {
+                itemHrid,
+                itemName: 'Coin',
+                quantity,
+                strategy: 'buy',
+                unitCost: 1,
+                totalCost: quantity,
+                buyPrice: 1,
+                craftCost: null,
+                actionHrid: null,
+                actionsNeeded: 0,
+                children: [],
+            };
+        }
+
+        // Check memo for previously computed unit cost
+        if (memo.has(itemHrid)) {
+            const cachedUnitCost = memo.get(itemHrid);
+            return {
+                itemHrid,
+                itemName,
+                quantity,
+                strategy: cachedUnitCost.strategy,
+                unitCost: cachedUnitCost.unitCost,
+                totalCost: cachedUnitCost.unitCost * quantity,
+                buyPrice,
+                craftCost: cachedUnitCost.craftCost,
+                actionHrid: cachedUnitCost.actionHrid,
+                actionsNeeded:
+                    cachedUnitCost.strategy === 'craft' ? Math.ceil(quantity / (cachedUnitCost.outputCount || 1)) : 0,
+                children:
+                    cachedUnitCost.strategy === 'craft'
+                        ? cachedUnitCost.childrenTemplate.map((c) =>
+                              computeBestCraftingPlan(c.itemHrid, c.qtyPerUnit * quantity, mode, visited, memo, depth + 1)
+                          )
+                        : [],
+            };
+        }
+
+        // Circular dependency or depth limit — must buy
+        if (visited.has(itemHrid) || depth >= MAX_DEPTH) {
+            return {
+                itemHrid,
+                itemName,
+                quantity,
+                strategy: 'buy',
+                unitCost: buyPrice ?? Infinity,
+                totalCost: (buyPrice ?? Infinity) * quantity,
+                buyPrice,
+                craftCost: null,
+                actionHrid: null,
+                actionsNeeded: 0,
+                children: [],
+            };
+        }
+
+        // Find production action
+        const production = findProductionAction(itemHrid);
+        if (!production) {
+            // No recipe — must buy
+            const unitCost = buyPrice ?? 0;
+            memo.set(itemHrid, {
+                strategy: 'buy',
+                unitCost,
+                craftCost: null,
+                actionHrid: null,
+                outputCount: 1,
+                childrenTemplate: [],
+            });
+            return {
+                itemHrid,
+                itemName,
+                quantity,
+                strategy: 'buy',
+                unitCost,
+                totalCost: unitCost * quantity,
+                buyPrice,
+                craftCost: null,
+                actionHrid: null,
+                actionsNeeded: 0,
+                children: [],
+            };
+        }
+
+        // Recurse into crafting
+        visited.add(itemHrid);
+        const { actionHrid, action, outputCount } = production;
+        const artisanBonus = getArtisanBonus(action.type);
+        const actionsForOne = 1 / outputCount; // actions per 1 output item
+
+        let craftCostPerUnit = 0;
+        const childrenTemplate = []; // { itemHrid, qtyPerUnit } for memo reconstruction
+
+        // Input items (affected by artisan bonus)
+        if (action.inputItems) {
+            for (const input of action.inputItems) {
+                const inputCountPerAction = input.count || 1;
+                const reducedCount = inputCountPerAction * (1 - artisanBonus);
+                const qtyPerUnit = reducedCount * actionsForOne;
+
+                const inputQty = Math.ceil(reducedCount * Math.ceil(quantity / outputCount));
+                const childPlan = computeBestCraftingPlan(input.itemHrid, inputQty, mode, visited, memo, depth + 1);
+
+                craftCostPerUnit += childPlan.unitCost * qtyPerUnit;
+                childrenTemplate.push({ itemHrid: input.itemHrid, qtyPerUnit });
+            }
+        }
+
+        // Upgrade item (NOT affected by artisan bonus)
+        if (action.upgradeItemHrid) {
+            const qtyPerUnit = actionsForOne; // 1 upgrade per action
+            const upgradeQty = Math.ceil(quantity / outputCount);
+            const upgradePlan = computeBestCraftingPlan(action.upgradeItemHrid, upgradeQty, mode, visited, memo, depth + 1);
+
+            craftCostPerUnit += upgradePlan.unitCost * qtyPerUnit;
+            childrenTemplate.push({ itemHrid: action.upgradeItemHrid, qtyPerUnit });
+        }
+
+        visited.delete(itemHrid);
+
+        // Buy vs craft decision
+        const shouldBuy = buyPrice !== null && buyPrice <= craftCostPerUnit;
+        const strategy = shouldBuy ? 'buy' : 'craft';
+        const unitCost = shouldBuy ? buyPrice : craftCostPerUnit;
+
+        // Cache the decision
+        memo.set(itemHrid, {
+            strategy,
+            unitCost,
+            craftCost: craftCostPerUnit,
+            actionHrid: strategy === 'craft' ? actionHrid : null,
+            outputCount,
+            childrenTemplate: strategy === 'craft' ? childrenTemplate : [],
+        });
+
+        // Build children for the actual quantities
+        let children = [];
+        if (!shouldBuy) {
+            const actionsNeeded = Math.ceil(quantity / outputCount);
+            children = [];
+            if (action.inputItems) {
+                for (const input of action.inputItems) {
+                    const inputCountPerAction = input.count || 1;
+                    const reducedCount = inputCountPerAction * (1 - artisanBonus);
+                    const inputQty = Math.ceil(reducedCount * actionsNeeded);
+                    children.push(computeBestCraftingPlan(input.itemHrid, inputQty, mode, visited, memo, depth + 1));
+                }
+            }
+            if (action.upgradeItemHrid) {
+                children.push(
+                    computeBestCraftingPlan(action.upgradeItemHrid, actionsNeeded, mode, visited, memo, depth + 1)
+                );
+            }
+        }
+
+        return {
+            itemHrid,
+            itemName,
+            quantity,
+            strategy,
+            unitCost,
+            totalCost: unitCost * quantity,
+            buyPrice,
+            craftCost: craftCostPerUnit,
+            actionHrid: strategy === 'craft' ? actionHrid : null,
+            actionsNeeded: strategy === 'craft' ? Math.ceil(quantity / outputCount) : 0,
+            children,
+        };
+    }
+
+    /**
+     * Crafting Plan Display
+     * Renders the buy-vs-craft decision tree in action panels.
+     * Shows a summary comparison plus a shopping list of materials to buy.
+     */
+
+
+    const UI_ID = 'mwi-crafting-plan';
+
+    const PRODUCTION_TYPES$1 = [
+        '/action_types/brewing',
+        '/action_types/cooking',
+        '/action_types/cheesesmithing',
+        '/action_types/crafting',
+        '/action_types/tailoring',
+    ];
+
+    /**
+     * Get action HRID from panel element.
+     * @param {HTMLElement} panel
+     * @returns {string|null}
+     */
+    function getActionHridFromPanel(panel) {
+        const nameEl = panel.querySelector('[class*="SkillActionDetail_name"]');
+        if (!nameEl) return null;
+        const actionName = Array.from(nameEl.childNodes)
+            .filter((n) => n.nodeType === Node.TEXT_NODE)
+            .map((n) => n.textContent)
+            .join('')
+            .trim();
+        return getActionHridFromName(actionName);
+    }
+
+    /**
+     * Get the primary output item for an action.
+     * @param {Object} actionDetail
+     * @returns {{ itemHrid: string, count: number }|null}
+     */
+    function getPrimaryOutput(actionDetail) {
+        if (!actionDetail?.outputItems?.length) return null;
+        return actionDetail.outputItems[0];
+    }
+
+    /**
+     * Get the pricing mode from user settings.
+     * @returns {string}
+     */
+    function getPricingMode() {
+        return config.getSetting('profitCalc_pricingMode') || 'ask';
+    }
+
+    /**
+     * Collect all leaf "buy" items from the plan tree into a flat shopping list.
+     * Aggregates quantities for the same item across branches.
+     * @param {Object} node - CraftingPlanNode
+     * @param {Map} buyItems - Map of itemHrid → { itemName, quantity, unitCost, totalCost }
+     */
+    function collectBuyItems(node, buyItems) {
+        if (node.strategy === 'buy') {
+            const existing = buyItems.get(node.itemHrid);
+            if (existing) {
+                existing.quantity += node.quantity;
+                existing.totalCost += node.totalCost;
+            } else {
+                buyItems.set(node.itemHrid, {
+                    itemName: node.itemName,
+                    quantity: node.quantity,
+                    unitCost: node.unitCost,
+                    totalCost: node.totalCost,
+                });
+            }
+            return;
+        }
+
+        for (const child of node.children) {
+            collectBuyItems(child, buyItems);
+        }
+    }
+
+    /**
+     * Collect all "craft" steps from the plan tree.
+     * @param {Object} node - CraftingPlanNode
+     * @param {Array} craftSteps - Array to collect craft steps into
+     */
+    function collectCraftSteps(node, craftSteps) {
+        // Depth-first: collect children first so deepest crafts appear first
+        for (const child of node.children) {
+            collectCraftSteps(child, craftSteps);
+        }
+
+        if (node.strategy === 'craft' && node.actionHrid) {
+            craftSteps.push({
+                itemName: node.itemName,
+                quantity: Math.ceil(node.quantity),
+                actionsNeeded: node.actionsNeeded,
+            });
+        }
+    }
+
+    /**
+     * Create a styled row with left label and right value.
+     * @param {string} leftText
+     * @param {string} rightText
+     * @param {Object} [options]
+     * @returns {HTMLElement}
+     */
+    function createRow(leftText, rightText, options = {}) {
+        const row = document.createElement('div');
+        row.style.cssText = `
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 2px 0;
+    `;
+
+        const left = document.createElement('span');
+        left.style.cssText = 'overflow: hidden; text-overflow: ellipsis; white-space: nowrap;';
+        left.textContent = leftText;
+        if (options.leftColor) left.style.color = options.leftColor;
+
+        const right = document.createElement('span');
+        right.style.cssText = 'flex-shrink: 0; white-space: nowrap;';
+        right.textContent = rightText;
+        if (options.rightColor) right.style.color = options.rightColor;
+
+        row.appendChild(left);
+        row.appendChild(right);
+        return row;
+    }
+
+    /**
+     * Build the full crafting plan UI for an action.
+     * @param {string} actionHrid
+     * @returns {HTMLElement|null}
+     */
+    function buildPlanUI(actionHrid) {
+        const gameData = dataManager.getInitClientData();
+        const actionDetail = gameData?.actionDetailMap?.[actionHrid];
+        if (!actionDetail) return null;
+
+        // Only production actions
+        if (!PRODUCTION_TYPES$1.includes(actionDetail.type)) return null;
+
+        const output = getPrimaryOutput(actionDetail);
+        if (!output) return null;
+
+        const mode = getPricingMode();
+        let plan;
+        try {
+            plan = computeBestCraftingPlan(output.itemHrid, 1, mode);
+        } catch (e) {
+            console.error('[CraftingPlan] computeBestCraftingPlan error:', e);
+            return null;
+        }
+
+        // Don't show if item has no production recipe (true raw material)
+        if (plan.craftCost === null) return null;
+
+        // Build content
+        const content = document.createElement('div');
+
+        // === Summary comparison ===
+        const unitCostText = plan.unitCost === Infinity ? '?' : formatters_js.formatWithSeparator(Math.round(plan.unitCost));
+        const buyText = plan.buyPrice !== null ? formatters_js.formatWithSeparator(Math.round(plan.buyPrice)) : 'N/A';
+        const craftText = plan.craftCost !== null ? formatters_js.formatWithSeparator(Math.round(plan.craftCost)) : 'N/A';
+        const strategyText = plan.strategy === 'buy' ? 'Buy from market' : 'Craft from materials';
+
+        const summary = document.createElement('div');
+        summary.style.cssText = 'margin-bottom: 6px;';
+        summary.innerHTML = `
+        <div style="display: flex; justify-content: space-between; color: var(--text-color-primary, #fff);">
+            <span>Optimal: <strong>${strategyText}</strong></span>
+            <span>${unitCostText}/ea</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; color: var(--text-color-secondary, #888); font-size: 0.9em;">
+            <span>Market buy: ${buyText}</span>
+            <span>Craft cost: ${craftText}</span>
+        </div>
+    `;
+        content.appendChild(summary);
+
+        // Only show breakdown if crafting is the optimal strategy
+        if (plan.strategy !== 'craft' || plan.children.length === 0) {
+            const costText = plan.unitCost === Infinity ? '?' : `${formatters_js.formatKMB(Math.round(plan.unitCost))}/ea`;
+            const section = uiComponents_js.createCollapsibleSection('', 'Best Crafting Plan', costText, content, false, 0);
+            section.id = UI_ID;
+            section.className = 'mwi-crafting-plan-section';
+            return section;
+        }
+
+        // === Shopping List (what to buy) ===
+        const buyItems = new Map();
+        collectBuyItems(plan, buyItems);
+
+        if (buyItems.size > 0) {
+            const divider = document.createElement('div');
+            divider.style.cssText = 'border-top: 1px solid var(--border-color, #333); margin: 6px 0;';
+            content.appendChild(divider);
+
+            const shoppingHeader = document.createElement('div');
+            shoppingHeader.style.cssText = `
+            font-weight: 500;
+            color: var(--text-color-primary, #fff);
+            margin-bottom: 4px;
+        `;
+            shoppingHeader.textContent = 'Shopping List';
+            content.appendChild(shoppingHeader);
+
+            // Sort by total cost descending
+            const sortedItems = [...buyItems.values()].sort((a, b) => b.totalCost - a.totalCost);
+
+            for (const item of sortedItems) {
+                const qty = Math.ceil(item.quantity);
+                const cost = formatters_js.formatKMB(Math.round(item.totalCost));
+                const unit = formatters_js.formatWithSeparator(Math.round(item.unitCost));
+                content.appendChild(createRow(`${item.itemName} x${formatters_js.formatWithSeparator(qty)}`, `${cost} (${unit}/ea)`));
+            }
+
+            // Total buy cost
+            const totalBuyCost = sortedItems.reduce((sum, item) => sum + item.totalCost, 0);
+            const totalRow = createRow('Total material cost', formatters_js.formatWithSeparator(Math.round(totalBuyCost)), {
+                leftColor: 'var(--text-color-primary, #fff)',
+            });
+            totalRow.style.borderTop = '1px solid var(--border-color, #333)';
+            totalRow.style.marginTop = '4px';
+            totalRow.style.paddingTop = '4px';
+            content.appendChild(totalRow);
+        }
+
+        // === Crafting Steps (what to craft, in order) ===
+        const craftSteps = [];
+        collectCraftSteps(plan, craftSteps);
+
+        if (craftSteps.length > 0) {
+            const divider2 = document.createElement('div');
+            divider2.style.cssText = 'border-top: 1px solid var(--border-color, #333); margin: 6px 0;';
+            content.appendChild(divider2);
+
+            const stepsHeader = document.createElement('div');
+            stepsHeader.style.cssText = `
+            font-weight: 500;
+            color: var(--text-color-primary, #fff);
+            margin-bottom: 4px;
+        `;
+            stepsHeader.textContent = 'Crafting Steps';
+            content.appendChild(stepsHeader);
+
+            for (let i = 0; i < craftSteps.length; i++) {
+                const step = craftSteps[i];
+                const qty = formatters_js.formatWithSeparator(step.quantity);
+                content.appendChild(createRow(`${i + 1}. ${step.itemName}`, `x${qty}`));
+            }
+        }
+
+        const costText = plan.unitCost === Infinity ? '?' : `${formatters_js.formatKMB(Math.round(plan.unitCost))}/ea`;
+        const section = uiComponents_js.createCollapsibleSection('', 'Best Crafting Plan', costText, content, false, 0);
+        section.id = UI_ID;
+        section.className = 'mwi-crafting-plan-section';
+
+        return section;
+    }
+
+    class CraftingPlanDisplay {
+        constructor() {
+            this.isInitialized = false;
+            this.unregisterHandlers = [];
+            this.processedPanels = new WeakSet();
+            this.panelObservers = new WeakMap();
+        }
+
+        initialize() {
+            if (this.isInitialized) return;
+            if (!config.getSetting('actionPanel_bestCraftingPlan')) return;
+
+            this.isInitialized = true;
+
+            const unregister = domObserver.onClass('CraftingPlan', 'SkillActionDetail_skillActionDetail', () =>
+                this._processActionPanels()
+            );
+            this.unregisterHandlers.push(unregister);
+        }
+
+        _processActionPanels() {
+            document.querySelectorAll('[class*="SkillActionDetail_skillActionDetail"]').forEach((panel) => {
+                if (this.processedPanels.has(panel)) return;
+
+                const actionHrid = getActionHridFromPanel(panel);
+                if (!actionHrid) return;
+
+                this.processedPanels.add(panel);
+                this._attachToPanel(panel, actionHrid);
+            });
+        }
+
+        _attachToPanel(panel, actionHrid) {
+            const ui = buildPlanUI(actionHrid);
+            if (!ui) return;
+
+            const position = () => {
+                const existing = panel.querySelector(`#${UI_ID}`);
+                // Insert before Profitability section
+                const profitSection = panel.querySelector('[data-mwi-profit-display]');
+
+                if (profitSection) {
+                    if (existing) {
+                        if (existing.nextElementSibling !== profitSection) {
+                            profitSection.parentNode.insertBefore(existing, profitSection);
+                        }
+                    } else {
+                        profitSection.parentNode.insertBefore(ui, profitSection);
+                    }
+                    return;
+                }
+
+                // Fallback: append to panel
+                if (!existing) panel.appendChild(ui);
+            };
+
+            position();
+
+            // Watch for profit section or crafting plan being added/removed
+            const observeTarget = ui.parentNode || panel;
+            const obs = new MutationObserver((mutations) => {
+                const relevant = mutations.some((m) =>
+                    [...m.addedNodes, ...m.removedNodes].some(
+                        (n) => n.id === UI_ID || (n.getAttribute && n.getAttribute('data-mwi-profit-display'))
+                    )
+                );
+                if (relevant) position();
+            });
+            obs.observe(observeTarget, { childList: true, subtree: true });
+            this.panelObservers.set(panel, obs);
+        }
+
+        disable() {
+            this.unregisterHandlers.forEach((fn) => fn());
+            this.unregisterHandlers = [];
+
+            document.querySelectorAll(`#${UI_ID}`).forEach((el) => el.remove());
+
+            // Disconnect panel observers
+            this.panelObservers = new WeakMap();
+            this.processedPanels = new WeakSet();
+            this.isInitialized = false;
+        }
+    }
+
+    const craftingPlanDisplay = new CraftingPlanDisplay();
+
+    /**
+     * Crafting Plan Feature
+     * Shows the cheapest way to obtain a crafted item by comparing
+     * buy vs craft at each material tier.
+     */
+
+
+    var craftingPlan = {
+        name: 'Crafting Plan',
+        initialize: () => {
+            craftingPlanDisplay.initialize();
+        },
+        disable: () => {
+            craftingPlanDisplay.disable();
+        },
+    };
 
     /**
      * Alchemy Profit Calculator Module
@@ -20475,6 +21093,7 @@
         requiredMaterials,
         missingMaterialsButton,
         budgetCalculator,
+        craftingPlan,
         alchemyProfitDisplay,
         alchemyBestItems,
         teaRecommendation,

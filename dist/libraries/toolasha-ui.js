@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.30.2
+ * Version: 2.31.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1950,19 +1950,19 @@
             { from: 80, to: 99, checked: true },
             { from: 100, to: 799, checked: true },
             { from: 800, to: 999, checked: true },
-            { from: 1000, to: 7999, checked: false },
-            { from: 8000, to: 9999, checked: false },
-            { label: '10k-100k', from: 10000, to: 99999, checked: false },
-            { label: '100k+', from: 100000, to: Infinity, checked: false },
+            { from: 1000, to: 7999, checked: true },
+            { from: 8000, to: 9999, checked: true },
+            { label: '10k-100k', from: 10000, to: 99999, checked: true },
+            { label: '100k+', from: 100000, to: Infinity, checked: true },
             { label: 'Not dungeon', className: 'nod', checked: true, fn: matchNoDungeon },
-            { dungeon: 'd1', checked: false },
-            { dungeon: 'd2', checked: false },
-            { dungeon: 'd3', checked: false },
-            { dungeon: 'd4', checked: false },
+            { dungeon: 'd1', checked: true },
+            { dungeon: 'd2', checked: true },
+            { dungeon: 'd3', checked: true },
+            { dungeon: 'd4', checked: true },
             {
                 label: 'Skilling Outfits',
                 className: 'skilling-outfit',
-                checked: false,
+                checked: true,
                 fn: (itemId) => SKILLING_OUTFITS.has(itemId),
             },
             {
