@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.30.1
+ * Version: 2.30.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2509,19 +2509,16 @@
             // Capture hook instance for closure
             const hookInstance = this;
 
-            // Hook MessageEvent.prototype.data (same as MWI Tools)
-            const dataProperty = Object.getOwnPropertyDescriptor(MessageEvent.prototype, 'data');
+            // Hook MessageEvent.prototype.data on the PAGE's prototype (via unsafeWindow)
+            // Using the sandbox's MessageEvent fails when Tampermonkey isolates prototypes
+            const pageMessageEvent = typeof unsafeWindow !== 'undefined' ? unsafeWindow.MessageEvent : MessageEvent;
+            const dataProperty = Object.getOwnPropertyDescriptor(pageMessageEvent.prototype, 'data');
             const originalGet = dataProperty.get;
 
             dataProperty.get = function hookedGet() {
                 const socket = this.currentTarget;
 
-                // Only hook WebSocket messages
-                if (!(socket instanceof WebSocket)) {
-                    return originalGet.call(this);
-                }
-
-                // Only hook MWI game server
+                // Only hook MWI game server (URL check handles non-WebSocket events safely)
                 if (!hookInstance.isGameSocket(socket)) {
                     return originalGet.call(this);
                 }
@@ -2540,7 +2537,7 @@
                 return message;
             };
 
-            Object.defineProperty(MessageEvent.prototype, 'data', dataProperty);
+            Object.defineProperty(pageMessageEvent.prototype, 'data', dataProperty);
 
             this.isHooked = true;
         }
