@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.31.1
+ * Version: 2.31.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2537,6 +2537,7 @@
             this.isSocketWrapped = false;
             this.originalWebSocket = null;
             this.currentWebSocket = null;
+            this.hasGMStorage = typeof GM_setValue !== 'undefined' && typeof GM_getValue !== 'undefined';
             this.clientDataRetryTimeout = null;
         }
 
@@ -2547,6 +2548,7 @@
          * @param {string} value - Value to save (JSON string)
          */
         async saveToStorage(key, value) {
+            if (!this.hasGMStorage) return;
             // Wrap in setTimeout to make async and prevent main thread blocking
             setTimeout(() => {
                 try {
@@ -2564,6 +2566,7 @@
          * @returns {string|null} Stored value or default
          */
         async loadFromStorage(key, defaultValue = null) {
+            if (!this.hasGMStorage) return defaultValue;
             return GM_getValue(key, defaultValue);
         }
 
