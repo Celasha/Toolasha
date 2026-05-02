@@ -138,9 +138,11 @@ function createRow(leftText, rightText, options = {}) {
 /**
  * Build the full crafting plan UI for an action.
  * @param {string} actionHrid
+ * @param {Function} [onToggle] - Callback when buy-intermediates toggle changes
+ * @param {boolean} [defaultOpen=false] - Whether the section should be open
  * @returns {HTMLElement|null}
  */
-function buildPlanUI(actionHrid) {
+function buildPlanUI(actionHrid, onToggle, defaultOpen = false) {
     const gameData = dataManager.getInitClientData();
     const actionDetail = gameData?.actionDetailMap?.[actionHrid];
     if (!actionDetail) return null;
@@ -152,9 +154,18 @@ function buildPlanUI(actionHrid) {
     if (!output) return null;
 
     const mode = getPricingMode();
+    const buyIntermediates = config.getSetting('actionPanel_craftingPlanBuyIntermediates');
     let plan;
     try {
-        plan = computeBestCraftingPlan(output.itemHrid, 1, mode);
+        plan = computeBestCraftingPlan(
+            output.itemHrid,
+            1,
+            mode,
+            new Set(),
+            new Map(),
+            0,
+            buyIntermediates ? 1 : undefined
+        );
     } catch (e) {
         console.error('[CraftingPlan] computeBestCraftingPlan error:', e);
         return null;
@@ -186,10 +197,33 @@ function buildPlanUI(actionHrid) {
     `;
     content.appendChild(summary);
 
+    // === Buy intermediates toggle ===
+    const toggleRow = document.createElement('label');
+    toggleRow.style.cssText = `
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.85em;
+        color: var(--text-color-secondary, #888);
+        cursor: pointer;
+        margin-bottom: 4px;
+    `;
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = buyIntermediates;
+    checkbox.style.cssText = 'margin: 0; cursor: pointer;';
+    checkbox.addEventListener('change', () => {
+        config.setSetting('actionPanel_craftingPlanBuyIntermediates', checkbox.checked);
+        if (onToggle) onToggle();
+    });
+    toggleRow.appendChild(checkbox);
+    toggleRow.appendChild(document.createTextNode('Buy intermediates'));
+    content.appendChild(toggleRow);
+
     // Only show breakdown if crafting is the optimal strategy
     if (plan.strategy !== 'craft' || plan.children.length === 0) {
         const costText = plan.unitCost === Infinity ? '?' : `${formatKMB(Math.round(plan.unitCost))}/ea`;
-        const section = createCollapsibleSection('', 'Best Crafting Plan', costText, content, false, 0);
+        const section = createCollapsibleSection('', 'Best Crafting Plan', costText, content, defaultOpen, 0);
         section.id = UI_ID;
         section.className = 'mwi-crafting-plan-section';
         return section;
@@ -260,7 +294,7 @@ function buildPlanUI(actionHrid) {
     }
 
     const costText = plan.unitCost === Infinity ? '?' : `${formatKMB(Math.round(plan.unitCost))}/ea`;
-    const section = createCollapsibleSection('', 'Best Crafting Plan', costText, content, false, 0);
+    const section = createCollapsibleSection('', 'Best Crafting Plan', costText, content, defaultOpen, 0);
     section.id = UI_ID;
     section.className = 'mwi-crafting-plan-section';
 
@@ -300,7 +334,23 @@ class CraftingPlanDisplay {
     }
 
     _attachToPanel(panel, actionHrid) {
-        const ui = buildPlanUI(actionHrid);
+        const rebuild = () => {
+            const existing = panel.querySelector(`#${UI_ID}`);
+            const wasOpen = existing?.querySelector('.mwi-section-header span')?.textContent === '▼';
+            if (existing) existing.remove();
+
+            const newUI = buildPlanUI(actionHrid, rebuild, wasOpen);
+            if (!newUI) return;
+
+            const profitSection = panel.querySelector('[data-mwi-profit-display]');
+            if (profitSection) {
+                profitSection.parentNode.insertBefore(newUI, profitSection);
+            } else {
+                panel.appendChild(newUI);
+            }
+        };
+
+        const ui = buildPlanUI(actionHrid, rebuild);
         if (!ui) return;
 
         const position = () => {

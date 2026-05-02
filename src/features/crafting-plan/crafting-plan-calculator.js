@@ -58,6 +58,7 @@ function getArtisanBonus(actionType) {
  * @param {Set} [visited] - Circular dependency guard
  * @param {Map} [memo] - Memoization cache (unit cost per itemHrid)
  * @param {number} [depth=0] - Current recursion depth
+ * @param {number} [maxDepth=MAX_DEPTH] - Maximum recursion depth (1 = buy all sub-materials)
  * @returns {CraftingPlanNode}
  */
 export function computeBestCraftingPlan(
@@ -66,7 +67,8 @@ export function computeBestCraftingPlan(
     mode = 'ask',
     visited = new Set(),
     memo = new Map(),
-    depth = 0
+    depth = 0,
+    maxDepth = MAX_DEPTH
 ) {
     const itemDetails = dataManager.getItemDetails(itemHrid);
     const itemName = itemDetails?.name || itemHrid.split('/').pop();
@@ -116,14 +118,22 @@ export function computeBestCraftingPlan(
             children:
                 cachedUnitCost.strategy === 'craft'
                     ? cachedUnitCost.childrenTemplate.map((c) =>
-                          computeBestCraftingPlan(c.itemHrid, c.qtyPerUnit * quantity, mode, visited, memo, depth + 1)
+                          computeBestCraftingPlan(
+                              c.itemHrid,
+                              c.qtyPerUnit * quantity,
+                              mode,
+                              visited,
+                              memo,
+                              depth + 1,
+                              maxDepth
+                          )
                       )
                     : [],
         };
     }
 
     // Circular dependency or depth limit — must buy
-    if (visited.has(itemHrid) || depth >= MAX_DEPTH) {
+    if (visited.has(itemHrid) || depth >= maxDepth) {
         return {
             itemHrid,
             itemName,
@@ -184,7 +194,15 @@ export function computeBestCraftingPlan(
             const qtyPerUnit = reducedCount * actionsForOne;
 
             const inputQty = Math.ceil(reducedCount * Math.ceil(quantity / outputCount));
-            const childPlan = computeBestCraftingPlan(input.itemHrid, inputQty, mode, visited, memo, depth + 1);
+            const childPlan = computeBestCraftingPlan(
+                input.itemHrid,
+                inputQty,
+                mode,
+                visited,
+                memo,
+                depth + 1,
+                maxDepth
+            );
 
             craftCostPerUnit += childPlan.unitCost * qtyPerUnit;
             childrenTemplate.push({ itemHrid: input.itemHrid, qtyPerUnit });
@@ -195,7 +213,15 @@ export function computeBestCraftingPlan(
     if (action.upgradeItemHrid) {
         const qtyPerUnit = actionsForOne; // 1 upgrade per action
         const upgradeQty = Math.ceil(quantity / outputCount);
-        const upgradePlan = computeBestCraftingPlan(action.upgradeItemHrid, upgradeQty, mode, visited, memo, depth + 1);
+        const upgradePlan = computeBestCraftingPlan(
+            action.upgradeItemHrid,
+            upgradeQty,
+            mode,
+            visited,
+            memo,
+            depth + 1,
+            maxDepth
+        );
 
         craftCostPerUnit += upgradePlan.unitCost * qtyPerUnit;
         childrenTemplate.push({ itemHrid: action.upgradeItemHrid, qtyPerUnit });
@@ -228,12 +254,14 @@ export function computeBestCraftingPlan(
                 const inputCountPerAction = input.count || 1;
                 const reducedCount = inputCountPerAction * (1 - artisanBonus);
                 const inputQty = Math.ceil(reducedCount * actionsNeeded);
-                children.push(computeBestCraftingPlan(input.itemHrid, inputQty, mode, visited, memo, depth + 1));
+                children.push(
+                    computeBestCraftingPlan(input.itemHrid, inputQty, mode, visited, memo, depth + 1, maxDepth)
+                );
             }
         }
         if (action.upgradeItemHrid) {
             children.push(
-                computeBestCraftingPlan(action.upgradeItemHrid, actionsNeeded, mode, visited, memo, depth + 1)
+                computeBestCraftingPlan(action.upgradeItemHrid, actionsNeeded, mode, visited, memo, depth + 1, maxDepth)
             );
         }
     }

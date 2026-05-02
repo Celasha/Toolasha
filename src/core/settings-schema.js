@@ -275,6 +275,13 @@ export const settingsGroups = {
                 default: true,
                 help: 'Shows the cheapest way to obtain a crafted item by comparing buy vs craft at each material tier.',
             },
+            actionPanel_craftingPlanBuyIntermediates: {
+                id: 'actionPanel_craftingPlanBuyIntermediates',
+                label: 'Action panel: Crafting plan buys intermediate materials',
+                type: 'checkbox',
+                default: false,
+                help: 'Only craft the final item — buy all sub-materials from the market instead of crafting them.',
+            },
             lootLogStats: {
                 id: 'lootLogStats',
                 label: 'Loot Log Statistics',
