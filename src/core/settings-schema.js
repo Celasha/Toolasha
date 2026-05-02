@@ -1592,9 +1592,17 @@ export const settingsGroups = {
             },
             color_xp_rate: {
                 id: 'color_xp_rate',
-                label: 'XP Text',
+                label: 'XP Rate Text',
                 type: 'color',
                 default: '#ffffff',
+                help: 'Color for XP/hr rate text on skill bars in left navigation',
+            },
+            color_hours_to_level: {
+                id: 'color_hours_to_level',
+                label: 'Hours to Level Text',
+                type: 'color',
+                default: '#ffffff',
+                help: 'Color for "hours till next level" text in skill tooltips',
             },
             color_inv_count: {
                 id: 'color_inv_count',

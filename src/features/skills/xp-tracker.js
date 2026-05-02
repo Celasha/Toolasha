@@ -398,7 +398,7 @@ class XPTracker {
 
         const div = document.createElement('div');
         div.className = 'mwi-xp-time-left';
-        div.style.cssText = `font-size: 12px; color: ${config.COLOR_XP_RATE}; margin-top: 4px;`;
+        div.style.cssText = `font-size: 12px; color: ${config.COLOR_HOURS_TO_LEVEL}; margin-top: 4px;`;
         div.innerHTML = `<span style="font-weight:700">${timeStr}</span> till next level`;
 
         divs[3].insertAdjacentElement('afterend', div);
