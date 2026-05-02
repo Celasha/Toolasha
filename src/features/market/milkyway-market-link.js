@@ -54,7 +54,8 @@ class MilkyWayMarketLink {
         if (!container) return;
 
         const enhancement = this._getEnhancementLevel();
-        const url = `https://milkyway.market/items${this.currentItemHrid}${enhancement > 0 ? `?enhancement=${enhancement}` : ''}`;
+        const itemSlug = this.currentItemHrid.replace('/items/', '');
+        const url = `https://milkyway.market/items/${itemSlug}${enhancement > 0 ? `?enhancement=${enhancement}` : ''}`;
 
         const link = document.createElement('a');
         link.id = LINK_ID;
