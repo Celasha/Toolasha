@@ -1,14 +1,12 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.31.0
+ * Version: 2.31.1
  * License: CC-BY-NC-SA-4.0
  */
 
 (function (config, dataManager, domObserver, formatters_js, timerRegistry_js, domObserverHelpers_js, dom_js, storage, marketAPI, efficiency_js, webSocketHook, reactInput_js, actionPanelHelper_js, expectedValueCalculator, bonusRevenueCalculator_js, marketData_js, profitConstants_js, profitHelpers_js, profitCalculator, selectors_js, profileManager_js, cleanupRegistry_js, settingsSchema_js, settingsStorage, materialCalculator_js, enhancementCalculator_js, enhancementConfig_js, teaParser_js, actionCalculator_js) {
     'use strict';
-
-    window.Toolasha = window.Toolasha || {}; window.Toolasha.__buildTarget = "browser";
 
     /**
      * Equipment Level Display
@@ -7037,11 +7035,8 @@ ${hideRules}
         // Party mode — load profile list from storage
         let profileList = [];
         try {
-            const hasScriptManager = typeof GM_info !== 'undefined';
-            if (hasScriptManager) {
-                const data = await webSocketHook.loadFromStorage('toolasha_profile_list', '[]');
-                profileList = JSON.parse(data);
-            }
+            const data = await webSocketHook.loadFromStorage('toolasha_profile_list', '[]');
+            profileList = JSON.parse(data);
         } catch (error) {
             console.error('[CombatSimAdapter] Failed to load profile list:', error);
         }
@@ -7049,13 +7044,8 @@ ${hideRules}
         // Get battle data for consumable detection
         let battleData = null;
         try {
-            const hasScriptManager = typeof GM_info !== 'undefined';
-            if (hasScriptManager) {
-                const data = await webSocketHook.loadFromStorage('toolasha_new_battle', null);
-                if (data) battleData = JSON.parse(data);
-            } else {
-                battleData = dataManager.battleData;
-            }
+            const data = await webSocketHook.loadFromStorage('toolasha_new_battle', null);
+            if (data) battleData = JSON.parse(data);
         } catch (error) {
             console.error('[CombatSimAdapter] Failed to load battle data:', error);
         }
@@ -14209,7 +14199,7 @@ ${hideRules}
 
             const div = document.createElement('div');
             div.className = 'mwi-xp-time-left';
-            div.style.cssText = `font-size: 12px; color: ${config.COLOR_XP_RATE}; margin-top: 4px;`;
+            div.style.cssText = `font-size: 12px; color: ${config.COLOR_HOURS_TO_LEVEL}; margin-top: 4px;`;
             div.innerHTML = `<span style="font-weight:700">${timeStr}</span> till next level`;
 
             divs[3].insertAdjacentElement('afterend', div);

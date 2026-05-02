@@ -1,14 +1,12 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.31.0
+ * Version: 2.31.1
  * License: CC-BY-NC-SA-4.0
  */
 
 (function (config, dataManager, domObserver, marketAPI, houseEfficiency_js, efficiency_js, bonusRevenueCalculator_js, marketData_js, profitConstants_js, profitHelpers_js, teaParser_js, buffParser_js, equipmentParser_js, actionCalculator_js, tokenValuation_js, enhancementCalculator_js, formatters_js, enhancementConfig_js, dom, timerRegistry_js, storage, cleanupRegistry_js, domObserverHelpers_js, enhancementMultipliers_js, reactInput_js, webSocketHook, abilityCostCalculator_js, houseCostCalculator_js) {
     'use strict';
-
-    window.Toolasha = window.Toolasha || {}; window.Toolasha.__buildTarget = "browser";
 
     function _interopNamespaceDefault(e) {
         var n = Object.create(null);
@@ -14686,7 +14684,8 @@ self.onmessage = function (e) {
             if (!container) return;
 
             const enhancement = this._getEnhancementLevel();
-            const url = `https://milkyway.market/items${this.currentItemHrid}${enhancement > 0 ? `?enhancement=${enhancement}` : ''}`;
+            const itemSlug = this.currentItemHrid.replace('/items/', '');
+            const url = `https://milkyway.market/items/${itemSlug}${enhancement > 0 ? `?enhancement=${enhancement}` : ''}`;
 
             const link = document.createElement('a');
             link.id = LINK_ID;

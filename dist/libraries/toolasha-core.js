@@ -1,14 +1,12 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.31.0
+ * Version: 2.31.1
  * License: CC-BY-NC-SA-4.0
  */
 
 (function () {
     'use strict';
-
-    window.Toolasha = window.Toolasha || {}; window.Toolasha.__buildTarget = "browser";
 
     /**
      * Centralized IndexedDB Storage
@@ -25,6 +23,8 @@
             this.saveDebounceTimers = new Map(); // Per-key debounce timers
             this.pendingWrites = new Map(); // Per-key pending write data: {value, storeName}
             this.SAVE_DEBOUNCE_DELAY = 3000; // 3 seconds
+            this._reconnecting = false; // Guard against concurrent reconnection attempts
+            this._dbNulledReason = null; // Track why db was last set to null
         }
 
         /**
@@ -58,17 +58,14 @@
 
                 request.onsuccess = () => {
                     this.db = request.result;
-                    // Handle connection being closed unexpectedly (e.g. version upgrade from another tab)
-                    this.db.onversionchange = () => {
-                        this.db.close();
-                        this.db = null;
-                        console.warn('[Storage] DB version changed, connection closed. Reload the page.');
-                    };
+                    this._dbNulledReason = null;
+                    this._setupDbEventHandlers();
                     resolve();
                 };
 
                 request.onblocked = () => {
                     console.warn('[Storage] IndexedDB open blocked by existing connection — retrying after close');
+                    this._dbNulledReason = 'onblocked';
                     // Attempt to close any stale connection and retry once
                     if (this.db) {
                         this.db.close();
@@ -81,10 +78,8 @@
                     };
                     retry.onsuccess = () => {
                         this.db = retry.result;
-                        this.db.onversionchange = () => {
-                            this.db.close();
-                            this.db = null;
-                        };
+                        this._dbNulledReason = null;
+                        this._setupDbEventHandlers();
                         resolve();
                     };
                     retry.onupgradeneeded = request.onupgradeneeded;
@@ -447,6 +442,69 @@
             this.saveDebounceTimers.clear();
             this.pendingWrites.clear();
         }
+
+        /**
+         * Set up event handlers on the active DB connection.
+         * @private
+         */
+        _setupDbEventHandlers() {
+            if (!this.db) return;
+
+            this.db.onversionchange = () => {
+                console.warn('[Storage] DB connection lost: onversionchange fired (another tab/instance upgraded the DB)');
+                this._dbNulledReason = 'onversionchange';
+                this.db.close();
+                this.db = null;
+                this._reconnect();
+            };
+
+            this.db.onclose = () => {
+                console.warn('[Storage] DB connection lost: onclose fired (connection dropped unexpectedly)');
+                this._dbNulledReason = 'onclose';
+                this.db = null;
+                this._reconnect();
+            };
+        }
+
+        /**
+         * Attempt to reconnect to IndexedDB after the connection is lost.
+         * @private
+         */
+        async _reconnect() {
+            if (this._reconnecting) return;
+            this._reconnecting = true;
+
+            // Wait a brief moment for any version upgrade to complete
+            await new Promise((r) => setTimeout(r, 500));
+
+            try {
+                await this.openDatabase();
+                this.available = true;
+                console.log('[Storage] Successfully reconnected to IndexedDB');
+            } catch (error) {
+                console.error('[Storage] Reconnection failed:', error);
+                this.available = false;
+            } finally {
+                this._reconnecting = false;
+            }
+        }
+
+        /**
+         * Return diagnostic info about current storage state.
+         * @returns {Object}
+         */
+        diagnostics() {
+            return {
+                dbExists: this.db !== null,
+                available: this.available,
+                dbName: this.dbName,
+                dbVersion: this.dbVersion,
+                reconnecting: this._reconnecting,
+                lastNullReason: this._dbNulledReason,
+                pendingWrites: this.pendingWrites.size,
+                activeTimers: this.saveDebounceTimers.size,
+            };
+        }
     }
 
     const storage = new Storage();
@@ -727,6 +785,13 @@
                     type: 'checkbox',
                     default: true,
                     help: 'Shows the cheapest way to obtain a crafted item by comparing buy vs craft at each material tier.',
+                },
+                actionPanel_craftingPlanBuyIntermediates: {
+                    id: 'actionPanel_craftingPlanBuyIntermediates',
+                    label: 'Action panel: Crafting plan buys intermediate materials',
+                    type: 'checkbox',
+                    default: false,
+                    help: 'Only craft the final item — buy all sub-materials from the market instead of crafting them.',
                 },
                 lootLogStats: {
                     id: 'lootLogStats',
@@ -2038,9 +2103,17 @@
                 },
                 color_xp_rate: {
                     id: 'color_xp_rate',
-                    label: 'XP Text',
+                    label: 'XP Rate Text',
                     type: 'color',
                     default: '#ffffff',
+                    help: 'Color for XP/hr rate text on skill bars in left navigation',
+                },
+                color_hours_to_level: {
+                    id: 'color_hours_to_level',
+                    label: 'Hours to Level Text',
+                    type: 'color',
+                    default: '#ffffff',
+                    help: 'Color for "hours till next level" text in skill tooltips',
                 },
                 color_inv_count: {
                     id: 'color_inv_count',
@@ -2464,46 +2537,34 @@
             this.isSocketWrapped = false;
             this.originalWebSocket = null;
             this.currentWebSocket = null;
-            // Detect if userscript manager is present (Tampermonkey, Greasemonkey, etc.)
-            this.hasScriptManager = typeof GM_info !== 'undefined';
             this.clientDataRetryTimeout = null;
         }
 
         /**
-         * Save combat sim export data to appropriate storage
-         * Only saves if script manager is available (cross-domain sharing with Combat Sim)
+         * Save combat sim export data to GM storage
+         * Used for cross-domain sharing with Combat Sim page
          * @param {string} key - Storage key
          * @param {string} value - Value to save (JSON string)
          */
         async saveToStorage(key, value) {
-            if (this.hasScriptManager) {
-                // Tampermonkey: use GM storage for cross-domain sharing with Combat Sim
-                // Wrap in setTimeout to make async and prevent main thread blocking
-                setTimeout(() => {
-                    try {
-                        GM_setValue(key, value);
-                    } catch (error) {
-                        console.error('[WebSocket] Failed to save to GM storage:', error);
-                    }
-                }, 0);
-            }
-            // Steam/standalone: Skip saving - Combat Sim import not possible without cross-domain storage
+            // Wrap in setTimeout to make async and prevent main thread blocking
+            setTimeout(() => {
+                try {
+                    GM_setValue(key, value);
+                } catch (error) {
+                    console.error('[WebSocket] Failed to save to GM storage:', error);
+                }
+            }, 0);
         }
 
         /**
-         * Load combat sim export data from appropriate storage
-         * Only loads if script manager is available
+         * Load combat sim export data from GM storage
          * @param {string} key - Storage key
          * @param {string} defaultValue - Default value if not found
          * @returns {string|null} Stored value or default
          */
         async loadFromStorage(key, defaultValue = null) {
-            if (this.hasScriptManager) {
-                // Tampermonkey: use GM storage
-                return GM_getValue(key, defaultValue);
-            }
-            // Steam/standalone: No data available (Combat Sim import requires script manager)
-            return defaultValue;
+            return GM_getValue(key, defaultValue);
         }
 
         /**
@@ -4384,6 +4445,7 @@
             this.COLOR_ACCENT = '#22c55e'; // Script accent color (green)
             this.COLOR_REMAINING_XP = '#FFFFFF'; // Remaining XP text color
             this.COLOR_XP_RATE = '#ffffff'; // XP/hr rate text color
+            this.COLOR_HOURS_TO_LEVEL = '#ffffff'; // Hours to level text color
             this.COLOR_INV_COUNT = '#ffffff'; // Inventory count display color
 
             // Legacy color constants (mapped to COLOR_ACCENT)
@@ -5001,6 +5063,7 @@
             this.COLOR_ACCENT = this.getSettingValue('color_accent', '#22c55e');
             this.COLOR_REMAINING_XP = this.getSettingValue('color_remaining_xp', '#FFFFFF');
             this.COLOR_XP_RATE = this.getSettingValue('color_xp_rate', '#ffffff');
+            this.COLOR_HOURS_TO_LEVEL = this.getSettingValue('color_hours_to_level', '#ffffff');
             this.COLOR_INV_COUNT = this.getSettingValue('color_inv_count', '#ffffff');
             this.COLOR_INVBADGE_ASK = this.getSettingValue('color_invBadge_ask', '#047857');
             this.COLOR_INVBADGE_BID = this.getSettingValue('color_invBadge_bid', '#60a5fa');

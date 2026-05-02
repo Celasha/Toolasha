@@ -1,14 +1,12 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.31.0
+ * Version: 2.31.1
  * License: CC-BY-NC-SA-4.0
  */
 
 (function (dataManager, domObserver, config, enhancementConfig_js, enhancementCalculator_js, profitConstants_js, formatters_js, marketAPI, domObserverHelpers_js, bonusRevenueCalculator_js, marketData_js, efficiency_js, profitHelpers_js, profitCalculator, uiComponents_js, actionPanelHelper_js, webSocketHook, storage, dom_js, timerRegistry_js, actionCalculator_js, cleanupRegistry_js, teaParser_js, equipmentParser_js, houseEfficiency_js, experienceParser_js, reactInput_js, experienceCalculator_js, materialCalculator_js, expectedValueCalculator, alchemyProfitCalculator) {
     'use strict';
-
-    window.Toolasha = window.Toolasha || {}; window.Toolasha.__buildTarget = "browser";
 
     /**
      * Enhancement XP Calculations
@@ -13916,6 +13914,7 @@
      * @param {Set} [visited] - Circular dependency guard
      * @param {Map} [memo] - Memoization cache (unit cost per itemHrid)
      * @param {number} [depth=0] - Current recursion depth
+     * @param {number} [maxDepth=MAX_DEPTH] - Maximum recursion depth (1 = buy all sub-materials)
      * @returns {CraftingPlanNode}
      */
     function computeBestCraftingPlan(
@@ -13924,7 +13923,8 @@
         mode = 'ask',
         visited = new Set(),
         memo = new Map(),
-        depth = 0
+        depth = 0,
+        maxDepth = MAX_DEPTH
     ) {
         const itemDetails = dataManager.getItemDetails(itemHrid);
         const itemName = itemDetails?.name || itemHrid.split('/').pop();
@@ -13974,14 +13974,22 @@
                 children:
                     cachedUnitCost.strategy === 'craft'
                         ? cachedUnitCost.childrenTemplate.map((c) =>
-                              computeBestCraftingPlan(c.itemHrid, c.qtyPerUnit * quantity, mode, visited, memo, depth + 1)
+                              computeBestCraftingPlan(
+                                  c.itemHrid,
+                                  c.qtyPerUnit * quantity,
+                                  mode,
+                                  visited,
+                                  memo,
+                                  depth + 1,
+                                  maxDepth
+                              )
                           )
                         : [],
             };
         }
 
         // Circular dependency or depth limit — must buy
-        if (visited.has(itemHrid) || depth >= MAX_DEPTH) {
+        if (visited.has(itemHrid) || depth >= maxDepth) {
             return {
                 itemHrid,
                 itemName,
@@ -14042,7 +14050,15 @@
                 const qtyPerUnit = reducedCount * actionsForOne;
 
                 const inputQty = Math.ceil(reducedCount * Math.ceil(quantity / outputCount));
-                const childPlan = computeBestCraftingPlan(input.itemHrid, inputQty, mode, visited, memo, depth + 1);
+                const childPlan = computeBestCraftingPlan(
+                    input.itemHrid,
+                    inputQty,
+                    mode,
+                    visited,
+                    memo,
+                    depth + 1,
+                    maxDepth
+                );
 
                 craftCostPerUnit += childPlan.unitCost * qtyPerUnit;
                 childrenTemplate.push({ itemHrid: input.itemHrid, qtyPerUnit });
@@ -14053,7 +14069,15 @@
         if (action.upgradeItemHrid) {
             const qtyPerUnit = actionsForOne; // 1 upgrade per action
             const upgradeQty = Math.ceil(quantity / outputCount);
-            const upgradePlan = computeBestCraftingPlan(action.upgradeItemHrid, upgradeQty, mode, visited, memo, depth + 1);
+            const upgradePlan = computeBestCraftingPlan(
+                action.upgradeItemHrid,
+                upgradeQty,
+                mode,
+                visited,
+                memo,
+                depth + 1,
+                maxDepth
+            );
 
             craftCostPerUnit += upgradePlan.unitCost * qtyPerUnit;
             childrenTemplate.push({ itemHrid: action.upgradeItemHrid, qtyPerUnit });
@@ -14086,12 +14110,14 @@
                     const inputCountPerAction = input.count || 1;
                     const reducedCount = inputCountPerAction * (1 - artisanBonus);
                     const inputQty = Math.ceil(reducedCount * actionsNeeded);
-                    children.push(computeBestCraftingPlan(input.itemHrid, inputQty, mode, visited, memo, depth + 1));
+                    children.push(
+                        computeBestCraftingPlan(input.itemHrid, inputQty, mode, visited, memo, depth + 1, maxDepth)
+                    );
                 }
             }
             if (action.upgradeItemHrid) {
                 children.push(
-                    computeBestCraftingPlan(action.upgradeItemHrid, actionsNeeded, mode, visited, memo, depth + 1)
+                    computeBestCraftingPlan(action.upgradeItemHrid, actionsNeeded, mode, visited, memo, depth + 1, maxDepth)
                 );
             }
         }
@@ -14244,9 +14270,11 @@
     /**
      * Build the full crafting plan UI for an action.
      * @param {string} actionHrid
+     * @param {Function} [onToggle] - Callback when buy-intermediates toggle changes
+     * @param {boolean} [defaultOpen=false] - Whether the section should be open
      * @returns {HTMLElement|null}
      */
-    function buildPlanUI(actionHrid) {
+    function buildPlanUI(actionHrid, onToggle, defaultOpen = false) {
         const gameData = dataManager.getInitClientData();
         const actionDetail = gameData?.actionDetailMap?.[actionHrid];
         if (!actionDetail) return null;
@@ -14258,9 +14286,18 @@
         if (!output) return null;
 
         const mode = getPricingMode();
+        const buyIntermediates = config.getSetting('actionPanel_craftingPlanBuyIntermediates');
         let plan;
         try {
-            plan = computeBestCraftingPlan(output.itemHrid, 1, mode);
+            plan = computeBestCraftingPlan(
+                output.itemHrid,
+                1,
+                mode,
+                new Set(),
+                new Map(),
+                0,
+                buyIntermediates ? 1 : undefined
+            );
         } catch (e) {
             console.error('[CraftingPlan] computeBestCraftingPlan error:', e);
             return null;
@@ -14292,10 +14329,33 @@
     `;
         content.appendChild(summary);
 
+        // === Buy intermediates toggle ===
+        const toggleRow = document.createElement('label');
+        toggleRow.style.cssText = `
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.85em;
+        color: var(--text-color-secondary, #888);
+        cursor: pointer;
+        margin-bottom: 4px;
+    `;
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.checked = buyIntermediates;
+        checkbox.style.cssText = 'margin: 0; cursor: pointer;';
+        checkbox.addEventListener('change', () => {
+            config.setSetting('actionPanel_craftingPlanBuyIntermediates', checkbox.checked);
+            if (onToggle) onToggle();
+        });
+        toggleRow.appendChild(checkbox);
+        toggleRow.appendChild(document.createTextNode('Buy intermediates'));
+        content.appendChild(toggleRow);
+
         // Only show breakdown if crafting is the optimal strategy
         if (plan.strategy !== 'craft' || plan.children.length === 0) {
             const costText = plan.unitCost === Infinity ? '?' : `${formatters_js.formatKMB(Math.round(plan.unitCost))}/ea`;
-            const section = uiComponents_js.createCollapsibleSection('', 'Best Crafting Plan', costText, content, false, 0);
+            const section = uiComponents_js.createCollapsibleSection('', 'Best Crafting Plan', costText, content, defaultOpen, 0);
             section.id = UI_ID;
             section.className = 'mwi-crafting-plan-section';
             return section;
@@ -14366,7 +14426,7 @@
         }
 
         const costText = plan.unitCost === Infinity ? '?' : `${formatters_js.formatKMB(Math.round(plan.unitCost))}/ea`;
-        const section = uiComponents_js.createCollapsibleSection('', 'Best Crafting Plan', costText, content, false, 0);
+        const section = uiComponents_js.createCollapsibleSection('', 'Best Crafting Plan', costText, content, defaultOpen, 0);
         section.id = UI_ID;
         section.className = 'mwi-crafting-plan-section';
 
@@ -14406,7 +14466,23 @@
         }
 
         _attachToPanel(panel, actionHrid) {
-            const ui = buildPlanUI(actionHrid);
+            const rebuild = () => {
+                const existing = panel.querySelector(`#${UI_ID}`);
+                const wasOpen = existing?.querySelector('.mwi-section-header span')?.textContent === '▼';
+                if (existing) existing.remove();
+
+                const newUI = buildPlanUI(actionHrid, rebuild, wasOpen);
+                if (!newUI) return;
+
+                const profitSection = panel.querySelector('[data-mwi-profit-display]');
+                if (profitSection) {
+                    profitSection.parentNode.insertBefore(newUI, profitSection);
+                } else {
+                    panel.appendChild(newUI);
+                }
+            };
+
+            const ui = buildPlanUI(actionHrid, rebuild);
             if (!ui) return;
 
             const position = () => {
@@ -15437,8 +15513,15 @@
         // Universal efficiency tea
         generalTeas.add('/items/efficiency_tea');
 
-        // Artisan tea - action level helps everyone, artisan buff helps production gold
-        generalTeas.add('/items/artisan_tea');
+        // Artisan tea - action level helps everyone, artisan buff helps production gold (not alchemy)
+        if (skill !== 'alchemy') {
+            generalTeas.add('/items/artisan_tea');
+        }
+
+        // Catalytic tea - alchemy success rate boost
+        if (skill === 'alchemy') {
+            generalTeas.add('/items/catalytic_tea');
+        }
 
         // Wisdom tea - always shown so users can evaluate the XP/gold trade-off in any mode
         generalTeas.add('/items/wisdom_tea');
