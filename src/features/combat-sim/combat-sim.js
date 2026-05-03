@@ -7,6 +7,7 @@ import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
 import combatSimUI from './combat-sim-ui.js';
 import { cancelSimulation } from './combat-sim-runner.js';
+import { cancelAllZonesSimulation } from './all-zones-runner.js';
 
 const BUTTON_CLASS = 'toolasha-combat-sim-btn';
 
@@ -84,6 +85,7 @@ class CombatSim {
         this.unregisterHandlers = [];
 
         cancelSimulation();
+        cancelAllZonesSimulation();
         combatSimUI.destroy();
 
         // Remove all injected buttons

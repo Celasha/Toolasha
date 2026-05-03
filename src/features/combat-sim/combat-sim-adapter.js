@@ -203,6 +203,155 @@ export function buildPlayerDTOFromProfile(profileData) {
 }
 
 /**
+ * Parse a Shykai-format export string into player DTOs.
+ * Accepts the multi-slot format: {"1": "{...}", "2": "{...}", ...}
+ * Each slot is a stringified player object with player/food/drinks/abilities/triggerMap/houseRooms.
+ * @param {string} jsonString - The pasted export string
+ * @returns {{ players: Array<Object>, names: Array<string> }|null} Parsed DTOs, or null on error
+ */
+export function parseShykaiImport(jsonString) {
+    const clientData = dataManager.getInitClientData();
+    if (!clientData) return null;
+    const itemDetailMap = clientData.itemDetailMap || {};
+
+    let parsed;
+    try {
+        parsed = JSON.parse(jsonString);
+    } catch {
+        return null;
+    }
+
+    // Detect format:
+    // - Multi-slot: {"1": "{...}", "2": "{...}", ...}
+    // - Single-player: {"player": {...}, "food": {...}, ...}
+    let slotEntries;
+
+    if (typeof parsed === 'object' && parsed['1']) {
+        // Multi-slot format
+        slotEntries = [];
+        for (let i = 1; i <= 5; i++) {
+            const slotStr = parsed[String(i)];
+            if (!slotStr) continue;
+            try {
+                const slotData = typeof slotStr === 'string' ? JSON.parse(slotStr) : slotStr;
+                slotEntries.push({ slot: i, data: slotData });
+            } catch {
+                // Skip unparseable slots
+            }
+        }
+    } else if (typeof parsed === 'object' && parsed.player) {
+        // Single-player format
+        slotEntries = [{ slot: 1, data: parsed }];
+    } else {
+        return null;
+    }
+
+    const players = [];
+    const names = [];
+
+    for (const { slot, data: slotData } of slotEntries) {
+        const p = slotData.player;
+        if (!p) continue;
+
+        // Skip blank/empty players (all levels at 1 and no equipment)
+        const hasEquipment = Array.isArray(p.equipment) ? p.equipment.some((e) => e.itemHrid) : false;
+        const hasLevels = (p.staminaLevel || 1) > 1 || (p.attackLevel || 1) > 1;
+        if (!hasEquipment && !hasLevels) continue;
+
+        const dto = {
+            staminaLevel: p.staminaLevel || 1,
+            intelligenceLevel: p.intelligenceLevel || 1,
+            attackLevel: p.attackLevel || 1,
+            meleeLevel: p.meleeLevel || 1,
+            defenseLevel: p.defenseLevel || 1,
+            rangedLevel: p.rangedLevel || 1,
+            magicLevel: p.magicLevel || 1,
+            hrid: `player${slot}`,
+            debuffOnLevelGap: 0,
+            equipment: {},
+            food: [],
+            drinks: [],
+            abilities: [],
+            houseRooms: {},
+        };
+
+        // Equipment: array format [{itemLocationHrid, itemHrid, enhancementLevel}]
+        if (Array.isArray(p.equipment)) {
+            for (const eq of p.equipment) {
+                if (!eq.itemHrid) continue;
+                // Map itemLocationHrid (e.g. /equipment_types/head) to equipment type
+                const eqType = eq.itemLocationHrid || itemDetailMap[eq.itemHrid]?.equipmentDetail?.type;
+                if (eqType) {
+                    dto.equipment[eqType] = {
+                        hrid: eq.itemHrid,
+                        enhancementLevel: eq.enhancementLevel || 0,
+                    };
+                }
+            }
+        }
+
+        // Trigger map helper
+        const triggerMap = slotData.triggerMap || {};
+        const buildTriggers = (hrid) => {
+            const raw = triggerMap[hrid];
+            if (!Array.isArray(raw)) return null;
+            return raw.map((t) => ({
+                dependencyHrid: t.dependencyHrid,
+                conditionHrid: t.conditionHrid,
+                comparatorHrid: t.comparatorHrid,
+                value: t.value || 0,
+            }));
+        };
+
+        // Food
+        const foodSlots = slotData.food?.['/action_types/combat'] || [];
+        for (const slot of foodSlots) {
+            if (slot.itemHrid) {
+                dto.food.push({ hrid: slot.itemHrid, triggers: buildTriggers(slot.itemHrid) });
+            } else {
+                dto.food.push(null);
+            }
+        }
+
+        // Drinks
+        const drinkSlots = slotData.drinks?.['/action_types/combat'] || [];
+        for (const slot of drinkSlots) {
+            if (slot.itemHrid) {
+                dto.drinks.push({ hrid: slot.itemHrid, triggers: buildTriggers(slot.itemHrid) });
+            } else {
+                dto.drinks.push(null);
+            }
+        }
+
+        // Abilities
+        const abilitySlots = slotData.abilities || [];
+        for (const slot of abilitySlots) {
+            if (slot.abilityHrid) {
+                dto.abilities.push({
+                    hrid: slot.abilityHrid,
+                    level: slot.level || 1,
+                    triggers: buildTriggers(slot.abilityHrid),
+                });
+            } else {
+                dto.abilities.push(null);
+            }
+        }
+
+        // House rooms
+        if (slotData.houseRooms) {
+            dto.houseRooms = { ...slotData.houseRooms };
+        }
+
+        players.push(dto);
+        names.push(slotData.name || p.name || `Player ${slot}`);
+    }
+
+    if (!players.length) return null;
+
+    return { players, names };
+}
+
+/**
  * Build a player DTO from a cached party member profile.
  * @param {Object} profile - Profile data with .profile sub-object
  * @param {Object} clientData - initClientData
@@ -471,7 +620,7 @@ export async function buildAllPlayerDTOs() {
 
 /**
  * Get a sorted list of combat zones for the zone dropdown.
- * @returns {Array<{hrid: string, name: string, isDungeon: boolean}>} Sorted zone list
+ * @returns {Array<{hrid: string, name: string, isDungeon: boolean, maxSpawnCount: number, maxDifficulty: number, sortIndex: number}>} Sorted zone list
  */
 export function getCombatZones() {
     const clientData = dataManager.getInitClientData();
@@ -488,6 +637,8 @@ export function getCombatZones() {
             hrid,
             name: action.name,
             isDungeon: action.combatZoneInfo?.isDungeon || false,
+            maxSpawnCount: action.combatZoneInfo?.fightInfo?.randomSpawnInfo?.maxSpawnCount || 1,
+            maxDifficulty: action.maxDifficulty || 0,
             sortIndex: action.sortIndex ?? 0,
         });
     }
@@ -495,8 +646,7 @@ export function getCombatZones() {
     // Sort by sortIndex for consistent ordering
     zones.sort((a, b) => a.sortIndex - b.sortIndex);
 
-    // Remove sortIndex from the returned objects
-    return zones.map(({ hrid, name, isDungeon }) => ({ hrid, name, isDungeon }));
+    return zones;
 }
 
 /**

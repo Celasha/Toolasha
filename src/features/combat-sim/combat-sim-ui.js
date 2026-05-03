@@ -17,9 +17,12 @@ import {
     getCommunityBuffs,
     calculateExpectedDrops,
     calculateDungeonKeyCosts,
+    calculateSimRevenue,
     applyLoadoutSnapshotToDTO,
+    parseShykaiImport,
 } from './combat-sim-adapter.js';
-import { runSimulation } from './combat-sim-runner.js';
+import { runSimulation, cancelSimulation } from './combat-sim-runner.js';
+import { runAllZonesSimulation, cancelAllZonesSimulation } from './all-zones-runner.js';
 import loadoutSnapshot from '../combat/loadout-snapshot.js';
 
 const PANEL_ID = 'mwi-combat-sim-panel';
@@ -28,6 +31,18 @@ const ACCENT_BORDER = 'rgba(74, 158, 255, 0.5)';
 const ACCENT_BG = 'rgba(74, 158, 255, 0.12)';
 const ACCENT_BTN_BG = 'rgba(74, 158, 255, 0.2)';
 const ACCENT_BTN_BORDER = 'rgba(74, 158, 255, 0.4)';
+
+/**
+ * Format elapsed seconds as "Xs" or "Xm Ys".
+ * @param {number} seconds
+ * @returns {string}
+ */
+function formatElapsed(seconds) {
+    if (seconds < 60) return `${seconds.toFixed(1)}s`;
+    const m = Math.floor(seconds / 60);
+    const s = (seconds % 60).toFixed(0);
+    return `${m}m ${s}s`;
+}
 
 class CombatSimUI {
     constructor() {
@@ -59,6 +74,11 @@ class CombatSimUI {
         this._missingMembers = [];
         this._editorInitialized = false;
         this._selectedLoadoutName = ''; // Track selected loadout for dropdown persistence
+        // All Zones state
+        this._allZonesMode = null; // null = off, 'group' or 'solo'
+        this._allZonesResults = null; // Array of {zone, simResult, revenue}
+        this._allZonesSortCol = null;
+        this._allZonesSortAsc = true;
     }
 
     /**
@@ -179,6 +199,43 @@ class CombatSimUI {
                 cursor: pointer;">Simulate</button>
         `;
 
+        // All Zones controls row
+        const allZonesRow = document.createElement('div');
+        allZonesRow.id = 'mwi-csim-allzones-row';
+        allZonesRow.style.cssText = `
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 6px 14px;
+            border-bottom: 1px solid #222;
+            flex-shrink: 0;
+            font-size: 12px;
+        `;
+        const checkboxStyle = 'margin:0; cursor:pointer;';
+        const labelStyle = 'display:flex; align-items:center; gap:4px; color:#888; cursor:pointer;';
+        allZonesRow.innerHTML = `
+            <label style="${labelStyle}">
+                <input type="checkbox" id="mwi-csim-allzones-group" style="${checkboxStyle}">
+                Sim All Zones
+            </label>
+            <label style="${labelStyle}">
+                <input type="checkbox" id="mwi-csim-allzones-solo" style="${checkboxStyle}">
+                Sim All Solo
+            </label>
+        `;
+
+        // Zone checklist (hidden by default)
+        const zoneChecklist = document.createElement('div');
+        zoneChecklist.id = 'mwi-csim-zone-checklist';
+        zoneChecklist.style.cssText = `
+            display: none;
+            max-height: 150px;
+            overflow-y: auto;
+            padding: 6px 14px;
+            border-bottom: 1px solid #222;
+            flex-shrink: 0;
+        `;
+
         // Loadout editor area (scrollable)
         const editorArea = document.createElement('div');
         editorArea.id = 'mwi-csim-editor';
@@ -186,6 +243,8 @@ class CombatSimUI {
         editorArea.innerHTML = `<div style="color:#555; font-size:12px; text-align:center; padding:20px 0;">Loading loadout...</div>`;
 
         configureContent.appendChild(controls);
+        configureContent.appendChild(allZonesRow);
+        configureContent.appendChild(zoneChecklist);
         configureContent.appendChild(editorArea);
 
         // Results tab content (hidden by default)
@@ -198,27 +257,41 @@ class CombatSimUI {
         progressContainer.id = 'mwi-csim-progress-container';
         progressContainer.style.cssText = 'display:none; padding:6px 14px; flex-shrink:0;';
         progressContainer.innerHTML = `
-            <div style="
-                background:#1a1a2e;
-                border-radius:4px;
-                height:18px;
-                overflow:hidden;
-                position:relative;
-                border:1px solid #333;">
-                <div id="mwi-csim-progress-fill" style="
-                    height:100%;
-                    width:0%;
-                    background:linear-gradient(90deg, ${ACCENT_BTN_BG}, ${ACCENT});
-                    border-radius:3px;
-                    transition:width 0.2s ease;"></div>
-                <span id="mwi-csim-progress-text" style="
-                    position:absolute;
-                    top:0; left:0; right:0;
-                    text-align:center;
+            <div style="display:flex; align-items:center; gap:8px;">
+                <div style="
+                    flex:1;
+                    background:#1a1a2e;
+                    border-radius:4px;
+                    height:18px;
+                    overflow:hidden;
+                    position:relative;
+                    border:1px solid #333;">
+                    <div id="mwi-csim-progress-fill" style="
+                        height:100%;
+                        width:0%;
+                        background:linear-gradient(90deg, ${ACCENT_BTN_BG}, ${ACCENT});
+                        border-radius:3px;
+                        transition:width 0.2s ease;"></div>
+                    <span id="mwi-csim-progress-text" style="
+                        position:absolute;
+                        top:0; left:0; right:0;
+                        text-align:center;
+                        font-size:11px;
+                        line-height:18px;
+                        color:#e0e0e0;
+                        font-weight:600;">0%</span>
+                </div>
+                <button id="mwi-csim-stop" style="
+                    background:rgba(244, 67, 54, 0.2);
+                    border:1px solid rgba(244, 67, 54, 0.4);
+                    color:#f44336;
+                    border-radius:4px;
+                    padding:2px 10px;
                     font-size:11px;
-                    line-height:18px;
-                    color:#e0e0e0;
-                    font-weight:600;">0%</span>
+                    font-weight:600;
+                    cursor:pointer;
+                    font-family:inherit;
+                    flex-shrink:0;">Stop</button>
             </div>
         `;
 
@@ -250,6 +323,7 @@ class CombatSimUI {
             this.panel.style.display = 'none';
         });
         this.panel.querySelector('#mwi-csim-run').addEventListener('click', () => this._onSimulate());
+        this.panel.querySelector('#mwi-csim-stop').addEventListener('click', () => this._onSimulate());
         this.panel.addEventListener('mousedown', () => bringPanelToFront(this.panel));
 
         // Tab switching
@@ -260,6 +334,26 @@ class CombatSimUI {
 
         // Zone change → update tier dropdown
         this.panel.querySelector('#mwi-csim-zone').addEventListener('change', () => this._updateTierDropdown());
+
+        // All Zones toggles
+        this.panel.querySelector('#mwi-csim-allzones-group').addEventListener('change', (e) => {
+            if (e.target.checked) {
+                this.panel.querySelector('#mwi-csim-allzones-solo').checked = false;
+                this._allZonesMode = 'group';
+            } else {
+                this._allZonesMode = null;
+            }
+            this._updateAllZonesUI();
+        });
+        this.panel.querySelector('#mwi-csim-allzones-solo').addEventListener('change', (e) => {
+            if (e.target.checked) {
+                this.panel.querySelector('#mwi-csim-allzones-group').checked = false;
+                this._allZonesMode = 'solo';
+            } else {
+                this._allZonesMode = null;
+            }
+            this._updateAllZonesUI();
+        });
 
         this.populateZones();
     }
@@ -318,6 +412,317 @@ class CombatSimUI {
             ''
         );
         tierSelect.value = String(Math.min(currentTier, maxTier));
+    }
+
+    /**
+     * Update UI visibility when All Zones mode changes.
+     * Shows/hides zone checklist, hides single-zone controls.
+     * @private
+     */
+    _updateAllZonesUI() {
+        const checklist = this.panel?.querySelector('#mwi-csim-zone-checklist');
+        const zoneSelect = this.panel?.querySelector('#mwi-csim-zone');
+        const tierSelect = this.panel?.querySelector('#mwi-csim-tier');
+        const zoneLabel = zoneSelect?.previousElementSibling;
+        const tierLabel = tierSelect?.previousElementSibling;
+
+        if (!checklist) return;
+
+        if (this._allZonesMode) {
+            // Hide single-zone controls
+            if (zoneSelect) zoneSelect.style.display = 'none';
+            if (tierSelect) tierSelect.style.display = 'none';
+            if (zoneLabel) zoneLabel.style.display = 'none';
+            if (tierLabel) tierLabel.style.display = 'none';
+
+            // Show checklist with zones
+            checklist.style.display = 'block';
+            this._populateZoneChecklist();
+        } else {
+            // Show single-zone controls
+            if (zoneSelect) zoneSelect.style.display = '';
+            if (tierSelect) tierSelect.style.display = '';
+            if (zoneLabel) zoneLabel.style.display = '';
+            if (tierLabel) tierLabel.style.display = '';
+
+            // Hide checklist
+            checklist.style.display = 'none';
+        }
+    }
+
+    /**
+     * Populate the zone checklist based on current all-zones mode.
+     * @private
+     */
+    _populateZoneChecklist() {
+        const checklist = this.panel?.querySelector('#mwi-csim-zone-checklist');
+        if (!checklist) return;
+
+        const zones = getCombatZones().filter((z) => {
+            if (z.isDungeon) return false;
+            if (this._allZonesMode === 'group') return z.maxSpawnCount > 1;
+            if (this._allZonesMode === 'solo') return z.maxSpawnCount === 1;
+            return false;
+        });
+
+        const checkAllId = 'mwi-csim-checkall';
+        checklist.innerHTML = `
+            <label style="display:flex; align-items:center; gap:4px; color:${ACCENT}; font-size:11px; font-weight:600; margin-bottom:4px; cursor:pointer;">
+                <input type="checkbox" id="${checkAllId}" checked style="margin:0; cursor:pointer;">
+                Check All
+            </label>
+        `;
+
+        for (const zone of zones) {
+            const label = document.createElement('label');
+            label.style.cssText =
+                'display:flex; align-items:center; gap:4px; color:#ccc; font-size:11px; padding:1px 0; cursor:pointer;';
+            label.innerHTML = `<input type="checkbox" class="mwi-csim-zone-cb" data-hrid="${zone.hrid}" checked style="margin:0; cursor:pointer;"> ${zone.name}`;
+            checklist.appendChild(label);
+        }
+
+        // Check All toggle
+        checklist.querySelector(`#${checkAllId}`).addEventListener('change', (e) => {
+            checklist.querySelectorAll('.mwi-csim-zone-cb').forEach((cb) => {
+                cb.checked = e.target.checked;
+            });
+        });
+    }
+
+    /**
+     * Get selected zones expanded into all difficulty tiers.
+     * @returns {Array<{zoneHrid: string, difficultyTier: number, name: string}>}
+     * @private
+     */
+    _getSelectedAllZones() {
+        const checklist = this.panel?.querySelector('#mwi-csim-zone-checklist');
+        if (!checklist) return [];
+
+        const allZones = getCombatZones();
+        const selected = [];
+
+        checklist.querySelectorAll('.mwi-csim-zone-cb:checked').forEach((cb) => {
+            const hrid = cb.dataset.hrid;
+            const zone = allZones.find((z) => z.hrid === hrid);
+            if (!zone) return;
+
+            for (let t = 0; t <= zone.maxDifficulty; t++) {
+                selected.push({ zoneHrid: zone.hrid, difficultyTier: t, name: zone.name });
+            }
+        });
+
+        return selected;
+    }
+
+    /**
+     * Display all-zones comparison results in a sortable table.
+     * @param {Array<Object>} zoneResults - Array of {zone, simResult, revenue}
+     * @param {number} hours - Simulation hours
+     * @param {Object} gameData - Game data maps
+     * @private
+     */
+    _displayAllZonesResults(zoneResults, hours, gameData) {
+        const container = this.panel?.querySelector('#mwi-csim-results');
+        if (!container) return;
+
+        this._allZonesResults = zoneResults;
+        container.style.display = 'block';
+
+        const skillCols = [
+            { key: 'totalXP', label: 'Total XP/hr' },
+            { key: 'stamina', label: 'Stam' },
+            { key: 'intelligence', label: 'Int' },
+            { key: 'attack', label: 'Atk' },
+            { key: 'melee', label: 'Melee' },
+            { key: 'defense', label: 'Def' },
+            { key: 'ranged', label: 'Ranged' },
+            { key: 'magic', label: 'Magic' },
+        ];
+
+        const cols = [
+            { key: 'zone', label: 'Zone' },
+            { key: 'tier', label: 'T' },
+            { key: 'encounters', label: 'Enc/hr' },
+            { key: 'deaths', label: 'Deaths/hr' },
+            ...skillCols,
+            { key: 'revenue', label: 'Rev/hr' },
+            { key: 'expenses', label: 'Cost/hr' },
+            { key: 'profit', label: 'Profit/hr' },
+        ];
+
+        // Build row data
+        const playerHrid = this._activePlayerTab || 'player1';
+        const rows = zoneResults
+            .filter((r) => r && r.simResult)
+            .map((r) => {
+                const sim = r.simResult;
+                const simHours = (sim.simulatedTime || 0) / (3600 * 1e9) || hours;
+                const xp = sim.experienceGained?.[playerHrid] || {};
+
+                const totalXP = Object.values(xp).reduce((s, v) => s + v, 0) / simHours;
+                const playerDeaths = (sim.deaths?.[playerHrid] || 0) / simHours;
+                const encounters = (sim.encounters || 0) / simHours;
+
+                return {
+                    zone: r.zone.name,
+                    tier: r.zone.difficultyTier,
+                    encounters,
+                    deaths: playerDeaths,
+                    totalXP,
+                    stamina: (xp.stamina || 0) / simHours,
+                    intelligence: (xp.intelligence || 0) / simHours,
+                    attack: (xp.attack || 0) / simHours,
+                    melee: (xp.melee || 0) / simHours,
+                    defense: (xp.defense || 0) / simHours,
+                    ranged: (xp.ranged || 0) / simHours,
+                    magic: (xp.magic || 0) / simHours,
+                    revenue: r.revenue?.revenuePerHour || 0,
+                    expenses: r.revenue?.costPerHour || 0,
+                    profit: r.revenue?.netPerHour || 0,
+                };
+            });
+
+        // Sort
+        if (this._allZonesSortCol) {
+            const col = this._allZonesSortCol;
+            const asc = this._allZonesSortAsc;
+            rows.sort((a, b) => {
+                const va = a[col] ?? 0;
+                const vb = b[col] ?? 0;
+                if (typeof va === 'string') return asc ? va.localeCompare(vb) : vb.localeCompare(va);
+                return asc ? va - vb : vb - va;
+            });
+        }
+
+        // Find max values per numeric column for highlighting
+        const maxVals = {};
+        const minVals = {};
+        for (const col of cols) {
+            if (col.key === 'zone' || col.key === 'tier') continue;
+            const values = rows.map((r) => r[col.key] || 0);
+            maxVals[col.key] = Math.max(...values);
+            minVals[col.key] = Math.min(...values);
+        }
+
+        // Render table
+        const headerCells = cols
+            .map((col) => {
+                const arrow = this._allZonesSortCol === col.key ? (this._allZonesSortAsc ? ' ▲' : ' ▼') : '';
+                return `<th data-col="${col.key}" style="padding:3px 4px; cursor:pointer; white-space:nowrap; font-size:10px; font-weight:600; color:#888; border-bottom:1px solid #333; user-select:none;">${col.label}${arrow}</th>`;
+            })
+            .join('');
+
+        const bodyRows = rows
+            .map((row) => {
+                const cells = cols
+                    .map((col) => {
+                        const val = row[col.key];
+                        let display;
+                        let style = 'padding:2px 4px; font-size:10px; white-space:nowrap;';
+
+                        if (col.key === 'zone') {
+                            display = val;
+                            style += ' color:#e0e0e0;';
+                        } else if (col.key === 'tier') {
+                            display = `T${val}`;
+                            style += ' color:#888; text-align:center;';
+                        } else {
+                            display = formatKMB(Math.round(val));
+                            style += ' text-align:right; font-variant-numeric:tabular-nums;';
+
+                            // Highlight best value per column in green
+                            const isLowerBetter = col.key === 'deaths' || col.key === 'expenses';
+                            const bestVal = isLowerBetter ? minVals[col.key] : maxVals[col.key];
+                            const isBest = bestVal !== undefined && val === bestVal && rows.length > 1;
+
+                            if (isBest) {
+                                style += ' color:#4caf50; font-weight:600;';
+                            } else if ((col.key === 'deaths' && val > 0) || (col.key === 'profit' && val < 0)) {
+                                style += ' color:#f44336;';
+                            } else {
+                                style += ' color:#e0e0e0;';
+                            }
+                        }
+
+                        return `<td style="${style}">${display}</td>`;
+                    })
+                    .join('');
+                return `<tr style="border-bottom:1px solid #1a1a1a;">${cells}</tr>`;
+            })
+            .join('');
+
+        container.innerHTML = `
+            <div style="overflow-x:auto;">
+                <table style="width:100%; border-collapse:collapse; min-width:800px;">
+                    <thead><tr>${headerCells}</tr></thead>
+                    <tbody>${bodyRows}</tbody>
+                </table>
+            </div>
+        `;
+
+        // Add sort listeners
+        container.querySelectorAll('th[data-col]').forEach((th) => {
+            th.addEventListener('click', () => {
+                const col = th.dataset.col;
+                if (this._allZonesSortCol === col) {
+                    this._allZonesSortAsc = !this._allZonesSortAsc;
+                } else {
+                    this._allZonesSortCol = col;
+                    this._allZonesSortAsc = col === 'zone'; // Ascending for zone name, descending for numbers
+                }
+                this._displayAllZonesResults(zoneResults, hours, gameData);
+            });
+        });
+    }
+
+    /**
+     * Reset the Simulate button to its default state.
+     * @param {HTMLElement} btn
+     * @private
+     */
+    _resetRunButton(btn) {
+        btn.disabled = false;
+        btn.style.opacity = '1';
+        btn.style.cursor = 'pointer';
+    }
+
+    /**
+     * Import players from parsed Shykai export data into the editor.
+     * Appends to existing roster. Each import adds player(s) to the next available slot(s).
+     * @param {Array<Object>} players - Array of player DTOs
+     * @param {Array<string>} names - Array of player names
+     * @private
+     */
+    _importPlayers(players, names) {
+        if (!this._editedDTOs) {
+            this._editedDTOs = {};
+            this._originalDTOs = {};
+            this._editedPlayerInfo = [];
+        }
+
+        // Find next available slot number
+        const existingSlots = this._editedPlayerInfo.map((p) => {
+            const match = p.hrid.match(/player(\d+)/);
+            return match ? parseInt(match[1]) : 0;
+        });
+        let nextSlot = existingSlots.length > 0 ? Math.max(...existingSlots) + 1 : 1;
+
+        for (let i = 0; i < players.length; i++) {
+            const dto = players[i];
+            dto.hrid = `player${nextSlot}`;
+            this._editedDTOs[dto.hrid] = dto;
+            this._originalDTOs[dto.hrid] = structuredClone(dto);
+            this._editedPlayerInfo.push({ hrid: dto.hrid, name: names[i] || `Player ${nextSlot}` });
+            nextSlot++;
+        }
+
+        this._activeEditPlayer = this._editedPlayerInfo[this._editedPlayerInfo.length - 1]?.hrid;
+        this._selfHrid = this._selfHrid || null;
+        this._missingMembers = [];
+        this._editorInitialized = true;
+        this._selectedLoadoutName = '';
+
+        this._renderEditor();
     }
 
     /**
@@ -398,6 +803,70 @@ class CombatSimUI {
         const playerInfo = this._editedPlayerInfo || [];
         const activePlayer = this._activeEditPlayer;
         const dto = this._editedDTOs[activePlayer];
+
+        // Empty state — no players loaded, show import prompt
+        if (!dto && playerInfo.length === 0) {
+            editorArea.innerHTML = `
+                <div style="text-align:center; padding:20px 0;">
+                    <div style="color:#888; font-size:12px; margin-bottom:10px;">No players loaded.</div>
+                    <button id="mwi-csim-import-btn" style="
+                        background:${ACCENT_BTN_BG}; border:1px solid ${ACCENT_BTN_BORDER}; color:${ACCENT};
+                        padding:5px 14px; border-radius:5px; font-size:12px; cursor:pointer;
+                        font-family:inherit; font-weight:600;">+ Import Player</button>
+                    <div id="mwi-csim-import-area" style="display:none; margin-top:10px; text-align:left;">
+                        <textarea id="mwi-csim-import-text" placeholder="Paste Combat Sim Export JSON here..." style="
+                            width:100%; height:60px; background:#1a1a2e; color:#e0e0e0; border:1px solid #444;
+                            border-radius:4px; padding:6px; font-size:11px; font-family:monospace; resize:vertical;
+                            box-sizing:border-box;"></textarea>
+                        <div style="display:flex; gap:6px; margin-top:4px;">
+                            <button id="mwi-csim-import-go" style="
+                                background:${ACCENT_BTN_BG}; border:1px solid ${ACCENT_BTN_BORDER}; color:${ACCENT};
+                                padding:3px 12px; border-radius:4px; font-size:11px; cursor:pointer; font-family:inherit;
+                                font-weight:600;">Import</button>
+                            <button id="mwi-csim-import-cancel" style="
+                                background:rgba(255,255,255,0.04); border:1px solid #333; color:#888;
+                                padding:3px 12px; border-radius:4px; font-size:11px; cursor:pointer; font-family:inherit;">Cancel</button>
+                            <span id="mwi-csim-import-error" style="color:#f44; font-size:11px; align-self:center;"></span>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            // Wire up import handlers for empty state
+            const importBtn = editorArea.querySelector('#mwi-csim-import-btn');
+            if (importBtn) {
+                importBtn.addEventListener('click', () => {
+                    const area = editorArea.querySelector('#mwi-csim-import-area');
+                    if (area) area.style.display = area.style.display === 'none' ? 'block' : 'none';
+                });
+            }
+            const importGo = editorArea.querySelector('#mwi-csim-import-go');
+            if (importGo) {
+                importGo.addEventListener('click', () => {
+                    const text = editorArea.querySelector('#mwi-csim-import-text')?.value?.trim();
+                    const errorEl = editorArea.querySelector('#mwi-csim-import-error');
+                    if (!text) {
+                        if (errorEl) errorEl.textContent = 'Paste export data first.';
+                        return;
+                    }
+                    const result = parseShykaiImport(text);
+                    if (!result || !result.players.length) {
+                        if (errorEl) errorEl.textContent = 'Invalid format. Paste a Combat Sim Export JSON.';
+                        return;
+                    }
+                    this._importPlayers(result.players, result.names);
+                });
+            }
+            const importCancel = editorArea.querySelector('#mwi-csim-import-cancel');
+            if (importCancel) {
+                importCancel.addEventListener('click', () => {
+                    const area = editorArea.querySelector('#mwi-csim-import-area');
+                    if (area) area.style.display = 'none';
+                });
+            }
+            return;
+        }
+
         if (!dto) return;
 
         const gameData = buildGameDataPayload();
@@ -405,9 +874,9 @@ class CombatSimUI {
 
         let html = '';
 
-        // Player tabs (party mode)
+        // Player tabs + import/remove controls
+        html += `<div style="display:flex; gap:4px; margin-bottom:10px; flex-wrap:wrap; align-items:center;">`;
         if (playerInfo.length > 1) {
-            html += `<div style="display:flex; gap:4px; margin-bottom:10px; flex-wrap:wrap;">`;
             for (const { hrid, name } of playerInfo) {
                 const isActive = hrid === activePlayer;
                 const tabStyle = isActive
@@ -415,12 +884,41 @@ class CombatSimUI {
                     : 'background:rgba(255,255,255,0.04); border:1px solid #333; color:#aaa;';
                 html += `<button data-edit-tab="${hrid}" style="
                     ${tabStyle}
-                    padding:3px 10px; border-radius:5px; font-size:12px; cursor:pointer;
-                    font-family:inherit; transition:all 0.1s;
-                ">${name}</button>`;
+                    padding:3px 8px; border-radius:5px; font-size:12px; cursor:pointer;
+                    font-family:inherit; transition:all 0.1s; position:relative;
+                ">${name}<span data-remove-player="${hrid}" style="margin-left:4px; color:#f44; cursor:pointer; font-size:14px;" title="Remove player">×</span></button>`;
             }
-            html += '</div>';
+        } else if (playerInfo.length === 1) {
+            const { hrid, name } = playerInfo[0];
+            html += `<button data-edit-tab="${hrid}" style="
+                background:${ACCENT_BG}; border:1px solid ${ACCENT_BORDER}; color:${ACCENT}; font-weight:700;
+                padding:3px 8px; border-radius:5px; font-size:12px; cursor:pointer;
+                font-family:inherit; transition:all 0.1s; position:relative;
+            ">${name}<span data-remove-player="${hrid}" style="margin-left:4px; color:#f44; cursor:pointer; font-size:14px;" title="Remove player">×</span></button>`;
         }
+        html += `<button id="mwi-csim-import-btn" style="
+            background:rgba(255,255,255,0.04); border:1px solid #333; color:#888;
+            padding:3px 8px; border-radius:5px; font-size:11px; cursor:pointer;
+            font-family:inherit;" title="Import players from Shykai export string">+ Import</button>`;
+        html += '</div>';
+
+        // Import paste area (hidden by default)
+        html += `<div id="mwi-csim-import-area" style="display:none; margin-bottom:10px;">
+            <textarea id="mwi-csim-import-text" placeholder="Paste Shykai export JSON here..." style="
+                width:100%; height:60px; background:#1a1a2e; color:#e0e0e0; border:1px solid #444;
+                border-radius:4px; padding:6px; font-size:11px; font-family:monospace; resize:vertical;
+                box-sizing:border-box;"></textarea>
+            <div style="display:flex; gap:6px; margin-top:4px;">
+                <button id="mwi-csim-import-go" style="
+                    background:${ACCENT_BTN_BG}; border:1px solid ${ACCENT_BTN_BORDER}; color:${ACCENT};
+                    padding:3px 12px; border-radius:4px; font-size:11px; cursor:pointer; font-family:inherit;
+                    font-weight:600;">Import</button>
+                <button id="mwi-csim-import-cancel" style="
+                    background:rgba(255,255,255,0.04); border:1px solid #333; color:#888;
+                    padding:3px 12px; border-radius:4px; font-size:11px; cursor:pointer; font-family:inherit;">Cancel</button>
+                <span id="mwi-csim-import-error" style="color:#f44; font-size:11px; align-self:center;"></span>
+            </div>
+        </div>`;
 
         // Loadout dropdown + Reset button row
         const allSnapshots = loadoutSnapshot.getAllSnapshots();
@@ -988,11 +1486,78 @@ class CombatSimUI {
 
         // Player edit tabs
         editorArea.querySelectorAll('[data-edit-tab]').forEach((btn) => {
-            btn.addEventListener('click', () => {
+            btn.addEventListener('click', (e) => {
+                // Don't switch tabs if clicking the × remove button
+                if (e.target.dataset.removePlayer) return;
                 this._activeEditPlayer = btn.dataset.editTab;
                 this._renderEditor();
             });
         });
+
+        // Remove player buttons
+        editorArea.querySelectorAll('[data-remove-player]').forEach((btn) => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const hrid = btn.dataset.removePlayer;
+                if (!this._editedDTOs) return;
+                delete this._editedDTOs[hrid];
+                if (this._originalDTOs) delete this._originalDTOs[hrid];
+                this._editedPlayerInfo = this._editedPlayerInfo.filter((p) => p.hrid !== hrid);
+                if (this._activeEditPlayer === hrid) {
+                    this._activeEditPlayer = this._editedPlayerInfo[0]?.hrid || null;
+                }
+                if (Object.keys(this._editedDTOs).length === 0) {
+                    this._editedDTOs = {};
+                    this._originalDTOs = {};
+                    this._editedPlayerInfo = [];
+                    this._editorInitialized = true;
+                    this._activeEditPlayer = null;
+                    this._selfHrid = null;
+                    this._renderEditor();
+                    return;
+                }
+                this._renderEditor();
+            });
+        });
+
+        // Import button
+        const importBtn = editorArea.querySelector('#mwi-csim-import-btn');
+        if (importBtn) {
+            importBtn.addEventListener('click', () => {
+                const area = editorArea.querySelector('#mwi-csim-import-area');
+                if (area) area.style.display = area.style.display === 'none' ? 'block' : 'none';
+            });
+        }
+
+        // Import action
+        const importGo = editorArea.querySelector('#mwi-csim-import-go');
+        if (importGo) {
+            importGo.addEventListener('click', () => {
+                const text = editorArea.querySelector('#mwi-csim-import-text')?.value?.trim();
+                const errorEl = editorArea.querySelector('#mwi-csim-import-error');
+                if (!text) {
+                    if (errorEl) errorEl.textContent = 'Paste export data first.';
+                    return;
+                }
+                const result = parseShykaiImport(text);
+                if (!result || !result.players.length) {
+                    if (errorEl) errorEl.textContent = 'Invalid format. Paste a Shykai export JSON.';
+                    return;
+                }
+                this._importPlayers(result.players, result.names);
+                const area = editorArea.querySelector('#mwi-csim-import-area');
+                if (area) area.style.display = 'none';
+            });
+        }
+
+        // Import cancel
+        const importCancel = editorArea.querySelector('#mwi-csim-import-cancel');
+        if (importCancel) {
+            importCancel.addEventListener('click', () => {
+                const area = editorArea.querySelector('#mwi-csim-import-area');
+                if (area) area.style.display = 'none';
+            });
+        }
 
         // Loadout select dropdown
         const loadoutSelect = editorArea.querySelector('#mwi-csim-loadout-select');
@@ -1138,7 +1703,19 @@ class CombatSimUI {
      * @private
      */
     async _onSimulate() {
-        if (this.isRunning) return;
+        if (this.isRunning) {
+            // Stop the running simulation
+            cancelSimulation();
+            cancelAllZonesSimulation();
+            this._setStatus('Simulation cancelled.');
+            this._switchTab('configure');
+            return;
+        }
+
+        // Route to all-zones simulation if active
+        if (this._allZonesMode) {
+            return this._onSimulateAllZones();
+        }
 
         const zoneHrid = this.panel.querySelector('#mwi-csim-zone')?.value;
         const difficultyTier = parseInt(this.panel.querySelector('#mwi-csim-tier')?.value) || 0;
@@ -1179,6 +1756,16 @@ class CombatSimUI {
             return;
         }
 
+        // Enforce 3-player max for non-dungeon zones
+        const zones = getCombatZones();
+        const selectedZone = zones.find((z) => z.hrid === zoneHrid);
+        if (selectedZone && !selectedZone.isDungeon && playerDTOs.length > 3) {
+            this._showWarning(
+                `Non-dungeon zones support max 3 players (you have ${playerDTOs.length}). Remove players to continue.`
+            );
+            return;
+        }
+
         this._playerInfo = playerInfo;
         this._activePlayerTab = selfHrid;
 
@@ -1190,7 +1777,7 @@ class CombatSimUI {
                 ? `Party (${playerDTOs.length} loaded${missingMembers.length ? ', ' + missingMembers.length + ' missing' : ''})`
                 : 'Solo';
 
-        // Disable button, show progress
+        // Disable Simulate button during run
         this.isRunning = true;
         const runBtn = this.panel.querySelector('#mwi-csim-run');
         runBtn.disabled = true;
@@ -1212,8 +1799,8 @@ class CombatSimUI {
 
         const simStartTime = Date.now();
         this.elapsedTimer = setInterval(() => {
-            const elapsed = ((Date.now() - simStartTime) / 1000).toFixed(1);
-            this._setStatus(`Simulating (${partyInfo})... ${elapsed}s`);
+            const elapsed = (Date.now() - simStartTime) / 1000;
+            this._setStatus(`Simulating (${partyInfo})... ${formatElapsed(elapsed)}`);
         }, 100);
 
         try {
@@ -1227,7 +1814,7 @@ class CombatSimUI {
 
             clearInterval(this.elapsedTimer);
             this.elapsedTimer = null;
-            const totalElapsed = ((Date.now() - simStartTime) / 1000).toFixed(1);
+            const totalElapsed = formatElapsed((Date.now() - simStartTime) / 1000);
 
             this._lastSimResult = simResult;
             this._lastSimHours = hours;
@@ -1286,18 +1873,151 @@ class CombatSimUI {
                 ? ` | Missing: ${missingMembers.join(', ')} (open their profiles)`
                 : '';
             this._setStatus(
-                `Simulation complete in ${totalElapsed}s: ${formatWithSeparator(hours)} hours · ${partyInfo} · Pricing: ${modeLabel}${missingNote}`
+                `Simulation complete in ${totalElapsed}: ${formatWithSeparator(hours)} hours · ${partyInfo} · Pricing: ${modeLabel}${missingNote}`
             );
         } catch (error) {
             clearInterval(this.elapsedTimer);
             this.elapsedTimer = null;
-            console.error('[CombatSimUI] Simulation failed:', error);
-            this._setStatus(`Simulation error: ${error.message || 'Unknown error'}`);
+            if (error.message === 'Cancelled') {
+                this._setStatus('Simulation cancelled.');
+            } else {
+                console.error('[CombatSimUI] Simulation failed:', error);
+                this._setStatus(`Simulation error: ${error.message || 'Unknown error'}`);
+            }
         } finally {
             this.isRunning = false;
-            runBtn.disabled = false;
-            runBtn.style.opacity = '1';
-            runBtn.style.cursor = 'pointer';
+            this._resetRunButton(runBtn);
+            progressContainer.style.display = 'none';
+        }
+    }
+
+    /**
+     * Run simulations for all selected zones.
+     * @private
+     */
+    async _onSimulateAllZones() {
+        const selectedZones = this._getSelectedAllZones();
+        if (!selectedZones.length) {
+            this._setStatus('No zones selected.');
+            return;
+        }
+
+        const hours = Math.min(10000, Math.max(1, parseInt(this.panel.querySelector('#mwi-csim-hours')?.value) || 100));
+
+        const gameData = buildGameDataPayload();
+        if (!gameData) {
+            this._setStatus('No game data available.');
+            return;
+        }
+
+        // Use edited DTOs if available, otherwise auto-fill
+        let playerDTOs;
+        if (this._editedDTOs) {
+            playerDTOs = Object.values(this._editedDTOs);
+        } else {
+            const result = await buildAllPlayerDTOs();
+            playerDTOs = result.players;
+            this._playerInfo = result.playerInfo;
+            this._activePlayerTab = result.selfHrid;
+            this._selfHrid = result.selfHrid;
+        }
+
+        if (!playerDTOs.length) {
+            this._setStatus('No character data available.');
+            return;
+        }
+
+        // All-zones is always non-dungeon — enforce 3-player max
+        if (playerDTOs.length > 3) {
+            this._showWarning(
+                `Non-dungeon zones support max 3 players (you have ${playerDTOs.length}). Remove players to continue.`
+            );
+            return;
+        }
+
+        const communityBuffs = getCommunityBuffs();
+
+        // UI: disable Simulate button, show progress
+        this.isRunning = true;
+        const runBtn = this.panel.querySelector('#mwi-csim-run');
+        runBtn.disabled = true;
+        runBtn.style.opacity = '0.5';
+        runBtn.style.cursor = 'not-allowed';
+
+        const progressContainer = this.panel.querySelector('#mwi-csim-progress-container');
+        const progressFill = this.panel.querySelector('#mwi-csim-progress-fill');
+        const progressText = this.panel.querySelector('#mwi-csim-progress-text');
+        const resultsContainer = this.panel.querySelector('#mwi-csim-results');
+
+        progressContainer.style.display = 'block';
+        progressFill.style.width = '0%';
+        progressText.textContent = '0%';
+        resultsContainer.style.display = 'none';
+
+        this._switchTab('results');
+
+        const simStartTime = Date.now();
+        const zoneCount = selectedZones.length;
+        this.elapsedTimer = setInterval(() => {
+            const elapsed = (Date.now() - simStartTime) / 1000;
+            this._setStatus(`Simulating ${zoneCount} zones... ${formatElapsed(elapsed)}`);
+        }, 100);
+
+        try {
+            const zones = selectedZones.map((z) => ({ zoneHrid: z.zoneHrid, difficultyTier: z.difficultyTier }));
+
+            const simResults = await runAllZonesSimulation(
+                { gameData, playerDTOs, zones, hours, communityBuffs },
+                (percent) => {
+                    progressFill.style.width = `${percent}%`;
+                    progressText.textContent = `${percent}%`;
+                }
+            );
+
+            clearInterval(this.elapsedTimer);
+            this.elapsedTimer = null;
+            const totalElapsed = formatElapsed((Date.now() - simStartTime) / 1000);
+
+            // Build zone results with revenue calculations
+            const playerHrid = this._activePlayerTab || 'player1';
+            const zoneResults = simResults
+                .map((simResult, i) => {
+                    if (!simResult) return null;
+
+                    let revenue = null;
+                    try {
+                        revenue = calculateSimRevenue(simResult, gameData, playerHrid, hours);
+                    } catch {
+                        // Revenue calculation may not be available
+                    }
+
+                    return {
+                        zone: selectedZones[i],
+                        simResult,
+                        revenue,
+                    };
+                })
+                .filter(Boolean);
+
+            this._allZonesSortCol = 'profit';
+            this._allZonesSortAsc = false;
+            this._displayAllZonesResults(zoneResults, hours, gameData);
+            this._switchTab('results');
+            this._setStatus(
+                `All zones complete in ${totalElapsed}: ${zoneCount} zones · ${formatWithSeparator(hours)} hours each`
+            );
+        } catch (error) {
+            clearInterval(this.elapsedTimer);
+            this.elapsedTimer = null;
+            if (error.message === 'Cancelled') {
+                this._setStatus('Simulation cancelled.');
+            } else {
+                console.error('[CombatSimUI] All zones simulation failed:', error);
+                this._setStatus(`Simulation error: ${error.message || 'Unknown error'}`);
+            }
+        } finally {
+            this.isRunning = false;
+            this._resetRunButton(runBtn);
             progressContainer.style.display = 'none';
         }
     }
@@ -2172,6 +2892,46 @@ class CombatSimUI {
     _setStatus(text) {
         const status = this.panel?.querySelector('#mwi-csim-status');
         if (status) status.textContent = text;
+    }
+
+    /**
+     * Show a temporary warning toast overlaid on the panel.
+     * @param {string} text - Warning message
+     * @param {number} [duration=3000] - Duration in ms before auto-dismiss
+     * @private
+     */
+    _showWarning(text, duration = 3000) {
+        // Remove existing warning
+        this.panel?.querySelector('.mwi-csim-warning')?.remove();
+
+        const toast = document.createElement('div');
+        toast.className = 'mwi-csim-warning';
+        toast.style.cssText = `
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(30, 20, 10, 0.97);
+            border: 1px solid rgba(255, 152, 0, 0.6);
+            border-radius: 8px;
+            padding: 12px 20px;
+            color: #ffb74d;
+            font-size: 13px;
+            font-weight: 600;
+            text-align: center;
+            z-index: 10;
+            max-width: 80%;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+            animation: mwi-csim-fade-in 0.15s ease;
+        `;
+        toast.textContent = text;
+        this.panel.appendChild(toast);
+
+        setTimeout(() => {
+            toast.style.transition = 'opacity 0.3s ease';
+            toast.style.opacity = '0';
+            setTimeout(() => toast.remove(), 300);
+        }, duration);
     }
 
     /**

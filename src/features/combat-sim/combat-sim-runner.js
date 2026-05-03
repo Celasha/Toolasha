@@ -13,6 +13,7 @@ import WORKER_SCRIPT from './combat-sim-worker-entry.js?worker';
 let workerBlobURL = null;
 let activeWorkers = [];
 let taskIdCounter = 0;
+let pendingRejects = []; // Track reject functions to abort on cancel
 
 const MIN_HOURS_PER_WORKER = 20;
 const MAX_WORKERS = 4;
@@ -21,7 +22,7 @@ const MAX_WORKERS = 4;
  * Get or create the worker Blob URL (created once, reused).
  * @returns {string}
  */
-function getWorkerURL() {
+export function getWorkerURL() {
     if (!workerBlobURL) {
         const blob = new Blob([WORKER_SCRIPT], { type: 'application/javascript' });
         workerBlobURL = URL.createObjectURL(blob);
@@ -34,7 +35,7 @@ function getWorkerURL() {
  * @param {Object} communityBuffs - { mooPass, comExp, comDrop }
  * @returns {Array<Object>}
  */
-function buildExtraBuffs(communityBuffs) {
+export function buildExtraBuffs(communityBuffs) {
     const extraBuffs = [];
 
     if (communityBuffs?.mooPass) {
@@ -85,10 +86,16 @@ function buildExtraBuffs(communityBuffs) {
  * @param {Function} [onProgress] - Progress callback (0-100 for this chunk)
  * @returns {Promise<Object>} SimResult
  */
-function runWorkerChunk(message, onProgress) {
+export function runWorkerChunk(message, onProgress) {
     return new Promise((resolve, reject) => {
         const worker = new Worker(getWorkerURL());
         activeWorkers.push(worker);
+        pendingRejects.push(reject);
+
+        const cleanup = () => {
+            activeWorkers = activeWorkers.filter((w) => w !== worker);
+            pendingRejects = pendingRejects.filter((r) => r !== reject);
+        };
 
         worker.onmessage = (event) => {
             const msg = event.data;
@@ -98,18 +105,18 @@ function runWorkerChunk(message, onProgress) {
                 if (onProgress) onProgress(msg.progress);
             } else if (msg.type === 'result') {
                 worker.terminate();
-                activeWorkers = activeWorkers.filter((w) => w !== worker);
+                cleanup();
                 resolve(msg.simResult);
             } else if (msg.type === 'error') {
                 worker.terminate();
-                activeWorkers = activeWorkers.filter((w) => w !== worker);
+                cleanup();
                 reject(new Error(msg.error));
             }
         };
 
         worker.onerror = (error) => {
             worker.terminate();
-            activeWorkers = activeWorkers.filter((w) => w !== worker);
+            cleanup();
             reject(new Error(error.message || 'Worker error'));
         };
 
@@ -304,11 +311,17 @@ export async function runSimulation(params, onProgress) {
 }
 
 /**
- * Terminate all active simulation workers.
+ * Terminate all active simulation workers and reject pending promises.
  */
 export function cancelSimulation() {
     for (const worker of activeWorkers) {
         worker.terminate();
     }
     activeWorkers = [];
+
+    const rejects = pendingRejects.slice();
+    pendingRejects = [];
+    for (const reject of rejects) {
+        reject(new Error('Cancelled'));
+    }
 }
