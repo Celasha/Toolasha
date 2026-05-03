@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.33.1
+ * Version: 2.34.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1309,6 +1309,13 @@
                     type: 'checkbox',
                     default: false,
                     help: 'When adding items from a loadout to a tab, also include food and drink items.',
+                },
+                inventoryTabs_topTabPriority: {
+                    id: 'inventoryTabs_topTabPriority',
+                    label: 'Custom Inventory Tabs: Items visible in topmost tab only',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'When an item appears in multiple tabs, it only shows in the highest (topmost) tab that contains it. When disabled, collapsing a tab releases its items to lower tabs.',
                 },
             },
         },
