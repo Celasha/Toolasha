@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.32.3
+ * Version: 2.32.4
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2911,8 +2911,8 @@
                         profileList.pop();
                     }
 
-                    // Save updated profile list to IndexedDB (works on all platforms including Steam)
-                    await storage.setJSON('profile_list', profileList, 'combatExport');
+                    // Save updated profile list to IndexedDB immediately (works on all platforms including Steam)
+                    await storage.setJSON('profile_list', profileList, 'combatExport', true);
                 }
             } catch (error) {
                 console.error('[WebSocket] Failed to save Combat Sim data:', error);

@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.32.3
+ * Version: 2.32.4
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -25263,10 +25263,11 @@ self.onmessage = function (e) {
                 const iconHref = spriteUrl ? `${spriteUrl}#${iconId}` : `#${iconId}`;
 
                 const ownedLevels = levelMap.get(hrid);
-                const hasEnhanced = ownedLevels && [...ownedLevels].some((l) => l > 0);
+                const maxLevel = details.equipmentDetail?.maxEnhancementLevel || 0;
+                const isExpandable = maxLevel > 0;
                 const isExpanded = this._expandedSearchHrids?.has(hrid);
 
-                if (hasEnhanced) {
+                if (isExpandable) {
                     if (isExpanded) {
                         // Collapse header row
                         const headerRow = document.createElement('div');
@@ -25278,15 +25279,19 @@ self.onmessage = function (e) {
                         });
                         container.appendChild(headerRow);
 
-                        // One row per owned enhancement level
-                        for (const level of [...ownedLevels].sort((a, b) => a - b)) {
+                        // All levels 0–maxLevel; mark owned with a dot
+                        for (let level = 0; level <= maxLevel; level++) {
                             const levelHrid = level === 0 ? hrid : `${hrid}+${level}`;
                             if (currentItems.has(levelHrid)) continue;
 
+                            const owned = ownedLevels?.has(level);
                             const levelRow = document.createElement('div');
                             levelRow.className = 'toolasha-ct-search-result toolasha-ct-search-level-row';
                             const displayName = level === 0 ? details.name : `${details.name} +${level}`;
-                            levelRow.innerHTML = `<svg viewBox="0 0 32 32"><use href="${iconHref}"></use></svg><span>${this._escHtml(displayName)}</span>`;
+                            const ownedDot = owned
+                                ? `<span style="color:#7dcea0;margin-left:4px;" title="In inventory">●</span>`
+                                : '';
+                            levelRow.innerHTML = `<svg viewBox="0 0 32 32"><use href="${iconHref}"></use></svg><span>${this._escHtml(displayName)}</span>${ownedDot}`;
                             levelRow.addEventListener('click', () => {
                                 this._config = addItem(this._config, tabId, levelHrid);
                                 this._save();
@@ -25300,13 +25305,17 @@ self.onmessage = function (e) {
                             container.appendChild(levelRow);
                         }
                     } else {
-                        // Collapsed group row — shows owned levels as badge, expand on click
-                        const sortedLevels = [...ownedLevels].sort((a, b) => a - b);
-                        const levelBadges = sortedLevels.map((l) => `+${l}`).join(' ');
+                        // Collapsed group row — shows owned levels as badges, expand on click
+                        const ownedBadges = ownedLevels
+                            ? [...ownedLevels]
+                                  .sort((a, b) => a - b)
+                                  .map((l) => `+${l}`)
+                                  .join(' ')
+                            : '';
 
                         const row = document.createElement('div');
                         row.className = 'toolasha-ct-search-result toolasha-ct-search-group-header';
-                        row.innerHTML = `<svg viewBox="0 0 32 32"><use href="${iconHref}"></use></svg><span>${this._escHtml(details.name)}</span><span class="toolasha-ct-level-badges">${this._escHtml(levelBadges)}</span><span class="toolasha-ct-expand-btn">▶</span>`;
+                        row.innerHTML = `<svg viewBox="0 0 32 32"><use href="${iconHref}"></use></svg><span>${this._escHtml(details.name)}</span>${ownedBadges ? `<span class="toolasha-ct-level-badges">${this._escHtml(ownedBadges)}</span>` : ''}<span class="toolasha-ct-expand-btn">▶</span>`;
                         row.addEventListener('click', () => {
                             if (!this._expandedSearchHrids) this._expandedSearchHrids = new Set();
                             this._expandedSearchHrids.add(hrid);
