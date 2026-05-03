@@ -10,41 +10,83 @@ import storage from '../../core/storage.js';
 
 /**
  * Get character data from dataManager (in-memory, always current).
+ * Falls back to GM storage when running on the Shykai page (dataManager is empty cross-domain).
  * @returns {Object|null}
  */
 function getCharacterData() {
     const data = dataManager.characterData;
-    if (!data) console.error('[Combat Sim Export] No character data found. Please refresh game page.');
-    return data || null;
+    if (data) return data;
+    // Cross-domain fallback: read from GM storage (saved by game page)
+    if (typeof GM_getValue !== 'undefined') {
+        try {
+            const raw = GM_getValue('toolasha_init_character_data', null);
+            if (raw) return JSON.parse(raw);
+        } catch {
+            /* ignore */
+        }
+    }
+    console.error('[Combat Sim Export] No character data found. Please refresh game page.');
+    return null;
 }
 
 /**
  * Get battle data from dataManager (null if not in combat).
+ * Falls back to GM storage when running on the Shykai page.
  * @returns {Object|null}
  */
 function getBattleData() {
-    return dataManager.battleData || null;
+    if (dataManager.battleData) return dataManager.battleData;
+    if (typeof GM_getValue !== 'undefined') {
+        try {
+            const raw = GM_getValue('toolasha_new_battle', null);
+            if (raw) return JSON.parse(raw);
+        } catch {
+            /* ignore */
+        }
+    }
+    return null;
 }
 
 /**
  * Get init_client_data from dataManager (in-memory, always current).
+ * Falls back to GM storage when running on the Shykai page.
  * @returns {Object|null}
  */
 function getClientData() {
-    return dataManager.getInitClientData() || null;
+    const data = dataManager.getInitClientData();
+    if (data) return data;
+    if (typeof GM_getValue !== 'undefined') {
+        try {
+            const raw = GM_getValue('toolasha_init_client_data', null);
+            if (raw) return JSON.parse(raw);
+        } catch {
+            /* ignore */
+        }
+    }
+    return null;
 }
 
 /**
- * Get profile list from IndexedDB (cross-session, works on all platforms).
+ * Get profile list from IndexedDB (cross-session) with GM storage fallback (cross-domain for Shykai).
  * @returns {Promise<Array>}
  */
 async function getProfileList() {
     try {
-        return (await storage.getJSON('profile_list', 'combatExport', null)) || [];
+        const list = await storage.getJSON('profile_list', 'combatExport', null);
+        if (list && list.length > 0) return list;
     } catch (error) {
-        console.error('[Combat Sim Export] Failed to get profile list:', error);
-        return [];
+        console.error('[Combat Sim Export] Failed to get profile list from IndexedDB:', error);
     }
+    // Cross-domain fallback: read from GM storage (saved by game page)
+    if (typeof GM_getValue !== 'undefined') {
+        try {
+            const raw = GM_getValue('toolasha_profile_list', null);
+            if (raw) return JSON.parse(raw);
+        } catch {
+            /* ignore */
+        }
+    }
+    return [];
 }
 
 /**
