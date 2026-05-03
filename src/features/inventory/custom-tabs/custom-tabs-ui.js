@@ -782,6 +782,15 @@ export default class CustomTabsUI {
     }
 
     /**
+     * Count total items across all tabs (recursively) for rebuild detection.
+     * @returns {number}
+     */
+    _getTotalConfigItemCount() {
+        const countTab = (tab) => (tab.items?.length || 0) + (tab.children || []).reduce((s, c) => s + countTab(c), 0);
+        return (this._config?.tabs || []).reduce((s, t) => s + countTab(t), 0);
+    }
+
+    /**
      * Synchronous layout pass — applies CSS order and visibility to all tiles.
      * Extracted from _applyLayout so it can also be called from a MutationObserver
      * callback (which fires before the browser paints, eliminating flicker when
@@ -820,10 +829,14 @@ export default class CustomTabsUI {
             tile.style.order = '';
         }
 
-        // Force full rebuild when tile count changed — the lightweight path
+        // Force full rebuild when tile count OR config item count changed — the lightweight path
         // reuses stale header order values that don't have enough order-space
         // for new tiles, causing items to visually cascade into wrong sections.
-        if (!needsFullRebuild && allTiles.length !== this._lastRebuildTileCount) {
+        const configItemCount = this._getTotalConfigItemCount();
+        if (
+            !needsFullRebuild &&
+            (allTiles.length !== this._lastRebuildTileCount || configItemCount !== this._lastRebuildConfigItemCount)
+        ) {
             needsFullRebuild = true;
             this._removeInjectedEls();
         }
@@ -855,6 +868,7 @@ export default class CustomTabsUI {
             }
 
             this._lastRebuildTileCount = allTiles.length;
+            this._lastRebuildConfigItemCount = configItemCount;
         } else {
             // Lightweight update: headers already exist, just re-apply tile order/visibility
             this._updateTileVisibility(invContainer, tileMap);
