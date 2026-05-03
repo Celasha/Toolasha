@@ -2739,6 +2739,7 @@ class CombatSimUI {
     }
 
     _renderHistoryPanel() {
+        const history = this._simHistory;
         if (history.length < 2) return '';
 
         const baseIdx = this._comparisonBaseline ?? 0;
