@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.34.0
+ * Version: 2.35.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2887,12 +2887,42 @@
         }
 
         /**
-         * Save profile shares to IndexedDB for Combat Simulator export
+         * Save combat sim data for export (cross-domain via GM storage + IndexedDB).
+         * Character/client/battle data is saved to GM storage so the Shykai sim page can read it.
+         * Profile shares are saved to IndexedDB for cross-session persistence.
          * @param {string} messageType - Message type
          * @param {string} message - Raw message JSON string
          */
         async saveCombatSimData(messageType, message) {
+            const hasGM = typeof GM_setValue !== 'undefined';
             try {
+                // Save character/client/battle data to GM storage for cross-domain Shykai access
+                if (hasGM && messageType === 'init_character_data') {
+                    setTimeout(() => {
+                        try {
+                            GM_setValue('toolasha_init_character_data', message);
+                        } catch {
+                            /* ignore */
+                        }
+                    }, 0);
+                } else if (hasGM && messageType === 'init_client_data') {
+                    setTimeout(() => {
+                        try {
+                            GM_setValue('toolasha_init_client_data', message);
+                        } catch {
+                            /* ignore */
+                        }
+                    }, 0);
+                } else if (hasGM && messageType === 'new_battle') {
+                    setTimeout(() => {
+                        try {
+                            GM_setValue('toolasha_new_battle', message);
+                        } catch {
+                            /* ignore */
+                        }
+                    }, 0);
+                }
+
                 // Save profile shares (when opening party member profiles)
                 if (messageType === 'profile_shared') {
                     const parsed = JSON.parse(message);
@@ -2928,8 +2958,15 @@
                         profileList.pop();
                     }
 
-                    // Save updated profile list to IndexedDB immediately (works on all platforms including Steam)
+                    // Save updated profile list to IndexedDB (cross-session) and GM storage (cross-domain for Shykai)
                     await storage.setJSON('profile_list', profileList, 'combatExport', true);
+                    if (hasGM) {
+                        try {
+                            GM_setValue('toolasha_profile_list', JSON.stringify(profileList));
+                        } catch {
+                            /* ignore */
+                        }
+                    }
                 }
             } catch (error) {
                 console.error('[WebSocket] Failed to save Combat Sim data:', error);
