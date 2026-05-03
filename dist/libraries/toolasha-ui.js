@@ -1,11 +1,11 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.32.2
+ * Version: 2.32.3
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (config, dataManager, domObserver, formatters_js, timerRegistry_js, domObserverHelpers_js, dom_js, storage, marketAPI, efficiency_js, webSocketHook, reactInput_js, actionPanelHelper_js, expectedValueCalculator, bonusRevenueCalculator_js, marketData_js, profitConstants_js, profitHelpers_js, profitCalculator, selectors_js, profileManager_js, cleanupRegistry_js, settingsSchema_js, settingsStorage, materialCalculator_js, enhancementCalculator_js, enhancementConfig_js, teaParser_js, actionCalculator_js) {
+(function (config, dataManager, domObserver, formatters_js, timerRegistry_js, domObserverHelpers_js, dom_js, storage, marketAPI, efficiency_js, webSocketHook, reactInput_js, actionPanelHelper_js, expectedValueCalculator, bonusRevenueCalculator_js, marketData_js, profitConstants_js, profitHelpers_js, profitCalculator, selectors_js, cleanupRegistry_js, settingsSchema_js, settingsStorage, materialCalculator_js, enhancementCalculator_js, enhancementConfig_js, teaParser_js, actionCalculator_js) {
     'use strict';
 
     /**
@@ -7107,23 +7107,16 @@ ${hideRules}
             };
         }
 
-        // Party mode — load profile list from storage
+        // Party mode — load profile list from IndexedDB
         let profileList = [];
         try {
-            const data = await webSocketHook.loadFromStorage('toolasha_profile_list', '[]');
-            profileList = JSON.parse(data);
+            profileList = (await storage.getJSON('profile_list', 'combatExport', null)) || [];
         } catch (error) {
             console.error('[CombatSimAdapter] Failed to load profile list:', error);
         }
 
         // Get battle data for consumable detection
-        let battleData = null;
-        try {
-            const data = await webSocketHook.loadFromStorage('toolasha_new_battle', null);
-            if (data) battleData = JSON.parse(data);
-        } catch (error) {
-            console.error('[CombatSimAdapter] Failed to load battle data:', error);
-        }
+        const battleData = dataManager.battleData || null;
 
         const players = [];
         const playerNames = [];
@@ -7144,14 +7137,8 @@ ${hideRules}
                     playerNames.push(characterData.character.name || 'Player ' + slotIndex);
                 }
             } else {
-                // Party member — try profile list, then memory cache
-                let profile = profileList.find((p) => p.characterID === member.characterID);
-                if (!profile) {
-                    const cached = profileManager_js.getCurrentProfile();
-                    if (cached?.characterID === member.characterID) {
-                        profile = cached;
-                    }
-                }
+                // Party member — look up in profile list (IndexedDB, cross-session)
+                const profile = profileList.find((p) => p.characterID === member.characterID);
 
                 if (profile) {
                     const memberDTO = buildPartyMemberDTO(profile, clientData, battleData);
@@ -30794,4 +30781,4 @@ ${hideRules}
 
     console.log('[Toolasha] UI library loaded');
 
-})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Utils.formatters, Toolasha.Utils.timerRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.dom, Toolasha.Core.storage, Toolasha.Core.marketAPI, Toolasha.Utils.efficiency, Toolasha.Core.webSocketHook, Toolasha.Utils.reactInput, Toolasha.Utils.actionPanelHelper, Toolasha.Market.expectedValueCalculator, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.marketData, Toolasha.Utils.profitConstants, Toolasha.Utils.profitHelpers, Toolasha.Market.profitCalculator, Toolasha.Utils.selectors, Toolasha.Core.profileManager, Toolasha.Utils.cleanupRegistry, Toolasha.Core, Toolasha.Core.settingsStorage, Toolasha.Utils.materialCalculator, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.enhancementConfig, Toolasha.Utils.teaParser, Toolasha.Utils.actionCalculator);
+})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Utils.formatters, Toolasha.Utils.timerRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.dom, Toolasha.Core.storage, Toolasha.Core.marketAPI, Toolasha.Utils.efficiency, Toolasha.Core.webSocketHook, Toolasha.Utils.reactInput, Toolasha.Utils.actionPanelHelper, Toolasha.Market.expectedValueCalculator, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.marketData, Toolasha.Utils.profitConstants, Toolasha.Utils.profitHelpers, Toolasha.Market.profitCalculator, Toolasha.Utils.selectors, Toolasha.Utils.cleanupRegistry, Toolasha.Core, Toolasha.Core.settingsStorage, Toolasha.Utils.materialCalculator, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.enhancementConfig, Toolasha.Utils.teaParser, Toolasha.Utils.actionCalculator);

@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.32.2
+ * Version: 2.32.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2537,37 +2537,7 @@
             this.isSocketWrapped = false;
             this.originalWebSocket = null;
             this.currentWebSocket = null;
-            this.hasGMStorage = typeof GM_setValue !== 'undefined' && typeof GM_getValue !== 'undefined';
             this.clientDataRetryTimeout = null;
-        }
-
-        /**
-         * Save combat sim export data to GM storage
-         * Used for cross-domain sharing with Combat Sim page
-         * @param {string} key - Storage key
-         * @param {string} value - Value to save (JSON string)
-         */
-        async saveToStorage(key, value) {
-            if (!this.hasGMStorage) return;
-            // Wrap in setTimeout to make async and prevent main thread blocking
-            setTimeout(() => {
-                try {
-                    GM_setValue(key, value);
-                } catch (error) {
-                    console.error('[WebSocket] Failed to save to GM storage:', error);
-                }
-            }, 0);
-        }
-
-        /**
-         * Load combat sim export data from GM storage
-         * @param {string} key - Storage key
-         * @param {string} defaultValue - Default value if not found
-         * @returns {string|null} Stored value or default
-         */
-        async loadFromStorage(key, defaultValue = null) {
-            if (!this.hasGMStorage) return defaultValue;
-            return GM_getValue(key, defaultValue);
         }
 
         /**
@@ -2900,27 +2870,12 @@
         }
 
         /**
-         * Save character/battle data for Combat Simulator export
+         * Save profile shares to IndexedDB for Combat Simulator export
          * @param {string} messageType - Message type
          * @param {string} message - Raw message JSON string
          */
         async saveCombatSimData(messageType, message) {
             try {
-                // Save full character data (on login/refresh)
-                if (messageType === 'init_character_data') {
-                    await this.saveToStorage('toolasha_init_character_data', message);
-                }
-
-                // Save client data (for ability special detection)
-                if (messageType === 'init_client_data') {
-                    await this.saveToStorage('toolasha_init_client_data', message);
-                }
-
-                // Save battle data including party members (on combat start)
-                if (messageType === 'new_battle') {
-                    await this.saveToStorage('toolasha_new_battle', message);
-                }
-
                 // Save profile shares (when opening party member profiles)
                 if (messageType === 'profile_shared') {
                     const parsed = JSON.parse(message);
@@ -2942,9 +2897,8 @@
                     // Store in memory for Steam users (works without GM storage)
                     setCurrentProfile(parsed);
 
-                    // Load existing profile list from GM storage (cross-origin accessible)
-                    const profileListJson = await this.loadFromStorage('toolasha_profile_list', '[]');
-                    let profileList = JSON.parse(profileListJson);
+                    // Load existing profile list from IndexedDB
+                    let profileList = (await storage.getJSON('profile_list', 'combatExport', null)) || [];
 
                     // Remove old entry for same character
                     profileList = profileList.filter((p) => p.characterID !== parsed.characterID);
@@ -2957,8 +2911,8 @@
                         profileList.pop();
                     }
 
-                    // Save updated profile list to GM storage (matches pattern of other combat sim data)
-                    await this.saveToStorage('toolasha_profile_list', JSON.stringify(profileList));
+                    // Save updated profile list to IndexedDB (works on all platforms including Steam)
+                    await storage.setJSON('profile_list', profileList, 'combatExport');
                 }
             } catch (error) {
                 console.error('[WebSocket] Failed to save Combat Sim data:', error);
@@ -2989,9 +2943,6 @@
 
                 // Verify it's init_client_data
                 if (clientDataObj?.type === 'init_client_data') {
-                    // Save as JSON string for Combat Sim export
-                    const clientDataStr = JSON.stringify(clientDataObj);
-                    await this.saveToStorage('toolasha_init_client_data', clientDataStr);
                     this.clearClientDataRetry();
                 }
             } catch (error) {

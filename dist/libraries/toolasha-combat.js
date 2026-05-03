@@ -1,11 +1,11 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.32.2
+ * Version: 2.32.3
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (config, dataManager, domObserver, storage, webSocketHook, timerRegistry_js, domObserverHelpers_js, marketAPI, formatters_js, profileManager_js, reactInput_js, expectedValueCalculator, dom, abilityCostCalculator_js, houseCostCalculator_js, enhancementConfig_js, marketData_js, enhancementCalculator_js, teaParser_js) {
+(function (config, dataManager, domObserver, storage, webSocketHook, timerRegistry_js, domObserverHelpers_js, marketAPI, formatters_js, reactInput_js, expectedValueCalculator, dom, abilityCostCalculator_js, houseCostCalculator_js, enhancementConfig_js, marketData_js, enhancementCalculator_js, teaParser_js) {
     'use strict';
 
     /**
@@ -7719,67 +7719,38 @@
 
 
     /**
-     * Get saved character data from storage
-     * @returns {Promise<Object|null>} Parsed character data or null
+     * Get character data from dataManager (in-memory, always current).
+     * @returns {Object|null}
      */
-    async function getCharacterData$1() {
-        try {
-            const data = await webSocketHook.loadFromStorage('toolasha_init_character_data', null);
-            if (!data) {
-                console.error('[Combat Sim Export] No character data found. Please refresh game page.');
-                return null;
-            }
-            return JSON.parse(data);
-        } catch (error) {
-            console.error('[Combat Sim Export] Failed to get character data:', error);
-            return null;
-        }
+    function getCharacterData$1() {
+        const data = dataManager.characterData;
+        if (!data) console.error('[Combat Sim Export] No character data found. Please refresh game page.');
+        return data || null;
     }
 
     /**
-     * Get saved battle data from storage
-     * @returns {Promise<Object|null>} Parsed battle data or null
+     * Get battle data from dataManager (null if not in combat).
+     * @returns {Object|null}
      */
-    async function getBattleData() {
-        try {
-            const data = await webSocketHook.loadFromStorage('toolasha_new_battle', null);
-            if (!data) {
-                return null; // No battle data (not in combat or solo)
-            }
-            return JSON.parse(data);
-        } catch (error) {
-            console.error('[Combat Sim Export] Failed to get battle data:', error);
-            return null;
-        }
+    function getBattleData() {
+        return dataManager.battleData || null;
     }
 
     /**
-     * Get init_client_data from storage
-     * @returns {Promise<Object|null>} Parsed client data or null
+     * Get init_client_data from dataManager (in-memory, always current).
+     * @returns {Object|null}
      */
-    async function getClientData() {
-        try {
-            const data = await webSocketHook.loadFromStorage('toolasha_init_client_data', null);
-            if (!data) {
-                console.warn('[Combat Sim Export] No client data found');
-                return null;
-            }
-            return JSON.parse(data);
-        } catch (error) {
-            console.error('[Combat Sim Export] Failed to get client data:', error);
-            return null;
-        }
+    function getClientData() {
+        return dataManager.getInitClientData() || null;
     }
 
     /**
-     * Get profile export list from storage
-     * @returns {Promise<Array>} List of saved profiles
+     * Get profile list from IndexedDB (cross-session, works on all platforms).
+     * @returns {Promise<Array>}
      */
     async function getProfileList$1() {
         try {
-            // Read from GM storage (cross-origin accessible, matches pattern of other combat sim data)
-            const profileListJson = await webSocketHook.loadFromStorage('toolasha_profile_list', '[]');
-            return JSON.parse(profileListJson);
+            return (await storage.getJSON('profile_list', 'combatExport', null)) || [];
         } catch (error) {
             console.error('[Combat Sim Export] Failed to get profile list:', error);
             return [];
@@ -8093,13 +8064,13 @@
      * @returns {Object} Export object with player data, IDs, positions, and zone info
      */
     async function constructExportObject(externalProfileId = null, singlePlayerFormat = false) {
-        const characterObj = await getCharacterData$1();
+        const characterObj = getCharacterData$1();
         if (!characterObj) {
             return null;
         }
 
-        const clientObj = await getClientData();
-        const battleObj = await getBattleData();
+        const clientObj = getClientData();
+        const battleObj = getBattleData();
         const profileList = await getProfileList$1();
 
         // Blank player template (as string, like MCS)
@@ -8108,14 +8079,7 @@
 
         // Check if exporting another player's profile
         if (externalProfileId && externalProfileId !== characterObj.character.id) {
-            // Try to find profile in GM storage first, then fall back to memory cache
-            let profile = profileList.find((p) => p.characterID === externalProfileId);
-
-            // If not found in GM storage, check memory cache (works on Steam)
-            const cachedProfile = profileManager_js.getCurrentProfile();
-            if (!profile && cachedProfile && cachedProfile.characterID === externalProfileId) {
-                profile = cachedProfile;
-            }
+            const profile = profileList.find((p) => p.characterID === externalProfileId);
 
             if (!profile) {
                 console.error('[Combat Sim Export] Profile not found for:', externalProfileId);
@@ -9241,7 +9205,7 @@
 
             // Fallback to real character data if simulator extraction fails
             if (!characterSkills) {
-                const characterData = await getCharacterDataFromStorage();
+                const characterData = getCharacterDataFromStorage();
 
                 if (!characterData) {
                     console.warn('[Toolasha Combat Sim Calculator] No character data available');
@@ -9257,7 +9221,7 @@
             }
 
             // Get level exp table from storage (cross-domain)
-            const clientData = await getClientDataFromStorage();
+            const clientData = getClientDataFromStorage();
 
             if (!clientData) {
                 console.warn('[Toolasha Combat Sim Calculator] No client data available');
@@ -9297,39 +9261,21 @@
     }
 
     /**
-     * Get saved character data from storage
-     * @returns {Promise<Object|null>} Parsed character data or null
+     * Get character data from dataManager (in-memory, always current).
+     * @returns {Object|null}
      */
-    async function getCharacterDataFromStorage() {
-        try {
-            const data = await webSocketHook.loadFromStorage('toolasha_init_character_data', null);
-            if (!data) {
-                console.error('[Toolasha Combat Sim Calculator] No character data in storage. Please refresh game page.');
-                return null;
-            }
-            return JSON.parse(data);
-        } catch (error) {
-            console.error('[Toolasha Combat Sim Calculator] Failed to get character data:', error);
-            return null;
-        }
+    function getCharacterDataFromStorage() {
+        const data = dataManager.characterData;
+        if (!data) console.error('[Toolasha Combat Sim Calculator] No character data. Please refresh game page.');
+        return data || null;
     }
 
     /**
-     * Get init_client_data from storage
-     * @returns {Promise<Object|null>} Parsed client data or null
+     * Get init_client_data from dataManager (in-memory, always current).
+     * @returns {Object|null}
      */
-    async function getClientDataFromStorage() {
-        try {
-            const data = await webSocketHook.loadFromStorage('toolasha_init_client_data', null);
-            if (!data) {
-                console.warn('[Toolasha Combat Sim Calculator] No client data in storage');
-                return null;
-            }
-            return JSON.parse(data);
-        } catch (error) {
-            console.error('[Toolasha Combat Sim Calculator] Failed to get client data:', error);
-            return null;
-        }
+    function getClientDataFromStorage() {
+        return dataManager.getInitClientData() || null;
     }
 
     var combatSimIntegration = /*#__PURE__*/Object.freeze({
@@ -9345,31 +9291,22 @@
 
 
     /**
-     * Get character data from storage
-     * @returns {Promise<Object|null>} Character data or null
+     * Get character data from dataManager (in-memory, always current).
+     * @returns {Object|null}
      */
-    async function getCharacterData() {
-        try {
-            const data = await webSocketHook.loadFromStorage('toolasha_init_character_data', null);
-            if (!data) {
-                console.error('[Milkonomy Export] No character data found');
-                return null;
-            }
-            return JSON.parse(data);
-        } catch (error) {
-            console.error('[Milkonomy Export] Failed to get character data:', error);
-            return null;
-        }
+    function getCharacterData() {
+        const data = dataManager.characterData;
+        if (!data) console.error('[Milkonomy Export] No character data found');
+        return data || null;
     }
 
     /**
-     * Get profile list from storage (for looking up external profiles)
-     * @returns {Promise<Array>} List of saved profiles
+     * Get profile list from IndexedDB (cross-session, works on all platforms).
+     * @returns {Promise<Array>}
      */
     async function getProfileList() {
         try {
-            const profileListJson = await webSocketHook.loadFromStorage('toolasha_profile_list', '[]');
-            return JSON.parse(profileListJson);
+            return (await storage.getJSON('profile_list', 'combatExport', null)) || [];
         } catch (error) {
             console.error('[Milkonomy Export] Failed to get profile list:', error);
             return [];
@@ -9813,7 +9750,7 @@
      */
     async function constructMilkonomyExport(externalProfileId = null) {
         try {
-            const characterData = await getCharacterData();
+            const characterData = getCharacterData();
             if (!characterData) {
                 console.error('[Milkonomy Export] No character data available');
                 return null;
@@ -9851,15 +9788,8 @@
 
             // Check if exporting another player's profile
             if (externalProfileId && externalProfileId !== characterData.character?.id) {
-                // Try to find profile in GM storage first, then fall back to memory cache
                 const profileList = await getProfileList();
-                let profile = profileList.find((p) => p.characterID === externalProfileId);
-
-                // If not found in GM storage, check memory cache (works on Steam)
-                const cachedProfile = profileManager_js.getCurrentProfile();
-                if (!profile && cachedProfile && cachedProfile.characterID === externalProfileId) {
-                    profile = cachedProfile;
-                }
+                const profile = profileList.find((p) => p.characterID === externalProfileId);
 
                 if (!profile) {
                     console.error('[Milkonomy Export] Profile not found for:', externalProfileId);
@@ -10507,23 +10437,16 @@
             };
         }
 
-        // Party mode — load profile list from storage
+        // Party mode — load profile list from IndexedDB
         let profileList = [];
         try {
-            const data = await webSocketHook.loadFromStorage('toolasha_profile_list', '[]');
-            profileList = JSON.parse(data);
+            profileList = (await storage.getJSON('profile_list', 'combatExport', null)) || [];
         } catch (error) {
             console.error('[CombatSimAdapter] Failed to load profile list:', error);
         }
 
         // Get battle data for consumable detection
-        let battleData = null;
-        try {
-            const data = await webSocketHook.loadFromStorage('toolasha_new_battle', null);
-            if (data) battleData = JSON.parse(data);
-        } catch (error) {
-            console.error('[CombatSimAdapter] Failed to load battle data:', error);
-        }
+        const battleData = dataManager.battleData || null;
 
         const players = [];
         const playerNames = [];
@@ -10544,14 +10467,8 @@
                     playerNames.push(characterData.character.name || 'Player ' + slotIndex);
                 }
             } else {
-                // Party member — try profile list, then memory cache
-                let profile = profileList.find((p) => p.characterID === member.characterID);
-                if (!profile) {
-                    const cached = profileManager_js.getCurrentProfile();
-                    if (cached?.characterID === member.characterID) {
-                        profile = cached;
-                    }
-                }
+                // Party member — look up in profile list (IndexedDB, cross-session)
+                const profile = profileList.find((p) => p.characterID === member.characterID);
 
                 if (profile) {
                     const memberDTO = buildPartyMemberDTO(profile, clientData, battleData);
@@ -20753,4 +20670,4 @@ self.onmessage = function (e) {
 
     console.log('[Toolasha] Combat library loaded');
 
-})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.storage, Toolasha.Core.webSocketHook, Toolasha.Utils.timerRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Core.marketAPI, Toolasha.Utils.formatters, Toolasha.Core.profileManager, Toolasha.Utils.reactInput, Toolasha.Market.expectedValueCalculator, Toolasha.Utils.dom, Toolasha.Utils.abilityCalc, Toolasha.Utils.houseCostCalculator, Toolasha.Utils.enhancementConfig, Toolasha.Utils.marketData, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.teaParser);
+})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.storage, Toolasha.Core.webSocketHook, Toolasha.Utils.timerRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Core.marketAPI, Toolasha.Utils.formatters, Toolasha.Utils.reactInput, Toolasha.Market.expectedValueCalculator, Toolasha.Utils.dom, Toolasha.Utils.abilityCalc, Toolasha.Utils.houseCostCalculator, Toolasha.Utils.enhancementConfig, Toolasha.Utils.marketData, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.teaParser);
