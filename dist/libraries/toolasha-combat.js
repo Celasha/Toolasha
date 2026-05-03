@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.32.4
+ * Version: 2.33.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -838,12 +838,10 @@
             this.updateListeners = [];
             this.isInitialized = false;
 
-            // Register WebSocket handler immediately at module load time.
-            // loadouts_updated fires as part of the game's login burst, often before
-            // feature initialization runs — pre-registering here ensures we never miss it.
+            // Register WebSocket handler at module load time so in-session loadout
+            // changes are captured whenever loadouts_updated fires.
             this.loadoutsUpdatedHandler = (data) => this._onLoadoutsUpdated(data);
             getWebSocketHook().on('loadouts_updated', this.loadoutsUpdatedHandler);
-            console.log('[LoadoutSnapshot] Constructor: WS handler registered at module load time');
         }
 
         /**
@@ -870,56 +868,35 @@
             if (this.isInitialized) return;
             this.isInitialized = true;
 
-            console.log('[LoadoutSnapshot] initialize() called, snapshots in memory:', Object.keys(this.snapshots).length);
-
             // Re-register WS handler if it was cleared by disable()
             if (!this.loadoutsUpdatedHandler) {
-                console.log('[LoadoutSnapshot] Re-registering WS handler (was cleared by disable)');
                 this.loadoutsUpdatedHandler = (data) => this._onLoadoutsUpdated(data);
                 getWebSocketHook().on('loadouts_updated', this.loadoutsUpdatedHandler);
             }
 
-            // Load from storage only if the early WS handler hasn't already populated snapshots.
-            // If loadouts_updated arrived before feature init, this.snapshots already has fresh data.
+            // Load from storage — loadouts_updated only fires when the user visits the loadouts
+            // UI, so storage is always the source of snapshots at startup.
             if (Object.keys(this.snapshots).length === 0) {
                 const storageKey = getStorageKey$2();
-                console.log('[LoadoutSnapshot] No WS data yet, loading from storage key:', storageKey);
                 // NOTE: getCurrentCharacterId() may be null at this point (before init_character_data
                 // arrives), so getStorageKey() may return 'loadout_snapshots_default'. We will reload
                 // from the correct key once character_initialized fires.
                 this.snapshots = (await storage.getJSON(storageKey, 'settings', null)) || {};
-                console.log('[LoadoutSnapshot] Loaded from storage:', Object.keys(this.snapshots).length, 'snapshots');
 
-                // Fallback for Steam users: loadouts_updated may fire before our WS handler is
-                // registered (parallel @require loading). If storage is also empty, bootstrap from
+                // Fallback for Steam users: if storage is also empty, bootstrap from
                 // the characterLoadoutMap embedded in init_character_data (already in dataManager).
                 if (Object.keys(this.snapshots).length === 0) {
                     const characterLoadoutMap = dataManager.characterData?.characterLoadoutMap;
                     if (characterLoadoutMap && Object.keys(characterLoadoutMap).length > 0) {
-                        console.log(
-                            '[LoadoutSnapshot] Falling back to characterLoadoutMap from init_character_data,',
-                            Object.keys(characterLoadoutMap).length,
-                            'entries'
-                        );
                         this._onLoadoutsUpdated({ characterLoadoutMap });
-                    } else {
-                        console.log('[LoadoutSnapshot] No characterLoadoutMap available in dataManager yet');
                     }
                 }
-            } else {
-                console.log('[LoadoutSnapshot] Using WS-populated snapshots, skipping storage read');
             }
 
             // Reload from the correct character-scoped key once character data is available
             this.characterInitializedHandler = async () => {
                 const storageKey = getStorageKey$2();
-                console.log('[LoadoutSnapshot] character_initialized fired, reloading from key:', storageKey);
                 const fresh = (await storage.getJSON(storageKey, 'settings', null)) || {};
-                console.log(
-                    '[LoadoutSnapshot] character_initialized reload:',
-                    Object.keys(fresh).length,
-                    'snapshots found'
-                );
                 if (Object.keys(fresh).length > 0) {
                     this.snapshots = fresh;
                     this._emitUpdate();
@@ -945,13 +922,6 @@
                 if (!loadout.name) continue;
                 newSnapshots[id] = buildSnapshot(loadout);
             }
-
-            const combatCount = Object.values(newSnapshots).filter(
-                (s) => s.actionTypeHrid === '/action_types/combat'
-            ).length;
-            console.log(
-                `[LoadoutSnapshot] loadouts_updated processed: ${Object.keys(newSnapshots).length} total snapshots, ${combatCount} combat, isInitialized=${this.isInitialized}, storageKey=${getStorageKey$2()}`
-            );
 
             this.snapshots = newSnapshots;
             storage.setJSON(getStorageKey$2(), this.snapshots, 'settings');
@@ -10625,7 +10595,7 @@
 
         const buildTriggers = (hrid) => {
             const rawTriggers = triggerMap[hrid];
-            if (!Array.isArray(rawTriggers)) return [];
+            if (!Array.isArray(rawTriggers)) return null;
             return rawTriggers.map((t) => ({
                 dependencyHrid: t.dependencyHrid,
                 conditionHrid: t.conditionHrid,
@@ -13884,6 +13854,15 @@
                 });
             });
 
+            // History: delete result buttons
+            container.querySelectorAll('[data-delete-history]').forEach((btn) => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const idx = parseInt(btn.dataset.deleteHistory, 10);
+                    this._deleteHistoryEntry(idx);
+                });
+            });
+
             // History collapsible toggle
             container.querySelectorAll('[data-toggle="history-section"]').forEach((el) => {
                 el.addEventListener('click', () => {
@@ -14002,8 +13981,62 @@
          * @returns {string} HTML string
          * @private
          */
+        /**
+         * Delete a history entry by index and re-render results.
+         * @param {number} idx - Index in _simHistory to remove
+         * @private
+         */
+        _deleteHistoryEntry(idx) {
+            if (idx < 0 || idx >= this._simHistory.length) return;
+
+            this._simHistory.splice(idx, 1);
+
+            // Adjust comparisonBaseline
+            if (this._comparisonBaseline === idx) {
+                this._comparisonBaseline = this._simHistory.length > 0 ? Math.max(0, this._simHistory.length - 1) : null;
+            } else if (this._comparisonBaseline !== null && this._comparisonBaseline > idx) {
+                this._comparisonBaseline--;
+            }
+
+            // Adjust comparisonSlots
+            this._comparisonSlots = this._comparisonSlots.filter((i) => i !== idx).map((i) => (i > idx ? i - 1 : i));
+
+            // Adjust comparisonIndex
+            if (this._comparisonIndex === idx) {
+                this._comparisonIndex = null;
+            } else if (this._comparisonIndex !== null && this._comparisonIndex > idx) {
+                this._comparisonIndex--;
+            }
+
+            // Adjust activeDetailIndex
+            if (this._activeDetailIndex === idx) {
+                this._activeDetailIndex = this._simHistory.length > 0 ? this._simHistory.length - 1 : null;
+            } else if (this._activeDetailIndex !== null && this._activeDetailIndex > idx) {
+                this._activeDetailIndex--;
+            }
+
+            // If history is now empty, clear results display
+            if (this._simHistory.length === 0) {
+                this._lastSimResult = null;
+                this._lastSimHours = null;
+                this._lastGameData = null;
+                const container = this.panel?.querySelector('#mwi-csim-results');
+                if (container) container.style.display = 'none';
+                return;
+            }
+
+            // Re-render with the active entry
+            const activeEntry =
+                this._activeDetailIndex !== null
+                    ? this._simHistory[this._activeDetailIndex]
+                    : this._simHistory[this._simHistory.length - 1];
+            this._lastSimResult = activeEntry.simResult;
+            this._lastSimHours = activeEntry.hours;
+            this._lastGameData = activeEntry.gameData;
+            this._displayResults(activeEntry.simResult, activeEntry.hours, activeEntry.gameData);
+        }
+
         _renderHistoryPanel() {
-            const history = this._simHistory;
             if (history.length < 2) return '';
 
             const baseIdx = this._comparisonBaseline ?? 0;
@@ -14046,6 +14079,7 @@
             html += '<th style="text-align:right; padding:2px 4px;">XP/hr</th>';
             if (hasDungeon) html += '<th style="text-align:right; padding:2px 4px;">Success</th>';
             html += '<th style="width:20px;"></th>';
+            html += '<th style="width:20px;"></th>';
             html += '</tr>';
 
             // Baseline row
@@ -14082,9 +14116,11 @@
                     '</td>';
             }
             html += '<td></td>';
+            html +=
+                '<td style="text-align:center; padding:2px; cursor:pointer; color:#555;" data-delete-history="' +
+                baseIdx +
+                '" title="Delete result">✕</td>';
             html += '</tr>';
-
-            // Compared rows
             for (const idx of this._comparisonSlots) {
                 if (idx === baseIdx || idx >= history.length) continue;
                 const entry = history[idx];
@@ -14140,6 +14176,10 @@
                     '<td style="text-align:center; padding:2px; cursor:pointer; color:#666;" data-remove-comparison="' +
                     idx +
                     '" title="Remove from comparison">×</td>';
+                html +=
+                    '<td style="text-align:center; padding:2px; cursor:pointer; color:#555;" data-delete-history="' +
+                    idx +
+                    '" title="Delete result">✕</td>';
                 html += '</tr>';
             }
 

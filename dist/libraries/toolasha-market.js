@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.32.4
+ * Version: 2.33.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -15871,12 +15871,10 @@ self.onmessage = function (e) {
             this.updateListeners = [];
             this.isInitialized = false;
 
-            // Register WebSocket handler immediately at module load time.
-            // loadouts_updated fires as part of the game's login burst, often before
-            // feature initialization runs — pre-registering here ensures we never miss it.
+            // Register WebSocket handler at module load time so in-session loadout
+            // changes are captured whenever loadouts_updated fires.
             this.loadoutsUpdatedHandler = (data) => this._onLoadoutsUpdated(data);
             getWebSocketHook().on('loadouts_updated', this.loadoutsUpdatedHandler);
-            console.log('[LoadoutSnapshot] Constructor: WS handler registered at module load time');
         }
 
         /**
@@ -15903,56 +15901,35 @@ self.onmessage = function (e) {
             if (this.isInitialized) return;
             this.isInitialized = true;
 
-            console.log('[LoadoutSnapshot] initialize() called, snapshots in memory:', Object.keys(this.snapshots).length);
-
             // Re-register WS handler if it was cleared by disable()
             if (!this.loadoutsUpdatedHandler) {
-                console.log('[LoadoutSnapshot] Re-registering WS handler (was cleared by disable)');
                 this.loadoutsUpdatedHandler = (data) => this._onLoadoutsUpdated(data);
                 getWebSocketHook().on('loadouts_updated', this.loadoutsUpdatedHandler);
             }
 
-            // Load from storage only if the early WS handler hasn't already populated snapshots.
-            // If loadouts_updated arrived before feature init, this.snapshots already has fresh data.
+            // Load from storage — loadouts_updated only fires when the user visits the loadouts
+            // UI, so storage is always the source of snapshots at startup.
             if (Object.keys(this.snapshots).length === 0) {
                 const storageKey = getStorageKey$1();
-                console.log('[LoadoutSnapshot] No WS data yet, loading from storage key:', storageKey);
                 // NOTE: getCurrentCharacterId() may be null at this point (before init_character_data
                 // arrives), so getStorageKey() may return 'loadout_snapshots_default'. We will reload
                 // from the correct key once character_initialized fires.
                 this.snapshots = (await storage.getJSON(storageKey, 'settings', null)) || {};
-                console.log('[LoadoutSnapshot] Loaded from storage:', Object.keys(this.snapshots).length, 'snapshots');
 
-                // Fallback for Steam users: loadouts_updated may fire before our WS handler is
-                // registered (parallel @require loading). If storage is also empty, bootstrap from
+                // Fallback for Steam users: if storage is also empty, bootstrap from
                 // the characterLoadoutMap embedded in init_character_data (already in dataManager).
                 if (Object.keys(this.snapshots).length === 0) {
                     const characterLoadoutMap = dataManager.characterData?.characterLoadoutMap;
                     if (characterLoadoutMap && Object.keys(characterLoadoutMap).length > 0) {
-                        console.log(
-                            '[LoadoutSnapshot] Falling back to characterLoadoutMap from init_character_data,',
-                            Object.keys(characterLoadoutMap).length,
-                            'entries'
-                        );
                         this._onLoadoutsUpdated({ characterLoadoutMap });
-                    } else {
-                        console.log('[LoadoutSnapshot] No characterLoadoutMap available in dataManager yet');
                     }
                 }
-            } else {
-                console.log('[LoadoutSnapshot] Using WS-populated snapshots, skipping storage read');
             }
 
             // Reload from the correct character-scoped key once character data is available
             this.characterInitializedHandler = async () => {
                 const storageKey = getStorageKey$1();
-                console.log('[LoadoutSnapshot] character_initialized fired, reloading from key:', storageKey);
                 const fresh = (await storage.getJSON(storageKey, 'settings', null)) || {};
-                console.log(
-                    '[LoadoutSnapshot] character_initialized reload:',
-                    Object.keys(fresh).length,
-                    'snapshots found'
-                );
                 if (Object.keys(fresh).length > 0) {
                     this.snapshots = fresh;
                     this._emitUpdate();
@@ -15978,13 +15955,6 @@ self.onmessage = function (e) {
                 if (!loadout.name) continue;
                 newSnapshots[id] = buildSnapshot(loadout);
             }
-
-            const combatCount = Object.values(newSnapshots).filter(
-                (s) => s.actionTypeHrid === '/action_types/combat'
-            ).length;
-            console.log(
-                `[LoadoutSnapshot] loadouts_updated processed: ${Object.keys(newSnapshots).length} total snapshots, ${combatCount} combat, isInitialized=${this.isInitialized}, storageKey=${getStorageKey$1()}`
-            );
 
             this.snapshots = newSnapshots;
             storage.setJSON(getStorageKey$1(), this.snapshots, 'settings');
@@ -24097,6 +24067,15 @@ self.onmessage = function (e) {
         }
 
         /**
+         * Count total items across all tabs (recursively) for rebuild detection.
+         * @returns {number}
+         */
+        _getTotalConfigItemCount() {
+            const countTab = (tab) => (tab.items?.length || 0) + (tab.children || []).reduce((s, c) => s + countTab(c), 0);
+            return (this._config?.tabs || []).reduce((s, t) => s + countTab(t), 0);
+        }
+
+        /**
          * Synchronous layout pass — applies CSS order and visibility to all tiles.
          * Extracted from _applyLayout so it can also be called from a MutationObserver
          * callback (which fires before the browser paints, eliminating flicker when
@@ -24135,10 +24114,14 @@ self.onmessage = function (e) {
                 tile.style.order = '';
             }
 
-            // Force full rebuild when tile count changed — the lightweight path
+            // Force full rebuild when tile count OR config item count changed — the lightweight path
             // reuses stale header order values that don't have enough order-space
             // for new tiles, causing items to visually cascade into wrong sections.
-            if (!needsFullRebuild && allTiles.length !== this._lastRebuildTileCount) {
+            const configItemCount = this._getTotalConfigItemCount();
+            if (
+                !needsFullRebuild &&
+                (allTiles.length !== this._lastRebuildTileCount || configItemCount !== this._lastRebuildConfigItemCount)
+            ) {
                 needsFullRebuild = true;
                 this._removeInjectedEls();
             }
@@ -24170,6 +24153,7 @@ self.onmessage = function (e) {
                 }
 
                 this._lastRebuildTileCount = allTiles.length;
+                this._lastRebuildConfigItemCount = configItemCount;
             } else {
                 // Lightweight update: headers already exist, just re-apply tile order/visibility
                 this._updateTileVisibility(invContainer, tileMap);
@@ -24558,6 +24542,23 @@ self.onmessage = function (e) {
                     if (remaining.length > 0) tileMap.set(baseHrid, remaining);
                     else tileMap.delete(baseHrid);
                 }
+            } else {
+                // Base hrid: skip tiles that are also registered under an enhanced key still in the
+                // tileMap — those tiles belong to a tab that specifically requested that level.
+                const enhancedPrefix = hrid + '+';
+                const reservedTiles = new Set();
+                for (const [key, keyTiles] of tileMap) {
+                    if (key.startsWith(enhancedPrefix)) {
+                        for (const t of keyTiles) reservedTiles.add(t);
+                    }
+                }
+                const claimable = reservedTiles.size > 0 ? entries.filter((t) => !reservedTiles.has(t)) : entries;
+                if (claimable.length < entries.length) {
+                    // Put the reserved tiles back so their enhanced-hrid tab can claim them
+                    const reserved = entries.filter((t) => reservedTiles.has(t));
+                    tileMap.set(hrid, reserved);
+                }
+                return claimable;
             }
             return entries;
         }
@@ -25263,7 +25264,7 @@ self.onmessage = function (e) {
                 const iconHref = spriteUrl ? `${spriteUrl}#${iconId}` : `#${iconId}`;
 
                 const ownedLevels = levelMap.get(hrid);
-                const maxLevel = details.equipmentDetail?.maxEnhancementLevel || 0;
+                const maxLevel = details.equipmentDetail ? 20 : 0;
                 const isExpandable = maxLevel > 0;
                 const isExpanded = this._expandedSearchHrids?.has(hrid);
 
@@ -25278,6 +25279,27 @@ self.onmessage = function (e) {
                             this._renderSearchResults(container, query, tabId, categoryFilter);
                         });
                         container.appendChild(headerRow);
+
+                        // "Add all levels" shortcut row
+                        const addAllRow = document.createElement('div');
+                        addAllRow.className = 'toolasha-ct-search-result toolasha-ct-search-level-row';
+                        addAllRow.innerHTML = `<span style="color:#7dcea0;font-size:12px;padding-left:4px;">+ Add all levels (+0–+${maxLevel})</span>`;
+                        addAllRow.addEventListener('click', () => {
+                            for (let level = 0; level <= maxLevel; level++) {
+                                const levelHrid = level === 0 ? hrid : `${hrid}+${level}`;
+                                if (!currentItems.has(levelHrid)) {
+                                    this._config = addItem(this._config, tabId, levelHrid);
+                                }
+                            }
+                            this._save();
+                            this._renderSearchResults(container, query, tabId, categoryFilter);
+                            this._renderAssignedItems(
+                                container.parentElement.querySelector('.toolasha-ct-assigned-list'),
+                                tabId
+                            );
+                            if (this._isActive) this._applyLayout();
+                        });
+                        container.appendChild(addAllRow);
 
                         // All levels 0–maxLevel; mark owned with a dot
                         for (let level = 0; level <= maxLevel; level++) {
