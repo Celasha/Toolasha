@@ -346,7 +346,12 @@ class WebSocketHook {
 
             for (const handler of handlers) {
                 try {
-                    handler(data);
+                    const result = handler(data);
+                    if (result instanceof Promise) {
+                        result.catch((error) => {
+                            console.error(`[WebSocket] Async handler error for ${parsedMessageType}:`, error);
+                        });
+                    }
                 } catch (error) {
                     console.error(`[WebSocket] Handler error for ${parsedMessageType}:`, error);
                 }
@@ -356,7 +361,12 @@ class WebSocketHook {
             const wildcardHandlers = this.messageHandlers.get('*') || [];
             for (const handler of wildcardHandlers) {
                 try {
-                    handler(data);
+                    const result = handler(data);
+                    if (result instanceof Promise) {
+                        result.catch((error) => {
+                            console.error('[WebSocket] Async wildcard handler error:', error);
+                        });
+                    }
                 } catch (error) {
                     console.error('[WebSocket] Wildcard handler error:', error);
                 }

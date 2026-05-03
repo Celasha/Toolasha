@@ -304,7 +304,7 @@ class DataManager {
             }
 
             // CRITICAL: Update inventory from action_completed (this is how inventory updates during gathering!)
-            if (data.endCharacterItems && Array.isArray(data.endCharacterItems)) {
+            if (data.endCharacterItems && Array.isArray(data.endCharacterItems) && this.characterItems) {
                 for (const endItem of data.endCharacterItems) {
                     // Only update inventory items
                     if (endItem.itemLocationHrid !== '/item_locations/inventory') {
