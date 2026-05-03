@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 2.32.1
+ * Version: 2.32.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -472,6 +472,17 @@
     const STORAGE_KEY_PREFIX = 'loadout_snapshots';
 
     /**
+     * Returns the active WebSocket hook instance.
+     * In the multi-bundle production build each library bundles its own copy of websocket.js,
+     * but only the Core library's instance has install() called on it.
+     * Prefer window.Toolasha.Core.webSocketHook so listeners actually receive messages.
+     * Falls back to the bundled copy for the dev standalone build (single bundle, one instance).
+     */
+    function getWebSocketHook() {
+        return (typeof window !== 'undefined' && window.Toolasha?.Core?.webSocketHook) || webSocketHook;
+    }
+
+    /**
      * Get character-scoped storage key.
      * @returns {string}
      */
@@ -555,7 +566,7 @@
             // loadouts_updated fires as part of the game's login burst, often before
             // feature initialization runs — pre-registering here ensures we never miss it.
             this.loadoutsUpdatedHandler = (data) => this._onLoadoutsUpdated(data);
-            webSocketHook.on('loadouts_updated', this.loadoutsUpdatedHandler);
+            getWebSocketHook().on('loadouts_updated', this.loadoutsUpdatedHandler);
             console.log('[LoadoutSnapshot] Constructor: WS handler registered at module load time');
         }
 
@@ -589,7 +600,7 @@
             if (!this.loadoutsUpdatedHandler) {
                 console.log('[LoadoutSnapshot] Re-registering WS handler (was cleared by disable)');
                 this.loadoutsUpdatedHandler = (data) => this._onLoadoutsUpdated(data);
-                webSocketHook.on('loadouts_updated', this.loadoutsUpdatedHandler);
+                getWebSocketHook().on('loadouts_updated', this.loadoutsUpdatedHandler);
             }
 
             // Load from storage only if the early WS handler hasn't already populated snapshots.
@@ -602,6 +613,23 @@
                 // from the correct key once character_initialized fires.
                 this.snapshots = (await storage.getJSON(storageKey, 'settings', null)) || {};
                 console.log('[LoadoutSnapshot] Loaded from storage:', Object.keys(this.snapshots).length, 'snapshots');
+
+                // Fallback for Steam users: loadouts_updated may fire before our WS handler is
+                // registered (parallel @require loading). If storage is also empty, bootstrap from
+                // the characterLoadoutMap embedded in init_character_data (already in dataManager).
+                if (Object.keys(this.snapshots).length === 0) {
+                    const characterLoadoutMap = dataManager.characterData?.characterLoadoutMap;
+                    if (characterLoadoutMap && Object.keys(characterLoadoutMap).length > 0) {
+                        console.log(
+                            '[LoadoutSnapshot] Falling back to characterLoadoutMap from init_character_data,',
+                            Object.keys(characterLoadoutMap).length,
+                            'entries'
+                        );
+                        this._onLoadoutsUpdated({ characterLoadoutMap });
+                    } else {
+                        console.log('[LoadoutSnapshot] No characterLoadoutMap available in dataManager yet');
+                    }
+                }
             } else {
                 console.log('[LoadoutSnapshot] Using WS-populated snapshots, skipping storage read');
             }
@@ -737,7 +765,7 @@
 
         disable() {
             if (this.loadoutsUpdatedHandler) {
-                webSocketHook.off('loadouts_updated', this.loadoutsUpdatedHandler);
+                getWebSocketHook().off('loadouts_updated', this.loadoutsUpdatedHandler);
                 this.loadoutsUpdatedHandler = null;
             }
 
