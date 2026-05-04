@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.35.0
+ * Version: 2.36.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1448,6 +1448,36 @@
                     type: 'checkbox',
                     default: true,
                     help: 'Simulate combat encounters to estimate XP/hr, deaths, and consumable usage',
+                },
+                combatSim_defaultHours: {
+                    id: 'combatSim_defaultHours',
+                    label: 'Combat Simulator: Default hours (single zone)',
+                    type: 'number',
+                    default: 100,
+                    min: 1,
+                    max: 10000,
+                    step: 1,
+                    help: 'Default simulation duration in hours for single-zone runs',
+                },
+                combatSim_allZonesDefaultHours: {
+                    id: 'combatSim_allZonesDefaultHours',
+                    label: 'Combat Simulator: Default hours (All Zones)',
+                    type: 'number',
+                    default: 10,
+                    min: 1,
+                    max: 10000,
+                    step: 1,
+                    help: 'Default simulation duration in hours for All Zones runs',
+                },
+                combatSim_seekDefaultHours: {
+                    id: 'combatSim_seekDefaultHours',
+                    label: 'Combat Simulator: Default hours (Seek)',
+                    type: 'number',
+                    default: 10,
+                    min: 1,
+                    max: 10000,
+                    step: 1,
+                    help: 'Default simulation duration in hours for Seek Best Source runs',
                 },
                 combatStats: {
                     id: 'combatStats',

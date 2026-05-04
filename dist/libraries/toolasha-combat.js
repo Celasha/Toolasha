@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.35.0
+ * Version: 2.36.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -7751,11 +7751,13 @@
      * @returns {Promise<Array>}
      */
     async function getProfileList$1() {
-        try {
-            const list = await storage.getJSON('profile_list', 'combatExport', null);
-            if (list && list.length > 0) return list;
-        } catch (error) {
-            console.error('[Combat Sim Export] Failed to get profile list from IndexedDB:', error);
+        if (storage.available) {
+            try {
+                const list = await storage.getJSON('profile_list', 'combatExport', null);
+                if (list && list.length > 0) return list;
+            } catch (error) {
+                console.error('[Combat Sim Export] Failed to get profile list from IndexedDB:', error);
+            }
         }
         // Cross-domain fallback: read from GM storage (saved by game page)
         if (typeof GM_getValue !== 'undefined') {
@@ -7857,30 +7859,43 @@
             playerObj.abilities[i] = { abilityHrid: '', level: 1 };
         }
 
-        // Extract equipped abilities
-        let normalAbilityIndex = 1;
-        const equippedAbilities = characterObj.combatUnit?.combatAbilities || [];
-        for (const ability of equippedAbilities) {
-            if (!ability || !ability.abilityHrid) continue;
+        // Extract equipped abilities via characterLoadoutMap (slot 0 = special/aura, 1-4 = normal).
+        // This avoids relying on clientObj.abilityDetailMap.isSpecialAbility, which is unavailable
+        // cross-domain (Shykai page) and caused abilities to shift into the wrong slots.
+        const abilityLevelMap = {};
+        for (const ability of characterObj.combatUnit?.combatAbilities || []) {
+            if (ability?.abilityHrid) abilityLevelMap[ability.abilityHrid] = ability.level || 1;
+        }
 
-            // Check if special ability
-            if (clientObj?.abilityDetailMap && !clientObj.abilityDetailMap[ability.abilityHrid]) {
-                console.error(`[CombatSimExport] Ability not found in abilityDetailMap: ${ability.abilityHrid}`);
+        let combatLoadout = null;
+        for (const loadout of Object.values(characterObj.characterLoadoutMap || {})) {
+            if (loadout.actionTypeHrid === '/action_types/combat') {
+                if (!combatLoadout || loadout.isDefault) combatLoadout = loadout;
             }
-            const isSpecial = clientObj?.abilityDetailMap?.[ability.abilityHrid]?.isSpecialAbility || false;
+        }
 
-            if (isSpecial) {
-                // Special ability goes in slot 0
-                playerObj.abilities[0] = {
-                    abilityHrid: ability.abilityHrid,
-                    level: ability.level || 1,
-                };
-            } else if (normalAbilityIndex < 5) {
-                // Normal abilities go in slots 1-4
-                playerObj.abilities[normalAbilityIndex++] = {
-                    abilityHrid: ability.abilityHrid,
-                    level: ability.level || 1,
-                };
+        if (combatLoadout?.abilityMap) {
+            for (const [slotStr, abilityHrid] of Object.entries(combatLoadout.abilityMap)) {
+                if (!abilityHrid) continue;
+                const slotIndex = parseInt(slotStr, 10);
+                if (slotIndex >= 0 && slotIndex < 5) {
+                    playerObj.abilities[slotIndex] = { abilityHrid, level: abilityLevelMap[abilityHrid] || 1 };
+                }
+            }
+        } else {
+            // Fallback: iterate combatAbilities with isSpecialAbility detection (requires clientObj)
+            let normalAbilityIndex = 1;
+            for (const ability of characterObj.combatUnit?.combatAbilities || []) {
+                if (!ability?.abilityHrid) continue;
+                const isSpecial = clientObj?.abilityDetailMap?.[ability.abilityHrid]?.isSpecialAbility || false;
+                if (isSpecial) {
+                    playerObj.abilities[0] = { abilityHrid: ability.abilityHrid, level: ability.level || 1 };
+                } else if (normalAbilityIndex < 5) {
+                    playerObj.abilities[normalAbilityIndex++] = {
+                        abilityHrid: ability.abilityHrid,
+                        level: ability.level || 1,
+                    };
+                }
             }
         }
 
@@ -8016,30 +8031,45 @@
             playerObj.abilities[i] = { abilityHrid: '', level: 1 };
         }
 
-        // Extract equipped abilities from profile
-        let normalAbilityIndex = 1;
-        const equippedAbilities = profile.profile?.equippedAbilities || [];
-        for (const ability of equippedAbilities) {
-            if (!ability || !ability.abilityHrid) continue;
-
-            // Check if special ability
-            if (clientObj?.abilityDetailMap && !clientObj.abilityDetailMap[ability.abilityHrid]) {
-                console.error(`[CombatSimExport] Ability not found in abilityDetailMap: ${ability.abilityHrid}`);
+        // Extract equipped abilities from profile.
+        // Try characterLoadoutMap first (slot-indexed, no clientObj needed).
+        // Falls back to equippedAbilities array with isSpecialAbility detection if loadout unavailable.
+        let profileCombatLoadout = null;
+        for (const loadout of Object.values(profile.profile?.characterLoadoutMap || {})) {
+            if (loadout.actionTypeHrid === '/action_types/combat') {
+                if (!profileCombatLoadout || loadout.isDefault) profileCombatLoadout = loadout;
             }
-            const isSpecial = clientObj?.abilityDetailMap?.[ability.abilityHrid]?.isSpecialAbility || false;
+        }
 
-            if (isSpecial) {
-                // Special ability goes in slot 0
-                playerObj.abilities[0] = {
-                    abilityHrid: ability.abilityHrid,
-                    level: ability.level || 1,
-                };
-            } else if (normalAbilityIndex < 5) {
-                // Normal abilities go in slots 1-4
-                playerObj.abilities[normalAbilityIndex++] = {
-                    abilityHrid: ability.abilityHrid,
-                    level: ability.level || 1,
-                };
+        if (profileCombatLoadout?.abilityMap) {
+            const profileAbilityLevelMap = {};
+            for (const ability of profile.profile?.equippedAbilities || []) {
+                if (ability?.abilityHrid) profileAbilityLevelMap[ability.abilityHrid] = ability.level || 1;
+            }
+            for (const [slotStr, abilityHrid] of Object.entries(profileCombatLoadout.abilityMap)) {
+                if (!abilityHrid) continue;
+                const slotIndex = parseInt(slotStr, 10);
+                if (slotIndex >= 0 && slotIndex < 5) {
+                    playerObj.abilities[slotIndex] = {
+                        abilityHrid,
+                        level: profileAbilityLevelMap[abilityHrid] || 1,
+                    };
+                }
+            }
+        } else {
+            // Fallback: iterate equippedAbilities with isSpecialAbility detection (requires clientObj)
+            let normalAbilityIndex = 1;
+            for (const ability of profile.profile?.equippedAbilities || []) {
+                if (!ability?.abilityHrid) continue;
+                const isSpecial = clientObj?.abilityDetailMap?.[ability.abilityHrid]?.isSpecialAbility || false;
+                if (isSpecial) {
+                    playerObj.abilities[0] = { abilityHrid: ability.abilityHrid, level: ability.level || 1 };
+                } else if (normalAbilityIndex < 5) {
+                    playerObj.abilities[normalAbilityIndex++] = {
+                        abilityHrid: ability.abilityHrid,
+                        level: ability.level || 1,
+                    };
+                }
             }
         }
 
@@ -11645,7 +11675,7 @@
             <select id="mwi-csim-tier" style="${selectStyle} flex:0; width:64px; min-width:64px;">
             </select>
             <label style="color:#888; font-size:12px;">Hours</label>
-            <input id="mwi-csim-hours" type="number" min="1" max="10000" value="100" style="${inputStyle}">
+            <input id="mwi-csim-hours" type="number" min="1" max="10000" value="${config.getSettingValue('combatSim_defaultHours', 100)}" style="${inputStyle}">
             <button id="mwi-csim-run" style="
                 margin-left: auto;
                 background: ${ACCENT_BTN_BG};
@@ -11681,6 +11711,8 @@
                 <input type="checkbox" id="mwi-csim-allzones-solo" style="${checkboxStyle}">
                 Sim All Solo
             </label>
+            <label id="mwi-csim-allzones-hours-label" style="color:#888; font-size:12px; display:none;">Hours</label>
+            <input id="mwi-csim-allzones-hours" type="number" min="1" max="10000" value="${config.getSettingValue('combatSim_allZonesDefaultHours', 10)}" style="display:none; width:60px; background:#1a1a2e; color:#e0e0e0; border:1px solid #444; border-radius:4px; padding:3px 6px; font-size:12px; text-align:center;">
             <label id="mwi-csim-earlyexit-label" style="${labelStyle} display:none;" title="Stop simming higher tiers for a zone if both XP/hr and profit/hr declined vs the previous tier">
                 <input type="checkbox" id="mwi-csim-earlyexit" style="${checkboxStyle}" checked>
                 Skip Worse Tiers
@@ -11789,7 +11821,7 @@
                 border:1px solid #444; border-radius:4px;
                 padding:3px 6px; font-size:12px; font-family:inherit;">
             <label style="color:#888; font-size:12px;">Hours</label>
-            <input id="mwi-csim-seek-hours" type="number" min="1" max="10000" value="10" style="
+            <input id="mwi-csim-seek-hours" type="number" min="1" max="10000" value="${config.getSettingValue('combatSim_seekDefaultHours', 10)}" style="
                 width:60px; background:#1a1a2e; color:#e0e0e0;
                 border:1px solid #444; border-radius:4px;
                 padding:3px 6px; font-size:12px; text-align:center;">
@@ -11997,6 +12029,10 @@
             const zoneLabel = zoneSelect?.previousElementSibling;
             const tierLabel = tierSelect?.previousElementSibling;
             const earlyExitLabel = this.panel?.querySelector('#mwi-csim-earlyexit-label');
+            const allZonesHoursInput = this.panel?.querySelector('#mwi-csim-allzones-hours');
+            const allZonesHoursLabel = this.panel?.querySelector('#mwi-csim-allzones-hours-label');
+            const mainHoursInput = this.panel?.querySelector('#mwi-csim-hours');
+            const mainHoursLabel = mainHoursInput?.previousElementSibling;
 
             if (!checklist) return;
 
@@ -12006,7 +12042,11 @@
                 if (tierSelect) tierSelect.style.display = 'none';
                 if (zoneLabel) zoneLabel.style.display = 'none';
                 if (tierLabel) tierLabel.style.display = 'none';
+                if (mainHoursInput) mainHoursInput.style.display = 'none';
+                if (mainHoursLabel) mainHoursLabel.style.display = 'none';
                 if (earlyExitLabel) earlyExitLabel.style.display = 'flex';
+                if (allZonesHoursInput) allZonesHoursInput.style.display = '';
+                if (allZonesHoursLabel) allZonesHoursLabel.style.display = '';
 
                 // Show checklist with zones
                 checklist.style.display = 'block';
@@ -12017,7 +12057,11 @@
                 if (tierSelect) tierSelect.style.display = '';
                 if (zoneLabel) zoneLabel.style.display = '';
                 if (tierLabel) tierLabel.style.display = '';
+                if (mainHoursInput) mainHoursInput.style.display = '';
+                if (mainHoursLabel) mainHoursLabel.style.display = '';
                 if (earlyExitLabel) earlyExitLabel.style.display = 'none';
+                if (allZonesHoursInput) allZonesHoursInput.style.display = 'none';
+                if (allZonesHoursLabel) allZonesHoursLabel.style.display = 'none';
 
                 // Hide checklist
                 checklist.style.display = 'none';
@@ -12104,6 +12148,7 @@
 
             const skillCols = [
                 { key: 'totalXP', label: 'Total XP/hr' },
+                { key: 'profitDay', label: 'Profit/day' },
                 { key: 'stamina', label: 'Stam' },
                 { key: 'intelligence', label: 'Int' },
                 { key: 'attack', label: 'Atk' },
@@ -12153,6 +12198,7 @@
                         revenue: r.revenue?.revenuePerHour || 0,
                         expenses: r.revenue?.costPerHour || 0,
                         profit: r.revenue?.netPerHour || 0,
+                        profitDay: (r.revenue?.netPerHour || 0) * 24,
                     };
                 });
 
@@ -12200,18 +12246,31 @@
                             } else if (col.key === 'tier') {
                                 display = `T${val}`;
                                 style += ' color:#888; text-align:center;';
+                            } else if (col.key === 'deaths') {
+                                display = val.toFixed(2);
+                                style += ' text-align:right; font-variant-numeric:tabular-nums;';
+
+                                const bestVal = minVals[col.key];
+                                const isBest = bestVal !== undefined && val === bestVal && rows.length > 1;
+                                if (isBest) {
+                                    style += ' color:#4caf50; font-weight:600;';
+                                } else if (val > 0) {
+                                    style += ' color:#f44336;';
+                                } else {
+                                    style += ' color:#e0e0e0;';
+                                }
                             } else {
                                 display = formatters_js.formatKMB(Math.round(val));
                                 style += ' text-align:right; font-variant-numeric:tabular-nums;';
 
                                 // Highlight best value per column in green
-                                const isLowerBetter = col.key === 'deaths' || col.key === 'expenses';
+                                const isLowerBetter = col.key === 'expenses';
                                 const bestVal = isLowerBetter ? minVals[col.key] : maxVals[col.key];
                                 const isBest = bestVal !== undefined && val === bestVal && rows.length > 1;
 
                                 if (isBest) {
                                     style += ' color:#4caf50; font-weight:600;';
-                                } else if ((col.key === 'deaths' && val > 0) || (col.key === 'profit' && val < 0)) {
+                                } else if ((col.key === 'profit' || col.key === 'profitDay') && val < 0) {
                                     style += ' color:#f44336;';
                                 } else {
                                     style += ' color:#e0e0e0;';
@@ -12374,7 +12433,10 @@
             }
 
             const hoursEl = this.panel?.querySelector('#mwi-csim-seek-hours');
-            const hours = Math.min(10000, Math.max(1, parseInt(hoursEl?.value) || 100));
+            const hours = Math.min(
+                10000,
+                Math.max(1, parseInt(hoursEl?.value) || config.getSettingValue('combatSim_seekDefaultHours', 10))
+            );
 
             let playerDTOs;
             if (this._editedDTOs) {
@@ -13660,7 +13722,14 @@
 
             const zoneHrid = this.panel.querySelector('#mwi-csim-zone')?.value;
             const difficultyTier = parseInt(this.panel.querySelector('#mwi-csim-tier')?.value) || 0;
-            const hours = Math.min(10000, Math.max(1, parseInt(this.panel.querySelector('#mwi-csim-hours')?.value) || 100));
+            const hours = Math.min(
+                10000,
+                Math.max(
+                    1,
+                    parseInt(this.panel.querySelector('#mwi-csim-hours')?.value) ||
+                        config.getSettingValue('combatSim_defaultHours', 100)
+                )
+            );
 
             if (!zoneHrid) {
                 this._setStatus('No zone selected.');
@@ -13843,7 +13912,14 @@
                 return;
             }
 
-            const hours = Math.min(10000, Math.max(1, parseInt(this.panel.querySelector('#mwi-csim-hours')?.value) || 100));
+            const hours = Math.min(
+                10000,
+                Math.max(
+                    1,
+                    parseInt(this.panel.querySelector('#mwi-csim-allzones-hours')?.value) ||
+                        config.getSettingValue('combatSim_allZonesDefaultHours', 10)
+                )
+            );
 
             const gameData = buildGameDataPayload();
             if (!gameData) {

@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.35.0
+ * Version: 2.36.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -25342,7 +25342,7 @@ self.onmessage = function (e) {
                             container.appendChild(levelRow);
                         }
                     } else {
-                        // Collapsed group row — shows owned levels as badges, expand on click
+                        // Collapsed group row — clicking name adds base item, ▶ expands to show levels
                         const ownedBadges = ownedLevels
                             ? [...ownedLevels]
                                   .sort((a, b) => a - b)
@@ -25353,10 +25353,23 @@ self.onmessage = function (e) {
                         const row = document.createElement('div');
                         row.className = 'toolasha-ct-search-result toolasha-ct-search-group-header';
                         row.innerHTML = `<svg viewBox="0 0 32 32"><use href="${iconHref}"></use></svg><span>${this._escHtml(details.name)}</span>${ownedBadges ? `<span class="toolasha-ct-level-badges">${this._escHtml(ownedBadges)}</span>` : ''}<span class="toolasha-ct-expand-btn">▶</span>`;
-                        row.addEventListener('click', () => {
+                        // Clicking the expand button expands the group
+                        row.querySelector('.toolasha-ct-expand-btn').addEventListener('click', (e) => {
+                            e.stopPropagation();
                             if (!this._expandedSearchHrids) this._expandedSearchHrids = new Set();
                             this._expandedSearchHrids.add(hrid);
                             this._renderSearchResults(container, query, tabId, categoryFilter);
+                        });
+                        // Clicking the item name/icon adds the base (unenhanced) item
+                        row.addEventListener('click', () => {
+                            this._config = addItem(this._config, tabId, hrid);
+                            this._save();
+                            this._renderSearchResults(container, query, tabId, categoryFilter);
+                            this._renderAssignedItems(
+                                container.parentElement.querySelector('.toolasha-ct-assigned-list'),
+                                tabId
+                            );
+                            if (this._isActive) this._applyLayout();
                         });
                         container.appendChild(row);
                     }
