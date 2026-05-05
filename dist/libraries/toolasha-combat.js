@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.36.0
+ * Version: 2.36.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -7874,6 +7874,18 @@
             }
         }
 
+        // DEBUG: Log ability data sources to diagnose import issues
+        console.log('[CombatSimExport] Self ability debug:', {
+            hasCharacterLoadoutMap: !!characterObj.characterLoadoutMap,
+            loadoutCount: Object.keys(characterObj.characterLoadoutMap || {}).length,
+            combatLoadoutFound: !!combatLoadout,
+            combatLoadoutAbilityMap: combatLoadout?.abilityMap || null,
+            combatAbilities: (characterObj.combatUnit?.combatAbilities || []).map((a) => a?.abilityHrid || null),
+            abilityLevelMap,
+            hasClientObj: !!clientObj,
+            usingLoadoutPath: !!combatLoadout?.abilityMap,
+        });
+
         if (combatLoadout?.abilityMap) {
             for (const [slotStr, abilityHrid] of Object.entries(combatLoadout.abilityMap)) {
                 if (!abilityHrid) continue;
@@ -7898,6 +7910,9 @@
                 }
             }
         }
+
+        // DEBUG: Log final ability result
+        console.log('[CombatSimExport] Self abilities result:', playerObj.abilities);
 
         // Extract trigger maps
         playerObj.triggerMap = {
