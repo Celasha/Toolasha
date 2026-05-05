@@ -76,7 +76,7 @@ class Zone {
             const waveKeys = Object.keys(this.dungeonSpawnInfo.randomSpawnInfoMap)
                 .map(Number)
                 .sort((a, b) => a - b);
-            if (this.encountersKilled > waveKeys[waveKeys.length - 1]) {
+            if (this.encountersKilled >= waveKeys[waveKeys.length - 1]) {
                 monsterSpawns = this.dungeonSpawnInfo.randomSpawnInfoMap[waveKeys[waveKeys.length - 1]];
             } else {
                 for (let i = 0; i < waveKeys.length - 1; i++) {
