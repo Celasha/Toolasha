@@ -110,12 +110,6 @@ export function runWorkerChunk(message, onProgress) {
             } else if (msg.type === 'error') {
                 worker.terminate();
                 cleanup();
-                console.error('[CombatSimRunner] Worker error:', {
-                    message: msg.error,
-                    stack: msg.stack,
-                    zoneHrid: msg.zoneHrid,
-                    difficultyTier: msg.difficultyTier,
-                });
                 reject(new Error(msg.error));
             }
         };

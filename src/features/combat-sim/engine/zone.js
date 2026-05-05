@@ -17,43 +17,13 @@ class Zone {
         this.dungeonsFailed = 0;
         this.finalWave = false;
 
-        // Log zone construction state for debugging
-        console.log('[Zone] constructed:', {
-            hrid: this.hrid,
-            difficultyTier: this.difficultyTier,
-            isDungeon: this.isDungeon,
-            hasFightInfo: !!this.monsterSpawnInfo,
-            hasDungeonInfo: !!this.dungeonSpawnInfo,
-            hasRandomSpawnInfo: !!this.monsterSpawnInfo?.randomSpawnInfo,
-            hasRandomSpawnInfoSpawns: !!this.monsterSpawnInfo?.randomSpawnInfo?.spawns,
-            randomSpawnInfoSpawnsLength: this.monsterSpawnInfo?.randomSpawnInfo?.spawns?.length ?? 'N/A',
-            hasBossSpawns: !!this.monsterSpawnInfo?.bossSpawns,
-            hasDungeonRandomSpawnInfoMap: !!this.dungeonSpawnInfo?.randomSpawnInfoMap,
-            dungeonRandomSpawnInfoMapKeys: this.dungeonSpawnInfo?.randomSpawnInfoMap
-                ? Object.keys(this.dungeonSpawnInfo.randomSpawnInfoMap)
-                : 'N/A',
-            fixedSpawnsMapKeys: this.dungeonSpawnInfo?.fixedSpawnsMap
-                ? Object.keys(this.dungeonSpawnInfo.fixedSpawnsMap)
-                : 'N/A',
-            maxWaves: this.dungeonSpawnInfo?.maxWaves ?? 'N/A',
-            combatZoneInfoKeys: Object.keys(gameZone.combatZoneInfo),
-        });
-
         if (this.monsterSpawnInfo) {
             this.monsterSpawnInfo.battlesPerBoss = 10;
         }
     }
 
     getRandomEncounter() {
-        // Guard: if monsterSpawnInfo is missing entirely
         if (!this.monsterSpawnInfo) {
-            console.error('[Zone] getRandomEncounter CRASH DEBUG:', {
-                reason: 'monsterSpawnInfo is null/undefined',
-                zoneHrid: this.hrid,
-                isDungeon: this.isDungeon,
-                difficultyTier: this.difficultyTier,
-                encountersKilled: this.encountersKilled,
-            });
             return [];
         }
 
@@ -64,24 +34,7 @@ class Zone {
             );
         }
 
-        // Guard: if randomSpawnInfo or spawns is missing
         if (!this.monsterSpawnInfo.randomSpawnInfo || !this.monsterSpawnInfo.randomSpawnInfo.spawns) {
-            console.error('[Zone] getRandomEncounter CRASH DEBUG:', {
-                reason: 'randomSpawnInfo or spawns is null/undefined',
-                zoneHrid: this.hrid,
-                isDungeon: this.isDungeon,
-                difficultyTier: this.difficultyTier,
-                encountersKilled: this.encountersKilled,
-                dungeonsCompleted: this.dungeonsCompleted,
-                dungeonsFailed: this.dungeonsFailed,
-                monsterSpawnInfoKeys: Object.keys(this.monsterSpawnInfo),
-                randomSpawnInfo: this.monsterSpawnInfo.randomSpawnInfo
-                    ? JSON.parse(JSON.stringify(this.monsterSpawnInfo.randomSpawnInfo))
-                    : null,
-                hasDungeonSpawnInfo: !!this.dungeonSpawnInfo,
-                dungeonSpawnInfoMaxWaves: this.dungeonSpawnInfo?.maxWaves ?? 'N/A',
-                fullMonsterSpawnInfo: JSON.parse(JSON.stringify(this.monsterSpawnInfo)),
-            });
             this.encountersKilled++;
             return [];
         }
@@ -138,15 +91,6 @@ class Zone {
         const randomSpawnInfoMap = this.dungeonSpawnInfo.randomSpawnInfoMap;
 
         if (!randomSpawnInfoMap || typeof randomSpawnInfoMap !== 'object') {
-            console.error('[Zone] getNextWave CRASH DEBUG:', {
-                reason: 'randomSpawnInfoMap is null/undefined/not-object',
-                randomSpawnInfoMap,
-                zoneHrid: this.hrid,
-                waveNum,
-                maxWaves: this.dungeonSpawnInfo.maxWaves,
-                fixedSpawnsMapKeys: Object.keys(this.dungeonSpawnInfo.fixedSpawnsMap || {}),
-                dungeonSpawnInfo: JSON.parse(JSON.stringify(this.dungeonSpawnInfo)),
-            });
             this.encountersKilled++;
             return [];
         }
@@ -156,29 +100,18 @@ class Zone {
             .sort((a, b) => a - b);
 
         if (waveKeys.length === 0) {
-            console.error('[Zone] getNextWave CRASH DEBUG:', {
-                reason: 'randomSpawnInfoMap has no keys',
-                randomSpawnInfoMap: JSON.parse(JSON.stringify(randomSpawnInfoMap)),
-                zoneHrid: this.hrid,
-                waveNum,
-                maxWaves: this.dungeonSpawnInfo.maxWaves,
-                fixedSpawnsMapKeys: Object.keys(this.dungeonSpawnInfo.fixedSpawnsMap || {}),
-            });
             this.encountersKilled++;
             return [];
         }
 
         let monsterSpawns = null;
-        let matchReason = 'none';
 
         if (waveNum >= waveKeys[waveKeys.length - 1]) {
             monsterSpawns = randomSpawnInfoMap[waveKeys[waveKeys.length - 1]];
-            matchReason = `>= last key (${waveKeys[waveKeys.length - 1]})`;
         } else {
             for (let i = 0; i < waveKeys.length - 1; i++) {
                 if (waveNum >= waveKeys[i] && waveNum < waveKeys[i + 1]) {
                     monsterSpawns = randomSpawnInfoMap[waveKeys[i]];
-                    matchReason = `range [${waveKeys[i]}, ${waveKeys[i + 1]})`;
                     break;
                 }
             }
@@ -186,36 +119,11 @@ class Zone {
 
         // Fallback to first available spawn info if no range matched
         if (!monsterSpawns || !monsterSpawns.spawns) {
-            const fallbackKey = waveKeys[0];
-            const fallbackValue = randomSpawnInfoMap[fallbackKey];
-
-            console.error('[Zone] getNextWave CRASH DEBUG:', {
-                reason: 'monsterSpawns null/missing spawns after lookup',
-                matchReason,
-                monsterSpawns: monsterSpawns ? JSON.parse(JSON.stringify(monsterSpawns)) : monsterSpawns,
-                fallbackKey,
-                fallbackValue: fallbackValue
-                    ? { spawns: fallbackValue.spawns, maxSpawnCount: fallbackValue.maxSpawnCount }
-                    : fallbackValue,
-                zoneHrid: this.hrid,
-                waveNum,
-                maxWaves: this.dungeonSpawnInfo.maxWaves,
-                waveKeys,
-                fixedSpawnsMapKeys: Object.keys(this.dungeonSpawnInfo.fixedSpawnsMap || {}),
-                dungeonsCompleted: this.dungeonsCompleted,
-                dungeonsFailed: this.dungeonsFailed,
-                randomSpawnInfoMapSnapshot: JSON.parse(JSON.stringify(randomSpawnInfoMap)),
-            });
-
-            monsterSpawns = fallbackValue;
+            monsterSpawns = randomSpawnInfoMap[waveKeys[0]];
         }
 
         // Final safety — if still broken, skip wave instead of crashing
         if (!monsterSpawns?.spawns) {
-            console.error('[Zone] getNextWave FATAL: no valid spawns found anywhere, skipping wave', {
-                zoneHrid: this.hrid,
-                waveNum,
-            });
             this.encountersKilled++;
             return [];
         }

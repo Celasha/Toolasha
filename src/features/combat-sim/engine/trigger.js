@@ -46,6 +46,9 @@ class Trigger {
         let dependency;
         switch (this.dependencyHrid) {
             case '/combat_trigger_dependencies/all_allies':
+                if (!friendlies) {
+                    return false;
+                }
                 dependency = friendlies;
                 break;
             case '/combat_trigger_dependencies/all_enemies':
@@ -56,6 +59,10 @@ class Trigger {
                 break;
             default:
                 throw new Error('Unknown dependencyHrid in trigger: ' + this.dependencyHrid);
+        }
+
+        if (!dependency) {
+            return false;
         }
 
         let dependencyValue;
