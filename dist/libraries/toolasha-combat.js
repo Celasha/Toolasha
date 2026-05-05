@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.36.1
+ * Version: 2.37.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -7859,60 +7859,35 @@
             playerObj.abilities[i] = { abilityHrid: '', level: 1 };
         }
 
-        // Extract equipped abilities via characterLoadoutMap (slot 0 = special/aura, 1-4 = normal).
-        // This avoids relying on clientObj.abilityDetailMap.isSpecialAbility, which is unavailable
-        // cross-domain (Shykai page) and caused abilities to shift into the wrong slots.
-        const abilityLevelMap = {};
-        for (const ability of characterObj.combatUnit?.combatAbilities || []) {
-            if (ability?.abilityHrid) abilityLevelMap[ability.abilityHrid] = ability.level || 1;
-        }
+        // Extract equipped abilities from combatUnit.combatAbilities (the live equipped state).
+        // When abilityDetailMap is available (game page), use isSpecialAbility for precise detection.
+        // On Shykai (cross-domain, no clientObj), fall back to the convention that combatAbilities[0]
+        // is the special/aura ability when 4 or more abilities are present.
+        const combatAbilities = characterObj.combatUnit?.combatAbilities || [];
+        const hasDetailMap = !!clientObj?.abilityDetailMap;
+        let normalAbilityIndex = 1;
 
-        let combatLoadout = null;
-        for (const loadout of Object.values(characterObj.characterLoadoutMap || {})) {
-            if (loadout.actionTypeHrid === '/action_types/combat') {
-                if (!combatLoadout || loadout.isDefault) combatLoadout = loadout;
+        for (let i = 0; i < combatAbilities.length; i++) {
+            const ability = combatAbilities[i];
+            if (!ability?.abilityHrid) continue;
+
+            let isSpecial;
+            if (hasDetailMap) {
+                isSpecial = clientObj.abilityDetailMap[ability.abilityHrid]?.isSpecialAbility || false;
+            } else {
+                // Cross-domain fallback: treat first entry as special when kit is full-sized
+                isSpecial = i === 0 && combatAbilities.length >= 4;
+            }
+
+            if (isSpecial) {
+                playerObj.abilities[0] = { abilityHrid: ability.abilityHrid, level: ability.level || 1 };
+            } else if (normalAbilityIndex < 5) {
+                playerObj.abilities[normalAbilityIndex++] = {
+                    abilityHrid: ability.abilityHrid,
+                    level: ability.level || 1,
+                };
             }
         }
-
-        // DEBUG: Log ability data sources to diagnose import issues
-        console.log('[CombatSimExport] Self ability debug:', {
-            hasCharacterLoadoutMap: !!characterObj.characterLoadoutMap,
-            loadoutCount: Object.keys(characterObj.characterLoadoutMap || {}).length,
-            combatLoadoutFound: !!combatLoadout,
-            combatLoadoutAbilityMap: combatLoadout?.abilityMap || null,
-            combatAbilities: (characterObj.combatUnit?.combatAbilities || []).map((a) => a?.abilityHrid || null),
-            abilityLevelMap,
-            hasClientObj: !!clientObj,
-            usingLoadoutPath: !!combatLoadout?.abilityMap,
-        });
-
-        if (combatLoadout?.abilityMap) {
-            for (const [slotStr, abilityHrid] of Object.entries(combatLoadout.abilityMap)) {
-                if (!abilityHrid) continue;
-                const slotIndex = parseInt(slotStr, 10);
-                if (slotIndex >= 0 && slotIndex < 5) {
-                    playerObj.abilities[slotIndex] = { abilityHrid, level: abilityLevelMap[abilityHrid] || 1 };
-                }
-            }
-        } else {
-            // Fallback: iterate combatAbilities with isSpecialAbility detection (requires clientObj)
-            let normalAbilityIndex = 1;
-            for (const ability of characterObj.combatUnit?.combatAbilities || []) {
-                if (!ability?.abilityHrid) continue;
-                const isSpecial = clientObj?.abilityDetailMap?.[ability.abilityHrid]?.isSpecialAbility || false;
-                if (isSpecial) {
-                    playerObj.abilities[0] = { abilityHrid: ability.abilityHrid, level: ability.level || 1 };
-                } else if (normalAbilityIndex < 5) {
-                    playerObj.abilities[normalAbilityIndex++] = {
-                        abilityHrid: ability.abilityHrid,
-                        level: ability.level || 1,
-                    };
-                }
-            }
-        }
-
-        // DEBUG: Log final ability result
-        console.log('[CombatSimExport] Self abilities result:', playerObj.abilities);
 
         // Extract trigger maps
         playerObj.triggerMap = {
@@ -8047,44 +8022,31 @@
         }
 
         // Extract equipped abilities from profile.
-        // Try characterLoadoutMap first (slot-indexed, no clientObj needed).
-        // Falls back to equippedAbilities array with isSpecialAbility detection if loadout unavailable.
-        let profileCombatLoadout = null;
-        for (const loadout of Object.values(profile.profile?.characterLoadoutMap || {})) {
-            if (loadout.actionTypeHrid === '/action_types/combat') {
-                if (!profileCombatLoadout || loadout.isDefault) profileCombatLoadout = loadout;
-            }
-        }
+        // When abilityDetailMap is available (game page), use isSpecialAbility for precise detection.
+        // On Shykai (cross-domain, no clientObj), fall back to the convention that equippedAbilities[0]
+        // is the special/aura ability when 4 or more abilities are present.
+        const equippedAbilities = profile.profile?.equippedAbilities || [];
+        const hasProfileDetailMap = !!clientObj?.abilityDetailMap;
+        let profileNormalIndex = 1;
 
-        if (profileCombatLoadout?.abilityMap) {
-            const profileAbilityLevelMap = {};
-            for (const ability of profile.profile?.equippedAbilities || []) {
-                if (ability?.abilityHrid) profileAbilityLevelMap[ability.abilityHrid] = ability.level || 1;
+        for (let i = 0; i < equippedAbilities.length; i++) {
+            const ability = equippedAbilities[i];
+            if (!ability?.abilityHrid) continue;
+
+            let isSpecial;
+            if (hasProfileDetailMap) {
+                isSpecial = clientObj.abilityDetailMap[ability.abilityHrid]?.isSpecialAbility || false;
+            } else {
+                isSpecial = i === 0 && equippedAbilities.length >= 4;
             }
-            for (const [slotStr, abilityHrid] of Object.entries(profileCombatLoadout.abilityMap)) {
-                if (!abilityHrid) continue;
-                const slotIndex = parseInt(slotStr, 10);
-                if (slotIndex >= 0 && slotIndex < 5) {
-                    playerObj.abilities[slotIndex] = {
-                        abilityHrid,
-                        level: profileAbilityLevelMap[abilityHrid] || 1,
-                    };
-                }
-            }
-        } else {
-            // Fallback: iterate equippedAbilities with isSpecialAbility detection (requires clientObj)
-            let normalAbilityIndex = 1;
-            for (const ability of profile.profile?.equippedAbilities || []) {
-                if (!ability?.abilityHrid) continue;
-                const isSpecial = clientObj?.abilityDetailMap?.[ability.abilityHrid]?.isSpecialAbility || false;
-                if (isSpecial) {
-                    playerObj.abilities[0] = { abilityHrid: ability.abilityHrid, level: ability.level || 1 };
-                } else if (normalAbilityIndex < 5) {
-                    playerObj.abilities[normalAbilityIndex++] = {
-                        abilityHrid: ability.abilityHrid,
-                        level: ability.level || 1,
-                    };
-                }
+
+            if (isSpecial) {
+                playerObj.abilities[0] = { abilityHrid: ability.abilityHrid, level: ability.level || 1 };
+            } else if (profileNormalIndex < 5) {
+                playerObj.abilities[profileNormalIndex++] = {
+                    abilityHrid: ability.abilityHrid,
+                    level: ability.level || 1,
+                };
             }
         }
 

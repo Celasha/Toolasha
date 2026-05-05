@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.36.1
+ * Version: 2.37.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -13947,6 +13947,7 @@
      * @param {Map} [memo] - Memoization cache (unit cost per itemHrid)
      * @param {number} [depth=0] - Current recursion depth
      * @param {number} [maxDepth=MAX_DEPTH] - Maximum recursion depth (1 = buy all sub-materials)
+     * @param {boolean} [buyRawOnly=false] - When true, always craft items that have a recipe; only buy uncraftable items
      * @returns {CraftingPlanNode}
      */
     function computeBestCraftingPlan(
@@ -13956,7 +13957,8 @@
         visited = new Set(),
         memo = new Map(),
         depth = 0,
-        maxDepth = MAX_DEPTH
+        maxDepth = MAX_DEPTH,
+        buyRawOnly = false
     ) {
         const itemDetails = dataManager.getItemDetails(itemHrid);
         const itemName = itemDetails?.name || itemHrid.split('/').pop();
@@ -14013,7 +14015,8 @@
                                   visited,
                                   memo,
                                   depth + 1,
-                                  maxDepth
+                                  maxDepth,
+                                  buyRawOnly
                               )
                           )
                         : [],
@@ -14089,7 +14092,8 @@
                     visited,
                     memo,
                     depth + 1,
-                    maxDepth
+                    maxDepth,
+                    buyRawOnly
                 );
 
                 craftCostPerUnit += childPlan.unitCost * qtyPerUnit;
@@ -14108,7 +14112,8 @@
                 visited,
                 memo,
                 depth + 1,
-                maxDepth
+                maxDepth,
+                buyRawOnly
             );
 
             craftCostPerUnit += upgradePlan.unitCost * qtyPerUnit;
@@ -14118,7 +14123,8 @@
         visited.delete(itemHrid);
 
         // Buy vs craft decision
-        const shouldBuy = buyPrice !== null && buyPrice <= craftCostPerUnit;
+        // When buyRawOnly is true, always craft (we only reach here if a recipe exists)
+        const shouldBuy = !buyRawOnly && buyPrice !== null && buyPrice <= craftCostPerUnit;
         const strategy = shouldBuy ? 'buy' : 'craft';
         const unitCost = shouldBuy ? buyPrice : craftCostPerUnit;
 
@@ -14143,13 +14149,31 @@
                     const reducedCount = inputCountPerAction * (1 - artisanBonus);
                     const inputQty = Math.ceil(reducedCount * actionsNeeded);
                     children.push(
-                        computeBestCraftingPlan(input.itemHrid, inputQty, mode, visited, memo, depth + 1, maxDepth)
+                        computeBestCraftingPlan(
+                            input.itemHrid,
+                            inputQty,
+                            mode,
+                            visited,
+                            memo,
+                            depth + 1,
+                            maxDepth,
+                            buyRawOnly
+                        )
                     );
                 }
             }
             if (action.upgradeItemHrid) {
                 children.push(
-                    computeBestCraftingPlan(action.upgradeItemHrid, actionsNeeded, mode, visited, memo, depth + 1, maxDepth)
+                    computeBestCraftingPlan(
+                        action.upgradeItemHrid,
+                        actionsNeeded,
+                        mode,
+                        visited,
+                        memo,
+                        depth + 1,
+                        maxDepth,
+                        buyRawOnly
+                    )
                 );
             }
         }
@@ -14321,15 +14345,7 @@
         const buyIntermediates = config.getSetting('actionPanel_craftingPlanBuyIntermediates');
         let plan;
         try {
-            plan = computeBestCraftingPlan(
-                output.itemHrid,
-                1,
-                mode,
-                new Set(),
-                new Map(),
-                0,
-                buyIntermediates ? 1 : undefined
-            );
+            plan = computeBestCraftingPlan(output.itemHrid, 1, mode, new Set(), new Map(), 0, undefined, buyIntermediates);
         } catch (e) {
             console.error('[CraftingPlan] computeBestCraftingPlan error:', e);
             return null;
@@ -14381,7 +14397,7 @@
             if (onToggle) onToggle();
         });
         toggleRow.appendChild(checkbox);
-        toggleRow.appendChild(document.createTextNode('Buy intermediates'));
+        toggleRow.appendChild(document.createTextNode('Buy raw materials only'));
         content.appendChild(toggleRow);
 
         // Only show breakdown if crafting is the optimal strategy

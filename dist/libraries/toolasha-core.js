@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.36.1
+ * Version: 2.37.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -788,10 +788,10 @@
                 },
                 actionPanel_craftingPlanBuyIntermediates: {
                     id: 'actionPanel_craftingPlanBuyIntermediates',
-                    label: 'Action panel: Crafting plan buys intermediate materials',
+                    label: 'Action panel: Crafting plan buys raw materials only',
                     type: 'checkbox',
                     default: false,
-                    help: 'Only craft the final item — buy all sub-materials from the market instead of crafting them.',
+                    help: 'Always craft items that have a recipe — only buy uncraftable raw materials from the market.',
                 },
                 lootLogStats: {
                     id: 'lootLogStats',
