@@ -51,10 +51,20 @@ onmessage = function (event) {
             simResult,
         });
     } catch (error) {
+        console.error('[CombatSimWorker] Simulation crashed:', {
+            error: error.message,
+            stack: error.stack,
+            zoneHrid: event.data.zoneHrid,
+            difficultyTier: event.data.difficultyTier,
+            simulationTimeLimit: event.data.simulationTimeLimit,
+        });
         postMessage({
             type: 'error',
             taskId,
             error: error.message || String(error),
+            stack: error.stack || '',
+            zoneHrid: event.data.zoneHrid,
+            difficultyTier: event.data.difficultyTier,
         });
     }
 };

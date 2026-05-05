@@ -11,20 +11,79 @@ class Zone {
         this.monsterSpawnInfo = gameZone.combatZoneInfo.fightInfo;
         this.dungeonSpawnInfo = gameZone.combatZoneInfo.dungeonInfo;
         this.encountersKilled = 1;
-        this.monsterSpawnInfo.battlesPerBoss = 10;
         this.buffs = gameZone.buffs;
         this.isDungeon = gameZone.combatZoneInfo.isDungeon;
         this.dungeonsCompleted = 0;
         this.dungeonsFailed = 0;
         this.finalWave = false;
+
+        // Log zone construction state for debugging
+        console.log('[Zone] constructed:', {
+            hrid: this.hrid,
+            difficultyTier: this.difficultyTier,
+            isDungeon: this.isDungeon,
+            hasFightInfo: !!this.monsterSpawnInfo,
+            hasDungeonInfo: !!this.dungeonSpawnInfo,
+            hasRandomSpawnInfo: !!this.monsterSpawnInfo?.randomSpawnInfo,
+            hasRandomSpawnInfoSpawns: !!this.monsterSpawnInfo?.randomSpawnInfo?.spawns,
+            randomSpawnInfoSpawnsLength: this.monsterSpawnInfo?.randomSpawnInfo?.spawns?.length ?? 'N/A',
+            hasBossSpawns: !!this.monsterSpawnInfo?.bossSpawns,
+            hasDungeonRandomSpawnInfoMap: !!this.dungeonSpawnInfo?.randomSpawnInfoMap,
+            dungeonRandomSpawnInfoMapKeys: this.dungeonSpawnInfo?.randomSpawnInfoMap
+                ? Object.keys(this.dungeonSpawnInfo.randomSpawnInfoMap)
+                : 'N/A',
+            fixedSpawnsMapKeys: this.dungeonSpawnInfo?.fixedSpawnsMap
+                ? Object.keys(this.dungeonSpawnInfo.fixedSpawnsMap)
+                : 'N/A',
+            maxWaves: this.dungeonSpawnInfo?.maxWaves ?? 'N/A',
+            combatZoneInfoKeys: Object.keys(gameZone.combatZoneInfo),
+        });
+
+        if (this.monsterSpawnInfo) {
+            this.monsterSpawnInfo.battlesPerBoss = 10;
+        }
     }
 
     getRandomEncounter() {
+        // Guard: if monsterSpawnInfo is missing entirely
+        if (!this.monsterSpawnInfo) {
+            console.error('[Zone] getRandomEncounter CRASH DEBUG:', {
+                reason: 'monsterSpawnInfo is null/undefined',
+                zoneHrid: this.hrid,
+                isDungeon: this.isDungeon,
+                difficultyTier: this.difficultyTier,
+                encountersKilled: this.encountersKilled,
+            });
+            return [];
+        }
+
         if (this.monsterSpawnInfo.bossSpawns && this.encountersKilled === this.monsterSpawnInfo.battlesPerBoss) {
             this.encountersKilled = 1;
             return this.monsterSpawnInfo.bossSpawns.map(
                 (monster) => new Monster(monster.combatMonsterHrid, monster.difficultyTier + this.difficultyTier)
             );
+        }
+
+        // Guard: if randomSpawnInfo or spawns is missing
+        if (!this.monsterSpawnInfo.randomSpawnInfo || !this.monsterSpawnInfo.randomSpawnInfo.spawns) {
+            console.error('[Zone] getRandomEncounter CRASH DEBUG:', {
+                reason: 'randomSpawnInfo or spawns is null/undefined',
+                zoneHrid: this.hrid,
+                isDungeon: this.isDungeon,
+                difficultyTier: this.difficultyTier,
+                encountersKilled: this.encountersKilled,
+                dungeonsCompleted: this.dungeonsCompleted,
+                dungeonsFailed: this.dungeonsFailed,
+                monsterSpawnInfoKeys: Object.keys(this.monsterSpawnInfo),
+                randomSpawnInfo: this.monsterSpawnInfo.randomSpawnInfo
+                    ? JSON.parse(JSON.stringify(this.monsterSpawnInfo.randomSpawnInfo))
+                    : null,
+                hasDungeonSpawnInfo: !!this.dungeonSpawnInfo,
+                dungeonSpawnInfoMaxWaves: this.dungeonSpawnInfo?.maxWaves ?? 'N/A',
+                fullMonsterSpawnInfo: JSON.parse(JSON.stringify(this.monsterSpawnInfo)),
+            });
+            this.encountersKilled++;
+            return [];
         }
 
         const totalWeight = this.monsterSpawnInfo.randomSpawnInfo.spawns.reduce((prev, cur) => prev + cur.rate, 0);
@@ -89,7 +148,7 @@ class Zone {
                 dungeonSpawnInfo: JSON.parse(JSON.stringify(this.dungeonSpawnInfo)),
             });
             this.encountersKilled++;
-            return [new Monster(Object.keys(randomSpawnInfoMap || {})[0] || this.hrid, this.difficultyTier)];
+            return [];
         }
 
         const waveKeys = Object.keys(randomSpawnInfoMap)
