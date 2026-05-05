@@ -175,7 +175,7 @@ class AbilityBookCalculator {
         const xpNeeded = targetXp - currentXp;
 
         // Calculate books needed
-        let booksNeeded = xpNeeded / xpPerBook;
+        let booksNeeded = Math.ceil(xpNeeded / xpPerBook);
 
         // If starting from level 0, need +1 book to learn the ability initially
         if (currentLevel === 0) {
