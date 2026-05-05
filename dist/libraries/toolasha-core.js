@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.38.0
+ * Version: 2.38.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -5019,13 +5019,9 @@
         /**
          * Reset all settings to defaults
          */
-        resetToDefaults() {
-            // Find default values from constructor (all true except notifiEmptyAction)
-            for (const key in this.settingsMap) {
-                this.settingsMap[key].isTrue = key !== 'notifiEmptyAction';
-            }
-
-            this.saveSettings();
+        async resetToDefaults() {
+            this.settingsMap = settingsStorage.buildDefaults();
+            await settingsStorage.saveSettings(this.settingsMap);
             this.applyColorSettings();
         }
 
