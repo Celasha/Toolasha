@@ -26,6 +26,7 @@ function isCombatSimulatorPage() {
 }
 
 if (isCombatSimulatorPage()) {
+    console.log('[Toolasha] Detected combat sim page, initializing integration');
     // Initialize combat sim integration only
     combatSimIntegration.initialize();
 
