@@ -241,11 +241,12 @@ class CombatStatsUI {
             }
         }
 
-        // Get latest combat data
+        // Get latest combat data (live = from a new_battle WS message this page session)
         let combatData = combatStatsDataCollector.getLatestData();
+        const isLive = !!combatData;
 
         if (!combatData) {
-            // Try to load from storage
+            // Try to load from storage (may be from a previous combat session)
             combatData = await combatStatsDataCollector.loadLatestData();
         }
 
@@ -254,14 +255,16 @@ class CombatStatsUI {
             return;
         }
 
-        // Recalculate duration from combat start time (updates in real-time during combat)
+        // Calculate duration:
+        // - Live data: recalculate from combatStartTime (real-time, always correct)
+        // - Stored fallback: use snapshot durationSeconds (avoids inflated duration when
+        //   stored combatStartTime is from a previous combat session)
         let durationSeconds = null;
-        if (combatData.combatStartTime) {
+        if (isLive && combatData.combatStartTime) {
             const combatStartTime = new Date(combatData.combatStartTime).getTime() / 1000;
             const currentTime = Date.now() / 1000;
             durationSeconds = currentTime - combatStartTime;
         } else if (combatData.durationSeconds) {
-            // Fallback to stored duration if no start time
             durationSeconds = combatData.durationSeconds;
         }
 
