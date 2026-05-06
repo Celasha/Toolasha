@@ -66,10 +66,6 @@ class CombatScore {
             return;
         }
 
-        if (!config.getSetting('combatScore')) {
-            return;
-        }
-
         this.isInitialized = true;
 
         this.profileSharedHandler = (data) => {
@@ -272,7 +268,7 @@ class CombatScore {
                     line-height: 1;
                 " title="Close">×</span>
             </div>
-            <div style="cursor: pointer; font-weight: bold; margin-bottom: 8px; color: ${config.COLOR_PROFIT};" id="mwi-score-toggle">
+            <div style="cursor: pointer; font-weight: bold; margin-bottom: 8px; color: ${config.COLOR_PROFIT}; ${!config.getSetting('combatScore') ? 'display: none;' : ''}" id="mwi-score-toggle">
                 + Combat Score: ${numberFormatter(scoreData.total.toFixed(1))}${equipmentHiddenText}
             </div>
             <div id="mwi-score-details" style="display: none; margin-left: 10px; color: ${config.COLOR_TEXT_PRIMARY};">
@@ -298,7 +294,7 @@ class CombatScore {
                 </div>
             </div>
 
-            <div style="cursor: pointer; font-weight: bold; margin-top: 12px; margin-bottom: 8px; color: ${config.COLOR_PROFIT};" id="mwi-skiller-score-toggle">
+            <div style="cursor: pointer; font-weight: bold; margin-top: 12px; margin-bottom: 8px; color: ${config.COLOR_PROFIT}; ${!config.getSetting('combatScore') ? 'display: none;' : ''}" id="mwi-skiller-score-toggle">
                 + Skiller Score: ${numberFormatter(scoreData.skillerTotal.toFixed(1))}
             </div>
             <div id="mwi-skiller-score-details" style="display: none; margin-left: 10px; color: ${config.COLOR_TEXT_PRIMARY};">
