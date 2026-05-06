@@ -32,6 +32,7 @@ import {
     setTabColor,
     moveTab,
     addItem,
+    moveItem,
     addLineBreak,
     removeItem,
     removeItemAtIndex,
@@ -464,6 +465,20 @@ const PANEL_CSS = `
     font-size: 12px;
     min-width: 100px;
 }
+
+/* ---------- Tile drag & drop ---------- */
+.toolasha-ct-tile-dragging { opacity: 0.4; }
+.toolasha-ct-section-header.toolasha-ct-tile-drop-target,
+.toolasha-ct-unorg-header.toolasha-ct-tile-drop-target {
+    background: rgba(74, 158, 255, 0.15) !important;
+    box-shadow: inset 0 0 0 1px rgba(74, 158, 255, 0.4);
+}
+.toolasha-ct-active [class*="Item_itemContainer"].toolasha-ct-drop-before {
+    box-shadow: -2px 0 0 0 #4a9eff;
+}
+.toolasha-ct-active [class*="Item_itemContainer"].toolasha-ct-drop-after {
+    box-shadow: 2px 0 0 0 #4a9eff;
+}
 `;
 
 // Sprite URL cache — needed for editor modal item search results
@@ -822,11 +837,14 @@ export default class CustomTabsUI {
         // Build tile map from all tiles currently in invContainer
         const tileMap = this._buildTileMap(invContainer);
 
-        // Reset all tiles: remove visible class and clear inline order
+        // Reset all tiles: remove visible class, clear inline order, and drag state
         const allTiles = invContainer.querySelectorAll('[class*="Item_itemContainer"]');
         for (const tile of allTiles) {
-            tile.classList.remove('toolasha-ct-visible');
+            tile.classList.remove('toolasha-ct-visible', 'toolasha-ct-drop-before', 'toolasha-ct-drop-after');
             tile.style.order = '';
+            tile.draggable = false;
+            delete tile.dataset.toolashaTabId;
+            delete tile.dataset.toolashaDragBound;
         }
 
         // Force full rebuild when tile count OR config item count changed — the lightweight path
@@ -984,7 +1002,7 @@ export default class CustomTabsUI {
                     }
                 }
             }
-            this._assignTileOrders(unorgTiles, unorgOrder + 1);
+            this._assignTileOrders(unorgTiles, unorgOrder + 1, '');
         }
     }
 
@@ -1017,6 +1035,8 @@ export default class CustomTabsUI {
                             for (const tile of this._claimTilesForHrid(hrid, tileMap)) {
                                 tile.classList.add('toolasha-ct-visible');
                                 tile.style.order = String(currentOrder++);
+                                tile.dataset.toolashaTabId = tab.id;
+                                this._setupTileDrag(tile);
                             }
                         }
                     }
@@ -1025,7 +1045,7 @@ export default class CustomTabsUI {
                     for (const hrid of tab.items) {
                         for (const tile of this._claimTilesForHrid(hrid, tileMap)) sectionTiles.push(tile);
                     }
-                    this._assignTileOrders(sectionTiles, headerOrder + 1);
+                    this._assignTileOrders(sectionTiles, headerOrder + 1, tab.id);
                 }
 
                 if (tab.children.length > 0) {
@@ -1313,6 +1333,27 @@ export default class CustomTabsUI {
         return this._nameHridCache.get(name) || null;
     }
 
+    /**
+     * Extract the full HRID (including enhancement level) from a tile DOM element.
+     * @param {HTMLElement} tile - Item tile element
+     * @returns {string|null} HRID like "/items/sword" or "/items/sword+3", or null
+     */
+    _getHridFromTile(tile) {
+        const svg = tile.querySelector('svg[aria-label]');
+        if (!svg) return null;
+        const baseName = svg.getAttribute('aria-label');
+        const hrid = this._nameToHrid(baseName);
+        if (!hrid) return null;
+        const enhEl = tile.querySelector('[class*="Item_enhancementLevel"]');
+        if (enhEl) {
+            const level = parseInt(enhEl.textContent.trim().replace('+', ''), 10);
+            if (!isNaN(level) && level > 0) {
+                return `${hrid}+${level}`;
+            }
+        }
+        return hrid;
+    }
+
     // -----------------------------------------------------------------------
     // Accordion headers — injected into Inventory_items with CSS order
     // -----------------------------------------------------------------------
@@ -1371,14 +1412,27 @@ export default class CustomTabsUI {
         header.addEventListener('dragover', (e) => {
             e.preventDefault();
             e.dataTransfer.dropEffect = 'move';
-            header.classList.add('toolasha-ct-section--drag-over');
+            // Show different visual for tile drop vs tab reorder
+            if (this._tileDragData) {
+                header.classList.add('toolasha-ct-tile-drop-target');
+            } else {
+                header.classList.add('toolasha-ct-section--drag-over');
+            }
         });
         header.addEventListener('dragleave', () => {
-            header.classList.remove('toolasha-ct-section--drag-over');
+            header.classList.remove('toolasha-ct-section--drag-over', 'toolasha-ct-tile-drop-target');
         });
         header.addEventListener('drop', (e) => {
             e.preventDefault();
-            header.classList.remove('toolasha-ct-section--drag-over');
+            header.classList.remove('toolasha-ct-section--drag-over', 'toolasha-ct-tile-drop-target');
+            // Check for tile drop first
+            const tileData = e.dataTransfer.getData('application/x-toolasha-tile');
+            if (tileData) {
+                const { hrid, sourceTabId } = JSON.parse(tileData);
+                this._onTileDropOnTab(hrid, sourceTabId, tab.id);
+                return;
+            }
+            // Otherwise handle tab reorder
             const draggedId = e.dataTransfer.getData('text/plain');
             if (draggedId && draggedId !== tab.id) this._onReorderTab(draggedId, tab.id);
         });
@@ -1470,6 +1524,8 @@ export default class CustomTabsUI {
                         for (const tile of this._claimTilesForHrid(hrid, tileMap)) {
                             tile.classList.add('toolasha-ct-visible');
                             tile.style.order = String(orderCounter++);
+                            tile.dataset.toolashaTabId = tab.id;
+                            this._setupTileDrag(tile);
                             sectionTiles.push(tile);
                         }
                     }
@@ -1545,7 +1601,7 @@ export default class CustomTabsUI {
 
             // For sections without line breaks, sort tiles by price and assign orders now
             if (!hasLineBreaks) {
-                orderCounter = this._assignTileOrders(sectionTiles, orderCounter);
+                orderCounter = this._assignTileOrders(sectionTiles, orderCounter, tab.id);
             }
 
             // Recurse into children
@@ -1646,9 +1702,10 @@ export default class CustomTabsUI {
      * sorting by ask/bid value if inventory sort is active.
      * @param {HTMLElement[]} tiles
      * @param {number} startOrder
+     * @param {string} [tabId] - Tab ID to stamp on tiles (empty string for unorganized)
      * @returns {number} next available order counter
      */
-    _assignTileOrders(tiles, startOrder) {
+    _assignTileOrders(tiles, startOrder, tabId) {
         if (tiles.length === 0) return startOrder;
 
         const mode = inventorySort.currentMode;
@@ -1660,8 +1717,89 @@ export default class CustomTabsUI {
         for (const tile of tiles) {
             tile.classList.add('toolasha-ct-visible');
             tile.style.order = startOrder++;
+            if (tabId !== undefined) tile.dataset.toolashaTabId = tabId;
+            this._setupTileDrag(tile);
         }
         return startOrder;
+    }
+
+    /**
+     * Make a tile draggable and attach drag/drop event handlers.
+     * Uses dataset.toolashaDragBound to prevent duplicate listeners.
+     * @param {HTMLElement} tile
+     */
+    _setupTileDrag(tile) {
+        tile.draggable = true;
+        if (tile.dataset.toolashaDragBound) return;
+        tile.dataset.toolashaDragBound = '1';
+
+        tile.addEventListener('dragstart', (e) => {
+            const hrid = this._getHridFromTile(tile);
+            if (!hrid) return;
+            const sourceTabId = tile.dataset.toolashaTabId || '';
+            const payload = JSON.stringify({ hrid, sourceTabId });
+            e.dataTransfer.setData('application/x-toolasha-tile', payload);
+            e.dataTransfer.effectAllowed = 'move';
+            tile.classList.add('toolasha-ct-tile-dragging');
+            this._tileDragData = { hrid, sourceTabId };
+        });
+
+        tile.addEventListener('dragend', () => {
+            tile.classList.remove('toolasha-ct-tile-dragging');
+            this._tileDragData = null;
+            // Clean up all drop indicators
+            if (this._invContainer) {
+                for (const el of this._invContainer.querySelectorAll(
+                    '.toolasha-ct-drop-before, .toolasha-ct-drop-after, .toolasha-ct-tile-drop-target'
+                )) {
+                    el.classList.remove(
+                        'toolasha-ct-drop-before',
+                        'toolasha-ct-drop-after',
+                        'toolasha-ct-tile-drop-target'
+                    );
+                }
+            }
+        });
+
+        // Within-tab reorder: dragover on tiles
+        tile.addEventListener('dragover', (e) => {
+            if (!this._tileDragData) return;
+            const targetTabId = tile.dataset.toolashaTabId || '';
+            // Only allow reorder within the same tab (and not unorganized)
+            if (!targetTabId || targetTabId !== this._tileDragData.sourceTabId) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            // Determine left/right insertion based on cursor position
+            const rect = tile.getBoundingClientRect();
+            const midX = rect.left + rect.width / 2;
+            if (e.clientX < midX) {
+                tile.classList.add('toolasha-ct-drop-before');
+                tile.classList.remove('toolasha-ct-drop-after');
+            } else {
+                tile.classList.add('toolasha-ct-drop-after');
+                tile.classList.remove('toolasha-ct-drop-before');
+            }
+        });
+
+        tile.addEventListener('dragleave', () => {
+            tile.classList.remove('toolasha-ct-drop-before', 'toolasha-ct-drop-after');
+        });
+
+        tile.addEventListener('drop', (e) => {
+            e.preventDefault();
+            tile.classList.remove('toolasha-ct-drop-before', 'toolasha-ct-drop-after');
+            const raw = e.dataTransfer.getData('application/x-toolasha-tile');
+            if (!raw) return;
+            const { hrid: draggedHrid, sourceTabId } = JSON.parse(raw);
+            const targetTabId = tile.dataset.toolashaTabId || '';
+            if (!targetTabId || targetTabId !== sourceTabId) return;
+            // Compute target index in items array from tile order position
+            const targetHrid = this._getHridFromTile(tile);
+            if (!targetHrid || targetHrid === draggedHrid) return;
+            const rect = tile.getBoundingClientRect();
+            const insertAfter = e.clientX >= rect.left + rect.width / 2;
+            this._onTileReorder(targetTabId, draggedHrid, targetHrid, insertAfter);
+        });
     }
 
     // -----------------------------------------------------------------------
@@ -1713,6 +1851,24 @@ export default class CustomTabsUI {
             headerEl.querySelector('span').textContent = this._unorgOpen ? '▼' : '▶';
             this._applyLayout();
         });
+        // Drop target: remove item from its tab (return to unorganized)
+        headerEl.addEventListener('dragover', (e) => {
+            if (!this._tileDragData || !this._tileDragData.sourceTabId) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            headerEl.classList.add('toolasha-ct-tile-drop-target');
+        });
+        headerEl.addEventListener('dragleave', () => {
+            headerEl.classList.remove('toolasha-ct-tile-drop-target');
+        });
+        headerEl.addEventListener('drop', (e) => {
+            e.preventDefault();
+            headerEl.classList.remove('toolasha-ct-tile-drop-target');
+            const raw = e.dataTransfer.getData('application/x-toolasha-tile');
+            if (!raw) return;
+            const { hrid, sourceTabId } = JSON.parse(raw);
+            this._onTileDropOnUnorganized(hrid, sourceTabId);
+        });
         invContainer.appendChild(headerEl);
         this._injectedEls.push(headerEl);
 
@@ -1734,10 +1890,75 @@ export default class CustomTabsUI {
                 return itemSortA - itemSortB;
             });
             const unorgTiles = remainingEntries.flatMap(({ tiles }) => tiles);
-            orderCounter = this._assignTileOrders(unorgTiles, orderCounter);
+            orderCounter = this._assignTileOrders(unorgTiles, orderCounter, '');
         }
 
         return orderCounter;
+    }
+
+    // -----------------------------------------------------------------------
+    // Tile drag & drop action handlers
+    // -----------------------------------------------------------------------
+
+    /**
+     * Handle a tile dropped onto a tab header (add or move item to that tab)
+     * @param {string} hrid
+     * @param {string} sourceTabId - empty string if from unorganized
+     * @param {string} targetTabId
+     */
+    async _onTileDropOnTab(hrid, sourceTabId, targetTabId) {
+        if (sourceTabId === targetTabId) return;
+        let newConfig;
+        if (!sourceTabId) {
+            // From unorganized → add to target tab
+            newConfig = addItem(this._config, targetTabId, hrid);
+        } else {
+            // From another tab → move
+            newConfig = moveItem(this._config, sourceTabId, targetTabId, hrid);
+        }
+        this._config = newConfig;
+        await saveConfig(this._characterId, this._config);
+        this._applyLayout();
+    }
+
+    /**
+     * Handle a tile dropped onto the unorganized header (remove from tab)
+     * @param {string} hrid
+     * @param {string} sourceTabId
+     */
+    async _onTileDropOnUnorganized(hrid, sourceTabId) {
+        if (!sourceTabId) return;
+        const newConfig = removeItem(this._config, sourceTabId, hrid);
+        this._config = newConfig;
+        await saveConfig(this._characterId, this._config);
+        this._applyLayout();
+    }
+
+    /**
+     * Handle a tile reordered within its tab via drag & drop
+     * @param {string} tabId
+     * @param {string} draggedHrid
+     * @param {string} targetHrid
+     * @param {boolean} insertAfter - true to insert after target, false for before
+     */
+    async _onTileReorder(tabId, draggedHrid, targetHrid, insertAfter) {
+        if (draggedHrid === targetHrid) return;
+        const result = findTab(this._config, tabId);
+        if (!result) return;
+        const items = result.tab.items;
+        // Find indices (skip LINEBREAK_HRID for matching, but preserve them in array)
+        const fromIndex = items.indexOf(draggedHrid);
+        const targetIndex = items.indexOf(targetHrid);
+        if (fromIndex === -1 || targetIndex === -1) return;
+        // Calculate destination: after removing source, where does target land?
+        let toIndex = targetIndex;
+        if (insertAfter) toIndex++;
+        // If dragging forward, adjust for removal shift
+        if (fromIndex < toIndex) toIndex--;
+        const newConfig = reorderItem(this._config, tabId, fromIndex, toIndex);
+        this._config = newConfig;
+        await saveConfig(this._characterId, this._config);
+        this._applyLayout();
     }
 
     // -----------------------------------------------------------------------

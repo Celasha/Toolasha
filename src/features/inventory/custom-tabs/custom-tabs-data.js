@@ -194,6 +194,54 @@ export function addItem(config, tabId, itemHrid) {
 }
 
 /**
+ * Insert an item at a specific index in a tab's items array (no-op if already present)
+ * @param {Object} config
+ * @param {string} tabId
+ * @param {string} itemHrid
+ * @param {number} index - Position to insert at (clamped to array bounds)
+ * @returns {Object} new config
+ */
+export function insertItem(config, tabId, itemHrid, index) {
+    const c = clone(config);
+    const result = _findNode(c.tabs, tabId);
+    if (result && !result.tab.items.includes(itemHrid)) {
+        const clamped = Math.max(0, Math.min(index, result.tab.items.length));
+        result.tab.items.splice(clamped, 0, itemHrid);
+    }
+    return c;
+}
+
+/**
+ * Move an item from one tab to another (atomic remove + insert)
+ * @param {Object} config
+ * @param {string} sourceTabId - Tab to remove from
+ * @param {string} targetTabId - Tab to insert into
+ * @param {string} itemHrid
+ * @param {number} [insertIndex] - Position in target tab (appends if omitted)
+ * @returns {Object} new config
+ */
+export function moveItem(config, sourceTabId, targetTabId, itemHrid, insertIndex) {
+    if (sourceTabId === targetTabId) return config;
+    const c = clone(config);
+    // Remove from source
+    const source = _findNode(c.tabs, sourceTabId);
+    if (source) {
+        source.tab.items = source.tab.items.filter((h) => h !== itemHrid);
+    }
+    // Insert into target
+    const target = _findNode(c.tabs, targetTabId);
+    if (target && !target.tab.items.includes(itemHrid)) {
+        if (insertIndex !== undefined) {
+            const clamped = Math.max(0, Math.min(insertIndex, target.tab.items.length));
+            target.tab.items.splice(clamped, 0, itemHrid);
+        } else {
+            target.tab.items.push(itemHrid);
+        }
+    }
+    return c;
+}
+
+/**
  * Append a line break sentinel to a tab's items array.
  * Multiple line breaks are allowed, so no duplicate check is performed.
  * @param {Object} config
