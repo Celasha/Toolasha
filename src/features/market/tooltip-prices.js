@@ -156,13 +156,8 @@ class TooltipPrices {
      * @param {Element} tooltipElement - The tooltip popper element
      */
     async handleTooltip(tooltipElement) {
-        // Apply pin-to-top positioning independently of price injection
-        if (config.getSetting('itemTooltip_pinTop')) {
-            dom.fixTooltipOverflow(tooltipElement, { forceTop: true });
-        }
-
         // Skip price/profit injection if prices are disabled
-        if (!config.getSetting('itemTooltip_prices')) {
+        if (!config.getSetting('itemTooltip_prices') && !config.getSetting('itemTooltip_pinTop')) {
             return;
         }
 
@@ -176,6 +171,16 @@ class TooltipPrices {
 
         if (!isCollectionTooltip && !isItemTooltip) {
             return; // Not a tooltip we can enhance
+        }
+
+        // Apply pin-to-top positioning only to item/collection tooltips
+        if (config.getSetting('itemTooltip_pinTop')) {
+            dom.fixTooltipOverflow(tooltipElement, { forceTop: true });
+        }
+
+        // Skip price/profit injection if prices are disabled
+        if (!config.getSetting('itemTooltip_prices')) {
+            return;
         }
 
         // Extract item name from appropriate element
