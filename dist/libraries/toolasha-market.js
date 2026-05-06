@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.39.2
+ * Version: 2.39.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -17690,6 +17690,14 @@ self.onmessage = function (e) {
             };
             document.addEventListener('keydown', this.escHandler);
 
+            // Click outside to close
+            this.outsideClickHandler = (e) => {
+                if (!modal.contains(e.target)) {
+                    this.closeModal();
+                }
+            };
+            setTimeout(() => document.addEventListener('mousedown', this.outsideClickHandler), 0);
+
             // Render default view
             this.renderChart(this.activeRange);
         }
@@ -18535,6 +18543,11 @@ self.onmessage = function (e) {
             if (this.escHandler) {
                 document.removeEventListener('keydown', this.escHandler);
                 this.escHandler = null;
+            }
+
+            if (this.outsideClickHandler) {
+                document.removeEventListener('mousedown', this.outsideClickHandler);
+                this.outsideClickHandler = null;
             }
         }
     }

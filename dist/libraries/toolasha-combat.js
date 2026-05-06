@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.39.2
+ * Version: 2.39.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -20193,10 +20193,6 @@ self.onmessage = function (e) {
                 return;
             }
 
-            if (!config.getSetting('combatScore')) {
-                return;
-            }
-
             this.isInitialized = true;
 
             this.profileSharedHandler = (data) => {
@@ -20399,7 +20395,7 @@ self.onmessage = function (e) {
                     line-height: 1;
                 " title="Close">×</span>
             </div>
-            <div style="cursor: pointer; font-weight: bold; margin-bottom: 8px; color: ${config.COLOR_PROFIT};" id="mwi-score-toggle">
+            <div style="cursor: pointer; font-weight: bold; margin-bottom: 8px; color: ${config.COLOR_PROFIT}; ${!config.getSetting('combatScore') ? 'display: none;' : ''}" id="mwi-score-toggle">
                 + Combat Score: ${formatters_js.numberFormatter(scoreData.total.toFixed(1))}${equipmentHiddenText}
             </div>
             <div id="mwi-score-details" style="display: none; margin-left: 10px; color: ${config.COLOR_TEXT_PRIMARY};">
@@ -20425,7 +20421,7 @@ self.onmessage = function (e) {
                 </div>
             </div>
 
-            <div style="cursor: pointer; font-weight: bold; margin-top: 12px; margin-bottom: 8px; color: ${config.COLOR_PROFIT};" id="mwi-skiller-score-toggle">
+            <div style="cursor: pointer; font-weight: bold; margin-top: 12px; margin-bottom: 8px; color: ${config.COLOR_PROFIT}; ${!config.getSetting('combatScore') ? 'display: none;' : ''}" id="mwi-skiller-score-toggle">
                 + Skiller Score: ${formatters_js.numberFormatter(scoreData.skillerTotal.toFixed(1))}
             </div>
             <div id="mwi-skiller-score-details" style="display: none; margin-left: 10px; color: ${config.COLOR_TEXT_PRIMARY};">
