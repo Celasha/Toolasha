@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.39.1
+ * Version: 2.39.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -4234,13 +4234,12 @@ self.onmessage = function (e) {
          * @param {Element} tooltipElement - The tooltip popper element
          */
         async handleTooltip(tooltipElement) {
-            // Apply pin-to-top positioning independently of price injection
-            if (config.getSetting('itemTooltip_pinTop')) {
-                dom.fixTooltipOverflow(tooltipElement, { forceTop: true });
-            }
-
-            // Skip price/profit injection if prices are disabled
-            if (!config.getSetting('itemTooltip_prices')) {
+            // Skip if no tooltip features are enabled
+            if (
+                !config.getSetting('itemTooltip_prices') &&
+                !config.getSetting('itemTooltip_pinTop') &&
+                !config.getSetting('itemTooltip_expectedValue')
+            ) {
                 return;
             }
 
@@ -4254,6 +4253,16 @@ self.onmessage = function (e) {
 
             if (!isCollectionTooltip && !isItemTooltip) {
                 return; // Not a tooltip we can enhance
+            }
+
+            // Apply pin-to-top positioning only to item/collection tooltips
+            if (config.getSetting('itemTooltip_pinTop')) {
+                dom.fixTooltipOverflow(tooltipElement, { forceTop: true });
+            }
+
+            // Skip all injection if no relevant features are enabled
+            if (!config.getSetting('itemTooltip_prices') && !config.getSetting('itemTooltip_expectedValue')) {
+                return;
             }
 
             // Extract item name from appropriate element
@@ -4350,8 +4359,8 @@ self.onmessage = function (e) {
             // Get market price for the specific enhancement level (0 for base items, 1-20 for enhanced)
             const price = marketData_js.getItemPrices(itemHrid, enhancementLevel);
 
-            // Inject price display only if we have market data
-            if (price && (price.ask > 0 || price.bid > 0)) {
+            // Inject price display only if we have market data and prices are enabled
+            if (config.getSetting('itemTooltip_prices') && price && (price.ask > 0 || price.bid > 0)) {
                 // Get item amount from tooltip (for stacks)
                 const amount = this.extractItemAmount(tooltipElement);
                 this.injectPriceDisplay(tooltipElement, price, amount, isCollectionTooltip);
@@ -24296,9 +24305,9 @@ self.onmessage = function (e) {
                 const unorgTiles = [];
                 for (const [hrid, tiles] of tileMap) {
                     if (/\+\d+$/.test(hrid)) {
-                        // Enhanced key: skip if exact hrid or its base is assigned
-                        const baseHrid = hrid.replace(/\+\d+$/, '');
-                        if (!assignedSet.has(hrid) && !assignedSet.has(baseHrid)) {
+                        // Enhanced key still in tileMap means it wasn't claimed —
+                        // only skip if the exact enhanced hrid is assigned to a tab.
+                        if (!assignedSet.has(hrid)) {
                             for (const tile of tiles) unorgTiles.push(tile);
                         }
                     } else {
@@ -25127,9 +25136,10 @@ self.onmessage = function (e) {
             const remainingEntries = [];
             for (const [hrid, tiles] of tileMap) {
                 if (/\+\d+$/.test(hrid)) {
-                    // Enhanced key: skip if exact hrid or its base is assigned
-                    const baseHrid = hrid.replace(/\+\d+$/, '');
-                    if (!assignedSet.has(hrid) && !assignedSet.has(baseHrid)) {
+                    // Enhanced key still in tileMap means it wasn't claimed by the base tab
+                    // (reserved for a specific enhanced-hrid tab that doesn't exist).
+                    // Only skip if the exact enhanced hrid is assigned to a tab.
+                    if (!assignedSet.has(hrid)) {
                         remainingEntries.push({ hrid, tiles });
                     }
                 } else {
@@ -25227,6 +25237,7 @@ self.onmessage = function (e) {
             }
             this._config = newConfig;
             await saveConfig(this._characterId, this._config);
+            this._removeInjectedEls();
             this._applyLayout();
         }
 
@@ -25240,6 +25251,7 @@ self.onmessage = function (e) {
             const newConfig = removeItem(this._config, sourceTabId, hrid);
             this._config = newConfig;
             await saveConfig(this._characterId, this._config);
+            this._removeInjectedEls();
             this._applyLayout();
         }
 
@@ -25267,6 +25279,7 @@ self.onmessage = function (e) {
             const newConfig = reorderItem(this._config, tabId, fromIndex, toIndex);
             this._config = newConfig;
             await saveConfig(this._characterId, this._config);
+            this._removeInjectedEls();
             this._applyLayout();
         }
 
