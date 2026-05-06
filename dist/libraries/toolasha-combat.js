@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.38.5
+ * Version: 2.39.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -7804,9 +7804,20 @@
             }
         }
 
-        // Extract equipped items - handle both formats
-        if (Array.isArray(characterObj.characterItems)) {
-            // Array format (full inventory list)
+        // Extract equipped items — prefer the always-current characterEquipment Map
+        // (updated on every items_updated WS message) over the characterItems array
+        // which can lose enhancementLevel when items are swapped mid-session.
+        const equipmentMap = dataManager.characterEquipment;
+        if (equipmentMap && equipmentMap.size > 0) {
+            for (const [locationHrid, item] of equipmentMap) {
+                playerObj.player.equipment.push({
+                    itemLocationHrid: locationHrid,
+                    itemHrid: item.itemHrid,
+                    enhancementLevel: item.enhancementLevel || 0,
+                });
+            }
+        } else if (Array.isArray(characterObj.characterItems)) {
+            // Fallback: array format (cross-domain or Map not yet populated)
             for (const item of characterObj.characterItems) {
                 if (item.itemLocationHrid && !item.itemLocationHrid.includes('/item_locations/inventory')) {
                     playerObj.player.equipment.push({
@@ -7817,7 +7828,7 @@
                 }
             }
         } else if (characterObj.characterEquipment) {
-            // Object format (just equipped items)
+            // Fallback: object format (cross-domain Shykai page)
             for (const key in characterObj.characterEquipment) {
                 const item = characterObj.characterEquipment[key];
                 playerObj.player.equipment.push({
@@ -10010,10 +10021,22 @@
         }
 
         // Extract equipped items → keyed by equipment type
-        // Use the item's equipmentDetail.type (already /equipment_types/ format) as the key
+        // Prefer the always-current characterEquipment Map (updated on every items_updated WS message)
+        // over characterItems array which can lose enhancementLevel when items are swapped mid-session.
         const itemDetailMap = clientData?.itemDetailMap || {};
+        const equipmentMap = dataManager.characterEquipment;
 
-        if (Array.isArray(characterData.characterItems)) {
+        if (equipmentMap && equipmentMap.size > 0) {
+            for (const [, item] of equipmentMap) {
+                const itemDetail = itemDetailMap[item.itemHrid];
+                if (!itemDetail?.equipmentDetail?.type) continue;
+                dto.equipment[itemDetail.equipmentDetail.type] = {
+                    hrid: item.itemHrid,
+                    enhancementLevel: item.enhancementLevel || 0,
+                };
+            }
+        } else if (Array.isArray(characterData.characterItems)) {
+            // Fallback: array format (Map not yet populated)
             for (const item of characterData.characterItems) {
                 if (!item.itemLocationHrid || item.itemLocationHrid.includes('/item_locations/inventory')) continue;
                 const itemDetail = itemDetailMap[item.itemHrid];
@@ -12938,6 +12961,9 @@
             // Skill levels section
             html += this._renderSkillLevelsSection(dto);
 
+            // House rooms section
+            html += this._renderHouseRoomsSection(dto, gameData);
+
             editorArea.innerHTML = html;
 
             // Wire event listeners
@@ -13377,6 +13403,40 @@
         }
 
         /**
+         * Render house rooms section with level inputs.
+         * @private
+         */
+        _renderHouseRoomsSection(dto, gameData) {
+            const houseRoomDetailMap = gameData.houseRoomDetailMap || {};
+            const roomHrids = Object.keys(houseRoomDetailMap).sort();
+            const activeCount = roomHrids.filter((hrid) => (dto.houseRooms[hrid] || 0) > 0).length;
+
+            let html = `<div style="margin-bottom:10px;">`;
+            html += `<div style="color:${ACCENT}; font-weight:700; font-size:12px; margin-bottom:6px; cursor:pointer; user-select:none;" data-toggle="house-section">`;
+            html += `<span data-arrow="house-section" style="display:inline-block; width:14px; font-size:10px;">&#9654;</span> House Rooms`;
+            html += `<span style="color:#888; font-weight:400; font-size:11px; margin-left:6px;">${activeCount} active</span>`;
+            html += '</div>';
+            html += `<div id="mwi-csim-house-section" style="display:none;">`;
+            html += `<div style="display:grid; grid-template-columns:1fr 1fr; gap:4px 12px;">`;
+
+            for (const hrid of roomHrids) {
+                const room = houseRoomDetailMap[hrid];
+                const name = room.name || hrid.split('/').pop();
+                const level = dto.houseRooms[hrid] || 0;
+                html += `<div style="display:flex; align-items:center; gap:6px; font-size:12px;">`;
+                html += `<span style="color:#888; width:100px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${name}">${name}</span>`;
+                html += `<input type="number" min="0" max="8" value="${level}"
+                data-house-hrid="${hrid}"
+                style="width:40px; background:#1a1a2e; color:#e0e0e0; border:1px solid #444;
+                border-radius:3px; padding:1px 3px; font-size:12px; text-align:center;">`;
+                html += '</div>';
+            }
+
+            html += '</div></div></div>';
+            return html;
+        }
+
+        /**
          * Wire event listeners for the editor area.
          * @private
          */
@@ -13442,6 +13502,20 @@
                     const val = Math.max(1, parseInt(input.value) || 1);
                     input.value = val;
                     dto[key] = val;
+                });
+            });
+
+            // House room level inputs
+            editorArea.querySelectorAll('[data-house-hrid]').forEach((input) => {
+                input.addEventListener('change', () => {
+                    const hrid = input.dataset.houseHrid;
+                    const val = Math.max(0, Math.min(8, parseInt(input.value) || 0));
+                    input.value = val;
+                    if (val === 0) {
+                        delete dto.houseRooms[hrid];
+                    } else {
+                        dto.houseRooms[hrid] = val;
+                    }
                 });
             });
 
@@ -16613,11 +16687,12 @@
                 }
             }
 
-            // Get latest combat data
+            // Get latest combat data (live = from a new_battle WS message this page session)
             let combatData = combatStatsDataCollector.getLatestData();
+            const isLive = !!combatData;
 
             if (!combatData) {
-                // Try to load from storage
+                // Try to load from storage (may be from a previous combat session)
                 combatData = await combatStatsDataCollector.loadLatestData();
             }
 
@@ -16626,14 +16701,16 @@
                 return;
             }
 
-            // Recalculate duration from combat start time (updates in real-time during combat)
+            // Calculate duration:
+            // - Live data: recalculate from combatStartTime (real-time, always correct)
+            // - Stored fallback: use snapshot durationSeconds (avoids inflated duration when
+            //   stored combatStartTime is from a previous combat session)
             let durationSeconds = null;
-            if (combatData.combatStartTime) {
+            if (isLive && combatData.combatStartTime) {
                 const combatStartTime = new Date(combatData.combatStartTime).getTime() / 1000;
                 const currentTime = Date.now() / 1000;
                 durationSeconds = currentTime - combatStartTime;
             } else if (combatData.durationSeconds) {
-                // Fallback to stored duration if no start time
                 durationSeconds = combatData.durationSeconds;
             }
 
@@ -18026,7 +18103,7 @@
             const xpNeeded = targetXp - currentXp;
 
             // Calculate books needed
-            let booksNeeded = xpNeeded / xpPerBook;
+            let booksNeeded = Math.ceil(xpNeeded / xpPerBook);
 
             // If starting from level 0, need +1 book to learn the ability initially
             if (currentLevel === 0) {

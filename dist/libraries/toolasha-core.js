@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.38.5
+ * Version: 2.39.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2123,6 +2123,34 @@
                     type: 'color',
                     default: '#ffd700',
                     help: "Color for the Philosopher's Mirror usage line in enhancement tooltips",
+                },
+                color_listing_price_1m: {
+                    id: 'color_listing_price_1m',
+                    label: 'Listing Total: 1M+',
+                    type: 'color',
+                    default: '#ffd700',
+                    help: 'Color for market listing total prices of 1 million or more',
+                },
+                color_listing_price_100k: {
+                    id: 'color_listing_price_100k',
+                    label: 'Listing Total: 100K+',
+                    type: 'color',
+                    default: '#22c55e',
+                    help: 'Color for market listing total prices of 100K or more',
+                },
+                color_listing_price_10k: {
+                    id: 'color_listing_price_10k',
+                    label: 'Listing Total: 10K+',
+                    type: 'color',
+                    default: '#ffffff',
+                    help: 'Color for market listing total prices of 10K or more',
+                },
+                color_listing_price_low: {
+                    id: 'color_listing_price_low',
+                    label: 'Listing Total: <10K',
+                    type: 'color',
+                    default: '#888888',
+                    help: 'Color for market listing total prices under 10K',
                 },
                 color_accent: {
                     id: 'color_accent',
@@ -4480,6 +4508,10 @@
             this.COLOR_BORDER = '#444444'; // Border color
             this.COLOR_GOLD = '#ffa500'; // Gold/currency color
             this.COLOR_MIRROR = '#ffd700'; // Philosopher's Mirror highlight color
+            this.COLOR_LISTING_PRICE_1M = '#ffd700'; // Listing total price 1M+
+            this.COLOR_LISTING_PRICE_100K = '#22c55e'; // Listing total price 100K+
+            this.COLOR_LISTING_PRICE_10K = '#ffffff'; // Listing total price 10K+
+            this.COLOR_LISTING_PRICE_LOW = '#888888'; // Listing total price <10K
             this.COLOR_ACCENT = '#22c55e'; // Script accent color (green)
             this.COLOR_REMAINING_XP = '#FFFFFF'; // Remaining XP text color
             this.COLOR_XP_RATE = '#ffffff'; // XP/hr rate text color
@@ -5094,6 +5126,10 @@
             this.COLOR_BORDER = this.getSettingValue('color_border', '#444444');
             this.COLOR_GOLD = this.getSettingValue('color_gold', '#ffa500');
             this.COLOR_MIRROR = this.getSettingValue('color_mirror', '#ffd700');
+            this.COLOR_LISTING_PRICE_1M = this.getSettingValue('color_listing_price_1m', '#ffd700');
+            this.COLOR_LISTING_PRICE_100K = this.getSettingValue('color_listing_price_100k', '#22c55e');
+            this.COLOR_LISTING_PRICE_10K = this.getSettingValue('color_listing_price_10k', '#ffffff');
+            this.COLOR_LISTING_PRICE_LOW = this.getSettingValue('color_listing_price_low', '#888888');
             this.COLOR_ACCENT = this.getSettingValue('color_accent', '#22c55e');
             this.COLOR_REMAINING_XP = this.getSettingValue('color_remaining_xp', '#FFFFFF');
             this.COLOR_XP_RATE = this.getSettingValue('color_xp_rate', '#ffffff');

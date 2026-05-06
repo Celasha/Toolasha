@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.38.5
+ * Version: 2.39.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -6792,10 +6792,22 @@ ${hideRules}
         }
 
         // Extract equipped items → keyed by equipment type
-        // Use the item's equipmentDetail.type (already /equipment_types/ format) as the key
+        // Prefer the always-current characterEquipment Map (updated on every items_updated WS message)
+        // over characterItems array which can lose enhancementLevel when items are swapped mid-session.
         const itemDetailMap = clientData?.itemDetailMap || {};
+        const equipmentMap = dataManager.characterEquipment;
 
-        if (Array.isArray(characterData.characterItems)) {
+        if (equipmentMap && equipmentMap.size > 0) {
+            for (const [, item] of equipmentMap) {
+                const itemDetail = itemDetailMap[item.itemHrid];
+                if (!itemDetail?.equipmentDetail?.type) continue;
+                dto.equipment[itemDetail.equipmentDetail.type] = {
+                    hrid: item.itemHrid,
+                    enhancementLevel: item.enhancementLevel || 0,
+                };
+            }
+        } else if (Array.isArray(characterData.characterItems)) {
+            // Fallback: array format (Map not yet populated)
             for (const item of characterData.characterItems) {
                 if (!item.itemLocationHrid || item.itemLocationHrid.includes('/item_locations/inventory')) continue;
                 const itemDetail = itemDetailMap[item.itemHrid];

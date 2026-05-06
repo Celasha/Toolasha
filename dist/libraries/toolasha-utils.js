@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 2.38.5
+ * Version: 2.39.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -3750,22 +3750,16 @@
                     const tooltipContent = tooltipElement.querySelector('.MuiTooltip-tooltip');
 
                     if (forceTop) {
-                        const transformString = tooltipElement.style.transform;
-                        const match = transformString?.match(REGEX_TRANSFORM3D);
+                        // Use position:fixed to place tooltip at top-center, bypassing
+                        // MUI's transform-based positioning which breaks at low browser
+                        // zoom levels (the offset parent may not be at viewport origin).
+                        const targetTop = 10;
+                        const targetLeft = Math.round((viewportWidth - bBox.width) / 2);
 
-                        if (match) {
-                            const currentX = parseFloat(match[1]);
-                            const currentY = parseFloat(match[2]);
-                            const z = match[3];
-
-                            const targetTop = 10;
-                            const targetLeft = Math.round((viewportWidth - bBox.width) / 2);
-                            // Adjust relative to current transform so visual position = target
-                            const newX = Math.round(currentX - bBox.left + targetLeft);
-                            const newY = Math.round(currentY - bBox.top + targetTop);
-
-                            tooltipElement.style.transform = `translate3d(${newX}px, ${newY}px, ${z})`;
-                        }
+                        tooltipElement.style.position = 'fixed';
+                        tooltipElement.style.top = `${targetTop}px`;
+                        tooltipElement.style.left = `${targetLeft}px`;
+                        tooltipElement.style.transform = 'none';
 
                         // Cap height if tooltip is taller than viewport
                         if (tooltipContent && bBox.height >= viewportHeight - 20) {
