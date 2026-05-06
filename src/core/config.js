@@ -38,6 +38,10 @@ class Config {
         this.COLOR_BORDER = '#444444'; // Border color
         this.COLOR_GOLD = '#ffa500'; // Gold/currency color
         this.COLOR_MIRROR = '#ffd700'; // Philosopher's Mirror highlight color
+        this.COLOR_LISTING_PRICE_1M = '#ffd700'; // Listing total price 1M+
+        this.COLOR_LISTING_PRICE_100K = '#22c55e'; // Listing total price 100K+
+        this.COLOR_LISTING_PRICE_10K = '#ffffff'; // Listing total price 10K+
+        this.COLOR_LISTING_PRICE_LOW = '#888888'; // Listing total price <10K
         this.COLOR_ACCENT = '#22c55e'; // Script accent color (green)
         this.COLOR_REMAINING_XP = '#FFFFFF'; // Remaining XP text color
         this.COLOR_XP_RATE = '#ffffff'; // XP/hr rate text color
@@ -652,6 +656,10 @@ class Config {
         this.COLOR_BORDER = this.getSettingValue('color_border', '#444444');
         this.COLOR_GOLD = this.getSettingValue('color_gold', '#ffa500');
         this.COLOR_MIRROR = this.getSettingValue('color_mirror', '#ffd700');
+        this.COLOR_LISTING_PRICE_1M = this.getSettingValue('color_listing_price_1m', '#ffd700');
+        this.COLOR_LISTING_PRICE_100K = this.getSettingValue('color_listing_price_100k', '#22c55e');
+        this.COLOR_LISTING_PRICE_10K = this.getSettingValue('color_listing_price_10k', '#ffffff');
+        this.COLOR_LISTING_PRICE_LOW = this.getSettingValue('color_listing_price_low', '#888888');
         this.COLOR_ACCENT = this.getSettingValue('color_accent', '#22c55e');
         this.COLOR_REMAINING_XP = this.getSettingValue('color_remaining_xp', '#FFFFFF');
         this.COLOR_XP_RATE = this.getSettingValue('color_xp_rate', '#ffffff');

@@ -859,10 +859,10 @@ class ListingPriceDisplay {
      * @returns {string} Color code
      */
     getAmountColor(amount) {
-        if (amount >= 1000000) return config.COLOR_MIRROR; // Gold for 1M+
-        if (amount >= 100000) return config.COLOR_ACCENT; // Green for 100K+
-        if (amount >= 10000) return config.COLOR_TEXT_PRIMARY; // White for 10K+
-        return config.COLOR_TEXT_SECONDARY; // Gray for small amounts
+        if (amount >= 1000000) return config.COLOR_LISTING_PRICE_1M;
+        if (amount >= 100000) return config.COLOR_LISTING_PRICE_100K;
+        if (amount >= 10000) return config.COLOR_LISTING_PRICE_10K;
+        return config.COLOR_LISTING_PRICE_LOW;
     }
 
     /**
