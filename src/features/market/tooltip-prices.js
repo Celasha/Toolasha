@@ -156,8 +156,12 @@ class TooltipPrices {
      * @param {Element} tooltipElement - The tooltip popper element
      */
     async handleTooltip(tooltipElement) {
-        // Skip price/profit injection if prices are disabled
-        if (!config.getSetting('itemTooltip_prices') && !config.getSetting('itemTooltip_pinTop')) {
+        // Skip if no tooltip features are enabled
+        if (
+            !config.getSetting('itemTooltip_prices') &&
+            !config.getSetting('itemTooltip_pinTop') &&
+            !config.getSetting('itemTooltip_expectedValue')
+        ) {
             return;
         }
 
@@ -178,8 +182,8 @@ class TooltipPrices {
             dom.fixTooltipOverflow(tooltipElement, { forceTop: true });
         }
 
-        // Skip price/profit injection if prices are disabled
-        if (!config.getSetting('itemTooltip_prices')) {
+        // Skip all injection if no relevant features are enabled
+        if (!config.getSetting('itemTooltip_prices') && !config.getSetting('itemTooltip_expectedValue')) {
             return;
         }
 
@@ -277,8 +281,8 @@ class TooltipPrices {
         // Get market price for the specific enhancement level (0 for base items, 1-20 for enhanced)
         const price = getItemPrices(itemHrid, enhancementLevel);
 
-        // Inject price display only if we have market data
-        if (price && (price.ask > 0 || price.bid > 0)) {
+        // Inject price display only if we have market data and prices are enabled
+        if (config.getSetting('itemTooltip_prices') && price && (price.ask > 0 || price.bid > 0)) {
             // Get item amount from tooltip (for stacks)
             const amount = this.extractItemAmount(tooltipElement);
             this.injectPriceDisplay(tooltipElement, price, amount, isCollectionTooltip);
