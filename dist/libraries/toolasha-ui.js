@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.39.0
+ * Version: 2.39.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -7190,15 +7190,27 @@ ${hideRules}
         const itemDetailMap = gameData.itemDetailMap || {};
         const abilityDetailMap = gameData.abilityDetailMap || {};
 
-        // Convert equipment: snapshot uses itemHrid, DTO keys by equipmentDetail.type
+        // Convert equipment: snapshot uses itemHrid, DTO keys by equipmentDetail.type.
+        // Cross-reference live data for accurate enhancement levels (loadouts with
+        // useExactEnhancement=false store 0 for most levels in the wearable hash).
+        const liveEquipment = dataManager.characterEquipment;
         const newEquipment = {};
         for (const equip of snapshot.equipment || []) {
             const itemDetail = itemDetailMap[equip.itemHrid];
             const equipType = itemDetail?.equipmentDetail?.type;
             if (equipType) {
+                let enhancementLevel = equip.enhancementLevel || 0;
+                if (enhancementLevel === 0 && liveEquipment) {
+                    for (const [, liveItem] of liveEquipment) {
+                        if (liveItem.itemHrid === equip.itemHrid) {
+                            enhancementLevel = liveItem.enhancementLevel || 0;
+                            break;
+                        }
+                    }
+                }
                 newEquipment[equipType] = {
                     hrid: equip.itemHrid,
-                    enhancementLevel: equip.enhancementLevel || 0,
+                    enhancementLevel,
                 };
             }
         }
