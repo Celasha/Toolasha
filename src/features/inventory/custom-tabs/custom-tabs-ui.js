@@ -985,9 +985,9 @@ export default class CustomTabsUI {
             const unorgTiles = [];
             for (const [hrid, tiles] of tileMap) {
                 if (/\+\d+$/.test(hrid)) {
-                    // Enhanced key: skip if exact hrid or its base is assigned
-                    const baseHrid = hrid.replace(/\+\d+$/, '');
-                    if (!assignedSet.has(hrid) && !assignedSet.has(baseHrid)) {
+                    // Enhanced key still in tileMap means it wasn't claimed —
+                    // only skip if the exact enhanced hrid is assigned to a tab.
+                    if (!assignedSet.has(hrid)) {
                         for (const tile of tiles) unorgTiles.push(tile);
                     }
                 } else {
@@ -1919,6 +1919,7 @@ export default class CustomTabsUI {
         }
         this._config = newConfig;
         await saveConfig(this._characterId, this._config);
+        this._removeInjectedEls();
         this._applyLayout();
     }
 
@@ -1932,6 +1933,7 @@ export default class CustomTabsUI {
         const newConfig = removeItem(this._config, sourceTabId, hrid);
         this._config = newConfig;
         await saveConfig(this._characterId, this._config);
+        this._removeInjectedEls();
         this._applyLayout();
     }
 
@@ -1959,6 +1961,7 @@ export default class CustomTabsUI {
         const newConfig = reorderItem(this._config, tabId, fromIndex, toIndex);
         this._config = newConfig;
         await saveConfig(this._characterId, this._config);
+        this._removeInjectedEls();
         this._applyLayout();
     }
 
