@@ -111,6 +111,8 @@ class CombatUnit {
             combatDropQuantity: 0,
             combatRareFind: 0,
             combatExperience: 0,
+            maxHitpointsRatio: 0,
+            maxManapointsRatio: 0,
             foodSlots: 1,
             drinkSlots: 1,
             armorPenetration: 0,
@@ -178,10 +180,12 @@ class CombatUnit {
         });
 
         this.combatDetails.maxHitpoints = Math.floor(
-            10 * (10 + this.combatDetails.staminaLevel) + this.combatDetails.combatStats.maxHitpoints
+            (10 * (10 + this.combatDetails.staminaLevel) + this.combatDetails.combatStats.maxHitpoints) *
+                (1 + this.combatDetails.combatStats.maxHitpointsRatio)
         );
         this.combatDetails.maxManapoints = Math.floor(
-            10 * (10 + this.combatDetails.intelligenceLevel) + this.combatDetails.combatStats.maxManapoints
+            (10 * (10 + this.combatDetails.intelligenceLevel) + this.combatDetails.combatStats.maxManapoints) *
+                (1 + this.combatDetails.combatStats.maxManapointsRatio)
         );
 
         const accuracyRatioBoostFromFury = this.getBuffBoost('/buff_types/fury_accuracy').ratioBoost;
@@ -212,7 +216,10 @@ class CombatUnit {
         });
 
         this.combatDetails.defensiveMaxDamage =
-            (10 + this.combatDetails.defenseLevel) * (1 + this.combatDetails.combatStats.defensiveDamage);
+            (10 + this.combatDetails.defenseLevel) *
+            (1 + this.combatDetails.combatStats.defensiveDamage) *
+            (1 + damageRatioBoost) *
+            (1 + damageRatioBoostFromFury);
 
         // when equiped bulwark
         if (this.equipment?.['/equipment_types/two_hand']?.hrid.includes('bulwark')) {
@@ -355,6 +362,7 @@ class CombatUnit {
         this.combatDetails.combatStats.threat += threatBoosts.flatBoost;
 
         this.combatDetails.combatStats.retaliation += this.getBuffBoost('/buff_types/retaliation').flatBoost;
+        this.combatDetails.combatStats.tenacity += this.getBuffBoost('/buff_types/tenacity').flatBoost;
     }
 
     addBuff(buff, currentTime) {
@@ -456,10 +464,17 @@ class CombatUnit {
 
     reset(currentTime = 0) {
         this.clearCCs();
-        this.clearBuffs();
-        this.updateCombatDetails();
-        this.resetCooldowns(currentTime);
 
+        if (currentTime === 0 || !this.isPlayer) {
+            // First combat start or enemy reset: full reset
+            this.clearBuffs();
+            this.resetCooldowns(currentTime);
+        } else {
+            // Dungeon wipe restart (players only): remove expired buffs, keep cooldowns
+            this.removeExpiredBuffs(currentTime);
+        }
+
+        this.updateCombatDetails();
         this.combatDetails.currentHitpoints = this.combatDetails.maxHitpoints;
         this.combatDetails.currentManapoints = this.combatDetails.maxManapoints;
     }

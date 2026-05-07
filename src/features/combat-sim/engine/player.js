@@ -161,6 +161,8 @@ class Player extends CombatUnit {
             'rangedExperience',
             'magicExperience',
             'retaliation',
+            'maxHitpointsRatio',
+            'maxManapointsRatio',
         ].forEach((stat) => {
             this.combatDetails.combatStats[stat] = Object.values(this.equipment)
                 .filter((equipment) => equipment != null)

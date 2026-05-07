@@ -28,7 +28,7 @@ const DOT_TICK_INTERVAL = 3 * ONE_SECOND;
 const REGEN_TICK_INTERVAL = 10 * ONE_SECOND;
 const ENEMY_RESPAWN_INTERVAL = 3 * ONE_SECOND;
 const PLAYER_RESPAWN_INTERVAL = 150 * ONE_SECOND;
-const RESTART_INTERVAL = 15 * ONE_SECOND;
+const RESTART_INTERVAL = 3 * ONE_SECOND;
 const ENRAGE_TICK_INTERVAL = 60 * ONE_SECOND;
 
 class CombatSimulator {
@@ -371,6 +371,7 @@ class CombatSimulator {
 
         this.eventQueue.clearEventsOfType(AbilityCastEndEvent.type);
 
+        this.checkTriggers();
         this.startAttacks();
     }
 
@@ -486,7 +487,7 @@ class CombatSimulator {
                 if (attackResult.didHit) {
                     furyAmount = Math.min(furyAmount + 1, maxFuryStack);
                 } else {
-                    furyAmount = Math.floor(furyAmount / 2);
+                    furyAmount = furyAmount / 2;
                 }
 
                 const furyAccuracyBuf = {
@@ -695,7 +696,17 @@ class CombatSimulator {
                 this.wipeLogs.index = 0;
                 this.wipeLogs.count = 0;
 
-                this.eventQueue.clear();
+                // Clear combat events but preserve buff expiration and cooldown events
+                this.eventQueue.clearEventsOfType(AutoAttackEvent.type);
+                this.eventQueue.clearEventsOfType(AbilityCastEndEvent.type);
+                this.eventQueue.clearEventsOfType(DamageOverTimeEvent.type);
+                this.eventQueue.clearEventsOfType(ConsumableTickEvent.type);
+                this.eventQueue.clearEventsOfType(RegenTickEvent.type);
+                this.eventQueue.clearEventsOfType(EnrageTickEvent.type);
+                this.eventQueue.clearEventsOfType(StunExpirationEvent.type);
+                this.eventQueue.clearEventsOfType(BlindExpirationEvent.type);
+                this.eventQueue.clearEventsOfType(SilenceExpirationEvent.type);
+                this.eventQueue.clearEventsOfType(AwaitCooldownEvent.type);
                 this.enemies = null;
 
                 const combatStartEvent = new CombatStartEvent(this.simulationTime + RESTART_INTERVAL);
@@ -857,9 +868,7 @@ class CombatSimulator {
 
     processRegenTickEvent(_event) {
         const units = [...this.players];
-        if (this.enemies) {
-            units.push(...this.enemies);
-        }
+        // Enemy regen is always 0 in game data — skip enemies
 
         for (const unit of units) {
             if (unit.combatDetails.currentHitpoints <= 0) {
@@ -1121,8 +1130,6 @@ class CombatSimulator {
             _cooldownDuration = (_cooldownDuration * 100) / (100 + haste);
         }
 
-        this.addNextAttackEvent(source);
-
         const todoAbilities = [ability];
 
         if (source.combatDetails.combatStats.blaze > 0 && Math.random() < source.combatDetails.combatStats.blaze) {
@@ -1180,6 +1187,8 @@ class CombatSimulator {
             }
         }
 
+        this.addNextAttackEvent(source);
+
         // Could die from reflect damage
         if (source.combatDetails.currentHitpoints === 0) {
             this.eventQueue.clearEventsForUnit(source);
@@ -1206,6 +1215,7 @@ class CombatSimulator {
                                 buff.multiplierPerSkillLevel;
                         const currentBuff = structuredClone(buff);
                         currentBuff.flatBoost *= multiplier;
+                        currentBuff.ratioBoost *= multiplier;
                         target.addBuff(currentBuff, this.simulationTime);
                     } else {
                         target.addBuff(buff, this.simulationTime);
@@ -1422,11 +1432,7 @@ class CombatSimulator {
                     this.eventQueue.addEvent(silenceExpirationEvent);
                 }
 
-                if (
-                    attackResult.didHit &&
-                    source.combatDetails.combatStats.curse > 0 &&
-                    Math.random() < 100 / (100 + target.combatDetails.combatStats.tenacity)
-                ) {
+                if (attackResult.didHit && source.combatDetails.combatStats.curse > 0) {
                     const curseExpireTime = 15000000000;
                     const currentCurseEvent = this.eventQueue.getByTypeAndSource(CurseExpirationEvent.type, target);
                     let currentCurseAmount = 0;
@@ -1476,6 +1482,59 @@ class CombatSimulator {
                     };
                     source.addBuff(weakenBuff);
                     this.eventQueue.addEvent(weakenExpirationEvent);
+                }
+
+                if (source.combatDetails.combatStats.fury > 0) {
+                    const currentFuryEvent = this.eventQueue.getByTypeAndSource(FuryExpirationEvent.type, source);
+                    this.eventQueue.clearByTypeAndSource(FuryExpirationEvent.type, source);
+
+                    const furyExpireTime = 15000000000;
+                    const maxFuryStack = 5;
+
+                    let furyAmount = 0;
+                    if (currentFuryEvent) furyAmount = currentFuryEvent.furyAmount;
+
+                    if (attackResult.didHit) {
+                        furyAmount = Math.min(furyAmount + 1, maxFuryStack);
+                    } else {
+                        furyAmount = furyAmount / 2;
+                    }
+
+                    const furyAccuracyBuf = {
+                        uniqueHrid: '/buff_uniques/fury_accuracy',
+                        typeHrid: '/buff_types/fury_accuracy',
+                        ratioBoost: furyAmount * source.combatDetails.combatStats.fury,
+                        ratioBoostLevelBonus: 0,
+                        flatBoost: 0,
+                        flatBoostLevelBonus: 0,
+                        startTime: '0001-01-01T00:00:00Z',
+                        duration: furyExpireTime,
+                    };
+                    const furyDamageBuf = {
+                        uniqueHrid: '/buff_uniques/fury_damage',
+                        typeHrid: '/buff_types/fury_damage',
+                        ratioBoost: furyAmount * source.combatDetails.combatStats.fury,
+                        ratioBoostLevelBonus: 0,
+                        flatBoost: 0,
+                        flatBoostLevelBonus: 0,
+                        startTime: '0001-01-01T00:00:00Z',
+                        duration: furyExpireTime,
+                    };
+
+                    if (furyAmount > 0) {
+                        const furyExpirationEvent = new FuryExpirationEvent(
+                            this.simulationTime + furyExpireTime,
+                            furyAmount,
+                            source
+                        );
+                        this.eventQueue.addEvent(furyExpirationEvent);
+
+                        source.addBuff(furyAccuracyBuf, this.simulationTime);
+                        source.addBuff(furyDamageBuf, this.simulationTime);
+                    } else {
+                        source.removeBuff(furyAccuracyBuf);
+                        source.removeBuff(furyDamageBuf);
+                    }
                 }
 
                 this.simResult.addAttack(
@@ -1552,7 +1611,10 @@ class CombatSimulator {
                     healTarget = target;
                     continue;
                 }
-                if (target.combatDetails.currentHitpoints < healTarget.combatDetails.currentHitpoints) {
+                if (
+                    target.combatDetails.currentHitpoints / target.combatDetails.maxHitpoints <
+                    healTarget.combatDetails.currentHitpoints / healTarget.combatDetails.maxHitpoints
+                ) {
                     healTarget = target;
                 }
             }
