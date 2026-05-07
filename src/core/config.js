@@ -93,6 +93,13 @@ class Config {
                 description: 'Shows buff effects and durations for food/drinks',
                 settingKey: 'showConsumTips',
             },
+            dungeonTokenTooltips: {
+                enabled: true,
+                name: 'Currency Token Tooltips',
+                category: 'Inventory',
+                description: 'Shows shop values for tokens, seals, and cowbells',
+                settingKey: 'dungeonTokenTooltips',
+            },
             expectedValueCalculator: {
                 enabled: true,
                 name: 'Expected Value Calculator',

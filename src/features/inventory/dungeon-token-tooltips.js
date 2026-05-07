@@ -91,6 +91,10 @@ class DungeonTokenTooltips {
      * @param {Element} tooltipElement - The tooltip popper element
      */
     async handleTooltip(tooltipElement) {
+        if (!config.isFeatureEnabled('dungeonTokenTooltips')) {
+            return;
+        }
+
         if (tooltipElement.dataset.dungeonProcessed) {
             return;
         }
