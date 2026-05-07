@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.40.5
+ * Version: 2.40.6
  * License: CC-BY-NC-SA-4.0
  */
 

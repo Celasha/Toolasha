@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.40.5
+ * Version: 2.40.6
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -11728,7 +11728,8 @@
 
     /**
      * Calculate the gold cost of enhancing an item from startLevel to targetLevel.
-     * Uses expected attempts from the Markov chain calculator and prices materials.
+     * Uses incremental cost approach: cost(0→target) - cost(0→start), matching
+     * the tooltip's enhancement path calculation exactly.
      * @param {string} itemHrid - Item HRID
      * @param {number} startLevel - Starting enhancement level
      * @param {number} targetLevel - Target enhancement level
@@ -11744,31 +11745,7 @@
         const enhancingParams = enhancementConfig_js.getEnhancingParams();
         const itemLevel = itemDetails.itemLevel || 1;
 
-        // Calculate expected attempts using Markov chain
-        // Use protection from startLevel (realistic — nobody enhances high levels unprotected)
-        const protectFrom = startLevel >= 2 ? startLevel : 0;
-        let attempts;
-        let protectionCount = 0;
-        try {
-            const result = enhancementCalculator_js.calculateEnhancement({
-                enhancingLevel: enhancingParams.enhancingLevel,
-                toolBonus: enhancingParams.toolBonus,
-                speedBonus: enhancingParams.speedBonus || 0,
-                itemLevel,
-                targetLevel,
-                startLevel,
-                protectFrom,
-                blessedTea: enhancingParams.teas?.blessed || false,
-                guzzlingBonus: enhancingParams.guzzlingBonus || 1.0,
-            });
-            attempts = result.attempts;
-            protectionCount = result.protectionCount || 0;
-        } catch {
-            // Fallback: rough estimate
-            attempts = targetLevel - startLevel;
-        }
-
-        // Sum material costs per attempt (matches tooltip-enhancement pricing)
+        // Calculate per-attempt material cost (matches tooltip-enhancement pricing)
         let perAttemptCost = 0;
         for (const material of itemDetails.enhancementCosts) {
             let price = 0;
@@ -11796,15 +11773,53 @@
             perAttemptCost += price * material.count;
         }
 
-        // Add protection scroll costs
-        let protectionCost = 0;
-        if (protectionCount > 0) {
-            const { price: protPrice } = getCheapestProtectionPrice(itemHrid);
-            protectionCost = protPrice * protectionCount;
+        // Get cheapest protection price
+        const { price: protPrice } = getCheapestProtectionPrice(itemHrid);
+
+        // Calculate full path cost for each level from 1 to targetLevel
+        // Find optimal protectFrom for each level (same approach as tooltip)
+        // Then: incremental cost = fullCost(targetLevel) - fullCost(startLevel)
+        const fullCost = new Array(targetLevel + 1).fill(0);
+
+        for (let level = 1; level <= targetLevel; level++) {
+            let bestCost = Infinity;
+
+            // Try all protection strategies: no protection, protect from 2, 3, ..., level
+            const protectOptions = [0];
+            for (let pf = 2; pf <= level; pf++) {
+                protectOptions.push(pf);
+            }
+
+            for (const protectFrom of protectOptions) {
+                try {
+                    const result = enhancementCalculator_js.calculateEnhancement({
+                        enhancingLevel: enhancingParams.enhancingLevel,
+                        toolBonus: enhancingParams.toolBonus,
+                        speedBonus: enhancingParams.speedBonus || 0,
+                        itemLevel,
+                        targetLevel: level,
+                        protectFrom,
+                        blessedTea: enhancingParams.teas?.blessed || false,
+                        guzzlingBonus: enhancingParams.guzzlingBonus || 1.0,
+                    });
+
+                    const materialCost = perAttemptCost * result.attempts;
+                    const protectionCost = protPrice * (result.protectionCount || 0);
+                    const totalForLevel = materialCost + protectionCost;
+
+                    if (totalForLevel < bestCost) {
+                        bestCost = totalForLevel;
+                    }
+                } catch {
+                    // Skip this strategy if calculation fails
+                }
+            }
+
+            fullCost[level] = bestCost === Infinity ? 0 : bestCost;
         }
 
-        const totalCost = Math.round(attempts * perAttemptCost + protectionCost);
-        return totalCost;
+        // Incremental cost = cost to reach targetLevel - cost to reach startLevel
+        return Math.max(0, Math.round(fullCost[targetLevel] - fullCost[startLevel]));
     }
 
     /**
