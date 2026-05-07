@@ -2906,8 +2906,11 @@ class CombatSimUI {
                         unitValue = 1;
                     }
                     if (unitValue === 0) {
-                        const evData = expectedValueCalculator.calculateExpectedValue(itemHrid);
-                        if (evData?.expectedValue > 0) unitValue = evData.expectedValue;
+                        // Use cached EV or calculate directly (matches combat stats approach)
+                        const ev =
+                            expectedValueCalculator.getCachedValue(itemHrid) ||
+                            expectedValueCalculator.calculateSingleContainer(itemHrid);
+                        if (ev !== null && ev > 0) unitValue = ev;
                     }
                     return { itemHrid, total, unitValue, totalGold: total * unitValue };
                 })
@@ -3054,14 +3057,14 @@ class CombatSimUI {
                 html += '</div>';
             }
             // Totals row
-            const prevExpPerHr = compMetrics?.expensesPerHr ?? null;
+            const prevConsumableCostPerHr = compMetrics?.consumableCostPerHr ?? null;
             const expDelta =
-                prevExpPerHr !== null && prevExpPerHr !== undefined
-                    ? this._formatDelta(consumableGoldPerHr, prevExpPerHr, false, true)
+                prevConsumableCostPerHr !== null && prevConsumableCostPerHr !== undefined
+                    ? this._formatDelta(consumableGoldPerHr, prevConsumableCostPerHr, false, true)
                     : '';
             const expDayDelta =
-                prevExpPerHr !== null && prevExpPerHr !== undefined
-                    ? this._formatDelta(consumableGoldPerHr * 24, prevExpPerHr * 24, false, true)
+                prevConsumableCostPerHr !== null && prevConsumableCostPerHr !== undefined
+                    ? this._formatDelta(consumableGoldPerHr * 24, prevConsumableCostPerHr * 24, false, true)
                     : '';
             html += `<div style="display:flex; align-items:center; padding:4px 0 0; font-size:12px; border-top:1px solid #333; margin-top:4px; gap:6px;">`;
             html += `<span style="color:#aaa; font-weight:700; flex:1;">Total Expenses</span>`;
@@ -3325,15 +3328,16 @@ class CombatSimUI {
         }
 
         // Expenses from consumables
-        let expensesPerHr = 0;
+        let consumableCostPerHr = 0;
         const selfConsumables = simResult.consumablesUsed?.[activeTab] || {};
         for (const [itemHrid, count] of Object.entries(selfConsumables)) {
             const price = marketAPI.getPrice(itemHrid);
             const unitCost = this._getBuyPrice(price);
-            expensesPerHr += (count / hours) * unitCost;
+            consumableCostPerHr += (count / hours) * unitCost;
         }
 
         // Dungeon key costs
+        let keyCostPerHrMetric = 0;
         if (simResult.isDungeon && gameData) {
             const dropMap = calculateExpectedDrops(simResult, gameData, activeTab);
             const getBuyPriceForKey = (keyHrid) => {
@@ -3342,9 +3346,11 @@ class CombatSimUI {
             };
             const keyCosts = calculateDungeonKeyCosts(dropMap, getBuyPriceForKey);
             for (const key of keyCosts) {
-                expensesPerHr += (key.count / hours) * key.unitCost;
+                keyCostPerHrMetric += (key.count / hours) * key.unitCost;
             }
         }
+
+        const expensesPerHr = consumableCostPerHr + keyCostPerHrMetric;
 
         return {
             encountersPerHr,
@@ -3352,6 +3358,8 @@ class CombatSimUI {
             totalXpPerHr,
             revenuePerHr,
             expensesPerHr,
+            consumableCostPerHr,
+            keyCostPerHr: keyCostPerHrMetric,
             profitPerHr: revenuePerHr - expensesPerHr,
             successRate: simResult.isDungeon
                 ? simResult.dungeonsCompleted / Math.max(1, simResult.dungeonsCompleted + simResult.dungeonsFailed)
@@ -3374,21 +3382,28 @@ class CombatSimUI {
 
         this._simHistory.splice(idx, 1);
 
-        // Adjust comparisonBaseline
-        if (this._comparisonBaseline === idx) {
-            this._comparisonBaseline = this._simHistory.length > 0 ? Math.max(0, this._simHistory.length - 1) : null;
-        } else if (this._comparisonBaseline !== null && this._comparisonBaseline > idx) {
-            this._comparisonBaseline--;
-        }
-
-        // Adjust comparisonSlots
-        this._comparisonSlots = this._comparisonSlots.filter((i) => i !== idx).map((i) => (i > idx ? i - 1 : i));
-
-        // Adjust comparisonIndex
-        if (this._comparisonIndex === idx) {
+        // If only one or zero results remain, clear all comparison state
+        if (this._simHistory.length <= 1) {
+            this._comparisonBaseline = null;
             this._comparisonIndex = null;
-        } else if (this._comparisonIndex !== null && this._comparisonIndex > idx) {
-            this._comparisonIndex--;
+            this._comparisonSlots = [];
+        } else {
+            // Adjust comparisonBaseline
+            if (this._comparisonBaseline === idx) {
+                this._comparisonBaseline = Math.max(0, this._simHistory.length - 1);
+            } else if (this._comparisonBaseline !== null && this._comparisonBaseline > idx) {
+                this._comparisonBaseline--;
+            }
+
+            // Adjust comparisonSlots
+            this._comparisonSlots = this._comparisonSlots.filter((i) => i !== idx).map((i) => (i > idx ? i - 1 : i));
+
+            // Adjust comparisonIndex
+            if (this._comparisonIndex === idx) {
+                this._comparisonIndex = null;
+            } else if (this._comparisonIndex !== null && this._comparisonIndex > idx) {
+                this._comparisonIndex--;
+            }
         }
 
         // Adjust activeDetailIndex

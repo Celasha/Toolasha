@@ -996,8 +996,10 @@ export function calculateSimRevenue(simResult, gameData, playerHrid, hours) {
         if (total <= 0) continue;
         let unitValue = itemHrid === '/items/coin' ? 1 : getSellPrice(marketAPI.getPrice(itemHrid));
         if (unitValue === 0) {
-            const evData = expectedValueCalculator.calculateExpectedValue(itemHrid);
-            if (evData?.expectedValue > 0) unitValue = evData.expectedValue;
+            const ev =
+                expectedValueCalculator.getCachedValue(itemHrid) ||
+                expectedValueCalculator.calculateSingleContainer(itemHrid);
+            if (ev !== null && ev > 0) unitValue = ev;
         }
         const perHour = (total / hours) * unitValue;
         revenuePerHour += perHour;
