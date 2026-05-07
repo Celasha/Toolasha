@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.40.0
+ * Version: 2.40.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -11623,6 +11623,17 @@
      */
     function getItemRole(combatStats) {
         if (!combatStats) return 'unknown';
+
+        // Check for elemental amplify — sub-classifies magic gear by element
+        const fireAmp = combatStats.fireAmplify || 0;
+        const natureAmp = combatStats.natureAmplify || 0;
+        const waterAmp = combatStats.waterAmplify || 0;
+
+        if (fireAmp > 0 || natureAmp > 0 || waterAmp > 0) {
+            if (fireAmp >= natureAmp && fireAmp >= waterAmp) return 'magic_fire';
+            if (natureAmp >= fireAmp && natureAmp >= waterAmp) return 'magic_nature';
+            return 'magic_water';
+        }
 
         // Check for primary offensive stats
         const melee = (combatStats.stabDamage || 0) + (combatStats.slashDamage || 0) + (combatStats.smashDamage || 0);
