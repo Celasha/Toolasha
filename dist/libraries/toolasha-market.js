@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.39.4
+ * Version: 2.39.5
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -17234,7 +17234,6 @@ self.onmessage = function (e) {
             this.currentCustomTo = null;
             this._deletePopup = null;
             this._deletePopupOutsideHandler = null;
-            this._loadChartPrefs();
         }
 
         /**
