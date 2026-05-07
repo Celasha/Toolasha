@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.40.1
+ * Version: 2.40.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -11582,6 +11582,8 @@
         const itemLevel = itemDetails.itemLevel || 1;
 
         // Calculate expected attempts using Markov chain
+        // Use protection from startLevel (realistic — nobody enhances high levels unprotected)
+        const protectFrom = startLevel >= 2 ? startLevel : 0;
         let attempts;
         try {
             const result = enhancementCalculator_js.calculateEnhancement({
@@ -11591,7 +11593,7 @@
                 itemLevel,
                 targetLevel,
                 startLevel,
-                protectFrom: 0,
+                protectFrom,
                 blessedTea: enhancingParams.teas?.blessed || false,
                 guzzlingBonus: enhancingParams.guzzlingBonus || 1.0,
             });
@@ -11847,12 +11849,29 @@
 
     /**
      * Calculate the total gold cost for a candidate upgrade.
+     * Uses market prices as primary source (buy upgraded - sell current).
+     * Falls back to enhancement cost estimate if market data unavailable.
      * @param {Object} candidate - Candidate from generateCandidates()
      * @param {Object} gameData - Game data
      * @returns {number} Total gold cost
      */
     function calculateUpgradeCost(candidate, gameData) {
         if (candidate.type === 'enhancement') {
+            // Primary: market price delta (buy at target level - sell at current level)
+            const buyUpgraded = profitHelpers_js.resolveItemPrice(candidate.currentHrid, {
+                side: 'buy',
+                enhancementLevel: candidate.upgradeLevel,
+            }).price;
+            const sellCurrent = profitHelpers_js.resolveItemPrice(candidate.currentHrid, {
+                side: 'sell',
+                enhancementLevel: candidate.currentLevel,
+            }).price;
+
+            if (buyUpgraded > 0 && sellCurrent > 0) {
+                return Math.max(0, buyUpgraded - sellCurrent);
+            }
+
+            // Fallback: enhancement cost estimate with protection
             return calculateEnhancementCost(
                 candidate.currentHrid,
                 candidate.currentLevel,
@@ -11861,19 +11880,17 @@
             );
         }
 
-        // Tier upgrade: buy new item + enhance it - sell current
-        const buyPrice = profitHelpers_js.resolveItemPrice(candidate.upgradeHrid, { side: 'buy' }).price;
+        // Tier upgrade: buy new item at same enhancement - sell current item
+        const buyPrice = profitHelpers_js.resolveItemPrice(candidate.upgradeHrid, {
+            side: 'buy',
+            enhancementLevel: candidate.upgradeLevel,
+        }).price;
         const sellPrice = profitHelpers_js.resolveItemPrice(candidate.currentHrid, {
             side: 'sell',
             enhancementLevel: candidate.currentLevel,
         }).price;
 
-        let enhanceCost = 0;
-        if (candidate.upgradeLevel > 0) {
-            enhanceCost = calculateEnhancementCost(candidate.upgradeHrid, 0, candidate.upgradeLevel, gameData);
-        }
-
-        return Math.max(0, buyPrice + enhanceCost - sellPrice);
+        return Math.max(0, buyPrice - sellPrice);
     }
 
     /**
