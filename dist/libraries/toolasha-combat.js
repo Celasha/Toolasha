@@ -1,11 +1,11 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.40.2
+ * Version: 2.40.3
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (config, dataManager, domObserver, storage, webSocketHook, timerRegistry_js, domObserverHelpers_js, marketAPI, formatters_js, reactInput_js, expectedValueCalculator, profitHelpers_js, enhancementCalculator_js, enhancementConfig_js, dom, abilityCostCalculator_js, houseCostCalculator_js, marketData_js, teaParser_js) {
+(function (config, dataManager, domObserver, storage, webSocketHook, timerRegistry_js, domObserverHelpers_js, marketAPI, formatters_js, reactInput_js, expectedValueCalculator, profitHelpers_js, marketData_js, enhancementCalculator_js, enhancementConfig_js, teaParser_js, dom, abilityCostCalculator_js, houseCostCalculator_js) {
     'use strict';
 
     /**
@@ -11541,6 +11541,169 @@
     }
 
     /**
+     * Enhancement Tooltip Module
+     *
+     * Provides enhancement analysis for item tooltips.
+     * Calculates optimal enhancement path and total costs for reaching current enhancement level.
+     *
+     * This module is part of Phase 2 of Option D (Hybrid Approach):
+     * - Enhancement panel: Shows 20-level enhancement table
+     * - Item tooltips: Shows optimal path to reach current enhancement level
+     */
+
+
+    /**
+     * Get realistic base item price with production cost fallback
+     * Matches original MWI Tools v25.0 getRealisticBaseItemPrice logic
+     * @private
+     */
+    function getRealisticBaseItemPrice(itemHrid) {
+        const marketPrice = marketData_js.getItemPrices(itemHrid, 0);
+        const ask = marketPrice?.ask > 0 ? marketPrice.ask : 0;
+        const bid = marketPrice?.bid > 0 ? marketPrice.bid : 0;
+
+        // Calculate production cost as fallback
+        const productionCost = getProductionCost(itemHrid);
+
+        // If both ask and bid exist
+        if (ask > 0 && bid > 0) {
+            // If ask is significantly higher than bid (>30% markup), use max(bid, production)
+            if (ask / bid > 1.3) {
+                return Math.max(bid, productionCost);
+            }
+            // Otherwise use ask (normal market)
+            return ask;
+        }
+
+        // If only ask exists
+        if (ask > 0) {
+            // If ask is inflated compared to production, use production
+            if (productionCost > 0 && ask / productionCost > 1.3) {
+                return productionCost;
+            }
+            // Otherwise use max of ask and production
+            return Math.max(ask, productionCost);
+        }
+
+        // If only bid exists, use max(bid, production)
+        if (bid > 0) {
+            return Math.max(bid, productionCost);
+        }
+
+        // No market data - use production cost as fallback
+        return productionCost;
+    }
+
+    /**
+     * Calculate production cost from crafting recipe
+     * Matches original MWI Tools v25.0 getBaseItemProductionCost logic
+     * @param {string} itemHrid
+     * @param {'ask'|'bid'} [mode='ask'] - Pricing side to use for input materials
+     * @private
+     */
+    function getProductionCost(itemHrid, mode = 'ask') {
+        const gameData = dataManager.getInitClientData();
+        const itemDetails = gameData.itemDetailMap[itemHrid];
+
+        if (!itemDetails || !itemDetails.name) {
+            return 0;
+        }
+
+        // Find the action that produces this item
+        let actionHrid = null;
+        let outputCount = 1;
+        for (const [hrid, action] of Object.entries(gameData.actionDetailMap)) {
+            if (action.outputItems && action.outputItems.length > 0) {
+                const output = action.outputItems[0];
+                if (output.itemHrid === itemHrid) {
+                    actionHrid = hrid;
+                    outputCount = output.count || 1;
+                    break;
+                }
+            }
+        }
+
+        if (!actionHrid) {
+            return 0;
+        }
+
+        const action = gameData.actionDetailMap[actionHrid];
+        let totalPrice = 0;
+
+        // Compute artisan tea reduction dynamically (same approach as material-calculator.js)
+        let artisanBonus = 0;
+        try {
+            const equipment = dataManager.getEquipment();
+            const itemDetailMap = gameData.itemDetailMap || {};
+            const drinkConcentration = teaParser_js.getDrinkConcentration(equipment, itemDetailMap);
+            const activeDrinks = dataManager.getActionDrinkSlots(action.type);
+            artisanBonus = teaParser_js.parseArtisanBonus(activeDrinks, itemDetailMap, drinkConcentration);
+        } catch {
+            // Fall back to no reduction if data unavailable
+        }
+
+        // Sum up input material costs (artisan tea reduces material quantities, not upgrade items)
+        if (action.inputItems) {
+            for (const input of action.inputItems) {
+                if (input.itemHrid === '/items/coin') {
+                    totalPrice += input.count * (1 - artisanBonus);
+                    continue;
+                }
+                let inputPrice = marketData_js.getItemPrice(input.itemHrid, { mode }) || 0;
+                if (inputPrice === 0) {
+                    inputPrice = getProductionCost(input.itemHrid, mode);
+                }
+                totalPrice += inputPrice * input.count * (1 - artisanBonus);
+            }
+        }
+
+        // Add upgrade item cost if this is an upgrade recipe (not affected by artisan tea)
+        if (action.upgradeItemHrid) {
+            let upgradePrice = marketData_js.getItemPrice(action.upgradeItemHrid, { mode }) || 0;
+            if (upgradePrice === 0) {
+                upgradePrice = getProductionCost(action.upgradeItemHrid, mode);
+            }
+            totalPrice += upgradePrice;
+        }
+
+        return totalPrice / outputCount;
+    }
+
+    /**
+     * Get cheapest protection item price
+     * Tests: item itself, mirror of protection, and specific protection items
+     * @private
+     */
+    function getCheapestProtectionPrice(itemHrid) {
+        const gameData = dataManager.getInitClientData();
+        const itemDetails = gameData.itemDetailMap[itemHrid];
+
+        // Build list of protection options: [item itself, mirror, ...specific items]
+        const protectionOptions = [itemHrid, '/items/mirror_of_protection'];
+
+        // Add specific protection items if they exist
+        if (itemDetails.protectionItemHrids && itemDetails.protectionItemHrids.length > 0) {
+            protectionOptions.push(...itemDetails.protectionItemHrids);
+        }
+
+        // Find cheapest option
+        let cheapestPrice = Infinity;
+        let cheapestItemHrid = null;
+        for (const protectionHrid of protectionOptions) {
+            const price = getRealisticBaseItemPrice(protectionHrid);
+            if (price > 0 && price < cheapestPrice) {
+                cheapestPrice = price;
+                cheapestItemHrid = protectionHrid;
+            }
+        }
+
+        return {
+            price: cheapestPrice === Infinity ? 0 : cheapestPrice,
+            itemHrid: cheapestItemHrid,
+        };
+    }
+
+    /**
      * Upgrade Advisor for Combat Sim
      *
      * Generates equipment upgrade candidates, calculates their costs,
@@ -11585,6 +11748,7 @@
         // Use protection from startLevel (realistic — nobody enhances high levels unprotected)
         const protectFrom = startLevel >= 2 ? startLevel : 0;
         let attempts;
+        let protectionCount = 0;
         try {
             const result = enhancementCalculator_js.calculateEnhancement({
                 enhancingLevel: enhancingParams.enhancingLevel,
@@ -11598,23 +11762,44 @@
                 guzzlingBonus: enhancingParams.guzzlingBonus || 1.0,
             });
             attempts = result.attempts;
+            protectionCount = result.protectionCount || 0;
         } catch {
             // Fallback: rough estimate
             attempts = targetLevel - startLevel;
         }
 
-        // Sum material costs per attempt
+        // Sum material costs per attempt (matches tooltip-enhancement pricing)
         let perAttemptCost = 0;
         for (const material of itemDetails.enhancementCosts) {
-            if (material.itemHrid === '/items/coin') {
-                perAttemptCost += material.count;
+            let price = 0;
+            if (material.itemHrid.startsWith('/items/trainee_')) {
+                price = 250000;
+            } else if (material.itemHrid === '/items/coin') {
+                price = 1;
             } else {
-                const { price } = profitHelpers_js.resolveItemPrice(material.itemHrid, { side: 'buy' });
-                perAttemptCost += price * material.count;
+                const marketPrice = marketData_js.getItemPrices(material.itemHrid, 0);
+                if (marketPrice) {
+                    let ask = marketPrice.ask;
+                    let bid = marketPrice.bid;
+                    if (ask > 0 && bid < 0) bid = ask;
+                    if (bid > 0 && ask < 0) ask = bid;
+                    price = ask;
+                } else {
+                    const itemDetail = gameData.itemDetailMap[material.itemHrid];
+                    price = getProductionCost(material.itemHrid, 'ask') || itemDetail?.sellPrice || 0;
+                }
             }
+            perAttemptCost += price * material.count;
         }
 
-        return Math.round(attempts * perAttemptCost);
+        // Add protection scroll costs
+        let protectionCost = 0;
+        if (protectionCount > 0) {
+            const { price: protPrice } = getCheapestProtectionPrice(itemHrid);
+            protectionCost = protPrice * protectionCount;
+        }
+
+        return Math.round(attempts * perAttemptCost + protectionCost);
     }
 
     /**
@@ -19476,169 +19661,6 @@ self.onmessage = function (e) {
     }
 
     /**
-     * Enhancement Tooltip Module
-     *
-     * Provides enhancement analysis for item tooltips.
-     * Calculates optimal enhancement path and total costs for reaching current enhancement level.
-     *
-     * This module is part of Phase 2 of Option D (Hybrid Approach):
-     * - Enhancement panel: Shows 20-level enhancement table
-     * - Item tooltips: Shows optimal path to reach current enhancement level
-     */
-
-
-    /**
-     * Get realistic base item price with production cost fallback
-     * Matches original MWI Tools v25.0 getRealisticBaseItemPrice logic
-     * @private
-     */
-    function getRealisticBaseItemPrice(itemHrid) {
-        const marketPrice = marketData_js.getItemPrices(itemHrid, 0);
-        const ask = marketPrice?.ask > 0 ? marketPrice.ask : 0;
-        const bid = marketPrice?.bid > 0 ? marketPrice.bid : 0;
-
-        // Calculate production cost as fallback
-        const productionCost = getProductionCost(itemHrid);
-
-        // If both ask and bid exist
-        if (ask > 0 && bid > 0) {
-            // If ask is significantly higher than bid (>30% markup), use max(bid, production)
-            if (ask / bid > 1.3) {
-                return Math.max(bid, productionCost);
-            }
-            // Otherwise use ask (normal market)
-            return ask;
-        }
-
-        // If only ask exists
-        if (ask > 0) {
-            // If ask is inflated compared to production, use production
-            if (productionCost > 0 && ask / productionCost > 1.3) {
-                return productionCost;
-            }
-            // Otherwise use max of ask and production
-            return Math.max(ask, productionCost);
-        }
-
-        // If only bid exists, use max(bid, production)
-        if (bid > 0) {
-            return Math.max(bid, productionCost);
-        }
-
-        // No market data - use production cost as fallback
-        return productionCost;
-    }
-
-    /**
-     * Calculate production cost from crafting recipe
-     * Matches original MWI Tools v25.0 getBaseItemProductionCost logic
-     * @param {string} itemHrid
-     * @param {'ask'|'bid'} [mode='ask'] - Pricing side to use for input materials
-     * @private
-     */
-    function getProductionCost(itemHrid, mode = 'ask') {
-        const gameData = dataManager.getInitClientData();
-        const itemDetails = gameData.itemDetailMap[itemHrid];
-
-        if (!itemDetails || !itemDetails.name) {
-            return 0;
-        }
-
-        // Find the action that produces this item
-        let actionHrid = null;
-        let outputCount = 1;
-        for (const [hrid, action] of Object.entries(gameData.actionDetailMap)) {
-            if (action.outputItems && action.outputItems.length > 0) {
-                const output = action.outputItems[0];
-                if (output.itemHrid === itemHrid) {
-                    actionHrid = hrid;
-                    outputCount = output.count || 1;
-                    break;
-                }
-            }
-        }
-
-        if (!actionHrid) {
-            return 0;
-        }
-
-        const action = gameData.actionDetailMap[actionHrid];
-        let totalPrice = 0;
-
-        // Compute artisan tea reduction dynamically (same approach as material-calculator.js)
-        let artisanBonus = 0;
-        try {
-            const equipment = dataManager.getEquipment();
-            const itemDetailMap = gameData.itemDetailMap || {};
-            const drinkConcentration = teaParser_js.getDrinkConcentration(equipment, itemDetailMap);
-            const activeDrinks = dataManager.getActionDrinkSlots(action.type);
-            artisanBonus = teaParser_js.parseArtisanBonus(activeDrinks, itemDetailMap, drinkConcentration);
-        } catch {
-            // Fall back to no reduction if data unavailable
-        }
-
-        // Sum up input material costs (artisan tea reduces material quantities, not upgrade items)
-        if (action.inputItems) {
-            for (const input of action.inputItems) {
-                if (input.itemHrid === '/items/coin') {
-                    totalPrice += input.count * (1 - artisanBonus);
-                    continue;
-                }
-                let inputPrice = marketData_js.getItemPrice(input.itemHrid, { mode }) || 0;
-                if (inputPrice === 0) {
-                    inputPrice = getProductionCost(input.itemHrid, mode);
-                }
-                totalPrice += inputPrice * input.count * (1 - artisanBonus);
-            }
-        }
-
-        // Add upgrade item cost if this is an upgrade recipe (not affected by artisan tea)
-        if (action.upgradeItemHrid) {
-            let upgradePrice = marketData_js.getItemPrice(action.upgradeItemHrid, { mode }) || 0;
-            if (upgradePrice === 0) {
-                upgradePrice = getProductionCost(action.upgradeItemHrid, mode);
-            }
-            totalPrice += upgradePrice;
-        }
-
-        return totalPrice / outputCount;
-    }
-
-    /**
-     * Get cheapest protection item price
-     * Tests: item itself, mirror of protection, and specific protection items
-     * @private
-     */
-    function getCheapestProtectionPrice(itemHrid) {
-        const gameData = dataManager.getInitClientData();
-        const itemDetails = gameData.itemDetailMap[itemHrid];
-
-        // Build list of protection options: [item itself, mirror, ...specific items]
-        const protectionOptions = [itemHrid, '/items/mirror_of_protection'];
-
-        // Add specific protection items if they exist
-        if (itemDetails.protectionItemHrids && itemDetails.protectionItemHrids.length > 0) {
-            protectionOptions.push(...itemDetails.protectionItemHrids);
-        }
-
-        // Find cheapest option
-        let cheapestPrice = Infinity;
-        let cheapestItemHrid = null;
-        for (const protectionHrid of protectionOptions) {
-            const price = getRealisticBaseItemPrice(protectionHrid);
-            if (price > 0 && price < cheapestPrice) {
-                cheapestPrice = price;
-                cheapestItemHrid = protectionHrid;
-            }
-        }
-
-        return {
-            price: cheapestPrice === Infinity ? 0 : cheapestPrice,
-            itemHrid: cheapestItemHrid,
-        };
-    }
-
-    /**
      * Game Data Lookup Utilities
      *
      * Centralized functions for resolving display names to HRIDs.
@@ -22348,4 +22370,4 @@ self.onmessage = function (e) {
 
     console.log('[Toolasha] Combat library loaded');
 
-})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.storage, Toolasha.Core.webSocketHook, Toolasha.Utils.timerRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Core.marketAPI, Toolasha.Utils.formatters, Toolasha.Utils.reactInput, Toolasha.Market.expectedValueCalculator, Toolasha.Utils.profitHelpers, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.enhancementConfig, Toolasha.Utils.dom, Toolasha.Utils.abilityCalc, Toolasha.Utils.houseCostCalculator, Toolasha.Utils.marketData, Toolasha.Utils.teaParser);
+})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.storage, Toolasha.Core.webSocketHook, Toolasha.Utils.timerRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Core.marketAPI, Toolasha.Utils.formatters, Toolasha.Utils.reactInput, Toolasha.Market.expectedValueCalculator, Toolasha.Utils.profitHelpers, Toolasha.Utils.marketData, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.enhancementConfig, Toolasha.Utils.teaParser, Toolasha.Utils.dom, Toolasha.Utils.abilityCalc, Toolasha.Utils.houseCostCalculator);
