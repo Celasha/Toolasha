@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.39.5
+ * Version: 2.40.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1479,6 +1479,13 @@
                     step: 1,
                     help: 'Default simulation duration in hours for Seek Best Source runs',
                 },
+                combatSim_decimalMinutes: {
+                    id: 'combatSim_decimalMinutes',
+                    label: 'Combat Simulator: Show completion time as decimal minutes',
+                    type: 'checkbox',
+                    default: false,
+                    help: 'Display avg completion time as "X.XX min" instead of "Xm Ys"',
+                },
                 combatStats: {
                     id: 'combatStats',
                     label: 'Combat Statistics: Show Statistics tab in Combat panel',
@@ -2505,8 +2512,9 @@
          * @returns {Promise<void>}
          */
         async resetToDefaults() {
-            // Simply clear storage - loadSettings() will return defaults
-            await storage.remove(this.storageKey, this.storageArea);
+            // Clear per-character settings so loadSettings() returns defaults
+            const characterKey = this.getCharacterStorageKey();
+            await storage.delete(characterKey, this.storageArea);
         }
 
         /**
@@ -4562,6 +4570,13 @@
                     category: 'Market',
                     description: 'Shows buff effects and durations for food/drinks',
                     settingKey: 'showConsumTips',
+                },
+                dungeonTokenTooltips: {
+                    enabled: true,
+                    name: 'Currency Token Tooltips',
+                    category: 'Inventory',
+                    description: 'Shows shop values for tokens, seals, and cowbells',
+                    settingKey: 'dungeonTokenTooltips',
                 },
                 expectedValueCalculator: {
                     enabled: true,

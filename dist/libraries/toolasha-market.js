@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.39.5
+ * Version: 2.40.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -8682,8 +8682,8 @@ self.onmessage = function (e) {
                         const topOrders = isSell ? orderBook.asks : orderBook.bids;
                         if (topOrders && topOrders.length > 0) {
                             // Asks are sorted ascending (lowest = best ask = index 0)
-                            // Bids are sorted ascending (highest = best bid = last index)
-                            topOrderPrice = isSell ? topOrders[0].price : topOrders[topOrders.length - 1].price;
+                            // Bids are sorted descending (highest = best bid = index 0)
+                            topOrderPrice = topOrders[0].price;
                         }
                     }
                 }
@@ -8756,7 +8756,7 @@ self.onmessage = function (e) {
                 return createStyledCell('N/A', config.COLOR_TEXT_SECONDARY, { fontSize: '0.9em' });
             }
 
-            // Get top order — asks sorted ascending (best = index 0), bids sorted ascending (best = last index)
+            // Get top order — asks sorted ascending (best = index 0), bids sorted descending (best = index 0)
             const topOrders = isSell ? orderBook.asks : orderBook.bids;
 
             if (!topOrders || topOrders.length === 0) {
@@ -8764,7 +8764,7 @@ self.onmessage = function (e) {
                 return createStyledCell('None', '#00FF00', { fontSize: '0.9em' }); // Green = you're the only one
             }
 
-            const topOrder = isSell ? topOrders[0] : topOrders[topOrders.length - 1];
+            const topOrder = topOrders[0];
             const topListingId = topOrder.listingId;
 
             // Estimate timestamp using existing logic
@@ -22183,6 +22183,10 @@ self.onmessage = function (e) {
          * @param {Element} tooltipElement - The tooltip popper element
          */
         async handleTooltip(tooltipElement) {
+            if (!config.isFeatureEnabled('dungeonTokenTooltips')) {
+                return;
+            }
+
             if (tooltipElement.dataset.dungeonProcessed) {
                 return;
             }

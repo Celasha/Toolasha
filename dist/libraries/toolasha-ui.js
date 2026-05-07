@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.39.5
+ * Version: 2.40.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -7420,8 +7420,10 @@ ${hideRules}
             if (total <= 0) continue;
             let unitValue = itemHrid === '/items/coin' ? 1 : getSellPrice(marketAPI.getPrice(itemHrid));
             if (unitValue === 0) {
-                const evData = expectedValueCalculator.calculateExpectedValue(itemHrid);
-                if (evData?.expectedValue > 0) unitValue = evData.expectedValue;
+                const ev =
+                    expectedValueCalculator.getCachedValue(itemHrid) ||
+                    expectedValueCalculator.calculateSingleContainer(itemHrid);
+                if (ev !== null && ev > 0) unitValue = ev;
             }
             const perHour = (total / hours) * unitValue;
             revenuePerHour += perHour;
