@@ -96,7 +96,7 @@ class Config {
             },
             dungeonTokenTooltips: {
                 enabled: true,
-                name: t('Currency Token Tooltips', '代币工具提示'),
+                name: t('Currency Token Tooltips', '代币提示'),
                 category: t('Inventory', '库存'),
                 description: t('Shows shop values for tokens, seals, and cowbells', '显示代币、印章和牛铃的商店价值'),
                 settingKey: 'dungeonTokenTooltips',
@@ -452,17 +452,17 @@ class Config {
         const useInstant = this.getSetting('profitCalc_pricingNaming');
         const labels = useInstant
             ? {
-                  conservative: 'Instant Buy / Instant Sell',
-                  hybrid: 'Instant Buy / Patient Sell',
-                  optimistic: 'Patient Buy / Patient Sell',
-                  patientBuy: 'Patient Buy / Instant Sell',
-              }
+                conservative: 'Instant Buy / Instant Sell',
+                hybrid: 'Instant Buy / Patient Sell',
+                optimistic: 'Patient Buy / Patient Sell',
+                patientBuy: 'Patient Buy / Instant Sell',
+            }
             : {
-                  conservative: 'Buy: Ask / Sell: Bid',
-                  hybrid: 'Buy: Ask / Sell: Ask',
-                  optimistic: 'Buy: Bid / Sell: Ask',
-                  patientBuy: 'Buy: Bid / Sell: Bid',
-              };
+                conservative: 'Buy: Ask / Sell: Bid',
+                hybrid: 'Buy: Ask / Sell: Ask',
+                optimistic: 'Buy: Bid / Sell: Ask',
+                patientBuy: 'Buy: Bid / Sell: Bid',
+            };
         return labels[mode] || labels.hybrid;
     }
 
