@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.40.6
+ * Version: 2.40.7
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -10471,11 +10471,15 @@
      * @returns {number} Combat level
      */
     function calcCombatLevel(dto) {
-        const base = (dto.staminaLevel + dto.intelligenceLevel + dto.defenseLevel) / 4;
-        const melee = (dto.attackLevel + dto.meleeLevel) / 2;
-        const ranged = (dto.attackLevel + dto.rangedLevel) / 2;
-        const magic = (dto.attackLevel + dto.magicLevel) / 2;
-        return Math.floor(base + Math.max(melee, ranged, magic));
+        return Math.floor(
+            0.1 *
+                (dto.staminaLevel +
+                    dto.intelligenceLevel +
+                    dto.attackLevel +
+                    dto.defenseLevel +
+                    Math.max(dto.meleeLevel, dto.rangedLevel, dto.magicLevel)) +
+                0.5 * Math.max(dto.attackLevel, dto.defenseLevel, dto.meleeLevel, dto.rangedLevel, dto.magicLevel)
+        );
     }
 
     /**
