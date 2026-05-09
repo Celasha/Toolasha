@@ -64,6 +64,7 @@ function getArtisanBonus(actionType) {
  * @param {boolean} [buyRawOnly=false] - When true, always craft items that have a recipe; only buy uncraftable items
  * @param {boolean} [forceRootCraft=false] - When true, forces the root item (depth 0) to be crafted
  * @param {number} [timeCostPerHour=0] - Gold value per hour of player time (0 = disabled)
+ * @param {boolean} [skipProcessing=false] - When true, forces buy for processing actions (single input, no upgrade)
  * @returns {CraftingPlanNode}
  */
 export function computeBestCraftingPlan(
@@ -76,7 +77,8 @@ export function computeBestCraftingPlan(
     maxDepth = MAX_DEPTH,
     buyRawOnly = false,
     forceRootCraft = false,
-    timeCostPerHour = 0
+    timeCostPerHour = 0,
+    skipProcessing = false
 ) {
     const itemDetails = dataManager.getItemDetails(itemHrid);
     const itemName = itemDetails?.name || itemHrid.split('/').pop();
@@ -136,7 +138,8 @@ export function computeBestCraftingPlan(
                               maxDepth,
                               buyRawOnly,
                               forceRootCraft,
-                              timeCostPerHour
+                              timeCostPerHour,
+                              skipProcessing
                           )
                       )
                     : [],
@@ -188,6 +191,33 @@ export function computeBestCraftingPlan(
         };
     }
 
+    // Skip processing actions if flag is set
+    // Processing = single input item type, no upgrade item (e.g., milk → cheese, fiber → fabric)
+    if (skipProcessing && !production.action.upgradeItemHrid && production.action.inputItems?.length === 1) {
+        const unitCost = buyPrice ?? Infinity;
+        memo.set(itemHrid, {
+            strategy: 'buy',
+            unitCost,
+            craftCost: null,
+            actionHrid: null,
+            outputCount: 1,
+            childrenTemplate: [],
+        });
+        return {
+            itemHrid,
+            itemName,
+            quantity,
+            strategy: 'buy',
+            unitCost,
+            totalCost: unitCost * quantity,
+            buyPrice,
+            craftCost: null,
+            actionHrid: null,
+            actionsNeeded: 0,
+            children: [],
+        };
+    }
+
     // Recurse into crafting
     visited.add(itemHrid);
     const { actionHrid, action, outputCount } = production;
@@ -215,7 +245,8 @@ export function computeBestCraftingPlan(
                 maxDepth,
                 buyRawOnly,
                 forceRootCraft,
-                timeCostPerHour
+                timeCostPerHour,
+                skipProcessing
             );
 
             craftCostPerUnit += childPlan.unitCost * qtyPerUnit;
@@ -237,7 +268,8 @@ export function computeBestCraftingPlan(
             maxDepth,
             buyRawOnly,
             forceRootCraft,
-            timeCostPerHour
+            timeCostPerHour,
+            skipProcessing
         );
 
         craftCostPerUnit += upgradePlan.unitCost * qtyPerUnit;
@@ -301,7 +333,8 @@ export function computeBestCraftingPlan(
                         maxDepth,
                         buyRawOnly,
                         forceRootCraft,
-                        timeCostPerHour
+                        timeCostPerHour,
+                        skipProcessing
                     )
                 );
             }
@@ -318,7 +351,8 @@ export function computeBestCraftingPlan(
                     maxDepth,
                     buyRawOnly,
                     forceRootCraft,
-                    timeCostPerHour
+                    timeCostPerHour,
+                    skipProcessing
                 )
             );
         }

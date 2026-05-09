@@ -182,10 +182,11 @@ function buildPlanUI(actionHrid, onToggle, defaultOpen = false) {
             new Set(),
             new Map(),
             0,
-            noProcessing ? 1 : undefined,
+            undefined,
             buyIntermediates,
             taskMode,
-            timeCostEnabled ? goldPerHour : 0
+            timeCostEnabled ? goldPerHour : 0,
+            noProcessing
         );
     } catch (e) {
         console.error('[CraftingPlan] computeBestCraftingPlan error:', e);
