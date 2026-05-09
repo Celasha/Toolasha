@@ -174,6 +174,10 @@ export function createAutofillManager(observerId) {
         initialize() {
             observerUnregister = domObserver.onClass(observerId, 'Modal_modalContainer', (modal) => {
                 handleBuyModal(modal, activeQuantity, pendingCalculation);
+                // Clear static quantity after use (one-shot) — pendingCalculation persists intentionally
+                if (activeQuantity !== null && !pendingCalculation) {
+                    activeQuantity = null;
+                }
             });
         },
 
