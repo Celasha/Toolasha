@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.41.4
+ * Version: 2.41.5
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -14110,8 +14110,11 @@
         }
 
         // Skip processing actions if flag is set
-        // Processing = single input item type, no upgrade item (e.g., milk → cheese, fiber → fabric)
-        if (skipProcessing && !production.action.upgradeItemHrid && production.action.inputItems?.length === 1) {
+        // Processing = material conversion actions (milk → cheese, fiber → fabric, log → lumber)
+        // Identified by category ending in /material or /lumber (vs equipment crafting like /feet, /crossbow)
+        const isProcessingAction =
+            production.action.category?.endsWith('/material') || production.action.category?.endsWith('/lumber');
+        if (skipProcessing && isProcessingAction) {
             const unitCost = buyPrice ?? Infinity;
             memo.set(itemHrid, {
                 strategy: 'buy',
