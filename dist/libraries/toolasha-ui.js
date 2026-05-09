@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.40.7
+ * Version: 2.41.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -13074,7 +13074,7 @@ ${hideRules}
             const isProtected = hrid && this.protectedHrids.has(hrid);
 
             // Update visual state
-            if (isProtected) {
+            if (isProtected && !config.getSetting('taskRerollProtection_hideHighlight')) {
                 taskCard.style.setProperty('outline', '2px solid rgba(76, 175, 80, 0.7)', 'important');
                 taskCard.style.setProperty('outline-offset', '-2px');
                 taskCard.style.setProperty('box-shadow', '0 0 8px 2px rgba(76, 175, 80, 0.3)', 'important');
@@ -15251,6 +15251,10 @@ ${hideRules}
             initialize() {
                 observerUnregister = domObserver.onClass(observerId, 'Modal_modalContainer', (modal) => {
                     handleBuyModal(modal, activeQuantity, pendingCalculation);
+                    // Clear static quantity after use (one-shot) — pendingCalculation persists intentionally
+                    if (activeQuantity !== null && !pendingCalculation) {
+                        activeQuantity = null;
+                    }
                 });
             },
 

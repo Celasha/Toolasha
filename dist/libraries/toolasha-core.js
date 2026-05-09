@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.40.7
+ * Version: 2.41.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -792,6 +792,34 @@
                     type: 'checkbox',
                     default: false,
                     help: 'Always craft items that have a recipe — only buy uncraftable raw materials from the market.',
+                },
+                actionPanel_craftingPlanNoProcessing: {
+                    id: 'actionPanel_craftingPlanNoProcessing',
+                    label: 'Action panel: Crafting plan no processing',
+                    type: 'checkbox',
+                    default: false,
+                    help: 'Only craft the final item — buy all sub-materials from the market instead of processing them yourself.',
+                },
+                actionPanel_craftingPlanTaskMode: {
+                    id: 'actionPanel_craftingPlanTaskMode',
+                    label: 'Action panel: Crafting plan task mode',
+                    type: 'checkbox',
+                    default: false,
+                    help: 'Forces the final craft step (for task credit) but allows buying intermediate materials if cheaper.',
+                },
+                actionPanel_craftingPlanTimeCost: {
+                    id: 'actionPanel_craftingPlanTimeCost',
+                    label: 'Action panel: Crafting plan time cost',
+                    type: 'checkbox',
+                    default: false,
+                    help: 'Factor in the time cost of crafting when deciding buy vs craft. Uses your gold/hr value to determine if crafting is worth your time.',
+                },
+                actionPanel_craftingPlanGoldPerHour: {
+                    id: 'actionPanel_craftingPlanGoldPerHour',
+                    label: 'Action panel: Crafting plan gold/hr value',
+                    type: 'number',
+                    default: 0,
+                    help: 'Your time value in gold per hour. Used to calculate if crafting intermediates is worth the time. Set to your typical hourly profit (e.g., 500000).',
                 },
                 lootLogStats: {
                     id: 'lootLogStats',
@@ -1670,6 +1698,13 @@
                     type: 'checkbox',
                     default: true,
                     help: 'Protect specific tasks from accidental rerolling. Protected tasks get a green highlight and require a confirmation click before rerolling. A shield icon appears in the task panel to configure protected zones.',
+                },
+                taskRerollProtection_hideHighlight: {
+                    id: 'taskRerollProtection_hideHighlight',
+                    label: 'Task reroll protection: Hide green highlight',
+                    type: 'checkbox',
+                    default: false,
+                    help: 'Removes the green outline/glow from protected tasks while keeping the reroll confirmation active.',
                 },
             },
         },

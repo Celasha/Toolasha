@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.40.7
+ * Version: 2.41.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -6870,7 +6870,7 @@
             // ONLY match against the first action (current action), not queued actions
             // This prevents showing stats from queued actions when party combat interrupts
             if (cachedActions.length > 0) {
-                action = this.matchCurrentActionFromText(cachedActions, actionNameText);
+                action = this.matchCurrentActionFromText(cachedActions.slice(0, 1), actionNameText);
             }
 
             if (!action) {
@@ -12284,6 +12284,10 @@
             initialize() {
                 observerUnregister = domObserver.onClass(observerId, 'Modal_modalContainer', (modal) => {
                     handleBuyModal(modal, activeQuantity, pendingCalculation);
+                    // Clear static quantity after use (one-shot) — pendingCalculation persists intentionally
+                    if (activeQuantity !== null && !pendingCalculation) {
+                        activeQuantity = null;
+                    }
                 });
             },
 
@@ -12485,7 +12489,7 @@
     /**
      * Module-level state
      */
-    let cleanupObserver = null;
+    let cleanupObserver$1 = null;
     const currentMaterialsTabs = [];
     let domObserverUnregister = null;
     let enhancementDomObserverUnregister = null;
@@ -12496,7 +12500,7 @@
     let storedNumActions = 0;
     let storedEnhancementContext = null;
     const timerRegistry = timerRegistry_js.createTimerRegistry();
-    const autofillManager = createAutofillManager('MissingMats-Actions');
+    const autofillManager$1 = createAutofillManager('MissingMats-Actions');
 
     /**
      * Enhancement panel debounce timeout
@@ -12518,8 +12522,8 @@
      * Initialize missing materials button feature
      */
     function initialize() {
-        cleanupObserver = setupMarketplaceCleanupObserver(handleMarketplaceCleanup, currentMaterialsTabs);
-        autofillManager.initialize();
+        cleanupObserver$1 = setupMarketplaceCleanupObserver(handleMarketplaceCleanup, currentMaterialsTabs);
+        autofillManager$1.initialize();
 
         // Watch for production action panels appearing
         domObserverUnregister = domObserver.onClass(
@@ -12555,12 +12559,12 @@
         }
 
         // Disconnect marketplace cleanup observer
-        if (cleanupObserver) {
-            cleanupObserver();
-            cleanupObserver = null;
+        if (cleanupObserver$1) {
+            cleanupObserver$1();
+            cleanupObserver$1 = null;
         }
 
-        autofillManager.cleanup();
+        autofillManager$1.cleanup();
 
         // Remove any existing custom tabs
         handleMarketplaceCleanup();
@@ -13177,7 +13181,7 @@
         return (_e, mat) => {
             // Store a lazy recalculation function — called each time a buy modal opens,
             // so the quantity always reflects current inventory state at that moment.
-            autofillManager.setPendingCalculation(() => {
+            autofillManager$1.setPendingCalculation(() => {
                 if (storedEnhancementContext) {
                     const ctx = storedEnhancementContext;
                     const mats = materialCalculator_js.calculateEnhancementMaterialRequirements(
@@ -13237,7 +13241,7 @@
                 // Check if clicked element is a regular tab (not our custom tab)
                 const clickedTab = e.target.closest('button');
                 if (clickedTab && !clickedTab.hasAttribute('data-mwi-custom-tab')) {
-                    autofillManager.clearQuantity();
+                    autofillManager$1.clearQuantity();
                 }
             });
         }
@@ -13407,7 +13411,7 @@
         storedActionHrid = null;
         storedNumActions = 0;
         storedEnhancementContext = null;
-        autofillManager.clearQuantity();
+        autofillManager$1.clearQuantity();
     }
 
     var missingMaterialsButton = {
@@ -13948,6 +13952,8 @@
      * @param {number} [depth=0] - Current recursion depth
      * @param {number} [maxDepth=MAX_DEPTH] - Maximum recursion depth (1 = buy all sub-materials)
      * @param {boolean} [buyRawOnly=false] - When true, always craft items that have a recipe; only buy uncraftable items
+     * @param {boolean} [forceRootCraft=false] - When true, forces the root item (depth 0) to be crafted
+     * @param {number} [timeCostPerHour=0] - Gold value per hour of player time (0 = disabled)
      * @returns {CraftingPlanNode}
      */
     function computeBestCraftingPlan(
@@ -13958,7 +13964,9 @@
         memo = new Map(),
         depth = 0,
         maxDepth = MAX_DEPTH,
-        buyRawOnly = false
+        buyRawOnly = false,
+        forceRootCraft = false,
+        timeCostPerHour = 0
     ) {
         const itemDetails = dataManager.getItemDetails(itemHrid);
         const itemName = itemDetails?.name || itemHrid.split('/').pop();
@@ -14016,7 +14024,9 @@
                                   memo,
                                   depth + 1,
                                   maxDepth,
-                                  buyRawOnly
+                                  buyRawOnly,
+                                  forceRootCraft,
+                                  timeCostPerHour
                               )
                           )
                         : [],
@@ -14093,7 +14103,9 @@
                     memo,
                     depth + 1,
                     maxDepth,
-                    buyRawOnly
+                    buyRawOnly,
+                    forceRootCraft,
+                    timeCostPerHour
                 );
 
                 craftCostPerUnit += childPlan.unitCost * qtyPerUnit;
@@ -14113,7 +14125,9 @@
                 memo,
                 depth + 1,
                 maxDepth,
-                buyRawOnly
+                buyRawOnly,
+                forceRootCraft,
+                timeCostPerHour
             );
 
             craftCostPerUnit += upgradePlan.unitCost * qtyPerUnit;
@@ -14122,9 +14136,27 @@
 
         visited.delete(itemHrid);
 
+        // Add time cost to craft cost if enabled
+        if (timeCostPerHour > 0) {
+            const gameData = dataManager.getInitClientData();
+            const actionDetails = gameData?.actionDetailMap?.[actionHrid];
+            if (actionDetails) {
+                const stats = actionCalculator_js.calculateActionStats(actionDetails, {
+                    skills: dataManager.getSkills(),
+                    equipment: dataManager.getEquipment(),
+                    itemDetailMap: gameData.itemDetailMap,
+                });
+                const effMultiplier = efficiency_js.calculateEfficiencyMultiplier(stats.totalEfficiency);
+                const timePerUnit = (stats.actionTime / effMultiplier) * actionsForOne;
+                craftCostPerUnit += timePerUnit * (timeCostPerHour / 3600);
+            }
+        }
+
         // Buy vs craft decision
         // When buyRawOnly is true, always craft (we only reach here if a recipe exists)
-        const shouldBuy = !buyRawOnly && buyPrice !== null && buyPrice <= craftCostPerUnit;
+        // When forceRootCraft is true and depth === 0, always craft the root item
+        const shouldBuy =
+            !buyRawOnly && !(forceRootCraft && depth === 0) && buyPrice !== null && buyPrice <= craftCostPerUnit;
         const strategy = shouldBuy ? 'buy' : 'craft';
         const unitCost = shouldBuy ? buyPrice : craftCostPerUnit;
 
@@ -14157,7 +14189,9 @@
                             memo,
                             depth + 1,
                             maxDepth,
-                            buyRawOnly
+                            buyRawOnly,
+                            forceRootCraft,
+                            timeCostPerHour
                         )
                     );
                 }
@@ -14172,7 +14206,9 @@
                         memo,
                         depth + 1,
                         maxDepth,
-                        buyRawOnly
+                        buyRawOnly,
+                        forceRootCraft,
+                        timeCostPerHour
                     )
                 );
             }
@@ -14201,6 +14237,9 @@
 
 
     const UI_ID = 'mwi-crafting-plan';
+    const craftingPlanTabs = [];
+    let cleanupObserver = null;
+    const autofillManager = createAutofillManager('CraftingPlan');
 
     const PRODUCTION_TYPES$1 = [
         '/action_types/brewing',
@@ -14288,6 +14327,7 @@
                 itemName: node.itemName,
                 quantity: Math.ceil(node.quantity),
                 actionsNeeded: node.actionsNeeded,
+                actionHrid: node.actionHrid,
             });
         }
     }
@@ -14343,9 +14383,24 @@
 
         const mode = getPricingMode();
         const buyIntermediates = config.getSetting('actionPanel_craftingPlanBuyIntermediates');
+        const noProcessing = config.getSetting('actionPanel_craftingPlanNoProcessing');
+        const taskMode = config.getSetting('actionPanel_craftingPlanTaskMode');
+        const timeCostEnabled = config.getSetting('actionPanel_craftingPlanTimeCost');
+        const goldPerHour = config.getSetting('actionPanel_craftingPlanGoldPerHour') || 0;
         let plan;
         try {
-            plan = computeBestCraftingPlan(output.itemHrid, 1, mode, new Set(), new Map(), 0, undefined, buyIntermediates);
+            plan = computeBestCraftingPlan(
+                output.itemHrid,
+                1,
+                mode,
+                new Set(),
+                new Map(),
+                0,
+                noProcessing ? 1 : undefined,
+                buyIntermediates,
+                taskMode,
+                timeCostEnabled ? goldPerHour : 0
+            );
         } catch (e) {
             console.error('[CraftingPlan] computeBestCraftingPlan error:', e);
             return null;
@@ -14400,6 +14455,100 @@
         toggleRow.appendChild(document.createTextNode('Buy raw materials only'));
         content.appendChild(toggleRow);
 
+        // === No processing toggle ===
+        const noProcessingRow = document.createElement('label');
+        noProcessingRow.style.cssText = `
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.85em;
+        color: var(--text-color-secondary, #888);
+        cursor: pointer;
+        margin-bottom: 4px;
+    `;
+        const noProcessingCheckbox = document.createElement('input');
+        noProcessingCheckbox.type = 'checkbox';
+        noProcessingCheckbox.checked = noProcessing;
+        noProcessingCheckbox.style.cssText = 'margin: 0; cursor: pointer;';
+        noProcessingCheckbox.addEventListener('change', () => {
+            config.setSetting('actionPanel_craftingPlanNoProcessing', noProcessingCheckbox.checked);
+            if (onToggle) onToggle();
+        });
+        noProcessingRow.appendChild(noProcessingCheckbox);
+        noProcessingRow.appendChild(document.createTextNode('No processing (buy intermediates)'));
+        content.appendChild(noProcessingRow);
+
+        // === Task mode toggle ===
+        const taskToggleRow = document.createElement('label');
+        taskToggleRow.style.cssText = `
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.85em;
+        color: var(--text-color-secondary, #888);
+        cursor: pointer;
+        margin-bottom: 4px;
+    `;
+        const taskCheckbox = document.createElement('input');
+        taskCheckbox.type = 'checkbox';
+        taskCheckbox.checked = taskMode;
+        taskCheckbox.style.cssText = 'margin: 0; cursor: pointer;';
+        taskCheckbox.addEventListener('change', () => {
+            config.setSetting('actionPanel_craftingPlanTaskMode', taskCheckbox.checked);
+            if (onToggle) onToggle();
+        });
+        taskToggleRow.appendChild(taskCheckbox);
+        taskToggleRow.appendChild(document.createTextNode('Task mode (force last step)'));
+        content.appendChild(taskToggleRow);
+
+        // === Time cost toggle ===
+        const timeCostRow = document.createElement('label');
+        timeCostRow.style.cssText = `
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.85em;
+        color: var(--text-color-secondary, #888);
+        cursor: pointer;
+        margin-bottom: 4px;
+    `;
+        const timeCostCheckbox = document.createElement('input');
+        timeCostCheckbox.type = 'checkbox';
+        timeCostCheckbox.checked = timeCostEnabled;
+        timeCostCheckbox.style.cssText = 'margin: 0; cursor: pointer;';
+        timeCostRow.appendChild(timeCostCheckbox);
+        timeCostRow.appendChild(document.createTextNode('Factor in time cost'));
+
+        const goldInput = document.createElement('input');
+        goldInput.type = 'number';
+        goldInput.value = goldPerHour || '';
+        goldInput.placeholder = '500000';
+        goldInput.style.cssText = `
+        width: 80px; margin-left: auto; padding: 2px 4px;
+        background: var(--input-bg, #1a1a2e); border: 1px solid var(--border-color, #333);
+        border-radius: 3px; color: var(--text-color-primary, #fff); font-size: 0.85em;
+    `;
+        goldInput.style.display = timeCostEnabled ? '' : 'none';
+        const goldLabel = document.createElement('span');
+        goldLabel.textContent = 'gold/hr';
+        goldLabel.style.fontSize = '0.85em';
+        goldLabel.style.display = timeCostEnabled ? '' : 'none';
+
+        timeCostCheckbox.addEventListener('change', () => {
+            config.setSetting('actionPanel_craftingPlanTimeCost', timeCostCheckbox.checked);
+            goldInput.style.display = timeCostCheckbox.checked ? '' : 'none';
+            goldLabel.style.display = timeCostCheckbox.checked ? '' : 'none';
+            if (onToggle) onToggle();
+        });
+        goldInput.addEventListener('change', () => {
+            config.setSetting('actionPanel_craftingPlanGoldPerHour', parseInt(goldInput.value) || 0);
+            if (onToggle) onToggle();
+        });
+
+        timeCostRow.appendChild(goldInput);
+        timeCostRow.appendChild(goldLabel);
+        content.appendChild(timeCostRow);
+
         // Only show breakdown if crafting is the optimal strategy
         if (plan.strategy !== 'craft' || plan.children.length === 0) {
             const costText = plan.unitCost === Infinity ? '?' : `${formatters_js.formatKMB(Math.round(plan.unitCost))}/ea`;
@@ -14446,6 +14595,50 @@
             totalRow.style.marginTop = '4px';
             totalRow.style.paddingTop = '4px';
             content.appendChild(totalRow);
+
+            // === Buy Missing Materials button ===
+            const buyButton = document.createElement('button');
+            buyButton.textContent = 'Buy Missing Materials';
+            buyButton.style.cssText = `
+            width: 100%; margin-top: 6px; padding: 6px;
+            background: linear-gradient(135deg, #1e40af, #3b82f6);
+            border: 1px solid #60a5fa; border-radius: 4px;
+            color: white; cursor: pointer; font-size: 0.85em;
+        `;
+            buyButton.addEventListener('click', () => {
+                const panel = buyButton.closest('[class*="SkillActionDetail_skillActionDetail"]');
+                const inputField = actionPanelHelper_js.findActionInput(panel);
+                const numActions = parseInt(inputField?.value) || 1;
+                const outputCount = output.count || 1;
+                const totalQty = numActions * outputCount;
+                const inventory = dataManager.getInventory() || [];
+
+                const missingMaterials = [];
+                for (const [itemHrid, item] of buyItems) {
+                    const needed = Math.ceil(item.quantity * totalQty);
+                    const have = inventory
+                        .filter((i) => i.itemHrid === itemHrid && !i.enhancementLevel)
+                        .reduce((sum, i) => sum + (i.count || 0), 0);
+                    const missing = Math.max(0, needed - have);
+                    const itemDetails = dataManager.getItemDetails(itemHrid);
+                    const isTradeable = itemDetails?.isTradable !== false;
+                    if (missing > 0 && isTradeable) {
+                        missingMaterials.push({
+                            itemHrid,
+                            itemName: item.itemName,
+                            missing,
+                            required: needed,
+                            isTradeable,
+                        });
+                    }
+                }
+
+                if (missingMaterials.length === 0) return;
+
+                navigateToMarketplace(missingMaterials[0].itemHrid, 0);
+                setTimeout(() => createCraftingPlanTabs(missingMaterials), 300);
+            });
+            content.appendChild(buyButton);
         }
 
         // === Crafting Steps (what to craft, in order) ===
@@ -14466,10 +14659,40 @@
             stepsHeader.textContent = 'Crafting Steps';
             content.appendChild(stepsHeader);
 
+            const gameData = dataManager.getInitClientData();
+            const skills = dataManager.getSkills();
+            const equipment = dataManager.getEquipment();
+            let totalCraftSeconds = 0;
+
             for (let i = 0; i < craftSteps.length; i++) {
                 const step = craftSteps[i];
                 const qty = formatters_js.formatWithSeparator(step.quantity);
-                content.appendChild(createRow(`${i + 1}. ${step.itemName}`, `x${qty}`));
+                let timeStr = '';
+                if (step.actionHrid) {
+                    const actionDetails = gameData?.actionDetailMap?.[step.actionHrid];
+                    if (actionDetails) {
+                        const stats = actionCalculator_js.calculateActionStats(actionDetails, {
+                            skills,
+                            equipment,
+                            itemDetailMap: gameData.itemDetailMap,
+                        });
+                        const effMultiplier = efficiency_js.calculateEfficiencyMultiplier(stats.totalEfficiency);
+                        const totalSeconds = (stats.actionTime * step.actionsNeeded) / effMultiplier;
+                        totalCraftSeconds += totalSeconds;
+                        timeStr = ` (${formatters_js.timeReadable(totalSeconds)})`;
+                    }
+                }
+                content.appendChild(createRow(`${i + 1}. ${step.itemName}`, `x${qty}${timeStr}`));
+            }
+
+            if (totalCraftSeconds > 0) {
+                const totalTimeRow = createRow('Total craft time', formatters_js.timeReadable(totalCraftSeconds), {
+                    leftColor: 'var(--text-color-primary, #fff)',
+                });
+                totalTimeRow.style.borderTop = '1px solid var(--border-color, #333)';
+                totalTimeRow.style.marginTop = '4px';
+                totalTimeRow.style.paddingTop = '4px';
+                content.appendChild(totalTimeRow);
             }
         }
 
@@ -14479,6 +14702,42 @@
         section.className = 'mwi-crafting-plan-section';
 
         return section;
+    }
+
+    /**
+     * Create marketplace tabs for crafting plan shopping list materials.
+     * @param {Array} missingMaterials - Array of { itemHrid, itemName, missing, required, isTradeable }
+     */
+    function createCraftingPlanTabs(missingMaterials) {
+        const tabsContainer = document.querySelector('.MuiTabs-flexContainer[role="tablist"]');
+        if (!tabsContainer) return;
+
+        removeMaterialTabs();
+        craftingPlanTabs.length = 0;
+
+        const referenceTab = Array.from(tabsContainer.children).find((btn) => btn.textContent.includes('My Listings'));
+        if (!referenceTab) return;
+
+        tabsContainer.style.flexWrap = 'wrap';
+
+        for (const material of missingMaterials) {
+            const tabRef = { tab: null };
+            const handler = () => {
+                const qty = parseInt(tabRef.tab?.getAttribute('data-missing-quantity') || '0', 10);
+                autofillManager.setQuantity(qty);
+                navigateToMarketplace(material.itemHrid, 0);
+            };
+            const tab = createMaterialTab(material, referenceTab, handler);
+            tabRef.tab = tab;
+            tabsContainer.appendChild(tab);
+            craftingPlanTabs.push(tab);
+        }
+
+        if (!cleanupObserver) {
+            cleanupObserver = setupMarketplaceCleanupObserver(() => {
+                craftingPlanTabs.length = 0;
+            }, craftingPlanTabs);
+        }
     }
 
     class CraftingPlanDisplay {
@@ -14494,6 +14753,7 @@
             if (!config.getSetting('actionPanel_bestCraftingPlan')) return;
 
             this.isInitialized = true;
+            autofillManager.initialize();
 
             const unregister = domObserver.onClass('CraftingPlan', 'SkillActionDetail_skillActionDetail', () =>
                 this._processActionPanels()

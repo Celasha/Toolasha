@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.40.7
+ * Version: 2.41.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -18962,6 +18962,10 @@
             initialize() {
                 observerUnregister = domObserver.onClass(observerId, 'Modal_modalContainer', (modal) => {
                     handleBuyModal(modal, activeQuantity, pendingCalculation);
+                    // Clear static quantity after use (one-shot) — pendingCalculation persists intentionally
+                    if (activeQuantity !== null && !pendingCalculation) {
+                        activeQuantity = null;
+                    }
                 });
             },
 
