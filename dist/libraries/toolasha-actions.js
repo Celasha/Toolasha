@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.41.2
+ * Version: 2.41.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -5494,6 +5494,30 @@
         }
 
         return null;
+    }
+
+    /**
+     * Get the coin cost of an item from the in-game shop.
+     * Returns 0 if the item is not available in the shop or not purchasable with coins.
+     * @param {string} itemHrid - Item HRID
+     * @returns {number} Coin cost, or 0 if not available in shop
+     */
+    function getShopCoinCost(itemHrid) {
+        const gameData = dataManager.getInitClientData();
+        if (!gameData?.shopItemDetailMap) return 0;
+
+        for (const shopItem of Object.values(gameData.shopItemDetailMap)) {
+            if (shopItem.itemHrid === itemHrid) {
+                if (shopItem.costs && shopItem.costs.length > 0) {
+                    const coinCost = shopItem.costs.find((cost) => cost.itemHrid === '/items/coin');
+                    if (coinCost) {
+                        return coinCost.count;
+                    }
+                }
+            }
+        }
+
+        return 0;
     }
 
     /**
@@ -13974,13 +13998,17 @@
         const itemName = itemDetails?.name || itemHrid.split('/').pop();
         const isTradable = itemDetails?.isTradable ?? false;
 
-        // Get market buy price
+        // Get market buy price (min of market ask and shop cost)
         let buyPrice = null;
         if (isTradable) {
             const marketPrice = marketData_js.getItemPrice(itemHrid, { mode, context: 'profit', side: 'buy' });
             if (marketPrice !== null && marketPrice > 0) {
                 buyPrice = marketPrice;
             }
+        }
+        const shopCost = getShopCoinCost(itemHrid);
+        if (shopCost > 0 && (buyPrice === null || shopCost < buyPrice)) {
+            buyPrice = shopCost;
         }
 
         // Coins always cost 1 each
