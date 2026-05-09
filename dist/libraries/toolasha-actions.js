@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.41.3
+ * Version: 2.41.4
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -14668,7 +14668,7 @@
             border: 1px solid #60a5fa; border-radius: 4px;
             color: white; cursor: pointer; font-size: 0.85em;
         `;
-            buyButton.addEventListener('click', () => {
+            buyButton.addEventListener('click', async () => {
                 const panel = buyButton.closest('[class*="SkillActionDetail_skillActionDetail"]');
                 const inputField = actionPanelHelper_js.findActionInput(panel);
                 const numActions = parseInt(inputField?.value) || 1;
@@ -14698,8 +14698,29 @@
 
                 if (missingMaterials.length === 0) return;
 
-                navigateToMarketplace(missingMaterials[0].itemHrid, 0);
-                setTimeout(() => createCraftingPlanTabs(missingMaterials), 300);
+                // Navigate to marketplace via navbar click
+                const navButtons = document.querySelectorAll('.NavigationBar_nav__3uuUl');
+                const marketplaceButton = Array.from(navButtons).find((nav) => {
+                    const svg = nav.querySelector('svg[aria-label="navigationBar.marketplace"]');
+                    return svg !== null;
+                });
+                if (!marketplaceButton) return;
+                marketplaceButton.click();
+
+                // Wait for marketplace to appear
+                for (let i = 0; i < 50; i++) {
+                    const tabsContainer = document.querySelector('.MuiTabs-flexContainer[role="tablist"]');
+                    if (tabsContainer) {
+                        const hasMarketListings = Array.from(tabsContainer.children).some((btn) =>
+                            btn.textContent.includes('Market Listings')
+                        );
+                        if (hasMarketListings) break;
+                    }
+                    await new Promise((resolve) => setTimeout(resolve, 100));
+                }
+
+                await new Promise((resolve) => setTimeout(resolve, 200));
+                createCraftingPlanTabs(missingMaterials);
             });
             content.appendChild(buyButton);
         }
