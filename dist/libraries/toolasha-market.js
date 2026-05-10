@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.42.1
+ * Version: 2.42.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -18713,7 +18713,7 @@ self.onmessage = function (e) {
             const entries = [];
             const seen = new Map();
             const add = (entry) => {
-                const key = `${entry.type}:${entry.value}`;
+                const key = entry.dedupKey || `${entry.type}:${entry.value}`;
                 const existing = seen.get(key);
                 if (!existing) {
                     seen.set(key, entry);
@@ -18754,16 +18754,19 @@ self.onmessage = function (e) {
             }
 
             // Individual items — post-exclusion breakdowns only contain included items
+            // Key by itemHrid + enhancementLevel to show each enhancement level separately
             const itemAmounts = new Map();
             for (const item of [...(ca?.inventory?.breakdown ?? []), ...(ca?.equipped?.breakdown ?? [])]) {
                 if (!item.itemHrid) continue;
-                const cur = itemAmounts.get(item.itemHrid) ?? { name: item.name, amount: 0 };
+                const enhLevel = item.enhancementLevel || 0;
+                const key = enhLevel > 0 ? `${item.itemHrid}:${enhLevel}` : item.itemHrid;
+                const cur = itemAmounts.get(key) ?? { name: item.name, amount: 0, itemHrid: item.itemHrid };
                 cur.amount += item.value;
-                itemAmounts.set(item.itemHrid, cur);
+                itemAmounts.set(key, cur);
             }
-            for (const [itemHrid, { name, amount }] of itemAmounts) {
+            for (const [key, { name, amount, itemHrid }] of itemAmounts) {
                 if (isExcluded('item', itemHrid)) continue;
-                add({ type: 'item', value: itemHrid, name, amount });
+                add({ type: 'item', value: itemHrid, name, amount, dedupKey: `item:${key}` });
             }
 
             // Individual house rooms — breakdown already reflects post-exclusion

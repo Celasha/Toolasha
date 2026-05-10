@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 2.42.1
+ * Version: 2.42.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -7494,8 +7494,9 @@ self.onmessage = function (e) {
             }
 
             const totalQuantity = Math.ceil(cost.count * (repeatCount ?? calc.attempts));
-            const inventoryItem = inventory.find((i) => i.itemHrid === cost.itemHrid);
-            const have = inventoryItem?.count || 0;
+            const have = inventory
+                .filter((i) => i.itemHrid === cost.itemHrid && !i.enhancementLevel)
+                .reduce((sum, i) => sum + (i.count || 0), 0);
             const missing = Math.max(0, totalQuantity - have);
 
             materials.push({
@@ -7518,8 +7519,9 @@ self.onmessage = function (e) {
             const protDetails = gameData.itemDetailMap[protectionItemHrid];
 
             if (protDetails) {
-                const inventoryItem = inventory.find((i) => i.itemHrid === protectionItemHrid);
-                const have = inventoryItem?.count || 0;
+                const have = inventory
+                    .filter((i) => i.itemHrid === protectionItemHrid && !i.enhancementLevel)
+                    .reduce((sum, i) => sum + (i.count || 0), 0);
                 const missing = Math.max(0, totalProtection - have);
 
                 materials.push({
