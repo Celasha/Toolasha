@@ -420,6 +420,19 @@ class CombatSimUI {
         upgradeControls.innerHTML = `
             <label style="color:#888; font-size:12px;">Player</label>
             <select id="mwi-csim-upgrade-player" style="${selectStyle}"></select>
+            <label style="color:#888; font-size:12px;">Mode</label>
+            <select id="mwi-csim-upgrade-mode" style="${selectStyle}">
+                <option value="equipment">Equipment</option>
+                <option value="ability_level">Ability Levels</option>
+                <option value="ability_swap">Ability Swaps</option>
+            </select>
+            <span id="mwi-csim-upgrade-level-group" style="display:none; align-items:center; gap:4px;">
+                <label style="color:#888; font-size:12px;">Target Lv</label>
+                <input id="mwi-csim-upgrade-target-level" type="number" min="1" max="200" placeholder="Next 10" style="
+                    width:75px; background:#1a1a2e; color:#e0e0e0; border:1px solid #444;
+                    border-radius:3px; padding:3px 5px; font-size:12px; text-align:center;"
+                    title="Leave blank to upgrade each ability to its next multiple of 10">
+            </span>
             <button id="mwi-csim-upgrade-run" style="
                 background: ${ACCENT_BTN_BG};
                 color: ${ACCENT};
@@ -498,6 +511,14 @@ class CombatSimUI {
         this.panel.querySelector('#mwi-csim-upgrade-run').addEventListener('click', () => this._onUpgradeAnalyze());
         this.panel.querySelector('#mwi-csim-upgrade-stop').addEventListener('click', () => {
             this._upgradeAborted = true;
+        });
+        this.panel.querySelector('#mwi-csim-upgrade-mode').addEventListener('change', (e) => {
+            const levelGroup = this.panel.querySelector('#mwi-csim-upgrade-level-group');
+            const isLevelMode = e.target.value === 'ability_level';
+            levelGroup.style.display = isLevelMode ? 'inline-flex' : 'none';
+            if (isLevelMode) {
+                this._setDefaultAbilityTargetLevel();
+            }
         });
 
         // Zone change → update tier dropdown
@@ -3857,6 +3878,16 @@ class CombatSimUI {
     }
 
     /**
+     * Set default ability target level input to blank (per-ability breakpoint mode).
+     * @private
+     */
+    _setDefaultAbilityTargetLevel() {
+        const input = this.panel.querySelector('#mwi-csim-upgrade-target-level');
+        if (!input) return;
+        input.value = '';
+    }
+
+    /**
      * Run upgrade analysis when Analyze button is clicked.
      * @private
      */
@@ -3872,6 +3903,8 @@ class CombatSimUI {
             )
         );
         const playerIndex = parseInt(this.panel.querySelector('#mwi-csim-upgrade-player')?.value) || 0;
+        const upgradeMode = this.panel.querySelector('#mwi-csim-upgrade-mode')?.value || 'equipment';
+        const abilityTargetLevel = parseInt(this.panel.querySelector('#mwi-csim-upgrade-target-level')?.value) || 0;
 
         if (!zoneHrid) {
             this._setStatus('Select a zone in Configure tab first.');
@@ -3913,7 +3946,16 @@ class CombatSimUI {
 
         try {
             const results = await runUpgradeAnalysis(
-                { playerDTOs, playerIndex, zoneHrid, difficultyTier, hours, communityBuffs },
+                {
+                    playerDTOs,
+                    playerIndex,
+                    zoneHrid,
+                    difficultyTier,
+                    hours,
+                    communityBuffs,
+                    upgradeMode,
+                    abilityTargetLevel,
+                },
                 ({ current, total, description }) => {
                     if (this._upgradeAborted) return;
                     const fill = this.panel.querySelector('#mwi-csim-upgrade-progress-fill');
@@ -3957,7 +3999,20 @@ class CombatSimUI {
             return;
         }
 
-        // Find best (lowest non-Infinity) value in each gold/0.01% column
+        const tableStyle = 'width:100%; border-collapse:collapse; font-size:11px;';
+        const thStyle = 'padding:4px 6px; text-align:left; border-bottom:1px solid #333; color:#888; font-weight:600;';
+        const tdStyle = 'padding:4px 6px; border-bottom:1px solid #1a1a2e;';
+
+        let html = `<table style="${tableStyle}">
+            <thead><tr>
+                <th style="${thStyle}">Upgrade</th>
+                <th style="${thStyle}">Cost</th>
+                <th style="${thStyle}">Gold/0.1% DPS</th>
+                <th style="${thStyle}">Gold/0.1% EXP</th>
+                <th style="${thStyle}">Gold/0.1% Profit</th>
+            </tr></thead><tbody>`;
+
+        // Find best (lowest non-Infinity) value in each gold/0.1% column
         let bestDps = Infinity;
         let bestXp = Infinity;
         let bestProfit = Infinity;
@@ -3967,64 +4022,81 @@ class CombatSimUI {
             if (r.goldPer.profit < bestProfit) bestProfit = r.goldPer.profit;
         }
 
-        const tableStyle = 'width:100%; border-collapse:collapse; font-size:11px;';
-        const thStyle = 'padding:4px 6px; text-align:left; border-bottom:1px solid #333; color:#888; font-weight:600;';
-        const tdStyle = 'padding:4px 6px; border-bottom:1px solid #1a1a2e;';
-        const bestStyle = 'color:#4caf50; font-weight:700;';
-
-        let html = `<table style="${tableStyle}">
-            <thead><tr>
-                <th style="${thStyle}">Upgrade</th>
-                <th style="${thStyle}">Cost</th>
-                <th style="${thStyle}">Gold/0.01% DPS</th>
-                <th style="${thStyle}">Gold/0.01% EXP</th>
-                <th style="${thStyle}">Gold/0.01% Profit</th>
-            </tr></thead><tbody>`;
-
         results.results.forEach((r, i) => {
             const costStr = formatKMB(r.cost);
-            const dpsGold = r.goldPer.dps === Infinity ? '—' : formatKMB(r.goldPer.dps);
-            const xpGold = r.goldPer.xp === Infinity ? '—' : formatKMB(r.goldPer.xp);
-            const profitGold = r.goldPer.profit === Infinity ? '—' : formatKMB(r.goldPer.profit);
-            const rowColor = r.deltas.dps > 0 ? '#e0e0e0' : '#888';
+            const rowColor = r.deltas.dps > 0 || r.deltas.profit > 0 ? '#e0e0e0' : '#888';
 
-            const dpsStyle = r.goldPer.dps === bestDps && bestDps !== Infinity ? bestStyle : '';
-            const xpStyle = r.goldPer.xp === bestXp && bestXp !== Infinity ? bestStyle : '';
-            const profitStyle = r.goldPer.profit === bestProfit && bestProfit !== Infinity ? bestStyle : '';
+            const fmtGoldPer = (val) => (val === Infinity ? '—' : formatKMB(val));
+            const bestColor = '#4caf50';
+            const dpsGoldStr = fmtGoldPer(r.goldPer.dps);
+            const xpGoldStr = fmtGoldPer(r.goldPer.xp);
+            const profitGoldStr = fmtGoldPer(r.goldPer.profit);
+            const dpsStyle =
+                r.goldPer.dps === bestDps && bestDps !== Infinity ? `color:${bestColor}; font-weight:700;` : '';
+            const xpStyle =
+                r.goldPer.xp === bestXp && bestXp !== Infinity ? `color:${bestColor}; font-weight:700;` : '';
+            const profitStyle =
+                r.goldPer.profit === bestProfit && bestProfit !== Infinity
+                    ? `color:${bestColor}; font-weight:700;`
+                    : '';
 
             html += `<tr style="cursor:pointer; color:${rowColor};" data-upgrade-row="${i}">
                 <td style="${tdStyle}">${r.candidate.description}</td>
                 <td style="${tdStyle}">${costStr}</td>
-                <td style="${tdStyle} ${dpsStyle}">${dpsGold}</td>
-                <td style="${tdStyle} ${xpStyle}">${xpGold}</td>
-                <td style="${tdStyle} ${profitStyle}">${profitGold}</td>
+                <td style="${tdStyle} ${dpsStyle}">${dpsGoldStr}</td>
+                <td style="${tdStyle} ${xpStyle}">${xpGoldStr}</td>
+                <td style="${tdStyle} ${profitStyle}">${profitGoldStr}</td>
             </tr>`;
 
-            // Expanded detail row (hidden by default)
-            const dpsDelta = r.deltas.dps.toFixed(2);
-            const xpDelta = r.deltas.xp.toFixed(2);
-            const profitDelta = r.deltas.profit.toFixed(2);
+            // Expanded detail row with deltas (hidden by default)
+            const dpsValueDelta = r.metrics.dps - results.baseline.dps;
+            const xpValueDelta = r.metrics.xpPerHour - results.baseline.xpPerHour;
+            const profitValueDelta = r.metrics.profitPerHour - results.baseline.profitPerHour;
+            const ephDelta = r.metrics.encountersPerHour - results.baseline.encountersPerHour;
+            const dphDelta = r.metrics.deathsPerHour - results.baseline.deathsPerHour;
+            const fmtDelta = (val) => {
+                if (Math.abs(val) < 0.5) return '—';
+                return (val >= 0 ? '+' : '') + formatKMB(val);
+            };
+            const fmtDeltaSmall = (val) => {
+                if (Math.abs(val) < 0.01) return '—';
+                return (val >= 0 ? '+' : '') + val.toFixed(1);
+            };
+            const deltaColor = (val) => (val > 0.5 ? '#4caf50' : val < -0.5 ? '#f44336' : '#888');
+            // For deaths, lower is better (inverted color)
+            const deathDeltaColor = (val) => (val < -0.01 ? '#4caf50' : val > 0.01 ? '#f44336' : '#888');
+
             html += `<tr data-upgrade-detail="${i}" style="display:none;">
                 <td colspan="5" style="padding:6px 12px; background:#0d0d1a; border-bottom:1px solid #222;">
-                    <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; font-size:11px;">
+                    <div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr 1fr; gap:8px; font-size:11px;">
                         <div>
-                            <div style="color:#888;">DPS (XP/hr)</div>
+                            <div style="color:#888;">DPS</div>
                             <div style="color:#e0e0e0;">${formatKMB(r.metrics.dps)}</div>
-                            <div style="color:${r.deltas.dps >= 0 ? '#4caf50' : '#f44336'};">${r.deltas.dps >= 0 ? '+' : ''}${dpsDelta}%</div>
+                            <div style="color:${deltaColor(dpsValueDelta)};">${fmtDelta(dpsValueDelta)} (${r.deltas.dps >= 0 ? '+' : ''}${r.deltas.dps.toFixed(2)}%)</div>
                         </div>
                         <div>
                             <div style="color:#888;">EXP/hr</div>
                             <div style="color:#e0e0e0;">${formatKMB(r.metrics.xpPerHour)}</div>
-                            <div style="color:${r.deltas.xp >= 0 ? '#4caf50' : '#f44336'};">${r.deltas.xp >= 0 ? '+' : ''}${xpDelta}%</div>
+                            <div style="color:${deltaColor(xpValueDelta)};">${fmtDelta(xpValueDelta)} (${r.deltas.xp >= 0 ? '+' : ''}${r.deltas.xp.toFixed(2)}%)</div>
                         </div>
                         <div>
                             <div style="color:#888;">Profit/hr</div>
                             <div style="color:#e0e0e0;">${formatKMB(r.metrics.profitPerHour)}</div>
-                            <div style="color:${r.deltas.profit >= 0 ? '#4caf50' : '#f44336'};">${r.deltas.profit >= 0 ? '+' : ''}${profitDelta}%</div>
+                            <div style="color:${deltaColor(profitValueDelta)};">${fmtDelta(profitValueDelta)} (${r.deltas.profit >= 0 ? '+' : ''}${r.deltas.profit.toFixed(2)}%)</div>
+                        </div>
+                        <div>
+                            <div style="color:#888;">EPH</div>
+                            <div style="color:#e0e0e0;">${r.metrics.encountersPerHour.toFixed(1)}</div>
+                            <div style="color:${deltaColor(ephDelta)};">${fmtDeltaSmall(ephDelta)} (${r.deltas.encounters >= 0 ? '+' : ''}${r.deltas.encounters.toFixed(2)}%)</div>
+                        </div>
+                        <div>
+                            <div style="color:#888;">DPH</div>
+                            <div style="color:#e0e0e0;">${r.metrics.deathsPerHour.toFixed(1)}</div>
+                            <div style="color:${deathDeltaColor(dphDelta)};">${fmtDeltaSmall(dphDelta)} (${r.deltas.deaths >= 0 ? '+' : ''}${r.deltas.deaths.toFixed(2)}%)</div>
                         </div>
                     </div>
                     <div style="margin-top:6px; color:#666; font-size:10px;">
-                        Baseline: DPS ${formatKMB(results.baseline.dps)} | EXP ${formatKMB(results.baseline.xpPerHour)} | Profit ${formatKMB(results.baseline.profitPerHour)}
+                        Baseline: DPS ${formatKMB(results.baseline.dps)} | EXP ${formatKMB(results.baseline.xpPerHour)} | Profit ${formatKMB(results.baseline.profitPerHour)} | EPH ${results.baseline.encountersPerHour.toFixed(1)} | DPH ${results.baseline.deathsPerHour.toFixed(1)}
                     </div>
                 </td>
             </tr>`;
