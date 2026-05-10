@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.42.0
+ * Version: 2.42.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -11872,15 +11872,18 @@
      * @param {number} startLevel - Starting enhancement level
      * @param {number} targetLevel - Target enhancement level
      * @param {Object} gameData - Game data from buildGameDataPayload()
+     * @param {Object} [options] - Options
+     * @param {string} [options.slot] - Equipment slot HRID (forces auto-detect for back items)
      * @returns {number} Expected gold cost
      */
-    function calculateEnhancementCost(itemHrid, startLevel, targetLevel, gameData) {
+    function calculateEnhancementCost(itemHrid, startLevel, targetLevel, gameData, options = {}) {
         const itemDetails = gameData.itemDetailMap[itemHrid];
         if (!itemDetails?.enhancementCosts || itemDetails.enhancementCosts.length === 0) {
             return 0;
         }
 
-        const enhancingParams = enhancementConfig_js.getEnhancingParams();
+        // Back items are non-tradeable, always use player's actual enhancing stats
+        const enhancingParams = options.slot === '/equipment_types/back' ? enhancementConfig_js.getAutoDetectedParams() : enhancementConfig_js.getEnhancingParams();
         const itemLevel = itemDetails.itemLevel || 1;
 
         // Calculate per-attempt material cost (matches tooltip-enhancement pricing)
@@ -12358,7 +12361,8 @@
                 candidate.currentHrid,
                 candidate.currentLevel,
                 candidate.upgradeLevel,
-                gameData
+                gameData,
+                { slot: candidate.slot }
             );
         }
 
