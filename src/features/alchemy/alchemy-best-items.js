@@ -9,6 +9,7 @@ import dataManager from '../../core/data-manager.js';
 import alchemyProfitCalculator from '../market/alchemy-profit-calculator.js';
 import { calculateExperienceMultiplier } from '../../utils/experience-parser.js';
 import { formatKMB } from '../../utils/formatters.js';
+import { getItemPrice } from '../../utils/market-data.js';
 import assetManifest from '../../utils/asset-manifest.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
 
@@ -63,6 +64,11 @@ class AlchemyBestItems {
         this.currentType = 'coinify';
         this.itemsSpriteUrl = null;
         this.profitableOnly = false;
+        this.searchQuery = '';
+        this.filterProfitMin = null;
+        this.filterProfitMax = null;
+        this.filterPriceMin = null;
+        this.filterPriceMax = null;
     }
 
     initialize() {
@@ -215,6 +221,7 @@ class AlchemyBestItems {
                 itemHrid,
                 name: itemDetails.name,
                 itemLevel,
+                itemPrice: getItemPrice(itemHrid, { context: 'profit', side: 'buy' }) || 0,
                 profitPerHour: profitData.profitPerHour,
                 xpPerHour,
                 catalyst: profitData.winningCatalystHrid || null,
@@ -373,6 +380,95 @@ class AlchemyBestItems {
 
         content.appendChild(controls);
 
+        // Search row
+        const searchRow = document.createElement('div');
+        searchRow.style.cssText = 'display: flex; margin-bottom: 8px;';
+        const searchInput = document.createElement('input');
+        searchInput.type = 'text';
+        searchInput.placeholder = 'Search items...';
+        searchInput.setAttribute('data-mwi-best-search', 'true');
+        searchInput.style.cssText = `
+            flex: 1; padding: 5px 10px; border-radius: 4px;
+            border: 1px solid #555; background: #1a1a2e; color: #fff;
+            font-size: 0.8rem; outline: none;
+        `;
+        searchInput.addEventListener('input', () => {
+            this.searchQuery = searchInput.value.trim().toLowerCase();
+            this.renderTable();
+        });
+        searchRow.appendChild(searchInput);
+        content.appendChild(searchRow);
+
+        // Filter row: profit/hr and item price ranges
+        const filterRow = document.createElement('div');
+        filterRow.style.cssText =
+            'display: flex; gap: 12px; margin-bottom: 8px; flex-wrap: wrap; align-items: center; font-size: 0.75rem; color: #aaa;';
+
+        const filterInputStyle = `
+            width: 70px; padding: 3px 6px; border-radius: 3px;
+            border: 1px solid #555; background: #1a1a2e; color: #fff;
+            font-size: 0.75rem; outline: none;
+        `;
+
+        // Profit/hr filter
+        const profitFilter = document.createElement('span');
+        profitFilter.style.cssText = 'display: flex; align-items: center; gap: 4px;';
+        profitFilter.innerHTML = 'Profit/hr:';
+        const profitMin = document.createElement('input');
+        profitMin.type = 'text';
+        profitMin.placeholder = 'Min';
+        profitMin.style.cssText = filterInputStyle;
+        const profitMax = document.createElement('input');
+        profitMax.type = 'text';
+        profitMax.placeholder = 'Max';
+        profitMax.style.cssText = filterInputStyle;
+
+        const parseFilterValue = (val) => {
+            if (!val) return null;
+            val = val.trim().toLowerCase();
+            const multipliers = { k: 1e3, m: 1e6, b: 1e9 };
+            const match = val.match(/^(-?[\d.]+)\s*([kmb])?$/);
+            if (!match) return null;
+            const num = parseFloat(match[1]);
+            return isNaN(num) ? null : num * (multipliers[match[2]] || 1);
+        };
+
+        const onFilterChange = () => {
+            this.filterProfitMin = parseFilterValue(profitMin.value);
+            this.filterProfitMax = parseFilterValue(profitMax.value);
+            this.filterPriceMin = parseFilterValue(priceMin.value);
+            this.filterPriceMax = parseFilterValue(priceMax.value);
+            this.renderTable();
+        };
+
+        profitMin.addEventListener('change', onFilterChange);
+        profitMax.addEventListener('change', onFilterChange);
+        profitFilter.appendChild(profitMin);
+        profitFilter.appendChild(document.createTextNode('–'));
+        profitFilter.appendChild(profitMax);
+        filterRow.appendChild(profitFilter);
+
+        // Item price filter
+        const priceFilter = document.createElement('span');
+        priceFilter.style.cssText = 'display: flex; align-items: center; gap: 4px;';
+        priceFilter.innerHTML = 'Item price:';
+        const priceMin = document.createElement('input');
+        priceMin.type = 'text';
+        priceMin.placeholder = 'Min';
+        priceMin.style.cssText = filterInputStyle;
+        const priceMax = document.createElement('input');
+        priceMax.type = 'text';
+        priceMax.placeholder = 'Max';
+        priceMax.style.cssText = filterInputStyle;
+        priceMin.addEventListener('change', onFilterChange);
+        priceMax.addEventListener('change', onFilterChange);
+        priceFilter.appendChild(priceMin);
+        priceFilter.appendChild(document.createTextNode('–'));
+        priceFilter.appendChild(priceMax);
+        filterRow.appendChild(priceFilter);
+
+        content.appendChild(filterRow);
+
         // Table container
         const tableContainer = document.createElement('div');
         tableContainer.setAttribute('data-mwi-best-table', 'true');
@@ -388,7 +484,22 @@ class AlchemyBestItems {
         const rankings = this.cachedRankings[this.currentType] || [];
 
         // Filter
-        const filtered = this.profitableOnly ? rankings.filter((r) => r.profitPerHour > 0) : rankings;
+        let filtered = this.profitableOnly ? rankings.filter((r) => r.profitPerHour > 0) : rankings;
+        if (this.searchQuery) {
+            filtered = filtered.filter((r) => r.name.toLowerCase().includes(this.searchQuery));
+        }
+        if (this.filterProfitMin !== null) {
+            filtered = filtered.filter((r) => r.profitPerHour >= this.filterProfitMin);
+        }
+        if (this.filterProfitMax !== null) {
+            filtered = filtered.filter((r) => r.profitPerHour <= this.filterProfitMax);
+        }
+        if (this.filterPriceMin !== null) {
+            filtered = filtered.filter((r) => r.itemPrice >= this.filterPriceMin);
+        }
+        if (this.filterPriceMax !== null) {
+            filtered = filtered.filter((r) => r.itemPrice <= this.filterPriceMax);
+        }
 
         // Sort
         const sorted = [...filtered].sort((a, b) => {
