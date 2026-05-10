@@ -13,8 +13,13 @@ import { calculateEnhancement } from '../../utils/enhancement-calculator.js';
 import { getEnhancingParams } from '../../utils/enhancement-config.js';
 import { getCheapestProtectionPrice, getProductionCost } from '../enhancement/tooltip-enhancement.js';
 
-/** Enhancement breakpoints: the next target level from any given current level */
-const BREAKPOINTS = [7, 10, 12, 13, 14, 15, 16, 17, 18, 19, 20];
+/** Enhancement breakpoints by slot type */
+const BREAKPOINTS_DEFAULT = [7, 10, 12, 13, 14, 15, 16, 17, 18, 19, 20];
+const BREAKPOINTS_JEWELRY = [5, 7, 10, 12, 13, 14, 15, 16, 17, 18, 19, 20];
+const BREAKPOINTS_BACK = [3, 5, 7, 10, 12, 13, 14, 15, 16, 17, 18, 19, 20];
+const BREAKPOINTS_REFINED = [10, 12, 13, 14, 15, 16, 17, 18, 19, 20];
+
+const JEWELRY_SLOTS = new Set(['/equipment_types/earrings', '/equipment_types/ring', '/equipment_types/neck']);
 
 /**
  * Get the next ability level target (next multiple of 10) above the current level.
@@ -29,11 +34,26 @@ function getNextAbilityBreakpoint(currentLevel) {
 
 /**
  * Get the next enhancement breakpoint above the current level.
+ * Uses slot-specific breakpoints: jewelry gets +5, back gets +3/+5,
+ * refined items always start at +10 minimum.
  * @param {number} currentLevel - Current enhancement level
+ * @param {string} slot - Equipment slot HRID
+ * @param {string} itemHrid - Item HRID (used to detect refined items)
  * @returns {number|null} Next breakpoint level, or null if already at max
  */
-function getNextBreakpoint(currentLevel) {
-    for (const bp of BREAKPOINTS) {
+function getNextBreakpoint(currentLevel, slot, itemHrid) {
+    let breakpoints;
+    if (itemHrid.includes('_refined')) {
+        breakpoints = BREAKPOINTS_REFINED;
+    } else if (JEWELRY_SLOTS.has(slot)) {
+        breakpoints = BREAKPOINTS_JEWELRY;
+    } else if (slot === '/equipment_types/back') {
+        breakpoints = BREAKPOINTS_BACK;
+    } else {
+        breakpoints = BREAKPOINTS_DEFAULT;
+    }
+
+    for (const bp of breakpoints) {
         if (bp > currentLevel) return bp;
     }
     return null;
@@ -478,7 +498,7 @@ export function generateCandidates(playerDTO, gameData, mode = 'equipment', abil
             if (!hasCombatStats(itemDetails)) continue;
 
             // Enhancement upgrade: next breakpoint
-            const nextBP = getNextBreakpoint(currentLevel);
+            const nextBP = getNextBreakpoint(currentLevel, slot, currentHrid);
             if (nextBP) {
                 const itemName = gameData.itemDetailMap[currentHrid]?.name || currentHrid.split('/').pop();
                 candidates.push({
