@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.41.6
+ * Version: 2.42.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -11715,19 +11715,153 @@
      */
 
 
-    /** Enhancement breakpoints: the next target level from any given current level */
-    const BREAKPOINTS = [7, 10, 12, 13, 14, 15, 16, 17, 18, 19, 20];
+    /** Enhancement breakpoints by slot type */
+    const BREAKPOINTS_DEFAULT = [7, 10, 12, 13, 14, 15, 16, 17, 18, 19, 20];
+    const BREAKPOINTS_JEWELRY = [5, 7, 10, 12, 13, 14, 15, 16, 17, 18, 19, 20];
+    const BREAKPOINTS_BACK = [3, 5, 7, 10, 12, 13, 14, 15, 16, 17, 18, 19, 20];
+    const BREAKPOINTS_REFINED = [10, 12, 13, 14, 15, 16, 17, 18, 19, 20];
+
+    const JEWELRY_SLOTS = new Set(['/equipment_types/earrings', '/equipment_types/ring', '/equipment_types/neck']);
+
+    /**
+     * Get the next ability level target (next multiple of 10) above the current level.
+     * Used as fallback when no explicit target level is provided.
+     * @param {number} currentLevel - Current ability level
+     * @returns {number|null} Next target level, or null if at max (200)
+     */
+    function getNextAbilityBreakpoint(currentLevel) {
+        const next = Math.ceil((currentLevel + 1) / 10) * 10;
+        return next <= 200 ? next : null;
+    }
 
     /**
      * Get the next enhancement breakpoint above the current level.
+     * Uses slot-specific breakpoints: jewelry gets +5, back gets +3/+5,
+     * refined items always start at +10 minimum.
      * @param {number} currentLevel - Current enhancement level
+     * @param {string} slot - Equipment slot HRID
+     * @param {string} itemHrid - Item HRID (used to detect refined items)
      * @returns {number|null} Next breakpoint level, or null if already at max
      */
-    function getNextBreakpoint(currentLevel) {
-        for (const bp of BREAKPOINTS) {
+    function getNextBreakpoint(currentLevel, slot, itemHrid) {
+        let breakpoints;
+        if (itemHrid.includes('_refined')) {
+            breakpoints = BREAKPOINTS_REFINED;
+        } else if (JEWELRY_SLOTS.has(slot)) {
+            breakpoints = BREAKPOINTS_JEWELRY;
+        } else if (slot === '/equipment_types/back') {
+            breakpoints = BREAKPOINTS_BACK;
+        } else {
+            breakpoints = BREAKPOINTS_DEFAULT;
+        }
+
+        for (const bp of breakpoints) {
             if (bp > currentLevel) return bp;
         }
         return null;
+    }
+
+    /**
+     * Get the player's primary combat style from their weapon.
+     * @param {Object} playerDTO
+     * @param {Object} gameData
+     * @returns {string} e.g., 'slash', 'stab', 'smash', 'ranged', 'magic'
+     */
+    function getPlayerCombatStyle(playerDTO, gameData) {
+        const weapon = playerDTO.equipment['/equipment_types/main_hand'];
+        if (!weapon) return 'unknown';
+        const weaponDetails = gameData.itemDetailMap[weapon.hrid];
+        const stats = weaponDetails?.equipmentDetail?.combatStats;
+        if (!stats) return 'unknown';
+
+        if (stats.rangedDamage > 0) return 'ranged';
+        if (stats.magicDamage > 0) return 'magic';
+        if (stats.stabDamage > 0) return 'stab';
+        if (stats.slashDamage > 0) return 'slash';
+        if (stats.smashDamage > 0) return 'smash';
+        return 'unknown';
+    }
+
+    /**
+     * Get the combat style of an ability from its effects.
+     * Uses combatStyleHrid for damage abilities, buff typeHrid/skill multipliers for buffs.
+     * @param {Object} abilityDetail - From abilityDetailMap
+     * @returns {string} 'stab', 'slash', 'smash', 'ranged', 'magic', 'melee', 'physical', or 'universal'
+     */
+    function getAbilityCombatStyle(abilityDetail) {
+        // Check for direct combat style on damage/heal effects
+        for (const effect of abilityDetail.abilityEffects || []) {
+            if (effect.combatStyleHrid) {
+                return effect.combatStyleHrid.split('/').pop();
+            }
+        }
+
+        // For buff abilities, analyze buff types and skill multipliers
+        const buffTypes = new Set();
+        const skillMultipliers = new Set();
+
+        for (const effect of abilityDetail.abilityEffects || []) {
+            if (effect.effectType?.includes('heal')) return 'universal';
+            if (!effect.buffs) continue;
+            for (const buff of effect.buffs) {
+                if (buff.typeHrid) buffTypes.add(buff.typeHrid);
+                if (buff.multiplierForSkillHrid) skillMultipliers.add(buff.multiplierForSkillHrid);
+            }
+        }
+
+        // Skill multiplier is the strongest signal
+        if (skillMultipliers.has('/skills/magic')) return 'magic';
+        if (skillMultipliers.has('/skills/melee')) return 'melee';
+        if (skillMultipliers.has('/skills/ranged')) return 'ranged';
+
+        // Buff type analysis
+        const hasElementalAmp =
+            buffTypes.has('/buff_types/water_amplify') ||
+            buffTypes.has('/buff_types/nature_amplify') ||
+            buffTypes.has('/buff_types/fire_amplify');
+        if (hasElementalAmp) return 'magic';
+
+        const hasPhysicalAmp = buffTypes.has('/buff_types/physical_amplify');
+        if (hasPhysicalAmp) return 'physical';
+
+        // Attack speed without cast speed = physical only
+        const hasAttackSpeed = buffTypes.has('/buff_types/attack_speed');
+        const hasCastSpeed = buffTypes.has('/buff_types/cast_speed');
+        if (hasAttackSpeed && !hasCastSpeed) return 'physical';
+
+        // Universal buffs: attack_speed+cast_speed, damage, accuracy, evasion, armor, thorns, etc.
+        return 'universal';
+    }
+
+    /**
+     * Check if an ability is compatible with a player's weapon style.
+     * @param {string} abilityStyle - From getAbilityCombatStyle()
+     * @param {string} weaponStyle - From getPlayerCombatStyle()
+     * @returns {boolean}
+     */
+    function isAbilityCompatible(abilityStyle, weaponStyle) {
+        // Universal abilities work for everyone
+        if (abilityStyle === 'universal') return true;
+
+        // Magic abilities only for magic weapons
+        if (abilityStyle === 'magic') return weaponStyle === 'magic';
+
+        // Ranged abilities only for ranged weapons
+        if (abilityStyle === 'ranged') return weaponStyle === 'ranged';
+
+        // Physical (non-elemental amplify) works for all melee and ranged
+        const meleeStyles = ['stab', 'slash', 'smash'];
+        if (abilityStyle === 'physical') {
+            return meleeStyles.includes(weaponStyle) || weaponStyle === 'ranged';
+        }
+
+        // Melee-specific (e.g., fierce aura with /skills/melee multiplier)
+        if (abilityStyle === 'melee') return meleeStyles.includes(weaponStyle);
+
+        // Specific melee sub-styles (stab/slash/smash abilities) work with any melee weapon
+        if (meleeStyles.includes(abilityStyle)) return meleeStyles.includes(weaponStyle);
+
+        return abilityStyle === weaponStyle;
     }
 
     /**
@@ -11995,60 +12129,190 @@
     }
 
     /**
-     * Generate upgrade candidates for a player's equipment.
-     * @param {Object} playerDTO - Player DTO with equipment
-     * @param {Object} gameData - Game data from buildGameDataPayload()
-     * @returns {Array} Candidates: [{slot, currentHrid, currentLevel, upgradeHrid, upgradeLevel, description, type}]
+     * Build a map of valid tier upgrades based on crafting/production chains.
+     * An item X can upgrade to item Y if Y's crafting action uses X as:
+     *   - upgradeItemHrid (direct upgrade chain), OR
+     *   - one of its inputItems (combination recipes like Philosopher's)
+     *
+     * Only considers equipment outputs and equipment inputs.
+     * @param {Object} gameData
+     * @returns {Map<string, Set<string>>} itemHrid → Set of possible upgrade output hrids
      */
-    function generateCandidates(playerDTO, gameData) {
-        const candidates = [];
-        const tierProgression = getEquipmentTierProgression(gameData);
+    function buildUpgradeMap(gameData) {
+        const map = new Map();
 
-        for (const [slot, equip] of Object.entries(playerDTO.equipment)) {
-            if (!equip) continue;
+        for (const action of Object.values(gameData.actionDetailMap)) {
+            if (!action.outputItems?.length) continue;
+            const outputHrid = action.outputItems[0].itemHrid;
 
-            const currentHrid = equip.hrid;
-            const currentLevel = equip.enhancementLevel || 0;
-            const itemDetails = gameData.itemDetailMap[currentHrid];
+            // Only consider equipment outputs
+            const outputItem = gameData.itemDetailMap[outputHrid];
+            if (!outputItem?.equipmentDetail?.type) continue;
 
-            // Skip trinkets and items with no combat stats (tools, etc.)
-            if (slot === '/equipment_types/trinket') continue;
-            if (!hasCombatStats(itemDetails)) continue;
-
-            // Enhancement upgrade: next breakpoint
-            const nextBP = getNextBreakpoint(currentLevel);
-            if (nextBP) {
-                const itemName = gameData.itemDetailMap[currentHrid]?.name || currentHrid.split('/').pop();
-                candidates.push({
-                    slot,
-                    currentHrid,
-                    currentLevel,
-                    upgradeHrid: currentHrid,
-                    upgradeLevel: nextBP,
-                    description: `${itemName} +${currentLevel} → +${nextBP}`,
-                    type: 'enhancement',
-                });
+            // upgradeItemHrid → output (direct upgrade chain)
+            if (action.upgradeItemHrid) {
+                const upgradeItem = gameData.itemDetailMap[action.upgradeItemHrid];
+                if (upgradeItem?.equipmentDetail?.type) {
+                    if (!map.has(action.upgradeItemHrid)) map.set(action.upgradeItemHrid, new Set());
+                    map.get(action.upgradeItemHrid).add(outputHrid);
+                }
             }
 
-            // Tier upgrade: next item in same slot AND same role
-            const role = getItemRole(itemDetails?.equipmentDetail?.combatStats);
-            const slotKey = `${slot}|${role}`;
-            const slotItems = tierProgression[slotKey];
-            if (slotItems) {
-                const currentIdx = slotItems.findIndex((item) => item.hrid === currentHrid);
-                if (currentIdx >= 0 && currentIdx < slotItems.length - 1) {
-                    const nextTier = slotItems[currentIdx + 1];
-                    const nextName = nextTier.name || nextTier.hrid.split('/').pop();
-                    const currentName = gameData.itemDetailMap[currentHrid]?.name || currentHrid.split('/').pop();
+            // inputItems → output (combination recipes like Philosopher's)
+            if (action.inputItems) {
+                for (const input of action.inputItems) {
+                    const inputItem = gameData.itemDetailMap[input.itemHrid];
+                    if (!inputItem?.equipmentDetail?.type) continue;
+
+                    if (!map.has(input.itemHrid)) map.set(input.itemHrid, new Set());
+                    map.get(input.itemHrid).add(outputHrid);
+                }
+            }
+        }
+
+        return map;
+    }
+
+    /**
+     * Generate upgrade candidates for a player's equipment and/or abilities.
+     * @param {Object} playerDTO - Player DTO with equipment
+     * @param {Object} gameData - Game data from buildGameDataPayload()
+     * @param {string} [mode='equipment'] - 'equipment' or 'abilities'
+     * @param {number} [abilityTargetLevel=0] - Target level for ability upgrades (0 = use default breakpoints)
+     * @returns {Array} Candidates: [{slot, currentHrid, currentLevel, upgradeHrid, upgradeLevel, description, type}]
+     */
+    function generateCandidates(playerDTO, gameData, mode = 'equipment', abilityTargetLevel = 0) {
+        const candidates = [];
+
+        if (mode === 'equipment') {
+            const tierProgression = getEquipmentTierProgression(gameData);
+            const upgradeMap = buildUpgradeMap(gameData);
+
+            for (const [slot, equip] of Object.entries(playerDTO.equipment)) {
+                if (!equip) continue;
+
+                const currentHrid = equip.hrid;
+                const currentLevel = equip.enhancementLevel || 0;
+                const itemDetails = gameData.itemDetailMap[currentHrid];
+
+                // Skip trinkets and items with no combat stats (tools, etc.)
+                if (slot === '/equipment_types/trinket') continue;
+                if (!hasCombatStats(itemDetails)) continue;
+
+                // Enhancement upgrade: next breakpoint
+                const nextBP = getNextBreakpoint(currentLevel, slot, currentHrid);
+                if (nextBP) {
+                    const itemName = gameData.itemDetailMap[currentHrid]?.name || currentHrid.split('/').pop();
                     candidates.push({
                         slot,
                         currentHrid,
                         currentLevel,
-                        upgradeHrid: nextTier.hrid,
-                        upgradeLevel: currentLevel,
-                        description: `${currentName} → ${nextName} (+${currentLevel})`,
-                        type: 'tier',
+                        upgradeHrid: currentHrid,
+                        upgradeLevel: nextBP,
+                        description: `${itemName} +${currentLevel} → +${nextBP}`,
+                        type: 'enhancement',
                     });
+                }
+
+                // Tier upgrade
+                const role = getItemRole(itemDetails?.equipmentDetail?.combatStats);
+
+                if (role === 'defensive') {
+                    // Defensive items: use crafting chain (upgrade path + combination recipes)
+                    const upgrades = upgradeMap.get(currentHrid);
+                    if (upgrades) {
+                        for (const upgradeHrid of upgrades) {
+                            const upgradeItem = gameData.itemDetailMap[upgradeHrid];
+                            if (!upgradeItem?.equipmentDetail) continue;
+                            if (upgradeItem.equipmentDetail.type !== slot) continue;
+                            const upgradeRole = getItemRole(upgradeItem.equipmentDetail?.combatStats);
+                            if (upgradeRole !== 'defensive') continue;
+
+                            const upgradeName = upgradeItem.name || upgradeHrid.split('/').pop();
+                            const currentName = itemDetails?.name || currentHrid.split('/').pop();
+                            candidates.push({
+                                slot,
+                                currentHrid,
+                                currentLevel,
+                                upgradeHrid,
+                                upgradeLevel: currentLevel,
+                                description: `${currentName} → ${upgradeName} (+${currentLevel})`,
+                                type: 'tier',
+                            });
+                        }
+                    }
+                } else {
+                    // Offensive items: keep existing role-based tier progression
+                    const slotKey = `${slot}|${role}`;
+                    const slotItems = tierProgression[slotKey];
+                    if (slotItems) {
+                        const currentIdx = slotItems.findIndex((item) => item.hrid === currentHrid);
+                        if (currentIdx >= 0 && currentIdx < slotItems.length - 1) {
+                            const nextTier = slotItems[currentIdx + 1];
+                            const nextName = nextTier.name || nextTier.hrid.split('/').pop();
+                            const currentName = gameData.itemDetailMap[currentHrid]?.name || currentHrid.split('/').pop();
+                            candidates.push({
+                                slot,
+                                currentHrid,
+                                currentLevel,
+                                upgradeHrid: nextTier.hrid,
+                                upgradeLevel: currentLevel,
+                                description: `${currentName} → ${nextName} (+${currentLevel})`,
+                                type: 'tier',
+                            });
+                        }
+                    }
+                }
+            }
+        } else if (mode === 'ability_level' || mode === 'ability_swap') {
+            const playerStyle = getPlayerCombatStyle(playerDTO, gameData);
+            const equippedAbilityHrids = new Set(playerDTO.abilities.filter((a) => a).map((a) => a.hrid));
+
+            for (let slotIdx = 0; slotIdx < playerDTO.abilities.length; slotIdx++) {
+                const ability = playerDTO.abilities[slotIdx];
+                if (!ability) continue;
+
+                const abilityDetail = gameData.abilityDetailMap[ability.hrid];
+                if (!abilityDetail) continue;
+                const abilityName = abilityDetail.name || ability.hrid.split('/').pop();
+
+                if (mode === 'ability_level') {
+                    // Level upgrade candidate
+                    const targetLevel =
+                        abilityTargetLevel > ability.level ? abilityTargetLevel : getNextAbilityBreakpoint(ability.level);
+                    if (targetLevel && targetLevel <= 200) {
+                        candidates.push({
+                            slot: `ability_${slotIdx}`,
+                            currentHrid: ability.hrid,
+                            currentLevel: ability.level,
+                            upgradeHrid: ability.hrid,
+                            upgradeLevel: targetLevel,
+                            description: `${abilityName} Lv${ability.level} → Lv${targetLevel}`,
+                            type: 'ability_level',
+                        });
+                    }
+                } else {
+                    // Swap candidates: other compatible abilities not already equipped
+                    for (const [abHrid, abDetail] of Object.entries(gameData.abilityDetailMap)) {
+                        if (equippedAbilityHrids.has(abHrid)) continue;
+                        if (abDetail.isSpecialAbility && slotIdx !== 0) continue;
+                        if (!abDetail.isSpecialAbility && slotIdx === 0) continue;
+                        if (abHrid === '/abilities/promote') continue;
+
+                        const abStyle = getAbilityCombatStyle(abDetail);
+                        if (!isAbilityCompatible(abStyle, playerStyle)) continue;
+
+                        const swapName = abDetail.name || abHrid.split('/').pop();
+                        candidates.push({
+                            slot: `ability_${slotIdx}`,
+                            currentHrid: ability.hrid,
+                            currentLevel: ability.level,
+                            upgradeHrid: abHrid,
+                            upgradeLevel: ability.level,
+                            description: `${abilityName} → ${swapName} (Lv${ability.level})`,
+                            type: 'ability_swap',
+                        });
+                    }
                 }
             }
         }
@@ -12065,6 +12329,20 @@
      * @returns {number} Total gold cost
      */
     function calculateUpgradeCost(candidate, gameData) {
+        if (candidate.type === 'ability_level') {
+            // Cost = (targetLevel - currentLevel) * book market price
+            const bookHrid = candidate.currentHrid.replace('/abilities/', '/items/');
+            const bookPrice = marketData_js.getItemPrice(bookHrid, { mode: 'ask', context: 'profit', side: 'buy' }) || 0;
+            return bookPrice * (candidate.upgradeLevel - candidate.currentLevel);
+        }
+
+        if (candidate.type === 'ability_swap') {
+            // Cost = targetLevel * book price for new ability (books are consumed, not recoverable)
+            const bookHrid = candidate.upgradeHrid.replace('/abilities/', '/items/');
+            const bookPrice = marketData_js.getItemPrice(bookHrid, { mode: 'ask', context: 'profit', side: 'buy' }) || 0;
+            return bookPrice * candidate.upgradeLevel;
+        }
+
         if (candidate.type === 'enhancement') {
             // Primary: market price delta (buy at target level - sell at current level)
             // Only use if BOTH levels have actual market listings
@@ -12099,13 +12377,22 @@
 
     /**
      * Run the full upgrade analysis: baseline sim + one sim per candidate.
-     * @param {Object} params - { playerDTOs, playerIndex, zoneHrid, difficultyTier, hours, communityBuffs }
+     * @param {Object} params - { playerDTOs, playerIndex, zoneHrid, difficultyTier, hours, communityBuffs, upgradeMode }
      * @param {Function} onProgress - Called with { current, total, description }
      * @param {Object} [options] - { abortSignal: () => boolean }
      * @returns {Promise<Object>} { baseline, results: [{candidate, cost, metrics, deltas, goldPer}] }
      */
     async function runUpgradeAnalysis(params, onProgress, options = {}) {
-        const { playerDTOs, playerIndex, zoneHrid, difficultyTier, hours, communityBuffs } = params;
+        const {
+            playerDTOs,
+            playerIndex,
+            zoneHrid,
+            difficultyTier,
+            hours,
+            communityBuffs,
+            upgradeMode,
+            abilityTargetLevel,
+        } = params;
         const { abortSignal } = options;
         const gameData = buildGameDataPayload();
         if (!gameData) throw new Error('No game data available');
@@ -12114,7 +12401,7 @@
         const playerHrid = playerDTO.hrid;
 
         // Generate candidates and compute costs
-        const candidates = generateCandidates(playerDTO, gameData);
+        const candidates = generateCandidates(playerDTO, gameData, upgradeMode, abilityTargetLevel);
         const candidatesWithCost = candidates.map((c) => ({
             ...c,
             cost: calculateUpgradeCost(c, gameData),
@@ -12145,12 +12432,24 @@
 
             onProgress?.({ current, total, description: `Simulating: ${candidate.description}` });
 
-            // Clone playerDTOs and swap equipment
+            // Clone playerDTOs and apply candidate upgrade
             const modifiedDTOs = JSON.parse(JSON.stringify(playerDTOs));
-            modifiedDTOs[playerIndex].equipment[candidate.slot] = {
-                hrid: candidate.upgradeHrid,
-                enhancementLevel: candidate.upgradeLevel,
-            };
+
+            if (candidate.slot.startsWith('ability_')) {
+                // Ability upgrade/swap
+                const slotIdx = parseInt(candidate.slot.split('_')[1]);
+                modifiedDTOs[playerIndex].abilities[slotIdx] = {
+                    hrid: candidate.upgradeHrid,
+                    level: candidate.upgradeLevel,
+                    triggers: null,
+                };
+            } else {
+                // Equipment upgrade
+                modifiedDTOs[playerIndex].equipment[candidate.slot] = {
+                    hrid: candidate.upgradeHrid,
+                    enhancementLevel: candidate.upgradeLevel,
+                };
+            }
 
             const simResult = await runSimulation(
                 { gameData, playerDTOs: modifiedDTOs, zoneHrid, difficultyTier, hours, communityBuffs },
@@ -12186,6 +12485,7 @@
         const xp = simResult.experienceGained?.[playerHrid] || {};
         const totalXpPerHour = Object.values(xp).reduce((s, v) => s + v, 0) / simHours;
         const deaths = (simResult.deaths?.[playerHrid] || 0) / simHours;
+        const encounters = (simResult.encounters || 0) / simHours;
 
         // Profit/hr
         const revenue = calculateSimRevenue(simResult, gameData, playerHrid, simHours);
@@ -12194,6 +12494,7 @@
             xpPerHour: totalXpPerHour,
             profitPerHour: revenue.netPerHour,
             deathsPerHour: deaths,
+            encountersPerHour: encounters,
             dps: totalXpPerHour, // Total combat XP/hr as DPS proxy
         };
     }
@@ -12211,26 +12512,35 @@
             dps: pctDelta(baseline.dps, upgraded.dps),
             xp: pctDelta(baseline.xpPerHour, upgraded.xpPerHour),
             profit: pctDelta(baseline.profitPerHour, upgraded.profitPerHour),
+            deaths: pctDelta(baseline.deathsPerHour, upgraded.deathsPerHour),
+            encounters: pctDelta(baseline.encountersPerHour, upgraded.encountersPerHour),
         };
     }
 
     /**
-     * Compute gold per 0.01% improvement for each metric.
+     * Compute gold per 0.1% improvement for each metric.
      * Lower = better value.
      */
     function computeGoldPerImprovement(cost, deltas) {
         const goldPer = (pctDelta) => {
             if (pctDelta <= 0) return Infinity;
-            // Gold per 0.01% = cost / (pctDelta * 10000)
-            // But pctDelta is already in percent, so:
-            // e.g., 2% delta = cost / (2 * 100) = cost per 0.01%
-            return cost / (pctDelta * 100);
+            // Gold per 0.1% = cost / (pctDelta * 10)
+            // pctDelta is already in percent (e.g., 2 = 2%)
+            return cost / (pctDelta * 10);
+        };
+
+        // For deaths, fewer is better — use negative delta (reduction)
+        const goldPerReduction = (pctDelta) => {
+            if (pctDelta >= 0) return Infinity; // Deaths didn't decrease
+            return cost / (Math.abs(pctDelta) * 10);
         };
 
         return {
             dps: goldPer(deltas.dps),
             xp: goldPer(deltas.xp),
             profit: goldPer(deltas.profit),
+            encounters: goldPer(deltas.encounters),
+            deaths: goldPerReduction(deltas.deaths),
         };
     }
 
@@ -12633,6 +12943,19 @@
             upgradeControls.innerHTML = `
             <label style="color:#888; font-size:12px;">Player</label>
             <select id="mwi-csim-upgrade-player" style="${selectStyle}"></select>
+            <label style="color:#888; font-size:12px;">Mode</label>
+            <select id="mwi-csim-upgrade-mode" style="${selectStyle}">
+                <option value="equipment">Equipment</option>
+                <option value="ability_level">Ability Levels</option>
+                <option value="ability_swap">Ability Swaps</option>
+            </select>
+            <span id="mwi-csim-upgrade-level-group" style="display:none; align-items:center; gap:4px;">
+                <label style="color:#888; font-size:12px;">Target Lv</label>
+                <input id="mwi-csim-upgrade-target-level" type="number" min="1" max="200" placeholder="Next 10" style="
+                    width:75px; background:#1a1a2e; color:#e0e0e0; border:1px solid #444;
+                    border-radius:3px; padding:3px 5px; font-size:12px; text-align:center;"
+                    title="Leave blank to upgrade each ability to its next multiple of 10">
+            </span>
             <button id="mwi-csim-upgrade-run" style="
                 background: ${ACCENT_BTN_BG};
                 color: ${ACCENT};
@@ -12711,6 +13034,14 @@
             this.panel.querySelector('#mwi-csim-upgrade-run').addEventListener('click', () => this._onUpgradeAnalyze());
             this.panel.querySelector('#mwi-csim-upgrade-stop').addEventListener('click', () => {
                 this._upgradeAborted = true;
+            });
+            this.panel.querySelector('#mwi-csim-upgrade-mode').addEventListener('change', (e) => {
+                const levelGroup = this.panel.querySelector('#mwi-csim-upgrade-level-group');
+                const isLevelMode = e.target.value === 'ability_level';
+                levelGroup.style.display = isLevelMode ? 'inline-flex' : 'none';
+                if (isLevelMode) {
+                    this._setDefaultAbilityTargetLevel();
+                }
             });
 
             // Zone change → update tier dropdown
@@ -16070,6 +16401,16 @@
         }
 
         /**
+         * Set default ability target level input to blank (per-ability breakpoint mode).
+         * @private
+         */
+        _setDefaultAbilityTargetLevel() {
+            const input = this.panel.querySelector('#mwi-csim-upgrade-target-level');
+            if (!input) return;
+            input.value = '';
+        }
+
+        /**
          * Run upgrade analysis when Analyze button is clicked.
          * @private
          */
@@ -16085,6 +16426,8 @@
                 )
             );
             const playerIndex = parseInt(this.panel.querySelector('#mwi-csim-upgrade-player')?.value) || 0;
+            const upgradeMode = this.panel.querySelector('#mwi-csim-upgrade-mode')?.value || 'equipment';
+            const abilityTargetLevel = parseInt(this.panel.querySelector('#mwi-csim-upgrade-target-level')?.value) || 0;
 
             if (!zoneHrid) {
                 this._setStatus('Select a zone in Configure tab first.');
@@ -16126,7 +16469,16 @@
 
             try {
                 const results = await runUpgradeAnalysis(
-                    { playerDTOs, playerIndex, zoneHrid, difficultyTier, hours, communityBuffs },
+                    {
+                        playerDTOs,
+                        playerIndex,
+                        zoneHrid,
+                        difficultyTier,
+                        hours,
+                        communityBuffs,
+                        upgradeMode,
+                        abilityTargetLevel,
+                    },
                     ({ current, total, description }) => {
                         if (this._upgradeAborted) return;
                         const fill = this.panel.querySelector('#mwi-csim-upgrade-progress-fill');
@@ -16170,7 +16522,20 @@
                 return;
             }
 
-            // Find best (lowest non-Infinity) value in each gold/0.01% column
+            const tableStyle = 'width:100%; border-collapse:collapse; font-size:11px;';
+            const thStyle = 'padding:4px 6px; text-align:left; border-bottom:1px solid #333; color:#888; font-weight:600;';
+            const tdStyle = 'padding:4px 6px; border-bottom:1px solid #1a1a2e;';
+
+            let html = `<table style="${tableStyle}">
+            <thead><tr>
+                <th style="${thStyle}">Upgrade</th>
+                <th style="${thStyle}">Cost</th>
+                <th style="${thStyle}">Gold/0.1% DPS</th>
+                <th style="${thStyle}">Gold/0.1% EXP</th>
+                <th style="${thStyle}">Gold/0.1% Profit</th>
+            </tr></thead><tbody>`;
+
+            // Find best (lowest non-Infinity) value in each gold/0.1% column
             let bestDps = Infinity;
             let bestXp = Infinity;
             let bestProfit = Infinity;
@@ -16180,64 +16545,81 @@
                 if (r.goldPer.profit < bestProfit) bestProfit = r.goldPer.profit;
             }
 
-            const tableStyle = 'width:100%; border-collapse:collapse; font-size:11px;';
-            const thStyle = 'padding:4px 6px; text-align:left; border-bottom:1px solid #333; color:#888; font-weight:600;';
-            const tdStyle = 'padding:4px 6px; border-bottom:1px solid #1a1a2e;';
-            const bestStyle = 'color:#4caf50; font-weight:700;';
-
-            let html = `<table style="${tableStyle}">
-            <thead><tr>
-                <th style="${thStyle}">Upgrade</th>
-                <th style="${thStyle}">Cost</th>
-                <th style="${thStyle}">Gold/0.01% DPS</th>
-                <th style="${thStyle}">Gold/0.01% EXP</th>
-                <th style="${thStyle}">Gold/0.01% Profit</th>
-            </tr></thead><tbody>`;
-
             results.results.forEach((r, i) => {
                 const costStr = formatters_js.formatKMB(r.cost);
-                const dpsGold = r.goldPer.dps === Infinity ? '—' : formatters_js.formatKMB(r.goldPer.dps);
-                const xpGold = r.goldPer.xp === Infinity ? '—' : formatters_js.formatKMB(r.goldPer.xp);
-                const profitGold = r.goldPer.profit === Infinity ? '—' : formatters_js.formatKMB(r.goldPer.profit);
-                const rowColor = r.deltas.dps > 0 ? '#e0e0e0' : '#888';
+                const rowColor = r.deltas.dps > 0 || r.deltas.profit > 0 ? '#e0e0e0' : '#888';
 
-                const dpsStyle = r.goldPer.dps === bestDps && bestDps !== Infinity ? bestStyle : '';
-                const xpStyle = r.goldPer.xp === bestXp && bestXp !== Infinity ? bestStyle : '';
-                const profitStyle = r.goldPer.profit === bestProfit && bestProfit !== Infinity ? bestStyle : '';
+                const fmtGoldPer = (val) => (val === Infinity ? '—' : formatters_js.formatKMB(val));
+                const bestColor = '#4caf50';
+                const dpsGoldStr = fmtGoldPer(r.goldPer.dps);
+                const xpGoldStr = fmtGoldPer(r.goldPer.xp);
+                const profitGoldStr = fmtGoldPer(r.goldPer.profit);
+                const dpsStyle =
+                    r.goldPer.dps === bestDps && bestDps !== Infinity ? `color:${bestColor}; font-weight:700;` : '';
+                const xpStyle =
+                    r.goldPer.xp === bestXp && bestXp !== Infinity ? `color:${bestColor}; font-weight:700;` : '';
+                const profitStyle =
+                    r.goldPer.profit === bestProfit && bestProfit !== Infinity
+                        ? `color:${bestColor}; font-weight:700;`
+                        : '';
 
                 html += `<tr style="cursor:pointer; color:${rowColor};" data-upgrade-row="${i}">
                 <td style="${tdStyle}">${r.candidate.description}</td>
                 <td style="${tdStyle}">${costStr}</td>
-                <td style="${tdStyle} ${dpsStyle}">${dpsGold}</td>
-                <td style="${tdStyle} ${xpStyle}">${xpGold}</td>
-                <td style="${tdStyle} ${profitStyle}">${profitGold}</td>
+                <td style="${tdStyle} ${dpsStyle}">${dpsGoldStr}</td>
+                <td style="${tdStyle} ${xpStyle}">${xpGoldStr}</td>
+                <td style="${tdStyle} ${profitStyle}">${profitGoldStr}</td>
             </tr>`;
 
-                // Expanded detail row (hidden by default)
-                const dpsDelta = r.deltas.dps.toFixed(2);
-                const xpDelta = r.deltas.xp.toFixed(2);
-                const profitDelta = r.deltas.profit.toFixed(2);
+                // Expanded detail row with deltas (hidden by default)
+                const dpsValueDelta = r.metrics.dps - results.baseline.dps;
+                const xpValueDelta = r.metrics.xpPerHour - results.baseline.xpPerHour;
+                const profitValueDelta = r.metrics.profitPerHour - results.baseline.profitPerHour;
+                const ephDelta = r.metrics.encountersPerHour - results.baseline.encountersPerHour;
+                const dphDelta = r.metrics.deathsPerHour - results.baseline.deathsPerHour;
+                const fmtDelta = (val) => {
+                    if (Math.abs(val) < 0.5) return '—';
+                    return (val >= 0 ? '+' : '') + formatters_js.formatKMB(val);
+                };
+                const fmtDeltaSmall = (val) => {
+                    if (Math.abs(val) < 0.01) return '—';
+                    return (val >= 0 ? '+' : '') + val.toFixed(1);
+                };
+                const deltaColor = (val) => (val > 0.5 ? '#4caf50' : val < -0.5 ? '#f44336' : '#888');
+                // For deaths, lower is better (inverted color)
+                const deathDeltaColor = (val) => (val < -0.01 ? '#4caf50' : val > 0.01 ? '#f44336' : '#888');
+
                 html += `<tr data-upgrade-detail="${i}" style="display:none;">
                 <td colspan="5" style="padding:6px 12px; background:#0d0d1a; border-bottom:1px solid #222;">
-                    <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; font-size:11px;">
+                    <div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr 1fr; gap:8px; font-size:11px;">
                         <div>
-                            <div style="color:#888;">DPS (XP/hr)</div>
+                            <div style="color:#888;">DPS</div>
                             <div style="color:#e0e0e0;">${formatters_js.formatKMB(r.metrics.dps)}</div>
-                            <div style="color:${r.deltas.dps >= 0 ? '#4caf50' : '#f44336'};">${r.deltas.dps >= 0 ? '+' : ''}${dpsDelta}%</div>
+                            <div style="color:${deltaColor(dpsValueDelta)};">${fmtDelta(dpsValueDelta)} (${r.deltas.dps >= 0 ? '+' : ''}${r.deltas.dps.toFixed(2)}%)</div>
                         </div>
                         <div>
                             <div style="color:#888;">EXP/hr</div>
                             <div style="color:#e0e0e0;">${formatters_js.formatKMB(r.metrics.xpPerHour)}</div>
-                            <div style="color:${r.deltas.xp >= 0 ? '#4caf50' : '#f44336'};">${r.deltas.xp >= 0 ? '+' : ''}${xpDelta}%</div>
+                            <div style="color:${deltaColor(xpValueDelta)};">${fmtDelta(xpValueDelta)} (${r.deltas.xp >= 0 ? '+' : ''}${r.deltas.xp.toFixed(2)}%)</div>
                         </div>
                         <div>
                             <div style="color:#888;">Profit/hr</div>
                             <div style="color:#e0e0e0;">${formatters_js.formatKMB(r.metrics.profitPerHour)}</div>
-                            <div style="color:${r.deltas.profit >= 0 ? '#4caf50' : '#f44336'};">${r.deltas.profit >= 0 ? '+' : ''}${profitDelta}%</div>
+                            <div style="color:${deltaColor(profitValueDelta)};">${fmtDelta(profitValueDelta)} (${r.deltas.profit >= 0 ? '+' : ''}${r.deltas.profit.toFixed(2)}%)</div>
+                        </div>
+                        <div>
+                            <div style="color:#888;">EPH</div>
+                            <div style="color:#e0e0e0;">${r.metrics.encountersPerHour.toFixed(1)}</div>
+                            <div style="color:${deltaColor(ephDelta)};">${fmtDeltaSmall(ephDelta)} (${r.deltas.encounters >= 0 ? '+' : ''}${r.deltas.encounters.toFixed(2)}%)</div>
+                        </div>
+                        <div>
+                            <div style="color:#888;">DPH</div>
+                            <div style="color:#e0e0e0;">${r.metrics.deathsPerHour.toFixed(1)}</div>
+                            <div style="color:${deathDeltaColor(dphDelta)};">${fmtDeltaSmall(dphDelta)} (${r.deltas.deaths >= 0 ? '+' : ''}${r.deltas.deaths.toFixed(2)}%)</div>
                         </div>
                     </div>
                     <div style="margin-top:6px; color:#666; font-size:10px;">
-                        Baseline: DPS ${formatters_js.formatKMB(results.baseline.dps)} | EXP ${formatters_js.formatKMB(results.baseline.xpPerHour)} | Profit ${formatters_js.formatKMB(results.baseline.profitPerHour)}
+                        Baseline: DPS ${formatters_js.formatKMB(results.baseline.dps)} | EXP ${formatters_js.formatKMB(results.baseline.xpPerHour)} | Profit ${formatters_js.formatKMB(results.baseline.profitPerHour)} | EPH ${results.baseline.encountersPerHour.toFixed(1)} | DPH ${results.baseline.deathsPerHour.toFixed(1)}
                     </div>
                 </td>
             </tr>`;

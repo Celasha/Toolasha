@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.41.6
+ * Version: 2.42.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -17718,9 +17718,9 @@ self.onmessage = function (e) {
             };
             document.addEventListener('keydown', this.escHandler);
 
-            // Click outside to close
+            // Click outside to close (but not if clicking in the delete popup)
             this.outsideClickHandler = (e) => {
-                if (!modal.contains(e.target)) {
+                if (!modal.contains(e.target) && !this._deletePopup?.contains(e.target)) {
                     this.closeModal();
                 }
             };
