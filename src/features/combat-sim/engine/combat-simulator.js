@@ -475,56 +475,7 @@ class CombatSimulator {
             }
 
             if (source.combatDetails.combatStats.fury > 0) {
-                const currentFuryEvent = this.eventQueue.getByTypeAndSource(FuryExpirationEvent.type, source);
-                this.eventQueue.clearByTypeAndSource(FuryExpirationEvent.type, source);
-
-                const furyExpireTime = 15000000000;
-                const maxFuryStack = 5;
-
-                let furyAmount = 0;
-                if (currentFuryEvent) furyAmount = currentFuryEvent.furyAmount;
-
-                if (attackResult.didHit) {
-                    furyAmount = Math.min(furyAmount + 1, maxFuryStack);
-                } else {
-                    furyAmount = furyAmount / 2;
-                }
-
-                const furyAccuracyBuf = {
-                    uniqueHrid: '/buff_uniques/fury_accuracy',
-                    typeHrid: '/buff_types/fury_accuracy',
-                    ratioBoost: furyAmount * source.combatDetails.combatStats.fury,
-                    ratioBoostLevelBonus: 0,
-                    flatBoost: 0,
-                    flatBoostLevelBonus: 0,
-                    startTime: '0001-01-01T00:00:00Z',
-                    duration: furyExpireTime,
-                };
-                const furyDamageBuf = {
-                    uniqueHrid: '/buff_uniques/fury_damage',
-                    typeHrid: '/buff_types/fury_damage',
-                    ratioBoost: furyAmount * source.combatDetails.combatStats.fury,
-                    ratioBoostLevelBonus: 0,
-                    flatBoost: 0,
-                    flatBoostLevelBonus: 0,
-                    startTime: '0001-01-01T00:00:00Z',
-                    duration: furyExpireTime,
-                };
-
-                if (furyAmount > 0) {
-                    const furyExpirationEvent = new FuryExpirationEvent(
-                        this.simulationTime + furyExpireTime,
-                        furyAmount,
-                        source
-                    );
-                    this.eventQueue.addEvent(furyExpirationEvent);
-
-                    source.addBuff(furyAccuracyBuf, this.simulationTime);
-                    source.addBuff(furyDamageBuf, this.simulationTime);
-                } else {
-                    source.removeBuff(furyAccuracyBuf);
-                    source.removeBuff(furyDamageBuf);
-                }
+                this._processFuryUpdate(source, attackResult.didHit);
             }
 
             if (target.combatDetails.combatStats.weaken > 0) {
@@ -925,7 +876,36 @@ class CombatSimulator {
     }
 
     processFuryExpirationEvent(event) {
-        event.source.removeExpiredBuffs(this.simulationTime);
+        event.source.furyAmount = 0;
+        event.source.furyExpireTime = 0;
+        event.source.updateFuryBuffs(0, 0, 0, 0);
+    }
+
+    _processFuryUpdate(source, didHit) {
+        const FURY_EXPIRE_TIME = 15000000000;
+        const MAX_FURY_STACK = 5;
+
+        const oldAmount = source.furyAmount;
+        const newAmount = didHit ? Math.min(oldAmount + 1, MAX_FURY_STACK) : Math.floor(oldAmount / 2);
+
+        source.furyAmount = newAmount;
+
+        // Always reschedule expiration (resets the 15s timer)
+        this.eventQueue.clearByTypeAndSource(FuryExpirationEvent.type, source);
+        if (newAmount > 0) {
+            source.furyExpireTime = this.simulationTime + FURY_EXPIRE_TIME;
+            this.eventQueue.addEvent(new FuryExpirationEvent(source.furyExpireTime, newAmount, source));
+        }
+
+        // Only recalculate combat stats if stacks actually changed
+        if (newAmount !== oldAmount) {
+            source.updateFuryBuffs(
+                newAmount,
+                source.combatDetails.combatStats.fury,
+                this.simulationTime,
+                FURY_EXPIRE_TIME
+            );
+        }
     }
 
     processEnrageTickEvent(event) {
@@ -1485,56 +1465,7 @@ class CombatSimulator {
                 }
 
                 if (source.combatDetails.combatStats.fury > 0) {
-                    const currentFuryEvent = this.eventQueue.getByTypeAndSource(FuryExpirationEvent.type, source);
-                    this.eventQueue.clearByTypeAndSource(FuryExpirationEvent.type, source);
-
-                    const furyExpireTime = 15000000000;
-                    const maxFuryStack = 5;
-
-                    let furyAmount = 0;
-                    if (currentFuryEvent) furyAmount = currentFuryEvent.furyAmount;
-
-                    if (attackResult.didHit) {
-                        furyAmount = Math.min(furyAmount + 1, maxFuryStack);
-                    } else {
-                        furyAmount = furyAmount / 2;
-                    }
-
-                    const furyAccuracyBuf = {
-                        uniqueHrid: '/buff_uniques/fury_accuracy',
-                        typeHrid: '/buff_types/fury_accuracy',
-                        ratioBoost: furyAmount * source.combatDetails.combatStats.fury,
-                        ratioBoostLevelBonus: 0,
-                        flatBoost: 0,
-                        flatBoostLevelBonus: 0,
-                        startTime: '0001-01-01T00:00:00Z',
-                        duration: furyExpireTime,
-                    };
-                    const furyDamageBuf = {
-                        uniqueHrid: '/buff_uniques/fury_damage',
-                        typeHrid: '/buff_types/fury_damage',
-                        ratioBoost: furyAmount * source.combatDetails.combatStats.fury,
-                        ratioBoostLevelBonus: 0,
-                        flatBoost: 0,
-                        flatBoostLevelBonus: 0,
-                        startTime: '0001-01-01T00:00:00Z',
-                        duration: furyExpireTime,
-                    };
-
-                    if (furyAmount > 0) {
-                        const furyExpirationEvent = new FuryExpirationEvent(
-                            this.simulationTime + furyExpireTime,
-                            furyAmount,
-                            source
-                        );
-                        this.eventQueue.addEvent(furyExpirationEvent);
-
-                        source.addBuff(furyAccuracyBuf, this.simulationTime);
-                        source.addBuff(furyDamageBuf, this.simulationTime);
-                    } else {
-                        source.removeBuff(furyAccuracyBuf);
-                        source.removeBuff(furyDamageBuf);
-                    }
+                    this._processFuryUpdate(source, attackResult.didHit);
                 }
 
                 this.simResult.addAttack(

@@ -153,6 +153,8 @@ class CombatUnit {
     permanentBuffs = {};
     zoneBuffs = {};
     extraBuffs = {};
+    furyAmount = 0;
+    furyExpireTime = 0;
 
     constructor() {}
 
@@ -381,6 +383,42 @@ class CombatUnit {
         this.updateCombatDetails();
     }
 
+    /**
+     * Update fury accuracy and damage buffs in a single batch, calling updateCombatDetails() once.
+     * @param {number} furyAmount - Current fury stack count (0-5)
+     * @param {number} furyStat - Fury combat stat value
+     * @param {number} currentTime - Simulation time for buff start
+     * @param {number} duration - Buff duration (fury expire time)
+     */
+    updateFuryBuffs(furyAmount, furyStat, currentTime, duration) {
+        if (furyAmount > 0) {
+            this.combatBuffs['/buff_uniques/fury_accuracy'] = {
+                uniqueHrid: '/buff_uniques/fury_accuracy',
+                typeHrid: '/buff_types/fury_accuracy',
+                ratioBoost: furyAmount * furyStat,
+                ratioBoostLevelBonus: 0,
+                flatBoost: 0,
+                flatBoostLevelBonus: 0,
+                startTime: currentTime,
+                duration: duration,
+            };
+            this.combatBuffs['/buff_uniques/fury_damage'] = {
+                uniqueHrid: '/buff_uniques/fury_damage',
+                typeHrid: '/buff_types/fury_damage',
+                ratioBoost: furyAmount * furyStat,
+                ratioBoostLevelBonus: 0,
+                flatBoost: 0,
+                flatBoostLevelBonus: 0,
+                startTime: currentTime,
+                duration: duration,
+            };
+        } else {
+            delete this.combatBuffs['/buff_uniques/fury_accuracy'];
+            delete this.combatBuffs['/buff_uniques/fury_damage'];
+        }
+        this.updateCombatDetails();
+    }
+
     addPermanentBuff(buff) {
         if (this.permanentBuffs[buff.typeHrid]) {
             this.permanentBuffs[buff.typeHrid].flatBoost += buff.flatBoost;
@@ -422,6 +460,8 @@ class CombatUnit {
 
     clearBuffs() {
         this.combatBuffs = structuredClone(this.permanentBuffs);
+        this.furyAmount = 0;
+        this.furyExpireTime = 0;
         this.updateCombatDetails();
     }
 
