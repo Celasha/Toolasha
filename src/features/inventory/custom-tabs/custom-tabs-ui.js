@@ -40,6 +40,10 @@ import {
     setTabOpen,
     findTab,
     getAssignedItemSet,
+    addLoadoutBinding,
+    removeItemFromBindings,
+    syncLoadoutBinding,
+    cleanOrphanedBindings,
     LINEBREAK_HRID,
 } from './custom-tabs-data.js';
 
@@ -600,6 +604,13 @@ export default class CustomTabsUI {
             this._injectAddToTabButton(menu);
         });
         this._unregisterHandlers.push(unregisterItemAction);
+
+        // Subscribe to loadout snapshot updates for auto-sync of loadout bindings
+        this._loadoutBindingHandler = () => this._onLoadoutSnapshotUpdate();
+        getLoadoutSnapshot().onUpdate(this._loadoutBindingHandler);
+        this._unregisterHandlers.push(() => {
+            getLoadoutSnapshot().offUpdate(this._loadoutBindingHandler);
+        });
     }
 
     cleanup() {
@@ -2449,6 +2460,10 @@ export default class CustomTabsUI {
             removeBtn.title = 'Remove';
             removeBtn.addEventListener('click', () => {
                 this._config = removeItemAtIndex(this._config, tabId, index);
+                // Clean item from loadout bindings so it won't be re-added on sync
+                if (hrid !== LINEBREAK_HRID) {
+                    this._config = removeItemFromBindings(this._config, tabId, hrid);
+                }
                 this._save();
                 this._renderAssignedItems(container, tabId);
                 if (this._isActive) this._applyLayout();
@@ -2552,6 +2567,72 @@ export default class CustomTabsUI {
         }
     }
 
+    /**
+     * Handle loadout snapshot updates — sync bound tabs automatically.
+     * Called whenever any loadout is created/updated/deleted in-game.
+     */
+    _onLoadoutSnapshotUpdate() {
+        const loadoutSnapshot = getLoadoutSnapshot();
+        const snapshots = loadoutSnapshot.snapshots;
+        const currentSnapshotNames = new Set(Object.values(snapshots).map((s) => s.name));
+        const includeConsumables = config.getSetting('inventoryTabs_loadoutIncludeConsumables');
+
+        let anyChanged = false;
+
+        // Walk all tabs looking for loadoutBindings
+        const walkAndSync = (tabs) => {
+            for (const tab of tabs) {
+                if (tab.loadoutBindings && Object.keys(tab.loadoutBindings).length > 0) {
+                    // Sync each binding against current snapshot
+                    for (const [loadoutName, _boundItems] of Object.entries(tab.loadoutBindings)) {
+                        // Find the matching snapshot
+                        const snapshot = Object.values(snapshots).find((s) => s.name === loadoutName);
+                        if (!snapshot) continue; // Will be cleaned up by orphan logic below
+
+                        // Build new snapshot items list
+                        const newItems = [];
+                        for (const eq of snapshot.equipment || []) {
+                            if (!eq.itemHrid) continue;
+                            const hrid =
+                                eq.enhancementLevel > 0 ? `${eq.itemHrid}+${eq.enhancementLevel}` : eq.itemHrid;
+                            newItems.push(hrid);
+                        }
+                        if (includeConsumables) {
+                            for (const f of snapshot.food || []) {
+                                if (f.itemHrid) newItems.push(f.itemHrid);
+                            }
+                            for (const d of snapshot.drinks || []) {
+                                if (d.itemHrid) newItems.push(d.itemHrid);
+                            }
+                        }
+
+                        const result = syncLoadoutBinding(this._config, tab.id, loadoutName, newItems);
+                        if (result.changed) {
+                            this._config = result.config;
+                            anyChanged = true;
+                        }
+                    }
+
+                    // Clean orphaned bindings (loadout deleted/renamed)
+                    const orphanResult = cleanOrphanedBindings(this._config, tab.id, currentSnapshotNames);
+                    if (orphanResult.changed) {
+                        this._config = orphanResult.config;
+                        anyChanged = true;
+                    }
+                }
+
+                if (tab.children.length > 0) walkAndSync(tab.children);
+            }
+        };
+
+        walkAndSync(this._config.tabs);
+
+        if (anyChanged) {
+            this._save();
+            if (this._isActive) this._applyLayout();
+        }
+    }
+
     _renderLoadoutButtons(container, tabId) {
         container.innerHTML = '';
         const loadoutSnapshot = getLoadoutSnapshot();
@@ -2610,6 +2691,10 @@ export default class CustomTabsUI {
                 for (const hrid of newItems) {
                     this._config = addItem(this._config, tabId, hrid);
                     currentItems.add(hrid);
+                }
+                // Record binding so this tab auto-syncs with loadout changes
+                if (loadoutItems.length > 0) {
+                    this._config = addLoadoutBinding(this._config, tabId, snapshot.name, loadoutItems);
                 }
                 this._save();
                 this._renderLoadoutButtons(container, tabId);
