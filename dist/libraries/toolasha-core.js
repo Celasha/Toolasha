@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.43.0
+ * Version: 2.44.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -401,6 +401,45 @@
                 } catch (error) {
                     console.error(`[Storage] GetAllKeys transaction failed for store ${storeName}:`, error);
                     resolve([]);
+                }
+            });
+        }
+
+        /**
+         * Get all key-value pairs from an object store
+         * @param {string} storeName - Object store name
+         * @returns {Promise<Object>} Map of key → value
+         */
+        async getAll(storeName = 'settings') {
+            if (!this.db) {
+                console.warn(`[Storage] Database not available, cannot get all from store: ${storeName}`);
+                return {};
+            }
+
+            return new Promise((resolve, _reject) => {
+                try {
+                    const transaction = this.db.transaction([storeName], 'readonly');
+                    const store = transaction.objectStore(storeName);
+                    const result = {};
+                    const cursorRequest = store.openCursor();
+
+                    cursorRequest.onsuccess = (event) => {
+                        const cursor = event.target.result;
+                        if (cursor) {
+                            result[cursor.key] = cursor.value;
+                            cursor.continue();
+                        } else {
+                            resolve(result);
+                        }
+                    };
+
+                    cursorRequest.onerror = () => {
+                        console.error(`[Storage] Failed to get all from ${storeName}:`, cursorRequest.error);
+                        resolve({});
+                    };
+                } catch (error) {
+                    console.error(`[Storage] GetAll transaction failed for store ${storeName}:`, error);
+                    resolve({});
                 }
             });
         }
@@ -987,13 +1026,14 @@
                     default: false,
                     help: 'Most players should leave this off to see realistic professional enhancer costs',
                 },
+                // --- ENHANCING ---
                 enhanceSim_enhancingLevel: {
                     id: 'enhanceSim_enhancingLevel',
                     label: 'Enhancing skill level',
                     type: 'number',
                     default: 140,
                     min: 1,
-                    max: 150,
+                    max: 200,
                     help: 'Default: 140 (professional enhancer level)',
                     disabledBy: 'enhanceSim_autoDetect',
                 },
@@ -1007,26 +1047,92 @@
                     help: 'Default: 8 (max level)',
                     disabledBy: 'enhanceSim_autoDetect',
                 },
-                enhanceSim_toolBonus: {
-                    id: 'enhanceSim_toolBonus',
-                    label: 'Tool success bonus %',
-                    type: 'number',
-                    default: 6.05,
-                    min: 0,
-                    max: 30,
-                    step: 0.01,
-                    help: 'Default: 6.05 (Celestial Enhancer +13)',
+                enhanceSim_achievement: {
+                    id: 'enhanceSim_achievement',
+                    label: 'Achievement bonus (+0.2%)',
+                    type: 'checkbox',
+                    default: false,
+                    help: 'Include enhancing achievement success bonus',
                     disabledBy: 'enhanceSim_autoDetect',
                 },
-                enhanceSim_speedBonus: {
-                    id: 'enhanceSim_speedBonus',
-                    label: 'Speed bonus %',
-                    type: 'number',
-                    default: 48.5,
-                    min: 0,
-                    max: 100,
-                    step: 0.1,
-                    help: "Default: 48.5 (All enhancing gear +10: Body/Legs/Hands + Philosopher's Necklace)",
+                // --- GEAR (compact rows: checkbox + optional tier + enhancement level) ---
+                enhanceSim_gear_enhancer: {
+                    id: 'enhanceSim_gear_enhancer',
+                    label: 'Enhancer',
+                    type: 'enhanceGear',
+                    default: { enabled: true, tier: 'celestial', level: 13 },
+                    tiers: [
+                        { value: 'cheese', label: 'Cheese' },
+                        { value: 'verdant', label: 'Verdant' },
+                        { value: 'azure', label: 'Azure' },
+                        { value: 'burble', label: 'Burble' },
+                        { value: 'crimson', label: 'Crimson' },
+                        { value: 'rainbow', label: 'Rainbow' },
+                        { value: 'holy', label: 'Holy' },
+                        { value: 'celestial', label: 'Celestial' },
+                    ],
+                    disabledBy: 'enhanceSim_autoDetect',
+                },
+                enhanceSim_gear_gloves: {
+                    id: 'enhanceSim_gear_gloves',
+                    label: 'Gloves',
+                    type: 'enhanceGear',
+                    default: { enabled: true, level: 10 },
+                    disabledBy: 'enhanceSim_autoDetect',
+                },
+                enhanceSim_gear_top: {
+                    id: 'enhanceSim_gear_top',
+                    label: 'Top',
+                    type: 'enhanceGear',
+                    default: { enabled: true, level: 10 },
+                    disabledBy: 'enhanceSim_autoDetect',
+                },
+                enhanceSim_gear_bottoms: {
+                    id: 'enhanceSim_gear_bottoms',
+                    label: 'Bottoms',
+                    type: 'enhanceGear',
+                    default: { enabled: true, level: 10 },
+                    disabledBy: 'enhanceSim_autoDetect',
+                },
+                enhanceSim_gear_neck: {
+                    id: 'enhanceSim_gear_neck',
+                    label: 'Neck',
+                    type: 'enhanceGear',
+                    default: { enabled: true, tier: 'philo', level: 10 },
+                    tiers: [{ value: 'philo', label: 'Philo' }],
+                    disabledBy: 'enhanceSim_autoDetect',
+                },
+                enhanceSim_gear_cape: {
+                    id: 'enhanceSim_gear_cape',
+                    label: 'Cape',
+                    type: 'enhanceGear',
+                    default: { enabled: true, tier: 'normal', level: 5 },
+                    tiers: [
+                        { value: 'normal', label: 'Normal' },
+                        { value: 'refined', label: 'Refined' },
+                    ],
+                    disabledBy: 'enhanceSim_autoDetect',
+                },
+                enhanceSim_gear_guzzling: {
+                    id: 'enhanceSim_gear_guzzling',
+                    label: 'Guzzling',
+                    type: 'enhanceGear',
+                    default: { enabled: true, level: 10 },
+                    disabledBy: 'enhanceSim_autoDetect',
+                },
+                // --- BUFFS ---
+                enhanceSim_tea: {
+                    id: 'enhanceSim_tea',
+                    label: 'Enhancing tea',
+                    type: 'select',
+                    default: 'ultra',
+                    options: [
+                        { value: 'none', label: 'None' },
+                        { value: 'basic', label: 'Enhancing Tea (+3)' },
+                        { value: 'super', label: 'Super Enhancing Tea (+6)' },
+                        { value: 'ultra', label: 'Ultra Enhancing Tea (+8)' },
+                    ],
+                    help: 'Enhancing tea provides skill level bonus',
                     disabledBy: 'enhanceSim_autoDetect',
                 },
                 enhanceSim_blessedTea: {
@@ -1037,39 +1143,13 @@
                     help: 'Professional enhancers use this to reduce attempts',
                     disabledBy: 'enhanceSim_autoDetect',
                 },
-                enhanceSim_ultraEnhancingTea: {
-                    id: 'enhanceSim_ultraEnhancingTea',
-                    label: 'Ultra Enhancing Tea active',
-                    type: 'checkbox',
-                    default: true,
-                    help: 'Provides +8 base skill levels (scales with drink concentration)',
-                    disabledBy: 'enhanceSim_autoDetect',
-                },
-                enhanceSim_superEnhancingTea: {
-                    id: 'enhanceSim_superEnhancingTea',
-                    label: 'Super Enhancing Tea active',
-                    type: 'checkbox',
-                    default: false,
-                    help: 'Provides +6 base skill levels (Ultra is better)',
-                    disabledBy: 'enhanceSim_autoDetect',
-                },
-                enhanceSim_enhancingTea: {
-                    id: 'enhanceSim_enhancingTea',
-                    label: 'Enhancing Tea active',
-                    type: 'checkbox',
-                    default: false,
-                    help: 'Provides +3 base skill levels (Ultra is better)',
-                    disabledBy: 'enhanceSim_autoDetect',
-                },
-                enhanceSim_drinkConcentration: {
-                    id: 'enhanceSim_drinkConcentration',
-                    label: 'Drink Concentration %',
-                    type: 'number',
-                    default: 12.9,
-                    min: 0,
-                    max: 20,
-                    step: 0.1,
-                    help: 'Default: 12.9 (Guzzling Pouch +10)',
+                enhanceSim_communityBuff: {
+                    id: 'enhanceSim_communityBuff',
+                    label: 'Community Buff',
+                    type: 'enhanceGear',
+                    default: { enabled: true, level: 1 },
+                    help: 'Enhancing speed community buff. Checked = auto-detect from game.',
+                    checkedMeansAuto: true,
                     disabledBy: 'enhanceSim_autoDetect',
                 },
             },
@@ -2553,27 +2633,62 @@
         }
 
         /**
-         * Export settings as JSON
+         * Export all settings as JSON (full dump of settings store)
+         * Includes global keys and current character's keys.
+         * Excludes transient cache data.
          * @returns {Promise<string>} JSON string
          */
         async exportSettings() {
-            const settings = await this.loadSettings();
-            return JSON.stringify(settings, null, 2);
+            const allData = await storage.getAll(this.storageArea);
+
+            // Exclude transient cache keys
+            const EXCLUDE_PREFIXES = ['marketplace_cache'];
+            const exported = {};
+
+            for (const [key, value] of Object.entries(allData)) {
+                if (EXCLUDE_PREFIXES.some((prefix) => key.startsWith(prefix))) continue;
+                exported[key] = value;
+            }
+
+            return JSON.stringify(exported, null, 2);
         }
 
         /**
          * Import settings from JSON
+         * Only imports global keys and keys matching the current character ID.
+         * Character-specific keys for other characters are skipped.
          * @param {string} jsonString - JSON string
-         * @returns {Promise<boolean>} Success
+         * @returns {Promise<{imported: number, skipped: number}>} Import result
          */
         async importSettings(jsonString) {
             try {
-                const imported = JSON.parse(jsonString);
-                await this.saveSettings(imported);
-                return true;
+                const data = JSON.parse(jsonString);
+                const currentCharId = this.currentCharacterId;
+                let imported = 0;
+                let skipped = 0;
+
+                for (const [key, value] of Object.entries(data)) {
+                    // Check if this is a character-specific key (contains a character ID pattern)
+                    const charIdMatch = key.match(/_([0-9a-f]{24})$/i) || key.match(/_(\d{10,})$/);
+
+                    if (charIdMatch) {
+                        const keyCharId = charIdMatch[1];
+                        if (currentCharId && keyCharId !== currentCharId) {
+                            // Key belongs to a different character — skip
+                            skipped++;
+                            continue;
+                        }
+                    }
+
+                    // Import global keys and current character's keys
+                    await storage.setJSON(key, value, this.storageArea, true);
+                    imported++;
+                }
+
+                return { imported, skipped };
             } catch (error) {
                 console.error('[Settings Storage] Import failed:', error);
-                return false;
+                return null;
             }
         }
     }

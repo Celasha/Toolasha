@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.43.0
+ * Version: 2.44.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -926,6 +926,31 @@
             this.snapshots = newSnapshots;
             storage.setJSON(getStorageKey$2(), this.snapshots, 'settings');
             this._emitUpdate();
+        }
+
+        /**
+         * Update a snapshot equipment item's enhancement level.
+         * Used when the highest owned enhancement of a loadout item changes (up or down).
+         * @param {string} itemHrid - Base item HRID (e.g. "/items/sword")
+         * @param {number} newLevel - New enhancement level (highest currently owned)
+         * @returns {boolean} True if any snapshot was updated
+         */
+        updateEnhancementLevel(itemHrid, newLevel) {
+            let changed = false;
+            for (const snapshot of Object.values(this.snapshots)) {
+                for (const eq of snapshot.equipment || []) {
+                    if (eq.itemHrid === itemHrid && eq.enhancementLevel !== newLevel) {
+                        eq.enhancementLevel = newLevel;
+                        snapshot.savedAt = Date.now();
+                        changed = true;
+                    }
+                }
+            }
+            if (changed) {
+                storage.setJSON(getStorageKey$2(), this.snapshots, 'settings');
+                this._emitUpdate();
+            }
+            return changed;
         }
 
         /**
@@ -10709,9 +10734,10 @@
         dto.equipment = newEquipment;
 
         // Ability levels come from current character (not the snapshot)
+        // Use characterAbilities (all learned) not combatUnit.combatAbilities (equipped only)
         const characterData = dataManager.characterData;
         const currentAbilityLevels = {};
-        for (const ability of characterData?.combatUnit?.combatAbilities || []) {
+        for (const ability of characterData?.characterAbilities || []) {
             if (ability?.abilityHrid) {
                 currentAbilityLevels[ability.abilityHrid] = ability.level || 1;
             }

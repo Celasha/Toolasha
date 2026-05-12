@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.43.0
+ * Version: 2.44.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -15971,6 +15971,31 @@ self.onmessage = function (e) {
         }
 
         /**
+         * Update a snapshot equipment item's enhancement level.
+         * Used when the highest owned enhancement of a loadout item changes (up or down).
+         * @param {string} itemHrid - Base item HRID (e.g. "/items/sword")
+         * @param {number} newLevel - New enhancement level (highest currently owned)
+         * @returns {boolean} True if any snapshot was updated
+         */
+        updateEnhancementLevel(itemHrid, newLevel) {
+            let changed = false;
+            for (const snapshot of Object.values(this.snapshots)) {
+                for (const eq of snapshot.equipment || []) {
+                    if (eq.itemHrid === itemHrid && eq.enhancementLevel !== newLevel) {
+                        eq.enhancementLevel = newLevel;
+                        snapshot.savedAt = Date.now();
+                        changed = true;
+                    }
+                }
+            }
+            if (changed) {
+                storage.setJSON(getStorageKey$1(), this.snapshots, 'settings');
+                this._emitUpdate();
+            }
+            return changed;
+        }
+
+        /**
          * Find the best snapshot for a given action type.
          * Priority: skill default > all skills default > skill non-default > all skills non-default
          * @param {string} actionTypeHrid - e.g. "/action_types/brewing"
@@ -23346,6 +23371,159 @@ self.onmessage = function (e) {
     }
 
     // ---------------------------------------------------------------------------
+    // Loadout binding helpers
+    // ---------------------------------------------------------------------------
+
+    /**
+     * Strip the +N enhancement suffix from an HRID to get the base item
+     * @param {string} hrid - e.g. "/items/sword+3"
+     * @returns {string} e.g. "/items/sword"
+     */
+    function getBaseHrid(hrid) {
+        const plusIdx = hrid.lastIndexOf('+');
+        if (plusIdx === -1) return hrid;
+        const suffix = hrid.substring(plusIdx + 1);
+        return /^\d+$/.test(suffix) ? hrid.substring(0, plusIdx) : hrid;
+    }
+
+    /**
+     * Record which items were added from a loadout
+     * @param {Object} config
+     * @param {string} tabId
+     * @param {string} loadoutName
+     * @param {string[]} items - HRIDs added from this loadout
+     * @returns {Object} new config
+     */
+    function addLoadoutBinding(config, tabId, loadoutName, items) {
+        const c = clone(config);
+        const result = _findNode(c.tabs, tabId);
+        if (!result) return c;
+        if (!result.tab.loadoutBindings) result.tab.loadoutBindings = {};
+        const existing = result.tab.loadoutBindings[loadoutName] || [];
+        // Merge new items into the binding (avoid duplicates)
+        const merged = new Set(existing);
+        for (const h of items) merged.add(h);
+        result.tab.loadoutBindings[loadoutName] = [...merged];
+        return c;
+    }
+
+    /**
+     * Remove a specific item from all loadout bindings in a tab
+     * Called when the user manually removes an item via the UI
+     * @param {Object} config
+     * @param {string} tabId
+     * @param {string} itemHrid
+     * @returns {Object} new config
+     */
+    function removeItemFromBindings(config, tabId, itemHrid) {
+        const c = clone(config);
+        const result = _findNode(c.tabs, tabId);
+        if (!result || !result.tab.loadoutBindings) return c;
+        for (const [name, items] of Object.entries(result.tab.loadoutBindings)) {
+            result.tab.loadoutBindings[name] = items.filter((h) => h !== itemHrid);
+            // Clean up empty bindings
+            if (result.tab.loadoutBindings[name].length === 0) {
+                delete result.tab.loadoutBindings[name];
+            }
+        }
+        return c;
+    }
+
+    /**
+     * Sync a tab's loadout binding against a new snapshot.
+     * Matches items by base HRID to detect enhancement level changes.
+     * @param {Object} config
+     * @param {string} tabId
+     * @param {string} loadoutName
+     * @param {string[]} newSnapshotItems - Current items from the loadout snapshot
+     * @returns {{ config: Object, changed: boolean }}
+     */
+    function syncLoadoutBinding(config, tabId, loadoutName, newSnapshotItems) {
+        const c = clone(config);
+        const result = _findNode(c.tabs, tabId);
+        if (!result || !result.tab.loadoutBindings?.[loadoutName]) {
+            return { config: c, changed: false };
+        }
+
+        const tab = result.tab;
+        const oldBound = tab.loadoutBindings[loadoutName];
+        const oldByBase = new Map(oldBound.map((h) => [getBaseHrid(h), h]));
+        const newByBase = new Map(newSnapshotItems.map((h) => [getBaseHrid(h), h]));
+        let changed = false;
+
+        // Enhancement level changed → swap in items[]
+        for (const [base, newHrid] of newByBase) {
+            const oldHrid = oldByBase.get(base);
+            if (oldHrid && oldHrid !== newHrid) {
+                const idx = tab.items.indexOf(oldHrid);
+                if (idx !== -1) {
+                    tab.items[idx] = newHrid;
+                    changed = true;
+                }
+            }
+        }
+
+        // Items removed from loadout → remove from items[]
+        for (const [base, oldHrid] of oldByBase) {
+            if (!newByBase.has(base)) {
+                tab.items = tab.items.filter((h) => h !== oldHrid);
+                changed = true;
+            }
+        }
+
+        // Items added to loadout → append to items[]
+        for (const [base, newHrid] of newByBase) {
+            if (!oldByBase.has(base) && !tab.items.includes(newHrid)) {
+                tab.items.push(newHrid);
+                changed = true;
+            }
+        }
+
+        // Update binding to reflect new state
+        tab.loadoutBindings[loadoutName] = [...newSnapshotItems];
+        return { config: c, changed };
+    }
+
+    /**
+     * Remove orphaned bindings (loadout no longer exists) and their exclusive items.
+     * Items that appear in other remaining bindings are preserved.
+     * @param {Object} config
+     * @param {string} tabId
+     * @param {Set<string>} currentSnapshotNames - Set of loadout names that currently exist
+     * @returns {{ config: Object, changed: boolean }}
+     */
+    function cleanOrphanedBindings(config, tabId, currentSnapshotNames) {
+        const c = clone(config);
+        const result = _findNode(c.tabs, tabId);
+        if (!result || !result.tab.loadoutBindings) return { config: c, changed: false };
+
+        const tab = result.tab;
+        const orphanedNames = Object.keys(tab.loadoutBindings).filter((n) => !currentSnapshotNames.has(n));
+        if (orphanedNames.length === 0) return { config: c, changed: false };
+
+        // Collect items still tracked by non-orphaned bindings
+        const stillBound = new Set();
+        for (const [name, items] of Object.entries(tab.loadoutBindings)) {
+            if (!orphanedNames.includes(name)) {
+                items.forEach((h) => stillBound.add(h));
+            }
+        }
+
+        // Remove orphaned bindings and their exclusive items
+        for (const orphanName of orphanedNames) {
+            const orphanItems = tab.loadoutBindings[orphanName] || [];
+            for (const hrid of orphanItems) {
+                if (!stillBound.has(hrid)) {
+                    tab.items = tab.items.filter((h) => h !== hrid);
+                }
+            }
+            delete tab.loadoutBindings[orphanName];
+        }
+
+        return { config: c, changed: true };
+    }
+
+    // ---------------------------------------------------------------------------
     // Internal tree traversal helpers
     // ---------------------------------------------------------------------------
 
@@ -23950,12 +24128,14 @@ self.onmessage = function (e) {
             // enhancement level changes. A 200ms debounce caused the enhanced item to disappear
             // from the custom tab for ~200ms while the new tile had no toolasha-ct-visible class.
             let rafId = null;
-            this._onItemsUpdated = () => {
+            this._onItemsUpdated = (data) => {
                 if (rafId) cancelAnimationFrame(rafId);
                 rafId = requestAnimationFrame(() => {
                     rafId = null;
                     if (this._isActive) this._applyLayout();
                 });
+                // Check if any changed items have a higher enhancement than bound items
+                this._checkBindingEnhancements(data);
             };
             dataManager.on('items_updated', this._onItemsUpdated);
 
@@ -23970,6 +24150,13 @@ self.onmessage = function (e) {
                 this._injectAddToTabButton(menu);
             });
             this._unregisterHandlers.push(unregisterItemAction);
+
+            // Subscribe to loadout snapshot updates for auto-sync of loadout bindings
+            this._loadoutBindingHandler = () => this._onLoadoutSnapshotUpdate();
+            getLoadoutSnapshot().onUpdate(this._loadoutBindingHandler);
+            this._unregisterHandlers.push(() => {
+                getLoadoutSnapshot().offUpdate(this._loadoutBindingHandler);
+            });
         }
 
         cleanup() {
@@ -25817,6 +26004,10 @@ self.onmessage = function (e) {
                 removeBtn.title = 'Remove';
                 removeBtn.addEventListener('click', () => {
                     this._config = removeItemAtIndex(this._config, tabId, index);
+                    // Clean item from loadout bindings so it won't be re-added on sync
+                    if (hrid !== LINEBREAK_HRID) {
+                        this._config = removeItemFromBindings(this._config, tabId, hrid);
+                    }
                     this._save();
                     this._renderAssignedItems(container, tabId);
                     if (this._isActive) this._applyLayout();
@@ -25920,6 +26111,190 @@ self.onmessage = function (e) {
             }
         }
 
+        /**
+         * Check if any changed items have a higher enhancement level than what's in bindings.
+         * Runs on every items_updated tick but only does cheap Set lookups for the changed items.
+         * @param {Object} data - The items_updated event data
+         */
+        _checkBindingEnhancements(data) {
+            const changedItems = data?.endCharacterItems;
+            if (!changedItems || changedItems.length === 0) return;
+
+            // Build set of bound base HRIDs and their current enhancement levels
+            if (!this._boundBaseHrids) this._rebuildBoundBaseHrids();
+            if (this._boundBaseHrids.size === 0) return;
+
+            // Collect unique base HRIDs from the changed items that match bindings
+            const relevantBases = new Set();
+            for (const item of changedItems) {
+                if (!item.itemHrid) continue;
+                if (this._boundBaseHrids.has(item.itemHrid)) {
+                    relevantBases.add(item.itemHrid);
+                }
+            }
+            if (relevantBases.size === 0) return;
+
+            // For each relevant base HRID, find the highest enhancement currently owned
+            const inventory = dataManager.characterItems || [];
+            let anyChanged = false;
+            const loadoutSnapshot = getLoadoutSnapshot();
+
+            for (const baseHrid of relevantBases) {
+                // Find highest enhancement level of this item in current inventory
+                let highestOwned = -1;
+                for (const item of inventory) {
+                    if (item.itemHrid === baseHrid && item.count > 0) {
+                        const level = item.enhancementLevel || 0;
+                        if (level > highestOwned) highestOwned = level;
+                    }
+                }
+
+                // If player owns none, skip (don't remove — they might just be mid-trade)
+                if (highestOwned < 0) continue;
+
+                const currentLevel = this._boundBaseHrids.get(baseHrid);
+                if (highestOwned === currentLevel) continue;
+
+                // Level changed (up or down) — swap in bindings
+                const oldHrid = currentLevel > 0 ? `${baseHrid}+${currentLevel}` : baseHrid;
+                const newHrid = highestOwned > 0 ? `${baseHrid}+${highestOwned}` : baseHrid;
+
+                this._walkAndSwapBinding(oldHrid, newHrid);
+                anyChanged = true;
+
+                // Also update the loadout snapshot
+                loadoutSnapshot.updateEnhancementLevel(baseHrid, highestOwned);
+
+                // Update the cached level
+                this._boundBaseHrids.set(baseHrid, highestOwned);
+            }
+
+            if (anyChanged) {
+                this._save();
+                if (this._isActive) this._applyLayout();
+            }
+        }
+
+        /**
+         * Build a Map of baseHrid → highest enhancement level across all bindings.
+         * Cached and invalidated when bindings change.
+         */
+        _rebuildBoundBaseHrids() {
+            this._boundBaseHrids = new Map();
+            const walk = (tabs) => {
+                for (const tab of tabs) {
+                    if (tab.loadoutBindings) {
+                        for (const items of Object.values(tab.loadoutBindings)) {
+                            for (const hrid of items) {
+                                const base = getBaseHrid(hrid);
+                                const plusIdx = hrid.lastIndexOf('+');
+                                const level =
+                                    plusIdx !== -1 && /^\d+$/.test(hrid.substring(plusIdx + 1))
+                                        ? parseInt(hrid.substring(plusIdx + 1), 10)
+                                        : 0;
+                                const existing = this._boundBaseHrids.get(base) ?? -1;
+                                if (level > existing) this._boundBaseHrids.set(base, level);
+                            }
+                        }
+                    }
+                    if (tab.children.length > 0) walk(tab.children);
+                }
+            };
+            walk(this._config.tabs);
+        }
+
+        /**
+         * Swap an old HRID for a new one in all loadout bindings across all tabs.
+         * @param {string} oldHrid
+         * @param {string} newHrid
+         */
+        _walkAndSwapBinding(oldHrid, newHrid) {
+            const walk = (tabs) => {
+                for (const tab of tabs) {
+                    if (tab.loadoutBindings) {
+                        for (const [_name, items] of Object.entries(tab.loadoutBindings)) {
+                            const idx = items.indexOf(oldHrid);
+                            if (idx !== -1) {
+                                items[idx] = newHrid;
+                                // Also swap in tab.items
+                                const itemIdx = tab.items.indexOf(oldHrid);
+                                if (itemIdx !== -1) tab.items[itemIdx] = newHrid;
+                            }
+                        }
+                    }
+                    if (tab.children.length > 0) walk(tab.children);
+                }
+            };
+            walk(this._config.tabs);
+        }
+
+        /**
+         * Handle loadout snapshot updates — sync bound tabs automatically.
+         * Called whenever any loadout is created/updated/deleted in-game.
+         */
+        _onLoadoutSnapshotUpdate() {
+            const loadoutSnapshot = getLoadoutSnapshot();
+            const snapshots = loadoutSnapshot.snapshots;
+            const currentSnapshotNames = new Set(Object.values(snapshots).map((s) => s.name));
+            const includeConsumables = config.getSetting('inventoryTabs_loadoutIncludeConsumables');
+
+            let anyChanged = false;
+
+            // Walk all tabs looking for loadoutBindings
+            const walkAndSync = (tabs) => {
+                for (const tab of tabs) {
+                    if (tab.loadoutBindings && Object.keys(tab.loadoutBindings).length > 0) {
+                        // Sync each binding against current snapshot
+                        for (const [loadoutName, _boundItems] of Object.entries(tab.loadoutBindings)) {
+                            // Find the matching snapshot
+                            const snapshot = Object.values(snapshots).find((s) => s.name === loadoutName);
+                            if (!snapshot) continue; // Will be cleaned up by orphan logic below
+
+                            // Build new snapshot items list
+                            const newItems = [];
+                            for (const eq of snapshot.equipment || []) {
+                                if (!eq.itemHrid) continue;
+                                const hrid =
+                                    eq.enhancementLevel > 0 ? `${eq.itemHrid}+${eq.enhancementLevel}` : eq.itemHrid;
+                                newItems.push(hrid);
+                            }
+                            if (includeConsumables) {
+                                for (const f of snapshot.food || []) {
+                                    if (f.itemHrid) newItems.push(f.itemHrid);
+                                }
+                                for (const d of snapshot.drinks || []) {
+                                    if (d.itemHrid) newItems.push(d.itemHrid);
+                                }
+                            }
+
+                            const result = syncLoadoutBinding(this._config, tab.id, loadoutName, newItems);
+                            if (result.changed) {
+                                this._config = result.config;
+                                anyChanged = true;
+                            }
+                        }
+
+                        // Clean orphaned bindings (loadout deleted/renamed)
+                        const orphanResult = cleanOrphanedBindings(this._config, tab.id, currentSnapshotNames);
+                        if (orphanResult.changed) {
+                            this._config = orphanResult.config;
+                            anyChanged = true;
+                        }
+                    }
+
+                    if (tab.children.length > 0) walkAndSync(tab.children);
+                }
+            };
+
+            walkAndSync(this._config.tabs);
+
+            if (anyChanged) {
+                this._boundBaseHrids = null; // Invalidate cache
+                this._save();
+                if (this._isActive) this._applyLayout();
+            }
+        }
+
         _renderLoadoutButtons(container, tabId) {
             container.innerHTML = '';
             const loadoutSnapshot = getLoadoutSnapshot();
@@ -25978,6 +26353,11 @@ self.onmessage = function (e) {
                     for (const hrid of newItems) {
                         this._config = addItem(this._config, tabId, hrid);
                         currentItems.add(hrid);
+                    }
+                    // Record binding so this tab auto-syncs with loadout changes
+                    if (loadoutItems.length > 0) {
+                        this._config = addLoadoutBinding(this._config, tabId, snapshot.name, loadoutItems);
+                        this._boundBaseHrids = null; // Invalidate cache
                     }
                     this._save();
                     this._renderLoadoutButtons(container, tabId);

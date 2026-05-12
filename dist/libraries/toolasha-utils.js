@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 2.43.0
+ * Version: 2.44.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -650,6 +650,31 @@
             this.snapshots = newSnapshots;
             storage.setJSON(getStorageKey(), this.snapshots, 'settings');
             this._emitUpdate();
+        }
+
+        /**
+         * Update a snapshot equipment item's enhancement level.
+         * Used when the highest owned enhancement of a loadout item changes (up or down).
+         * @param {string} itemHrid - Base item HRID (e.g. "/items/sword")
+         * @param {number} newLevel - New enhancement level (highest currently owned)
+         * @returns {boolean} True if any snapshot was updated
+         */
+        updateEnhancementLevel(itemHrid, newLevel) {
+            let changed = false;
+            for (const snapshot of Object.values(this.snapshots)) {
+                for (const eq of snapshot.equipment || []) {
+                    if (eq.itemHrid === itemHrid && eq.enhancementLevel !== newLevel) {
+                        eq.enhancementLevel = newLevel;
+                        snapshot.savedAt = Date.now();
+                        changed = true;
+                    }
+                }
+            }
+            if (changed) {
+                storage.setJSON(getStorageKey(), this.snapshots, 'settings');
+                this._emitUpdate();
+            }
+            return changed;
         }
 
         /**
@@ -6979,18 +7004,120 @@ self.onmessage = function (e) {
     }
 
     /**
-     * Get manual enhancing parameters from config settings
+     * Detect current character's enhancing gear and return values mapped to setting keys.
+     * Used by settings UI to populate gear inputs when auto-detect is toggled on.
+     * @returns {Object} Map of settingId → detected value
+     */
+    function getDetectedGearSettings() {
+        const equipment = dataManager.getEquipment();
+        const skills = dataManager.getSkills();
+        const drinkSlots = dataManager.getActionDrinkSlots('/action_types/enhancing');
+
+        const result = {};
+
+        // Enhancing level
+        const enhancingSkill = skills?.find((s) => s.skillHrid === '/skills/enhancing');
+        result.enhanceSim_enhancingLevel = enhancingSkill?.level || 1;
+
+        // Observatory
+        result.enhanceSim_houseLevel = dataManager.getHouseRoomLevel('/house_rooms/observatory');
+
+        // Community buff
+        result.enhanceSim_communityBuff = dataManager.getCommunityBuffLevel('/community_buff_types/enhancing_speed');
+
+        // Achievement
+        const achievementBonus = dataManager.getAchievementBuffFlatBoost(
+            '/action_types/enhancing',
+            '/buff_types/enhancing_success'
+        );
+        result.enhanceSim_achievement = achievementBonus > 0;
+
+        // Tea detection
+        const teaMap = {
+            '/items/ultra_enhancing_tea': 'ultra',
+            '/items/super_enhancing_tea': 'super',
+            '/items/enhancing_tea': 'basic',
+        };
+        let detectedTea = 'none';
+        let hasBlessed = false;
+        if (drinkSlots) {
+            for (const drink of drinkSlots) {
+                if (!drink?.itemHrid) continue;
+                if (teaMap[drink.itemHrid]) detectedTea = teaMap[drink.itemHrid];
+                if (drink.itemHrid === '/items/blessed_tea') hasBlessed = true;
+            }
+        }
+        result.enhanceSim_tea = detectedTea;
+        result.enhanceSim_blessedTea = hasBlessed;
+
+        // Gear detection — match equipped items to known gear HRIDs
+        const ENHANCER_HRIDS = {
+            '/items/cheese_enhancer': 'cheese',
+            '/items/verdant_enhancer': 'verdant',
+            '/items/azure_enhancer': 'azure',
+            '/items/burble_enhancer': 'burble',
+            '/items/crimson_enhancer': 'crimson',
+            '/items/rainbow_enhancer': 'rainbow',
+            '/items/holy_enhancer': 'holy',
+            '/items/celestial_enhancer': 'celestial',
+        };
+        const CAPE_HRIDS = {
+            '/items/chance_cape': 'normal',
+            '/items/chance_cape_r': 'refined',
+        };
+        const FIXED_HRIDS = {
+            '/items/enchanted_gloves': 'gloves',
+            '/items/enhancers_top': 'top',
+            '/items/enhancers_bottoms': 'bottoms',
+            '/items/philosophers_necklace': 'neck',
+            '/items/guzzling_pouch': 'guzzling',
+        };
+
+        // Default all gear to disabled (not detected)
+        result.enhanceSim_gear_enhancer = { enabled: false, tier: 'celestial', level: 0 };
+        result.enhanceSim_gear_gloves = { enabled: false, level: 0 };
+        result.enhanceSim_gear_top = { enabled: false, level: 0 };
+        result.enhanceSim_gear_bottoms = { enabled: false, level: 0 };
+        result.enhanceSim_gear_neck = { enabled: false, tier: 'philo', level: 0 };
+        result.enhanceSim_gear_cape = { enabled: false, tier: 'normal', level: 0 };
+        result.enhanceSim_gear_guzzling = { enabled: false, level: 0 };
+
+        if (equipment) {
+            for (const item of equipment.values()) {
+                if (!item?.itemHrid) continue;
+                const hrid = item.itemHrid;
+                const enhLevel = item.enhancementLevel || 0;
+
+                if (ENHANCER_HRIDS[hrid]) {
+                    result.enhanceSim_gear_enhancer = { enabled: true, tier: ENHANCER_HRIDS[hrid], level: enhLevel };
+                } else if (CAPE_HRIDS[hrid]) {
+                    result.enhanceSim_gear_cape = { enabled: true, tier: CAPE_HRIDS[hrid], level: enhLevel };
+                } else if (FIXED_HRIDS[hrid]) {
+                    const slot = FIXED_HRIDS[hrid];
+                    result[`enhanceSim_gear_${slot}`] = { enabled: true, level: enhLevel };
+                }
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * Get manual enhancing parameters from gear-based config settings
      * @returns {Object} Manual parameters
      */
     function getManualParams() {
-        // Get values directly from config
         const getValue = (key, defaultValue) => {
             return config.getSettingValue(key, defaultValue);
         };
 
-        const houseLevel = getValue('enhanceSim_houseLevel', 8);
+        const itemDetailMap = dataManager.getInitClientData()?.itemDetailMap || {};
 
-        // Get tea selection from dropdown (replaces 3 separate checkboxes)
+        // --- ENHANCING ---
+        const houseLevel = getValue('enhanceSim_houseLevel', 8);
+        const baseEnhancingLevel = getValue('enhanceSim_enhancingLevel', 140);
+
+        // --- TEA ---
         const teaSelection = getValue('enhanceSim_tea', 'ultra');
         const teas = {
             enhancing: teaSelection === 'basic',
@@ -6998,36 +7125,145 @@ self.onmessage = function (e) {
             ultraEnhancing: teaSelection === 'ultra',
             blessed: getValue('enhanceSim_blessedTea', true),
         };
-
-        // Calculate tea bonuses based on selection
         const teaLevelBonus =
             teaSelection === 'ultra' ? 8 : teaSelection === 'super' ? 6 : teaSelection === 'basic' ? 3 : 0;
         const teaSpeedBonus =
             teaSelection === 'ultra' ? 6 : teaSelection === 'super' ? 4 : teaSelection === 'basic' ? 2 : 0;
 
-        // Calculate house bonuses
-        const houseSpeedBonus = houseLevel * 1.0; // 1% per level
-        const houseSuccessBonus = houseLevel * 0.05; // 0.05% per level
+        // --- GEAR ---
+        const ENHANCER_TIERS = {
+            cheese: '/items/cheese_enhancer',
+            verdant: '/items/verdant_enhancer',
+            azure: '/items/azure_enhancer',
+            burble: '/items/burble_enhancer',
+            crimson: '/items/crimson_enhancer',
+            rainbow: '/items/rainbow_enhancer',
+            holy: '/items/holy_enhancer',
+            celestial: '/items/celestial_enhancer',
+        };
+        const CAPE_TIERS = {
+            normal: '/items/chance_cape',
+            refined: '/items/chance_cape_r',
+        };
+        const FIXED_GEAR = {
+            gloves: '/items/enchanted_gloves',
+            top: '/items/enhancers_top',
+            bottoms: '/items/enhancers_bottoms',
+            neck: '/items/philosophers_necklace',
+            guzzling: '/items/guzzling_pouch',
+        };
 
-        // Get community buffs
-        const communityBuffLevel = dataManager.getCommunityBuffLevel('/community_buff_types/enhancing_speed');
+        // Helper to read compound gear setting
+        const getGear = (key, defaults) => {
+            const val = getValue(key, defaults);
+            // Handle both object (new format) and missing/null
+            if (val && typeof val === 'object') return val;
+            return defaults;
+        };
+
+        // Calculate bonuses from each gear slot
+        let equipmentSuccessBonus = 0;
+        let equipmentSpeedBonus = 0;
+        let equipmentRareFind = 0;
+        let equipmentExperience = 0;
+        let drinkConcentration = 0;
+
+        // Enhancer
+        const enhancer = getGear('enhanceSim_gear_enhancer', { enabled: true, tier: 'celestial', level: 13 });
+        if (enhancer.enabled) {
+            const hrid = ENHANCER_TIERS[enhancer.tier] || ENHANCER_TIERS.celestial;
+            const bonus = getGearSlotBonus(hrid, enhancer.level, itemDetailMap);
+            equipmentSuccessBonus += bonus.success;
+            equipmentSpeedBonus += bonus.speed;
+            equipmentRareFind += bonus.rareFind;
+            equipmentExperience += bonus.experience;
+        }
+
+        // Gloves
+        const gloves = getGear('enhanceSim_gear_gloves', { enabled: true, level: 10 });
+        if (gloves.enabled) {
+            const bonus = getGearSlotBonus(FIXED_GEAR.gloves, gloves.level, itemDetailMap);
+            equipmentSpeedBonus += bonus.speed;
+            equipmentExperience += bonus.experience;
+        }
+
+        // Top
+        const top = getGear('enhanceSim_gear_top', { enabled: true, level: 10 });
+        if (top.enabled) {
+            const bonus = getGearSlotBonus(FIXED_GEAR.top, top.level, itemDetailMap);
+            equipmentSpeedBonus += bonus.speed;
+            equipmentRareFind += bonus.rareFind;
+            equipmentExperience += bonus.experience;
+        }
+
+        // Bottoms
+        const bottoms = getGear('enhanceSim_gear_bottoms', { enabled: true, level: 10 });
+        if (bottoms.enabled) {
+            const bonus = getGearSlotBonus(FIXED_GEAR.bottoms, bottoms.level, itemDetailMap);
+            equipmentSpeedBonus += bonus.speed;
+            equipmentExperience += bonus.experience;
+        }
+
+        // Neck (Philosopher's Necklace — 5× multiplier slot)
+        const neck = getGear('enhanceSim_gear_neck', { enabled: true, tier: 'philo', level: 10 });
+        if (neck.enabled) {
+            const bonus = getGearSlotBonus(FIXED_GEAR.neck, neck.level, itemDetailMap);
+            equipmentSpeedBonus += bonus.speed;
+            equipmentExperience += bonus.experience;
+        }
+
+        // Cape
+        const cape = getGear('enhanceSim_gear_cape', { enabled: true, tier: 'normal', level: 5 });
+        if (cape.enabled) {
+            const hrid = CAPE_TIERS[cape.tier] || CAPE_TIERS.normal;
+            const bonus = getGearSlotBonus(hrid, cape.level, itemDetailMap);
+            equipmentSpeedBonus += bonus.speed;
+            equipmentExperience += bonus.experience;
+        }
+
+        // Guzzling Pouch (provides drink concentration)
+        const guzzling = getGear('enhanceSim_gear_guzzling', { enabled: true, level: 10 });
+        if (guzzling.enabled) {
+            const bonus = getGearSlotBonus(FIXED_GEAR.guzzling, guzzling.level, itemDetailMap);
+            drinkConcentration = bonus.drinkConc;
+        }
+
+        // --- COMMUNITY BUFF ---
+        const communityBuff = getGear('enhanceSim_communityBuff', { enabled: true, level: 1 });
+        let communityBuffLevel;
+        if (communityBuff.enabled) {
+            // Checked = auto-detect from game
+            communityBuffLevel = dataManager.getCommunityBuffLevel('/community_buff_types/enhancing_speed');
+        } else {
+            communityBuffLevel = communityBuff.level;
+        }
         const communitySpeedBonus = communityBuffLevel > 0 ? 20 + (communityBuffLevel - 1) * 0.5 : 0;
 
-        // Equipment speed is whatever's left after house/community/tea
-        const totalSpeed = getValue('enhanceSim_speedBonus', 48.5);
-        const equipmentSpeedBonus = Math.max(0, totalSpeed - houseSpeedBonus - communitySpeedBonus - teaSpeedBonus);
+        // --- ACHIEVEMENT ---
+        const achievementEnabled = getValue('enhanceSim_achievement', false);
+        const achievementSuccessBonus = achievementEnabled ? 0.2 : 0;
 
-        const toolBonusEquipment = getValue('enhanceSim_toolBonus', 6.05);
-        const totalToolBonus = toolBonusEquipment + houseSuccessBonus;
+        // --- HOUSE BONUSES ---
+        const houseSpeedBonus = houseLevel * 1.0;
+        const houseSuccessBonus = houseLevel * 0.05;
+
+        // --- SCALE TEA BONUSES WITH DRINK CONCENTRATION ---
+        const scaledTeaLevelBonus = teaLevelBonus > 0 ? teaLevelBonus * (1 + drinkConcentration / 100) : 0;
+        const scaledTeaSpeedBonus = teaSpeedBonus > 0 ? teaSpeedBonus * (1 + drinkConcentration / 100) : 0;
+
+        // --- TOTALS ---
+        const totalToolBonus = equipmentSuccessBonus + houseSuccessBonus + achievementSuccessBonus;
+        const totalSpeedBonus = equipmentSpeedBonus + houseSpeedBonus + communitySpeedBonus + scaledTeaSpeedBonus;
+        const guzzlingBonus = 1 + drinkConcentration / 100;
 
         return {
-            enhancingLevel: getValue('enhanceSim_enhancingLevel', 140) + teaLevelBonus,
+            enhancingLevel: baseEnhancingLevel + scaledTeaLevelBonus,
             houseLevel: houseLevel,
-            toolBonus: totalToolBonus, // Total = equipment + house
-            speedBonus: totalSpeed,
-            rareFindBonus: getValue('enhanceSim_rareFindBonus', 0),
-            experienceBonus: getValue('enhanceSim_experienceBonus', 0),
-            guzzlingBonus: 1 + getValue('enhanceSim_drinkConcentration', 12.9) / 100,
+            toolBonus: totalToolBonus,
+            speedBonus: totalSpeedBonus,
+            rareFindBonus: equipmentRareFind,
+            experienceBonus: equipmentExperience,
+            guzzlingBonus: guzzlingBonus,
             teas: teas,
 
             // Display info for manual mode
@@ -7035,20 +7271,44 @@ self.onmessage = function (e) {
             bodySlot: null,
             legsSlot: null,
             handsSlot: null,
-            detectedTeaBonus: teaLevelBonus,
+            detectedTeaBonus: scaledTeaLevelBonus,
             communityBuffLevel: communityBuffLevel,
             communitySpeedBonus: communitySpeedBonus,
-            teaSpeedBonus: teaSpeedBonus,
+            teaSpeedBonus: scaledTeaSpeedBonus,
             equipmentSpeedBonus: equipmentSpeedBonus,
             houseSpeedBonus: houseSpeedBonus,
-            equipmentSuccessBonus: toolBonusEquipment, // Just equipment
+            equipmentSuccessBonus: equipmentSuccessBonus,
             houseSuccessBonus: houseSuccessBonus,
+        };
+    }
+
+    /**
+     * Calculate enhancing bonuses from a single gear slot
+     * @param {string} itemHrid - Item HRID
+     * @param {number} enhancementLevel - Enhancement level (0-20)
+     * @param {Object} itemDetailMap - Item details map
+     * @returns {Object} { success, speed, rareFind, experience, drinkConc }
+     */
+    function getGearSlotBonus(itemHrid, enhancementLevel, itemDetailMap) {
+        const itemDetails = itemDetailMap[itemHrid];
+        if (!itemDetails) return { success: 0, speed: 0, rareFind: 0, experience: 0, drinkConc: 0 };
+
+        const multiplier = getEnhancementMultiplier(itemDetails, enhancementLevel);
+        const stats = itemDetails.equipmentDetail?.noncombatStats || {};
+
+        return {
+            success: (stats.enhancingSuccess || 0) * 100 * multiplier,
+            speed: ((stats.enhancingSpeed || 0) + (stats.skillingSpeed || 0)) * 100 * multiplier,
+            rareFind: (stats.enhancingRareFind || 0) * 100 * multiplier,
+            experience: ((stats.enhancingExperience || 0) + (stats.skillingExperience || 0)) * 100 * multiplier,
+            drinkConc: (stats.drinkConcentration || 0) * 100 * multiplier,
         };
     }
 
     var enhancementConfig = /*#__PURE__*/Object.freeze({
         __proto__: null,
         getAutoDetectedParams: getAutoDetectedParams,
+        getDetectedGearSettings: getDetectedGearSettings,
         getEnhancingParams: getEnhancingParams
     });
 
