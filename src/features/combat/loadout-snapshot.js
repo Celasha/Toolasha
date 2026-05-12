@@ -204,16 +204,16 @@ class LoadoutSnapshot {
 
     /**
      * Update a snapshot equipment item's enhancement level.
-     * Used when a higher enhancement of a loadout item is detected in inventory.
+     * Used when the highest owned enhancement of a loadout item changes (up or down).
      * @param {string} itemHrid - Base item HRID (e.g. "/items/sword")
-     * @param {number} newLevel - New enhancement level
+     * @param {number} newLevel - New enhancement level (highest currently owned)
      * @returns {boolean} True if any snapshot was updated
      */
     updateEnhancementLevel(itemHrid, newLevel) {
         let changed = false;
         for (const snapshot of Object.values(this.snapshots)) {
             for (const eq of snapshot.equipment || []) {
-                if (eq.itemHrid === itemHrid && eq.enhancementLevel < newLevel) {
+                if (eq.itemHrid === itemHrid && eq.enhancementLevel !== newLevel) {
                     eq.enhancementLevel = newLevel;
                     snapshot.savedAt = Date.now();
                     changed = true;

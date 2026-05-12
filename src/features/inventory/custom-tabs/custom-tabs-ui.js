@@ -2583,30 +2583,49 @@ export default class CustomTabsUI {
         if (!this._boundBaseHrids) this._rebuildBoundBaseHrids();
         if (this._boundBaseHrids.size === 0) return;
 
+        // Collect unique base HRIDs from the changed items that match bindings
+        const relevantBases = new Set();
+        for (const item of changedItems) {
+            if (!item.itemHrid) continue;
+            if (this._boundBaseHrids.has(item.itemHrid)) {
+                relevantBases.add(item.itemHrid);
+            }
+        }
+        if (relevantBases.size === 0) return;
+
+        // For each relevant base HRID, find the highest enhancement currently owned
+        const inventory = dataManager.characterItems || [];
         let anyChanged = false;
         const loadoutSnapshot = getLoadoutSnapshot();
 
-        for (const item of changedItems) {
-            if (!item.itemHrid || item.count === 0) continue;
-            const baseHrid = item.itemHrid;
-            const newLevel = item.enhancementLevel || 0;
+        for (const baseHrid of relevantBases) {
+            // Find highest enhancement level of this item in current inventory
+            let highestOwned = -1;
+            for (const item of inventory) {
+                if (item.itemHrid === baseHrid && item.count > 0) {
+                    const level = item.enhancementLevel || 0;
+                    if (level > highestOwned) highestOwned = level;
+                }
+            }
 
-            // Check if this base HRID is in any binding
+            // If player owns none, skip (don't remove — they might just be mid-trade)
+            if (highestOwned < 0) continue;
+
             const currentLevel = this._boundBaseHrids.get(baseHrid);
-            if (currentLevel === undefined || newLevel <= currentLevel) continue;
+            if (highestOwned === currentLevel) continue;
 
-            // Higher enhancement found — update bindings in all tabs
+            // Level changed (up or down) — swap in bindings
             const oldHrid = currentLevel > 0 ? `${baseHrid}+${currentLevel}` : baseHrid;
-            const newHrid = newLevel > 0 ? `${baseHrid}+${newLevel}` : baseHrid;
+            const newHrid = highestOwned > 0 ? `${baseHrid}+${highestOwned}` : baseHrid;
 
             this._walkAndSwapBinding(oldHrid, newHrid);
             anyChanged = true;
 
             // Also update the loadout snapshot
-            loadoutSnapshot.updateEnhancementLevel(baseHrid, newLevel);
+            loadoutSnapshot.updateEnhancementLevel(baseHrid, highestOwned);
 
             // Update the cached level
-            this._boundBaseHrids.set(baseHrid, newLevel);
+            this._boundBaseHrids.set(baseHrid, highestOwned);
         }
 
         if (anyChanged) {
