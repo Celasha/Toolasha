@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.44.0
+ * Version: 2.44.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -6830,9 +6830,10 @@
          * Create the display panel in the DOM
          */
         createDisplayPanel() {
-            if (this.displayElement) {
-                return; // Already created
+            if (this.displayElement && this.displayElement.isConnected) {
+                return; // Already created and still in the DOM
             }
+            this.displayElement = null;
 
             // Find the action name container (use wildcard for hash-suffixed class)
             const actionNameContainer = document.querySelector('div[class*="Header_actionName"]');
