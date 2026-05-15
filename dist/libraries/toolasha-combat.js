@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.44.1
+ * Version: 2.45.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -14626,11 +14626,19 @@
 
             for (const slotType of slotOrder) {
                 const equip = dto.equipment[slotType];
-                if (!equip) continue;
+                const label = slotLabels[slotType] || slotType.split('/').pop();
+
+                if (!equip) {
+                    html += `<div style="display:flex; align-items:center; gap:6px; padding:2px 0; font-size:12px;">`;
+                    html += `<span style="color:#888; width:70px; flex-shrink:0;">${label}</span>`;
+                    html += `<span style="color:#555; flex:1; font-style:italic;">Empty</span>`;
+                    html += `<button data-equipment-slot="${slotType}" style="background:rgba(255,255,255,0.06); border:1px solid #444; color:#aaa; padding:1px 6px; border-radius:3px; font-size:11px; cursor:pointer; font-family:inherit;">add</button>`;
+                    html += '</div>';
+                    continue;
+                }
 
                 const item = itemDetailMap[equip.hrid];
                 const name = item?.name || equip.hrid.split('/').pop();
-                const label = slotLabels[slotType] || slotType.split('/').pop();
 
                 html += `<div style="display:flex; align-items:center; gap:6px; padding:2px 0; font-size:12px;">`;
                 html += `<span style="color:#888; width:70px; flex-shrink:0;">${label}</span>`;
@@ -14640,6 +14648,7 @@
                 data-enhance-slot="${slotType}"
                 style="width:36px; background:#1a1a2e; color:#e0e0e0; border:1px solid #444;
                 border-radius:3px; padding:1px 3px; font-size:12px; text-align:center;">`;
+                html += `<button data-equipment-slot="${slotType}" style="background:rgba(255,255,255,0.06); border:1px solid #444; color:#aaa; padding:1px 6px; border-radius:3px; font-size:11px; cursor:pointer; font-family:inherit;">change</button>`;
                 html += '</div>';
             }
 
@@ -14661,13 +14670,24 @@
             html += '</div>';
             html += `<div id="mwi-csim-ability-section" style="display:none;">`;
 
-            for (let i = 0; i < dto.abilities.length; i++) {
+            const maxSlots = 5;
+            const slotCount = Math.max(dto.abilities.length, maxSlots);
+
+            for (let i = 0; i < slotCount; i++) {
                 const ability = dto.abilities[i];
-                if (!ability) continue;
+                const slotLabel = i === 0 ? 'Special' : `Slot ${i}`;
+
+                if (!ability) {
+                    html += `<div style="display:flex; align-items:center; gap:6px; padding:2px 0; font-size:12px;">`;
+                    html += `<span style="color:#888; width:50px; flex-shrink:0;">${slotLabel}</span>`;
+                    html += `<span style="color:#555; flex:1; font-style:italic;">Empty</span>`;
+                    html += `<button data-ability-slot="${i}" style="background:rgba(255,255,255,0.06); border:1px solid #444; color:#aaa; padding:1px 6px; border-radius:3px; font-size:11px; cursor:pointer; font-family:inherit;">add</button>`;
+                    html += '</div>';
+                    continue;
+                }
 
                 const detail = abilityDetailMap[ability.hrid];
                 const name = detail?.name || ability.hrid.split('/').pop();
-                const slotLabel = i === 0 ? 'Special' : `Slot ${i}`;
 
                 html += `<div style="display:flex; align-items:center; gap:6px; padding:2px 0; font-size:12px;">`;
                 html += `<span style="color:#888; width:50px; flex-shrink:0;">${slotLabel}</span>`;
@@ -14677,6 +14697,7 @@
                 data-ability-idx="${i}"
                 style="width:42px; background:#1a1a2e; color:#e0e0e0; border:1px solid #444;
                 border-radius:3px; padding:1px 3px; font-size:12px; text-align:center;">`;
+                html += `<button data-ability-slot="${i}" style="background:rgba(255,255,255,0.06); border:1px solid #444; color:#aaa; padding:1px 6px; border-radius:3px; font-size:11px; cursor:pointer; font-family:inherit;">change</button>`;
                 html += '</div>';
             }
 
@@ -14975,6 +14996,311 @@
             renderList('');
             searchInput.focus();
         }
+
+        /**
+         * Open equipment picker for a specific slot.
+         * @private
+         */
+        _openEquipmentPicker(slotType, dto, gameData) {
+            document.getElementById('mwi-csim-equipment-picker')?.remove();
+            document.getElementById('mwi-csim-equipment-backdrop')?.remove();
+
+            const itemDetailMap = gameData?.itemDetailMap || {};
+            const slotName = slotType.split('/').pop().replace(/_/g, ' ');
+
+            const items = [];
+            for (const [hrid, item] of Object.entries(itemDetailMap)) {
+                if (item.equipmentDetail?.type !== slotType) continue;
+
+                const levelReqs = item.equipmentDetail.levelRequirements || [];
+                const primaryReq = levelReqs[0];
+                const reqLevel = primaryReq?.level || 0;
+                const reqSkill = primaryReq?.skillHrid?.split('/').pop() || '';
+
+                let categoryLabel;
+                if (reqSkill === 'attack') categoryLabel = 'Attack';
+                else if (reqSkill === 'defense') categoryLabel = 'Defense';
+                else if (reqSkill === 'ranged') categoryLabel = 'Ranged';
+                else if (reqSkill === 'magic') categoryLabel = 'Magic';
+                else categoryLabel = 'General';
+
+                items.push({
+                    hrid,
+                    name: item.name || hrid.split('/').pop(),
+                    itemLevel: item.itemLevel || 0,
+                    reqLevel,
+                    categoryLabel,
+                });
+            }
+
+            items.sort((a, b) => {
+                const catCmp = a.categoryLabel.localeCompare(b.categoryLabel);
+                if (catCmp !== 0) return catCmp;
+                return b.itemLevel - a.itemLevel;
+            });
+
+            const popup = document.createElement('div');
+            popup.id = 'mwi-csim-equipment-picker';
+            popup.style.cssText =
+                'position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); z-index:100000;' +
+                'background:rgba(10,10,20,0.97); border:2px solid rgba(74,158,255,0.5); border-radius:10px;' +
+                'width:350px; max-height:400px; display:flex; flex-direction:column;' +
+                "font-family:'Segoe UI',sans-serif; color:#e0e0e0; font-size:13px; box-shadow:0 8px 24px rgba(0,0,0,0.6);";
+
+            const header = document.createElement('div');
+            header.style.cssText =
+                'display:flex; justify-content:space-between; align-items:center; padding:8px 14px; border-bottom:1px solid rgba(74,158,255,0.3); flex-shrink:0;';
+            header.innerHTML =
+                `<span style="font-weight:700; font-size:13px; color:${ACCENT};">Select ${slotName}</span>` +
+                '<button id="mwi-csim-equip-picker-close" style="background:none; border:none; color:#aaa; font-size:20px; cursor:pointer; padding:0; line-height:1;">\u00d7</button>';
+            popup.appendChild(header);
+
+            const searchDiv = document.createElement('div');
+            searchDiv.style.cssText = 'padding:6px 14px; flex-shrink:0;';
+            const searchInput = document.createElement('input');
+            searchInput.type = 'search';
+            searchInput.placeholder = 'Search...';
+            searchInput.style.cssText =
+                'width:100%; padding:5px 8px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.15);' +
+                'border-radius:6px; color:#e0e0e0; font-size:12px; font-family:inherit; outline:none;';
+            searchDiv.appendChild(searchInput);
+            popup.appendChild(searchDiv);
+
+            const listEl = document.createElement('div');
+            listEl.style.cssText = 'flex:1; overflow-y:auto; padding:4px 14px;';
+            popup.appendChild(listEl);
+
+            const currentHrid = dto.equipment[slotType]?.hrid || '';
+
+            const renderList = (query) => {
+                const lower = query.toLowerCase();
+                const filtered = query ? items.filter((i) => i.name.toLowerCase().includes(lower)) : items;
+
+                let html =
+                    '<div data-pick-hrid="" style="display:flex; align-items:center; gap:8px; padding:4px; cursor:pointer; border-bottom:1px solid #1a1a2e; color:#888; font-style:italic;"' +
+                    ' onmouseover="this.style.background=\'rgba(255,255,255,0.04)\'" onmouseout="this.style.background=\'\'">Empty (remove slot)</div>';
+
+                let lastCategory = '';
+                for (const item of filtered.slice(0, 100)) {
+                    if (item.categoryLabel !== lastCategory) {
+                        lastCategory = item.categoryLabel;
+                        html +=
+                            `<div style="padding:6px 0 2px; font-size:10px; font-weight:700; color:${ACCENT}; border-bottom:1px solid #2a2a4e; margin-top:4px;">` +
+                            item.categoryLabel +
+                            '</div>';
+                    }
+
+                    const isCurrent = item.hrid === currentHrid;
+                    const color = isCurrent ? ACCENT : '#ccc';
+                    const indicator = isCurrent ? ` <span style="color:${ACCENT};">\u25cf</span>` : '';
+                    const lvlTag = `<span style="color:#666; font-size:10px; margin-left:auto; flex-shrink:0;">Lv ${item.reqLevel}</span>`;
+
+                    html +=
+                        `<div data-pick-hrid="${item.hrid}" style="display:flex; align-items:center; gap:8px; padding:3px 4px; cursor:pointer; border-bottom:1px solid #1a1a2e; color:${color};"` +
+                        ' onmouseover="this.style.background=\'rgba(255,255,255,0.04)\'" onmouseout="this.style.background=\'\'">' +
+                        item.name +
+                        indicator +
+                        lvlTag +
+                        '</div>';
+                }
+                if (filtered.length > 100) {
+                    html += `<div style="color:#666; text-align:center; padding:6px;">...${filtered.length - 100} more</div>`;
+                }
+                listEl.innerHTML = html;
+
+                listEl.querySelectorAll('[data-pick-hrid]').forEach((row) => {
+                    row.addEventListener('click', () => {
+                        const hrid = row.dataset.pickHrid;
+                        if (hrid) {
+                            dto.equipment[slotType] = { hrid, enhancementLevel: 0 };
+                        } else {
+                            delete dto.equipment[slotType];
+                        }
+                        closePicker();
+                        this._renderEditor();
+                    });
+                });
+            };
+
+            let searchTimeout;
+            searchInput.addEventListener('input', () => {
+                clearTimeout(searchTimeout);
+                searchTimeout = setTimeout(() => renderList(searchInput.value.trim()), 150);
+            });
+
+            const closePicker = () => {
+                popup.remove();
+                document.getElementById('mwi-csim-equipment-backdrop')?.remove();
+            };
+
+            popup.querySelector('#mwi-csim-equip-picker-close').addEventListener('click', closePicker);
+
+            const backdrop = document.createElement('div');
+            backdrop.id = 'mwi-csim-equipment-backdrop';
+            backdrop.style.cssText = 'position:fixed; top:0; left:0; right:0; bottom:0; z-index:99999;';
+            backdrop.addEventListener('click', closePicker);
+
+            document.body.appendChild(backdrop);
+            document.body.appendChild(popup);
+            renderList('');
+            searchInput.focus();
+        }
+
+        /**
+         * Open ability picker for a specific slot.
+         * @private
+         */
+        _openAbilityPicker(slotIndex, dto, gameData) {
+            document.getElementById('mwi-csim-ability-picker')?.remove();
+            document.getElementById('mwi-csim-ability-backdrop')?.remove();
+
+            const abilityDetailMap = gameData?.abilityDetailMap || {};
+            const isSpecialSlot = slotIndex === 0;
+
+            const usedHrids = new Set();
+            for (let i = 0; i < dto.abilities.length; i++) {
+                if (i === slotIndex || !dto.abilities[i]) continue;
+                usedHrids.add(dto.abilities[i].hrid);
+            }
+
+            const items = [];
+            for (const [hrid, ability] of Object.entries(abilityDetailMap)) {
+                if (isSpecialSlot && !ability.isSpecialAbility) continue;
+                if (!isSpecialSlot && ability.isSpecialAbility) continue;
+
+                const effects = ability.abilityEffects || [];
+                const combatStyle = effects[0]?.combatStyleHrid?.split('/').pop() || '';
+                let categoryLabel;
+                if (combatStyle === 'stab' || combatStyle === 'slash' || combatStyle === 'smash') categoryLabel = 'Melee';
+                else if (combatStyle === 'ranged') categoryLabel = 'Ranged';
+                else if (combatStyle === 'magic') categoryLabel = 'Magic';
+                else categoryLabel = 'Other';
+
+                items.push({
+                    hrid,
+                    name: ability.name || hrid.split('/').pop(),
+                    categoryLabel,
+                    conflict: usedHrids.has(hrid),
+                });
+            }
+
+            items.sort((a, b) => {
+                const catCmp = a.categoryLabel.localeCompare(b.categoryLabel);
+                if (catCmp !== 0) return catCmp;
+                return a.name.localeCompare(b.name);
+            });
+
+            const popup = document.createElement('div');
+            popup.id = 'mwi-csim-ability-picker';
+            popup.style.cssText =
+                'position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); z-index:100000;' +
+                'background:rgba(10,10,20,0.97); border:2px solid rgba(74,158,255,0.5); border-radius:10px;' +
+                'width:350px; max-height:400px; display:flex; flex-direction:column;' +
+                "font-family:'Segoe UI',sans-serif; color:#e0e0e0; font-size:13px; box-shadow:0 8px 24px rgba(0,0,0,0.6);";
+
+            const slotLabel = isSpecialSlot ? 'Special Ability' : `Ability Slot ${slotIndex}`;
+            const header = document.createElement('div');
+            header.style.cssText =
+                'display:flex; justify-content:space-between; align-items:center; padding:8px 14px; border-bottom:1px solid rgba(74,158,255,0.3); flex-shrink:0;';
+            header.innerHTML =
+                `<span style="font-weight:700; font-size:13px; color:${ACCENT};">Select ${slotLabel}</span>` +
+                '<button id="mwi-csim-ability-picker-close" style="background:none; border:none; color:#aaa; font-size:20px; cursor:pointer; padding:0; line-height:1;">\u00d7</button>';
+            popup.appendChild(header);
+
+            const searchDiv = document.createElement('div');
+            searchDiv.style.cssText = 'padding:6px 14px; flex-shrink:0;';
+            const searchInput = document.createElement('input');
+            searchInput.type = 'search';
+            searchInput.placeholder = 'Search...';
+            searchInput.style.cssText =
+                'width:100%; padding:5px 8px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.15);' +
+                'border-radius:6px; color:#e0e0e0; font-size:12px; font-family:inherit; outline:none;';
+            searchDiv.appendChild(searchInput);
+            popup.appendChild(searchDiv);
+
+            const listEl = document.createElement('div');
+            listEl.style.cssText = 'flex:1; overflow-y:auto; padding:4px 14px;';
+            popup.appendChild(listEl);
+
+            const currentHrid = dto.abilities[slotIndex]?.hrid || '';
+
+            const renderList = (query) => {
+                const lower = query.toLowerCase();
+                const filtered = query ? items.filter((i) => i.name.toLowerCase().includes(lower)) : items;
+
+                let html =
+                    '<div data-pick-hrid="" style="display:flex; align-items:center; gap:8px; padding:4px; cursor:pointer; border-bottom:1px solid #1a1a2e; color:#888; font-style:italic;"' +
+                    ' onmouseover="this.style.background=\'rgba(255,255,255,0.04)\'" onmouseout="this.style.background=\'\'">Empty (clear slot)</div>';
+
+                let lastCategory = '';
+                for (const item of filtered) {
+                    if (item.categoryLabel !== lastCategory) {
+                        lastCategory = item.categoryLabel;
+                        html +=
+                            `<div style="padding:6px 0 2px; font-size:10px; font-weight:700; color:${ACCENT}; border-bottom:1px solid #2a2a4e; margin-top:4px;">` +
+                            item.categoryLabel +
+                            '</div>';
+                    }
+
+                    if (item.conflict) {
+                        html +=
+                            '<div style="display:flex; align-items:center; gap:8px; padding:3px 4px; border-bottom:1px solid #1a1a2e; color:#555; cursor:default;">' +
+                            item.name +
+                            ' <span style="font-size:10px; color:#664;">(in use)</span></div>';
+                    } else {
+                        const isCurrent = item.hrid === currentHrid;
+                        const color = isCurrent ? ACCENT : '#ccc';
+                        const indicator = isCurrent ? ` <span style="color:${ACCENT};">\u25cf</span>` : '';
+                        html +=
+                            `<div data-pick-hrid="${item.hrid}" style="display:flex; align-items:center; gap:8px; padding:3px 4px; cursor:pointer; border-bottom:1px solid #1a1a2e; color:${color};"` +
+                            ' onmouseover="this.style.background=\'rgba(255,255,255,0.04)\'" onmouseout="this.style.background=\'\'">' +
+                            item.name +
+                            indicator +
+                            '</div>';
+                    }
+                }
+                listEl.innerHTML = html;
+
+                listEl.querySelectorAll('[data-pick-hrid]').forEach((row) => {
+                    row.addEventListener('click', () => {
+                        const hrid = row.dataset.pickHrid;
+                        const existingLevel = dto.abilities[slotIndex]?.level || 1;
+                        if (hrid) {
+                            while (dto.abilities.length <= slotIndex) dto.abilities.push(null);
+                            dto.abilities[slotIndex] = { hrid, level: existingLevel, triggers: null };
+                        } else if (slotIndex < dto.abilities.length) {
+                            dto.abilities[slotIndex] = null;
+                        }
+                        closePicker();
+                        this._renderEditor();
+                    });
+                });
+            };
+
+            let searchTimeout;
+            searchInput.addEventListener('input', () => {
+                clearTimeout(searchTimeout);
+                searchTimeout = setTimeout(() => renderList(searchInput.value.trim()), 150);
+            });
+
+            const closePicker = () => {
+                popup.remove();
+                document.getElementById('mwi-csim-ability-backdrop')?.remove();
+            };
+
+            popup.querySelector('#mwi-csim-ability-picker-close').addEventListener('click', closePicker);
+
+            const backdrop = document.createElement('div');
+            backdrop.id = 'mwi-csim-ability-backdrop';
+            backdrop.style.cssText = 'position:fixed; top:0; left:0; right:0; bottom:0; z-index:99999;';
+            backdrop.addEventListener('click', closePicker);
+
+            document.body.appendChild(backdrop);
+            document.body.appendChild(popup);
+            renderList('');
+            searchInput.focus();
+        }
+
         _renderSkillLevelsSection(dto) {
             const skills = [
                 { key: 'staminaLevel', label: 'Stamina' },
@@ -15133,6 +15459,24 @@
                     const [slotType, idx] = btn.dataset.consumableSlot.split('-');
                     const gameData = buildGameDataPayload();
                     if (gameData) this._openConsumablePicker(slotType, parseInt(idx), dto, gameData);
+                });
+            });
+
+            // Equipment change buttons
+            editorArea.querySelectorAll('[data-equipment-slot]').forEach((btn) => {
+                btn.addEventListener('click', () => {
+                    const slotType = btn.dataset.equipmentSlot;
+                    const gameData = buildGameDataPayload();
+                    if (gameData) this._openEquipmentPicker(slotType, dto, gameData);
+                });
+            });
+
+            // Ability change buttons
+            editorArea.querySelectorAll('[data-ability-slot]').forEach((btn) => {
+                btn.addEventListener('click', () => {
+                    const slotIndex = parseInt(btn.dataset.abilitySlot);
+                    const gameData = buildGameDataPayload();
+                    if (gameData) this._openAbilityPicker(slotIndex, dto, gameData);
                 });
             });
 

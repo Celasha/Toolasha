@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.44.1
+ * Version: 2.45.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -651,6 +651,13 @@
                         { value: 'minimal', label: 'Minimal (remaining + time only)' },
                     ],
                     help: 'Choose what information to display in the action bar. Full shows all stats, Compact limits width for wide monitors, Minimal shows only remaining actions and time to complete.',
+                },
+                actionPanel_liveCountdown: {
+                    id: 'actionPanel_liveCountdown',
+                    label: 'Action bar: Live countdown timer',
+                    type: 'checkbox',
+                    default: false,
+                    help: 'Replaces the static time display on the action progress bar with a live countdown in seconds',
                 },
                 actionPanel_totalTime: {
                     id: 'actionPanel_totalTime',
@@ -4284,6 +4291,22 @@
         }
 
         /**
+         * @param {string} actionTypeHrid - Action type HRID (e.g., "/action_types/enhancing")
+         * @param {string} buffTypeHrid - Buff type HRID (e.g., "/buff_types/enhancing_success")
+         * @returns {number} Ratio boost value (decimal) or 0 if not found
+         */
+        getAchievementBuffRatioBoost(actionTypeHrid, buffTypeHrid) {
+            const achievementMap = this.characterData?.achievementActionTypeBuffsMap;
+            if (!achievementMap) return 0;
+
+            const achievementBuffs = achievementMap[actionTypeHrid];
+            if (!Array.isArray(achievementBuffs)) return 0;
+
+            const buff = achievementBuffs.find((entry) => entry?.typeHrid === buffTypeHrid);
+            return buff?.ratioBoost || 0;
+        }
+
+        /**
          * Get personal buff flat boost for an action type and buff type (seal buffs from Labyrinth).
          * When scroll simulation is armed for this action type, returns max(active, simulated).
          * @param {string} actionTypeHrid - Action type HRID (e.g., "/action_types/foraging")
@@ -4778,6 +4801,12 @@
                     category: 'Actions',
                     description: 'Shows total time and completion time for queued actions',
                     settingKey: 'totalActionTime',
+                },
+                actionCountdown: {
+                    enabled: true,
+                    name: 'Action Bar Countdown',
+                    category: 'Actions',
+                    description: 'Live countdown timer on the action progress bar',
                 },
                 quickInputButtons: {
                     enabled: true,

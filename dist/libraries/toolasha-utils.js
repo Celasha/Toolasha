@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 2.44.1
+ * Version: 2.45.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -6948,10 +6948,12 @@ self.onmessage = function (e) {
             dataManager.getAchievementBuffFlatBoost('/action_types/enhancing', '/buff_types/rare_find') * 100;
 
         // Calculate total success rate bonus
-        // Equipment + house + (check for other sources)
+        // Equipment + house + achievement
         const houseSuccessBonus = houseLevel * 0.05; // 0.05% per level for success
         const equipmentSuccessBonus = gear.toolBonus;
-        const totalSuccessBonus = equipmentSuccessBonus + houseSuccessBonus;
+        const achievementSuccessBonus =
+            dataManager.getAchievementBuffRatioBoost('/action_types/enhancing', '/buff_types/enhancing_success') * 100;
+        const totalSuccessBonus = equipmentSuccessBonus + houseSuccessBonus + achievementSuccessBonus;
 
         // Calculate total speed bonus
         // Speed bonus (from equipment) + house bonus (1% per level) + community buff + tea speed
@@ -6998,6 +7000,7 @@ self.onmessage = function (e) {
             equipmentExperience: gear.experienceBonus, // For display
             equipmentSuccessBonus: equipmentSuccessBonus, // For display
             houseSuccessBonus: houseSuccessBonus, // For display
+            achievementSuccessBonus: achievementSuccessBonus, // For display
             equipmentSpeedBonus: gear.speedBonus, // For display
             houseSpeedBonus: houseSpeedBonus, // For display
         };
@@ -7023,10 +7026,11 @@ self.onmessage = function (e) {
         result.enhanceSim_houseLevel = dataManager.getHouseRoomLevel('/house_rooms/observatory');
 
         // Community buff
-        result.enhanceSim_communityBuff = dataManager.getCommunityBuffLevel('/community_buff_types/enhancing_speed');
+        const communityLevel = dataManager.getCommunityBuffLevel('/community_buff_types/enhancing_speed');
+        result.enhanceSim_communityBuff = { enabled: true, level: communityLevel };
 
         // Achievement
-        const achievementBonus = dataManager.getAchievementBuffFlatBoost(
+        const achievementBonus = dataManager.getAchievementBuffRatioBoost(
             '/action_types/enhancing',
             '/buff_types/enhancing_success'
         );
@@ -7279,6 +7283,7 @@ self.onmessage = function (e) {
             houseSpeedBonus: houseSpeedBonus,
             equipmentSuccessBonus: equipmentSuccessBonus,
             houseSuccessBonus: houseSuccessBonus,
+            achievementSuccessBonus: achievementSuccessBonus,
         };
     }
 
