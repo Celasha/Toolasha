@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.45.1
+ * Version: 2.46.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -17137,6 +17137,540 @@ ${hideRules}
     const ironCowMode = new IronCowMode();
 
     /**
+     * Performance Monitor
+     * Tracks execution time of features and DOM observer handlers
+     * using a rolling window for CPU percentage calculations.
+     */
+
+    const WINDOW_MS = 5000;
+
+    class PerformanceMonitor {
+        constructor() {
+            this.measurements = new Map();
+            this.snapshots = new Map();
+            this.windowMs = WINDOW_MS;
+            this.enabled = false;
+            this._onVisibilityChange = () => {
+                this._tabVisible = !document.hidden;
+            };
+            this._tabVisible = true;
+            if (typeof document !== 'undefined') {
+                document.addEventListener('visibilitychange', this._onVisibilityChange);
+            }
+        }
+
+        /**
+         * Record a timing measurement
+         * @param {string} name - Metric name (e.g. "dom:MarketFilter", "init:tooltipPrices")
+         * @param {number} durationMs - Duration in milliseconds
+         */
+        record(name, durationMs) {
+            if (!this.enabled || !this._tabVisible) return;
+            if (!this.measurements.has(name)) {
+                this.measurements.set(name, []);
+            }
+            this.measurements.get(name).push({ time: Date.now(), duration: durationMs });
+        }
+
+        /**
+         * Store a one-time snapshot measurement that persists beyond the rolling window
+         * @param {string} name - Metric name
+         * @param {number} durationMs - Duration in milliseconds
+         */
+        snapshot(name, durationMs) {
+            this.snapshots.set(name, { duration: durationMs, time: Date.now() });
+        }
+
+        /**
+         * Wrap a function with automatic timing
+         * @param {string} name - Metric name
+         * @param {Function} fn - Function to wrap
+         * @returns {Function} Wrapped function
+         */
+        wrap(name, fn) {
+            const monitor = this;
+            return function (...args) {
+                if (!monitor.enabled || !monitor._tabVisible) return fn.apply(this, args);
+                const start = performance.now();
+                try {
+                    const result = fn.apply(this, args);
+                    if (result && typeof result.then === 'function') {
+                        return result.finally(() => monitor.record(name, performance.now() - start));
+                    }
+                    monitor.record(name, performance.now() - start);
+                    return result;
+                } catch (error) {
+                    monitor.record(name, performance.now() - start);
+                    throw error;
+                }
+            };
+        }
+
+        /**
+         * Get stats for a single metric within the rolling window
+         * @param {string} name - Metric name
+         * @returns {{ calls: number, totalMs: number, avgMs: number, cpuPercent: number } | null}
+         */
+        getStats(name) {
+            const entries = this.measurements.get(name);
+            if (!entries || entries.length === 0) return null;
+
+            const cutoff = Date.now() - this.windowMs;
+            let calls = 0;
+            let totalMs = 0;
+
+            for (let i = entries.length - 1; i >= 0; i--) {
+                if (entries[i].time < cutoff) break;
+                calls++;
+                totalMs += entries[i].duration;
+            }
+
+            if (calls === 0) return null;
+
+            return {
+                calls,
+                totalMs,
+                avgMs: totalMs / calls,
+                cpuPercent: Math.min((totalMs / this.windowMs) * 100, 100),
+            };
+        }
+
+        /**
+         * Get stats for all metrics, cleaning up stale data
+         * @returns {Map<string, { calls: number, totalMs: number, avgMs: number, cpuPercent: number }>}
+         */
+        getAllStats() {
+            this._cleanup();
+            const result = new Map();
+
+            for (const [name, entries] of this.measurements) {
+                if (entries.length === 0) continue;
+                const stats = this.getStats(name);
+                if (stats) {
+                    result.set(name, stats);
+                }
+            }
+
+            return result;
+        }
+
+        /**
+         * Remove measurements older than the rolling window
+         * @private
+         */
+        _cleanup() {
+            const cutoff = Date.now() - this.windowMs;
+            for (const [name, entries] of this.measurements) {
+                let firstValid = 0;
+                while (firstValid < entries.length && entries[firstValid].time < cutoff) {
+                    firstValid++;
+                }
+                if (firstValid > 0) {
+                    entries.splice(0, firstValid);
+                }
+                if (entries.length === 0) {
+                    this.measurements.delete(name);
+                }
+            }
+        }
+
+        /**
+         * Get all snapshot measurements
+         * @returns {Map<string, { duration: number, time: number }>}
+         */
+        getSnapshots() {
+            return new Map(this.snapshots);
+        }
+
+        /**
+         * Clear all measurements
+         */
+        reset() {
+            this.measurements.clear();
+            this.snapshots.clear();
+        }
+    }
+
+    const performanceMonitor = new PerformanceMonitor();
+
+    /**
+     * PFormance Panel
+     * Floating panel displaying CPU performance metrics for Toolasha features
+     * and DOM observer handlers.
+     */
+
+
+    const COLORS = {
+        background: 'rgba(5, 5, 15, 0.95)',
+        headerBg: 'rgba(15, 5, 35, 0.7)',
+        border: 'rgba(0, 255, 234, 0.4)',
+        borderDim: 'rgba(0, 255, 234, 0.2)',
+        text: '#e0f7ff',
+        textDim: 'rgba(224, 247, 255, 0.6)',
+        accent: '#00ffe7',
+        danger: '#ff0055',
+        warning: '#ffaa00',
+        success: '#00ff99',
+    };
+
+    class PFormancePanel {
+        constructor() {
+            this.panel = null;
+            this.timerRegistry = timerRegistry_js.createTimerRegistry();
+            this.updateIntervalId = null;
+            this.isDragging = false;
+            this.isCollapsed = false;
+            this.featureSectionCollapsed = false;
+            this.domSectionCollapsed = false;
+        }
+
+        initialize() {
+            // No-op — panel is created on-demand via show()
+        }
+
+        show() {
+            if (this.panel && document.body.contains(this.panel)) {
+                bringPanelToFront(this.panel);
+                return;
+            }
+            performanceMonitor.enabled = true;
+            this._createPanel();
+            this._startUpdating();
+        }
+
+        disable() {
+            this._removePanel();
+        }
+
+        _createPanel() {
+            this.panel = document.createElement('div');
+            this.panel.id = 'toolasha-pformance-panel';
+            Object.assign(this.panel.style, {
+                position: 'fixed',
+                top: '80px',
+                right: '80px',
+                zIndex: String(config.Z_FLOATING_PANEL),
+                width: '380px',
+                background: COLORS.background,
+                border: `1px solid ${COLORS.border}`,
+                borderRadius: '8px',
+                boxShadow: '0 8px 32px rgba(0, 0, 0, 0.6)',
+                backdropFilter: 'blur(12px)',
+                color: COLORS.text,
+                fontSize: '13px',
+                display: 'flex',
+                flexDirection: 'column',
+                overflow: 'hidden',
+            });
+
+            this.panel.appendChild(this._createHeader());
+
+            this.contentEl = document.createElement('div');
+            this.contentEl.style.padding = '10px';
+            this.contentEl.style.overflow = 'auto';
+            this.contentEl.style.maxHeight = '500px';
+            this.panel.appendChild(this.contentEl);
+
+            this._makeDraggable();
+
+            document.body.appendChild(this.panel);
+            registerFloatingPanel(this.panel);
+            this._updateContent();
+        }
+
+        _createHeader() {
+            const header = document.createElement('div');
+            header.className = 'pformance-header';
+            Object.assign(header.style, {
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                cursor: 'move',
+                padding: '8px 12px',
+                background: COLORS.headerBg,
+                borderBottom: `1px solid ${COLORS.border}`,
+                userSelect: 'none',
+            });
+            this.headerEl = header;
+
+            const title = document.createElement('span');
+            title.textContent = 'PFormance';
+            title.style.fontWeight = 'bold';
+            title.style.color = COLORS.accent;
+
+            const buttons = document.createElement('div');
+            buttons.style.display = 'flex';
+            buttons.style.gap = '4px';
+
+            const collapseBtn = this._headerButton(this.isCollapsed ? '▶' : '▼', () => {
+                this.isCollapsed = !this.isCollapsed;
+                collapseBtn.textContent = this.isCollapsed ? '▶' : '▼';
+                this.contentEl.style.display = this.isCollapsed ? 'none' : '';
+            });
+
+            const closeBtn = this._headerButton('✕', () => this._removePanel());
+            closeBtn.title = 'Close';
+
+            buttons.appendChild(collapseBtn);
+            buttons.appendChild(closeBtn);
+
+            header.appendChild(title);
+            header.appendChild(buttons);
+            return header;
+        }
+
+        _headerButton(text, onClick) {
+            const btn = document.createElement('button');
+            btn.textContent = text;
+            Object.assign(btn.style, {
+                background: 'none',
+                border: 'none',
+                color: COLORS.text,
+                cursor: 'pointer',
+                fontSize: '14px',
+                padding: '2px 6px',
+                borderRadius: '3px',
+            });
+            btn.addEventListener('mouseover', () => {
+                btn.style.background = 'rgba(0, 255, 234, 0.15)';
+            });
+            btn.addEventListener('mouseout', () => {
+                btn.style.background = 'none';
+            });
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                onClick();
+            });
+            return btn;
+        }
+
+        _makeDraggable() {
+            let offsetX = 0;
+            let offsetY = 0;
+
+            const onMouseMove = (e) => {
+                if (!this.isDragging) return;
+                this.panel.style.left = `${e.clientX - offsetX}px`;
+                this.panel.style.right = 'auto';
+                this.panel.style.top = `${e.clientY - offsetY}px`;
+            };
+
+            const onMouseUp = () => {
+                this.isDragging = false;
+                document.removeEventListener('mousemove', onMouseMove);
+                document.removeEventListener('mouseup', onMouseUp);
+            };
+
+            this.headerEl.addEventListener('mousedown', (e) => {
+                bringPanelToFront(this.panel);
+                this.isDragging = true;
+                const rect = this.panel.getBoundingClientRect();
+                offsetX = e.clientX - rect.left;
+                offsetY = e.clientY - rect.top;
+                document.addEventListener('mousemove', onMouseMove);
+                document.addEventListener('mouseup', onMouseUp);
+            });
+        }
+
+        _startUpdating() {
+            if (this.updateIntervalId) return;
+            this.updateIntervalId = setInterval(() => this._updateContent(), 1000);
+            this.timerRegistry.registerInterval(this.updateIntervalId);
+        }
+
+        _stopUpdating() {
+            if (this.updateIntervalId) {
+                clearInterval(this.updateIntervalId);
+                this.updateIntervalId = null;
+            }
+        }
+
+        _removePanel() {
+            this._stopUpdating();
+            performanceMonitor.enabled = false;
+            if (this.panel) {
+                unregisterFloatingPanel(this.panel);
+                this.panel.remove();
+                this.panel = null;
+                this.contentEl = null;
+                this.headerEl = null;
+            }
+        }
+
+        _updateContent() {
+            if (!this.contentEl) return;
+            const allStats = performanceMonitor.getAllStats();
+            const snapshots = performanceMonitor.getSnapshots();
+
+            const initEntries = [];
+            const domEntries = [];
+
+            for (const [name, snap] of snapshots) {
+                if (name.startsWith('init:')) {
+                    initEntries.push({ name: name.slice(5), totalMs: snap.duration });
+                }
+            }
+
+            for (const [name, stats] of allStats) {
+                if (name.startsWith('dom:')) {
+                    domEntries.push({ name: name.slice(4), ...stats });
+                }
+            }
+
+            initEntries.sort((a, b) => b.totalMs - a.totalMs);
+            domEntries.sort((a, b) => b.cpuPercent - a.cpuPercent);
+
+            this.contentEl.innerHTML = '';
+            this.contentEl.appendChild(
+                this._createSection('Feature Init', initEntries, this.featureSectionCollapsed, (v) => {
+                    this.featureSectionCollapsed = v;
+                })
+            );
+            this.contentEl.appendChild(
+                this._createSection('DOM Observers', domEntries, this.domSectionCollapsed, (v) => {
+                    this.domSectionCollapsed = v;
+                })
+            );
+        }
+
+        _createSection(title, entries, collapsed, setCollapsed) {
+            const section = document.createElement('div');
+            section.style.marginBottom = '8px';
+
+            const header = document.createElement('div');
+            Object.assign(header.style, {
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                cursor: 'pointer',
+                padding: '4px 6px',
+                background: COLORS.headerBg,
+                borderRadius: '4px',
+                marginBottom: collapsed ? '0' : '4px',
+                userSelect: 'none',
+            });
+
+            const label = document.createElement('span');
+            label.textContent = `${collapsed ? '▶' : '▼'} ${title}`;
+            label.style.fontWeight = 'bold';
+            label.style.fontSize = '12px';
+            label.style.color = COLORS.accent;
+
+            const count = document.createElement('span');
+            count.textContent = `${entries.length}`;
+            count.style.fontSize = '11px';
+            count.style.color = COLORS.textDim;
+
+            header.appendChild(label);
+            header.appendChild(count);
+            header.addEventListener('click', () => {
+                setCollapsed(!collapsed);
+                this._updateContent();
+            });
+
+            section.appendChild(header);
+
+            if (collapsed) return section;
+
+            if (entries.length === 0) {
+                const empty = document.createElement('div');
+                empty.textContent = 'No data';
+                empty.style.padding = '4px 6px';
+                empty.style.color = COLORS.textDim;
+                empty.style.fontSize = '11px';
+                section.appendChild(empty);
+                return section;
+            }
+
+            const table = document.createElement('table');
+            Object.assign(table.style, {
+                width: '100%',
+                borderCollapse: 'collapse',
+                fontSize: '11px',
+            });
+
+            const thead = document.createElement('thead');
+            const headRow = document.createElement('tr');
+            const columns = title === 'Feature Init' ? ['Name', 'Time (ms)'] : ['Name', 'Calls/s', 'Total ms', 'CPU %'];
+
+            for (const col of columns) {
+                const th = document.createElement('th');
+                th.textContent = col;
+                Object.assign(th.style, {
+                    padding: '3px 5px',
+                    textAlign: col === 'Name' ? 'left' : 'right',
+                    borderBottom: `1px solid ${COLORS.borderDim}`,
+                    color: COLORS.textDim,
+                    fontWeight: 'normal',
+                });
+                headRow.appendChild(th);
+            }
+            thead.appendChild(headRow);
+            table.appendChild(thead);
+
+            const tbody = document.createElement('tbody');
+            for (const entry of entries) {
+                const row = document.createElement('tr');
+
+                if (title === 'Feature Init') {
+                    row.appendChild(this._cell(entry.name, 'left'));
+                    row.appendChild(this._cell(entry.totalMs.toFixed(1), 'right'));
+                } else {
+                    const callsPerSec = (entry.calls / (performanceMonitor.windowMs / 1000)).toFixed(1);
+                    row.appendChild(this._cell(entry.name, 'left'));
+                    row.appendChild(this._cell(callsPerSec, 'right'));
+                    row.appendChild(this._cell(entry.totalMs.toFixed(1), 'right'));
+                    row.appendChild(this._cpuCell(entry.cpuPercent));
+                }
+
+                tbody.appendChild(row);
+            }
+            table.appendChild(tbody);
+            section.appendChild(table);
+
+            return section;
+        }
+
+        _cell(text, align) {
+            const td = document.createElement('td');
+            td.textContent = text;
+            Object.assign(td.style, {
+                padding: '2px 5px',
+                textAlign: align,
+                borderBottom: `1px solid ${COLORS.borderDim}`,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                maxWidth: align === 'left' ? '160px' : 'auto',
+            });
+            return td;
+        }
+
+        _cpuCell(percent) {
+            const td = document.createElement('td');
+            td.textContent = percent.toFixed(2) + '%';
+            Object.assign(td.style, {
+                padding: '2px 5px',
+                textAlign: 'right',
+                borderBottom: `1px solid ${COLORS.borderDim}`,
+                fontWeight: 'bold',
+            });
+
+            if (percent > 5) {
+                td.style.color = COLORS.danger;
+            } else if (percent > 1) {
+                td.style.color = COLORS.warning;
+            } else {
+                td.style.color = COLORS.success;
+            }
+
+            return td;
+        }
+    }
+
+    const pformancePanel = new PFormancePanel();
+
+    /**
      * Custom Price Overrides
      * Manages user-defined buy/sell price overrides for profit calculations.
      * Overrides are stored in IndexedDB and cached in memory.
@@ -18135,6 +18669,12 @@ ${hideRules}
             buttonsDiv.appendChild(resetBtn);
             buttonsDiv.appendChild(exportBtn);
             buttonsDiv.appendChild(importBtn);
+
+            const pformanceBtn = document.createElement('button');
+            pformanceBtn.textContent = 'PFormance';
+            pformanceBtn.className = 'toolasha-utility-button';
+            pformanceBtn.addEventListener('click', () => pformancePanel.show());
+            buttonsDiv.appendChild(pformanceBtn);
 
             container.appendChild(buttonsDiv);
         }
@@ -31126,6 +31666,7 @@ ${hideRules}
         guildXPDisplay: guildXPDisplay$1,
         emptyQueueNotification,
         queueMonitor,
+        pformancePanel,
     };
 
     console.log('[Toolasha] UI library loaded');

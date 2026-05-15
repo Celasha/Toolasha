@@ -1,11 +1,11 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.45.1
+ * Version: 2.46.0
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (config, dataManager, domObserver, storage, webSocketHook, timerRegistry_js, domObserverHelpers_js, marketAPI, formatters_js, reactInput_js, expectedValueCalculator, profitHelpers_js, marketData_js, enhancementCalculator_js, enhancementConfig_js, teaParser_js, dom, abilityCostCalculator_js, houseCostCalculator_js) {
+(function (config, dataManager, domObserver, storage, webSocketHook, timerRegistry_js, domObserverHelpers_js, marketAPI, formatters_js, reactInput_js, expectedValueCalculator, profitHelpers_js, marketData_js, enhancementCalculator_js, enhancementConfig_js, teaParser_js, abilityCostCalculator_js, dom, houseCostCalculator_js) {
     'use strict';
 
     /**
@@ -12356,10 +12356,17 @@
      * @param {Object} playerDTO - Player DTO with equipment
      * @param {Object} gameData - Game data from buildGameDataPayload()
      * @param {string} [mode='equipment'] - 'equipment' or 'abilities'
-     * @param {number} [abilityTargetLevel=0] - Target level for ability upgrades (0 = use default breakpoints)
+     * @param {number} [abilityTargetLevel=0] - Target level or increment for ability upgrades
+     * @param {string} [abilityLevelType='increment'] - 'increment' (add N levels) or 'target' (absolute level)
      * @returns {Array} Candidates: [{slot, currentHrid, currentLevel, upgradeHrid, upgradeLevel, description, type}]
      */
-    function generateCandidates(playerDTO, gameData, mode = 'equipment', abilityTargetLevel = 0) {
+    function generateCandidates(
+        playerDTO,
+        gameData,
+        mode = 'equipment',
+        abilityTargetLevel = 0,
+        abilityLevelType = 'increment'
+    ) {
         const candidates = [];
 
         if (mode === 'equipment') {
@@ -12456,9 +12463,18 @@
 
                 if (mode === 'ability_level') {
                     // Level upgrade candidate
-                    const targetLevel =
-                        abilityTargetLevel > ability.level ? abilityTargetLevel : getNextAbilityBreakpoint(ability.level);
-                    if (targetLevel && targetLevel <= 200) {
+                    let targetLevel;
+                    if (abilityLevelType === 'target') {
+                        targetLevel =
+                            abilityTargetLevel > ability.level
+                                ? abilityTargetLevel
+                                : getNextAbilityBreakpoint(ability.level);
+                    } else {
+                        const increment = abilityTargetLevel > 0 ? abilityTargetLevel : 5;
+                        targetLevel = ability.level + increment;
+                    }
+                    targetLevel = Math.min(targetLevel, 200);
+                    if (targetLevel > ability.level) {
                         candidates.push({
                             slot: `ability_${slotIdx}`,
                             currentHrid: ability.hrid,
@@ -12508,17 +12524,18 @@
      */
     function calculateUpgradeCost(candidate, gameData) {
         if (candidate.type === 'ability_level') {
-            // Cost = (targetLevel - currentLevel) * book market price
-            const bookHrid = candidate.currentHrid.replace('/abilities/', '/items/');
-            const bookPrice = marketData_js.getItemPrice(bookHrid, { mode: 'ask', context: 'profit', side: 'buy' }) || 0;
-            return bookPrice * (candidate.upgradeLevel - candidate.currentLevel);
+            const levelXpTable = gameData.levelExperienceTable || [];
+            const currentXp = levelXpTable[candidate.currentLevel] || 0;
+            return abilityCostCalculator_js.calculateAbilityLevelUpCost(
+                candidate.currentHrid,
+                candidate.currentLevel,
+                currentXp,
+                candidate.upgradeLevel
+            );
         }
 
         if (candidate.type === 'ability_swap') {
-            // Cost = targetLevel * book price for new ability (books are consumed, not recoverable)
-            const bookHrid = candidate.upgradeHrid.replace('/abilities/', '/items/');
-            const bookPrice = marketData_js.getItemPrice(bookHrid, { mode: 'ask', context: 'profit', side: 'buy' }) || 0;
-            return bookPrice * candidate.upgradeLevel;
+            return abilityCostCalculator_js.calculateAbilityLevelUpCost(candidate.upgradeHrid, 0, 0, candidate.upgradeLevel);
         }
 
         if (candidate.type === 'enhancement') {
@@ -12570,6 +12587,7 @@
             hours,
             communityBuffs,
             upgradeMode,
+            abilityLevelType,
             abilityTargetLevel,
         } = params;
         const { abortSignal } = options;
@@ -12580,7 +12598,7 @@
         const playerHrid = playerDTO.hrid;
 
         // Generate candidates and compute costs
-        const candidates = generateCandidates(playerDTO, gameData, upgradeMode, abilityTargetLevel);
+        const candidates = generateCandidates(playerDTO, gameData, upgradeMode, abilityTargetLevel, abilityLevelType);
         const candidatesWithCost = candidates.map((c) => ({
             ...c,
             cost: calculateUpgradeCost(c, gameData),
@@ -12750,6 +12768,7 @@
             hours,
             communityBuffs,
             upgradeMode,
+            abilityLevelType,
             abilityTargetLevel,
         } = params;
         const { abortSignal } = options;
@@ -12763,7 +12782,7 @@
             Object.keys(gameData.actionDetailMap).find((k) => k.includes('/actions/combat/')) || '/actions/combat/fly';
 
         // Generate candidates and compute costs
-        const candidates = generateCandidates(playerDTO, gameData, upgradeMode, abilityTargetLevel);
+        const candidates = generateCandidates(playerDTO, gameData, upgradeMode, abilityTargetLevel, abilityLevelType);
         const candidatesWithCost = candidates.map((c) => ({
             ...c,
             cost: calculateUpgradeCost(c, gameData),
@@ -13267,11 +13286,16 @@
                 <option value="labyrinth">Labyrinth Win Rate</option>
             </select>
             <span id="mwi-csim-upgrade-level-group" style="display:none; align-items:center; gap:4px;">
-                <label style="color:#888; font-size:12px;">Target Lv</label>
-                <input id="mwi-csim-upgrade-target-level" type="number" min="1" max="200" placeholder="Next 10" style="
-                    width:75px; background:#1a1a2e; color:#e0e0e0; border:1px solid #444;
+                <select id="mwi-csim-upgrade-level-type" style="
+                    background:#1a1a2e; color:#e0e0e0; border:1px solid #444;
+                    border-radius:3px; padding:3px 5px; font-size:12px;">
+                    <option value="increment">+Levels</option>
+                    <option value="target">Target Lv</option>
+                </select>
+                <input id="mwi-csim-upgrade-target-level" type="number" min="1" max="200" value="5" placeholder="+5" style="
+                    width:55px; background:#1a1a2e; color:#e0e0e0; border:1px solid #444;
                     border-radius:3px; padding:3px 5px; font-size:12px; text-align:center;"
-                    title="Leave blank to upgrade each ability to its next multiple of 10">
+                    title="Number of levels to add to each ability">
             </span>
             <button id="mwi-csim-upgrade-run" style="
                 background: ${ACCENT_BTN_BG};
@@ -13484,6 +13508,23 @@
                 if (e.target.value === 'labyrinth') {
                     this._setStatus('Uses monster/level/crates from Labyrinth tab. Click Analyze.');
                 }
+            });
+            this.panel.querySelector('#mwi-csim-upgrade-level-type').addEventListener('change', (e) => {
+                const input = this.panel.querySelector('#mwi-csim-upgrade-target-level');
+                if (e.target.value === 'increment') {
+                    input.value = '5';
+                    input.placeholder = '+5';
+                    input.title = 'Number of levels to add to each ability';
+                } else {
+                    input.value = '';
+                    input.placeholder = 'e.g. 80';
+                    input.title = 'Absolute target level for all abilities';
+                }
+            });
+            this.panel.querySelector('#mwi-csim-upgrade-target-level').addEventListener('change', (e) => {
+                const val = parseInt(e.target.value);
+                if (val > 200) e.target.value = 200;
+                if (val < 1 && e.target.value !== '') e.target.value = 1;
             });
 
             // Zone change → update tier dropdown
@@ -17211,13 +17252,17 @@
         }
 
         /**
-         * Set default ability target level input to blank (per-ability breakpoint mode).
+         * Set default ability target level input to increment mode with value 5.
          * @private
          */
         _setDefaultAbilityTargetLevel() {
+            const typeSelect = this.panel.querySelector('#mwi-csim-upgrade-level-type');
             const input = this.panel.querySelector('#mwi-csim-upgrade-target-level');
             if (!input) return;
-            input.value = '';
+            if (typeSelect) typeSelect.value = 'increment';
+            input.value = '5';
+            input.placeholder = '+5';
+            input.title = 'Number of levels to add to each ability';
         }
 
         /**
@@ -17237,7 +17282,11 @@
             );
             const playerIndex = parseInt(this.panel.querySelector('#mwi-csim-upgrade-player')?.value) || 0;
             const upgradeMode = this.panel.querySelector('#mwi-csim-upgrade-mode')?.value || 'equipment';
-            const abilityTargetLevel = parseInt(this.panel.querySelector('#mwi-csim-upgrade-target-level')?.value) || 0;
+            const abilityLevelType = this.panel.querySelector('#mwi-csim-upgrade-level-type')?.value || 'increment';
+            const abilityTargetLevel = Math.min(
+                200,
+                parseInt(this.panel.querySelector('#mwi-csim-upgrade-target-level')?.value) || 0
+            );
 
             // Labyrinth mode uses labyrinth tab inputs
             if (upgradeMode === 'labyrinth') {
@@ -17292,6 +17341,7 @@
                         hours,
                         communityBuffs,
                         upgradeMode,
+                        abilityLevelType,
                         abilityTargetLevel,
                     },
                     ({ current, total, description }) => {
@@ -24018,4 +24068,4 @@ self.onmessage = function (e) {
 
     console.log('[Toolasha] Combat library loaded');
 
-})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.storage, Toolasha.Core.webSocketHook, Toolasha.Utils.timerRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Core.marketAPI, Toolasha.Utils.formatters, Toolasha.Utils.reactInput, Toolasha.Market.expectedValueCalculator, Toolasha.Utils.profitHelpers, Toolasha.Utils.marketData, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.enhancementConfig, Toolasha.Utils.teaParser, Toolasha.Utils.dom, Toolasha.Utils.abilityCalc, Toolasha.Utils.houseCostCalculator);
+})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.storage, Toolasha.Core.webSocketHook, Toolasha.Utils.timerRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Core.marketAPI, Toolasha.Utils.formatters, Toolasha.Utils.reactInput, Toolasha.Market.expectedValueCalculator, Toolasha.Utils.profitHelpers, Toolasha.Utils.marketData, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.enhancementConfig, Toolasha.Utils.teaParser, Toolasha.Utils.abilityCalc, Toolasha.Utils.dom, Toolasha.Utils.houseCostCalculator);
