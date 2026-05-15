@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.45.0
+ * Version: 2.45.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -17487,6 +17487,11 @@ ${hideRules}
 
                 // Apply disabled state now that elements are in the document
                 this.applyDisabledByState();
+
+                // Populate auto-detected values if auto-detect is already on
+                if (config.getSettingValue('enhanceSim_autoDetect', false)) {
+                    this.populateEnhanceSimFromDetection();
+                }
 
                 // Store reference
                 this.settingsPanel = tabPanel;
