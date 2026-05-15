@@ -434,11 +434,16 @@ class CombatSimUI {
                 <option value="labyrinth">Labyrinth Win Rate</option>
             </select>
             <span id="mwi-csim-upgrade-level-group" style="display:none; align-items:center; gap:4px;">
-                <label style="color:#888; font-size:12px;">Target Lv</label>
-                <input id="mwi-csim-upgrade-target-level" type="number" min="1" max="200" placeholder="Next 10" style="
-                    width:75px; background:#1a1a2e; color:#e0e0e0; border:1px solid #444;
+                <select id="mwi-csim-upgrade-level-type" style="
+                    background:#1a1a2e; color:#e0e0e0; border:1px solid #444;
+                    border-radius:3px; padding:3px 5px; font-size:12px;">
+                    <option value="increment">+Levels</option>
+                    <option value="target">Target Lv</option>
+                </select>
+                <input id="mwi-csim-upgrade-target-level" type="number" min="1" max="200" value="5" placeholder="+5" style="
+                    width:55px; background:#1a1a2e; color:#e0e0e0; border:1px solid #444;
                     border-radius:3px; padding:3px 5px; font-size:12px; text-align:center;"
-                    title="Leave blank to upgrade each ability to its next multiple of 10">
+                    title="Number of levels to add to each ability">
             </span>
             <button id="mwi-csim-upgrade-run" style="
                 background: ${ACCENT_BTN_BG};
@@ -651,6 +656,23 @@ class CombatSimUI {
             if (e.target.value === 'labyrinth') {
                 this._setStatus('Uses monster/level/crates from Labyrinth tab. Click Analyze.');
             }
+        });
+        this.panel.querySelector('#mwi-csim-upgrade-level-type').addEventListener('change', (e) => {
+            const input = this.panel.querySelector('#mwi-csim-upgrade-target-level');
+            if (e.target.value === 'increment') {
+                input.value = '5';
+                input.placeholder = '+5';
+                input.title = 'Number of levels to add to each ability';
+            } else {
+                input.value = '';
+                input.placeholder = 'e.g. 80';
+                input.title = 'Absolute target level for all abilities';
+            }
+        });
+        this.panel.querySelector('#mwi-csim-upgrade-target-level').addEventListener('change', (e) => {
+            const val = parseInt(e.target.value);
+            if (val > 200) e.target.value = 200;
+            if (val < 1 && e.target.value !== '') e.target.value = 1;
         });
 
         // Zone change → update tier dropdown
@@ -4378,13 +4400,17 @@ class CombatSimUI {
     }
 
     /**
-     * Set default ability target level input to blank (per-ability breakpoint mode).
+     * Set default ability target level input to increment mode with value 5.
      * @private
      */
     _setDefaultAbilityTargetLevel() {
+        const typeSelect = this.panel.querySelector('#mwi-csim-upgrade-level-type');
         const input = this.panel.querySelector('#mwi-csim-upgrade-target-level');
         if (!input) return;
-        input.value = '';
+        if (typeSelect) typeSelect.value = 'increment';
+        input.value = '5';
+        input.placeholder = '+5';
+        input.title = 'Number of levels to add to each ability';
     }
 
     /**
@@ -4404,7 +4430,11 @@ class CombatSimUI {
         );
         const playerIndex = parseInt(this.panel.querySelector('#mwi-csim-upgrade-player')?.value) || 0;
         const upgradeMode = this.panel.querySelector('#mwi-csim-upgrade-mode')?.value || 'equipment';
-        const abilityTargetLevel = parseInt(this.panel.querySelector('#mwi-csim-upgrade-target-level')?.value) || 0;
+        const abilityLevelType = this.panel.querySelector('#mwi-csim-upgrade-level-type')?.value || 'increment';
+        const abilityTargetLevel = Math.min(
+            200,
+            parseInt(this.panel.querySelector('#mwi-csim-upgrade-target-level')?.value) || 0
+        );
 
         // Labyrinth mode uses labyrinth tab inputs
         if (upgradeMode === 'labyrinth') {
@@ -4459,6 +4489,7 @@ class CombatSimUI {
                     hours,
                     communityBuffs,
                     upgradeMode,
+                    abilityLevelType,
                     abilityTargetLevel,
                 },
                 ({ current, total, description }) => {

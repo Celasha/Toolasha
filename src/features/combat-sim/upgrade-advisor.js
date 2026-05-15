@@ -480,10 +480,17 @@ function buildUpgradeMap(gameData) {
  * @param {Object} playerDTO - Player DTO with equipment
  * @param {Object} gameData - Game data from buildGameDataPayload()
  * @param {string} [mode='equipment'] - 'equipment' or 'abilities'
- * @param {number} [abilityTargetLevel=0] - Target level for ability upgrades (0 = use default breakpoints)
+ * @param {number} [abilityTargetLevel=0] - Target level or increment for ability upgrades
+ * @param {string} [abilityLevelType='increment'] - 'increment' (add N levels) or 'target' (absolute level)
  * @returns {Array} Candidates: [{slot, currentHrid, currentLevel, upgradeHrid, upgradeLevel, description, type}]
  */
-export function generateCandidates(playerDTO, gameData, mode = 'equipment', abilityTargetLevel = 0) {
+export function generateCandidates(
+    playerDTO,
+    gameData,
+    mode = 'equipment',
+    abilityTargetLevel = 0,
+    abilityLevelType = 'increment'
+) {
     const candidates = [];
 
     if (mode === 'equipment') {
@@ -580,9 +587,18 @@ export function generateCandidates(playerDTO, gameData, mode = 'equipment', abil
 
             if (mode === 'ability_level') {
                 // Level upgrade candidate
-                const targetLevel =
-                    abilityTargetLevel > ability.level ? abilityTargetLevel : getNextAbilityBreakpoint(ability.level);
-                if (targetLevel && targetLevel <= 200) {
+                let targetLevel;
+                if (abilityLevelType === 'target') {
+                    targetLevel =
+                        abilityTargetLevel > ability.level
+                            ? abilityTargetLevel
+                            : getNextAbilityBreakpoint(ability.level);
+                } else {
+                    const increment = abilityTargetLevel > 0 ? abilityTargetLevel : 5;
+                    targetLevel = ability.level + increment;
+                }
+                targetLevel = Math.min(targetLevel, 200);
+                if (targetLevel > ability.level) {
                     candidates.push({
                         slot: `ability_${slotIdx}`,
                         currentHrid: ability.hrid,
@@ -695,6 +711,7 @@ export async function runUpgradeAnalysis(params, onProgress, options = {}) {
         hours,
         communityBuffs,
         upgradeMode,
+        abilityLevelType,
         abilityTargetLevel,
     } = params;
     const { abortSignal } = options;
@@ -705,7 +722,7 @@ export async function runUpgradeAnalysis(params, onProgress, options = {}) {
     const playerHrid = playerDTO.hrid;
 
     // Generate candidates and compute costs
-    const candidates = generateCandidates(playerDTO, gameData, upgradeMode, abilityTargetLevel);
+    const candidates = generateCandidates(playerDTO, gameData, upgradeMode, abilityTargetLevel, abilityLevelType);
     const candidatesWithCost = candidates.map((c) => ({
         ...c,
         cost: calculateUpgradeCost(c, gameData),
@@ -875,6 +892,7 @@ export async function runLabyrinthUpgradeAnalysis(params, onProgress, options = 
         hours,
         communityBuffs,
         upgradeMode,
+        abilityLevelType,
         abilityTargetLevel,
     } = params;
     const { abortSignal } = options;
@@ -888,7 +906,7 @@ export async function runLabyrinthUpgradeAnalysis(params, onProgress, options = 
         Object.keys(gameData.actionDetailMap).find((k) => k.includes('/actions/combat/')) || '/actions/combat/fly';
 
     // Generate candidates and compute costs
-    const candidates = generateCandidates(playerDTO, gameData, upgradeMode, abilityTargetLevel);
+    const candidates = generateCandidates(playerDTO, gameData, upgradeMode, abilityTargetLevel, abilityLevelType);
     const candidatesWithCost = candidates.map((c) => ({
         ...c,
         cost: calculateUpgradeCost(c, gameData),
