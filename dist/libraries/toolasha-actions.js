@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.47.0
+ * Version: 2.47.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -13439,26 +13439,10 @@
      */
     function makeMaterialClickHandler(tabRef) {
         return (_e, mat) => {
-            // Store a lazy recalculation function — called each time a buy modal opens,
-            // so the quantity always reflects current inventory state at that moment.
+            // Read the current missing quantity from the tab's data attribute,
+            // which is kept up-to-date by the inventory listener.
             autofillManager$1.setPendingCalculation(() => {
-                if (storedEnhancementContext) {
-                    const ctx = storedEnhancementContext;
-                    const mats = materialCalculator_js.calculateEnhancementMaterialRequirements(
-                        ctx.itemHrid,
-                        ctx.startLevel,
-                        ctx.targetLevel,
-                        ctx.protectionItemHrid,
-                        ctx.protectFromLevel,
-                        ctx.repeatCount
-                    );
-                    return mats.find((m) => m.itemHrid === mat.itemHrid)?.missing ?? 0;
-                } else if (storedActionHrid && storedNumActions > 0) {
-                    const ignoreQueue = config.getSetting('actions_missingMaterialsButton_ignoreQueue') || false;
-                    const mats = materialCalculator_js.calculateMaterialRequirements(storedActionHrid, storedNumActions, !ignoreQueue);
-                    return mats.find((m) => m.itemHrid === mat.itemHrid)?.missing ?? 0;
-                }
-                return parseInt(tabRef.tab.getAttribute('data-missing-quantity') || '0', 10);
+                return parseInt(tabRef.tab?.getAttribute('data-missing-quantity') || '0', 10);
             });
             navigateToMarketplace(mat.itemHrid, 0);
         };
@@ -15046,8 +15030,9 @@
         for (const material of missingMaterials) {
             const tabRef = { tab: null };
             const handler = () => {
-                const qty = parseInt(tabRef.tab?.getAttribute('data-missing-quantity') || '0', 10);
-                autofillManager.setQuantity(qty);
+                autofillManager.setPendingCalculation(() => {
+                    return parseInt(tabRef.tab?.getAttribute('data-missing-quantity') || '0', 10);
+                });
                 navigateToMarketplace(material.itemHrid, 0);
             };
             const tab = createMaterialTab(material, referenceTab, handler);

@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.47.0
+ * Version: 2.47.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -4404,7 +4404,8 @@ self.onmessage = function (e) {
 
             // Show enhancement milestones for unenhanced equipment items
             if (enhancementLevel === 0 && config.getSetting('itemTooltip_enhancementMilestones')) {
-                const enhancementConfig = enhancementConfig_js.getEnhancingParams();
+                const isTradeable = itemDetails.tradeable !== false;
+                const enhancementConfig = isTradeable ? enhancementConfig_js.getEnhancingParams() : enhancementConfig_js.getAutoDetectedParams();
                 if (enhancementConfig) {
                     const milestonesHTML = buildEnhancementMilestonesHTML(itemHrid, enhancementConfig);
                     if (milestonesHTML) {
@@ -4424,8 +4425,9 @@ self.onmessage = function (e) {
 
             // Show enhancement path for enhanced items (1-20)
             if (enhancementLevel > 0 && config.getSetting('itemTooltip_enhancementPath')) {
-                // Get enhancement configuration
-                const enhancementConfig = enhancementConfig_js.getEnhancingParams();
+                // Use auto-detected stats for untradeable items (you're the one enhancing)
+                const isTradeable = itemDetails.tradeable !== false;
+                const enhancementConfig = isTradeable ? enhancementConfig_js.getEnhancingParams() : enhancementConfig_js.getAutoDetectedParams();
                 if (enhancementConfig) {
                     // Calculate optimal enhancement path
                     const enhancementData = calculateEnhancementPath(itemHrid, enhancementLevel, enhancementConfig);

@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.47.0
+ * Version: 2.47.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -16168,12 +16168,17 @@ ${starCSS}
             // Create tab for each missing material
             this.currentMaterialsTabs.length = 0; // Clear without reassigning (preserves observer reference)
             for (const material of missingMaterials) {
+                let tabEl = null;
                 const tab = createMaterialTab(material, referenceTab, (_e, mat) => {
-                    // Store the missing quantity for auto-fill when buy modal opens
-                    this.autofillManager.setQuantity(mat.missing);
+                    // Read the current missing quantity from the tab's data attribute,
+                    // which is kept up-to-date by the inventory listener.
+                    this.autofillManager.setPendingCalculation(() => {
+                        return parseInt(tabEl?.getAttribute('data-missing-quantity') || '0', 10);
+                    });
                     // Navigate to marketplace
                     navigateToMarketplace(mat.itemHrid, 0);
                 });
+                tabEl = tab;
                 tab.setAttribute('data-item-name', material.itemName);
                 tabsContainer.appendChild(tab);
                 this.currentMaterialsTabs.push(tab);

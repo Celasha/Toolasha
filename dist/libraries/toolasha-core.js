@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.47.0
+ * Version: 2.47.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1131,6 +1131,21 @@
                     label: 'Guzzling',
                     type: 'enhanceGear',
                     default: { enabled: true, level: 10 },
+                    disabledBy: 'enhanceSim_autoDetect',
+                },
+                enhanceSim_gear_charm: {
+                    id: 'enhanceSim_gear_charm',
+                    label: 'Charm',
+                    type: 'enhanceGear',
+                    default: { enabled: true, tier: 'grandmaster', level: 0 },
+                    tiers: [
+                        { value: 'trainee', label: 'Trainee' },
+                        { value: 'basic', label: 'Basic' },
+                        { value: 'advanced', label: 'Advanced' },
+                        { value: 'expert', label: 'Expert' },
+                        { value: 'master', label: 'Master' },
+                        { value: 'grandmaster', label: 'Grandmaster' },
+                    ],
                     disabledBy: 'enhanceSim_autoDetect',
                 },
                 // --- BUFFS ---
