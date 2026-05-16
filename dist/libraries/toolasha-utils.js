@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 2.46.1
+ * Version: 2.47.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -4886,6 +4886,9 @@ self.onmessage = function (e) {
 
             // Special case: Cowbell (use bag price ÷ 10, with 18% tax)
             if (itemHrid === this.COWBELL_HRID) {
+                if (!config.getSetting('expectedValue_includeCowbells')) {
+                    return 0;
+                }
                 // Get Cowbell Bag price using profit context (sell side - you're selling the bag)
                 const bagValue = getItemPrice(this.COWBELL_BAG_HRID, { context: 'profit', side: 'sell' }) || 0;
 

@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.46.1
+ * Version: 2.47.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -942,6 +942,12 @@
                 expectedValue_respectPricingMode: {
                     id: 'expectedValue_respectPricingMode',
                     label: 'Use pricing mode for expected value calculations',
+                    type: 'checkbox',
+                    default: true,
+                },
+                expectedValue_includeCowbells: {
+                    id: 'expectedValue_includeCowbells',
+                    label: 'Include cowbell value in expected value calculations',
                     type: 'checkbox',
                     default: true,
                 },
@@ -1932,6 +1938,13 @@
                     default: true,
                     help: 'Adds 10, 100, 1000 preset quantity buttons to buy/sell dialogs',
                 },
+                market_quickInputButtons_presets: {
+                    id: 'market_quickInputButtons_presets',
+                    label: 'Marketplace: Custom quick input presets',
+                    type: 'text',
+                    default: '',
+                    help: 'Comma-separated preset values (e.g. 50,500,5000). Leave blank for defaults (10, 100, 1000). Max 8 values.',
+                },
                 market_marketplaceShortcuts: {
                     id: 'market_marketplaceShortcuts',
                     label: 'Marketplace: Show "Marketplace Action" button on item menus',
@@ -2360,10 +2373,15 @@
             settings: {
                 collectionFilters: {
                     id: 'collectionFilters',
-                    label: 'Enable Collection Filters & Favorites',
+                    label: 'Collection Filters: Count-range, dungeon, and skilling-outfit filters',
                     type: 'checkbox',
                     default: true,
-                    help: 'Adds count-range filters, dungeon/skilling-outfit checkboxes, and favorites (★) to the Collections panel',
+                },
+                collectionFavorites: {
+                    id: 'collectionFavorites',
+                    label: 'Collection Favorites: Star (★) items to mark and filter favorites',
+                    type: 'checkbox',
+                    default: true,
                 },
                 collectionFilters_skillingBadges: {
                     id: 'collectionFilters_skillingBadges',

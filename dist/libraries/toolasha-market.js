@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.46.1
+ * Version: 2.47.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1122,6 +1122,9 @@ self.onmessage = function (e) {
 
             // Special case: Cowbell (use bag price ÷ 10, with 18% tax)
             if (itemHrid === this.COWBELL_HRID) {
+                if (!config.getSetting('expectedValue_includeCowbells')) {
+                    return 0;
+                }
                 // Get Cowbell Bag price using profit context (sell side - you're selling the bag)
                 const bagValue = marketData_js.getItemPrice(this.COWBELL_BAG_HRID, { context: 'profit', side: 'sell' }) || 0;
 
@@ -14502,7 +14505,13 @@ self.onmessage = function (e) {
                 row.appendChild(addToggle);
 
                 // Preset count buttons
-                const presetValues = [10, 100, 1000];
+                const defaults = [10, 100, 1000];
+                const raw = config.getSettingValue('market_quickInputButtons_presets', '');
+                const parsed = raw
+                    .split(',')
+                    .map((s) => parseInt(s.trim(), 10))
+                    .filter((n) => Number.isFinite(n) && n > 0);
+                const presetValues = parsed.length > 0 ? [...new Set(parsed)].sort((a, b) => a - b).slice(0, 8) : defaults;
                 for (const value of presetValues) {
                     const btn = document.createElement('button');
                     btn.textContent = value.toLocaleString();
