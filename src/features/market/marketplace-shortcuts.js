@@ -516,7 +516,13 @@ class MarketplaceShortcuts {
             row.appendChild(addToggle);
 
             // Preset count buttons
-            const presetValues = [10, 100, 1000];
+            const defaults = [10, 100, 1000];
+            const raw = config.getSettingValue('market_quickInputButtons_presets', '');
+            const parsed = raw
+                .split(',')
+                .map((s) => parseInt(s.trim(), 10))
+                .filter((n) => Number.isFinite(n) && n > 0);
+            const presetValues = parsed.length > 0 ? [...new Set(parsed)].sort((a, b) => a - b).slice(0, 8) : defaults;
             for (const value of presetValues) {
                 const btn = document.createElement('button');
                 btn.textContent = value.toLocaleString();
