@@ -16,7 +16,7 @@ import {
     buildEnhancementMilestonesHTML,
 } from '../enhancement/tooltip-enhancement.js';
 import { calculateGatheringProfit } from '../actions/gathering-profit.js';
-import { getEnhancingParams } from '../../utils/enhancement-config.js';
+import { getEnhancingParams, getAutoDetectedParams } from '../../utils/enhancement-config.js';
 import { numberFormatter, formatKMB, networthFormatter, formatPercentage } from '../../utils/formatters.js';
 import { getItemPrices } from '../../utils/market-data.js';
 import { resolveItemPrice } from '../../utils/profit-helpers.js';
@@ -323,7 +323,8 @@ class TooltipPrices {
 
         // Show enhancement milestones for unenhanced equipment items
         if (enhancementLevel === 0 && config.getSetting('itemTooltip_enhancementMilestones')) {
-            const enhancementConfig = getEnhancingParams();
+            const isTradeable = itemDetails.tradeable !== false;
+            const enhancementConfig = isTradeable ? getEnhancingParams() : getAutoDetectedParams();
             if (enhancementConfig) {
                 const milestonesHTML = buildEnhancementMilestonesHTML(itemHrid, enhancementConfig);
                 if (milestonesHTML) {
@@ -343,8 +344,9 @@ class TooltipPrices {
 
         // Show enhancement path for enhanced items (1-20)
         if (enhancementLevel > 0 && config.getSetting('itemTooltip_enhancementPath')) {
-            // Get enhancement configuration
-            const enhancementConfig = getEnhancingParams();
+            // Use auto-detected stats for untradeable items (you're the one enhancing)
+            const isTradeable = itemDetails.tradeable !== false;
+            const enhancementConfig = isTradeable ? getEnhancingParams() : getAutoDetectedParams();
             if (enhancementConfig) {
                 // Calculate optimal enhancement path
                 const enhancementData = calculateEnhancementPath(itemHrid, enhancementLevel, enhancementConfig);
