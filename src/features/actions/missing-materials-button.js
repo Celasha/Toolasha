@@ -718,26 +718,10 @@ async function waitForMarketplace() {
  */
 function makeMaterialClickHandler(tabRef) {
     return (_e, mat) => {
-        // Store a lazy recalculation function — called each time a buy modal opens,
-        // so the quantity always reflects current inventory state at that moment.
+        // Read the current missing quantity from the tab's data attribute,
+        // which is kept up-to-date by the inventory listener.
         autofillManager.setPendingCalculation(() => {
-            if (storedEnhancementContext) {
-                const ctx = storedEnhancementContext;
-                const mats = calculateEnhancementMaterialRequirements(
-                    ctx.itemHrid,
-                    ctx.startLevel,
-                    ctx.targetLevel,
-                    ctx.protectionItemHrid,
-                    ctx.protectFromLevel,
-                    ctx.repeatCount
-                );
-                return mats.find((m) => m.itemHrid === mat.itemHrid)?.missing ?? 0;
-            } else if (storedActionHrid && storedNumActions > 0) {
-                const ignoreQueue = config.getSetting('actions_missingMaterialsButton_ignoreQueue') || false;
-                const mats = calculateMaterialRequirements(storedActionHrid, storedNumActions, !ignoreQueue);
-                return mats.find((m) => m.itemHrid === mat.itemHrid)?.missing ?? 0;
-            }
-            return parseInt(tabRef.tab.getAttribute('data-missing-quantity') || '0', 10);
+            return parseInt(tabRef.tab?.getAttribute('data-missing-quantity') || '0', 10);
         });
         navigateToMarketplace(mat.itemHrid, 0);
     };
