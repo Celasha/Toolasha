@@ -360,23 +360,204 @@ class PopOutChat {
      * Open the pop-out window and write the self-contained HTML into it.
      */
     _openPopout() {
+        console.log('[PopOutChat:Debug] _openPopout() called');
+        console.log('[PopOutChat:Debug] Browser:', navigator.userAgent);
+        console.log('[PopOutChat:Debug] Current URL:', window.location.href);
+        console.log(
+            '[PopOutChat:Debug] Existing popoutWindow:',
+            this.popoutWindow,
+            'closed:',
+            this.popoutWindow?.closed
+        );
+
         // Re-focus if already open
         if (this.popoutWindow && !this.popoutWindow.closed) {
+            console.log('[PopOutChat:Debug] Window already open, focusing');
             this.popoutWindow.focus();
             return;
         }
 
+        console.log('[PopOutChat:Debug] Calling window.open("about:blank", "mwi-chat-popout", ...)');
         this.popoutWindow = window.open('about:blank', 'mwi-chat-popout', 'width=960,height=720,resizable=yes');
 
         if (!this.popoutWindow) {
-            console.error('[PopOutChat] window.open() blocked — allow pop-ups for this site');
+            console.error('[PopOutChat:Debug] window.open() returned null/undefined — popup blocked');
             return;
         }
 
+        console.log('[PopOutChat:Debug] window.open() returned:', this.popoutWindow);
+        console.log(
+            '[PopOutChat:Debug] popout.location.href:',
+            (() => {
+                try {
+                    return this.popoutWindow.location.href;
+                } catch (e) {
+                    return 'ACCESS DENIED: ' + e.message;
+                }
+            })()
+        );
+        console.log(
+            '[PopOutChat:Debug] popout.document:',
+            (() => {
+                try {
+                    return this.popoutWindow.document;
+                } catch (e) {
+                    return 'ACCESS DENIED: ' + e.message;
+                }
+            })()
+        );
+        console.log(
+            '[PopOutChat:Debug] popout.document.readyState:',
+            (() => {
+                try {
+                    return this.popoutWindow.document.readyState;
+                } catch (e) {
+                    return 'ACCESS DENIED: ' + e.message;
+                }
+            })()
+        );
+
         const html = this._buildPopoutHTML();
-        this.popoutWindow.document.open();
-        this.popoutWindow.document.write(html);
-        this.popoutWindow.document.close();
+        console.log('[PopOutChat:Debug] Built HTML, length:', html.length, 'first 200 chars:', html.slice(0, 200));
+
+        try {
+            console.log('[PopOutChat:Debug] Calling popout.document.open()');
+            this.popoutWindow.document.open();
+            console.log('[PopOutChat:Debug] document.open() succeeded');
+        } catch (e) {
+            console.error('[PopOutChat:Debug] document.open() THREW:', e.name, e.message, e);
+        }
+
+        try {
+            console.log('[PopOutChat:Debug] Calling popout.document.write() with', html.length, 'chars');
+            this.popoutWindow.document.write(html);
+            console.log('[PopOutChat:Debug] document.write() succeeded');
+        } catch (e) {
+            console.error('[PopOutChat:Debug] document.write() THREW:', e.name, e.message, e);
+        }
+
+        try {
+            console.log('[PopOutChat:Debug] Calling popout.document.close()');
+            this.popoutWindow.document.close();
+            console.log('[PopOutChat:Debug] document.close() succeeded');
+        } catch (e) {
+            console.error('[PopOutChat:Debug] document.close() THREW:', e.name, e.message, e);
+        }
+
+        // Check the state after writing
+        console.log(
+            '[PopOutChat:Debug] After write - popout.location.href:',
+            (() => {
+                try {
+                    return this.popoutWindow.location.href;
+                } catch (e) {
+                    return 'ACCESS DENIED: ' + e.message;
+                }
+            })()
+        );
+        console.log(
+            '[PopOutChat:Debug] After write - popout.document.title:',
+            (() => {
+                try {
+                    return this.popoutWindow.document.title;
+                } catch (e) {
+                    return 'ACCESS DENIED: ' + e.message;
+                }
+            })()
+        );
+        console.log(
+            '[PopOutChat:Debug] After write - popout.document.body.children.length:',
+            (() => {
+                try {
+                    return this.popoutWindow.document.body.children.length;
+                } catch (e) {
+                    return 'ACCESS DENIED: ' + e.message;
+                }
+            })()
+        );
+        console.log(
+            '[PopOutChat:Debug] After write - popout.document.body.innerHTML (first 300):',
+            (() => {
+                try {
+                    return this.popoutWindow.document.body.innerHTML.slice(0, 300);
+                } catch (e) {
+                    return 'ACCESS DENIED: ' + e.message;
+                }
+            })()
+        );
+
+        // Delayed check — see if something navigates the popup away after our write
+        setTimeout(() => {
+            console.log('[PopOutChat:Debug] +500ms - popout.closed:', this.popoutWindow?.closed);
+            console.log(
+                '[PopOutChat:Debug] +500ms - popout.location.href:',
+                (() => {
+                    try {
+                        return this.popoutWindow.location.href;
+                    } catch (e) {
+                        return 'ACCESS DENIED: ' + e.message;
+                    }
+                })()
+            );
+            console.log(
+                '[PopOutChat:Debug] +500ms - popout.document.title:',
+                (() => {
+                    try {
+                        return this.popoutWindow.document.title;
+                    } catch (e) {
+                        return 'ACCESS DENIED: ' + e.message;
+                    }
+                })()
+            );
+        }, 500);
+
+        setTimeout(() => {
+            console.log('[PopOutChat:Debug] +2000ms - popout.closed:', this.popoutWindow?.closed);
+            console.log(
+                '[PopOutChat:Debug] +2000ms - popout.location.href:',
+                (() => {
+                    try {
+                        return this.popoutWindow.location.href;
+                    } catch (e) {
+                        return 'ACCESS DENIED: ' + e.message;
+                    }
+                })()
+            );
+            console.log(
+                '[PopOutChat:Debug] +2000ms - popout.document.title:',
+                (() => {
+                    try {
+                        return this.popoutWindow.document.title;
+                    } catch (e) {
+                        return 'ACCESS DENIED: ' + e.message;
+                    }
+                })()
+            );
+        }, 2000);
+
+        setTimeout(() => {
+            console.log('[PopOutChat:Debug] +5000ms - popout.closed:', this.popoutWindow?.closed);
+            console.log(
+                '[PopOutChat:Debug] +5000ms - popout.location.href:',
+                (() => {
+                    try {
+                        return this.popoutWindow.location.href;
+                    } catch (e) {
+                        return 'ACCESS DENIED: ' + e.message;
+                    }
+                })()
+            );
+            console.log(
+                '[PopOutChat:Debug] +5000ms - popout.document.title:',
+                (() => {
+                    try {
+                        return this.popoutWindow.document.title;
+                    } catch (e) {
+                        return 'ACCESS DENIED: ' + e.message;
+                    }
+                })()
+            );
+        }, 5000);
     }
 
     /**
