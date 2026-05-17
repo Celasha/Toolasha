@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.47.5
+ * Version: 2.48.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -807,15 +807,15 @@
      */
 
 
-    const STORAGE_KEY_PREFIX$3 = 'tabOrder';
+    const STORAGE_KEY_PREFIX$4 = 'tabOrder';
 
     /**
      * Get character-scoped storage key.
      * @returns {string}
      */
-    function getStorageKey$3() {
+    function getStorageKey$4() {
         const charId = dataManager.getCurrentCharacterId() || 'default';
-        return `${STORAGE_KEY_PREFIX$3}_${charId}`;
+        return `${STORAGE_KEY_PREFIX$4}_${charId}`;
     }
 
     /**
@@ -847,7 +847,7 @@
             this.isInitialized = true;
 
             // Load saved order
-            this.savedOrder = await storage.getJSON(getStorageKey$3(), 'settings', null);
+            this.savedOrder = await storage.getJSON(getStorageKey$4(), 'settings', null);
 
             // Apply to existing tabs
             this._applyOrder();
@@ -996,7 +996,7 @@
          * @private
          */
         async _saveOrder(order) {
-            await storage.setJSON(getStorageKey$3(), order, 'settings', true);
+            await storage.setJSON(getStorageKey$4(), order, 'settings', true);
         }
 
         disable() {
@@ -4280,23 +4280,204 @@ ${starCSS}
          * Open the pop-out window and write the self-contained HTML into it.
          */
         _openPopout() {
+            console.log('[PopOutChat:Debug] _openPopout() called');
+            console.log('[PopOutChat:Debug] Browser:', navigator.userAgent);
+            console.log('[PopOutChat:Debug] Current URL:', window.location.href);
+            console.log(
+                '[PopOutChat:Debug] Existing popoutWindow:',
+                this.popoutWindow,
+                'closed:',
+                this.popoutWindow?.closed
+            );
+
             // Re-focus if already open
             if (this.popoutWindow && !this.popoutWindow.closed) {
+                console.log('[PopOutChat:Debug] Window already open, focusing');
                 this.popoutWindow.focus();
                 return;
             }
 
+            console.log('[PopOutChat:Debug] Calling window.open("about:blank", "mwi-chat-popout", ...)');
             this.popoutWindow = window.open('about:blank', 'mwi-chat-popout', 'width=960,height=720,resizable=yes');
 
             if (!this.popoutWindow) {
-                console.error('[PopOutChat] window.open() blocked — allow pop-ups for this site');
+                console.error('[PopOutChat:Debug] window.open() returned null/undefined — popup blocked');
                 return;
             }
 
+            console.log('[PopOutChat:Debug] window.open() returned:', this.popoutWindow);
+            console.log(
+                '[PopOutChat:Debug] popout.location.href:',
+                (() => {
+                    try {
+                        return this.popoutWindow.location.href;
+                    } catch (e) {
+                        return 'ACCESS DENIED: ' + e.message;
+                    }
+                })()
+            );
+            console.log(
+                '[PopOutChat:Debug] popout.document:',
+                (() => {
+                    try {
+                        return this.popoutWindow.document;
+                    } catch (e) {
+                        return 'ACCESS DENIED: ' + e.message;
+                    }
+                })()
+            );
+            console.log(
+                '[PopOutChat:Debug] popout.document.readyState:',
+                (() => {
+                    try {
+                        return this.popoutWindow.document.readyState;
+                    } catch (e) {
+                        return 'ACCESS DENIED: ' + e.message;
+                    }
+                })()
+            );
+
             const html = this._buildPopoutHTML();
-            this.popoutWindow.document.open();
-            this.popoutWindow.document.write(html);
-            this.popoutWindow.document.close();
+            console.log('[PopOutChat:Debug] Built HTML, length:', html.length, 'first 200 chars:', html.slice(0, 200));
+
+            try {
+                console.log('[PopOutChat:Debug] Calling popout.document.open()');
+                this.popoutWindow.document.open();
+                console.log('[PopOutChat:Debug] document.open() succeeded');
+            } catch (e) {
+                console.error('[PopOutChat:Debug] document.open() THREW:', e.name, e.message, e);
+            }
+
+            try {
+                console.log('[PopOutChat:Debug] Calling popout.document.write() with', html.length, 'chars');
+                this.popoutWindow.document.write(html);
+                console.log('[PopOutChat:Debug] document.write() succeeded');
+            } catch (e) {
+                console.error('[PopOutChat:Debug] document.write() THREW:', e.name, e.message, e);
+            }
+
+            try {
+                console.log('[PopOutChat:Debug] Calling popout.document.close()');
+                this.popoutWindow.document.close();
+                console.log('[PopOutChat:Debug] document.close() succeeded');
+            } catch (e) {
+                console.error('[PopOutChat:Debug] document.close() THREW:', e.name, e.message, e);
+            }
+
+            // Check the state after writing
+            console.log(
+                '[PopOutChat:Debug] After write - popout.location.href:',
+                (() => {
+                    try {
+                        return this.popoutWindow.location.href;
+                    } catch (e) {
+                        return 'ACCESS DENIED: ' + e.message;
+                    }
+                })()
+            );
+            console.log(
+                '[PopOutChat:Debug] After write - popout.document.title:',
+                (() => {
+                    try {
+                        return this.popoutWindow.document.title;
+                    } catch (e) {
+                        return 'ACCESS DENIED: ' + e.message;
+                    }
+                })()
+            );
+            console.log(
+                '[PopOutChat:Debug] After write - popout.document.body.children.length:',
+                (() => {
+                    try {
+                        return this.popoutWindow.document.body.children.length;
+                    } catch (e) {
+                        return 'ACCESS DENIED: ' + e.message;
+                    }
+                })()
+            );
+            console.log(
+                '[PopOutChat:Debug] After write - popout.document.body.innerHTML (first 300):',
+                (() => {
+                    try {
+                        return this.popoutWindow.document.body.innerHTML.slice(0, 300);
+                    } catch (e) {
+                        return 'ACCESS DENIED: ' + e.message;
+                    }
+                })()
+            );
+
+            // Delayed check — see if something navigates the popup away after our write
+            setTimeout(() => {
+                console.log('[PopOutChat:Debug] +500ms - popout.closed:', this.popoutWindow?.closed);
+                console.log(
+                    '[PopOutChat:Debug] +500ms - popout.location.href:',
+                    (() => {
+                        try {
+                            return this.popoutWindow.location.href;
+                        } catch (e) {
+                            return 'ACCESS DENIED: ' + e.message;
+                        }
+                    })()
+                );
+                console.log(
+                    '[PopOutChat:Debug] +500ms - popout.document.title:',
+                    (() => {
+                        try {
+                            return this.popoutWindow.document.title;
+                        } catch (e) {
+                            return 'ACCESS DENIED: ' + e.message;
+                        }
+                    })()
+                );
+            }, 500);
+
+            setTimeout(() => {
+                console.log('[PopOutChat:Debug] +2000ms - popout.closed:', this.popoutWindow?.closed);
+                console.log(
+                    '[PopOutChat:Debug] +2000ms - popout.location.href:',
+                    (() => {
+                        try {
+                            return this.popoutWindow.location.href;
+                        } catch (e) {
+                            return 'ACCESS DENIED: ' + e.message;
+                        }
+                    })()
+                );
+                console.log(
+                    '[PopOutChat:Debug] +2000ms - popout.document.title:',
+                    (() => {
+                        try {
+                            return this.popoutWindow.document.title;
+                        } catch (e) {
+                            return 'ACCESS DENIED: ' + e.message;
+                        }
+                    })()
+                );
+            }, 2000);
+
+            setTimeout(() => {
+                console.log('[PopOutChat:Debug] +5000ms - popout.closed:', this.popoutWindow?.closed);
+                console.log(
+                    '[PopOutChat:Debug] +5000ms - popout.location.href:',
+                    (() => {
+                        try {
+                            return this.popoutWindow.location.href;
+                        } catch (e) {
+                            return 'ACCESS DENIED: ' + e.message;
+                        }
+                    })()
+                );
+                console.log(
+                    '[PopOutChat:Debug] +5000ms - popout.document.title:',
+                    (() => {
+                        try {
+                            return this.popoutWindow.document.title;
+                        } catch (e) {
+                            return 'ACCESS DENIED: ' + e.message;
+                        }
+                    })()
+                );
+            }, 5000);
         }
 
         /**
@@ -6454,7 +6635,7 @@ ${starCSS}
      */
 
 
-    const STORAGE_KEY_PREFIX$2 = 'loadout_snapshots';
+    const STORAGE_KEY_PREFIX$3 = 'loadout_snapshots';
 
     /**
      * Returns the active WebSocket hook instance.
@@ -6471,9 +6652,9 @@ ${starCSS}
      * Get character-scoped storage key.
      * @returns {string}
      */
-    function getStorageKey$2() {
+    function getStorageKey$3() {
         const charId = dataManager.getCurrentCharacterId() || 'default';
-        return `${STORAGE_KEY_PREFIX$2}_${charId}`;
+        return `${STORAGE_KEY_PREFIX$3}_${charId}`;
     }
 
     /**
@@ -6586,7 +6767,7 @@ ${starCSS}
             // Load from storage — loadouts_updated only fires when the user visits the loadouts
             // UI, so storage is always the source of snapshots at startup.
             if (Object.keys(this.snapshots).length === 0) {
-                const storageKey = getStorageKey$2();
+                const storageKey = getStorageKey$3();
                 // NOTE: getCurrentCharacterId() may be null at this point (before init_character_data
                 // arrives), so getStorageKey() may return 'loadout_snapshots_default'. We will reload
                 // from the correct key once character_initialized fires.
@@ -6604,7 +6785,7 @@ ${starCSS}
 
             // Reload from the correct character-scoped key once character data is available
             this.characterInitializedHandler = async () => {
-                const storageKey = getStorageKey$2();
+                const storageKey = getStorageKey$3();
                 const fresh = (await storage.getJSON(storageKey, 'settings', null)) || {};
                 if (Object.keys(fresh).length > 0) {
                     this.snapshots = fresh;
@@ -6633,7 +6814,7 @@ ${starCSS}
             }
 
             this.snapshots = newSnapshots;
-            storage.setJSON(getStorageKey$2(), this.snapshots, 'settings');
+            storage.setJSON(getStorageKey$3(), this.snapshots, 'settings');
             this._emitUpdate();
         }
 
@@ -6656,7 +6837,7 @@ ${starCSS}
                 }
             }
             if (changed) {
-                storage.setJSON(getStorageKey$2(), this.snapshots, 'settings');
+                storage.setJSON(getStorageKey$3(), this.snapshots, 'settings');
                 this._emitUpdate();
             }
             return changed;
@@ -13023,15 +13204,15 @@ ${starCSS}
      */
 
 
-    const STORAGE_KEY_PREFIX$1 = 'taskProtectedHrids';
+    const STORAGE_KEY_PREFIX$2 = 'taskProtectedHrids';
 
     /**
      * Get character-scoped storage key.
      * @returns {string}
      */
-    function getStorageKey$1() {
+    function getStorageKey$2() {
         const charId = dataManager.getCurrentCharacterId() || 'default';
-        return `${STORAGE_KEY_PREFIX$1}_${charId}`;
+        return `${STORAGE_KEY_PREFIX$2}_${charId}`;
     }
 
     class TaskRerollProtection {
@@ -13049,7 +13230,7 @@ ${starCSS}
             this.isInitialized = true;
 
             // Load protected list from storage
-            const saved = await storage.getJSON(getStorageKey$1(), 'settings', []);
+            const saved = await storage.getJSON(getStorageKey$2(), 'settings', []);
             this.protectedHrids = new Set(saved);
 
             // Watch for task cards appearing
@@ -13372,7 +13553,7 @@ ${starCSS}
          * @private
          */
         async _save() {
-            await storage.setJSON(getStorageKey$1(), Array.from(this.protectedHrids), 'settings', true);
+            await storage.setJSON(getStorageKey$2(), Array.from(this.protectedHrids), 'settings', true);
         }
 
         /**
@@ -16523,12 +16704,12 @@ ${starCSS}
      */
 
 
-    const STORAGE_KEY_PREFIX = 'scroll_simulation';
+    const STORAGE_KEY_PREFIX$1 = 'scroll_simulation';
     const DEFAULT_KEY = '__default__';
 
-    function getStorageKey() {
+    function getStorageKey$1() {
         const charId = dataManager.getCurrentCharacterId() || 'default';
-        return `${STORAGE_KEY_PREFIX}_${charId}`;
+        return `${STORAGE_KEY_PREFIX$1}_${charId}`;
     }
 
     class ScrollSimulator {
@@ -16540,7 +16721,7 @@ ${starCSS}
 
         async initialize() {
             if (this.initialized) return;
-            const saved = await storage.getJSON(getStorageKey(), 'settings', {});
+            const saved = await storage.getJSON(getStorageKey$1(), 'settings', {});
             for (const [name, arr] of Object.entries(saved)) {
                 if (Array.isArray(arr)) {
                     this.scrollsByLoadout[name] = new Set(arr);
@@ -16589,7 +16770,7 @@ ${starCSS}
             for (const [name, set] of Object.entries(this.scrollsByLoadout)) {
                 toSave[name] = [...set];
             }
-            await storage.setJSON(getStorageKey(), toSave, 'settings');
+            await storage.setJSON(getStorageKey$1(), toSave, 'settings');
         }
     }
 
@@ -17038,6 +17219,7 @@ ${starCSS}
         'actionPanel_showProfitDetail',
         'actionPanel_foragingTotal',
         'actionPanel_hideNegativeProfit',
+        'actionQueue_showValue',
         'actionQueue_valueMode',
         'alchemy_profitDisplay',
         'itemTooltip_profit',
@@ -26043,6 +26225,416 @@ ${starCSS}
     };
 
     /**
+     * Alchemy Action Protection
+     * Prevents accidental alchemy actions on items from protected categories.
+     * Uses a double-confirm pattern: blocks the action button for 3 seconds,
+     * then requires a second click within 3 seconds to proceed.
+     */
+
+
+    const STORAGE_KEY_PREFIX = 'alchemyProtectedCategories';
+    const LOCKDOWN_MS = 3000;
+    const CONFIRM_WINDOW_MS = 3000;
+
+    function getStorageKey() {
+        const charId = dataManager.getCurrentCharacterId() || 'default';
+        return `${STORAGE_KEY_PREFIX}_${charId}`;
+    }
+
+    const DEFAULT_PROTECTION = {
+        coinify: [],
+        decompose: [],
+        transmute: [],
+    };
+
+    class AlchemyActionProtection {
+        constructor() {
+            this.isInitialized = false;
+            this.protectedMap = new Map();
+            this.unregisterHandlers = [];
+            this.confirmTimer = null;
+            this.lockdownTimer = null;
+        }
+
+        async initialize() {
+            if (this.isInitialized) return;
+            if (!config.getSetting('alchemy_actionProtection')) return;
+
+            this.isInitialized = true;
+
+            const saved = await storage.getJSON(getStorageKey(), 'settings', null);
+            if (saved) {
+                for (const [type, categories] of Object.entries(saved)) {
+                    this.protectedMap.set(type, new Set(categories));
+                }
+            } else {
+                for (const [type, categories] of Object.entries(DEFAULT_PROTECTION)) {
+                    this.protectedMap.set(type, new Set(categories));
+                }
+                await this._saveProtection();
+            }
+
+            this._setupClickInterceptor();
+            this._setupShieldButton();
+        }
+
+        _setupClickInterceptor() {
+            const handler = (e) => {
+                if (!config.getSetting('alchemy_actionProtection')) return;
+
+                const btn = e.target.closest('button');
+                if (!btn) return;
+
+                if (!btn.classList.contains('Button_success__6d6kU')) return;
+
+                const alchemyPanel = btn.closest('[class*="SkillActionDetail_alchemyComponent"]');
+                if (!alchemyPanel) return;
+
+                const alchemyType = this._getAlchemyType();
+                if (!alchemyType) return;
+
+                const protectedCategories = this.protectedMap.get(alchemyType);
+                if (!protectedCategories || protectedCategories.size === 0) return;
+
+                const itemHrid = this._getSelectedItemHrid();
+                if (!itemHrid) return;
+
+                const itemDetails = dataManager.getItemDetails(itemHrid);
+                if (!itemDetails) return;
+
+                const categoryHrid = itemDetails.categoryHrid;
+                if (!protectedCategories.has(categoryHrid)) return;
+
+                // Item is in a protected category — apply state machine
+                if (alchemyPanel.dataset.mwiAlchemyConfirmed === '1') {
+                    alchemyPanel.dataset.mwiAlchemyConfirmed = '';
+                    this._clearWarning(alchemyPanel);
+                    return;
+                }
+
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+
+                if (alchemyPanel.dataset.mwiAlchemyLocked === '1') return;
+
+                alchemyPanel.dataset.mwiAlchemyLocked = '1';
+
+                const categoryName = this._getCategoryDisplayName(categoryHrid);
+                this._showWarning(alchemyPanel, `Protected category (${categoryName})! Unlocks in 3s...`);
+
+                if (this.lockdownTimer) clearTimeout(this.lockdownTimer);
+                if (this.confirmTimer) clearTimeout(this.confirmTimer);
+
+                this.lockdownTimer = setTimeout(() => {
+                    alchemyPanel.dataset.mwiAlchemyLocked = '';
+                    alchemyPanel.dataset.mwiAlchemyConfirmed = '1';
+                    this._showWarning(alchemyPanel, 'Click again to confirm.');
+
+                    this.confirmTimer = setTimeout(() => {
+                        alchemyPanel.dataset.mwiAlchemyConfirmed = '';
+                        this._clearWarning(alchemyPanel);
+                    }, CONFIRM_WINDOW_MS);
+                }, LOCKDOWN_MS);
+            };
+
+            document.addEventListener('click', handler, true);
+            this.unregisterHandlers.push(() => document.removeEventListener('click', handler, true));
+        }
+
+        _setupShieldButton() {
+            const unregister = domObserver.onClass(
+                'AlchemyActionProtection-Shield',
+                'AlchemyPanel_tabsComponentContainer',
+                (tabContainer) => {
+                    this._injectShieldButton(tabContainer);
+                }
+            );
+            this.unregisterHandlers.push(unregister);
+        }
+
+        _injectShieldButton(tabContainer) {
+            const parent = tabContainer.parentElement;
+            if (!parent || parent.querySelector('.mwi-alchemy-protection-btn')) return;
+
+            const btn = document.createElement('span');
+            btn.className = 'mwi-alchemy-protection-btn';
+            btn.textContent = '\u{1F6E1}\u{FE0F}';
+            btn.style.cssText =
+                'cursor:pointer; font-size:16px; margin-left:8px; opacity:0.7; transition:opacity 0.1s; vertical-align:middle; display:inline-block; position:relative; z-index:10;';
+            btn.addEventListener('mouseenter', () => {
+                btn.style.opacity = '1';
+            });
+            btn.addEventListener('mouseleave', () => {
+                btn.style.opacity = '0.7';
+            });
+            btn.addEventListener('click', () => this.openConfigPopup());
+
+            tabContainer.appendChild(btn);
+
+            const updateVisibility = () => {
+                const type = this._getAlchemyType();
+                btn.style.display = type ? 'inline-block' : 'none';
+            };
+
+            updateVisibility();
+
+            const observer = new MutationObserver(updateVisibility);
+            observer.observe(tabContainer, { attributes: true, subtree: true, attributeFilter: ['aria-selected'] });
+            this.unregisterHandlers.push(() => observer.disconnect());
+        }
+
+        _getAlchemyType() {
+            const tabContainer = document.querySelector('[class*="AlchemyPanel_tabsComponentContainer"]');
+            const selectedTab = tabContainer?.querySelector('[role="tab"][aria-selected="true"]');
+            const tabText = selectedTab?.textContent?.trim()?.toLowerCase() || '';
+
+            if (tabText.includes('transmute')) return 'transmute';
+            if (tabText.includes('decompose')) return 'decompose';
+            if (tabText.includes('coinify')) return 'coinify';
+            return null;
+        }
+
+        _getSelectedItemHrid() {
+            const reqContainer = document.querySelector(
+                '[class*="SkillActionDetail_itemRequirements"] [class*="Item_itemContainer"]'
+            );
+            if (!reqContainer) return null;
+
+            const use = reqContainer.querySelector('svg use');
+            if (!use) return null;
+
+            const href = use.getAttribute('href');
+            if (!href) return null;
+
+            const itemId = href.split('#')[1];
+            return itemId ? `/items/${itemId}` : null;
+        }
+
+        _getCategoryDisplayName(categoryHrid) {
+            const name = categoryHrid.replace('/item_categories/', '').replace(/_/g, ' ');
+            return name.charAt(0).toUpperCase() + name.slice(1);
+        }
+
+        _showWarning(container, message) {
+            this._clearWarning(container);
+
+            const warning = document.createElement('div');
+            warning.className = 'mwi-alchemy-protection-warning';
+            warning.style.cssText = `
+            text-align: center;
+            font-size: 12px;
+            font-weight: 700;
+            color: #ff6b6b;
+            background: rgba(0, 0, 0, 0.85);
+            padding: 6px 12px;
+            border-radius: 4px;
+            margin-top: 6px;
+        `;
+            warning.textContent = message;
+
+            const actionBtn = container.querySelector('button.Button_success__6d6kU');
+            if (actionBtn) {
+                actionBtn.parentElement.insertAdjacentElement('afterend', warning);
+            } else {
+                container.appendChild(warning);
+            }
+        }
+
+        _clearWarning(container) {
+            const existing = container.querySelector('.mwi-alchemy-protection-warning');
+            if (existing) existing.remove();
+        }
+
+        async openConfigPopup() {
+            const existing = document.getElementById('mwi-alchemy-protection-popup');
+            if (existing) {
+                existing.remove();
+                return;
+            }
+
+            const popup = document.createElement('div');
+            popup.id = 'mwi-alchemy-protection-popup';
+            popup.style.cssText = `
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: #1e1e2e;
+            border: 2px solid #555;
+            border-radius: 8px;
+            padding: 20px;
+            z-index: 100001;
+            min-width: 340px;
+            max-width: 500px;
+            max-height: 70vh;
+            overflow-y: auto;
+            color: #ccc;
+            font-size: 13px;
+        `;
+
+            const header = document.createElement('div');
+            header.style.cssText = 'display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;';
+            header.innerHTML = `<h3 style="margin:0; font-size:16px; color:#eee;">Alchemy Action Protection</h3>`;
+
+            const closeBtn = document.createElement('button');
+            closeBtn.textContent = '\u2715';
+            closeBtn.style.cssText =
+                'background:#a33; color:#fff; border:none; cursor:pointer; font-size:16px; padding:2px 8px; border-radius:4px;';
+            closeBtn.addEventListener('click', () => popup.remove());
+            header.appendChild(closeBtn);
+            popup.appendChild(header);
+
+            const desc = document.createElement('p');
+            desc.style.cssText = 'color:#999; margin:0 0 14px 0; font-size:12px;';
+            desc.textContent =
+                'Select which item categories to protect from each alchemy action. Protected items require a 3-second confirmation before the action proceeds.';
+            popup.appendChild(desc);
+
+            const alchemyTypes = ['coinify', 'decompose', 'transmute'];
+            const categories = this._getAlchemizableCategories();
+
+            for (const type of alchemyTypes) {
+                const typeCats = categories[type];
+                if (!typeCats || typeCats.length === 0) continue;
+
+                const section = document.createElement('div');
+                section.style.cssText = 'margin-bottom: 14px;';
+
+                const typeHeader = document.createElement('div');
+                typeHeader.style.cssText = 'font-weight:bold; margin-bottom:6px; text-transform:capitalize; color:#ddd;';
+                typeHeader.textContent = type;
+                section.appendChild(typeHeader);
+
+                const protectedSet = this.protectedMap.get(type) || new Set();
+
+                for (const cat of typeCats) {
+                    const row = document.createElement('label');
+                    row.style.cssText = 'display:flex; align-items:center; gap:8px; padding:3px 0; cursor:pointer;';
+
+                    const checkbox = document.createElement('input');
+                    checkbox.type = 'checkbox';
+                    checkbox.checked = protectedSet.has(cat.hrid);
+                    checkbox.style.cssText = 'cursor:pointer;';
+                    checkbox.addEventListener('change', async () => {
+                        if (checkbox.checked) {
+                            protectedSet.add(cat.hrid);
+                        } else {
+                            protectedSet.delete(cat.hrid);
+                        }
+                        this.protectedMap.set(type, protectedSet);
+                        await this._saveProtection();
+                    });
+
+                    const label = document.createElement('span');
+                    label.textContent = `${cat.name} (${cat.count} items)`;
+
+                    row.appendChild(checkbox);
+                    row.appendChild(label);
+                    section.appendChild(row);
+                }
+
+                popup.appendChild(section);
+            }
+
+            // Click outside to close
+            const backdrop = document.createElement('div');
+            backdrop.style.cssText = 'position:fixed; top:0; left:0; right:0; bottom:0; z-index:100000;';
+            backdrop.addEventListener('click', () => {
+                popup.remove();
+                backdrop.remove();
+            });
+
+            document.body.appendChild(backdrop);
+            document.body.appendChild(popup);
+        }
+
+        _getAlchemizableCategories() {
+            const gameData = dataManager.getInitClientData();
+            if (!gameData?.itemDetailMap) return {};
+
+            const result = { transmute: {}, decompose: {}, coinify: {} };
+
+            for (const item of Object.values(gameData.itemDetailMap)) {
+                if (!item.alchemyDetail || !item.categoryHrid) continue;
+
+                const cat = item.categoryHrid;
+
+                if (item.alchemyDetail.transmuteDropTable) {
+                    if (!result.transmute[cat]) result.transmute[cat] = 0;
+                    result.transmute[cat]++;
+                }
+                if (item.alchemyDetail.decomposeItems) {
+                    if (!result.decompose[cat]) result.decompose[cat] = 0;
+                    result.decompose[cat]++;
+                }
+                if (item.alchemyDetail.isCoinifiable) {
+                    if (!result.coinify[cat]) result.coinify[cat] = 0;
+                    result.coinify[cat]++;
+                }
+            }
+
+            const format = (catMap) =>
+                Object.entries(catMap)
+                    .map(([hrid, count]) => ({
+                        hrid,
+                        name: this._getCategoryDisplayName(hrid),
+                        count,
+                    }))
+                    .sort((a, b) => a.name.localeCompare(b.name));
+
+            return {
+                transmute: format(result.transmute),
+                decompose: format(result.decompose),
+                coinify: format(result.coinify),
+            };
+        }
+
+        async _saveProtection() {
+            const obj = {};
+            for (const [type, set] of this.protectedMap) {
+                obj[type] = [...set];
+            }
+            await storage.setJSON(getStorageKey(), obj, 'settings');
+        }
+
+        disable() {
+            for (const unregister of this.unregisterHandlers) {
+                unregister();
+            }
+            this.unregisterHandlers = [];
+
+            if (this.lockdownTimer) clearTimeout(this.lockdownTimer);
+            if (this.confirmTimer) clearTimeout(this.confirmTimer);
+
+            this.isInitialized = false;
+            this.protectedMap.clear();
+
+            const warning = document.querySelector('.mwi-alchemy-protection-warning');
+            if (warning) warning.remove();
+            const popup = document.getElementById('mwi-alchemy-protection-popup');
+            if (popup) popup.remove();
+            const btn = document.querySelector('.mwi-alchemy-protection-btn');
+            if (btn) btn.remove();
+        }
+    }
+
+    const alchemyActionProtection = new AlchemyActionProtection();
+
+    var alchemyActionProtection$1 = {
+        name: 'Alchemy Action Protection',
+        initialize: async () => {
+            await alchemyActionProtection.initialize();
+        },
+        cleanup: () => {
+            alchemyActionProtection.disable();
+        },
+        disable: () => {
+            alchemyActionProtection.disable();
+        },
+    };
+
+    /**
      * Enhancement Session Data Structure
      * Represents a single enhancement tracking session for one item
      */
@@ -31545,6 +32137,7 @@ ${starCSS}
         coinifyHistoryViewer: coinifyHistoryViewer$1,
         decomposeHistoryTracker: decomposeHistoryTracker$1,
         decomposeHistoryViewer: decomposeHistoryViewer$1,
+        alchemyActionProtection: alchemyActionProtection$1,
         enhancementFeature,
         xphCalculator,
         guildXPTracker: guildXPTracker$1,

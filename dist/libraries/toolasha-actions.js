@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.47.5
+ * Version: 2.48.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -8497,7 +8497,12 @@
 
                     // Create empty profit div for this action (will be populated asynchronously)
                     // Skip enhancing actions — no profit applies
-                    if (!isTrulyInfinite && actionTimeSeconds > 0 && !isEnhancing) {
+                    if (
+                        !isTrulyInfinite &&
+                        actionTimeSeconds > 0 &&
+                        !isEnhancing &&
+                        config.getSettingValue('actionQueue_showValue', true)
+                    ) {
                         const profitDiv = document.createElement('div');
                         profitDiv.className = 'mwi-queue-action-profit';
                         profitDiv.dataset.divIndex = divIndex;
@@ -8548,7 +8553,11 @@
                 queueMenu.insertAdjacentElement('afterend', totalDiv);
 
                 // Calculate profit asynchronously (non-blocking)
-                if (actionsToCalculate.length > 0 && marketAPI.isLoaded()) {
+                if (
+                    actionsToCalculate.length > 0 &&
+                    marketAPI.isLoaded() &&
+                    config.getSettingValue('actionQueue_showValue', true)
+                ) {
                     // Async will handle observer reconnection after updates complete
                     shouldReconnectObserver = false;
                     this.calculateAndDisplayTotalProfit(totalDiv, actionsToCalculate, totalText, queueMenu);

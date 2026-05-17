@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.47.5
+ * Version: 2.48.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -695,6 +695,12 @@
                     type: 'checkbox',
                     default: true,
                 },
+                actionQueue_showValue: {
+                    id: 'actionQueue_showValue',
+                    label: 'Queued actions: Show profit/value for queued actions',
+                    type: 'checkbox',
+                    default: true,
+                },
                 actionPanel_enhanceMatLimitProtections: {
                     id: 'actionPanel_enhanceMatLimitProtections',
                     label: 'Enhancement material limit: Include protection items',
@@ -803,6 +809,13 @@
                     type: 'checkbox',
                     default: true,
                     help: 'Records decompose sessions and displays history in a viewer tab in the Alchemy panel',
+                },
+                alchemy_actionProtection: {
+                    id: 'alchemy_actionProtection',
+                    label: 'Alchemy panel: Protect categories from accidental alchemy actions',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Blocks alchemy action buttons for 3 seconds when the selected item belongs to a protected category. A shield icon appears in the alchemy panel to configure protected categories.',
                 },
                 actions_missingMaterialsButton: {
                     id: 'actions_missingMaterialsButton',
