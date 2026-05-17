@@ -646,10 +646,15 @@ export function getProductionCost(itemHrid, mode = 'ask') {
     }
 
     // Add upgrade item cost if this is an upgrade recipe (not affected by artisan tea)
+    // Use min(market, craft) so refined items reflect the cheapest way to obtain the base item
     if (action.upgradeItemHrid) {
-        let upgradePrice = getItemPrice(action.upgradeItemHrid, { mode }) || 0;
-        if (upgradePrice === 0) {
-            upgradePrice = getProductionCost(action.upgradeItemHrid, mode);
+        const upgradeMarketPrice = getItemPrice(action.upgradeItemHrid, { mode }) || 0;
+        const upgradeCraftPrice = getProductionCost(action.upgradeItemHrid, mode);
+        let upgradePrice;
+        if (upgradeMarketPrice > 0 && upgradeCraftPrice > 0) {
+            upgradePrice = Math.min(upgradeMarketPrice, upgradeCraftPrice);
+        } else {
+            upgradePrice = upgradeMarketPrice || upgradeCraftPrice;
         }
         totalPrice += upgradePrice;
     }
