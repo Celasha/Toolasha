@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.47.3
+ * Version: 2.47.4
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -3241,10 +3241,15 @@ self.onmessage = function (e) {
         }
 
         // Add upgrade item cost if this is an upgrade recipe (not affected by artisan tea)
+        // Use min(market, craft) so refined items reflect the cheapest way to obtain the base item
         if (action.upgradeItemHrid) {
-            let upgradePrice = marketData_js.getItemPrice(action.upgradeItemHrid, { mode }) || 0;
-            if (upgradePrice === 0) {
-                upgradePrice = getProductionCost(action.upgradeItemHrid, mode);
+            const upgradeMarketPrice = marketData_js.getItemPrice(action.upgradeItemHrid, { mode }) || 0;
+            const upgradeCraftPrice = getProductionCost(action.upgradeItemHrid, mode);
+            let upgradePrice;
+            if (upgradeMarketPrice > 0 && upgradeCraftPrice > 0) {
+                upgradePrice = Math.min(upgradeMarketPrice, upgradeCraftPrice);
+            } else {
+                upgradePrice = upgradeMarketPrice || upgradeCraftPrice;
             }
             totalPrice += upgradePrice;
         }
@@ -17756,7 +17761,12 @@ self.onmessage = function (e) {
 
             // Click outside to close (but not if clicking in the delete popup)
             this.outsideClickHandler = (e) => {
-                if (!modal.contains(e.target) && !this._deletePopup?.contains(e.target)) {
+                const breakdownPopout = document.getElementById('mwi-nw-24h-breakdown');
+                if (
+                    !modal.contains(e.target) &&
+                    !this._deletePopup?.contains(e.target) &&
+                    !breakdownPopout?.contains(e.target)
+                ) {
                     this.closeModal();
                 }
             };
@@ -17971,7 +17981,12 @@ self.onmessage = function (e) {
             for (const cat of CATEGORIES) {
                 if (!this.categoryVisibility[cat.key]) continue;
 
-                const catData = chartData.map((p) => ({ x: p.x, y: p._raw ? p._raw[cat.key] : NaN }));
+                const catData = chartData.map((p) => {
+                    if (!p._raw) return { x: p.x, y: NaN };
+                    let val = p._raw[cat.key];
+                    if (cat.key === 'inventory') val = (val || 0) - (p._raw.gold || 0);
+                    return { x: p.x, y: val };
+                });
                 datasets.push({
                     type: 'line',
                     label: cat.label,
@@ -18080,7 +18095,8 @@ self.onmessage = function (e) {
                                     if (!raw) return [];
                                     const lines = [];
                                     if (raw.gold) lines.push(`Gold: ${formatters_js.networthFormatter(raw.gold)}`);
-                                    if (raw.inventory) lines.push(`Inventory: ${formatters_js.networthFormatter(raw.inventory)}`);
+                                    const inventoryExGold = (raw.inventory || 0) - (raw.gold || 0);
+                                    if (inventoryExGold > 0) lines.push(`Inventory: ${formatters_js.networthFormatter(inventoryExGold)}`);
                                     if (raw.equipment) lines.push(`Equipment: ${formatters_js.networthFormatter(raw.equipment)}`);
                                     if (raw.listings) lines.push(`Listings: ${formatters_js.networthFormatter(raw.listings)}`);
                                     if (raw.house) lines.push(`House: ${formatters_js.networthFormatter(raw.house)}`);
@@ -18225,8 +18241,12 @@ self.onmessage = function (e) {
             // Per-category rate stats for each visible category line
             for (const cat of CATEGORIES) {
                 if (!this.categoryVisibility[cat.key]) continue;
-                const firstVal = first[cat.key] ?? 0;
-                const lastVal = last[cat.key] ?? 0;
+                let firstVal = first[cat.key] ?? 0;
+                let lastVal = last[cat.key] ?? 0;
+                if (cat.key === 'inventory') {
+                    firstVal -= first.gold ?? 0;
+                    lastVal -= last.gold ?? 0;
+                }
                 const catChange = lastVal - firstVal;
                 const rate = hoursElapsed > 0 ? catChange / hoursElapsed : 0;
                 const rateColor = rate >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;

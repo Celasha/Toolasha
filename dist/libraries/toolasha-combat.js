@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.47.3
+ * Version: 2.47.4
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -11837,10 +11837,15 @@
         }
 
         // Add upgrade item cost if this is an upgrade recipe (not affected by artisan tea)
+        // Use min(market, craft) so refined items reflect the cheapest way to obtain the base item
         if (action.upgradeItemHrid) {
-            let upgradePrice = marketData_js.getItemPrice(action.upgradeItemHrid, { mode }) || 0;
-            if (upgradePrice === 0) {
-                upgradePrice = getProductionCost(action.upgradeItemHrid, mode);
+            const upgradeMarketPrice = marketData_js.getItemPrice(action.upgradeItemHrid, { mode }) || 0;
+            const upgradeCraftPrice = getProductionCost(action.upgradeItemHrid, mode);
+            let upgradePrice;
+            if (upgradeMarketPrice > 0 && upgradeCraftPrice > 0) {
+                upgradePrice = Math.min(upgradeMarketPrice, upgradeCraftPrice);
+            } else {
+                upgradePrice = upgradeMarketPrice || upgradeCraftPrice;
             }
             totalPrice += upgradePrice;
         }
@@ -17192,6 +17197,26 @@
                 this.panel = null;
             }
             this.isRunning = false;
+
+            // Clear cached character data so next open loads fresh state
+            this._editorInitialized = false;
+            this._editedDTOs = null;
+            this._originalDTOs = null;
+            this._editedPlayerInfo = null;
+            this._selfHrid = null;
+            this._missingMembers = [];
+            this._lastSimResult = null;
+            this._lastSimHours = null;
+            this._lastGameData = null;
+            this._simHistory = [];
+            this._comparisonIndex = null;
+            this._comparisonBaseline = null;
+            this._comparisonSlots = [];
+            this._activeDetailIndex = null;
+            this._allZonesResults = null;
+            this._labyResults = null;
+            this._seekResults = null;
+            this._selectedLoadoutName = '';
         }
 
         /**
