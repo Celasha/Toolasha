@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.47.4
+ * Version: 2.47.5
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -16866,7 +16866,13 @@ self.onmessage = function (e) {
 
                 const listingValue = value * (1 - fee) + listing.unclaimedCoinCount;
                 listingsValue += listingValue;
-                listingsBreakdown.push({ name: itemName, isSell: true, value: listingValue });
+                listingsBreakdown.push({
+                    itemHrid: listing.itemHrid,
+                    enhancementLevel,
+                    name: itemName,
+                    isSell: true,
+                    value: listingValue,
+                });
             } else {
                 // Buying: value is locked coins + unclaimed items
                 const unclaimedValue = await calculateItemValue(
@@ -16876,7 +16882,13 @@ self.onmessage = function (e) {
 
                 const listingValue = quantity * listing.price + unclaimedValue;
                 listingsValue += listingValue;
-                listingsBreakdown.push({ name: itemName, isSell: false, value: listingValue });
+                listingsBreakdown.push({
+                    itemHrid: listing.itemHrid,
+                    enhancementLevel,
+                    name: itemName,
+                    isSell: false,
+                    value: listingValue,
+                });
             }
         }
 
@@ -17161,6 +17173,35 @@ self.onmessage = function (e) {
                 if (!item.itemHrid) continue;
                 const key = `${item.itemHrid}:${item.enhancementLevel || 0}`;
                 items[key] = { count: 1, value: Math.round(item.value || 0) };
+            }
+
+            // Houses (fixed assets)
+            for (const room of data.fixedAssets.houses.breakdown) {
+                items[`house:${room.hrid}`] = { count: room.level, value: Math.round(room.cost) };
+            }
+
+            // Abilities (fixed assets)
+            for (const ability of data.fixedAssets.abilities.breakdown) {
+                items[`ability:${ability.hrid}`] = { count: 1, value: Math.round(ability.cost) };
+            }
+
+            // Ability books (fixed assets)
+            for (const book of data.fixedAssets.abilityBooks.breakdown) {
+                if (!book.itemHrid) continue;
+                items[`abilitybook:${book.itemHrid}`] = { count: book.count || 1, value: Math.round(book.value || 0) };
+            }
+
+            // Market listings
+            for (const listing of data.currentAssets.listings.breakdown) {
+                if (!listing.itemHrid) continue;
+                const dir = listing.isSell ? 'sell' : 'buy';
+                const key = `listing:${dir}:${listing.itemHrid}:${listing.enhancementLevel || 0}`;
+                if (items[key]) {
+                    items[key].value += Math.round(listing.value);
+                    items[key].count += 1;
+                } else {
+                    items[key] = { count: 1, value: Math.round(listing.value) };
+                }
             }
 
             this.detailHistory.push({ t: Date.now(), items });
@@ -18382,15 +18423,77 @@ self.onmessage = function (e) {
                 };
             }
 
-            // Decompose each item into activity vs market impact
+            // Houses (fixed assets)
+            for (const room of currentData.fixedAssets.houses.breakdown) {
+                currentItems[`house:${room.hrid}`] = {
+                    count: room.level,
+                    value: Math.round(room.cost),
+                    name: room.name,
+                };
+            }
+
+            // Abilities (fixed assets)
+            for (const ability of currentData.fixedAssets.abilities.breakdown) {
+                currentItems[`ability:${ability.hrid}`] = {
+                    count: 1,
+                    value: Math.round(ability.cost),
+                    name: ability.name,
+                };
+            }
+
+            // Ability books (fixed assets)
+            for (const book of currentData.fixedAssets.abilityBooks.breakdown) {
+                if (!book.itemHrid) continue;
+                currentItems[`abilitybook:${book.itemHrid}`] = {
+                    count: book.count || 1,
+                    value: Math.round(book.value || 0),
+                    name: book.name,
+                };
+            }
+
+            // Market listings
+            for (const listing of currentData.currentAssets.listings.breakdown) {
+                if (!listing.itemHrid) continue;
+                const dir = listing.isSell ? 'sell' : 'buy';
+                const key = `listing:${dir}:${listing.itemHrid}:${listing.enhancementLevel || 0}`;
+                if (currentItems[key]) {
+                    currentItems[key].value += Math.round(listing.value);
+                    currentItems[key].count += 1;
+                } else {
+                    currentItems[key] = {
+                        count: 1,
+                        value: Math.round(listing.value),
+                        name: listing.name,
+                        isSell: listing.isSell,
+                    };
+                }
+            }
+
+            // Decompose each item into activity, market, or other impact
             const activityItems = [];
             const marketItems = [];
+            const otherItems = [];
             let activityTotal = 0;
             let marketTotal = 0;
+            let otherTotal = 0;
 
             const allKeys = new Set([...Object.keys(currentItems), ...Object.keys(oldSnapshot.items)]);
 
+            // Detect which namespaced categories the old snapshot tracks
+            // If it has no keys for a prefix, that category was added after the snapshot was taken — skip it
+            const oldKeys = Object.keys(oldSnapshot.items);
+            const oldHasHouse = oldKeys.some((k) => k.startsWith('house:'));
+            const oldHasAbility = oldKeys.some((k) => k.startsWith('ability:'));
+            const oldHasAbilityBook = oldKeys.some((k) => k.startsWith('abilitybook:'));
+            const oldHasListing = oldKeys.some((k) => k.startsWith('listing:'));
+
             for (const key of allKeys) {
+                // Skip categories the old snapshot doesn't track (pre-transition data)
+                if (key.startsWith('listing:') && !oldHasListing) continue;
+                if (key.startsWith('house:') && !oldHasHouse) continue;
+                if (key.startsWith('ability:') && !oldHasAbility) continue;
+                if (key.startsWith('abilitybook:') && !oldHasAbilityBook) continue;
+
                 const curr = currentItems[key] || { count: 0, value: 0 };
                 const old = oldSnapshot.items[key] || { count: 0, value: 0 };
 
@@ -18399,6 +18502,23 @@ self.onmessage = function (e) {
 
                 if (totalDiff === 0 && countDiff === 0) continue;
 
+                // Listings → Other section (straight value diff, no activity/market split)
+                if (key.startsWith('listing:')) {
+                    let name = curr.name;
+                    if (!name) {
+                        const parts = key.split(':');
+                        const itemHrid = parts[2];
+                        const enhLevel = parts[3];
+                        const details = gameData?.itemDetailMap?.[itemHrid];
+                        const baseName = details?.name || itemHrid.replace('/items/', '');
+                        name = Number(enhLevel) > 0 ? `${baseName} +${enhLevel}` : baseName;
+                    }
+                    const prefix = key.startsWith('listing:sell:') ? 'Sell Listing' : 'Buy Listing';
+                    otherTotal += totalDiff;
+                    otherItems.push({ name: `${prefix}: ${name}`, key, value: totalDiff });
+                    continue;
+                }
+
                 // Resolve display name
                 let name = curr.name;
                 if (!name) {
@@ -18406,6 +18526,15 @@ self.onmessage = function (e) {
                     const details = gameData?.itemDetailMap?.[itemHrid];
                     const baseName = details?.name || itemHrid.replace('/items/', '');
                     name = Number(enhLevel) > 0 ? `${baseName} +${enhLevel}` : baseName;
+                }
+
+                // Fixed assets (house, ability, abilitybook) → Activity only (no market movement)
+                if (key.startsWith('house:') || key.startsWith('ability:') || key.startsWith('abilitybook:')) {
+                    if (totalDiff !== 0) {
+                        activityTotal += totalDiff;
+                        activityItems.push({ name, key, countDiff, value: totalDiff });
+                    }
+                    continue;
                 }
 
                 // Per-unit prices
@@ -18441,14 +18570,15 @@ self.onmessage = function (e) {
                 }
             }
 
-            if (activityItems.length === 0 && marketItems.length === 0) {
+            if (activityItems.length === 0 && marketItems.length === 0 && otherItems.length === 0) {
                 container.innerHTML = '<span style="color: #666;">No item-level changes in the last 24h</span>';
                 return;
             }
 
-            // Sort both lists by absolute value descending
+            // Sort all lists by absolute value descending
             activityItems.sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
             marketItems.sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
+            otherItems.sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
 
             let html = '';
 
@@ -18495,6 +18625,46 @@ self.onmessage = function (e) {
 
                     html += `<div style="display: flex; justify-content: space-between; padding: 1px 0 1px 12px;">`;
                     html += `<span>${item.name} <span style="color: #888; font-size: 11px;">\u00d7${item.count}</span></span>`;
+                    html += `<span style="color: ${color}; white-space: nowrap; margin-left: 12px;">${sign}${formatters_js.networthFormatter(item.value)}</span>`;
+                    html += `</div>`;
+                }
+            }
+
+            // Other section (listings)
+            // Compute rounding residual from hourly snapshot total
+            const history = networthHistory.getHistory();
+            if (history.length >= 2) {
+                let oldHourly = history[0];
+                for (const snap of history) {
+                    if (Math.abs(snap.t - oneDayAgo) < Math.abs(oldHourly.t - oneDayAgo)) {
+                        oldHourly = snap;
+                    }
+                }
+                const currentTotal = Math.round(currentData.totalNetworth + (currentData.excluded?.total ?? 0));
+                const last24hChange = currentTotal - oldHourly.total;
+                const residual = last24hChange - activityTotal - marketTotal - otherTotal;
+                if (Math.abs(residual) > 0) {
+                    otherTotal += residual;
+                    otherItems.push({ name: 'Rounding', key: '_rounding', value: residual });
+                }
+            }
+
+            const hasPrevSections = activityItems.length > 0 || marketItems.length > 0;
+            if (otherItems.length > 0) {
+                const otherColor = otherTotal >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
+                const otherSign = otherTotal >= 0 ? '+' : '';
+                html += `<div style="font-weight: bold; margin-top: 8px; margin-bottom: 4px; display: flex; justify-content: space-between;${hasPrevSections ? ' padding-top: 6px; border-top: 1px solid #333;' : ''}">`;
+                html += `<span>Other</span>`;
+                html += `<span style="color: ${otherColor};">${otherSign}${formatters_js.networthFormatter(otherTotal)}</span>`;
+                html += `</div>`;
+
+                for (const item of otherItems) {
+                    const isPos = item.value >= 0;
+                    const color = isPos ? config.COLOR_PROFIT : config.COLOR_LOSS;
+                    const sign = isPos ? '+' : '';
+
+                    html += `<div style="display: flex; justify-content: space-between; padding: 1px 0 1px 12px;">`;
+                    html += `<span>${item.name}</span>`;
                     html += `<span style="color: ${color}; white-space: nowrap; margin-left: 12px;">${sign}${formatters_js.networthFormatter(item.value)}</span>`;
                     html += `</div>`;
                 }
