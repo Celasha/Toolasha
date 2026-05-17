@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 2.47.1
+ * Version: 2.47.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -5266,21 +5266,14 @@ self.onmessage = function (e) {
             if (!itemDetails?.equipmentDetail) continue;
 
             const noncombatStats = itemDetails.equipmentDetail.noncombatStats || {};
-            const noncombatEnhancement = itemDetails.equipmentDetail.noncombatEnhancementBonuses || {};
 
             // Get base skillingExperience
             const baseWisdom = noncombatStats.skillingExperience || 0;
             if (baseWisdom === 0) continue;
 
-            // Get enhancement scaling
-            const enhancementBonus = noncombatEnhancement.skillingExperience || 0;
             const enhancementLevel = item.enhancementLevel || 0;
-
-            // Calculate total wisdom from this item
-            // Enhancement scales quadratically: level × (1 + 0.05 × (level - 1))
-            const enhancementTotal =
-                enhancementBonus * (enhancementLevel + (0.1 * enhancementLevel * (enhancementLevel - 1)) / 2);
-            const itemWisdom = (baseWisdom + enhancementTotal) * 100;
+            const multiplier = getEnhancementMultiplier(itemDetails, enhancementLevel);
+            const itemWisdom = baseWisdom * multiplier * 100;
             totalWisdom += itemWisdom;
 
             // Add to breakdown
@@ -5317,21 +5310,14 @@ self.onmessage = function (e) {
             if (!itemDetails?.equipmentDetail) continue;
 
             const noncombatStats = itemDetails.equipmentDetail.noncombatStats || {};
-            const noncombatEnhancement = itemDetails.equipmentDetail.noncombatEnhancementBonuses || {};
 
             // Get base charm experience
             const baseCharmXP = noncombatStats[statName] || 0;
             if (baseCharmXP === 0) continue;
 
-            // Get enhancement scaling
-            const enhancementBonus = noncombatEnhancement[statName] || 0;
             const enhancementLevel = item.enhancementLevel || 0;
-
-            // Calculate total charm XP from this item
-            // Enhancement scales quadratically: level × (1 + 0.05 × (level - 1))
-            const enhancementTotal =
-                enhancementBonus * (enhancementLevel + (0.1 * enhancementLevel * (enhancementLevel - 1)) / 2);
-            const itemCharmXP = (baseCharmXP + enhancementTotal) * 100;
+            const multiplier = getEnhancementMultiplier(itemDetails, enhancementLevel);
+            const itemCharmXP = baseCharmXP * multiplier * 100;
             totalCharmXP += itemCharmXP;
 
             // Add to breakdown
@@ -5533,16 +5519,9 @@ self.onmessage = function (e) {
             return 0;
         }
 
-        // Get enhancement scaling
-        const noncombatEnhancement = itemDetails.equipmentDetail.noncombatEnhancementBonuses || {};
-        const enhancementBonus = noncombatEnhancement.drinkConcentration || 0;
         const enhancementLevel = pouchItem.enhancementLevel || 0;
-
-        // Calculate total drink concentration
-        // Enhancement scales quadratically: level × (1 + 0.05 × (level - 1))
-        const enhancementTotal =
-            enhancementBonus * (enhancementLevel + (0.1 * enhancementLevel * (enhancementLevel - 1)) / 2);
-        return (baseDrinkConcentration + enhancementTotal) * 100;
+        const multiplier = getEnhancementMultiplier(itemDetails, enhancementLevel);
+        return baseDrinkConcentration * multiplier * 100;
     }
 
     var experienceParser = {
