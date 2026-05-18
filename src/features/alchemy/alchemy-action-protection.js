@@ -63,7 +63,7 @@ class AlchemyActionProtection {
             const btn = e.target.closest('button');
             if (!btn) return;
 
-            if (!btn.classList.contains('Button_success__6d6kU')) return;
+            if (!btn.closest('[class*="SkillActionDetail_buttonsContainer"]')) return;
 
             const alchemyPanel = btn.closest('[class*="SkillActionDetail_alchemyComponent"]');
             if (!alchemyPanel) return;
