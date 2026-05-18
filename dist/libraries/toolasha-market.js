@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.48.1
+ * Version: 2.48.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1413,13 +1413,15 @@
 
                 if (itemDetails) {
                     let resolved;
+                    let isCrafted = false;
                     if (actionDetails.upgradeItemHrid === '/items/coin') {
                         resolved = { price: 1, custom: false, missing: false };
                     } else {
                         resolved = profitHelpers_js.resolveItemPrice(actionDetails.upgradeItemHrid, { context: 'profit', side: 'buy' });
 
                         const craftCost = getProductionCost(actionDetails.upgradeItemHrid, 'ask');
-                        if (craftCost > 0 && (resolved.price === 0 || craftCost < resolved.price)) {
+                        isCrafted = craftCost > 0 && (resolved.price === 0 || craftCost < resolved.price);
+                        if (isCrafted) {
                             resolved = { price: craftCost, custom: false, missing: false };
                         }
                     }
@@ -1437,6 +1439,7 @@
                         missingPrice: resolved.missing,
                         customPrice: resolved.custom,
                         isUpgradeItem: true,
+                        isCrafted,
                     });
                 }
             }
@@ -4731,8 +4734,11 @@ self.onmessage = function (e) {
                     if (material.isUpgradeItem) {
                         const craftAsk = getProductionCost(material.itemHrid, 'ask');
                         const craftBid = getProductionCost(material.itemHrid, 'bid');
-                        if (craftAsk > 0 && (askPrice === 0 || craftAsk < askPrice)) askPrice = craftAsk;
+                        const isCrafted = craftAsk > 0 && (askPrice === 0 || craftAsk < askPrice);
+                        if (isCrafted) askPrice = craftAsk;
                         if (craftBid > 0 && (bidPrice === 0 || craftBid < bidPrice)) bidPrice = craftBid;
+                        const label = isCrafted ? 'Craft' : 'Buy';
+                        return { ...material, itemName: `${label} ${material.itemName}`, askPrice, bidPrice };
                     }
 
                     return { ...material, askPrice, bidPrice };
