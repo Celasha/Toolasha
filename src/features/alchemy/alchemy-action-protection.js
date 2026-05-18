@@ -245,7 +245,7 @@ class AlchemyActionProtection {
             z-index: 100001;
             min-width: 340px;
             max-width: 500px;
-            max-height: 70vh;
+            max-height: 90vh;
             overflow-y: auto;
             color: #ccc;
             font-size: 13px;
@@ -264,7 +264,7 @@ class AlchemyActionProtection {
         popup.appendChild(header);
 
         const desc = document.createElement('p');
-        desc.style.cssText = 'color:#999; margin:0 0 14px 0; font-size:12px;';
+        desc.style.cssText = 'color:#999; margin:0 0 10px 0; font-size:12px;';
         desc.textContent =
             'Select which item categories to protect from each alchemy action. Protected items require a 3-second confirmation before the action proceeds.';
         popup.appendChild(desc);
@@ -277,7 +277,7 @@ class AlchemyActionProtection {
             if (!typeCats || typeCats.length === 0) continue;
 
             const section = document.createElement('div');
-            section.style.cssText = 'margin-bottom: 14px;';
+            section.style.cssText = 'margin-bottom: 10px;';
 
             const typeHeader = document.createElement('div');
             typeHeader.style.cssText = 'font-weight:bold; margin-bottom:6px; text-transform:capitalize; color:#ddd;';
@@ -288,7 +288,7 @@ class AlchemyActionProtection {
 
             for (const cat of typeCats) {
                 const row = document.createElement('label');
-                row.style.cssText = 'display:flex; align-items:center; gap:8px; padding:3px 0; cursor:pointer;';
+                row.style.cssText = 'display:flex; align-items:center; gap:8px; padding:2px 0; cursor:pointer;';
 
                 const checkbox = document.createElement('input');
                 checkbox.type = 'checkbox';
