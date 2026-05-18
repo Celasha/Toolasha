@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.48.2
+ * Version: 2.48.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -15515,6 +15515,7 @@ ${starCSS}
             this.timerRegistry = timerRegistry_js.createTimerRegistry();
             this.autofillManager = createAutofillManager('MissingMats-Houses');
             this._itemsUpdatedHandler = null; // Inventory change listener
+            this._houseRoomsUpdatedHandler = null; // House room level change listener
             this._cumulativeState = null; // State for refreshing cumulative display
             this._costContext = null; // { houseRoomHrid, currentLevel, targetLevel } for recalculating missing mats
         }
@@ -15558,6 +15559,10 @@ ${starCSS}
             // Listen for inventory changes to refresh the cumulative display
             this._itemsUpdatedHandler = () => this._onInventoryChanged();
             dataManager.on('items_updated', this._itemsUpdatedHandler);
+
+            // Listen for house room level changes to refresh the dropdown and display
+            this._houseRoomsUpdatedHandler = () => this._onHouseRoomUpdated();
+            dataManager.on('house_rooms_updated', this._houseRoomsUpdatedHandler);
 
             this.autofillManager.initialize();
         }
@@ -16246,6 +16251,46 @@ ${starCSS}
         }
 
         /**
+         * Handle house room level changes — refresh the dropdown and cumulative display
+         */
+        async _onHouseRoomUpdated() {
+            if (!this._cumulativeState) return;
+            const { costContainer, houseRoomHrid, dropdown } = this._cumulativeState;
+            if (!costContainer.isConnected) {
+                this._cumulativeState = null;
+                return;
+            }
+
+            const newLevel = houseCostCalculator.getCurrentRoomLevel(houseRoomHrid);
+            if (newLevel >= 8) {
+                costContainer.innerHTML = '';
+                this._cumulativeState = null;
+                this._costContext = null;
+                return;
+            }
+
+            // Remove dropdown options at or below the new current level
+            while (dropdown.options.length > 0 && parseInt(dropdown.options[0].value) <= newLevel) {
+                dropdown.remove(0);
+            }
+
+            if (dropdown.options.length === 0) {
+                costContainer.innerHTML = '';
+                this._cumulativeState = null;
+                this._costContext = null;
+                return;
+            }
+
+            dropdown.value = dropdown.options[0].value;
+            const targetLevel = parseInt(dropdown.value);
+
+            this._cumulativeState.currentLevel = newLevel;
+            this._costContext = { houseRoomHrid, currentLevel: newLevel, targetLevel };
+
+            await this.updateCompactCumulativeDisplay(costContainer, houseRoomHrid, newLevel, targetLevel);
+        }
+
+        /**
          * Update marketplace tab badges when inventory changes.
          * Recalculates missing amounts and updates each tab's display.
          */
@@ -16325,6 +16370,13 @@ ${starCSS}
                 dataManager.off('items_updated', this._itemsUpdatedHandler);
                 this._itemsUpdatedHandler = null;
             }
+
+            // Remove house room listener
+            if (this._houseRoomsUpdatedHandler) {
+                dataManager.off('house_rooms_updated', this._houseRoomsUpdatedHandler);
+                this._houseRoomsUpdatedHandler = null;
+            }
+
             this._cumulativeState = null;
             this._costContext = null;
 
@@ -26103,7 +26155,7 @@ ${starCSS}
                 const btn = e.target.closest('button');
                 if (!btn) return;
 
-                if (!btn.classList.contains('Button_success__6d6kU')) return;
+                if (!btn.closest('[class*="SkillActionDetail_buttonsContainer"]')) return;
 
                 const alchemyPanel = btn.closest('[class*="SkillActionDetail_alchemyComponent"]');
                 if (!alchemyPanel) return;
@@ -26163,23 +26215,32 @@ ${starCSS}
         _setupShieldButton() {
             const unregister = domObserver.onClass(
                 'AlchemyActionProtection-Shield',
-                'AlchemyPanel_tabsComponentContainer',
-                (tabContainer) => {
-                    this._injectShieldButton(tabContainer);
+                'SkillActionDetail_primaryItemSelectorContainer',
+                (itemSelectorContainer) => {
+                    this._injectShieldButton(itemSelectorContainer);
                 }
             );
             this.unregisterHandlers.push(unregister);
+
+            // Check for already-existing element (alchemy panel may already be open)
+            const existing = document.querySelector('[class*="SkillActionDetail_primaryItemSelectorContainer"]');
+            if (existing) {
+                this._injectShieldButton(existing);
+            }
         }
 
-        _injectShieldButton(tabContainer) {
-            const parent = tabContainer.parentElement;
+        _injectShieldButton(itemSelectorContainer) {
+            const alchemyComponent = itemSelectorContainer.closest('[class*="SkillActionDetail_alchemyComponent"]');
+            if (!alchemyComponent) return;
+
+            const parent = itemSelectorContainer.parentElement;
             if (!parent || parent.querySelector('.mwi-alchemy-protection-btn')) return;
 
-            const btn = document.createElement('span');
+            const btn = document.createElement('div');
             btn.className = 'mwi-alchemy-protection-btn';
             btn.textContent = '\u{1F6E1}\u{FE0F}';
             btn.style.cssText =
-                'cursor:pointer; font-size:16px; margin-left:8px; opacity:0.7; transition:opacity 0.1s; vertical-align:middle; display:inline-block; position:relative; z-index:10;';
+                'cursor:pointer; font-size:16px; opacity:0.7; transition:opacity 0.1s; text-align:center; margin-bottom:2px;';
             btn.addEventListener('mouseenter', () => {
                 btn.style.opacity = '1';
             });
@@ -26188,18 +26249,21 @@ ${starCSS}
             });
             btn.addEventListener('click', () => this.openConfigPopup());
 
-            tabContainer.appendChild(btn);
+            parent.insertBefore(btn, itemSelectorContainer);
 
+            const tabContainer = document.querySelector('[class*="AlchemyPanel_tabsComponentContainer"]');
             const updateVisibility = () => {
                 const type = this._getAlchemyType();
-                btn.style.display = type ? 'inline-block' : 'none';
+                btn.style.display = type ? 'block' : 'none';
             };
 
             updateVisibility();
 
-            const observer = new MutationObserver(updateVisibility);
-            observer.observe(tabContainer, { attributes: true, subtree: true, attributeFilter: ['aria-selected'] });
-            this.unregisterHandlers.push(() => observer.disconnect());
+            if (tabContainer) {
+                const observer = new MutationObserver(updateVisibility);
+                observer.observe(tabContainer, { attributes: true, subtree: true, attributeFilter: ['aria-selected'] });
+                this.unregisterHandlers.push(() => observer.disconnect());
+            }
         }
 
         _getAlchemyType() {
@@ -26285,7 +26349,7 @@ ${starCSS}
             z-index: 100001;
             min-width: 340px;
             max-width: 500px;
-            max-height: 70vh;
+            max-height: 90vh;
             overflow-y: auto;
             color: #ccc;
             font-size: 13px;
@@ -26304,7 +26368,7 @@ ${starCSS}
             popup.appendChild(header);
 
             const desc = document.createElement('p');
-            desc.style.cssText = 'color:#999; margin:0 0 14px 0; font-size:12px;';
+            desc.style.cssText = 'color:#999; margin:0 0 10px 0; font-size:12px;';
             desc.textContent =
                 'Select which item categories to protect from each alchemy action. Protected items require a 3-second confirmation before the action proceeds.';
             popup.appendChild(desc);
@@ -26317,7 +26381,7 @@ ${starCSS}
                 if (!typeCats || typeCats.length === 0) continue;
 
                 const section = document.createElement('div');
-                section.style.cssText = 'margin-bottom: 14px;';
+                section.style.cssText = 'margin-bottom: 10px;';
 
                 const typeHeader = document.createElement('div');
                 typeHeader.style.cssText = 'font-weight:bold; margin-bottom:6px; text-transform:capitalize; color:#ddd;';
@@ -26328,7 +26392,7 @@ ${starCSS}
 
                 for (const cat of typeCats) {
                     const row = document.createElement('label');
-                    row.style.cssText = 'display:flex; align-items:center; gap:8px; padding:3px 0; cursor:pointer;';
+                    row.style.cssText = 'display:flex; align-items:center; gap:8px; padding:2px 0; cursor:pointer;';
 
                     const checkbox = document.createElement('input');
                     checkbox.type = 'checkbox';

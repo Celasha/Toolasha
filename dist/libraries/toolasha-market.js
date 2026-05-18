@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.48.2
+ * Version: 2.48.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2081,7 +2081,7 @@ self.onmessage = function (e) {
                     // Get price and tradeable status
                     const price = this.getDropPrice(itemHrid);
                     const itemDetails = dataManager.getItemDetails(itemHrid);
-                    const canBeSold = itemDetails?.tradeable !== false;
+                    const canBeSold = itemDetails?.isTradable !== false;
 
                     priceMap[itemHrid] = {
                         price,
@@ -2140,7 +2140,7 @@ self.onmessage = function (e) {
 
                 // Check if item is tradeable (for tax calculation)
                 const itemDetails = dataManager.getItemDetails(itemHrid);
-                const canBeSold = itemDetails?.tradeable !== false;
+                const canBeSold = itemDetails?.isTradable !== false;
 
                 // Special case: Coin never has market tax (it's currency, not a market item)
                 const isCoin = itemHrid === this.COIN_HRID;
@@ -2289,7 +2289,7 @@ self.onmessage = function (e) {
                 const price = this.getDropPrice(itemHrid);
 
                 // Calculate expected value for this drop
-                const itemCanBeSold = itemDetails.tradeable !== false;
+                const itemCanBeSold = itemDetails.isTradable !== false;
 
                 // Special case: Coin never has market tax (it's currency, not a market item)
                 const isCoin = itemHrid === this.COIN_HRID;
@@ -4418,7 +4418,7 @@ self.onmessage = function (e) {
 
             // Show enhancement milestones for unenhanced equipment items
             if (enhancementLevel === 0 && config.getSetting('itemTooltip_enhancementMilestones')) {
-                const isTradeable = itemDetails.tradeable !== false;
+                const isTradeable = itemDetails.isTradable !== false;
                 const enhancementConfig = isTradeable ? enhancementConfig_js.getEnhancingParams() : enhancementConfig_js.getAutoDetectedParams();
                 if (enhancementConfig) {
                     const milestonesHTML = buildEnhancementMilestonesHTML(itemHrid, enhancementConfig);
@@ -4440,7 +4440,7 @@ self.onmessage = function (e) {
             // Show enhancement path for enhanced items (1-20)
             if (enhancementLevel > 0 && config.getSetting('itemTooltip_enhancementPath')) {
                 // Use auto-detected stats for untradeable items (you're the one enhancing)
-                const isTradeable = itemDetails.tradeable !== false;
+                const isTradeable = itemDetails.isTradable !== false;
                 const enhancementConfig = isTradeable ? enhancementConfig_js.getEnhancingParams() : enhancementConfig_js.getAutoDetectedParams();
                 if (enhancementConfig) {
                     // Calculate optimal enhancement path

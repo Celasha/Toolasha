@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.48.2
+ * Version: 2.48.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1125,7 +1125,32 @@
                     label: 'Neck',
                     type: 'enhanceGear',
                     default: { enabled: true, tier: 'philo', level: 10 },
-                    tiers: [{ value: 'philo', label: 'Philo' }],
+                    tiers: [
+                        { value: 'philo', label: 'Philo' },
+                        { value: 'speed', label: 'Speed' },
+                    ],
+                    disabledBy: 'enhanceSim_autoDetect',
+                },
+                enhanceSim_gear_ring: {
+                    id: 'enhanceSim_gear_ring',
+                    label: 'Ring',
+                    type: 'enhanceGear',
+                    default: { enabled: true, tier: 'philo', level: 10 },
+                    tiers: [
+                        { value: 'philo', label: 'Philo' },
+                        { value: 'rarefind', label: 'Rare Find' },
+                    ],
+                    disabledBy: 'enhanceSim_autoDetect',
+                },
+                enhanceSim_gear_earring: {
+                    id: 'enhanceSim_gear_earring',
+                    label: 'Earring',
+                    type: 'enhanceGear',
+                    default: { enabled: true, tier: 'philo', level: 10 },
+                    tiers: [
+                        { value: 'philo', label: 'Philo' },
+                        { value: 'rarefind', label: 'Rare Find' },
+                    ],
                     disabledBy: 'enhanceSim_autoDetect',
                 },
                 enhanceSim_gear_cape: {

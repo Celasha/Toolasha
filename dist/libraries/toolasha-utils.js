@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 2.48.2
+ * Version: 2.48.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -4797,7 +4797,7 @@ self.onmessage = function (e) {
                     // Get price and tradeable status
                     const price = this.getDropPrice(itemHrid);
                     const itemDetails = dataManager.getItemDetails(itemHrid);
-                    const canBeSold = itemDetails?.tradeable !== false;
+                    const canBeSold = itemDetails?.isTradable !== false;
 
                     priceMap[itemHrid] = {
                         price,
@@ -4856,7 +4856,7 @@ self.onmessage = function (e) {
 
                 // Check if item is tradeable (for tax calculation)
                 const itemDetails = dataManager.getItemDetails(itemHrid);
-                const canBeSold = itemDetails?.tradeable !== false;
+                const canBeSold = itemDetails?.isTradable !== false;
 
                 // Special case: Coin never has market tax (it's currency, not a market item)
                 const isCoin = itemHrid === this.COIN_HRID;
@@ -5005,7 +5005,7 @@ self.onmessage = function (e) {
                 const price = this.getDropPrice(itemHrid);
 
                 // Calculate expected value for this drop
-                const itemCanBeSold = itemDetails.tradeable !== false;
+                const itemCanBeSold = itemDetails.isTradable !== false;
 
                 // Special case: Coin never has market tax (it's currency, not a market item)
                 const isCoin = itemHrid === this.COIN_HRID;
@@ -7079,8 +7079,19 @@ self.onmessage = function (e) {
             '/items/enchanted_gloves': 'gloves',
             '/items/enhancers_top': 'top',
             '/items/enhancers_bottoms': 'bottoms',
-            '/items/philosophers_necklace': 'neck',
             '/items/guzzling_pouch': 'guzzling',
+        };
+        const NECK_HRIDS = {
+            '/items/philosophers_necklace': 'philo',
+            '/items/necklace_of_speed': 'speed',
+        };
+        const RING_HRIDS = {
+            '/items/philosophers_ring': 'philo',
+            '/items/ring_of_rare_find': 'rarefind',
+        };
+        const EARRING_HRIDS = {
+            '/items/philosophers_earrings': 'philo',
+            '/items/earrings_of_rare_find': 'rarefind',
         };
 
         // Default all gear to disabled (not detected)
@@ -7089,6 +7100,8 @@ self.onmessage = function (e) {
         result.enhanceSim_gear_top = { enabled: false, level: 0 };
         result.enhanceSim_gear_bottoms = { enabled: false, level: 0 };
         result.enhanceSim_gear_neck = { enabled: false, tier: 'philo', level: 0 };
+        result.enhanceSim_gear_ring = { enabled: false, tier: 'philo', level: 0 };
+        result.enhanceSim_gear_earring = { enabled: false, tier: 'philo', level: 0 };
         result.enhanceSim_gear_cape = { enabled: false, tier: 'normal', level: 0 };
         result.enhanceSim_gear_guzzling = { enabled: false, level: 0 };
         result.enhanceSim_gear_charm = { enabled: false, tier: 'grandmaster', level: 0 };
@@ -7105,6 +7118,12 @@ self.onmessage = function (e) {
                     result.enhanceSim_gear_cape = { enabled: true, tier: CAPE_HRIDS[hrid], level: enhLevel };
                 } else if (CHARM_HRIDS[hrid]) {
                     result.enhanceSim_gear_charm = { enabled: true, tier: CHARM_HRIDS[hrid], level: enhLevel };
+                } else if (NECK_HRIDS[hrid]) {
+                    result.enhanceSim_gear_neck = { enabled: true, tier: NECK_HRIDS[hrid], level: enhLevel };
+                } else if (RING_HRIDS[hrid]) {
+                    result.enhanceSim_gear_ring = { enabled: true, tier: RING_HRIDS[hrid], level: enhLevel };
+                } else if (EARRING_HRIDS[hrid]) {
+                    result.enhanceSim_gear_earring = { enabled: true, tier: EARRING_HRIDS[hrid], level: enhLevel };
                 } else if (FIXED_HRIDS[hrid]) {
                     const slot = FIXED_HRIDS[hrid];
                     result[`enhanceSim_gear_${slot}`] = { enabled: true, level: enhLevel };
@@ -7170,8 +7189,19 @@ self.onmessage = function (e) {
             gloves: '/items/enchanted_gloves',
             top: '/items/enhancers_top',
             bottoms: '/items/enhancers_bottoms',
-            neck: '/items/philosophers_necklace',
             guzzling: '/items/guzzling_pouch',
+        };
+        const NECK_TIERS = {
+            philo: '/items/philosophers_necklace',
+            speed: '/items/necklace_of_speed',
+        };
+        const RING_TIERS = {
+            philo: '/items/philosophers_ring',
+            rarefind: '/items/ring_of_rare_find',
+        };
+        const EARRING_TIERS = {
+            philo: '/items/philosophers_earrings',
+            rarefind: '/items/earrings_of_rare_find',
         };
 
         // Helper to read compound gear setting
@@ -7225,11 +7255,33 @@ self.onmessage = function (e) {
             equipmentExperience += bonus.experience;
         }
 
-        // Neck (Philosopher's Necklace — 5× multiplier slot)
+        // Neck
         const neck = getGear('enhanceSim_gear_neck', { enabled: true, tier: 'philo', level: 10 });
         if (neck.enabled) {
-            const bonus = getGearSlotBonus(FIXED_GEAR.neck, neck.level, itemDetailMap);
+            const hrid = NECK_TIERS[neck.tier] || NECK_TIERS.philo;
+            const bonus = getGearSlotBonus(hrid, neck.level, itemDetailMap);
             equipmentSpeedBonus += bonus.speed;
+            equipmentRareFind += bonus.rareFind;
+            equipmentExperience += bonus.experience;
+        }
+
+        // Ring
+        const ring = getGear('enhanceSim_gear_ring', { enabled: true, tier: 'philo', level: 10 });
+        if (ring.enabled) {
+            const hrid = RING_TIERS[ring.tier] || RING_TIERS.philo;
+            const bonus = getGearSlotBonus(hrid, ring.level, itemDetailMap);
+            equipmentSpeedBonus += bonus.speed;
+            equipmentRareFind += bonus.rareFind;
+            equipmentExperience += bonus.experience;
+        }
+
+        // Earring
+        const earring = getGear('enhanceSim_gear_earring', { enabled: true, tier: 'philo', level: 10 });
+        if (earring.enabled) {
+            const hrid = EARRING_TIERS[earring.tier] || EARRING_TIERS.philo;
+            const bonus = getGearSlotBonus(hrid, earring.level, itemDetailMap);
+            equipmentSpeedBonus += bonus.speed;
+            equipmentRareFind += bonus.rareFind;
             equipmentExperience += bonus.experience;
         }
 
@@ -7367,7 +7419,7 @@ self.onmessage = function (e) {
         return {
             success: (stats.enhancingSuccess || 0) * 100 * multiplier,
             speed: ((stats.enhancingSpeed || 0) + (stats.skillingSpeed || 0)) * 100 * multiplier,
-            rareFind: (stats.enhancingRareFind || 0) * 100 * multiplier,
+            rareFind: ((stats.enhancingRareFind || 0) + (stats.skillingRareFind || 0)) * 100 * multiplier,
             experience: ((stats.enhancingExperience || 0) + (stats.skillingExperience || 0)) * 100 * multiplier,
             drinkConc: (stats.drinkConcentration || 0) * 100 * multiplier,
         };
