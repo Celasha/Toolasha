@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 2.48.3
+ * Version: 2.49.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -6904,7 +6904,7 @@ self.onmessage = function (e) {
         const teaWisdomBonus = baseTeaWisdom > 0 ? baseTeaWisdom * (1 + drinkConcentration / 100) : 0;
 
         // Get Enhancing skill level
-        const enhancingSkill = skills.find((s) => s.skillHrid === '/skills/enhancing');
+        const enhancingSkill = skills?.find((s) => s.skillHrid === '/skills/enhancing');
         if (!enhancingSkill) {
             console.error('[EnhancementConfig] Skill not found: /skills/enhancing');
         }

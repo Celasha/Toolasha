@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.48.3
+ * Version: 2.49.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -225,7 +225,7 @@
             // No mirror used - return traditional result
             optimalStrategy = {
                 protectFrom: optimalTraditional.protectFrom,
-                label: optimalTraditional.protectFrom === 0 ? 'Never' : `From +${optimalTraditional.protectFrom}`,
+                label: optimalTraditional.protectFrom === 0 ? 'Never' : `+${optimalTraditional.protectFrom}`,
                 expectedAttempts: optimalTraditional.expectedAttempts,
                 totalTime: optimalTraditional.totalTime,
                 baseCost: optimalTraditional.baseCost,
@@ -770,7 +770,11 @@
         html += '<div style="font-size: 0.9em; margin-left: 8px;">';
 
         // Optimal strategy
-        html += '<div>Strategy: ' + optimalStrategy.label + '</div>';
+        if (optimalStrategy.protectFrom === 0) {
+            html += '<div>No protection needed for +' + targetLevel + '</div>';
+        } else {
+            html += '<div>Protect from: ' + optimalStrategy.label + '</div>';
+        }
 
         // Show Philosopher's Mirror usage if applicable
         if (optimalStrategy.usedMirror && optimalStrategy.mirrorStartLevel) {
@@ -17905,6 +17909,10 @@ self.onmessage = function (e) {
                 this.chartInstance = null;
             }
 
+            // Remove stale tooltip
+            const staleTooltip = document.getElementById('mwi-nw-chart-tooltip');
+            if (staleTooltip) staleTooltip.remove();
+
             const history = networthHistory.getHistory();
             if (history.length === 0) {
                 this.updateSummaryStats([]);
@@ -18115,6 +18123,8 @@ self.onmessage = function (e) {
                         legend: { display: false },
                         datalabels: { display: false },
                         tooltip: {
+                            enabled: false,
+                            external: (context) => this._renderCustomTooltip(context),
                             filter: (tooltipItem) => {
                                 if (tooltipItem.dataset.type === 'bar') return false;
                                 if (isNaN(tooltipItem.raw?.y)) return false;
@@ -18122,46 +18132,6 @@ self.onmessage = function (e) {
                                 if (tooltipItem.dataset.label === 'Non-Excluded') return true;
                                 const cat = CATEGORIES.find((c) => c.label === tooltipItem.dataset.label);
                                 return cat ? this.categoryVisibility[cat.key] : false;
-                            },
-                            callbacks: {
-                                title: (tooltipItems) => {
-                                    if (!tooltipItems.length) return '';
-                                    const ts = tooltipItems[0].raw.x;
-                                    return new Date(ts).toLocaleString([], {
-                                        month: 'short',
-                                        day: 'numeric',
-                                        hour: 'numeric',
-                                        minute: '2-digit',
-                                    });
-                                },
-                                label: (context) => {
-                                    if (context.dataset.label === 'Total Net Worth') {
-                                        const raw = context.raw._raw;
-                                        return raw ? `Total: ${formatters_js.networthFormatter(raw.total)}` : '';
-                                    }
-                                    if (context.dataset.label === 'Non-Excluded') {
-                                        const val = context.raw.y;
-                                        return !isNaN(val) ? `Non-Excluded: ${formatters_js.networthFormatter(Math.round(val))}` : '';
-                                    }
-                                    return `${context.dataset.label}: ${formatters_js.networthFormatter(Math.round(context.raw.y))}`;
-                                },
-                                afterLabel: (context) => {
-                                    if (context.dataset.label !== 'Total Net Worth') return [];
-                                    const raw = context.raw._raw;
-                                    if (!raw) return [];
-                                    const lines = [];
-                                    if (raw.gold) lines.push(`Gold: ${formatters_js.networthFormatter(raw.gold)}`);
-                                    const inventoryExGold = (raw.inventory || 0) - (raw.gold || 0);
-                                    if (inventoryExGold > 0) lines.push(`Inventory: ${formatters_js.networthFormatter(inventoryExGold)}`);
-                                    if (raw.equipment) lines.push(`Equipment: ${formatters_js.networthFormatter(raw.equipment)}`);
-                                    if (raw.listings) lines.push(`Listings: ${formatters_js.networthFormatter(raw.listings)}`);
-                                    if (raw.house) lines.push(`House: ${formatters_js.networthFormatter(raw.house)}`);
-                                    if (raw.abilities) lines.push(`Abilities: ${formatters_js.networthFormatter(raw.abilities)}`);
-                                    if (raw.nonExcluded != null && raw.nonExcluded !== raw.total) {
-                                        lines.push(`Excluded: ${formatters_js.networthFormatter(raw.total - raw.nonExcluded)}`);
-                                    }
-                                    return lines;
-                                },
                             },
                         },
                     },
@@ -18693,8 +18663,151 @@ self.onmessage = function (e) {
         }
 
         /**
-         * Close the modal and clean up
+         * Find previous valid _raw data by searching backward from currentIndex
          */
+        _getPreviousRaw(dataset, currentIndex) {
+            for (let i = currentIndex - 1; i >= 0; i--) {
+                const point = dataset[i];
+                if (!isNaN(point.y) && point._raw) return point._raw;
+            }
+            return null;
+        }
+
+        /**
+         * Format a delta value with color
+         */
+        _formatDelta(current, previous) {
+            if (previous == null || current == null) return '';
+            const diff = current - previous;
+            if (diff === 0) return '';
+            const color = diff > 0 ? '#4ade80' : '#f87171';
+            const sign = diff > 0 ? '+' : '';
+            return `<span style="color:${color}; margin-left:6px;">${sign}${formatters_js.networthFormatter(diff)}</span>`;
+        }
+
+        /**
+         * Render custom HTML tooltip with colored deltas
+         */
+        _renderCustomTooltip(context) {
+            const { tooltip } = context;
+
+            let tooltipEl = document.getElementById('mwi-nw-chart-tooltip');
+            if (!tooltipEl) {
+                tooltipEl = document.createElement('div');
+                tooltipEl.id = 'mwi-nw-chart-tooltip';
+                tooltipEl.style.cssText = `
+                position: absolute;
+                background: rgba(0, 0, 0, 0.92);
+                border: 1px solid #555;
+                border-radius: 4px;
+                padding: 8px 12px;
+                pointer-events: none;
+                font-size: 12px;
+                font-family: monospace;
+                color: #ccc;
+                white-space: nowrap;
+                z-index: 10;
+                transition: opacity 0.15s;
+            `;
+                const canvas = context.chart.canvas;
+                canvas.parentElement.appendChild(tooltipEl);
+            }
+
+            if (tooltip.opacity === 0) {
+                tooltipEl.style.opacity = '0';
+                return;
+            }
+
+            // Find the Total Net Worth data point
+            const totalPoint = tooltip.dataPoints?.find((dp) => dp.dataset.label === 'Total Net Worth');
+            if (!totalPoint) {
+                tooltipEl.style.opacity = '0';
+                return;
+            }
+
+            const raw = totalPoint.raw._raw;
+            if (!raw) {
+                tooltipEl.style.opacity = '0';
+                return;
+            }
+
+            const prevRaw = this._getPreviousRaw(totalPoint.dataset.data, totalPoint.dataIndex);
+
+            // Title
+            const title = new Date(totalPoint.raw.x).toLocaleString([], {
+                month: 'short',
+                day: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit',
+            });
+
+            // Build lines
+            let html = `<div style="font-weight:bold; color:#fff; margin-bottom:4px;">${title}</div>`;
+
+            // Total
+            const totalDelta = this._formatDelta(raw.total, prevRaw?.total);
+            html += `<div style="color:#4ade80;">&#9632; Total: ${formatters_js.networthFormatter(raw.total)}${totalDelta}</div>`;
+
+            // Category breakdown
+            const categories = [];
+            if (raw.gold) {
+                categories.push({ label: 'Gold', value: raw.gold, prev: prevRaw?.gold });
+            }
+            const inventoryExGold = (raw.inventory || 0) - (raw.gold || 0);
+            const prevInventoryExGold = prevRaw ? (prevRaw.inventory || 0) - (prevRaw.gold || 0) : null;
+            if (inventoryExGold > 0) {
+                categories.push({ label: 'Inventory', value: inventoryExGold, prev: prevInventoryExGold });
+            }
+            if (raw.equipment) {
+                categories.push({ label: 'Equipment', value: raw.equipment, prev: prevRaw?.equipment });
+            }
+            if (raw.listings) {
+                categories.push({ label: 'Listings', value: raw.listings, prev: prevRaw?.listings });
+            }
+            if (raw.house) {
+                categories.push({ label: 'House', value: raw.house, prev: prevRaw?.house });
+            }
+            if (raw.abilities) {
+                categories.push({ label: 'Abilities', value: raw.abilities, prev: prevRaw?.abilities });
+            }
+            if (raw.nonExcluded != null && raw.nonExcluded !== raw.total) {
+                const excluded = raw.total - raw.nonExcluded;
+                const prevExcluded = prevRaw?.nonExcluded != null ? prevRaw.total - prevRaw.nonExcluded : null;
+                categories.push({ label: 'Excluded', value: excluded, prev: prevExcluded });
+            }
+
+            for (const cat of categories) {
+                const delta = this._formatDelta(cat.value, cat.prev);
+                html += `<div style="color:#ccc; padding-left:12px;">${cat.label}: ${formatters_js.networthFormatter(cat.value)}${delta}</div>`;
+            }
+
+            tooltipEl.innerHTML = html;
+            tooltipEl.style.opacity = '1';
+
+            // Position tooltip
+            const containerRect = context.chart.canvas.parentElement.getBoundingClientRect();
+            const offsetX = tooltip.caretX;
+            const offsetY = tooltip.caretY;
+
+            // Keep tooltip within canvas bounds
+            const tooltipWidth = tooltipEl.offsetWidth;
+            const tooltipHeight = tooltipEl.offsetHeight;
+            const containerWidth = containerRect.width;
+            const containerHeight = containerRect.height;
+
+            let left = offsetX + 12;
+            let top = offsetY - tooltipHeight / 2;
+
+            if (left + tooltipWidth > containerWidth) {
+                left = offsetX - tooltipWidth - 12;
+            }
+            if (top < 0) top = 0;
+            if (top + tooltipHeight > containerHeight) top = containerHeight - tooltipHeight;
+
+            tooltipEl.style.left = `${left}px`;
+            tooltipEl.style.top = `${top}px`;
+        }
+
         /**
          * Handle a click on the chart — show delete popup for the nearest data point.
          * @param {Object} event - Chart.js event object
