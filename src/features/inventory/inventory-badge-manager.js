@@ -15,6 +15,7 @@ import expectedValueCalculator from '../market/expected-value-calculator.js';
 import { getItemPrice } from '../../utils/market-data.js';
 import { parseItemCount } from '../../utils/number-parser.js';
 import { MARKET_TAX, COWBELL_BAG_HRID, COWBELL_BAG_TAX } from '../../utils/profit-constants.js';
+import { DUNGEON_CHEST_CHEST_KEYS } from '../combat-stats/combat-stats-calculator.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
 
 /**
@@ -365,11 +366,20 @@ class InventoryBadgeManager {
             if (itemDetails?.isOpenable && expectedValueCalculator.isInitialized) {
                 const evData = expectedValueCalculator.calculateExpectedValue(itemHrid);
                 if (evData && evData.expectedValue > 0) {
-                    // Use expected value for both ask and bid
-                    itemElem.dataset.askPrice = evData.expectedValue;
-                    itemElem.dataset.bidPrice = evData.expectedValue;
-                    itemElem.dataset.askValue = evData.expectedValue * itemCount;
-                    itemElem.dataset.bidValue = evData.expectedValue * itemCount;
+                    let netValue = evData.expectedValue;
+
+                    const chestKeyHrid = DUNGEON_CHEST_CHEST_KEYS[itemHrid];
+                    if (chestKeyHrid) {
+                        const keyPricingSetting = config.getSettingValue('profitCalc_keyPricingMode') || 'ask';
+                        const keyPrices = marketAPI.getPrice(chestKeyHrid);
+                        const keyPrice = keyPrices?.[keyPricingSetting] ?? keyPrices?.ask ?? 0;
+                        netValue -= keyPrice;
+                    }
+
+                    itemElem.dataset.askPrice = netValue;
+                    itemElem.dataset.bidPrice = netValue;
+                    itemElem.dataset.askValue = netValue * itemCount;
+                    itemElem.dataset.bidValue = netValue * itemCount;
                     continue;
                 }
             }
