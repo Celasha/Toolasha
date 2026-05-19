@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.49.1
+ * Version: 2.49.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -5141,6 +5141,35 @@
             });
             sortBtn.insertAdjacentElement('afterend', modeBtn);
             this.modeButton = modeBtn;
+
+            // Create craft toggle button
+            const craftBtn = document.createElement('button');
+            craftBtn.id = 'mwi-action-craft-toggle';
+            craftBtn.title =
+                'When on, uses crafting cost for upgrade items if cheaper than market, and includes crafting time in profit/hr';
+            const updateCraftBtn = () => {
+                const enabled = config.getSetting('profitCalc_craftUpgradeItems');
+                craftBtn.textContent = enabled ? 'Craft: On' : 'Craft: Off';
+            };
+            craftBtn.style.cssText = `
+            padding: 8px 12px;
+            font-size: 14px;
+            border: 1px solid rgba(255, 255, 255, 0.23);
+            border-radius: 4px;
+            background: transparent;
+            cursor: pointer;
+            font-family: inherit;
+            flex-shrink: 0;
+        `;
+            updateCraftBtn();
+            craftBtn.addEventListener('click', async () => {
+                const current = config.getSetting('profitCalc_craftUpgradeItems');
+                config.setSettingValue('profitCalc_craftUpgradeItems', !current);
+                updateCraftBtn();
+                await this._refreshProfitDisplays();
+            });
+            modeBtn.insertAdjacentElement('afterend', craftBtn);
+            this.craftButton = craftBtn;
 
             // Find the container for action panels to inject "No results" message
             this.setupNoResultsMessage(titleElement);
