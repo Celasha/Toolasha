@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.50.0
+ * Version: 2.50.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2991,6 +2991,16 @@
 
             const wrapConstructor = (OriginalWebSocket) => {
                 if (!OriginalWebSocket || OriginalWebSocket.__toolashaWrapped) {
+                    hookInstance.currentWebSocket = OriginalWebSocket;
+                    return;
+                }
+
+                // Only subclass native WebSocket constructors. Third-party wrappers
+                // (other userscripts replacing window.WebSocket) are passed through
+                // as-is — Toolasha still intercepts via MessageEvent.data hook and
+                // WebSocket.prototype patches.
+                const isNative = /\[native code\]/.test(Function.prototype.toString.call(OriginalWebSocket));
+                if (!isNative) {
                     hookInstance.currentWebSocket = OriginalWebSocket;
                     return;
                 }

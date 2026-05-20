@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.50.0
+ * Version: 2.50.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2446,6 +2446,17 @@ self.onmessage = function (e) {
     };
 
     /**
+     * @param {Object} itemDetails - Item details from dataManager
+     * @returns {number} Gold cost per alchemy action (includes bulkMultiplier)
+     */
+    function calculateAlchemyCoinCost(itemDetails) {
+        const sellPrice = itemDetails.sellPrice || 0;
+        const level = itemDetails.itemLevel || 1;
+        const bulkMultiplier = itemDetails.alchemyDetail?.bulkMultiplier || 1;
+        return Math.max(Math.floor(sellPrice / 5), 50 + level * 5) * bulkMultiplier;
+    }
+
+    /**
      * Calculate alchemy-specific bonus drops (essences + rares) from item level.
      * Alchemy actions don't have essenceDropTable/rareDropTable in game data,
      * so we compute them from the item's level using reverse-engineered formulas.
@@ -3166,9 +3177,7 @@ self.onmessage = function (e) {
                     }
                 }
 
-                // Get coin cost per action attempt
-                // If not in action data, calculate as 1/5 of item's sell price
-                const coinCost = actionDetails.coinCost || Math.floor((itemDetails.sellPrice || 0) * 0.2);
+                const coinCost = calculateAlchemyCoinCost(itemDetails);
 
                 // Calculate per-hour values
                 // Convert efficiency from percentage to decimal
@@ -3477,9 +3486,7 @@ self.onmessage = function (e) {
                     }
                 }
 
-                // Get coin cost per action attempt
-                // If not in action data, calculate as 1/5 of item's sell price per item
-                const coinCost = actionDetails.coinCost || Math.floor((itemDetails.sellPrice || 0) * 0.2) * bulkMultiplier;
+                const coinCost = calculateAlchemyCoinCost(itemDetails);
 
                 // Gross material cost (before self-return adjustment)
                 const grossMaterialCost = inputPrice * bulkMultiplier;

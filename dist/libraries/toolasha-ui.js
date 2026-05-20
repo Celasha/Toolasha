@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.50.0
+ * Version: 2.50.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -26490,6 +26490,7 @@ ${starCSS}
             this.unregisterHandlers = [];
             this.confirmTimer = null;
             this.lockdownTimer = null;
+            this._updatingGold = false;
         }
 
         async initialize() {
@@ -26687,10 +26688,42 @@ ${starCSS}
                 this.unregisterHandlers.push(() => observer.disconnect());
             }
 
-            // Watch item selection changes to update pin state
-            const itemObserver = new MutationObserver(updatePinIcon);
+            // Watch item selection changes to update pin state and gold summary
+            const updateAll = () => {
+                updatePinIcon();
+                this._updateGoldSummary(alchemyComponent);
+            };
+            const itemObserver = new MutationObserver(updateAll);
             itemObserver.observe(alchemyComponent, { childList: true, subtree: true });
             this.unregisterHandlers.push(() => itemObserver.disconnect());
+
+            // Watch action count input changes for gold summary
+            const onInputChange = (e) => {
+                if (e.target.closest('[class*="maxActionCountInput"]')) {
+                    this._updateGoldSummary(alchemyComponent);
+                }
+            };
+            alchemyComponent.addEventListener('input', onInputChange);
+            this.unregisterHandlers.push(() => alchemyComponent.removeEventListener('input', onInputChange));
+
+            // Also update gold summary on tab changes
+            if (tabContainer) {
+                const tabGoldObserver = new MutationObserver(() => this._updateGoldSummary(alchemyComponent));
+                tabGoldObserver.observe(tabContainer, {
+                    attributes: true,
+                    subtree: true,
+                    attributeFilter: ['aria-selected'],
+                });
+                this.unregisterHandlers.push(() => tabGoldObserver.disconnect());
+            }
+
+            // Update gold summary on inventory changes
+            const onItemsUpdated = () => this._updateGoldSummary(alchemyComponent);
+            dataManager.on('items_updated', onItemsUpdated);
+            this.unregisterHandlers.push(() => dataManager.off('items_updated', onItemsUpdated));
+
+            // Initial update
+            this._updateGoldSummary(alchemyComponent);
         }
 
         _getAlchemyType() {
@@ -26718,6 +26751,99 @@ ${starCSS}
 
             const itemId = href.split('#')[1];
             return itemId ? `/items/${itemId}` : null;
+        }
+
+        _updateGoldSummary(alchemyComponent) {
+            if (this._updatingGold) return;
+            this._updatingGold = true;
+
+            try {
+                this._doUpdateGoldSummary(alchemyComponent);
+            } finally {
+                this._updatingGold = false;
+            }
+        }
+
+        _doUpdateGoldSummary(alchemyComponent) {
+            let summaryDiv = alchemyComponent.querySelector('.mwi-alchemy-gold-summary');
+
+            const alchemyType = this._getAlchemyType();
+            if (!alchemyType || alchemyType === 'coinify') {
+                if (summaryDiv) summaryDiv.style.display = 'none';
+                return;
+            }
+
+            const itemHrid = this._getSelectedItemHrid();
+            if (!itemHrid) {
+                if (summaryDiv) summaryDiv.style.display = 'none';
+                return;
+            }
+
+            const actionHrid = `/actions/alchemy/${alchemyType}`;
+            const itemDetails = dataManager.getItemDetails(itemHrid);
+            if (!itemDetails) {
+                if (summaryDiv) summaryDiv.style.display = 'none';
+                return;
+            }
+            const bulkMultiplier = itemDetails.alchemyDetail?.bulkMultiplier || 1;
+
+            const sellPrice = itemDetails.sellPrice || 0;
+            const level = itemDetails.itemLevel || 1;
+            const coinCost = Math.max(Math.floor(sellPrice / 5), 50 + level * 5) * bulkMultiplier;
+
+            const inventory = dataManager.getInventory();
+            let itemCount = 0;
+            let goldBalance = 0;
+            if (inventory) {
+                for (const item of inventory) {
+                    if (item.itemLocationHrid !== '/item_locations/inventory') continue;
+                    if (item.itemHrid === itemHrid) itemCount += item.count || 0;
+                    if (item.itemHrid === '/items/coin') goldBalance += item.count || 0;
+                }
+            }
+
+            const actions = dataManager.getCurrentActions();
+            const activeAction = actions?.find((a) => a.actionHrid === actionHrid && a.primaryItemHash?.includes(itemHrid));
+
+            let totalActions;
+            let label = 'all';
+
+            const countInput = alchemyComponent.querySelector('[class*="maxActionCountInput"] input');
+            const inputValue = countInput ? parseInt(countInput.value, 10) : NaN;
+
+            const maxFromItems = Math.ceil(itemCount / bulkMultiplier);
+
+            if (!isNaN(inputValue) && inputValue > 0) {
+                totalActions = Math.min(inputValue, maxFromItems);
+                label = formatters_js.formatLargeNumber(totalActions);
+            } else if (activeAction?.hasMaxCount) {
+                totalActions = Math.min(activeAction.maxCount - (activeAction.currentCount || 0), maxFromItems);
+                label = formatters_js.formatLargeNumber(totalActions);
+            } else {
+                totalActions = maxFromItems;
+            }
+
+            const goldNeeded = totalActions * coinCost;
+            const hasEnough = goldBalance >= goldNeeded;
+
+            if (!summaryDiv) {
+                summaryDiv = document.createElement('div');
+                summaryDiv.className = 'mwi-alchemy-gold-summary';
+                summaryDiv.style.cssText = 'font-size: 12px; padding: 4px 8px; margin-top: 4px; text-align: center;';
+                const costsSection = alchemyComponent.querySelector('[class*="SkillActionDetail_alchemyCosts"]');
+                if (costsSection) {
+                    costsSection.insertAdjacentElement('afterend', summaryDiv);
+                } else {
+                    alchemyComponent.appendChild(summaryDiv);
+                }
+            }
+
+            const color = hasEnough ? '#4caf50' : '#ff6b6b';
+            const text = `Gold for ${label}: ${formatters_js.formatLargeNumber(goldNeeded)} / ${formatters_js.formatLargeNumber(goldBalance)}`;
+            if (summaryDiv.textContent === text && summaryDiv.style.display === 'block') return;
+            summaryDiv.style.display = 'block';
+            summaryDiv.style.color = color;
+            summaryDiv.textContent = text;
         }
 
         _getCategoryDisplayName(categoryHrid) {
@@ -26925,6 +27051,8 @@ ${starCSS}
             if (popup) popup.remove();
             const iconRow = document.querySelector('.mwi-alchemy-icon-row');
             if (iconRow) iconRow.remove();
+            const goldSummary = document.querySelector('.mwi-alchemy-gold-summary');
+            if (goldSummary) goldSummary.remove();
         }
     }
 

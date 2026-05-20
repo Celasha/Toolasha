@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.50.0
+ * Version: 2.50.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -7254,6 +7254,13 @@
                 }
             }
 
+            let limitingItemHrid = null;
+            if (limitType?.startsWith('material:')) {
+                limitingItemHrid = limitType.slice('material:'.length);
+            } else if (limitType === 'gold') {
+                limitingItemHrid = '/items/coin';
+            }
+
             // Get queue size for display (total queued, doesn't change)
             // For infinite actions with inventory count, use that; otherwise use maxCount or Infinity
             let queueSizeDisplay;
@@ -7379,7 +7386,9 @@
             // Show time info if we have a finite number of remaining actions
             // This includes both finite actions (hasMaxCount) and infinite actions with inventory count
             if (remainingQueuedActions !== Infinity && !isNaN(remainingQueuedActions) && remainingQueuedActions > 0) {
-                this.displayElement.innerHTML = `<span style="display: inline-block; margin-right: 0.25em;">⏱</span> ${timeStr} → ${clockTime}`;
+                const itemIconHtml = this.getItemIconHtml(limitingItemHrid);
+                const matsLabel = itemIconHtml ? `${itemIconHtml}:` : '';
+                this.displayElement.innerHTML = `<span style="display: inline-block; margin-right: 0.25em;">⏱</span> ${matsLabel} ${timeStr} → ${clockTime}`;
             } else {
                 this.displayElement.innerHTML = '';
             }
@@ -7994,7 +8003,7 @@
                     }
 
                     if (actionDetails.coinCost && actionDetails.coinCost > 0) {
-                        const availableGold = byHrid['/items/gold_coin'] || 0;
+                        const availableGold = byHrid['/items/coin'] || 0;
                         const maxFromGold = Math.floor(availableGold / actionDetails.coinCost);
                         if (maxFromGold < minLimit) {
                             minLimit = maxFromGold;
@@ -8041,7 +8050,7 @@
 
             // Check gold/coin constraint (if action has a coin cost)
             if (hasCoinCost) {
-                const availableGold = byHrid['/items/gold_coin'] || 0;
+                const availableGold = byHrid['/items/coin'] || 0;
                 const maxActionsFromGold = Math.floor(availableGold / actionDetails.coinCost);
 
                 if (maxActionsFromGold < minLimit) {
