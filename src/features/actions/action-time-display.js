@@ -1014,6 +1014,13 @@ class ActionTimeDisplay {
             }
         }
 
+        let limitingItemHrid = null;
+        if (limitType?.startsWith('material:')) {
+            limitingItemHrid = limitType.slice('material:'.length);
+        } else if (limitType === 'gold') {
+            limitingItemHrid = '/items/gold_coin';
+        }
+
         // Get queue size for display (total queued, doesn't change)
         // For infinite actions with inventory count, use that; otherwise use maxCount or Infinity
         let queueSizeDisplay;
@@ -1139,7 +1146,9 @@ class ActionTimeDisplay {
         // Show time info if we have a finite number of remaining actions
         // This includes both finite actions (hasMaxCount) and infinite actions with inventory count
         if (remainingQueuedActions !== Infinity && !isNaN(remainingQueuedActions) && remainingQueuedActions > 0) {
-            this.displayElement.innerHTML = `<span style="display: inline-block; margin-right: 0.25em;">⏱</span> ${timeStr} → ${clockTime}`;
+            const itemIconHtml = this.getItemIconHtml(limitingItemHrid);
+            const matsLabel = itemIconHtml ? `${itemIconHtml}:` : '';
+            this.displayElement.innerHTML = `<span style="display: inline-block; margin-right: 0.25em;">⏱</span> ${matsLabel} ${timeStr} → ${clockTime}`;
         } else {
             this.displayElement.innerHTML = '';
         }
