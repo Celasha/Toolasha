@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.49.2
+ * Version: 2.49.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -5164,7 +5164,7 @@
             updateCraftBtn();
             craftBtn.addEventListener('click', async () => {
                 const current = config.getSetting('profitCalc_craftUpgradeItems');
-                config.setSettingValue('profitCalc_craftUpgradeItems', !current);
+                config.setSetting('profitCalc_craftUpgradeItems', !current);
                 updateCraftBtn();
                 await this._refreshProfitDisplays();
             });

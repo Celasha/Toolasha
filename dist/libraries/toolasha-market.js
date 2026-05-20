@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.49.2
+ * Version: 2.49.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -21392,7 +21392,7 @@ self.onmessage = function (e) {
                     inventoryLookup = new Map();
                     for (const item of inventory) {
                         if (item.itemLocationHrid === '/item_locations/inventory') {
-                            const key = `${item.itemHrid}|${item.count}`;
+                            const key = `${item.itemHrid}|${item.count}|${item.enhancementLevel || 0}`;
                             inventoryLookup.set(key, item);
                         }
                     }
@@ -21440,7 +21440,7 @@ self.onmessage = function (e) {
                 inventoryLookup = new Map();
                 for (const item of inventory) {
                     if (item.itemLocationHrid === '/item_locations/inventory') {
-                        const key = `${item.itemHrid}|${item.count}`;
+                        const key = `${item.itemHrid}|${item.count}|${item.enhancementLevel || 0}`;
                         inventoryLookup.set(key, item);
                     }
                 }
@@ -21552,7 +21552,9 @@ self.onmessage = function (e) {
                 }
 
                 // Match to inventory item to get enhancement level
-                const key = `${itemHrid}|${itemCount}`;
+                const enhEl = itemElem.querySelector('[class*="Item_enhancementLevel"]');
+                const domEnhancementLevel = enhEl ? parseInt(enhEl.textContent.trim().replace('+', ''), 10) || 0 : 0;
+                const key = `${itemHrid}|${itemCount}|${domEnhancementLevel}`;
                 const inventoryItem = inventoryLookup.get(key);
                 const enhancementLevel = inventoryItem?.enhancementLevel || 0;
 

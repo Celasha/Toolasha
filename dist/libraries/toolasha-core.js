@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.49.2
+ * Version: 2.49.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2879,14 +2879,15 @@
                     return originalGet.call(this);
                 }
 
+                // Already processed — pass through without re-processing
+                if (hookInstance.isMessageEventProcessed(this)) {
+                    return originalGet.call(this);
+                }
+
                 hookInstance.attachSocketListeners(socket);
 
                 const message = originalGet.call(this);
 
-                // Anti-loop: define data property so we don't hook our own access
-                Object.defineProperty(this, 'data', { value: message });
-
-                // Process message in our hook
                 hookInstance.markMessageEventProcessed(this);
                 hookInstance.processMessage(message);
 
