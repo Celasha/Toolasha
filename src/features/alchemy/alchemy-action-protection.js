@@ -9,6 +9,7 @@ import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
 import storage from '../../core/storage.js';
+import actionPanelSort from '../actions/action-panel-sort.js';
 
 const STORAGE_KEY_PREFIX = 'alchemyProtectedCategories';
 const LOCKDOWN_MS = 3000;
@@ -142,13 +143,17 @@ class AlchemyActionProtection {
         if (!alchemyComponent) return;
 
         const parent = itemSelectorContainer.parentElement;
-        if (!parent || parent.querySelector('.mwi-alchemy-protection-btn')) return;
+        if (!parent || alchemyComponent.querySelector('.mwi-alchemy-protection-btn')) return;
+
+        // Flex row container for shield + pin
+        const iconRow = document.createElement('div');
+        iconRow.className = 'mwi-alchemy-icon-row';
+        iconRow.style.cssText = 'display:flex; gap:6px; justify-content:center; margin-bottom:2px;';
 
         const btn = document.createElement('div');
         btn.className = 'mwi-alchemy-protection-btn';
         btn.textContent = '\u{1F6E1}\u{FE0F}';
-        btn.style.cssText =
-            'cursor:pointer; font-size:16px; opacity:0.7; transition:opacity 0.1s; text-align:center; margin-bottom:2px;';
+        btn.style.cssText = 'cursor:pointer; font-size:16px; opacity:0.7; transition:opacity 0.1s; text-align:center;';
         btn.addEventListener('mouseenter', () => {
             btn.style.opacity = '1';
         });
@@ -157,12 +162,64 @@ class AlchemyActionProtection {
         });
         btn.addEventListener('click', () => this.openConfigPopup());
 
-        parent.insertBefore(btn, itemSelectorContainer);
+        // Pin icon
+        const pinIcon = document.createElement('div');
+        pinIcon.className = 'mwi-alchemy-pin';
+        pinIcon.innerHTML = '\u{1F4CC}';
+        pinIcon.style.cssText =
+            'cursor:pointer; font-size:16px; transition:all 0.2s; text-align:center; filter: grayscale(100%) brightness(0.7); display:none;';
+        pinIcon.title = 'Pin this action';
+
+        const updatePinIcon = () => {
+            const alchemyType = this._getAlchemyType();
+            const itemHrid = this._getSelectedItemHrid();
+            if (!alchemyType || !itemHrid) {
+                pinIcon.style.display = 'none';
+                return;
+            }
+            pinIcon.style.display = 'block';
+            const compositeKey = `/actions/alchemy/${alchemyType}|${itemHrid}`;
+            const isPinned = actionPanelSort.isPinned(compositeKey);
+            if (isPinned) {
+                pinIcon.style.filter = 'grayscale(0%) brightness(1.2) drop-shadow(0 0 3px rgba(255, 100, 0, 0.8))';
+                pinIcon.style.transform = 'scale(1.1)';
+                pinIcon.title = 'Unpin this action';
+            } else {
+                pinIcon.style.filter = 'grayscale(100%) brightness(0.7)';
+                pinIcon.style.transform = 'scale(1)';
+                pinIcon.title = 'Pin this action';
+            }
+        };
+
+        pinIcon.addEventListener('mouseenter', () => {
+            const alchemyType = this._getAlchemyType();
+            const itemHrid = this._getSelectedItemHrid();
+            if (alchemyType && itemHrid) {
+                const compositeKey = `/actions/alchemy/${alchemyType}|${itemHrid}`;
+                if (!actionPanelSort.isPinned(compositeKey)) {
+                    pinIcon.style.filter = 'grayscale(50%) brightness(1)';
+                }
+            }
+        });
+        pinIcon.addEventListener('mouseleave', updatePinIcon);
+        pinIcon.addEventListener('click', async () => {
+            const alchemyType = this._getAlchemyType();
+            const itemHrid = this._getSelectedItemHrid();
+            if (!alchemyType || !itemHrid) return;
+            const compositeKey = `/actions/alchemy/${alchemyType}|${itemHrid}`;
+            await actionPanelSort.togglePin(compositeKey);
+            updatePinIcon();
+        });
+
+        iconRow.appendChild(btn);
+        iconRow.appendChild(pinIcon);
+        parent.insertBefore(iconRow, itemSelectorContainer);
 
         const tabContainer = document.querySelector('[class*="AlchemyPanel_tabsComponentContainer"]');
         const updateVisibility = () => {
             const type = this._getAlchemyType();
-            btn.style.display = type ? 'block' : 'none';
+            iconRow.style.display = type ? 'flex' : 'none';
+            updatePinIcon();
         };
 
         updateVisibility();
@@ -172,6 +229,11 @@ class AlchemyActionProtection {
             observer.observe(tabContainer, { attributes: true, subtree: true, attributeFilter: ['aria-selected'] });
             this.unregisterHandlers.push(() => observer.disconnect());
         }
+
+        // Watch item selection changes to update pin state
+        const itemObserver = new MutationObserver(updatePinIcon);
+        itemObserver.observe(alchemyComponent, { childList: true, subtree: true });
+        this.unregisterHandlers.push(() => itemObserver.disconnect());
     }
 
     _getAlchemyType() {
@@ -404,8 +466,8 @@ class AlchemyActionProtection {
         if (warning) warning.remove();
         const popup = document.getElementById('mwi-alchemy-protection-popup');
         if (popup) popup.remove();
-        const btn = document.querySelector('.mwi-alchemy-protection-btn');
-        if (btn) btn.remove();
+        const iconRow = document.querySelector('.mwi-alchemy-icon-row');
+        if (iconRow) iconRow.remove();
     }
 }
 

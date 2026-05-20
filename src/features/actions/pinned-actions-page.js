@@ -12,10 +12,12 @@ import actionPanelSort from './action-panel-sort.js';
 import { calculateGatheringProfit } from './gathering-profit.js';
 import { calculateProductionProfit } from './production-profit.js';
 import { calculateExpPerHour } from '../../utils/experience-calculator.js';
+import { calculateExperienceMultiplier } from '../../utils/experience-parser.js';
 import { numberFormatter } from '../../utils/formatters.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { calculateMaterialRequirements } from '../../utils/material-calculator.js';
 import assetManifest from '../../utils/asset-manifest.js';
+import alchemyProfitCalculator from '../market/alchemy-profit-calculator.js';
 
 const GATHERING_TYPES = ['/action_types/foraging', '/action_types/woodcutting', '/action_types/milking'];
 
@@ -232,21 +234,38 @@ class PinnedActionsPage {
         const pinnedActions = actionPanelSort.getPinnedActions();
         this.allActions = [];
 
-        for (const actionHrid of pinnedActions) {
+        for (const pinnedKey of pinnedActions) {
+            let actionHrid = pinnedKey;
+            let pinnedItemHrid = null;
+            if (pinnedKey.includes('|')) {
+                const parts = pinnedKey.split('|');
+                actionHrid = parts[0];
+                pinnedItemHrid = parts[1];
+            }
+
             const details = dataManager.getActionDetails(actionHrid);
             if (!details) continue;
 
-            let stats = actionPanelSort.getCachedStats(actionHrid);
+            let displayName = details.name;
+            if (pinnedItemHrid) {
+                const itemDetails = dataManager.getItemDetails(pinnedItemHrid);
+                if (itemDetails) {
+                    displayName = `${details.name} ${itemDetails.name}`;
+                }
+            }
+
+            let stats = actionPanelSort.getCachedStats(pinnedKey);
             if (!stats || stats.profitPerHour === undefined) {
-                stats = await this.computeStats(actionHrid, details);
+                stats = await this.computeStats(actionHrid, details, pinnedItemHrid);
             }
 
             this.allActions.push({
-                actionHrid,
-                name: details.name,
+                actionHrid: pinnedKey,
+                baseActionHrid: actionHrid,
+                name: displayName,
                 skill: formatSkillName(details.type),
                 type: details.type,
-                outputItemHrid: details.outputItems?.[0]?.itemHrid || null,
+                outputItemHrid: pinnedItemHrid || details.outputItems?.[0]?.itemHrid || null,
                 level: details.levelRequirement?.level ?? 0,
                 profitPerHour: stats?.profitPerHour ?? null,
                 expPerHour: stats?.expPerHour ?? null,
@@ -532,7 +551,7 @@ class PinnedActionsPage {
                 const game = getGameObject();
                 if (game?.handleGoToAction) {
                     this.hidePage(true);
-                    game.handleGoToAction(action.actionHrid);
+                    game.handleGoToAction(action.baseActionHrid);
                 }
             });
 
@@ -806,31 +825,87 @@ class PinnedActionsPage {
      * @param {Object} details - Action details from dataManager
      * @returns {Object|null} { profitPerHour, expPerHour }
      */
-    async computeStats(actionHrid, details) {
+    async computeStats(actionHrid, details, pinnedItemHrid = null) {
         try {
             let profitPerHour = null;
             let expPerHour = null;
 
-            const isGathering = GATHERING_TYPES.includes(details.type);
-            if (isGathering) {
-                const profitData = await calculateGatheringProfit(actionHrid);
+            if (pinnedItemHrid && actionHrid.startsWith('/actions/alchemy/')) {
+                const alchemyType = actionHrid.replace('/actions/alchemy/', '');
+                const profitData = this._computeAlchemyStats(alchemyType, pinnedItemHrid);
                 profitPerHour = profitData?.profitPerHour ?? null;
+                expPerHour = profitData?.expPerHour ?? null;
             } else {
-                const profitData = await calculateProductionProfit(actionHrid);
-                profitPerHour = profitData?.profitPerHour ?? null;
-            }
+                const isGathering = GATHERING_TYPES.includes(details.type);
+                if (isGathering) {
+                    const profitData = await calculateGatheringProfit(actionHrid);
+                    profitPerHour = profitData?.profitPerHour ?? null;
+                } else {
+                    const profitData = await calculateProductionProfit(actionHrid);
+                    profitPerHour = profitData?.profitPerHour ?? null;
+                }
 
-            const expData = calculateExpPerHour(actionHrid);
-            expPerHour = expData?.expPerHour ?? null;
+                const expData = calculateExpPerHour(actionHrid);
+                expPerHour = expData?.expPerHour ?? null;
+            }
 
             const stats = { profitPerHour, expPerHour };
             if (!actionPanelSort.cachedStats) actionPanelSort.cachedStats = {};
-            actionPanelSort.cachedStats[actionHrid] = stats;
+            const cacheKey = pinnedItemHrid ? `${actionHrid}|${pinnedItemHrid}` : actionHrid;
+            actionPanelSort.cachedStats[cacheKey] = stats;
 
             return stats;
         } catch (error) {
             console.error('[PinnedActionsPage] Failed to compute stats for', actionHrid, error);
             return null;
+        }
+    }
+
+    /**
+     * Compute profit/hr and XP/hr for an alchemy action + item combo
+     * @param {string} alchemyType - 'coinify', 'decompose', or 'transmute'
+     * @param {string} itemHrid - Item HRID
+     * @returns {Object|null} { profitPerHour, expPerHour }
+     */
+    _computeAlchemyStats(alchemyType, itemHrid) {
+        try {
+            let profitData;
+            if (alchemyType === 'transmute') {
+                profitData = alchemyProfitCalculator.calculateTransmuteProfit(itemHrid);
+            } else if (alchemyType === 'decompose') {
+                profitData = alchemyProfitCalculator.calculateDecomposeProfit(itemHrid, 0);
+            } else {
+                profitData = alchemyProfitCalculator.calculateCoinifyProfit(itemHrid, 0);
+            }
+
+            if (!profitData) return null;
+
+            const itemDetails = dataManager.getItemDetails(itemHrid);
+            const itemLevel = itemDetails?.itemLevel || 1;
+
+            const baseXP = this._getAlchemyBaseXP(alchemyType, itemLevel);
+            const xpData = calculateExperienceMultiplier('/skills/alchemy', '/action_types/alchemy');
+            const fullXP = baseXP * xpData.totalMultiplier;
+            const expectedXP = profitData.successRate * fullXP + (1 - profitData.successRate) * fullXP * 0.1;
+            const expPerHour = profitData.actionsPerHour * expectedXP;
+
+            return { profitPerHour: profitData.profitPerHour, expPerHour };
+        } catch (error) {
+            console.error('[PinnedActionsPage] Failed to compute alchemy stats:', error);
+            return null;
+        }
+    }
+
+    _getAlchemyBaseXP(actionType, itemLevel) {
+        switch (actionType) {
+            case 'coinify':
+                return itemLevel + 10;
+            case 'decompose':
+                return itemLevel * 1.4 + 14;
+            case 'transmute':
+                return itemLevel * 1.6 + 16;
+            default:
+                return 0;
         }
     }
 
