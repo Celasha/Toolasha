@@ -26,6 +26,7 @@ import { calculateEnhancementPath } from '../enhancement/tooltip-enhancement.js'
 import { getEnhancingParams } from '../../utils/enhancement-config.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
 import { getActionHridFromName } from '../../utils/game-lookups.js';
+import { setReactInputValue } from '../../utils/react-input.js';
 
 /**
  * Module-level state
@@ -803,6 +804,104 @@ function createStrategyIndicator(strategyInfo) {
 }
 
 /**
+ * Get game object via React fiber tree traversal
+ * @returns {Object|null} Game component instance
+ */
+function getGameObject() {
+    const rootEl = document.getElementById('root');
+    const rootFiber = rootEl?._reactRootContainer?.current || rootEl?._reactRootContainer?._internalRoot?.current;
+    if (!rootFiber) return null;
+
+    function find(fiber) {
+        if (!fiber) return null;
+        if (fiber.stateNode?.handleGoToAction) return fiber.stateNode;
+        return find(fiber.child) || find(fiber.sibling);
+    }
+
+    return find(rootFiber);
+}
+
+/**
+ * Create a "Return to Action" tab for navigating back after buying materials
+ * @param {HTMLElement} referenceTab - Tab element to clone structure from
+ * @returns {HTMLElement|null} Return tab element, or null if no stored context
+ */
+function createReturnTab(referenceTab) {
+    let displayName;
+
+    if (storedActionHrid) {
+        const details = dataManager.getActionDetails(storedActionHrid);
+        displayName = details?.name || storedActionHrid.split('/').pop();
+        if (storedNumActions > 0) displayName += ` (\u00d7${formatWithSeparator(storedNumActions)})`;
+    } else if (storedEnhancementContext) {
+        const ctx = storedEnhancementContext;
+        const itemName = dataManager.getItemDetails(ctx.itemHrid)?.name || '...';
+        displayName = `${itemName} +${ctx.startLevel}\u2192+${ctx.targetLevel}`;
+    } else {
+        return null;
+    }
+
+    const tab = referenceTab.cloneNode(true);
+    tab.setAttribute('data-mwi-custom-tab', 'true');
+    tab.classList.remove('Mui-selected');
+    tab.setAttribute('aria-selected', 'false');
+    tab.setAttribute('tabindex', '-1');
+
+    const badgeSpan = tab.querySelector('[class*="TabsComponent_badge"]');
+    if (badgeSpan) {
+        badgeSpan.innerHTML = `
+            <div style="text-align: center;">
+                <div>\u21a9 Return</div>
+                <div style="font-size: 0.75em; color: #60a5fa;">${displayName}</div>
+            </div>
+        `;
+    }
+
+    tab.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        handleReturnToAction();
+    });
+
+    return tab;
+}
+
+/**
+ * Navigate back to the stored action and restore input values
+ */
+async function handleReturnToAction() {
+    const game = getGameObject();
+    if (!game?.handleGoToAction) return;
+
+    if (storedActionHrid) {
+        game.handleGoToAction(storedActionHrid);
+    } else if (storedEnhancementContext) {
+        game.handleGoToAction('/actions/enhancing');
+    } else {
+        return;
+    }
+
+    // Restore input value for production actions — poll for the input to appear
+    if (storedActionHrid && storedNumActions > 0) {
+        const maxAttempts = 20;
+        for (let i = 0; i < maxAttempts; i++) {
+            await new Promise((resolve) => {
+                const t = setTimeout(resolve, 100);
+                timerRegistry.registerTimeout(t);
+            });
+
+            const input =
+                document.querySelector('[class*="maxActionCountInput"] input') ||
+                document.querySelector('[class*="SkillActionDetail_skillActionDetail"] input[type="number"]');
+            if (input) {
+                setReactInputValue(input, storedNumActions);
+                break;
+            }
+        }
+    }
+}
+
+/**
  * Create custom tabs for missing materials
  * @param {Array} missingMaterials - Array of missing material objects
  * @param {Object|null} strategyInfo - Auto-calculated protection strategy info
@@ -862,6 +961,13 @@ function createMissingMaterialTabs(missingMaterials, strategyInfo = null) {
         tabRef.tab = tab;
         tabsContainer.appendChild(tab);
         currentMaterialsTabs.push(tab);
+    }
+
+    // Add "Return to Action" tab at the end
+    const returnTab = createReturnTab(referenceTab);
+    if (returnTab) {
+        tabsContainer.appendChild(returnTab);
+        currentMaterialsTabs.push(returnTab);
     }
 }
 
