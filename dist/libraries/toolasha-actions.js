@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.50.1
+ * Version: 2.50.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -4616,6 +4616,7 @@
             this.initialized = false;
             this.timerRegistry = timerRegistry_js.createTimerRegistry();
             this.handlers = {};
+            this.pinChangeListeners = [];
         }
 
         /**
@@ -4780,6 +4781,14 @@
             // Save to storage
             await storage.setJSON(this._getPinnedStorageKey(), Array.from(this.pinnedActions), 'settings', true);
 
+            for (const cb of this.pinChangeListeners) {
+                try {
+                    cb();
+                } catch {
+                    /* ignore */
+                }
+            }
+
             return this.pinnedActions.has(actionHrid);
         }
 
@@ -4790,6 +4799,15 @@
          */
         isPinned(actionHrid) {
             return this.pinnedActions.has(actionHrid);
+        }
+
+        onPinChange(cb) {
+            this.pinChangeListeners.push(cb);
+        }
+
+        offPinChange(cb) {
+            const idx = this.pinChangeListeners.indexOf(cb);
+            if (idx > -1) this.pinChangeListeners.splice(idx, 1);
         }
 
         /**
@@ -12833,6 +12851,14 @@
 
     const toolashaConfig = config;
 
+    const _costCache = new Map();
+    const _chainTimeCache = new Map();
+
+    marketAPI.on(() => {
+        _costCache.clear();
+        _chainTimeCache.clear();
+    });
+
     /**
      * Calculate optimal enhancement path for an item
      * Matches Enhancelator's algorithm exactly:
@@ -13404,6 +13430,14 @@
      * @private
      */
     function getProductionCost(itemHrid, mode = 'ask') {
+        const cacheKey = `${itemHrid}|${mode}`;
+        if (_costCache.has(cacheKey)) return _costCache.get(cacheKey);
+        const result = _computeProductionCost(itemHrid, mode);
+        _costCache.set(cacheKey, result);
+        return result;
+    }
+
+    function _computeProductionCost(itemHrid, mode = 'ask') {
         const gameData = dataManager.getInitClientData();
         const itemDetails = gameData.itemDetailMap[itemHrid];
 
@@ -13515,10 +13549,12 @@
      * @private
      */
     function fib(n) {
-        if (n === 0 || n === 1) {
-            return 1;
+        let a = 1,
+            b = 1;
+        for (let i = 2; i <= n; i++) {
+            [a, b] = [b, a + b];
         }
-        return fib(n - 1) + fib(n - 2);
+        return b;
     }
 
     /**
@@ -13526,13 +13562,13 @@
      * @private
      */
     function mirrorFib(n) {
-        if (n === 0) {
-            return 1;
+        if (n === 0) return 1;
+        let a = 1,
+            b = 2;
+        for (let i = 2; i <= n; i++) {
+            [a, b] = [b, a + b + 1];
         }
-        if (n === 1) {
-            return 2;
-        }
-        return mirrorFib(n - 1) + mirrorFib(n - 2) + 1;
+        return b;
     }
 
     /**
@@ -19866,6 +19902,9 @@
         `;
             mainPanel.appendChild(this.pageContainer);
 
+            this._onPinChange = () => this.loadActions();
+            actionPanelSort.onPinChange(this._onPinChange);
+
             this.loadActions();
             this.setupNavigationObserver(mainPanel);
         }
@@ -20560,6 +20599,11 @@
             if (!this.isActive) return;
 
             this.closeFilterPopup();
+
+            if (this._onPinChange) {
+                actionPanelSort.offPinChange(this._onPinChange);
+                this._onPinChange = null;
+            }
 
             for (const { el, prevDisplay } of this.hiddenElements) {
                 el.style.display = prevDisplay;

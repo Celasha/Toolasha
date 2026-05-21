@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.50.1
+ * Version: 2.50.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -39,6 +39,14 @@
      */
 
     const toolashaConfig = config;
+
+    const _costCache = new Map();
+    const _chainTimeCache = new Map();
+
+    marketAPI.on(() => {
+        _costCache.clear();
+        _chainTimeCache.clear();
+    });
 
     /**
      * Calculate optimal enhancement path for an item
@@ -611,6 +619,14 @@
      * @private
      */
     function getProductionCost(itemHrid, mode = 'ask') {
+        const cacheKey = `${itemHrid}|${mode}`;
+        if (_costCache.has(cacheKey)) return _costCache.get(cacheKey);
+        const result = _computeProductionCost(itemHrid, mode);
+        _costCache.set(cacheKey, result);
+        return result;
+    }
+
+    function _computeProductionCost(itemHrid, mode = 'ask') {
         const gameData = dataManager.getInitClientData();
         const itemDetails = gameData.itemDetailMap[itemHrid];
 
@@ -690,6 +706,13 @@
      * @returns {number} Total chain time in seconds (base times, no speed bonuses applied)
      */
     function getProductionChainTime(itemHrid) {
+        if (_chainTimeCache.has(itemHrid)) return _chainTimeCache.get(itemHrid);
+        const result = _computeProductionChainTime(itemHrid);
+        _chainTimeCache.set(itemHrid, result);
+        return result;
+    }
+
+    function _computeProductionChainTime(itemHrid) {
         const gameData = dataManager.getInitClientData();
         if (!gameData?.actionDetailMap) return 0;
 
@@ -755,10 +778,12 @@
      * @private
      */
     function fib(n) {
-        if (n === 0 || n === 1) {
-            return 1;
+        let a = 1,
+            b = 1;
+        for (let i = 2; i <= n; i++) {
+            [a, b] = [b, a + b];
         }
-        return fib(n - 1) + fib(n - 2);
+        return b;
     }
 
     /**
@@ -766,13 +791,13 @@
      * @private
      */
     function mirrorFib(n) {
-        if (n === 0) {
-            return 1;
+        if (n === 0) return 1;
+        let a = 1,
+            b = 2;
+        for (let i = 2; i <= n; i++) {
+            [a, b] = [b, a + b + 1];
         }
-        if (n === 1) {
-            return 2;
-        }
-        return mirrorFib(n - 1) + mirrorFib(n - 2) + 1;
+        return b;
     }
 
     /**

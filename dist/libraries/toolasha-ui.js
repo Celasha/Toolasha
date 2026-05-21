@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.50.1
+ * Version: 2.50.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -26113,6 +26113,7 @@ ${starCSS}
             this.initialized = false;
             this.timerRegistry = timerRegistry_js.createTimerRegistry();
             this.handlers = {};
+            this.pinChangeListeners = [];
         }
 
         /**
@@ -26277,6 +26278,14 @@ ${starCSS}
             // Save to storage
             await storage.setJSON(this._getPinnedStorageKey(), Array.from(this.pinnedActions), 'settings', true);
 
+            for (const cb of this.pinChangeListeners) {
+                try {
+                    cb();
+                } catch {
+                    /* ignore */
+                }
+            }
+
             return this.pinnedActions.has(actionHrid);
         }
 
@@ -26287,6 +26296,15 @@ ${starCSS}
          */
         isPinned(actionHrid) {
             return this.pinnedActions.has(actionHrid);
+        }
+
+        onPinChange(cb) {
+            this.pinChangeListeners.push(cb);
+        }
+
+        offPinChange(cb) {
+            const idx = this.pinChangeListeners.indexOf(cb);
+            if (idx > -1) this.pinChangeListeners.splice(idx, 1);
         }
 
         /**
@@ -29811,6 +29829,14 @@ ${starCSS}
      */
 
 
+    const _costCache = new Map();
+    const _chainTimeCache = new Map();
+
+    marketAPI.on(() => {
+        _costCache.clear();
+        _chainTimeCache.clear();
+    });
+
     /**
      * Get realistic base item price with production cost fallback
      * Matches original MWI Tools v25.0 getRealisticBaseItemPrice logic
@@ -29861,6 +29887,14 @@ ${starCSS}
      * @private
      */
     function getProductionCost(itemHrid, mode = 'ask') {
+        const cacheKey = `${itemHrid}|${mode}`;
+        if (_costCache.has(cacheKey)) return _costCache.get(cacheKey);
+        const result = _computeProductionCost(itemHrid, mode);
+        _costCache.set(cacheKey, result);
+        return result;
+    }
+
+    function _computeProductionCost(itemHrid, mode = 'ask') {
         const gameData = dataManager.getInitClientData();
         const itemDetails = gameData.itemDetailMap[itemHrid];
 

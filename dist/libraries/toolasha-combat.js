@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.50.1
+ * Version: 2.50.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -11731,6 +11731,14 @@
      */
 
 
+    const _costCache = new Map();
+    const _chainTimeCache = new Map();
+
+    marketAPI.on(() => {
+        _costCache.clear();
+        _chainTimeCache.clear();
+    });
+
     /**
      * Get realistic base item price with production cost fallback
      * Matches original MWI Tools v25.0 getRealisticBaseItemPrice logic
@@ -11781,6 +11789,14 @@
      * @private
      */
     function getProductionCost(itemHrid, mode = 'ask') {
+        const cacheKey = `${itemHrid}|${mode}`;
+        if (_costCache.has(cacheKey)) return _costCache.get(cacheKey);
+        const result = _computeProductionCost(itemHrid, mode);
+        _costCache.set(cacheKey, result);
+        return result;
+    }
+
+    function _computeProductionCost(itemHrid, mode = 'ask') {
         const gameData = dataManager.getInitClientData();
         const itemDetails = gameData.itemDetailMap[itemHrid];
 
