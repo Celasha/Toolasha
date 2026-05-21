@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.50.2
+ * Version: 2.51.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -12811,7 +12811,7 @@
      * Get game object via React fiber
      * @returns {Object|null} Game component instance
      */
-    function getGameObject$1() {
+    function getGameObject$2() {
         const rootEl = document.getElementById('root');
         const rootFiber = rootEl?._reactRootContainer?.current || rootEl?._reactRootContainer?._internalRoot?.current;
         if (!rootFiber) return null;
@@ -12831,7 +12831,7 @@
      * @param {number} enhancementLevel - Enhancement level (default 0)
      */
     function navigateToMarketplace(itemHrid, enhancementLevel = 0) {
-        const game = getGameObject$1();
+        const game = getGameObject$2();
         if (game?.handleGoToMarketplace) {
             game.handleGoToMarketplace(itemHrid, enhancementLevel);
         }
@@ -14353,6 +14353,104 @@
     }
 
     /**
+     * Get game object via React fiber tree traversal
+     * @returns {Object|null} Game component instance
+     */
+    function getGameObject$1() {
+        const rootEl = document.getElementById('root');
+        const rootFiber = rootEl?._reactRootContainer?.current || rootEl?._reactRootContainer?._internalRoot?.current;
+        if (!rootFiber) return null;
+
+        function find(fiber) {
+            if (!fiber) return null;
+            if (fiber.stateNode?.handleGoToAction) return fiber.stateNode;
+            return find(fiber.child) || find(fiber.sibling);
+        }
+
+        return find(rootFiber);
+    }
+
+    /**
+     * Create a "Return to Action" tab for navigating back after buying materials
+     * @param {HTMLElement} referenceTab - Tab element to clone structure from
+     * @returns {HTMLElement|null} Return tab element, or null if no stored context
+     */
+    function createReturnTab(referenceTab) {
+        let displayName;
+
+        if (storedActionHrid) {
+            const details = dataManager.getActionDetails(storedActionHrid);
+            displayName = details?.name || storedActionHrid.split('/').pop();
+            if (storedNumActions > 0) displayName += ` (\u00d7${formatters_js.formatWithSeparator(storedNumActions)})`;
+        } else if (storedEnhancementContext) {
+            const ctx = storedEnhancementContext;
+            const itemName = dataManager.getItemDetails(ctx.itemHrid)?.name || '...';
+            displayName = `${itemName} +${ctx.startLevel}\u2192+${ctx.targetLevel}`;
+        } else {
+            return null;
+        }
+
+        const tab = referenceTab.cloneNode(true);
+        tab.setAttribute('data-mwi-custom-tab', 'true');
+        tab.classList.remove('Mui-selected');
+        tab.setAttribute('aria-selected', 'false');
+        tab.setAttribute('tabindex', '-1');
+
+        const badgeSpan = tab.querySelector('[class*="TabsComponent_badge"]');
+        if (badgeSpan) {
+            badgeSpan.innerHTML = `
+            <div style="text-align: center;">
+                <div>\u21a9 Return</div>
+                <div style="font-size: 0.75em; color: #60a5fa;">${displayName}</div>
+            </div>
+        `;
+        }
+
+        tab.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            handleReturnToAction();
+        });
+
+        return tab;
+    }
+
+    /**
+     * Navigate back to the stored action and restore input values
+     */
+    async function handleReturnToAction() {
+        const game = getGameObject$1();
+        if (!game?.handleGoToAction) return;
+
+        if (storedActionHrid) {
+            game.handleGoToAction(storedActionHrid);
+        } else if (storedEnhancementContext) {
+            game.handleGoToAction('/actions/enhancing');
+        } else {
+            return;
+        }
+
+        // Restore input value for production actions — poll for the input to appear
+        if (storedActionHrid && storedNumActions > 0) {
+            const maxAttempts = 20;
+            for (let i = 0; i < maxAttempts; i++) {
+                await new Promise((resolve) => {
+                    const t = setTimeout(resolve, 100);
+                    timerRegistry.registerTimeout(t);
+                });
+
+                const input =
+                    document.querySelector('[class*="maxActionCountInput"] input') ||
+                    document.querySelector('[class*="SkillActionDetail_skillActionDetail"] input[type="number"]');
+                if (input) {
+                    reactInput_js.setReactInputValue(input, storedNumActions);
+                    break;
+                }
+            }
+        }
+    }
+
+    /**
      * Create custom tabs for missing materials
      * @param {Array} missingMaterials - Array of missing material objects
      * @param {Object|null} strategyInfo - Auto-calculated protection strategy info
@@ -14412,6 +14510,13 @@
             tabRef.tab = tab;
             tabsContainer.appendChild(tab);
             currentMaterialsTabs.push(tab);
+        }
+
+        // Add "Return to Action" tab at the end
+        const returnTab = createReturnTab(referenceTab);
+        if (returnTab) {
+            tabsContainer.appendChild(returnTab);
+            currentMaterialsTabs.push(returnTab);
         }
     }
 
@@ -22456,6 +22561,7 @@
                     profitPerHour: profitData.profitPerHour,
                     xpPerHour,
                     catalyst: profitData.winningCatalystHrid || null,
+                    profitData,
                 });
             }
 
@@ -22847,6 +22953,9 @@
                 xpTd.style.cssText = 'padding: 4px 8px; text-align: right; color: #93c5fd;';
                 row.appendChild(xpTd);
 
+                row.style.cursor = 'pointer';
+                row.addEventListener('click', () => this.toggleBreakdown(row, item, tbody));
+
                 tbody.appendChild(row);
             }
 
@@ -22866,6 +22975,132 @@
                     container.appendChild(more);
                 }
             }
+        }
+
+        /**
+         * Toggle breakdown expansion for a row
+         */
+        toggleBreakdown(row, item, tbody) {
+            const existing = row.nextElementSibling;
+            if (existing?.classList.contains('mwi-best-items-breakdown')) {
+                existing.remove();
+                return;
+            }
+
+            // Collapse any other open breakdown
+            tbody.querySelectorAll('.mwi-best-items-breakdown').forEach((el) => el.remove());
+
+            const expansionRow = document.createElement('tr');
+            expansionRow.classList.add('mwi-best-items-breakdown');
+            const td = document.createElement('td');
+            td.setAttribute('colspan', '6');
+            td.style.cssText = 'padding: 8px 16px; background: #1e1e1e; font-size: 0.75rem;';
+            td.appendChild(this.renderBreakdownContent(item));
+            expansionRow.appendChild(td);
+            row.after(expansionRow);
+        }
+
+        /**
+         * Render breakdown content for an expanded item row
+         */
+        renderBreakdownContent(item) {
+            const container = document.createElement('div');
+            const profitData = item.profitData;
+
+            if (!profitData) {
+                container.textContent = 'No breakdown data available';
+                container.style.color = '#888';
+                return container;
+            }
+
+            // Revenue section
+            if (profitData.dropRevenues?.length > 0) {
+                const revenueHeader = document.createElement('div');
+                revenueHeader.style.cssText = 'color: #fff; font-weight: 500; margin-bottom: 2px;';
+                const totalRevenue = profitData.dropRevenues
+                    .filter((d) => !d.isSelfReturn)
+                    .reduce((sum, d) => sum + d.revenuePerHour, 0);
+                revenueHeader.textContent = `Revenue: ${formatters_js.formatKMB(Math.round(totalRevenue))}/hr`;
+                container.appendChild(revenueHeader);
+
+                for (const drop of profitData.dropRevenues) {
+                    const itemDetails = dataManager.getItemDetails(drop.itemHrid);
+                    const itemName = itemDetails?.name || drop.itemHrid.split('/').pop();
+                    const dropRatePct = formatters_js.formatPercentage(drop.dropRate, drop.dropRate < 0.01 ? 3 : 2);
+                    const dropsDisplay =
+                        drop.dropsPerHour >= 10000
+                            ? formatters_js.formatKMB(Math.round(drop.dropsPerHour))
+                            : drop.dropsPerHour.toFixed(2);
+
+                    const line = document.createElement('div');
+                    line.style.cssText = 'margin-left: 8px; color: #aaa;';
+                    if (drop.isSelfReturn) {
+                        line.style.textDecoration = 'line-through';
+                        line.style.opacity = '0.6';
+                    }
+                    line.textContent = `\u2022 ${itemName}: ${dropsDisplay}/hr (${dropRatePct} \u00d7 ${formatters_js.formatPercentage(profitData.successRate, 1)} success) @ ${formatters_js.formatWithSeparator(Math.round(drop.price))} \u2192 ${formatters_js.formatKMB(Math.round(drop.revenuePerHour))}/hr`;
+                    container.appendChild(line);
+                }
+            }
+
+            // Costs section
+            const totalCosts =
+                (profitData.materialCostPerHour || 0) +
+                (profitData.catalystCostPerHour || 0) +
+                (profitData.totalTeaCostPerHour || 0);
+
+            if (totalCosts > 0 || profitData.requirementCosts?.length > 0) {
+                const costsHeader = document.createElement('div');
+                costsHeader.style.cssText = 'color: #fff; font-weight: 500; margin-top: 6px; margin-bottom: 2px;';
+                costsHeader.textContent = `Costs: ${formatters_js.formatKMB(Math.round(totalCosts))}/hr`;
+                container.appendChild(costsHeader);
+
+                // Input materials
+                if (profitData.requirementCosts) {
+                    for (const req of profitData.requirementCosts) {
+                        const itemDetails = dataManager.getItemDetails(req.itemHrid);
+                        const itemName = itemDetails?.name || req.itemHrid.split('/').pop();
+                        const line = document.createElement('div');
+                        line.style.cssText = 'margin-left: 8px; color: #aaa;';
+                        line.textContent = `\u2022 ${itemName}: ${req.count}\u00d7 @ ${formatters_js.formatWithSeparator(Math.round(req.price))} \u2192 ${formatters_js.formatKMB(Math.round(req.costPerHour))}/hr`;
+                        container.appendChild(line);
+                    }
+                }
+
+                // Catalyst
+                if (profitData.catalystCost?.itemHrid && profitData.catalystCostPerHour > 0) {
+                    const catDetails = dataManager.getItemDetails(profitData.catalystCost.itemHrid);
+                    const catName = catDetails?.name || profitData.catalystCost.itemHrid.split('/').pop();
+                    const line = document.createElement('div');
+                    line.style.cssText = 'margin-left: 8px; color: #aaa;';
+                    line.textContent = `\u2022 ${catName} @ ${formatters_js.formatWithSeparator(Math.round(profitData.catalystCost.price))} \u2192 ${formatters_js.formatKMB(Math.round(profitData.catalystCostPerHour))}/hr`;
+                    container.appendChild(line);
+                }
+
+                // Tea
+                if (profitData.consumableCosts?.length > 0) {
+                    for (const tea of profitData.consumableCosts) {
+                        const teaDetails = dataManager.getItemDetails(tea.itemHrid);
+                        const teaName = teaDetails?.name || tea.itemHrid.split('/').pop();
+                        const line = document.createElement('div');
+                        line.style.cssText = 'margin-left: 8px; color: #aaa;';
+                        line.textContent = `\u2022 ${teaName} \u2192 ${formatters_js.formatKMB(Math.round(tea.costPerHour))}/hr`;
+                        container.appendChild(line);
+                    }
+                }
+            }
+
+            // Stats line
+            const statsLine = document.createElement('div');
+            statsLine.style.cssText = 'color: #888; margin-top: 6px; font-size: 0.7rem;';
+            const parts = [];
+            if (profitData.actionsPerHour) parts.push(`${Math.round(profitData.actionsPerHour)}/hr`);
+            if (profitData.successRate) parts.push(`${formatters_js.formatPercentage(profitData.successRate, 1)} success`);
+            if (profitData.efficiency != null) parts.push(`${formatters_js.formatPercentage(profitData.efficiency, 1)} efficiency`);
+            statsLine.textContent = parts.join(' | ');
+            container.appendChild(statsLine);
+
+            return container;
         }
     }
 

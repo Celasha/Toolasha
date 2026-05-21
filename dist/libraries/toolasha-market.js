@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.50.2
+ * Version: 2.51.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -8888,7 +8888,7 @@ self.onmessage = function (e) {
                 content = formatters_js.coinFormatter(null);
                 color = '#004FFF'; // Blue for no data
             } else {
-                content = formatters_js.coinFormatter(topOrderPrice);
+                content = formatters_js.formatKMB(topOrderPrice, 1);
 
                 // Color coding based on competitiveness
                 if (isSell) {
@@ -9002,7 +9002,7 @@ self.onmessage = function (e) {
                 totalPrice = (orderQuantity - filledQuantity) * Math.floor(profitHelpers_js.calculatePriceAfterTax(price, taxRate));
             }
 
-            return createStyledCell(formatters_js.coinFormatter(totalPrice), this.getAmountColor(totalPrice));
+            return createStyledCell(formatters_js.formatKMB(totalPrice, 1), this.getAmountColor(totalPrice));
         }
 
         /**
