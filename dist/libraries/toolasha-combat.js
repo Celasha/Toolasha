@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.51.1
+ * Version: 2.51.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -13987,7 +13987,8 @@
                     }
                 } else {
                     const spawns = action.combatZoneInfo?.fightInfo?.randomSpawnInfo?.spawns || [];
-                    for (const spawn of spawns) {
+                    const bossSpawns = action.combatZoneInfo?.fightInfo?.bossSpawns || [];
+                    for (const spawn of [...spawns, ...bossSpawns]) {
                         const monster = combatMonsterDetailMap[spawn.combatMonsterHrid];
                         if (!monster) continue;
                         for (const drop of monster.dropTable || []) {
