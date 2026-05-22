@@ -153,6 +153,12 @@ class ActionCountdown {
 
     disable() {
         this._stopLoop();
+        if (this.textEl && this.totalTime) {
+            const span = this.textEl.querySelector('span');
+            if (span) {
+                span.textContent = this.totalTime.toFixed(1) + 's';
+            }
+        }
         if (this.actionCompletedHandler) {
             dataManager.off('action_completed', this.actionCompletedHandler);
             this.actionCompletedHandler = null;
