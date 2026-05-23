@@ -178,6 +178,17 @@ class TooltipPrices {
             return; // Not a tooltip we can enhance
         }
 
+        // Suppress item tooltip when hovering items in the enhance item selector
+        if (
+            isItemTooltip &&
+            config.getSetting('itemTooltip_hideInEnhanceSelector') &&
+            document.querySelector('[class*="EnhancingPanel_enhancingPanel"]') &&
+            document.querySelector('[class*="ItemSelector_itemList"]')
+        ) {
+            tooltipElement.style.display = 'none';
+            return;
+        }
+
         // Apply pin-to-top positioning only to item/collection tooltips
         if (config.getSetting('itemTooltip_pinTop')) {
             dom.fixTooltipOverflow(tooltipElement, { forceTop: true });

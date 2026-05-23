@@ -520,6 +520,13 @@ export const settingsGroups = {
                 default: false,
                 help: 'Forces item tooltips to always appear centered at the top of the screen instead of near the hovered item',
             },
+            itemTooltip_hideInEnhanceSelector: {
+                id: 'itemTooltip_hideInEnhanceSelector',
+                label: 'Hide tooltip extras in enhance item selector',
+                type: 'checkbox',
+                default: false,
+                help: 'Suppresses injected tooltip content (prices, profit, milestones) when browsing items in the enhancement selector',
+            },
         },
     },
 
