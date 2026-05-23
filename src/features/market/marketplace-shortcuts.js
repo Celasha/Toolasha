@@ -11,7 +11,7 @@ import { navigateToMarketplace } from '../../utils/marketplace-tabs.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { setReactInputValue } from '../../utils/react-input.js';
 import estimatedListingAge from './estimated-listing-age.js';
-import { formatRelativeTime } from '../../utils/formatters.js';
+import { formatRelativeTime, formatWithSeparator } from '../../utils/formatters.js';
 
 /** Native input value setter for triggering React state updates */
 const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
@@ -50,6 +50,7 @@ class MarketplaceShortcuts {
         const unregisterModal = domObserver.onClass('MarketplaceShortcuts_modal', 'Modal_modalContainer', (modal) => {
             this.autofillQuantity(modal);
             this.injectQuickInputButtons(modal);
+            this.injectOwnedCount(modal);
             this.focusQuantityInput(modal);
         });
         this.unregisterHandlers.push(unregisterModal);
@@ -562,6 +563,72 @@ class MarketplaceShortcuts {
                 inputRow.insertAdjacentElement('afterend', row);
             }
         }, 150);
+    }
+
+    /**
+     * Inject "owned: X" count into Buy Now / Buy Listing modals.
+     * @param {HTMLElement} modal - Modal container element
+     */
+    injectOwnedCount(modal) {
+        if (!config.getSetting('market_showOwnedInBuyModal')) return;
+
+        const header = modal.querySelector('div[class*="MarketplacePanel_header"]');
+        if (!header) return;
+
+        const headerText = header.textContent.trim();
+        if (!headerText.includes('Buy Now') && !headerText.includes('Buy Listing')) return;
+
+        setTimeout(() => {
+            if (modal.querySelector('.mwi-owned-count')) return;
+
+            // Extract item HRID from the SVG icon in the modal
+            const useEl = modal.querySelector('svg use[href], svg use[xlink\\:href]');
+            if (!useEl) return;
+            const href = useEl.getAttribute('href') || useEl.getAttribute('xlink:href');
+            if (!href) return;
+            const idMatch = href.match(/#(.+)$/);
+            if (!idMatch) return;
+            const itemSlug = idMatch[1];
+            const itemHrid = `/items/${itemSlug}`;
+
+            // Determine enhancement level from modal (if present)
+            let enhancementLevel = 0;
+            const allInputs = modal.querySelectorAll('input[type="number"]');
+            for (const input of allInputs) {
+                const parent = input.closest('div');
+                if (parent?.textContent?.includes('Enhancement Level')) {
+                    enhancementLevel = parseInt(input.value) || 0;
+                    break;
+                }
+            }
+
+            // Look up inventory count for this specific item + enhancement level
+            const inventory = dataManager.characterItems || [];
+            let count = 0;
+            for (const item of inventory) {
+                if (
+                    item.itemHrid === itemHrid &&
+                    (item.enhancementLevel || 0) === enhancementLevel &&
+                    item.itemLocationHrid === '/item_locations/inventory'
+                ) {
+                    count += item.count || 0;
+                }
+            }
+
+            // Inject below the "Price" label area, before "Quantity"
+            const quantityInput = this.findQuantityInput(modal);
+            if (!quantityInput) return;
+
+            // Find the Quantity label container
+            const quantityRow = quantityInput.closest('div')?.parentElement?.parentElement;
+            if (!quantityRow) return;
+
+            const ownedEl = document.createElement('div');
+            ownedEl.className = 'mwi-owned-count';
+            ownedEl.style.cssText = `text-align: center; font-size: 13px; color: ${config.COLOR_TEXT_SECONDARY}; margin: 4px 0;`;
+            ownedEl.innerHTML = `Owned: <span style="color: ${config.COLOR_ACCENT}; font-weight: 600;">${formatWithSeparator(count)}</span>`;
+            quantityRow.insertAdjacentElement('beforebegin', ownedEl);
+        }, 100);
     }
 
     /**

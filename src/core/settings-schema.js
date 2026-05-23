@@ -1511,6 +1511,13 @@ export const settingsGroups = {
                 default: '',
                 help: 'Comma-separated preset values (e.g. 50,500,5000). Leave blank for defaults (10, 100, 1000). Max 8 values.',
             },
+            market_showOwnedInBuyModal: {
+                id: 'market_showOwnedInBuyModal',
+                label: 'Marketplace: Show owned count in buy dialogs',
+                type: 'checkbox',
+                default: true,
+                help: 'Displays how many of the item you currently own in Buy Now and Buy Listing modals',
+            },
             market_marketplaceShortcuts: {
                 id: 'market_marketplaceShortcuts',
                 label: 'Marketplace: Show "Marketplace Action" button on item menus',
