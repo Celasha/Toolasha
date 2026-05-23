@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.51.3
+ * Version: 2.52.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -4352,6 +4352,17 @@ self.onmessage = function (e) {
 
             if (!isCollectionTooltip && !isItemTooltip) {
                 return; // Not a tooltip we can enhance
+            }
+
+            // Suppress item tooltip when hovering items in the enhance item selector
+            if (
+                isItemTooltip &&
+                config.getSetting('itemTooltip_hideInEnhanceSelector') &&
+                document.querySelector('[class*="EnhancingPanel_enhancingPanel"]') &&
+                document.querySelector('[class*="ItemSelector_itemList"]')
+            ) {
+                tooltipElement.style.display = 'none';
+                return;
             }
 
             // Apply pin-to-top positioning only to item/collection tooltips
