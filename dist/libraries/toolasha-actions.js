@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.52.0
+ * Version: 2.52.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -5051,10 +5051,18 @@
             this.noResultsMessage = null;
 
             // The h1 has display: block from game CSS, need to override it
-            titleElement.style.setProperty('display', 'flex', 'important');
-            titleElement.style.alignItems = 'center';
-            titleElement.style.gap = '15px';
-            titleElement.style.flexWrap = 'wrap';
+            const anyVisible =
+                config.getSetting('actionPanel_showFilter') ||
+                config.getSetting('actionPanel_showSort') ||
+                config.getSetting('actionPanel_showPricingMode') ||
+                config.getSetting('actionPanel_showCraftToggle');
+
+            if (anyVisible) {
+                titleElement.style.setProperty('display', 'flex', 'important');
+                titleElement.style.alignItems = 'center';
+                titleElement.style.gap = '15px';
+                titleElement.style.flexWrap = 'wrap';
+            }
 
             // Create input element (match game's input style)
             const input = document.createElement('input');
@@ -5092,6 +5100,10 @@
 
             // Store reference
             this.filterInput = input;
+
+            if (!config.getSetting('actionPanel_showFilter')) {
+                input.style.display = 'none';
+            }
 
             // Create sort toggle button
             const SORT_MODES = ['default', 'profit', 'xp', 'coinsPerXp'];
@@ -5131,6 +5143,10 @@
             input.insertAdjacentElement('afterend', sortBtn);
             this.sortButton = sortBtn;
 
+            if (!config.getSetting('actionPanel_showSort')) {
+                sortBtn.style.display = 'none';
+            }
+
             // Create profit mode toggle button
             const PROFIT_MODES = ['hybrid', 'conservative', 'optimistic', 'patientBuy'];
             const modeBtn = document.createElement('button');
@@ -5160,6 +5176,10 @@
             sortBtn.insertAdjacentElement('afterend', modeBtn);
             this.modeButton = modeBtn;
 
+            if (!config.getSetting('actionPanel_showPricingMode')) {
+                modeBtn.style.display = 'none';
+            }
+
             // Create craft toggle button
             const craftBtn = document.createElement('button');
             craftBtn.id = 'mwi-action-craft-toggle';
@@ -5188,6 +5208,10 @@
             });
             modeBtn.insertAdjacentElement('afterend', craftBtn);
             this.craftButton = craftBtn;
+
+            if (!config.getSetting('actionPanel_showCraftToggle')) {
+                craftBtn.style.display = 'none';
+            }
 
             // Find the container for action panels to inject "No results" message
             this.setupNoResultsMessage(titleElement);

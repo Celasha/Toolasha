@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.52.0
+ * Version: 2.52.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -711,6 +711,30 @@
                 actionPanel_foragingTotal: {
                     id: 'actionPanel_foragingTotal',
                     label: 'Action panel: Overall profit for multi-outcome foraging',
+                    type: 'checkbox',
+                    default: true,
+                },
+                actionPanel_showFilter: {
+                    id: 'actionPanel_showFilter',
+                    label: 'Skill page: Filter actions input',
+                    type: 'checkbox',
+                    default: true,
+                },
+                actionPanel_showSort: {
+                    id: 'actionPanel_showSort',
+                    label: 'Skill page: Sort button',
+                    type: 'checkbox',
+                    default: true,
+                },
+                actionPanel_showPricingMode: {
+                    id: 'actionPanel_showPricingMode',
+                    label: 'Skill page: Pricing mode button',
+                    type: 'checkbox',
+                    default: true,
+                },
+                actionPanel_showCraftToggle: {
+                    id: 'actionPanel_showCraftToggle',
+                    label: 'Skill page: Craft toggle button',
                     type: 'checkbox',
                     default: true,
                 },
