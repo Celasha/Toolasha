@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.51.2
+ * Version: 2.51.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2738,8 +2738,7 @@ self.onmessage = function (e) {
                 const teaCostPerHour = combo.teaBonus > 0 ? computeTeaCost(combo.teaBonus) : 0;
 
                 const profitPerSecond = (netProfitPerAttempt * (1 + efficiencyDecimal)) / actionTime;
-                const profitPerHour =
-                    profitPerSecond * profitConstants_js.SECONDS_PER_HOUR + alchemyBonusRevenue - teaCostPerHour - catalystCostPerHour;
+                const profitPerHour = profitPerSecond * profitConstants_js.SECONDS_PER_HOUR + alchemyBonusRevenue - teaCostPerHour;
 
                 if (profitPerHour > bestProfitPerHour) {
                     bestProfitPerHour = profitPerHour;
@@ -2805,8 +2804,7 @@ self.onmessage = function (e) {
             const teaCostPerHour = liveTeaBonus > 0 ? computeTeaCost(liveTeaBonus) : 0;
             const netProfitPerAttempt = computeNetProfit(successRate) - catalystCostPerAttempt;
             const profitPerSecond = (netProfitPerAttempt * (1 + efficiencyDecimal)) / actionTime;
-            const profitPerHour =
-                profitPerSecond * profitConstants_js.SECONDS_PER_HOUR + alchemyBonusRevenue - teaCostPerHour - catalystCostPerHour;
+            const profitPerHour = profitPerSecond * profitConstants_js.SECONDS_PER_HOUR + alchemyBonusRevenue - teaCostPerHour;
             return {
                 catalystBonus,
                 catalystHrid,
