@@ -328,8 +328,7 @@ class AlchemyProfitCalculator {
             const teaCostPerHour = combo.teaBonus > 0 ? computeTeaCost(combo.teaBonus) : 0;
 
             const profitPerSecond = (netProfitPerAttempt * (1 + efficiencyDecimal)) / actionTime;
-            const profitPerHour =
-                profitPerSecond * SECONDS_PER_HOUR + alchemyBonusRevenue - teaCostPerHour - catalystCostPerHour;
+            const profitPerHour = profitPerSecond * SECONDS_PER_HOUR + alchemyBonusRevenue - teaCostPerHour;
 
             if (profitPerHour > bestProfitPerHour) {
                 bestProfitPerHour = profitPerHour;
@@ -395,8 +394,7 @@ class AlchemyProfitCalculator {
         const teaCostPerHour = liveTeaBonus > 0 ? computeTeaCost(liveTeaBonus) : 0;
         const netProfitPerAttempt = computeNetProfit(successRate) - catalystCostPerAttempt;
         const profitPerSecond = (netProfitPerAttempt * (1 + efficiencyDecimal)) / actionTime;
-        const profitPerHour =
-            profitPerSecond * SECONDS_PER_HOUR + alchemyBonusRevenue - teaCostPerHour - catalystCostPerHour;
+        const profitPerHour = profitPerSecond * SECONDS_PER_HOUR + alchemyBonusRevenue - teaCostPerHour;
         return {
             catalystBonus,
             catalystHrid,
