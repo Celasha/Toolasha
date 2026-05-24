@@ -28,7 +28,7 @@ const BTN_CLASS = 'mwi-xph-calc-btn';
  * @returns {{itemHrid, name, xph, goldPerXP, costPerHour, costPartial}|null}
  */
 function calculateItemXPH(itemHrid, itemDetails, maxLevel, protectFrom, params) {
-    const itemLevel = itemDetails.level || itemDetails.equipmentDetail?.levelRequirements?.[0]?.level || 0;
+    const itemLevel = itemDetails.itemLevel || 0;
 
     let calc;
     try {
