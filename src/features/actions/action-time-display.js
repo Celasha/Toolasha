@@ -704,6 +704,13 @@ class ActionTimeDisplay {
             return;
         }
 
+        if (!this.displayElement.isConnected) {
+            this.createDisplayPanel();
+            if (!this.displayElement) {
+                return;
+            }
+        }
+
         // Get current action - read from game UI which is always correct
         // The game updates the DOM immediately when actions change
         // Use wildcard selector to handle hash-suffixed class names
