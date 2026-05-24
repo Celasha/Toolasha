@@ -639,6 +639,7 @@ class AlchemyProfitCalculator {
                 costPerAttempt,
                 incomePerAttempt: revenuePerAttempt,
                 netProfitPerAttempt,
+                profitPerAction: profitPerHour / actionsPerHourWithEfficiency,
 
                 // Per-hour costs
                 materialCostPerHour,
@@ -937,6 +938,7 @@ class AlchemyProfitCalculator {
                 costPerAttempt,
                 incomePerAttempt: revenuePerAttempt,
                 netProfitPerAttempt,
+                profitPerAction: profitPerHour / actionsPerHourWithEfficiency,
 
                 // Per-hour costs
                 materialCostPerHour,
@@ -1264,6 +1266,7 @@ class AlchemyProfitCalculator {
                 costPerAttempt,
                 incomePerAttempt: revenuePerAttempt,
                 netProfitPerAttempt,
+                profitPerAction: comboProfitPerHour / actionsPerHourWithEfficiency,
 
                 // Per-hour costs
                 materialCostPerHour,

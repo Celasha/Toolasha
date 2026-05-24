@@ -1136,9 +1136,9 @@ class TooltipPrices {
             html += `<div style="color: ${color};">• ${label}: ${formatKMB(profit.profitPerHour)}/hr`;
 
             // Show profit per action for alchemy actions
-            if (profit.netProfitPerAttempt !== undefined) {
-                const perActionColor = profit.netProfitPerAttempt >= 0 ? 'inherit' : config.COLOR_TOOLTIP_LOSS;
-                html += ` <span style="opacity: 0.7; color: ${perActionColor};">(${formatKMB(profit.netProfitPerAttempt)}/action)</span>`;
+            if (profit.profitPerAction !== undefined) {
+                const perActionColor = profit.profitPerAction >= 0 ? 'inherit' : config.COLOR_TOOLTIP_LOSS;
+                html += ` <span style="opacity: 0.7; color: ${perActionColor};">(${formatKMB(profit.profitPerAction)}/action)</span>`;
             }
 
             // Show item icons for the winning catalyst and/or tea (silence = no modifiers needed)
