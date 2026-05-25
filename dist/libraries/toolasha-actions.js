@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.52.1
+ * Version: 2.53.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -24,15 +24,8 @@
             const gameData = dataManager.getInitClientData();
             const itemData = gameData?.itemDetailMap?.[itemHrid];
 
-            // First try direct level field (works for consumables, resources, etc.)
-            if (itemData?.level) {
-                return itemData.level;
-            }
-
-            // For equipment, check levelRequirements array
-            if (itemData?.equipmentDetail?.levelRequirements?.length > 0) {
-                // Return the level from the first requirement (highest requirement)
-                return itemData.equipmentDetail.levelRequirements[0].level;
+            if (itemData?.itemLevel) {
+                return itemData.itemLevel;
             }
 
             return 0;
@@ -6984,6 +6977,13 @@
         updateDisplay() {
             if (!this.displayElement) {
                 return;
+            }
+
+            if (!this.displayElement.isConnected) {
+                this.createDisplayPanel();
+                if (!this.displayElement) {
+                    return;
+                }
             }
 
             // Get current action - read from game UI which is always correct

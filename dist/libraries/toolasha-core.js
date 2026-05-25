@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.52.1
+ * Version: 2.53.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -963,6 +963,13 @@
                     type: 'checkbox',
                     default: true,
                 },
+                itemTooltip_artisanPrices: {
+                    id: 'itemTooltip_artisanPrices',
+                    label: 'Adjust tooltip prices for Artisan Tea reduction',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'When viewing a recipe on an action panel, adjusts the total price to reflect actual material cost after Artisan Tea reduction',
+                },
                 itemTooltip_profit: {
                     id: 'itemTooltip_profit',
                     label: 'Show production cost and profit',
@@ -1665,6 +1672,30 @@
                     default: true,
                     help: 'Shows ask/bid market prices on tradeable items in the Labyrinth Shop tab',
                 },
+                labyrinthClearRate: {
+                    id: 'labyrinthClearRate',
+                    label: 'Labyrinth clear rate calculator',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Shows expected clear time and success rate on labyrinth skilling room tiles',
+                },
+                labyrinthRecommendTargetRate: {
+                    id: 'labyrinthRecommendTargetRate',
+                    label: 'Labyrinth: Recommend target clear rate (%)',
+                    type: 'number',
+                    default: 70,
+                    min: 1,
+                    max: 100,
+                    step: 1,
+                    help: 'Target clear rate for labyrinth skip threshold recommendations',
+                },
+                labyrinthLiveProgress: {
+                    id: 'labyrinthLiveProgress',
+                    label: 'Labyrinth: Show live clear chance',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Shows live clear chance during active labyrinth skilling/enhancing rooms',
+                },
                 combatBattleCounter: {
                     id: 'combatBattleCounter',
                     label: 'Show battle/wave counter in current action panel during combat',
@@ -2060,6 +2091,20 @@
                     type: 'text',
                     default: '',
                     help: 'Comma-separated preset values (e.g. 50,500,5000). Leave blank for defaults (10, 100, 1000). Max 8 values.',
+                },
+                market_multiplierButtons: {
+                    id: 'market_multiplierButtons',
+                    label: 'Marketplace: ÷2 and ×2 buttons on order dialogs',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Adds ÷2 and ×2 buttons to the price and quantity rows in buy/sell dialogs',
+                },
+                market_showOwnedInBuyModal: {
+                    id: 'market_showOwnedInBuyModal',
+                    label: 'Marketplace: Show owned count in buy dialogs',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Displays how many of the item you currently own in Buy Now and Buy Listing modals',
                 },
                 market_marketplaceShortcuts: {
                     id: 'market_marketplaceShortcuts',
@@ -3174,7 +3219,9 @@
                 messageType === 'consumable_buffs_updated' ||
                 messageType === 'character_info_updated' ||
                 messageType === 'labyrinth_updated' ||
-                messageType === 'loadouts_updated';
+                messageType === 'loadouts_updated' ||
+                messageType === 'setting_updated' ||
+                messageType === 'labyrinth_room_progress';
 
             if (!skipDedup) {
                 // Deduplicate by message content to prevent 4x JSON.parse on same message
@@ -4176,6 +4223,14 @@
                 this.emit('character_info_updated', data);
             });
 
+            // Handle setting_updated (labyrinth skip thresholds, crate selection, etc.)
+            this.webSocketHook.on('setting_updated', (data) => {
+                if (this.characterData && data.characterSetting) {
+                    this.characterData.characterSetting = data.characterSetting;
+                }
+                this.emit('setting_updated', data);
+            });
+
             // Handle quests_updated (keep characterQuests in sync mid-session)
             this.webSocketHook.on('quests_updated', (data) => {
                 if (data.endCharacterQuests && Array.isArray(data.endCharacterQuests)) {
@@ -4874,6 +4929,13 @@
                     category: 'Market',
                     description: 'Shows bid/ask prices in item tooltips',
                     settingKey: 'itemTooltip_prices',
+                },
+                tooltipArtisanPrices: {
+                    enabled: true,
+                    name: 'Artisan-Adjusted Tooltip Prices',
+                    category: 'Market',
+                    description: 'Adjusts tooltip price totals for Artisan Tea material reduction',
+                    settingKey: 'itemTooltip_artisanPrices',
                 },
                 tooltipProfit: {
                     enabled: true,

@@ -1,11 +1,11 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.52.1
+ * Version: 2.53.0
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (config, dataManager, domObserver, marketAPI, houseEfficiency_js, efficiency_js, bonusRevenueCalculator_js, enhancementCalculator_js, formatters_js, marketData_js, teaParser_js, profitConstants_js, profitHelpers_js, buffParser_js, equipmentParser_js, actionCalculator_js, tokenValuation_js, enhancementConfig_js, dom, timerRegistry_js, storage, cleanupRegistry_js, domObserverHelpers_js, enhancementMultipliers_js, reactInput_js, webSocketHook, abilityCostCalculator_js, houseCostCalculator_js) {
+(function (config, dataManager, domObserver, marketAPI, houseEfficiency_js, efficiency_js, bonusRevenueCalculator_js, enhancementCalculator_js, formatters_js, marketData_js, teaParser_js, profitConstants_js, profitHelpers_js, buffParser_js, equipmentParser_js, actionCalculator_js, tokenValuation_js, enhancementConfig_js, dom, materialCalculator_js, timerRegistry_js, storage, cleanupRegistry_js, domObserverHelpers_js, enhancementMultipliers_js, reactInput_js, webSocketHook, abilityCostCalculator_js, houseCostCalculator_js) {
     'use strict';
 
     function _interopNamespaceDefault(e) {
@@ -3040,6 +3040,7 @@ self.onmessage = function (e) {
                     costPerAttempt,
                     incomePerAttempt: revenuePerAttempt,
                     netProfitPerAttempt,
+                    profitPerAction: profitPerHour / actionsPerHourWithEfficiency,
 
                     // Per-hour costs
                     materialCostPerHour,
@@ -3338,6 +3339,7 @@ self.onmessage = function (e) {
                     costPerAttempt,
                     incomePerAttempt: revenuePerAttempt,
                     netProfitPerAttempt,
+                    profitPerAction: profitPerHour / actionsPerHourWithEfficiency,
 
                     // Per-hour costs
                     materialCostPerHour,
@@ -3665,6 +3667,7 @@ self.onmessage = function (e) {
                     costPerAttempt,
                     incomePerAttempt: revenuePerAttempt,
                     netProfitPerAttempt,
+                    profitPerAction: comboProfitPerHour / actionsPerHourWithEfficiency,
 
                     // Per-hour costs
                     materialCostPerHour,
@@ -4196,6 +4199,86 @@ self.onmessage = function (e) {
     };
 
     /**
+     * Game Data Lookup Utilities
+     *
+     * Centralized functions for resolving display names to HRIDs.
+     * Handles the ★ ↔ (R) refined item display name difference between
+     * test server and live server.
+     */
+
+
+    /**
+     * Generate alternate display names to handle ★ ↔ (R) refined item naming.
+     * @param {string} name - Original display name
+     * @returns {string[]} Array of alternate names to try (may be empty)
+     */
+    function getRefinedNameVariants(name) {
+        const variants = [];
+        if (name.includes('★')) {
+            variants.push(name.replace(/\s*★/, ' (R)'));
+        }
+        if (name.includes('(R)')) {
+            variants.push(name.replace(/\s*\(R\)/, ' ★'));
+        }
+        return variants;
+    }
+
+    /**
+     * Find an action HRID from its display name.
+     * Tries exact match first, then ★ ↔ (R) variants for refined items.
+     * @param {string} actionName - Display name of the action
+     * @returns {string|null} Action HRID or null if not found
+     */
+    function getActionHridFromName(actionName) {
+        const gameData = dataManager.getInitClientData();
+        if (!gameData?.actionDetailMap) {
+            return null;
+        }
+
+        // Try exact match first
+        for (const [hrid, detail] of Object.entries(gameData.actionDetailMap)) {
+            if (detail.name === actionName) {
+                return hrid;
+            }
+        }
+
+        // Try ★ ↔ (R) variants for refined items
+        for (const variant of getRefinedNameVariants(actionName)) {
+            for (const [hrid, detail] of Object.entries(gameData.actionDetailMap)) {
+                if (detail.name === variant) {
+                    return hrid;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Get the coin cost of an item from the in-game shop.
+     * Returns 0 if the item is not available in the shop or not purchasable with coins.
+     * @param {string} itemHrid - Item HRID
+     * @returns {number} Coin cost, or 0 if not available in shop
+     */
+    function getShopCoinCost(itemHrid) {
+        const gameData = dataManager.getInitClientData();
+        if (!gameData?.shopItemDetailMap) return 0;
+
+        for (const shopItem of Object.values(gameData.shopItemDetailMap)) {
+            if (shopItem.itemHrid === itemHrid) {
+                if (shopItem.costs && shopItem.costs.length > 0) {
+                    const coinCost = shopItem.costs.find((cost) => cost.itemHrid === '/items/coin');
+                    if (coinCost) {
+                        return coinCost.count;
+                    }
+                }
+            }
+        }
+
+        return 0;
+    }
+
+    /**
      * Market Tooltip Prices Feature
      * Adds market prices to item tooltips
      */
@@ -4473,7 +4556,8 @@ self.onmessage = function (e) {
             if (config.getSetting('itemTooltip_prices') && price && (price.ask > 0 || price.bid > 0)) {
                 // Get item amount from tooltip (for stacks)
                 const amount = this.extractItemAmount(tooltipElement);
-                this.injectPriceDisplay(tooltipElement, price, amount, isCollectionTooltip);
+                const artisanAmount = this._getArtisanAdjustedAmount(tooltipElement, amount);
+                this.injectPriceDisplay(tooltipElement, price, amount, isCollectionTooltip, artisanAmount);
             }
 
             // Always show detailed craft profit if enabled
@@ -4682,13 +4766,50 @@ self.onmessage = function (e) {
         }
 
         /**
+         * Get artisan-adjusted amount if tooltip is inside an action panel.
+         * @param {Element} tooltipElement - Tooltip popper element
+         * @param {number} baseAmount - Base recipe amount from tooltip
+         * @returns {number|null} Adjusted amount, or null if not applicable
+         */
+        _getArtisanAdjustedAmount(tooltipElement, baseAmount) {
+            if (baseAmount <= 1) return null;
+            if (!config.getSetting('itemTooltip_artisanPrices')) return null;
+
+            const trigger = document.querySelector(`[aria-describedby="${tooltipElement.id}"]`);
+            if (!trigger) return null;
+
+            const actionPanel =
+                trigger.closest('[class*="SkillActionDetail_regularComponent"]') ||
+                trigger.closest('[class*="SkillActionDetail_enhancingComponent"]');
+            if (!actionPanel) return null;
+
+            const actionNameEl = actionPanel.querySelector('[class*="SkillActionDetail_name"]');
+            if (!actionNameEl) return null;
+
+            const actionHrid = getActionHridFromName(actionNameEl.textContent.trim());
+            if (!actionHrid) return null;
+
+            const actionDetails = dataManager.getActionDetails(actionHrid);
+            if (!actionDetails) return null;
+
+            const artisanBonus = materialCalculator_js.calculateArtisanBonus(actionDetails);
+            if (artisanBonus <= 0) return null;
+
+            const adjusted = Math.ceil(baseAmount * (1 - artisanBonus));
+            if (adjusted >= baseAmount) return null;
+
+            return adjusted;
+        }
+
+        /**
          * Inject price display into tooltip
          * @param {Element} tooltipElement - Tooltip element
          * @param {Object} price - { ask, bid }
-         * @param {number} amount - Item amount
+         * @param {number} amount - Item amount (base recipe amount)
          * @param {boolean} isCollectionTooltip - True if this is a collection tooltip
+         * @param {number|null} artisanAmount - Artisan-adjusted amount, or null if not applicable
          */
-        injectPriceDisplay(tooltipElement, price, amount, isCollectionTooltip = false) {
+        injectPriceDisplay(tooltipElement, price, amount, isCollectionTooltip = false, artisanAmount = null) {
             const tooltipText = isCollectionTooltip
                 ? tooltipElement.querySelector('.Collection_tooltipContent__2IcSJ')
                 : tooltipElement.querySelector('.ItemTooltipText_itemTooltipText__zFq3A');
@@ -4717,11 +4838,13 @@ self.onmessage = function (e) {
             const bidDisplay = price.bid > 0 ? formatTooltipPrice(price.bid) : '-';
 
             // Calculate totals (only if both prices valid and amount > 1)
+            const effectiveAmount = artisanAmount || amount;
             let totalDisplay = '';
-            if (amount > 1 && price.ask > 0 && price.bid > 0) {
-                const totalAsk = price.ask * amount;
-                const totalBid = price.bid * amount;
-                totalDisplay = ` (${formatTooltipPrice(totalAsk)} / ${formatTooltipPrice(totalBid)})`;
+            if (effectiveAmount > 1 && price.ask > 0 && price.bid > 0) {
+                const totalAsk = price.ask * effectiveAmount;
+                const totalBid = price.bid * effectiveAmount;
+                const amountLabel = artisanAmount ? ` ×${formatters_js.numberFormatter(artisanAmount)}` : '';
+                totalDisplay = ` (${formatTooltipPrice(totalAsk)} / ${formatTooltipPrice(totalBid)}${amountLabel})`;
             }
 
             // Format: "Price: 1,200 / 950" or "Price: 1,200 / -" or "Price: - / 950"
@@ -5312,9 +5435,9 @@ self.onmessage = function (e) {
                 html += `<div style="color: ${color};">• ${label}: ${formatters_js.formatKMB(profit.profitPerHour)}/hr`;
 
                 // Show profit per action for alchemy actions
-                if (profit.netProfitPerAttempt !== undefined) {
-                    const perActionColor = profit.netProfitPerAttempt >= 0 ? 'inherit' : config.COLOR_TOOLTIP_LOSS;
-                    html += ` <span style="opacity: 0.7; color: ${perActionColor};">(${formatters_js.formatKMB(profit.netProfitPerAttempt)}/action)</span>`;
+                if (profit.profitPerAction !== undefined) {
+                    const perActionColor = profit.profitPerAction >= 0 ? 'inherit' : config.COLOR_TOOLTIP_LOSS;
+                    html += ` <span style="opacity: 0.7; color: ${perActionColor};">(${formatters_js.formatKMB(profit.profitPerAction)}/action)</span>`;
                 }
 
                 // Show item icons for the winning catalyst and/or tea (silence = no modifiers needed)
@@ -14229,6 +14352,8 @@ self.onmessage = function (e) {
             const unregisterModal = domObserver.onClass('MarketplaceShortcuts_modal', 'Modal_modalContainer', (modal) => {
                 this.autofillQuantity(modal);
                 this.injectQuickInputButtons(modal);
+                this.injectMultiplierButtons(modal);
+                this.injectOwnedCount(modal);
                 this.focusQuantityInput(modal);
             });
             this.unregisterHandlers.push(unregisterModal);
@@ -14744,6 +14869,72 @@ self.onmessage = function (e) {
         }
 
         /**
+         * Inject "owned: X" count into Buy Now / Buy Listing modals.
+         * @param {HTMLElement} modal - Modal container element
+         */
+        injectOwnedCount(modal) {
+            if (!config.getSetting('market_showOwnedInBuyModal')) return;
+
+            const header = modal.querySelector('div[class*="MarketplacePanel_header"]');
+            if (!header) return;
+
+            const headerText = header.textContent.trim();
+            if (!headerText.includes('Buy Now') && !headerText.includes('Buy Listing')) return;
+
+            setTimeout(() => {
+                if (modal.querySelector('.mwi-owned-count')) return;
+
+                // Extract item HRID from the SVG icon in the modal
+                const useEl = modal.querySelector('svg use[href], svg use[xlink\\:href]');
+                if (!useEl) return;
+                const href = useEl.getAttribute('href') || useEl.getAttribute('xlink:href');
+                if (!href) return;
+                const idMatch = href.match(/#(.+)$/);
+                if (!idMatch) return;
+                const itemSlug = idMatch[1];
+                const itemHrid = `/items/${itemSlug}`;
+
+                // Determine enhancement level from modal (if present)
+                let enhancementLevel = 0;
+                const allInputs = modal.querySelectorAll('input[type="number"]');
+                for (const input of allInputs) {
+                    const parent = input.closest('div');
+                    if (parent?.textContent?.includes('Enhancement Level')) {
+                        enhancementLevel = parseInt(input.value) || 0;
+                        break;
+                    }
+                }
+
+                // Look up inventory count for this specific item + enhancement level
+                const inventory = dataManager.characterItems || [];
+                let count = 0;
+                for (const item of inventory) {
+                    if (
+                        item.itemHrid === itemHrid &&
+                        (item.enhancementLevel || 0) === enhancementLevel &&
+                        item.itemLocationHrid === '/item_locations/inventory'
+                    ) {
+                        count += item.count || 0;
+                    }
+                }
+
+                // Inject below the "Price" label area, before "Quantity"
+                const quantityInput = this.findQuantityInput(modal);
+                if (!quantityInput) return;
+
+                // Find the Quantity label container
+                const quantityRow = quantityInput.closest('div')?.parentElement?.parentElement;
+                if (!quantityRow) return;
+
+                const ownedEl = document.createElement('div');
+                ownedEl.className = 'mwi-owned-count';
+                ownedEl.style.cssText = `text-align: center; font-size: 13px; color: ${config.COLOR_TEXT_SECONDARY}; margin: 4px 0;`;
+                ownedEl.innerHTML = `Owned: <span style="color: ${config.COLOR_ACCENT}; font-weight: 600;">${formatters_js.formatWithSeparator(count)}</span>`;
+                quantityRow.insertAdjacentElement('beforebegin', ownedEl);
+            }, 100);
+        }
+
+        /**
          * Find the quantity input in a marketplace modal.
          * Equipment items have multiple number inputs (enhancement level + quantity),
          * so we identify the correct one by checking parent containers.
@@ -14812,6 +15003,77 @@ self.onmessage = function (e) {
         }
 
         /**
+         * Inject ÷2 and ×2 multiplier buttons into price and quantity rows.
+         * @param {HTMLElement} modal - Modal container element
+         */
+        injectMultiplierButtons(modal) {
+            if (!config.getSetting('market_multiplierButtons')) return;
+
+            const header = modal.querySelector('div[class*="MarketplacePanel_header"]');
+            if (!header) return;
+
+            const headerText = header.textContent.trim();
+            const isMarketplaceModal =
+                headerText.includes('Buy Now') ||
+                headerText.includes('Buy Listing') ||
+                headerText.includes('Sell Now') ||
+                headerText.includes('Sell Listing');
+            if (!isMarketplaceModal) return;
+
+            setTimeout(() => {
+                if (modal.querySelector('.mwi-mp-multiplier')) return;
+
+                const priceRow = modal.querySelector('div[class*="MarketplacePanel_priceInputs"]');
+                const quantityRow = modal.querySelector('div[class*="MarketplacePanel_quantityInputs"]');
+
+                for (const row of [priceRow, quantityRow]) {
+                    if (!row) continue;
+
+                    const input = row.querySelector('input[type="number"]');
+                    if (!input) continue;
+
+                    const buttonContainers = row.querySelectorAll('div[class*="MarketplacePanel_buttonContainer"]');
+                    if (buttonContainers.length < 2) continue;
+
+                    const firstContainer = buttonContainers[0];
+                    const lastContainer = buttonContainers[buttonContainers.length - 1];
+
+                    const existingBtn = firstContainer.querySelector('button');
+                    const btnClass = existingBtn?.className || '';
+
+                    const divideWrapper = document.createElement('div');
+                    divideWrapper.className = firstContainer.className + ' mwi-mp-multiplier';
+                    const divideBtn = document.createElement('button');
+                    divideBtn.className = btnClass;
+                    divideBtn.textContent = '÷2';
+                    divideBtn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const current = parseInt(input.value) || 0;
+                        reactInput_js.setReactInputValue(input, Math.max(1, Math.floor(current / 2)));
+                    });
+                    divideWrapper.appendChild(divideBtn);
+
+                    const multiplyWrapper = document.createElement('div');
+                    multiplyWrapper.className = lastContainer.className + ' mwi-mp-multiplier';
+                    const multiplyBtn = document.createElement('button');
+                    multiplyBtn.className = btnClass;
+                    multiplyBtn.textContent = '×2';
+                    multiplyBtn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const current = parseInt(input.value) || 0;
+                        reactInput_js.setReactInputValue(input, current * 2);
+                    });
+                    multiplyWrapper.appendChild(multiplyBtn);
+
+                    firstContainer.insertAdjacentElement('beforebegin', divideWrapper);
+                    lastContainer.insertAdjacentElement('afterend', multiplyWrapper);
+                }
+            }, 100);
+        }
+
+        /**
          * Disable and cleanup
          */
         disable() {
@@ -14827,6 +15089,7 @@ self.onmessage = function (e) {
 
             document.querySelectorAll('.mwi-marketplace-dropdown').forEach((el) => el.remove());
             document.querySelectorAll('.mwi-mp-quick-input').forEach((el) => el.remove());
+            document.querySelectorAll('.mwi-mp-multiplier').forEach((el) => el.remove());
 
             this.itemNameToHridCache = null;
             this.isInitialized = false;
@@ -15825,39 +16088,6 @@ self.onmessage = function (e) {
 
         // Extract just the values
         return flatResults.map((r) => r.value);
-    }
-
-    /**
-     * Game Data Lookup Utilities
-     *
-     * Centralized functions for resolving display names to HRIDs.
-     * Handles the ★ ↔ (R) refined item display name difference between
-     * test server and live server.
-     */
-
-
-    /**
-     * Get the coin cost of an item from the in-game shop.
-     * Returns 0 if the item is not available in the shop or not purchasable with coins.
-     * @param {string} itemHrid - Item HRID
-     * @returns {number} Coin cost, or 0 if not available in shop
-     */
-    function getShopCoinCost(itemHrid) {
-        const gameData = dataManager.getInitClientData();
-        if (!gameData?.shopItemDetailMap) return 0;
-
-        for (const shopItem of Object.values(gameData.shopItemDetailMap)) {
-            if (shopItem.itemHrid === itemHrid) {
-                if (shopItem.costs && shopItem.costs.length > 0) {
-                    const coinCost = shopItem.costs.find((cost) => cost.itemHrid === '/items/coin');
-                    if (coinCost) {
-                        return coinCost.count;
-                    }
-                }
-            }
-        }
-
-        return 0;
     }
 
     /**
@@ -27191,4 +27421,4 @@ self.onmessage = function (e) {
 
     console.log('[Toolasha] Market library loaded');
 
-})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.marketAPI, Toolasha.Utils.houseEfficiency, Toolasha.Utils.efficiency, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.formatters, Toolasha.Utils.marketData, Toolasha.Utils.teaParser, Toolasha.Utils.profitConstants, Toolasha.Utils.profitHelpers, Toolasha.Utils.buffParser, Toolasha.Utils.equipmentParser, Toolasha.Utils.actionCalculator, Toolasha.Utils.tokenValuation, Toolasha.Utils.enhancementConfig, Toolasha.Utils.dom, Toolasha.Utils.timerRegistry, Toolasha.Core.storage, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.enhancementMultipliers, Toolasha.Utils.reactInput, Toolasha.Core.webSocketHook, Toolasha.Utils.abilityCalc, Toolasha.Utils.houseCostCalculator);
+})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.marketAPI, Toolasha.Utils.houseEfficiency, Toolasha.Utils.efficiency, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.formatters, Toolasha.Utils.marketData, Toolasha.Utils.teaParser, Toolasha.Utils.profitConstants, Toolasha.Utils.profitHelpers, Toolasha.Utils.buffParser, Toolasha.Utils.equipmentParser, Toolasha.Utils.actionCalculator, Toolasha.Utils.tokenValuation, Toolasha.Utils.enhancementConfig, Toolasha.Utils.dom, Toolasha.Utils.materialCalculator, Toolasha.Utils.timerRegistry, Toolasha.Core.storage, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.enhancementMultipliers, Toolasha.Utils.reactInput, Toolasha.Core.webSocketHook, Toolasha.Utils.abilityCalc, Toolasha.Utils.houseCostCalculator);

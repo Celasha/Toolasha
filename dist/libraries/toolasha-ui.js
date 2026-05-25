@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.52.1
+ * Version: 2.53.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -22,7 +22,7 @@
         constructor() {
             this.unregisterHandler = null;
             this.isActive = false;
-            this.processedDivs = new WeakSet(); // Track already-processed divs
+            this.processedHrefs = new WeakMap(); // Track last href per div
             this.isInitialized = false;
         }
 
@@ -42,8 +42,8 @@
             // Listen for key info toggle
             config.onSettingChange('showsKeyInfoInIcon', () => {
                 if (this.isInitialized) {
-                    // Clear processed set and re-render
-                    this.processedDivs = new WeakSet();
+                    // Clear processed map and re-render
+                    this.processedHrefs = new WeakMap();
                     this.addItemLevels();
                 }
             });
@@ -105,10 +105,6 @@
             );
 
             for (const div of iconDivs) {
-                if (this.processedDivs.has(div)) {
-                    continue;
-                }
-
                 // Skip if already has a name element (tooltip is open)
                 if (div.querySelector('div.Item_name__2C42x')) {
                     continue;
@@ -125,6 +121,17 @@
                     continue;
                 }
 
+                // Skip if this div already has the correct overlay for this href
+                if (this.processedHrefs.get(div) === href) {
+                    continue;
+                }
+
+                // Remove stale overlay if item changed
+                const existingOverlay = div.querySelector('div.script_itemLevel');
+                if (existingOverlay) {
+                    existingOverlay.remove();
+                }
+
                 // Extract item HRID (e.g., "#cheese_sword" -> "/items/cheese_sword")
                 const hrefName = href.split('#')[1];
                 const itemHrid = `/items/${hrefName}`;
@@ -132,6 +139,7 @@
                 // Get item details
                 const itemDetails = dataManager.getItemDetails(itemHrid);
                 if (!itemDetails) {
+                    this.processedHrefs.set(div, href);
                     continue;
                 }
 
@@ -158,7 +166,7 @@
                 }
 
                 // Add overlay if we have valid text to display
-                if (displayText && !div.querySelector('div.script_itemLevel')) {
+                if (displayText) {
                     div.style.position = 'relative';
 
                     // Position: bottom left for all items (matches market value style)
@@ -168,12 +176,9 @@
                         'beforeend',
                         `<div class="script_itemLevel" style="z-index: 1; position: absolute; ${position} color: ${config.SCRIPT_COLOR_MAIN}; text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 0 3px #000;">${displayText}</div>`
                     );
-                    // Mark as processed
-                    this.processedDivs.add(div);
-                } else {
-                    // No valid text or already has overlay, mark as processed
-                    this.processedDivs.add(div);
                 }
+
+                this.processedHrefs.set(div, href);
             }
         }
 
@@ -248,7 +253,7 @@
             }
 
             // Clear processed tracking
-            this.processedDivs = new WeakSet();
+            this.processedHrefs = new WeakMap();
 
             this.isActive = false;
             this.isInitialized = false;
@@ -27525,15 +27530,8 @@ ${starCSS}
             const gameData = dataManager.getInitClientData();
             const itemData = gameData?.itemDetailMap?.[itemHrid];
 
-            // First try direct level field (works for consumables, resources, etc.)
-            if (itemData?.level) {
-                return itemData.level;
-            }
-
-            // For equipment, check levelRequirements array
-            if (itemData?.equipmentDetail?.levelRequirements?.length > 0) {
-                // Return the level from the first requirement (highest requirement)
-                return itemData.equipmentDetail.levelRequirements[0].level;
+            if (itemData?.itemLevel) {
+                return itemData.itemLevel;
             }
 
             return 0;
@@ -30020,7 +30018,7 @@ ${starCSS}
      * @returns {{itemHrid, name, xph, goldPerXP, costPerHour, costPartial}|null}
      */
     function calculateItemXPH(itemHrid, itemDetails, maxLevel, protectFrom, params) {
-        const itemLevel = itemDetails.level || itemDetails.equipmentDetail?.levelRequirements?.[0]?.level || 0;
+        const itemLevel = itemDetails.itemLevel || 0;
 
         let calc;
         try {

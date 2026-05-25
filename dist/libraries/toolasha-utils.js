@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 2.52.1
+ * Version: 2.53.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -7940,6 +7940,7 @@ self.onmessage = function (e) {
     var materialCalculator = /*#__PURE__*/Object.freeze({
         __proto__: null,
         ARTISAN_MATERIAL_MODE: ARTISAN_MATERIAL_MODE,
+        calculateArtisanBonus: calculateArtisanBonus,
         calculateEnhancementMaterialRequirements: calculateEnhancementMaterialRequirements,
         calculateMaterialRequirements: calculateMaterialRequirements,
         calculateQueuedMaterialsForAction: calculateQueuedMaterialsForAction
