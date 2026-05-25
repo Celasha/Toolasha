@@ -12,8 +12,8 @@
  * - Catalyst (type-specific): +15% multiplicative, consumed once per successful action
  * - Catalyst (prime): +25% multiplicative, consumed once per successful action
  * - Transmute under-level penalty: perLevel = 0.9 / itemLevel, applied when alchemyLevel < itemLevel
- * - Formula (coinify/decompose): finalRate = min(1, baseRate × (1 + catalystBonus) × (1 + teaBonus))
- * - Formula (transmute): finalRate = min(1, baseRate × (1 + catalyst + perLevel × (alchemyLvl - itemLvl)) × (1 + tea))
+ * - Formula (coinify/decompose): finalRate = min(1, baseRate × (1 + catalystBonus + teaBonus))
+ * - Formula (transmute): finalRate = min(1, baseRate × (1 + catalyst + perLevel × (alchemyLvl - itemLvl) + tea))
  */
 
 import config from '../../core/config.js';
@@ -222,9 +222,9 @@ class AlchemyProfitCalculator {
             const teaBonus = teaBonusOverride !== null ? teaBonusOverride : getAlchemySuccessBonus();
 
             // Calculate final success rate:
-            // base × (1 + catalyst + levelPenalty) × (1 + tea)
+            // base × (1 + catalyst + levelPenalty + tea)
             // levelPenalty is 0 when at or above item level
-            const total = Math.min(1.0, baseRate * (1 + catalystBonus + levelPenalty) * (1 + teaBonus));
+            const total = Math.min(1.0, baseRate * (1 + catalystBonus + levelPenalty + teaBonus));
 
             return {
                 total: Math.max(0, total),
