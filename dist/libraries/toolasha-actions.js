@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.53.1
+ * Version: 2.54.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -6376,6 +6376,22 @@
                     if (this.characterInitHandler) {
                         dataManager.off('character_initialized', this.characterInitHandler);
                         this.characterInitHandler = null;
+                    }
+                });
+            }
+
+            // Listen for actions_updated so display refreshes when new actions arrive via WebSocket
+            // (the DOM updates optimistically before the WS message, so the mutation observer fires
+            // before characterActions is populated — this ensures we retry once the data is available)
+            if (!this.actionsUpdatedHandler) {
+                this.actionsUpdatedHandler = () => {
+                    this.updateDisplay();
+                };
+                dataManager.on('actions_updated', this.actionsUpdatedHandler);
+                this.cleanupRegistry.registerCleanup(() => {
+                    if (this.actionsUpdatedHandler) {
+                        dataManager.off('actions_updated', this.actionsUpdatedHandler);
+                        this.actionsUpdatedHandler = null;
                     }
                 });
             }

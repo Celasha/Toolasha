@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.53.1
+ * Version: 2.54.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -18910,6 +18910,7 @@
             monsterHrid,
             crates,
             communityBuffs,
+            labyrinthCombatBuffs,
             threshold = DEFAULT_THRESHOLD,
             minLevel = DEFAULT_MIN_LEVEL,
             maxLevel = DEFAULT_MAX_LEVEL,
@@ -18936,6 +18937,7 @@
                 crates,
                 hours: simHours,
                 communityBuffs,
+                labyrinthCombatBuffs,
             });
 
             const attempts = simResult.labyAttemptCount || 1;
@@ -18958,6 +18960,7 @@
         return {
             maxLevel: bestLevel,
             winRate: bestWinRate,
+            steps: step,
         };
     }
 
@@ -19574,14 +19577,15 @@
                             zoneHrid,
                             monsterHrid,
                             crates,
-                            hours,
+                            simHours: hours,
                             communityBuffs,
                             labyrinthCombatBuffs,
+                            threshold,
                         },
-                        threshold,
                         (progress) => {
-                            progressFill.style.width = `${progress.percent}%`;
-                            progressText.textContent = `Level ${progress.currentLevel} (${progress.step})`;
+                            const percent = Math.round((progress.step / progress.totalSteps) * 100);
+                            progressFill.style.width = `${percent}%`;
+                            progressText.textContent = `Level ${progress.level} — ${(progress.winRate * 100).toFixed(0)}% (step ${progress.step}/${progress.totalSteps})`;
                         }
                     );
 

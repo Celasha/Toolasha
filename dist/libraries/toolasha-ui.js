@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.53.1
+ * Version: 2.54.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -812,15 +812,15 @@
      */
 
 
-    const STORAGE_KEY_PREFIX$4 = 'tabOrder';
+    const STORAGE_KEY_PREFIX$5 = 'tabOrder';
 
     /**
      * Get character-scoped storage key.
      * @returns {string}
      */
-    function getStorageKey$4() {
+    function getStorageKey$5() {
         const charId = dataManager.getCurrentCharacterId() || 'default';
-        return `${STORAGE_KEY_PREFIX$4}_${charId}`;
+        return `${STORAGE_KEY_PREFIX$5}_${charId}`;
     }
 
     /**
@@ -852,7 +852,7 @@
             this.isInitialized = true;
 
             // Load saved order
-            this.savedOrder = await storage.getJSON(getStorageKey$4(), 'settings', null);
+            this.savedOrder = await storage.getJSON(getStorageKey$5(), 'settings', null);
 
             // Apply to existing tabs
             this._applyOrder();
@@ -1001,7 +1001,7 @@
          * @private
          */
         async _saveOrder(order) {
-            await storage.setJSON(getStorageKey$4(), order, 'settings', true);
+            await storage.setJSON(getStorageKey$5(), order, 'settings', true);
         }
 
         disable() {
@@ -6458,7 +6458,7 @@ ${starCSS}
      */
 
 
-    const STORAGE_KEY_PREFIX$3 = 'loadout_snapshots';
+    const STORAGE_KEY_PREFIX$4 = 'loadout_snapshots';
 
     /**
      * Returns the active WebSocket hook instance.
@@ -6475,9 +6475,9 @@ ${starCSS}
      * Get character-scoped storage key.
      * @returns {string}
      */
-    function getStorageKey$3() {
+    function getStorageKey$4() {
         const charId = dataManager.getCurrentCharacterId() || 'default';
-        return `${STORAGE_KEY_PREFIX$3}_${charId}`;
+        return `${STORAGE_KEY_PREFIX$4}_${charId}`;
     }
 
     /**
@@ -6590,7 +6590,7 @@ ${starCSS}
             // Load from storage — loadouts_updated only fires when the user visits the loadouts
             // UI, so storage is always the source of snapshots at startup.
             if (Object.keys(this.snapshots).length === 0) {
-                const storageKey = getStorageKey$3();
+                const storageKey = getStorageKey$4();
                 // NOTE: getCurrentCharacterId() may be null at this point (before init_character_data
                 // arrives), so getStorageKey() may return 'loadout_snapshots_default'. We will reload
                 // from the correct key once character_initialized fires.
@@ -6608,7 +6608,7 @@ ${starCSS}
 
             // Reload from the correct character-scoped key once character data is available
             this.characterInitializedHandler = async () => {
-                const storageKey = getStorageKey$3();
+                const storageKey = getStorageKey$4();
                 const fresh = (await storage.getJSON(storageKey, 'settings', null)) || {};
                 if (Object.keys(fresh).length > 0) {
                     this.snapshots = fresh;
@@ -6637,7 +6637,7 @@ ${starCSS}
             }
 
             this.snapshots = newSnapshots;
-            storage.setJSON(getStorageKey$3(), this.snapshots, 'settings');
+            storage.setJSON(getStorageKey$4(), this.snapshots, 'settings');
             this._emitUpdate();
         }
 
@@ -6660,7 +6660,7 @@ ${starCSS}
                 }
             }
             if (changed) {
-                storage.setJSON(getStorageKey$3(), this.snapshots, 'settings');
+                storage.setJSON(getStorageKey$4(), this.snapshots, 'settings');
                 this._emitUpdate();
             }
             return changed;
@@ -13027,15 +13027,15 @@ ${starCSS}
      */
 
 
-    const STORAGE_KEY_PREFIX$2 = 'taskProtectedHrids';
+    const STORAGE_KEY_PREFIX$3 = 'taskProtectedHrids';
 
     /**
      * Get character-scoped storage key.
      * @returns {string}
      */
-    function getStorageKey$2() {
+    function getStorageKey$3() {
         const charId = dataManager.getCurrentCharacterId() || 'default';
-        return `${STORAGE_KEY_PREFIX$2}_${charId}`;
+        return `${STORAGE_KEY_PREFIX$3}_${charId}`;
     }
 
     class TaskRerollProtection {
@@ -13053,7 +13053,7 @@ ${starCSS}
             this.isInitialized = true;
 
             // Load protected list from storage
-            const saved = await storage.getJSON(getStorageKey$2(), 'settings', []);
+            const saved = await storage.getJSON(getStorageKey$3(), 'settings', []);
             this.protectedHrids = new Set(saved);
 
             // Watch for task cards appearing
@@ -13376,7 +13376,7 @@ ${starCSS}
          * @private
          */
         async _save() {
-            await storage.setJSON(getStorageKey$2(), Array.from(this.protectedHrids), 'settings', true);
+            await storage.setJSON(getStorageKey$3(), Array.from(this.protectedHrids), 'settings', true);
         }
 
         /**
@@ -13644,6 +13644,445 @@ ${starCSS}
         },
         openConfigPopup: () => {
             taskRerollProtection.openConfigPopup();
+        },
+    };
+
+    /**
+     * Task Auto-Reroll Reminder
+     * Highlights tasks that the user wants to reroll with a red/orange indicator.
+     * Inverse of task reroll protection — instead of preventing rerolls,
+     * it reminds the user to reroll unwanted tasks.
+     *
+     * Per-character configuration stored in IndexedDB.
+     */
+
+
+    const STORAGE_KEY_PREFIX$2 = 'taskAutoRerollHrids';
+
+    function getStorageKey$2() {
+        const charId = dataManager.getCurrentCharacterId() || 'default';
+        return `${STORAGE_KEY_PREFIX$2}_${charId}`;
+    }
+
+    class TaskAutoReroll {
+        constructor() {
+            this.isInitialized = false;
+            this.autoRerollHrids = new Set();
+            this.unregisterHandlers = [];
+        }
+
+        async initialize() {
+            if (this.isInitialized) return;
+            if (!config.getSetting('taskAutoReroll')) return;
+
+            this.isInitialized = true;
+
+            const saved = await storage.getJSON(getStorageKey$2(), 'settings', []);
+            this.autoRerollHrids = new Set(saved);
+
+            const unregister = domObserver.onClass('TaskAutoReroll', 'RandomTask_randomTask', (taskNode) => {
+                setTimeout(() => this._processTaskCard(taskNode), 150);
+            });
+            this.unregisterHandlers.push(unregister);
+
+            const questHandler = () => {
+                setTimeout(() => this._processAllCards(), 300);
+            };
+            webSocketHook.on('quests_updated', questHandler);
+            this.unregisterHandlers.push(() => webSocketHook.off('quests_updated', questHandler));
+
+            const unregisterPanel = domObserver.onClass('TaskAutoReroll-Panel', 'TasksPanel_taskSlotCount', (panel) => {
+                this._injectConfigButton(panel);
+            });
+            this.unregisterHandlers.push(unregisterPanel);
+        }
+
+        _processAllCards() {
+            const cards = document.querySelectorAll('[class*="RandomTask_randomTask"]');
+            for (const card of cards) {
+                this._processTaskCard(card);
+            }
+        }
+
+        _injectConfigButton(panel) {
+            const parent = panel.parentElement;
+            if (!parent || parent.querySelector('.mwi-task-autoreroll-btn')) return;
+
+            const btn = document.createElement('span');
+            btn.className = 'mwi-task-autoreroll-btn';
+            btn.textContent = '\u{1F3AF}';
+            btn.title = 'Configure task auto-reroll reminders';
+            btn.style.cssText = 'cursor:pointer; font-size:16px; margin-left:6px; opacity:0.7; transition:opacity 0.1s;';
+            btn.addEventListener('mouseover', () => {
+                btn.style.opacity = '1';
+            });
+            btn.addEventListener('mouseout', () => {
+                btn.style.opacity = '0.7';
+            });
+            btn.addEventListener('click', () => this.openConfigPopup());
+
+            parent.appendChild(btn);
+        }
+
+        _processTaskCard(taskCard) {
+            const quest = this._getQuestFromCard(taskCard);
+            const hrid = quest?.actionHrid || quest?.monsterHrid || '';
+            const shouldReroll = hrid && this.autoRerollHrids.has(hrid);
+
+            // Don't show reroll reminder if task is also in protection list (green outline = protected)
+            const isProtected =
+                taskCard.dataset.mwiRerollProtection === '1' && taskCard.style.outline?.includes('76, 175, 80');
+
+            if (shouldReroll && !isProtected) {
+                taskCard.style.setProperty('outline', '2px solid rgba(239, 68, 68, 0.7)', 'important');
+                taskCard.style.setProperty('outline-offset', '-2px');
+                taskCard.style.setProperty('box-shadow', '0 0 8px 2px rgba(239, 68, 68, 0.3)', 'important');
+                this._showBadge(taskCard);
+            } else if (taskCard.querySelector('.mwi-autoreroll-badge')) {
+                taskCard.style.removeProperty('outline');
+                taskCard.style.removeProperty('outline-offset');
+                taskCard.style.removeProperty('box-shadow');
+                this._clearBadge(taskCard);
+            }
+        }
+
+        _showBadge(taskCard) {
+            if (taskCard.querySelector('.mwi-autoreroll-badge')) return;
+
+            const badge = document.createElement('div');
+            badge.className = 'mwi-autoreroll-badge';
+            badge.textContent = 'Reroll!';
+            badge.style.cssText = `
+            position: absolute;
+            top: 4px;
+            right: 4px;
+            font-size: 10px;
+            font-weight: 700;
+            color: #fff;
+            background: rgba(239, 68, 68, 0.85);
+            padding: 2px 6px;
+            border-radius: 3px;
+            z-index: 10;
+            pointer-events: none;
+        `;
+
+            const currentPos = getComputedStyle(taskCard).position;
+            if (currentPos === 'static') {
+                taskCard.style.position = 'relative';
+            }
+
+            taskCard.appendChild(badge);
+        }
+
+        _clearBadge(taskCard) {
+            const badge = taskCard.querySelector('.mwi-autoreroll-badge');
+            if (badge) badge.remove();
+        }
+
+        _getQuestFromCard(taskCard) {
+            const rootEl = document.getElementById('root');
+            const rootFiber = rootEl?._reactRootContainer?.current || rootEl?._reactRootContainer?._internalRoot?.current;
+            if (!rootFiber) return null;
+
+            function walk(fiber, target) {
+                if (!fiber) return null;
+                if (fiber.stateNode === target) return fiber;
+                return walk(fiber.child, target) || walk(fiber.sibling, target);
+            }
+
+            function findQuestInFiber(startFiber) {
+                let f = startFiber?.return;
+                while (f) {
+                    if (f.memoizedProps?.characterQuest) {
+                        return f.memoizedProps.characterQuest;
+                    }
+                    f = f.return;
+                }
+                return null;
+            }
+
+            const anchors = [
+                taskCard.querySelector('button.Button_success__6d6kU'),
+                taskCard.querySelector('button'),
+                taskCard.querySelector('[class*="RandomTask_name"]'),
+                taskCard,
+            ];
+
+            for (const anchor of anchors) {
+                if (!anchor) continue;
+                const fiber = walk(rootFiber, anchor);
+                if (fiber) {
+                    const quest = findQuestInFiber(fiber);
+                    if (quest) return quest;
+                }
+            }
+
+            return null;
+        }
+
+        async toggleHrid(hrid) {
+            if (this.autoRerollHrids.has(hrid)) {
+                this.autoRerollHrids.delete(hrid);
+            } else {
+                this.autoRerollHrids.add(hrid);
+            }
+            await this._save();
+            this._processAllCards();
+            return this.autoRerollHrids.has(hrid);
+        }
+
+        async _save() {
+            await storage.setJSON(getStorageKey$2(), Array.from(this.autoRerollHrids), 'settings', true);
+        }
+
+        openConfigPopup() {
+            const existing = document.getElementById('mwi-task-autoreroll-popup');
+            if (existing) {
+                existing.remove();
+                return;
+            }
+
+            const gameData = dataManager.getInitClientData();
+            if (!gameData) return;
+
+            const items = [];
+            const zoneMonsters = {};
+
+            for (const [hrid, action] of Object.entries(gameData.actionDetailMap || {})) {
+                if (action.type === '/action_types/combat') {
+                    const monsterHrids = new Set();
+                    const fightInfo = action.combatZoneInfo?.fightInfo;
+                    if (fightInfo) {
+                        for (const spawn of fightInfo.randomSpawnInfo?.spawns || []) {
+                            if (spawn.combatMonsterHrid) monsterHrids.add(spawn.combatMonsterHrid);
+                        }
+                        for (const spawn of fightInfo.bossSpawns || []) {
+                            if (spawn.combatMonsterHrid) monsterHrids.add(spawn.combatMonsterHrid);
+                        }
+                    }
+                    const dungeonInfo = action.combatZoneInfo?.dungeonInfo;
+                    if (dungeonInfo) {
+                        for (const wave of Object.values(dungeonInfo.fixedSpawnsMap || {})) {
+                            for (const spawn of wave) {
+                                if (spawn.combatMonsterHrid) monsterHrids.add(spawn.combatMonsterHrid);
+                            }
+                        }
+                        for (const spawnInfo of Object.values(dungeonInfo.randomSpawnInfoMap || {})) {
+                            for (const spawn of spawnInfo.spawns || []) {
+                                if (spawn.combatMonsterHrid) monsterHrids.add(spawn.combatMonsterHrid);
+                            }
+                        }
+                    }
+                    if (monsterHrids.size > 1) {
+                        zoneMonsters[hrid] = [...monsterHrids];
+                        items.push({ hrid, name: action.name, type: 'zone', isZone: true });
+                    }
+                    continue;
+                }
+                items.push({ hrid, name: action.name, type: action.type?.split('/').pop() || 'other' });
+            }
+
+            for (const [hrid, monster] of Object.entries(gameData.combatMonsterDetailMap || {})) {
+                items.push({ hrid, name: monster.name, type: 'combat' });
+            }
+
+            items.sort((a, b) => a.name.localeCompare(b.name));
+
+            const popup = document.createElement('div');
+            popup.id = 'mwi-task-autoreroll-popup';
+            popup.style.cssText = `
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 99999;
+            background: rgba(10, 10, 20, 0.97);
+            border: 2px solid rgba(239, 68, 68, 0.5);
+            border-radius: 10px;
+            width: 400px;
+            max-height: 500px;
+            display: flex;
+            flex-direction: column;
+            font-family: 'Segoe UI', sans-serif;
+            color: #e0e0e0;
+            font-size: 13px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+        `;
+
+            const header = document.createElement('div');
+            header.style.cssText = `
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 14px;
+            border-bottom: 1px solid rgba(239, 68, 68, 0.3);
+            flex-shrink: 0;
+        `;
+            header.innerHTML = `
+            <span style="font-weight:700; font-size:14px; color:#ef4444;">Auto-Reroll List</span>
+            <button id="mwi-task-autoreroll-close" style="
+                background:none; border:none; color:#aaa; font-size:22px;
+                cursor:pointer; padding:0; line-height:1;">\u00d7</button>
+        `;
+
+            const searchDiv = document.createElement('div');
+            searchDiv.style.cssText = 'padding: 8px 14px; flex-shrink: 0;';
+            const searchInput = document.createElement('input');
+            searchInput.type = 'search';
+            searchInput.placeholder = 'Search actions, monsters, zones...';
+            searchInput.style.cssText = `
+            width: 100%;
+            padding: 6px 10px;
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 6px;
+            color: #e0e0e0;
+            font-size: 13px;
+            font-family: inherit;
+            outline: none;
+        `;
+            searchDiv.appendChild(searchInput);
+
+            const listContainer = document.createElement('div');
+            listContainer.style.cssText = 'flex: 1; overflow-y: auto; padding: 4px 14px;';
+
+            const renderList = (query) => {
+                const lower = query.toLowerCase();
+                const filtered = query
+                    ? items.filter((i) => i.name.toLowerCase().includes(lower))
+                    : items.filter((i) => {
+                          if (i.isZone) {
+                              return zoneMonsters[i.hrid]?.some((m) => this.autoRerollHrids.has(m));
+                          }
+                          return this.autoRerollHrids.has(i.hrid);
+                      });
+
+                let html = '';
+                if (!query && filtered.length === 0) {
+                    html =
+                        '<div style="color:#666; text-align:center; padding:20px 0;">No auto-reroll tasks yet. Search to add.</div>';
+                }
+
+                for (const item of filtered.slice(0, 50)) {
+                    let checkmark, checkColor, nameColor, typeLabel;
+
+                    if (item.isZone) {
+                        const monsters = zoneMonsters[item.hrid] || [];
+                        const markedCount = monsters.filter((m) => this.autoRerollHrids.has(m)).length;
+                        const allMarked = markedCount === monsters.length;
+                        checkmark = allMarked ? '\u2713' : markedCount > 0 ? '~' : '';
+                        checkColor = markedCount > 0 ? '#ef4444' : '#444';
+                        nameColor = markedCount > 0 ? '#e0e0e0' : '#aaa';
+                        typeLabel = 'Zone (' + monsters.length + ')';
+                    } else {
+                        const isMarked = this.autoRerollHrids.has(item.hrid);
+                        checkmark = isMarked ? '\u2713' : '';
+                        checkColor = isMarked ? '#ef4444' : '#444';
+                        nameColor = isMarked ? '#e0e0e0' : '#aaa';
+                        typeLabel = item.type.charAt(0).toUpperCase() + item.type.slice(1);
+                    }
+
+                    const borderColor = item.isZone ? '#2a2a4e' : '#1a1a2e';
+                    html += `<div data-hrid="${item.hrid}" ${item.isZone ? 'data-zone="1"' : ''} style="
+                    display:flex; align-items:center; gap:8px; padding:5px 4px;
+                    cursor:pointer; border-bottom:1px solid ${borderColor};
+                    transition: background 0.1s;
+                " onmouseover="this.style.background='rgba(255,255,255,0.04)'"
+                   onmouseout="this.style.background=''">
+                    <span style="width:18px; text-align:center; color:${checkColor}; font-weight:700;">${checkmark}</span>
+                    <span style="flex:1; color:${nameColor};">${item.name}</span>
+                    <span style="color:#666; font-size:11px;">${typeLabel}</span>
+                </div>`;
+                }
+
+                if (filtered.length > 50) {
+                    html += `<div style="color:#666; text-align:center; padding:8px;">...${filtered.length - 50} more (refine search)</div>`;
+                }
+
+                listContainer.innerHTML = html;
+
+                listContainer.querySelectorAll('[data-hrid]').forEach((row) => {
+                    row.addEventListener('click', async () => {
+                        if (row.dataset.zone === '1') {
+                            const monsters = zoneMonsters[row.dataset.hrid] || [];
+                            const allMarked = monsters.every((m) => this.autoRerollHrids.has(m));
+                            for (const m of monsters) {
+                                if (allMarked) {
+                                    this.autoRerollHrids.delete(m);
+                                } else {
+                                    this.autoRerollHrids.add(m);
+                                }
+                            }
+                            await this._save();
+                            this._processAllCards();
+                        } else {
+                            await this.toggleHrid(row.dataset.hrid);
+                        }
+                        renderList(searchInput.value.trim());
+                    });
+                });
+            };
+
+            let searchTimeout;
+            searchInput.addEventListener('input', () => {
+                clearTimeout(searchTimeout);
+                searchTimeout = setTimeout(() => renderList(searchInput.value.trim()), 150);
+            });
+
+            popup.appendChild(header);
+            popup.appendChild(searchDiv);
+            popup.appendChild(listContainer);
+            document.body.appendChild(popup);
+
+            renderList('');
+            searchInput.focus();
+
+            popup.querySelector('#mwi-task-autoreroll-close').addEventListener('click', () => {
+                popup.remove();
+                backdrop.remove();
+            });
+
+            const backdrop = document.createElement('div');
+            backdrop.style.cssText = 'position:fixed; top:0; left:0; right:0; bottom:0; z-index:99998;';
+            backdrop.addEventListener('click', () => {
+                popup.remove();
+                backdrop.remove();
+            });
+            document.body.appendChild(backdrop);
+        }
+
+        disable() {
+            for (const unregister of this.unregisterHandlers) {
+                unregister();
+            }
+            this.unregisterHandlers = [];
+
+            const cards = document.querySelectorAll('[class*="RandomTask_randomTask"]');
+            for (const card of cards) {
+                if (card.querySelector('.mwi-autoreroll-badge')) {
+                    card.style.removeProperty('outline');
+                    card.style.removeProperty('outline-offset');
+                    card.style.removeProperty('box-shadow');
+                    this._clearBadge(card);
+                }
+            }
+
+            this.isInitialized = false;
+        }
+    }
+
+    const taskAutoReroll = new TaskAutoReroll();
+
+    var taskAutoReroll$1 = {
+        name: 'Task Auto-Reroll Reminder',
+        initialize: async () => {
+            await taskAutoReroll.initialize();
+        },
+        cleanup: () => {
+            taskAutoReroll.disable();
+        },
+        disable: () => {
+            taskAutoReroll.disable();
         },
     };
 
@@ -13930,7 +14369,7 @@ ${starCSS}
      */
 
 
-    const STORE_NAME$2 = 'xpHistory';
+    const STORE_NAME$3 = 'xpHistory';
     const WINDOW_10M$1 = 10 * 60 * 1000;
     const WINDOW_1H$1 = 60 * 60 * 1000;
     const WINDOW_1W$1 = 7 * 24 * 60 * 60 * 1000;
@@ -14148,7 +14587,7 @@ ${starCSS}
             this.characterId = charId;
 
             // Load persisted history for this character
-            const stored = await storage.get(`xpHistory_${charId}`, STORE_NAME$2, {});
+            const stored = await storage.get(`xpHistory_${charId}`, STORE_NAME$3, {});
             this.xpHistory = stored;
 
             const t = data.currentTimestamp ? +new Date(data.currentTimestamp) : Date.now();
@@ -14166,7 +14605,7 @@ ${starCSS}
             });
 
             // Don't await — write is fire-and-forget, no need to block initialization
-            storage.set(`xpHistory_${charId}`, this.xpHistory, STORE_NAME$2);
+            storage.set(`xpHistory_${charId}`, this.xpHistory, STORE_NAME$3);
 
             this._updateNavBars();
         }
@@ -14193,7 +14632,7 @@ ${starCSS}
                 pushXP$1(this.xpHistory[skillId], { t, xp: skillEntry.experience });
             });
 
-            storage.set(`xpHistory_${this.characterId}`, this.xpHistory, STORE_NAME$2);
+            storage.set(`xpHistory_${this.characterId}`, this.xpHistory, STORE_NAME$3);
 
             this._updateNavBars();
         }
@@ -14368,6 +14807,78 @@ ${starCSS}
     };
 
     /**
+     * Loot Log History Storage
+     * Persists loot log entries to IndexedDB for extended history
+     */
+
+
+    const STORE_NAME$2 = 'lootLogHistory';
+    const MAX_ENTRIES = 500;
+
+    class LootLogHistory {
+        _getKey() {
+            const charId = dataManager.getCurrentCharacterId();
+            return charId ? `lootLog_${charId}` : null;
+        }
+
+        /**
+         * @returns {Promise<Array>}
+         */
+        async _load() {
+            const key = this._getKey();
+            if (!key) return [];
+            return await storage.get(key, STORE_NAME$2, []);
+        }
+
+        /**
+         * @param {Array} entries
+         */
+        async _save(entries) {
+            const key = this._getKey();
+            if (!key) return;
+            await storage.set(key, entries, STORE_NAME$2, true);
+        }
+
+        /**
+         * Merge new entries from a loot_log_updated message into stored history.
+         * Deduplicates by characterActionId, keeps newest first, caps at MAX_ENTRIES.
+         * @param {Array} lootLog - Array from the WebSocket message
+         */
+        async mergeAndSave(lootLog) {
+            if (!lootLog || lootLog.length === 0) return;
+
+            const existing = await this._load();
+            const existingIds = new Set(existing.map((e) => e.characterActionId));
+
+            const newEntries = lootLog.filter((e) => !existingIds.has(e.characterActionId));
+            if (newEntries.length === 0) return;
+
+            const merged = [...newEntries, ...existing];
+            merged.sort((a, b) => new Date(b.startTime) - new Date(a.startTime));
+
+            await this._save(merged.slice(0, MAX_ENTRIES));
+        }
+
+        /**
+         * Get entries that are in storage but not in the current game-provided set.
+         * @param {Set<number>} currentIds - characterActionIds from the current loot_log_updated
+         * @returns {Promise<Array>}
+         */
+        async getHistoricalEntries(currentIds) {
+            const all = await this._load();
+            return all.filter((e) => !currentIds.has(e.characterActionId));
+        }
+
+        async clearHistory() {
+            const key = this._getKey();
+            if (!key) return;
+            await storage.delete(key, STORE_NAME$2);
+        }
+    }
+
+    const lootLogHistory = new LootLogHistory();
+
+    /**
      * Loot Log Statistics Module
      * Adds total value, average time, and daily output statistics to loot logs
      * Port of Edible Tools loot tracker feature, integrated into Toolasha architecture
@@ -14382,6 +14893,10 @@ ${starCSS}
             this.processedLogs = new WeakSet();
             this.currentLootLogData = null;
             this.itemsSpriteUrl = null;
+            this.actionsSpriteUrl = null;
+            this.historyEnabled = false;
+            this.historicalBatchSize = 20;
+            this.historicalRendered = 0;
         }
 
         /**
@@ -14392,6 +14907,8 @@ ${starCSS}
 
             const enabled = config.getSetting('lootLogStats');
             if (!enabled) return;
+
+            this.historyEnabled = config.getSetting('lootLogHistory');
 
             // Listen for loot_log_updated messages from WebSocket
             const wsHandler = (data) => this.handleLootLogUpdate(data);
@@ -14406,6 +14923,16 @@ ${starCSS}
             );
             this.unregisterHandlers.push(unregisterObserver);
 
+            // Watch for loot log container to inject historical entries
+            if (this.historyEnabled) {
+                const unregisterHistoryObserver = domObserver.onClass(
+                    'LootLogHistory',
+                    'LootLogPanel_actionLoots__3oTid',
+                    () => this.renderHistoricalEntries()
+                );
+                this.unregisterHandlers.push(unregisterHistoryObserver);
+            }
+
             this.initialized = true;
         }
 
@@ -14419,10 +14946,19 @@ ${starCSS}
             // Store loot log data for matching with DOM elements
             this.currentLootLogData = data.lootLog;
 
+            // Persist to history if enabled
+            if (this.historyEnabled) {
+                lootLogHistory.mergeAndSave(data.lootLog);
+            }
+
             // Process existing loot log elements after short delay
             const timeout = setTimeout(() => {
                 const lootLogElements = document.querySelectorAll('.LootLogPanel_actionLoot__32gl_');
                 lootLogElements.forEach((element) => this.processLootLogElement(element));
+
+                if (this.historyEnabled) {
+                    this.renderHistoricalEntries();
+                }
             }, 200);
 
             this.timerRegistry.registerTimeout(timeout);
@@ -14889,6 +15425,312 @@ ${starCSS}
         }
 
         /**
+         * Render historical entries below native loot log entries
+         */
+        async renderHistoricalEntries() {
+            const container = document.querySelector('.LootLogPanel_actionLoots__3oTid');
+            if (!container) return;
+
+            // Remove existing historical section
+            const existing = container.querySelector('.mwi-loot-log-history');
+            if (existing) existing.remove();
+
+            if (!this.currentLootLogData) return;
+
+            // Build set of current IDs
+            const currentIds = new Set(this.currentLootLogData.map((e) => e.characterActionId));
+
+            // Get historical entries not in current set
+            const historicalEntries = await lootLogHistory.getHistoricalEntries(currentIds);
+            if (historicalEntries.length === 0) return;
+
+            // Create separator
+            const separator = document.createElement('div');
+            separator.style.cssText = `
+            text-align: center;
+            padding: 8px 0;
+            margin-top: 8px;
+            border-top: 1px solid rgba(96, 165, 250, 0.3);
+            color: rgba(96, 165, 250, 0.7);
+            font-size: 0.85em;
+        `;
+            separator.textContent = `— Historical Entries (${historicalEntries.length}) —`;
+
+            // Create wrapper
+            const wrapper = document.createElement('div');
+            wrapper.className = 'mwi-loot-log-history';
+            wrapper.appendChild(separator);
+
+            // Render first batch
+            this.historicalRendered = 0;
+            const batch = historicalEntries.slice(0, this.historicalBatchSize);
+            for (const entry of batch) {
+                const el = this.renderHistoricalEntry(entry);
+                if (el) wrapper.appendChild(el);
+            }
+            this.historicalRendered = batch.length;
+
+            // "Show more" button if needed
+            if (historicalEntries.length > this.historicalBatchSize) {
+                const showMoreBtn = document.createElement('button');
+                showMoreBtn.className = 'mwi-loot-log-history-more';
+                showMoreBtn.textContent = `Show more (${historicalEntries.length - this.historicalRendered} remaining)`;
+                showMoreBtn.style.cssText = `
+                display: block;
+                width: 100%;
+                margin-top: 8px;
+                padding: 6px;
+                background: rgba(96, 165, 250, 0.1);
+                border: 1px solid rgba(96, 165, 250, 0.3);
+                border-radius: 4px;
+                color: rgba(96, 165, 250, 0.8);
+                cursor: pointer;
+                font-size: 0.85em;
+            `;
+                showMoreBtn.addEventListener('click', () => {
+                    const nextBatch = historicalEntries.slice(
+                        this.historicalRendered,
+                        this.historicalRendered + this.historicalBatchSize
+                    );
+                    for (const entry of nextBatch) {
+                        const el = this.renderHistoricalEntry(entry);
+                        if (el) wrapper.insertBefore(el, showMoreBtn);
+                    }
+                    this.historicalRendered += nextBatch.length;
+                    const remaining = historicalEntries.length - this.historicalRendered;
+                    if (remaining <= 0) {
+                        showMoreBtn.remove();
+                    } else {
+                        showMoreBtn.textContent = `Show more (${remaining} remaining)`;
+                    }
+                });
+                wrapper.appendChild(showMoreBtn);
+            }
+
+            container.appendChild(wrapper);
+        }
+
+        /**
+         * Render a single historical loot log entry matching native styling
+         * @param {Object} entry - Historical log entry from storage
+         * @returns {HTMLElement|null}
+         */
+        renderHistoricalEntry(entry) {
+            if (!entry) return null;
+
+            // Skip enhancing entries
+            if (entry.actionHrid === '/actions/enhancing/enhance') return null;
+
+            const entryEl = document.createElement('div');
+            entryEl.className = 'mwi-loot-log-history-entry';
+            entryEl.style.cssText = `
+            border-left: 3px solid rgba(96, 165, 250, 0.3);
+            opacity: 0.9;
+            padding: 8px 8px 8px 12px;
+            margin-top: 8px;
+            position: relative;
+            background: rgba(28, 33, 40, 0.8);
+            border-radius: 8px;
+        `;
+
+            // Delete button (red X)
+            const deleteBtn = document.createElement('span');
+            deleteBtn.textContent = '✕';
+            deleteBtn.style.cssText = `
+            position: absolute;
+            top: 4px;
+            right: 8px;
+            color: rgba(239, 68, 68, 0.6);
+            cursor: pointer;
+            font-size: 14px;
+            line-height: 1;
+            padding: 2px 4px;
+            border-radius: 3px;
+        `;
+            deleteBtn.addEventListener('mouseenter', () => {
+                deleteBtn.style.color = 'rgba(239, 68, 68, 1)';
+                deleteBtn.style.background = 'rgba(239, 68, 68, 0.1)';
+            });
+            deleteBtn.addEventListener('mouseleave', () => {
+                deleteBtn.style.color = 'rgba(239, 68, 68, 0.6)';
+                deleteBtn.style.background = 'none';
+            });
+            deleteBtn.addEventListener('click', async () => {
+                await this.deleteHistoricalEntry(entry.characterActionId);
+                entryEl.remove();
+                // Update separator count
+                const wrapper = document.querySelector('.mwi-loot-log-history');
+                if (wrapper) {
+                    const sep = wrapper.querySelector('div');
+                    const remaining = wrapper.querySelectorAll('.mwi-loot-log-history-entry').length;
+                    if (remaining === 0) {
+                        wrapper.remove();
+                    } else if (sep) {
+                        sep.textContent = `— Historical Entries (${remaining}) —`;
+                    }
+                }
+            });
+            entryEl.appendChild(deleteBtn);
+
+            // Header row: action icon + "Category - Action Name (count)"
+            const headerDiv = document.createElement('div');
+            headerDiv.style.cssText = 'display: flex; align-items: center; gap: 6px; margin-bottom: 2px;';
+
+            const actionIcon = this.createActionIcon(entry.actionHrid, 20);
+            if (actionIcon) headerDiv.appendChild(actionIcon);
+
+            const actionLabel = document.createElement('span');
+            actionLabel.style.cssText = 'font-weight: bold; color: #fff;';
+            const category = this.getActionCategory(entry.actionHrid);
+            const name = this.getActionName(entry.actionHrid);
+            const countStr = entry.actionCount ? ` (${formatters_js.numberFormatter(entry.actionCount)})` : '';
+            actionLabel.textContent = category ? `${category} - ${name}${countStr}` : `${name}${countStr}`;
+            headerDiv.appendChild(actionLabel);
+
+            entryEl.appendChild(headerDiv);
+
+            // Start Time row + total value
+            const timeDiv = document.createElement('div');
+            timeDiv.style.cssText = 'margin-bottom: 2px;';
+
+            const startDate = new Date(entry.startTime);
+            timeDiv.textContent = `Start Time: ${startDate.toLocaleString()}`;
+            entryEl.appendChild(timeDiv);
+
+            this.injectTotalValue(timeDiv, entry);
+
+            // Duration row + avg time + daily output
+            const durationDiv = document.createElement('div');
+            durationDiv.style.cssText = 'margin-bottom: 6px;';
+
+            if (entry.startTime && entry.endTime) {
+                const durationSec = (new Date(entry.endTime) - new Date(entry.startTime)) / 1000;
+                durationDiv.textContent = `Duration: ${this.formatDuration(durationSec)}`;
+            }
+            entryEl.appendChild(durationDiv);
+
+            this.injectTimeAndDailyOutput(durationDiv, entry);
+
+            // Drops grid - large icons with counts below (matching native style)
+            if (entry.drops && Object.keys(entry.drops).length > 0) {
+                const dropsDiv = document.createElement('div');
+                dropsDiv.style.cssText = 'display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px;';
+
+                for (const [hrid, count] of Object.entries(entry.drops)) {
+                    const baseHrid = hrid.replace(/::\d+$/, '');
+                    const dropEl = document.createElement('div');
+                    dropEl.style.cssText = `
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    width: 60px;
+                `;
+
+                    const icon = this.createItemIcon(baseHrid, 48);
+                    if (icon) {
+                        icon.style.cssText = `
+                        width: 48px;
+                        height: 48px;
+                        background: rgba(255, 255, 255, 0.03);
+                        border-radius: 4px;
+                        padding: 4px;
+                    `;
+                        dropEl.appendChild(icon);
+                    }
+
+                    const countEl = document.createElement('span');
+                    countEl.style.cssText = 'font-size: 0.8em; color: #ccc; margin-top: 2px;';
+                    countEl.textContent = formatters_js.numberFormatter(count);
+                    dropEl.appendChild(countEl);
+
+                    dropsDiv.appendChild(dropEl);
+                }
+
+                entryEl.appendChild(dropsDiv);
+            }
+
+            return entryEl;
+        }
+
+        /**
+         * Delete a single historical entry by characterActionId
+         * @param {number} characterActionId
+         */
+        async deleteHistoricalEntry(characterActionId) {
+            const key = lootLogHistory._getKey();
+            if (!key) return;
+            const entries = await lootLogHistory._load();
+            const filtered = entries.filter((e) => e.characterActionId !== characterActionId);
+            await lootLogHistory._save(filtered);
+        }
+
+        /**
+         * Get action category from HRID (e.g. "/actions/cooking/donut" → "Cooking")
+         * @param {string} actionHrid
+         * @returns {string|null}
+         */
+        getActionCategory(actionHrid) {
+            if (!actionHrid) return null;
+            const parts = actionHrid.split('/');
+            // Format: /actions/category/name
+            if (parts.length >= 3) {
+                const category = parts[2];
+                return category.charAt(0).toUpperCase() + category.slice(1);
+            }
+            return null;
+        }
+
+        /**
+         * Create an SVG action icon element
+         * @param {string} actionHrid - Action HRID
+         * @param {number} size - Icon size in pixels
+         * @returns {SVGElement|null}
+         */
+        createActionIcon(actionHrid, size) {
+            const spriteUrl = this.getActionsSpriteUrl();
+            if (!spriteUrl) return null;
+
+            const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svg.setAttribute('width', String(size));
+            svg.setAttribute('height', String(size));
+            svg.style.flexShrink = '0';
+
+            const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+            const iconName = actionHrid.split('/').pop();
+            use.setAttribute('href', `${spriteUrl}#${iconName}`);
+            svg.appendChild(use);
+
+            return svg;
+        }
+
+        /**
+         * Get the actions sprite URL (cached after first lookup)
+         * @returns {string|null}
+         */
+        getActionsSpriteUrl() {
+            if (!this.actionsSpriteUrl) {
+                const el = document.querySelector('use[href*="actions_sprite"]');
+                if (el) {
+                    const href = el.getAttribute('href');
+                    this.actionsSpriteUrl = href ? href.split('#')[0] : null;
+                }
+            }
+            return this.actionsSpriteUrl;
+        }
+
+        /**
+         * Get action display name from HRID
+         * @param {string} actionHrid - Action HRID
+         * @returns {string}
+         */
+        getActionName(actionHrid) {
+            if (!actionHrid) return 'Unknown';
+            const details = dataManager.getActionDetails(actionHrid);
+            if (details?.name) return details.name;
+            return actionHrid.split('/').pop().replace(/_/g, ' ');
+        }
+
+        /**
          * Cleanup when disabling feature
          */
         cleanup() {
@@ -14902,6 +15744,10 @@ ${starCSS}
             const dayValueSpans = document.querySelectorAll('.mwi-loot-log-day-value');
             dayValueSpans.forEach((span) => span.remove());
 
+            // Remove historical entries section
+            const historySection = document.querySelectorAll('.mwi-loot-log-history');
+            historySection.forEach((el) => el.remove());
+
             // Unregister all handlers
             this.unregisterHandlers.forEach((fn) => fn());
             this.unregisterHandlers = [];
@@ -14913,6 +15759,8 @@ ${starCSS}
             this.processedLogs = new WeakSet();
             this.currentLootLogData = null;
             this.itemsSpriteUrl = null;
+            this.actionsSpriteUrl = null;
+            this.historicalRendered = 0;
             this.initialized = false;
         }
     }
@@ -32157,8 +33005,8 @@ ${starCSS}
 
                 this.snapshots.set(oldId, snapshot);
 
-                // Persist to IndexedDB
-                storage.set(`queueSnapshot_${oldId}`, snapshot, STORE_NAME);
+                // Persist to IndexedDB immediately (must complete before _loadSnapshots re-runs on re-init)
+                storage.set(`queueSnapshot_${oldId}`, snapshot, STORE_NAME, true);
             } catch (error) {
                 console.error('[QueueSnapshot] Failed to create snapshot:', error);
             }
@@ -32593,6 +33441,7 @@ ${starCSS}
         taskStatistics,
         taskClaimCollector,
         taskRerollProtection: taskRerollProtection$1,
+        taskAutoReroll: taskAutoReroll$1,
         remainingXP,
         xpTracker: xpTracker$1,
         lootLogStats,

@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.53.1
+ * Version: 2.54.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -19,7 +19,7 @@
             this.db = null;
             this.available = false;
             this.dbName = 'ToolashaDB';
-            this.dbVersion = 15; // Bumped for queueSnapshots store
+            this.dbVersion = 16; // Bumped for lootLogHistory store
             this.saveDebounceTimers = new Map(); // Per-key debounce timers
             this.pendingWrites = new Map(); // Per-key pending write data: {value, storeName}
             this.SAVE_DEBOUNCE_DELAY = 3000; // 3 seconds
@@ -165,6 +165,11 @@
                     // Create queueSnapshots store if it doesn't exist (for cross-character queue monitor)
                     if (!db.objectStoreNames.contains('queueSnapshots')) {
                         db.createObjectStore('queueSnapshots');
+                    }
+
+                    // Create lootLogHistory store if it doesn't exist (for extended loot log)
+                    if (!db.objectStoreNames.contains('lootLogHistory')) {
+                        db.createObjectStore('lootLogHistory');
                     }
                 };
             });
@@ -935,6 +940,13 @@
                     type: 'checkbox',
                     default: true,
                     help: 'Display total value, average time, and daily output in loot logs',
+                },
+                lootLogHistory: {
+                    id: 'lootLogHistory',
+                    label: 'Loot Log: Persist and display historical entries',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Saves loot log entries and displays older entries below current ones in the loot log panel',
                 },
                 inventoryCountDisplay: {
                     id: 'inventoryCountDisplay',
@@ -1945,6 +1957,13 @@
                     type: 'checkbox',
                     default: false,
                     help: 'Removes the green outline/glow from protected tasks while keeping the reroll confirmation active.',
+                },
+                taskAutoReroll: {
+                    id: 'taskAutoReroll',
+                    label: 'Task auto-reroll reminder',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Highlights tasks you want to reroll with a red border and reminder badge. Configure per-character via the target icon in the task panel.',
                 },
             },
         },
