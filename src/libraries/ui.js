@@ -34,6 +34,7 @@ import taskInventoryHighlighter from '../features/tasks/task-inventory-highlight
 import taskStatistics from '../features/tasks/task-statistics.js';
 import taskClaimCollector from '../features/tasks/task-claim-collector.js';
 import taskRerollProtection from '../features/tasks/task-reroll-protection.js';
+import taskAutoReroll from '../features/tasks/task-auto-reroll.js';
 
 // Skills
 import remainingXP from '../features/skills/remaining-xp.js';
@@ -109,6 +110,7 @@ toolashaRoot.UI = {
     taskStatistics,
     taskClaimCollector,
     taskRerollProtection,
+    taskAutoReroll,
     remainingXP,
     xpTracker,
     lootLogStats,

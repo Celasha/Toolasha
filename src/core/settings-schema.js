@@ -1403,6 +1403,13 @@ export const settingsGroups = {
                 default: false,
                 help: 'Removes the green outline/glow from protected tasks while keeping the reroll confirmation active.',
             },
+            taskAutoReroll: {
+                id: 'taskAutoReroll',
+                label: 'Task auto-reroll reminder',
+                type: 'checkbox',
+                default: true,
+                help: 'Highlights tasks you want to reroll with a red border and reminder badge. Configure per-character via the target icon in the task panel.',
+            },
         },
     },
 
