@@ -62,13 +62,17 @@ const CATALYST_BONUSES = {
 
 /**
  * @param {Object} itemDetails - Item details from dataManager
- * @returns {number} Gold cost per alchemy action (includes bulkMultiplier)
+ * @param {'decompose'|'transmute'} alchemyType - Which alchemy action
+ * @returns {number} Gold cost per alchemy action
  */
-function calculateAlchemyCoinCost(itemDetails) {
-    const sellPrice = itemDetails.sellPrice || 0;
+function calculateAlchemyCoinCost(itemDetails, alchemyType) {
+    if (alchemyType === 'transmute') {
+        const sellPrice = itemDetails.sellPrice || 0;
+        return Math.max(50, Math.floor(sellPrice / 5));
+    }
+    // Decompose / Unrefine
     const level = itemDetails.itemLevel || 1;
-    const bulkMultiplier = itemDetails.alchemyDetail?.bulkMultiplier || 1;
-    return Math.max(Math.floor(sellPrice / 5), 50 + level * 5) * bulkMultiplier;
+    return (10 + level) * 5;
 }
 
 /**
@@ -800,7 +804,7 @@ class AlchemyProfitCalculator {
                 }
             }
 
-            const coinCost = calculateAlchemyCoinCost(itemDetails);
+            const coinCost = calculateAlchemyCoinCost(itemDetails, 'decompose');
 
             // Calculate per-hour values
             // Convert efficiency from percentage to decimal
@@ -1110,7 +1114,7 @@ class AlchemyProfitCalculator {
                 }
             }
 
-            const coinCost = calculateAlchemyCoinCost(itemDetails);
+            const coinCost = calculateAlchemyCoinCost(itemDetails, 'transmute');
 
             // Gross material cost (before self-return adjustment)
             const grossMaterialCost = inputPrice * bulkMultiplier;

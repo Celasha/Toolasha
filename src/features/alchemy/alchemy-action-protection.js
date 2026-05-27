@@ -333,7 +333,7 @@ class AlchemyActionProtection {
 
         const sellPrice = itemDetails.sellPrice || 0;
         const level = itemDetails.itemLevel || 1;
-        const coinCost = Math.max(Math.floor(sellPrice / 5), 50 + level * 5);
+        const coinCost = alchemyType === 'transmute' ? Math.max(50, Math.floor(sellPrice / 5)) : (10 + level) * 5;
 
         const inventory = dataManager.getInventory();
         let itemCount = 0;
