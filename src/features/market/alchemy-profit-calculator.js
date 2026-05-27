@@ -63,16 +63,17 @@ const CATALYST_BONUSES = {
 /**
  * @param {Object} itemDetails - Item details from dataManager
  * @param {'decompose'|'transmute'} alchemyType - Which alchemy action
- * @returns {number} Gold cost per alchemy action
+ * @returns {number} Gold cost per alchemy action (includes bulkMultiplier)
  */
 function calculateAlchemyCoinCost(itemDetails, alchemyType) {
+    const bulkMultiplier = itemDetails.alchemyDetail?.bulkMultiplier || 1;
     if (alchemyType === 'transmute') {
         const sellPrice = itemDetails.sellPrice || 0;
-        return Math.max(50, Math.floor(sellPrice / 5));
+        return Math.max(50, Math.floor(sellPrice / 5)) * bulkMultiplier;
     }
     // Decompose / Unrefine
     const level = itemDetails.itemLevel || 1;
-    return (10 + level) * 5;
+    return (10 + level) * 5 * bulkMultiplier;
 }
 
 /**

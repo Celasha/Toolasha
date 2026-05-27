@@ -311,9 +311,9 @@ class PhiloCalculator {
         // Catalyst cost per action (consumed only on success)
         const catalystCostPerAction = this.useCatalyst ? successRate * this.catalystPrice : 0;
 
-        // Transmute coin cost: max(50, sellPrice / 5) per action
+        // Transmute coin cost: max(50, sellPrice / 5) × bulkMultiplier per action
         const sellPrice = itemDetails.sellPrice || 0;
-        const coinCost = Math.max(50, Math.floor(sellPrice / 5));
+        const coinCost = Math.max(50, Math.floor(sellPrice / 5)) * bulkMultiplier;
 
         // Total cost per transmute action
         const totalCostPerAction = itemCost * bulkMultiplier + catalystCostPerAction + coinCost;
