@@ -42,7 +42,12 @@ onmessage = function (event) {
 
         // Create Players
         const players = playerDTOs.map((dto) => {
-            const player = Player.createFromDTO(structuredClone(dto));
+            const cloned = structuredClone(dto);
+            if (labyrinth) {
+                cloned.food = cloned.food.map(() => null);
+                cloned.drinks = cloned.drinks.map(() => null);
+            }
+            const player = Player.createFromDTO(cloned);
             // Labyrinth: crate buffs go to zoneBuffs; otherwise use zone buffs
             player.zoneBuffs = labyrinth ? labyrinth.buffs : zone.buffs;
             player.extraBuffs = extraBuffs;
