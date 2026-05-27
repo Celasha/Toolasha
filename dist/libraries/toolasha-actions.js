@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.54.0
+ * Version: 2.55.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -6992,7 +6992,10 @@
          */
         updateDisplay() {
             if (!this.displayElement) {
-                return;
+                this.createDisplayPanel();
+                if (!this.displayElement) {
+                    return;
+                }
             }
 
             if (!this.displayElement.isConnected) {
@@ -7818,15 +7821,19 @@
             });
         }
 
-        scheduleUpdateRetry() {
-            if (this.retryUpdateTimeout) {
+        scheduleUpdateRetry(attempt = 0) {
+            if (this.retryUpdateTimeout || attempt >= 3) {
                 return;
             }
 
+            const delays = [150, 300, 500];
             this.retryUpdateTimeout = setTimeout(() => {
                 this.retryUpdateTimeout = null;
                 this.updateDisplay();
-            }, 150);
+                if (!this.displayElement || !this.displayElement.innerHTML) {
+                    this.scheduleUpdateRetry(attempt + 1);
+                }
+            }, delays[attempt]);
             this.cleanupRegistry.registerTimeout(this.retryUpdateTimeout);
         }
 

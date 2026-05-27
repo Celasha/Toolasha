@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.54.0
+ * Version: 2.55.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2560,6 +2560,12 @@
                 collectionFavorites: {
                     id: 'collectionFavorites',
                     label: 'Collection Favorites: Star (★) items to mark and filter favorites',
+                    type: 'checkbox',
+                    default: true,
+                },
+                collectionFavoritesSection: {
+                    id: 'collectionFavoritesSection',
+                    label: 'Collection Favorites: Show favorites section at top of grid',
                     type: 'checkbox',
                     default: true,
                 },
