@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.58.0
+ * Version: 2.58.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -19937,7 +19937,11 @@
             border: 2px solid ${ACCENT_BORDER};
             border-radius: 10px;
             width: 560px;
-            max-height: 600px;
+            height: 600px;
+            min-width: 400px;
+            min-height: 300px;
+            max-width: 90vw;
+            max-height: 90vh;
             display: none;
             flex-direction: column;
             font-family: 'Segoe UI', sans-serif;
@@ -20350,6 +20354,22 @@
             this.panel.appendChild(upgradeContent);
             this.panel.appendChild(skillingContent);
             this.panel.appendChild(status);
+
+            const resizeHandle = document.createElement('div');
+            resizeHandle.style.cssText = `
+            position: absolute;
+            bottom: 0;
+            right: 0;
+            width: 16px;
+            height: 16px;
+            cursor: nwse-resize;
+            background: linear-gradient(135deg, transparent 50%, rgba(74, 158, 255, 0.4) 50%);
+            border-radius: 0 0 8px 0;
+            z-index: 1;
+        `;
+            this.panel.appendChild(resizeHandle);
+            this._setupResize(resizeHandle);
+
             document.body.appendChild(this.panel);
             registerFloatingPanel(this.panel);
 
@@ -21117,9 +21137,13 @@
 
             const targetSkill = this.panel.querySelector('#mwi-labsim-skilling-filter')?.value || '';
             const visibleSkills = targetSkill ? skills.filter((s) => s.hrid === targetSkill) : skills;
+            const collapsed = this._loadoutsCollapsed || false;
 
-            let html = `<div style="color:${ACCENT}; font-weight:700; font-size:12px; margin-bottom:4px;">Skill Loadouts</div>`;
-            html += '<div style="display:grid; grid-template-columns:1fr 1fr; gap:3px 10px;">';
+            const arrow = collapsed ? '&#9654;' : '&#9660;';
+            let html = `<div id="mwi-labsim-loadout-toggle" style="color:${ACCENT}; font-weight:700; font-size:12px; margin-bottom:4px; cursor:pointer; user-select:none;">
+            <span style="display:inline-block; width:14px; font-size:10px;">${arrow}</span> Skill Loadouts
+        </div>`;
+            html += `<div id="mwi-labsim-loadout-grid" style="display:${collapsed ? 'none' : 'grid'}; grid-template-columns:1fr 1fr; gap:3px 10px;">`;
 
             for (const skill of visibleSkills) {
                 const current = this._skillLoadouts[skill.hrid] || '';
@@ -21144,6 +21168,11 @@
                     this._skillLoadouts[skillHrid] = select.value;
                     storage.set('labSimSkillingLoadouts', this._skillLoadouts, 'settings');
                 });
+            });
+
+            container.querySelector('#mwi-labsim-loadout-toggle')?.addEventListener('click', () => {
+                this._loadoutsCollapsed = !this._loadoutsCollapsed;
+                this._renderSkillLoadoutTable();
             });
         }
 
@@ -21543,6 +21572,32 @@
                     document.removeEventListener('mouseup', onUp);
                 };
 
+                document.addEventListener('mousemove', onMove);
+                document.addEventListener('mouseup', onUp);
+            });
+        }
+
+        /** @private */
+        _setupResize(handle) {
+            handle.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const startX = e.clientX;
+                const startY = e.clientY;
+                const startWidth = this.panel.offsetWidth;
+                const startHeight = this.panel.offsetHeight;
+                bringPanelToFront(this.panel);
+
+                const onMove = (ev) => {
+                    const newWidth = Math.max(400, startWidth + (ev.clientX - startX));
+                    const newHeight = Math.max(300, startHeight + (ev.clientY - startY));
+                    this.panel.style.width = `${newWidth}px`;
+                    this.panel.style.height = `${newHeight}px`;
+                };
+                const onUp = () => {
+                    document.removeEventListener('mousemove', onMove);
+                    document.removeEventListener('mouseup', onUp);
+                };
                 document.addEventListener('mousemove', onMove);
                 document.addEventListener('mouseup', onUp);
             });
