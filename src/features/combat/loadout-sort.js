@@ -244,6 +244,13 @@ class LoadoutSort {
 
 const loadoutSort = new LoadoutSort();
 
+/**
+ * @returns {Promise<Array<{icon: string, name: string}>|null>}
+ */
+export async function getLoadoutSortOrder() {
+    return storage.getJSON(getStorageKey(), 'settings', null);
+}
+
 export default {
     name: 'Loadout Sort',
     initialize: () => loadoutSort.initialize(),
