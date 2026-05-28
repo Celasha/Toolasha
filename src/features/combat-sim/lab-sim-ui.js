@@ -6,6 +6,7 @@
 
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
+import storage from '../../core/storage.js';
 import {
     buildGameDataPayload,
     buildAllPlayerDTOs,
@@ -60,6 +61,7 @@ class LabSimUI {
         this._upgradeAborted = false;
         this._skillingAborted = false;
         this._skillLoadouts = {};
+        this._skillLoadoutsLoaded = false;
     }
 
     buildPanel() {
@@ -1173,7 +1175,7 @@ class LabSimUI {
     }
 
     /** @private */
-    _renderSkillLoadoutTable() {
+    async _renderSkillLoadoutTable() {
         const container = this.panel?.querySelector('#mwi-labsim-skilling-loadouts');
         if (!container) return;
 
@@ -1196,14 +1198,33 @@ class LabSimUI {
             { hrid: '/skills/enhancing', label: 'Enhancing', actionType: '/action_types/enhancing' },
         ];
 
-        // Auto-populate from snapshot actionTypeHrid on first render
-        if (Object.keys(this._skillLoadouts).length === 0) {
+        // Load persisted overrides once
+        if (!this._skillLoadoutsLoaded) {
+            this._skillLoadoutsLoaded = true;
+            const persisted = await storage.get('labSimSkillingLoadouts', 'settings', null);
+            if (persisted && typeof persisted === 'object') {
+                this._skillLoadouts = persisted;
+            }
+        }
+
+        // Auto-populate from game's lab automation settings for any skill not already set
+        if (Object.keys(this._skillLoadouts).length < skills.length) {
+            const charSetting = dataManager.characterData?.characterSetting;
+            const snapshots = loadoutSnapshot.snapshots || {};
             for (const skill of skills) {
-                const match = nonCombatSnapshots.find((s) => s.actionTypeHrid === skill.actionType);
-                if (match) {
-                    this._skillLoadouts[skill.hrid] = match.name;
-                } else if (allSkillsSnapshots.length > 0) {
-                    this._skillLoadouts[skill.hrid] = allSkillsSnapshots[0].name;
+                if (this._skillLoadouts[skill.hrid]) continue;
+                const skillId = skill.hrid.replace('/skills/', '');
+                const pascal = skillId.charAt(0).toUpperCase() + skillId.slice(1);
+                const loadoutId = charSetting?.[`labyrinthLoadout${pascal}`];
+                if (loadoutId && snapshots[loadoutId]?.name) {
+                    this._skillLoadouts[skill.hrid] = snapshots[loadoutId].name;
+                } else {
+                    const match = nonCombatSnapshots.find((s) => s.actionTypeHrid === skill.actionType);
+                    if (match) {
+                        this._skillLoadouts[skill.hrid] = match.name;
+                    } else if (allSkillsSnapshots.length > 0) {
+                        this._skillLoadouts[skill.hrid] = allSkillsSnapshots[0].name;
+                    }
                 }
             }
         }
@@ -1235,6 +1256,7 @@ class LabSimUI {
             select.addEventListener('change', () => {
                 const skillHrid = select.dataset.skillLoadout;
                 this._skillLoadouts[skillHrid] = select.value;
+                storage.set('labSimSkillingLoadouts', this._skillLoadouts, 'settings');
             });
         });
     }
