@@ -33,6 +33,7 @@ class LabyrinthClearRate {
         this.simRunning = false;
         this.recommendations = new Map();
         this.recommendRunning = false;
+        this._recommendSimHours = 1;
         this.liveProgressHandler = null;
         this.liveProgressTimeout = null;
     }
@@ -623,7 +624,7 @@ class LabyrinthClearRate {
                 monsterHrid,
                 roomLevel,
                 crates: crateHrids,
-                hours: 1,
+                hours: this._recommendSimHours || 1,
                 communityBuffs: { mooPass: false, comExp: 0, comDrop: 0 },
                 labyrinthCombatBuffs,
             });
@@ -739,8 +740,18 @@ class LabyrinthClearRate {
         if (this.recommendRunning) return;
         this.recommendRunning = true;
         this.recommendations.clear();
+        this.combatCache.clear();
 
-        const targetRate = (config.getSetting('labyrinthRecommendTargetRate') || 70) / 100;
+        const rateInput = document.getElementById('mwi-recommend-target-rate');
+        const targetPct = rateInput ? parseInt(rateInput.value, 10) : null;
+        const targetRate =
+            (targetPct > 0 && targetPct <= 100 ? targetPct : config.getSetting('labyrinthRecommendTargetRate') || 70) /
+            100;
+
+        const hoursInput = document.getElementById('mwi-recommend-sim-hours');
+        const hoursVal = hoursInput ? parseInt(hoursInput.value, 10) : null;
+        this._recommendSimHours =
+            hoursVal > 0 && hoursVal <= 100 ? hoursVal : config.getSetting('labyrinthRecommendSimHours') || 1;
         const cells = document.querySelectorAll('[class*="LabyrinthPanel_skipThreshold"]');
         const rooms = [];
 
@@ -823,7 +834,41 @@ class LabyrinthClearRate {
 
         const container = document.createElement('div');
         container.className = RECOMMEND_CONTROLS_CLASS;
-        container.style.cssText = 'display:flex; align-items:center; gap:8px; margin-bottom:6px; font-size:0.8rem;';
+        container.style.cssText =
+            'display:flex; align-items:center; gap:8px; margin-bottom:6px; font-size:0.8rem; flex-wrap:wrap;';
+
+        const inputStyle =
+            'width:50px; background:#1a1a2e; color:#e0e0e0; border:1px solid #555; border-radius:4px; padding:2px 4px; font-size:0.75rem; text-align:center;';
+        const labelStyle = 'color:#888; font-size:0.75rem; white-space:nowrap;';
+
+        const defaultRate = config.getSetting('labyrinthRecommendTargetRate') || 70;
+        const defaultHours = config.getSetting('labyrinthRecommendSimHours') || 1;
+
+        const rateLabel = document.createElement('span');
+        rateLabel.style.cssText = labelStyle;
+        rateLabel.textContent = 'Target Win %';
+
+        const rateInput = document.createElement('input');
+        rateInput.type = 'number';
+        rateInput.id = 'mwi-recommend-target-rate';
+        rateInput.min = '1';
+        rateInput.max = '100';
+        rateInput.step = '1';
+        rateInput.value = defaultRate;
+        rateInput.style.cssText = inputStyle;
+
+        const hoursLabel = document.createElement('span');
+        hoursLabel.style.cssText = labelStyle;
+        hoursLabel.textContent = 'Sim Hours';
+
+        const hoursInput = document.createElement('input');
+        hoursInput.type = 'number';
+        hoursInput.id = 'mwi-recommend-sim-hours';
+        hoursInput.min = '1';
+        hoursInput.max = '100';
+        hoursInput.step = '1';
+        hoursInput.value = defaultHours;
+        hoursInput.style.cssText = inputStyle;
 
         const button = document.createElement('button');
         button.textContent = 'Recommend';
@@ -831,6 +876,10 @@ class LabyrinthClearRate {
             'padding:2px 10px; cursor:pointer; font-size:0.75rem; border-radius:4px; border:1px solid #555; background:#333; color:#ccc;';
         button.addEventListener('click', () => this.runRecommendations());
 
+        container.appendChild(rateLabel);
+        container.appendChild(rateInput);
+        container.appendChild(hoursLabel);
+        container.appendChild(hoursInput);
         container.appendChild(button);
         table.parentNode.insertBefore(container, table);
     }
