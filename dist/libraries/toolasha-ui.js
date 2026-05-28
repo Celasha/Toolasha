@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.56.0
+ * Version: 2.57.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -6923,6 +6923,16 @@ ${starCSS}
             defenseLevel: 1,
             rangedLevel: 1,
             magicLevel: 1,
+            woodcuttingLevel: 1,
+            foragingLevel: 1,
+            milkingLevel: 1,
+            cookingLevel: 1,
+            brewingLevel: 1,
+            cheesesmithingLevel: 1,
+            craftingLevel: 1,
+            tailoringLevel: 1,
+            alchemyLevel: 1,
+            enhancingLevel: 1,
             hrid: 'player1',
             debuffOnLevelGap: 0,
             equipment: {},
@@ -6930,9 +6940,11 @@ ${starCSS}
             drinks: [],
             abilities: [],
             houseRooms: {},
+            tokenUpgrades: { speed: 0, efficiency: 0, success: 0, doubleProgress: 0 },
+            communityBuffLevels: { productionEfficiency: 0, enhancingSpeed: 0, gatheringQuantity: 0, experience: 0 },
         };
 
-        // Extract combat skill levels
+        // Extract all skill levels (combat + skilling)
         for (const skill of characterData.characterSkills || []) {
             const skillName = skill.skillHrid.split('/').pop();
             const key = skillName + 'Level';
@@ -6940,6 +6952,25 @@ ${starCSS}
                 dto[key] = skill.level;
             }
         }
+
+        // Extract labyrinth token upgrades
+        const info = characterData.characterInfo;
+        if (info) {
+            dto.tokenUpgrades = {
+                speed: Math.max(0, Math.floor(Number(info.labyrinthSkillActionSpeedLevel) || 0)),
+                efficiency: Math.max(0, Math.floor(Number(info.labyrinthSkillingEfficiencyLevel) || 0)),
+                success: Math.max(0, Math.floor(Number(info.labyrinthSkillingSuccessLevel) || 0)),
+                doubleProgress: Math.max(0, Math.floor(Number(info.labyrinthSkillingDoubleProgressLevel) || 0)),
+            };
+        }
+
+        // Extract community buff levels
+        dto.communityBuffLevels = {
+            productionEfficiency: dataManager.getCommunityBuffLevel('/community_buff_types/production_efficiency') || 0,
+            enhancingSpeed: dataManager.getCommunityBuffLevel('/community_buff_types/enhancing_speed') || 0,
+            gatheringQuantity: dataManager.getCommunityBuffLevel('/community_buff_types/gathering_quantity') || 0,
+            experience: dataManager.getCommunityBuffLevel('/community_buff_types/experience') || 0,
+        };
 
         // Extract equipped items → keyed by equipment type
         // Prefer the always-current characterEquipment Map (updated on every items_updated WS message)

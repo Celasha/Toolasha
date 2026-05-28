@@ -1,11 +1,11 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.56.0
+ * Version: 2.57.0
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (config, dataManager, domObserver, storage, webSocketHook, timerRegistry_js, domObserverHelpers_js, marketAPI, formatters_js, expectedValueCalculator, reactInput_js, profitHelpers_js, marketData_js, enhancementCalculator_js, enhancementConfig_js, teaParser_js, abilityCostCalculator_js, dom, houseCostCalculator_js) {
+(function (config, dataManager, domObserver, storage, webSocketHook, timerRegistry_js, domObserverHelpers_js, marketAPI, formatters_js, expectedValueCalculator, reactInput_js, profitHelpers_js, marketData_js, enhancementCalculator_js, enhancementConfig_js, teaParser_js, abilityCostCalculator_js, equipmentParser_js, dom, houseCostCalculator_js) {
     'use strict';
 
     /**
@@ -7776,6 +7776,16 @@
             defenseLevel: 1,
             rangedLevel: 1,
             magicLevel: 1,
+            woodcuttingLevel: 1,
+            foragingLevel: 1,
+            milkingLevel: 1,
+            cookingLevel: 1,
+            brewingLevel: 1,
+            cheesesmithingLevel: 1,
+            craftingLevel: 1,
+            tailoringLevel: 1,
+            alchemyLevel: 1,
+            enhancingLevel: 1,
             hrid: 'player1',
             debuffOnLevelGap: 0,
             equipment: {},
@@ -7783,9 +7793,11 @@
             drinks: [],
             abilities: [],
             houseRooms: {},
+            tokenUpgrades: { speed: 0, efficiency: 0, success: 0, doubleProgress: 0 },
+            communityBuffLevels: { productionEfficiency: 0, enhancingSpeed: 0, gatheringQuantity: 0, experience: 0 },
         };
 
-        // Extract combat skill levels
+        // Extract all skill levels (combat + skilling)
         for (const skill of characterData.characterSkills || []) {
             const skillName = skill.skillHrid.split('/').pop();
             const key = skillName + 'Level';
@@ -7793,6 +7805,25 @@
                 dto[key] = skill.level;
             }
         }
+
+        // Extract labyrinth token upgrades
+        const info = characterData.characterInfo;
+        if (info) {
+            dto.tokenUpgrades = {
+                speed: Math.max(0, Math.floor(Number(info.labyrinthSkillActionSpeedLevel) || 0)),
+                efficiency: Math.max(0, Math.floor(Number(info.labyrinthSkillingEfficiencyLevel) || 0)),
+                success: Math.max(0, Math.floor(Number(info.labyrinthSkillingSuccessLevel) || 0)),
+                doubleProgress: Math.max(0, Math.floor(Number(info.labyrinthSkillingDoubleProgressLevel) || 0)),
+            };
+        }
+
+        // Extract community buff levels
+        dto.communityBuffLevels = {
+            productionEfficiency: dataManager.getCommunityBuffLevel('/community_buff_types/production_efficiency') || 0,
+            enhancingSpeed: dataManager.getCommunityBuffLevel('/community_buff_types/enhancing_speed') || 0,
+            gatheringQuantity: dataManager.getCommunityBuffLevel('/community_buff_types/gathering_quantity') || 0,
+            experience: dataManager.getCommunityBuffLevel('/community_buff_types/experience') || 0,
+        };
 
         // Extract equipped items → keyed by equipment type
         // Prefer the always-current characterEquipment Map (updated on every items_updated WS message)
@@ -10409,6 +10440,139 @@
             if (clearChance >= 0.95) return '#00c896';
             if (clearChance >= 0.7) return '#f0ad4e';
             return '#d9534f';
+        }
+
+        /**
+         * Compute skilling metrics from override buff arrays instead of live data.
+         * @param {string} skillId - e.g. "woodcutting"
+         * @param {string} actionTypeHrid - e.g. "/action_types/woodcutting"
+         * @param {Object} overrides
+         * @param {Array} [overrides.equipmentBuffs] - Equipment buff objects for this action type
+         * @param {Array} [overrides.communityBuffs] - Community buff objects
+         * @param {Array} [overrides.houseBuffs] - House room buff objects
+         * @param {Array} [overrides.crateBuffs] - Crate buff objects
+         * @param {Object} [overrides.tokenUpgrades] - {speed, efficiency, success, doubleProgress}
+         * @returns {Object} {skillLevelBonus, efficiencyBonus, actionSpeedBonus, successBonus, doubleProgressBonus}
+         */
+        getSkillingMetricsFromOverrides(skillId, actionTypeHrid, overrides) {
+            const metrics = {
+                skillLevelBonus: 0,
+                efficiencyBonus: 0,
+                actionSpeedBonus: 0,
+                successBonus: 0,
+                doubleProgressBonus: 0,
+            };
+
+            const skillLevelType = `/buff_types/${skillId}_level`;
+            const skillSuccessType = `/buff_types/${skillId}_success`;
+
+            const buffSources = [
+                overrides.equipmentBuffs,
+                overrides.communityBuffs,
+                overrides.houseBuffs,
+                dataManager.characterData?.achievementActionTypeBuffsMap?.[actionTypeHrid],
+            ];
+
+            for (const buffs of buffSources) {
+                if (!Array.isArray(buffs)) continue;
+                for (const buff of buffs) {
+                    if (!buff?.typeHrid) continue;
+                    const amount = (buff.flatBoost || 0) + (buff.ratioBoost || 0);
+                    if (amount === 0) continue;
+                    this.applyBuff(metrics, buff.typeHrid, amount, skillLevelType, skillSuccessType);
+                }
+            }
+
+            for (const buff of overrides.crateBuffs || []) {
+                if (!buff?.typeHrid) continue;
+                const amount = (buff.flatBoost || 0) + (buff.ratioBoost || 0);
+                if (amount === 0) continue;
+                this.applyBuff(metrics, buff.typeHrid, amount, skillLevelType, skillSuccessType);
+            }
+
+            const upgrades = overrides.tokenUpgrades || { speed: 0, efficiency: 0, success: 0, doubleProgress: 0 };
+            metrics.actionSpeedBonus += upgrades.speed * UPGRADE_STEP;
+            metrics.efficiencyBonus += upgrades.efficiency * UPGRADE_STEP;
+            metrics.successBonus += upgrades.success * UPGRADE_SUCCESS_STEP;
+            metrics.doubleProgressBonus += upgrades.doubleProgress * UPGRADE_STEP;
+
+            return metrics;
+        }
+
+        /**
+         * Compute skilling clear from pre-built metrics and base level.
+         * @param {Object} metrics - From getSkillingMetrics() or getSkillingMetricsFromOverrides()
+         * @param {number} baseLevel - Character skill level
+         * @param {number} roomLevel - Labyrinth room level
+         * @returns {Object} Clear result with stats
+         */
+        computeSkillingClearWithParams(metrics, baseLevel, roomLevel) {
+            const effectiveLevel = baseLevel + metrics.skillLevelBonus;
+            const levelDelta = effectiveLevel - roomLevel;
+            const levelBonus = levelDelta >= 0 ? levelDelta * 0.005 : levelDelta * 0.01;
+            const successChance = Math.min(1, Math.max(0, 0.8 * (1 + levelBonus + metrics.successBonus)));
+            const doubleChance = Math.min(1, Math.max(0, metrics.doubleProgressBonus));
+
+            const workPower = effectiveLevel * (1 + metrics.efficiencyBonus);
+            const progressPerSuccess = Math.max(0, Math.floor(workPower));
+            const targetProgress = roomLevel * 10;
+
+            const actionSeconds = BASE_SKILLING_TIME / Math.max(0.05, 1 + metrics.actionSpeedBonus);
+            const attempts = Math.max(1, Math.floor(ROOM_DURATION / actionSeconds));
+
+            const clearStats = this.computeNonEnhancingClearStats(
+                attempts,
+                successChance,
+                doubleChance,
+                progressPerSuccess,
+                targetProgress
+            );
+            const result = this.buildResult(clearStats, actionSeconds);
+            result.type = 'skilling';
+            result.effectiveLevel = effectiveLevel;
+            result.baseLevel = baseLevel;
+            result.successChance = successChance;
+            result.doubleChance = doubleChance;
+            result.attempts = attempts;
+            result.actionSeconds = actionSeconds;
+            result.workPower = workPower;
+            result.progressPerSuccess = progressPerSuccess;
+            result.targetProgress = targetProgress;
+            result.roomLevel = roomLevel;
+            result.xpPerRoom = roomLevel * 50;
+            return result;
+        }
+
+        /**
+         * Compute enhancing clear from pre-built metrics and base level.
+         * @param {Object} metrics - From getSkillingMetrics() or getSkillingMetricsFromOverrides()
+         * @param {number} baseLevel - Character enhancing level
+         * @param {number} roomLevel - Labyrinth room level
+         * @returns {Object} Clear result with stats
+         */
+        computeEnhancingClearWithParams(metrics, baseLevel, roomLevel) {
+            const effectiveLevel = baseLevel + metrics.skillLevelBonus;
+            const levelDelta = effectiveLevel - roomLevel;
+            const levelBonus = levelDelta >= 0 ? levelDelta * 0.005 : levelDelta * 0.01;
+            const successChance = Math.min(1, Math.max(0, 0.8 * (1 + levelBonus + metrics.successBonus)));
+            const doubleChance = Math.min(1, Math.max(0, metrics.doubleProgressBonus));
+
+            const actionSeconds = BASE_ENHANCING_TIME / Math.max(0.05, 1 + metrics.actionSpeedBonus);
+            const attempts = Math.max(1, Math.floor(ROOM_DURATION / actionSeconds));
+            const targetLevel = 5;
+
+            const clearStats = this.computeEnhancingClearStats(attempts, successChance, doubleChance, targetLevel);
+            const result = this.buildResult(clearStats, actionSeconds);
+            result.type = 'enhancing';
+            result.effectiveLevel = effectiveLevel;
+            result.baseLevel = baseLevel;
+            result.successChance = successChance;
+            result.doubleChance = doubleChance;
+            result.attempts = attempts;
+            result.actionSeconds = actionSeconds;
+            result.targetLevel = targetLevel;
+            result.roomLevel = roomLevel;
+            return result;
         }
 
         formatTime(seconds) {
@@ -13044,6 +13208,173 @@
     }
 
     /**
+     * Skilling Sim Helpers
+     * Pure functions that convert editor state into buff arrays
+     * for use with LabyrinthClearRate.getSkillingMetricsFromOverrides().
+     */
+
+
+    const PRODUCTION_SKILLS = [
+        '/action_types/alchemy',
+        '/action_types/brewing',
+        '/action_types/cheesesmithing',
+        '/action_types/cooking',
+        '/action_types/crafting',
+        '/action_types/tailoring',
+    ];
+
+    const GATHERING_SKILLS = ['/action_types/foraging', '/action_types/milking', '/action_types/woodcutting'];
+
+    /**
+     * Convert editor equipment DTO format to the Map format the equipment parser expects.
+     * DTO: { '/equipment_types/body': { hrid, enhancementLevel } }
+     * Parser: Map<'/item_locations/body', { itemHrid, enhancementLevel }>
+     * @param {Object} editorEquipment - Equipment from DTO
+     * @returns {Map}
+     */
+    function toEquipmentMap(editorEquipment) {
+        const map = new Map();
+        for (const [slot, item] of Object.entries(editorEquipment || {})) {
+            if (!item?.hrid) continue;
+            const locationKey = slot.replace('/equipment_types/', '/item_locations/');
+            map.set(locationKey, { itemHrid: item.hrid, enhancementLevel: item.enhancementLevel || 0 });
+        }
+        return map;
+    }
+
+    /**
+     * Build equipment buff array for a specific action type from editor equipment.
+     * @param {Object} editorEquipment - { '/equipment_types/body': { hrid, enhancementLevel } }
+     * @param {string} actionTypeHrid - e.g. "/action_types/woodcutting"
+     * @param {Object} itemDetailMap - From gameData
+     * @returns {Array} Buff objects compatible with getSkillingMetricsFromOverrides()
+     */
+    function buildEquipmentBuffsForSkill(editorEquipment, actionTypeHrid, itemDetailMap) {
+        const equipMap = toEquipmentMap(editorEquipment);
+        const buffs = [];
+
+        const speedBonus = equipmentParser_js.parseEquipmentSpeedBonuses(equipMap, actionTypeHrid, itemDetailMap);
+        if (speedBonus > 0) {
+            buffs.push({ typeHrid: '/buff_types/action_speed', flatBoost: speedBonus, ratioBoost: 0 });
+        }
+
+        const efficiencyBonus = equipmentParser_js.parseEquipmentEfficiencyBonuses(equipMap, actionTypeHrid, itemDetailMap);
+        if (efficiencyBonus > 0) {
+            buffs.push({ typeHrid: '/buff_types/efficiency', flatBoost: efficiencyBonus / 100, ratioBoost: 0 });
+        }
+
+        return buffs;
+    }
+
+    /**
+     * Build community buff array for a specific action type from editor levels.
+     * @param {Object} communityBuffLevels - { productionEfficiency, enhancingSpeed, gatheringQuantity, experience }
+     * @param {string} actionTypeHrid - e.g. "/action_types/woodcutting"
+     * @returns {Array} Buff objects
+     */
+    function buildCommunityBuffsForSkill(communityBuffLevels, actionTypeHrid) {
+        const buffs = [];
+        if (!communityBuffLevels) return buffs;
+
+        if (PRODUCTION_SKILLS.includes(actionTypeHrid) && communityBuffLevels.productionEfficiency > 0) {
+            const level = communityBuffLevels.productionEfficiency;
+            const value = 0.14 + (level - 1) * 0.003;
+            buffs.push({ typeHrid: '/buff_types/efficiency', flatBoost: value, ratioBoost: 0 });
+        }
+
+        if (actionTypeHrid === '/action_types/enhancing' && communityBuffLevels.enhancingSpeed > 0) {
+            const level = communityBuffLevels.enhancingSpeed;
+            const value = 0.2 + (level - 1) * 0.005;
+            buffs.push({ typeHrid: '/buff_types/action_speed', flatBoost: value, ratioBoost: 0 });
+        }
+
+        if (GATHERING_SKILLS.includes(actionTypeHrid) && communityBuffLevels.gatheringQuantity > 0) {
+            const level = communityBuffLevels.gatheringQuantity;
+            const value = 0.2 + (level - 1) * 0.005;
+            buffs.push({ typeHrid: '/buff_types/gathering', flatBoost: value, ratioBoost: 0 });
+        }
+
+        return buffs;
+    }
+
+    /**
+     * Build house buff array for a specific action type from editor house room levels.
+     * @param {Object} editorHouseRooms - { '/house_rooms/brewery': level, ... }
+     * @param {string} actionTypeHrid - e.g. "/action_types/brewing"
+     * @param {Object} houseRoomDetailMap - From gameData
+     * @returns {Array} Buff objects
+     */
+    function buildHouseBuffsForSkill(editorHouseRooms, actionTypeHrid, houseRoomDetailMap) {
+        const buffs = [];
+        if (!editorHouseRooms || !houseRoomDetailMap) return buffs;
+
+        for (const [hrid, level] of Object.entries(editorHouseRooms)) {
+            if (!level || level <= 0) continue;
+            const roomDetail = houseRoomDetailMap[hrid];
+            if (!roomDetail) continue;
+
+            if (Array.isArray(roomDetail.actionBuffs)) {
+                for (const buff of roomDetail.actionBuffs) {
+                    if (!buff?.usableInActionTypeMap?.[actionTypeHrid]) continue;
+                    const flatBoost = (buff.flatBoostLevelBonus || 0) * level;
+                    const ratioBoost = (buff.ratioBoostLevelBonus || 0) * level;
+                    if (flatBoost === 0 && ratioBoost === 0) continue;
+                    buffs.push({ typeHrid: buff.typeHrid, flatBoost, ratioBoost });
+                }
+            }
+
+            if (Array.isArray(roomDetail.globalBuffs)) {
+                for (const buff of roomDetail.globalBuffs) {
+                    const flatBoost = (buff.flatBoostLevelBonus || 0) * level;
+                    const ratioBoost = (buff.ratioBoostLevelBonus || 0) * level;
+                    if (flatBoost === 0 && ratioBoost === 0) continue;
+                    buffs.push({ typeHrid: buff.typeHrid, flatBoost, ratioBoost });
+                }
+            }
+        }
+
+        return buffs;
+    }
+
+    /**
+     * Build crate buff array from selected crate HRIDs.
+     * @param {string[]} crateHrids - Array of crate item HRIDs
+     * @param {Object} labyrinthCrateDetailMap - From gameData
+     * @returns {Array} Buff objects
+     */
+    function buildCrateBuffs(crateHrids, labyrinthCrateDetailMap) {
+        const allBuffs = [];
+        if (!labyrinthCrateDetailMap) return allBuffs;
+
+        for (const hrid of crateHrids || []) {
+            if (!hrid) continue;
+            const buffs = labyrinthCrateDetailMap[hrid];
+            if (Array.isArray(buffs)) {
+                allBuffs.push(...buffs);
+            }
+        }
+        return allBuffs;
+    }
+
+    /**
+     * Build the full overrides object for a single skill from editor state.
+     * @param {Object} editorState - { equipment, houseRooms, tokenUpgrades, communityBuffLevels }
+     * @param {string} actionTypeHrid - e.g. "/action_types/woodcutting"
+     * @param {string[]} crateHrids - Selected crate HRIDs
+     * @param {Object} gameData - { itemDetailMap, houseRoomDetailMap, labyrinthCrateDetailMap }
+     * @returns {Object} Overrides for getSkillingMetricsFromOverrides()
+     */
+    function buildOverridesForSkill(editorState, actionTypeHrid, crateHrids, gameData) {
+        return {
+            equipmentBuffs: buildEquipmentBuffsForSkill(editorState.equipment, actionTypeHrid, gameData.itemDetailMap),
+            communityBuffs: buildCommunityBuffsForSkill(editorState.communityBuffLevels, actionTypeHrid),
+            houseBuffs: buildHouseBuffsForSkill(editorState.houseRooms, actionTypeHrid, gameData.houseRoomDetailMap),
+            crateBuffs: buildCrateBuffs(crateHrids, gameData.labyrinthCrateDetailMap),
+            tokenUpgrades: editorState.tokenUpgrades,
+        };
+    }
+
+    /**
      * Upgrade Advisor for Combat Sim
      *
      * Generates equipment upgrade candidates, calculates their costs,
@@ -14001,16 +14332,13 @@
 
     const LABYRINTH_SKILLS = [
         '/skills/woodcutting',
-        '/skills/mining',
         '/skills/foraging',
-        '/skills/farming',
         '/skills/milking',
         '/skills/cooking',
         '/skills/brewing',
         '/skills/cheesesmithing',
         '/skills/crafting',
         '/skills/tailoring',
-        '/skills/smithing',
         '/skills/alchemy',
         '/skills/enhancing',
     ];
@@ -14375,6 +14703,330 @@
         };
     }
 
+    // ─── Editor-Based Skilling Analysis ──────────────────────────────────────────
+
+    const SKILLING_DTO_KEYS = {
+        '/skills/woodcutting': 'woodcuttingLevel',
+        '/skills/foraging': 'foragingLevel',
+        '/skills/milking': 'milkingLevel',
+        '/skills/cooking': 'cookingLevel',
+        '/skills/brewing': 'brewingLevel',
+        '/skills/cheesesmithing': 'cheesesmithingLevel',
+        '/skills/crafting': 'craftingLevel',
+        '/skills/tailoring': 'tailoringLevel',
+        '/skills/alchemy': 'alchemyLevel',
+        '/skills/enhancing': 'enhancingLevel',
+    };
+
+    /**
+     * Compute per-skill clear results from editor state.
+     * @param {number} roomLevel
+     * @param {Object} editorDTO - Player DTO from editor
+     * @param {string[]} crateHrids - Selected crate HRIDs
+     * @param {Object} gameData - From buildGameDataPayload()
+     * @param {Object} [skillEquipmentMap] - Per-skill equipment overrides { '/skills/X': { slot: { hrid, enhancementLevel } } }
+     * @returns {Array<Object>} Per-skill results with skill name, clear chance, etc.
+     */
+    function computeSkillingClearRatesFromEditor(
+        roomLevel,
+        editorDTO,
+        crateHrids,
+        gameData,
+        skillEquipmentMap = {}
+    ) {
+        const results = [];
+
+        for (const skillHrid of LABYRINTH_SKILLS) {
+            const skillId = skillHrid.replace('/skills/', '');
+            const actionTypeHrid = `/action_types/${skillId}`;
+            const dtoKey = SKILLING_DTO_KEYS[skillHrid];
+            const baseLevel = editorDTO[dtoKey] || 1;
+
+            const editorState = {
+                equipment: skillEquipmentMap[skillHrid] || editorDTO.equipment,
+                houseRooms: editorDTO.houseRooms,
+                tokenUpgrades: editorDTO.tokenUpgrades,
+                communityBuffLevels: editorDTO.communityBuffLevels,
+            };
+
+            const overrides = buildOverridesForSkill(editorState, actionTypeHrid, crateHrids, gameData);
+            const metrics = labyrinthClearRate.getSkillingMetricsFromOverrides(skillId, actionTypeHrid, overrides);
+
+            let result;
+            if (skillHrid === '/skills/enhancing') {
+                result = labyrinthClearRate.computeEnhancingClearWithParams(metrics, baseLevel, roomLevel);
+            } else {
+                result = labyrinthClearRate.computeSkillingClearWithParams(metrics, baseLevel, roomLevel);
+            }
+            result.skillHrid = skillHrid;
+            result.skillId = skillId;
+            result.skillName = skillId.charAt(0).toUpperCase() + skillId.slice(1);
+            results.push(result);
+        }
+
+        return results;
+    }
+
+    /**
+     * Compute average skilling clear rate from editor state.
+     * @param {number} roomLevel
+     * @param {Object} editorDTO - Player DTO from editor
+     * @param {string[]} crateHrids - Selected crate HRIDs
+     * @param {Object} gameData - From buildGameDataPayload()
+     * @param {Object} [options]
+     * @param {Object} [options.metricOverride] - { key, delta } to add to one metric across all skills
+     * @param {Object} [options.skillEquipmentMap] - Per-skill equipment overrides
+     * @returns {number} Average clear rate (0-1)
+     */
+    function computeAverageSkillingClearRateFromEditor(roomLevel, editorDTO, crateHrids, gameData, options = {}) {
+        const { metricOverride = null, skillEquipmentMap = {} } = options;
+
+        let total = 0;
+        let count = 0;
+
+        for (const skillHrid of LABYRINTH_SKILLS) {
+            const skillId = skillHrid.replace('/skills/', '');
+            const actionTypeHrid = `/action_types/${skillId}`;
+            const dtoKey = SKILLING_DTO_KEYS[skillHrid];
+            const baseLevel = editorDTO[dtoKey] || 1;
+
+            const editorState = {
+                equipment: skillEquipmentMap[skillHrid] || editorDTO.equipment,
+                houseRooms: editorDTO.houseRooms,
+                tokenUpgrades: editorDTO.tokenUpgrades,
+                communityBuffLevels: editorDTO.communityBuffLevels,
+            };
+
+            const overrides = buildOverridesForSkill(editorState, actionTypeHrid, crateHrids, gameData);
+            const metrics = labyrinthClearRate.getSkillingMetricsFromOverrides(skillId, actionTypeHrid, overrides);
+
+            if (metricOverride) {
+                metrics[metricOverride.key] = (metrics[metricOverride.key] || 0) + metricOverride.delta;
+            }
+
+            let clearChance;
+            if (skillHrid === '/skills/enhancing') {
+                clearChance = labyrinthClearRate.computeEnhancingClearWithParams(metrics, baseLevel, roomLevel).clearChance;
+            } else {
+                clearChance = labyrinthClearRate.computeSkillingClearWithParams(metrics, baseLevel, roomLevel).clearChance;
+            }
+
+            total += clearChance;
+            count++;
+        }
+
+        return count > 0 ? total / count : 0;
+    }
+
+    /**
+     * Generate labyrinth buff candidates from editor token upgrade levels.
+     * @param {Object} tokenUpgrades - { speed, efficiency, success, doubleProgress }
+     * @returns {Array} Buff candidates with type 'labyrinth_buff'
+     */
+    function generateLabyrinthBuffCandidatesFromEditor(tokenUpgrades) {
+        const skillingDefs = LABYRINTH_BUFF_DEFS.filter((d) => d.category === 'skilling');
+        const editorKeyMap = {
+            labyrinthSkillActionSpeedLevel: 'speed',
+            labyrinthSkillingEfficiencyLevel: 'efficiency',
+            labyrinthSkillingSuccessLevel: 'success',
+            labyrinthSkillingDoubleProgressLevel: 'doubleProgress',
+        };
+
+        const candidates = [];
+        for (const def of skillingDefs) {
+            const editorKey = editorKeyMap[def.key];
+            const currentLevel = Math.max(0, Math.floor(Number(tokenUpgrades?.[editorKey]) || 0));
+            if (currentLevel >= def.maxLevel) continue;
+
+            candidates.push({
+                type: 'labyrinth_buff',
+                category: def.category,
+                buffKey: def.key,
+                editorKey,
+                currentLevel,
+                step: def.step,
+                tokenCost: def.tokenCost * (currentLevel + 1),
+                description: `${def.name} Lv${currentLevel}\u2192${currentLevel + 1}`,
+                metric: def.metric,
+            });
+        }
+        return candidates;
+    }
+
+    /**
+     * Generate skilling equipment enhancement candidates from editor equipment.
+     * Considers per-skill equipment overrides to find all unique items that need upgrading.
+     * @param {Object} editorDTO - Player DTO from editor
+     * @param {Object} gameData - From buildGameDataPayload()
+     * @param {Object} [skillEquipmentMap] - Per-skill equipment overrides
+     * @returns {Array} Enhancement candidates with gold cost
+     */
+    function generateSkillingEquipmentCandidates(editorDTO, gameData, skillEquipmentMap = {}) {
+        const itemDetailMap = gameData.itemDetailMap || {};
+        const candidates = [];
+        const seen = new Set();
+
+        const equipmentSets = [editorDTO.equipment || {}];
+        for (const skillEquip of Object.values(skillEquipmentMap)) {
+            if (skillEquip) equipmentSets.push(skillEquip);
+        }
+
+        for (const equipment of equipmentSets) {
+            for (const [slot, equip] of Object.entries(equipment)) {
+                if (!equip?.hrid) continue;
+                const dedupKey = `${slot}:${equip.hrid}:${equip.enhancementLevel || 0}`;
+                if (seen.has(dedupKey)) continue;
+                seen.add(dedupKey);
+
+                const itemDetails = itemDetailMap[equip.hrid];
+                if (!itemDetails?.equipmentDetail?.noncombatStats) continue;
+
+                const hasNoncombat = Object.values(itemDetails.equipmentDetail.noncombatStats).some((v) => v > 0);
+                if (!hasNoncombat) continue;
+
+                const currentLevel = equip.enhancementLevel || 0;
+                const nextBP = getNextBreakpoint(currentLevel, slot, equip.hrid);
+                if (!nextBP) continue;
+
+                const itemName = itemDetails.name || equip.hrid.split('/').pop();
+                const candidate = {
+                    slot,
+                    currentHrid: equip.hrid,
+                    currentLevel,
+                    upgradeHrid: equip.hrid,
+                    upgradeLevel: nextBP,
+                    description: `${itemName} +${currentLevel} \u2192 +${nextBP}`,
+                    type: 'enhancement',
+                };
+                candidate.cost = calculateUpgradeCost(candidate, gameData);
+                candidates.push(candidate);
+            }
+        }
+
+        return candidates;
+    }
+
+    /**
+     * Run skilling upgrade analysis from editor state.
+     * @param {Object} params
+     * @param {Object} params.editorDTO - Player DTO from editor
+     * @param {number} params.roomLevel - Room level
+     * @param {string[]} params.crateHrids - Selected crate HRIDs
+     * @param {Object} [params.skillEquipmentMap] - Per-skill equipment overrides
+     * @param {Function} onProgress - Called with { current, total, description }
+     * @param {Object} [options] - { abortSignal: () => boolean }
+     * @returns {Object} { baseline, results }
+     */
+    function runSkillingUpgradeAnalysis(params, onProgress, options = {}) {
+        const { editorDTO, roomLevel, crateHrids, skillEquipmentMap = {} } = params;
+        const { abortSignal } = options;
+        const gameData = buildGameDataPayload();
+        if (!gameData) throw new Error('No game data available');
+
+        const tokenUpgrades = editorDTO.tokenUpgrades || {};
+        const buffCandidates = generateLabyrinthBuffCandidatesFromEditor(tokenUpgrades);
+        const equipCandidates = generateSkillingEquipmentCandidates(editorDTO, gameData, skillEquipmentMap);
+        const clearRateOpts = { skillEquipmentMap };
+
+        const total = buffCandidates.length + equipCandidates.length + 1;
+        let current = 0;
+
+        onProgress?.({ current: 0, total, description: 'Computing baseline...' });
+        const baselineClearRate = computeAverageSkillingClearRateFromEditor(
+            roomLevel,
+            editorDTO,
+            crateHrids,
+            gameData,
+            clearRateOpts
+        );
+        current++;
+
+        if (abortSignal?.()) return { baseline: null, results: [] };
+
+        onProgress?.({ current, total, description: `Baseline: ${(baselineClearRate * 100).toFixed(1)}%` });
+
+        const results = [];
+
+        for (const buffCandidate of buffCandidates) {
+            if (abortSignal?.()) break;
+
+            onProgress?.({ current, total, description: `Evaluating: ${buffCandidate.description}` });
+
+            const modifiedDTO = JSON.parse(JSON.stringify(editorDTO));
+            modifiedDTO.tokenUpgrades[buffCandidate.editorKey] = buffCandidate.currentLevel + 1;
+
+            const modifiedClearRate = computeAverageSkillingClearRateFromEditor(
+                roomLevel,
+                modifiedDTO,
+                crateHrids,
+                gameData,
+                clearRateOpts
+            );
+            const clearRateDelta = modifiedClearRate - baselineClearRate;
+
+            results.push({
+                candidate: buffCandidate,
+                costType: 'token',
+                tokenCost: buffCandidate.tokenCost,
+                clearRate: modifiedClearRate,
+                clearRateDelta,
+                metricType: 'clearRate',
+            });
+            current++;
+            onProgress?.({ current, total, description: buffCandidate.description });
+        }
+
+        for (const candidate of equipCandidates) {
+            if (abortSignal?.()) break;
+
+            onProgress?.({ current, total, description: `Evaluating: ${candidate.description}` });
+
+            const modifiedDTO = JSON.parse(JSON.stringify(editorDTO));
+            const modifiedSkillEquipMap = JSON.parse(JSON.stringify(skillEquipmentMap));
+            const upgradePayload = { hrid: candidate.upgradeHrid, enhancementLevel: candidate.upgradeLevel };
+
+            if (modifiedDTO.equipment?.[candidate.slot]?.hrid === candidate.currentHrid) {
+                modifiedDTO.equipment[candidate.slot] = upgradePayload;
+            }
+            for (const skillEquip of Object.values(modifiedSkillEquipMap)) {
+                if (skillEquip?.[candidate.slot]?.hrid === candidate.currentHrid) {
+                    skillEquip[candidate.slot] = upgradePayload;
+                }
+            }
+
+            const modifiedClearRate = computeAverageSkillingClearRateFromEditor(
+                roomLevel,
+                modifiedDTO,
+                crateHrids,
+                gameData,
+                { skillEquipmentMap: modifiedSkillEquipMap }
+            );
+            const clearRateDelta = modifiedClearRate - baselineClearRate;
+
+            results.push({
+                candidate,
+                costType: 'gold',
+                cost: candidate.cost,
+                clearRate: modifiedClearRate,
+                clearRateDelta,
+                goldPerClearRate: clearRateDelta > 0 ? candidate.cost / (clearRateDelta * 100) : Infinity,
+                metricType: 'clearRate',
+            });
+            current++;
+            onProgress?.({ current, total, description: candidate.description });
+        }
+
+        results.sort((a, b) => {
+            if (a.costType !== b.costType) return a.costType === 'token' ? -1 : 1;
+            return (b.clearRateDelta ?? 0) - (a.clearRateDelta ?? 0);
+        });
+
+        return {
+            baseline: { clearRate: baselineClearRate },
+            results,
+        };
+    }
+
     /**
      * Shared Sim Editor
      * Loadout editor used by both Combat Sim and Lab Sim.
@@ -14393,10 +15045,12 @@
          * @param {Object} options
          * @param {HTMLElement} options.editorEl - Container element the editor renders into
          * @param {boolean} [options.labMode=false] - When true, filters coffees from consumable picker
+         * @param {boolean} [options.skillingMode=false] - When true, shows skilling skills/loadouts/token upgrades
          */
-        constructor({ editorEl, labMode = false }) {
+        constructor({ editorEl, labMode = false, skillingMode = false }) {
             this._editorEl = editorEl;
             this.labMode = labMode;
+            this.skillingMode = skillingMode;
 
             this._editedDTOs = null;
             this._editedPlayerInfo = null;
@@ -14658,47 +15312,54 @@
             </div>
         </div>`;
 
-            // Loadout dropdown + Reset button
-            const allSnapshots = loadoutSnapshot.getAllSnapshots();
-            const combatSnapshots = allSnapshots.filter(
-                (s) => !s.actionTypeHrid || s.actionTypeHrid === '/action_types/combat'
-            );
+            // Loadout dropdown + Reset button (skip in skillingMode — loadouts assigned per-skill)
+            if (!this.skillingMode) {
+                const allSnapshots = loadoutSnapshot.getAllSnapshots();
+                const filteredSnapshots = allSnapshots.filter(
+                    (s) => !s.actionTypeHrid || s.actionTypeHrid === '/action_types/combat'
+                );
 
-            // Apply custom loadout sort order if available
-            if (this._loadoutSortOrder?.length) {
-                combatSnapshots.sort((a, b) => {
-                    const aIdx = this._loadoutSortOrder.findIndex((o) => o.name === a.name);
-                    const bIdx = this._loadoutSortOrder.findIndex((o) => o.name === b.name);
-                    const aPos = aIdx === -1 ? Infinity : aIdx;
-                    const bPos = bIdx === -1 ? Infinity : bIdx;
-                    return aPos - bPos;
-                });
-            }
-            html += `<div style="display:flex; align-items:center; gap:6px; margin-bottom:8px;">`;
-            if (combatSnapshots.length > 0) {
-                html += `<label style="color:#888; font-size:11px; flex-shrink:0;">Loadout</label>`;
-                html += `<select id="mwi-csim-loadout-select" style="
-                flex:1; min-width:0; background:#1a1a2e; color:#e0e0e0; border:1px solid #444;
-                border-radius:4px; padding:2px 6px; font-size:12px; font-family:inherit;">`;
-                html += `<option value=""${!this._selectedLoadoutName ? ' selected' : ''}>— Current Gear —</option>`;
-                for (const snap of combatSnapshots) {
-                    const label = snap.name + (snap.actionTypeHrid ? '' : ' (All Skills)');
-                    const selected = this._selectedLoadoutName === snap.name ? ' selected' : '';
-                    html += `<option value="${snap.name}"${selected}>${label}</option>`;
+                if (this._loadoutSortOrder?.length) {
+                    filteredSnapshots.sort((a, b) => {
+                        const aIdx = this._loadoutSortOrder.findIndex((o) => o.name === a.name);
+                        const bIdx = this._loadoutSortOrder.findIndex((o) => o.name === b.name);
+                        const aPos = aIdx === -1 ? Infinity : aIdx;
+                        const bPos = bIdx === -1 ? Infinity : bIdx;
+                        return aPos - bPos;
+                    });
                 }
-                html += `</select>`;
+                html += `<div style="display:flex; align-items:center; gap:6px; margin-bottom:8px;">`;
+                if (filteredSnapshots.length > 0) {
+                    html += `<label style="color:#888; font-size:11px; flex-shrink:0;">Loadout</label>`;
+                    html += `<select id="mwi-csim-loadout-select" style="
+                    flex:1; min-width:0; background:#1a1a2e; color:#e0e0e0; border:1px solid #444;
+                    border-radius:4px; padding:2px 6px; font-size:12px; font-family:inherit;">`;
+                    html += `<option value=""${!this._selectedLoadoutName ? ' selected' : ''}>— Current Gear —</option>`;
+                    for (const snap of filteredSnapshots) {
+                        const label = snap.name + (snap.actionTypeHrid ? '' : ' (All Skills)');
+                        const selected = this._selectedLoadoutName === snap.name ? ' selected' : '';
+                        html += `<option value="${snap.name}"${selected}>${label}</option>`;
+                    }
+                    html += `</select>`;
+                }
+                html += `<button id="mwi-csim-reset" style="
+                margin-left:auto; background:rgba(255,255,255,0.04); border:1px solid #333; color:#aaa;
+                padding:2px 8px; border-radius:4px; font-size:11px; cursor:pointer;
+                font-family:inherit; flex-shrink:0;">Reset to Current</button>`;
+                html += '</div>';
             }
-            html += `<button id="mwi-csim-reset" style="
-            margin-left:auto; background:rgba(255,255,255,0.04); border:1px solid #333; color:#aaa;
-            padding:2px 8px; border-radius:4px; font-size:11px; cursor:pointer;
-            font-family:inherit; flex-shrink:0;">Reset to Current</button>`;
-            html += '</div>';
 
-            html += this._renderEquipmentSection(dto, gameData);
-            html += this._renderAbilitiesSection(dto, gameData);
-            html += this._renderConsumablesSection(dto, gameData);
+            if (!this.skillingMode) {
+                html += this._renderEquipmentSection(dto, gameData);
+                html += this._renderAbilitiesSection(dto, gameData);
+                html += this._renderConsumablesSection(dto, gameData);
+            }
             html += this._renderSkillLevelsSection(dto);
             html += this._renderHouseRoomsSection(dto, gameData);
+            if (this.skillingMode) {
+                html += this._renderTokenUpgradesSection(dto);
+                html += this._renderCommunityBuffsSection(dto);
+            }
 
             editorArea.innerHTML = html;
             this._wireEditorEvents(editorArea, dto);
@@ -15388,7 +16049,7 @@
 
         /** @private */
         _renderSkillLevelsSection(dto) {
-            const skills = [
+            const combatSkills = [
                 { key: 'staminaLevel', label: 'Stamina' },
                 { key: 'intelligenceLevel', label: 'Intelligence' },
                 { key: 'attackLevel', label: 'Attack' },
@@ -15397,6 +16058,19 @@
                 { key: 'rangedLevel', label: 'Ranged' },
                 { key: 'magicLevel', label: 'Magic' },
             ];
+            const skillingSkills = [
+                { key: 'woodcuttingLevel', label: 'Woodcutting' },
+                { key: 'foragingLevel', label: 'Foraging' },
+                { key: 'milkingLevel', label: 'Milking' },
+                { key: 'cookingLevel', label: 'Cooking' },
+                { key: 'brewingLevel', label: 'Brewing' },
+                { key: 'cheesesmithingLevel', label: 'Cheesesmithing' },
+                { key: 'craftingLevel', label: 'Crafting' },
+                { key: 'tailoringLevel', label: 'Tailoring' },
+                { key: 'alchemyLevel', label: 'Alchemy' },
+                { key: 'enhancingLevel', label: 'Enhancing' },
+            ];
+            const skills = this.skillingMode ? skillingSkills : combatSkills;
 
             const summary = skills.map((s) => `${s.label.slice(0, 3)} ${dto[s.key]}`).join(' / ');
 
@@ -15444,6 +16118,74 @@
                 html += `<span style="color:#888; width:100px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${name}">${name}</span>`;
                 html += `<input type="number" min="0" max="8" value="${level}"
                 data-house-hrid="${hrid}"
+                style="width:40px; background:#1a1a2e; color:#e0e0e0; border:1px solid #444;
+                border-radius:3px; padding:1px 3px; font-size:12px; text-align:center;">`;
+                html += '</div>';
+            }
+
+            html += '</div></div></div>';
+            return html;
+        }
+
+        /** @private */
+        _renderTokenUpgradesSection(dto) {
+            const upgrades = [
+                { key: 'speed', label: 'Speed' },
+                { key: 'efficiency', label: 'Efficiency' },
+                { key: 'success', label: 'Success Rate' },
+                { key: 'doubleProgress', label: 'Double Progress' },
+            ];
+            const tokens = dto.tokenUpgrades || {};
+            const activeCount = upgrades.filter((u) => (tokens[u.key] || 0) > 0).length;
+
+            let html = `<div style="margin-bottom:10px;">`;
+            html += `<div style="color:${ACCENT$2}; font-weight:700; font-size:12px; margin-bottom:6px; cursor:pointer; user-select:none;" data-toggle="token-section">`;
+            html += `<span data-arrow="token-section" style="display:inline-block; width:14px; font-size:10px;">&#9654;</span> Token Upgrades`;
+            html += `<span style="color:#888; font-weight:400; font-size:11px; margin-left:6px;">${activeCount} active</span>`;
+            html += '</div>';
+            html += `<div id="mwi-csim-token-section" style="display:none;">`;
+            html += `<div style="display:grid; grid-template-columns:1fr 1fr; gap:4px 12px;">`;
+
+            for (const upgrade of upgrades) {
+                const val = tokens[upgrade.key] || 0;
+                html += `<div style="display:flex; align-items:center; gap:6px; font-size:12px;">`;
+                html += `<span style="color:#888; width:100px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${upgrade.label}</span>`;
+                html += `<input type="number" min="0" max="12" value="${val}"
+                data-token-upgrade="${upgrade.key}"
+                style="width:40px; background:#1a1a2e; color:#e0e0e0; border:1px solid #444;
+                border-radius:3px; padding:1px 3px; font-size:12px; text-align:center;">`;
+                html += '</div>';
+            }
+
+            html += '</div></div></div>';
+            return html;
+        }
+
+        /** @private */
+        _renderCommunityBuffsSection(dto) {
+            const buffs = [
+                { key: 'productionEfficiency', label: 'Prod. Efficiency' },
+                { key: 'enhancingSpeed', label: 'Enhancing Speed' },
+                { key: 'gatheringQuantity', label: 'Gathering Qty' },
+                { key: 'experience', label: 'Experience' },
+            ];
+            const levels = dto.communityBuffLevels || {};
+            const activeCount = buffs.filter((b) => (levels[b.key] || 0) > 0).length;
+
+            let html = `<div style="margin-bottom:10px;">`;
+            html += `<div style="color:${ACCENT$2}; font-weight:700; font-size:12px; margin-bottom:6px; cursor:pointer; user-select:none;" data-toggle="community-section">`;
+            html += `<span data-arrow="community-section" style="display:inline-block; width:14px; font-size:10px;">&#9654;</span> Community Buffs`;
+            html += `<span style="color:#888; font-weight:400; font-size:11px; margin-left:6px;">${activeCount} active</span>`;
+            html += '</div>';
+            html += `<div id="mwi-csim-community-section" style="display:none;">`;
+            html += `<div style="display:grid; grid-template-columns:1fr 1fr; gap:4px 12px;">`;
+
+            for (const buff of buffs) {
+                const val = levels[buff.key] || 0;
+                html += `<div style="display:flex; align-items:center; gap:6px; font-size:12px;">`;
+                html += `<span style="color:#888; width:100px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${buff.label}">${buff.label}</span>`;
+                html += `<input type="number" min="0" max="30" value="${val}"
+                data-community-buff="${buff.key}"
                 style="width:40px; background:#1a1a2e; color:#e0e0e0; border:1px solid #444;
                 border-radius:3px; padding:1px 3px; font-size:12px; text-align:center;">`;
                 html += '</div>';
@@ -15524,6 +16266,26 @@
                     } else {
                         dto.houseRooms[hrid] = val;
                     }
+                });
+            });
+
+            editorArea.querySelectorAll('[data-token-upgrade]').forEach((input) => {
+                input.addEventListener('change', () => {
+                    const key = input.dataset.tokenUpgrade;
+                    const val = Math.max(0, Math.min(12, parseInt(input.value) || 0));
+                    input.value = val;
+                    if (!dto.tokenUpgrades) dto.tokenUpgrades = {};
+                    dto.tokenUpgrades[key] = val;
+                });
+            });
+
+            editorArea.querySelectorAll('[data-community-buff]').forEach((input) => {
+                input.addEventListener('change', () => {
+                    const key = input.dataset.communityBuff;
+                    const val = Math.max(0, Math.min(30, parseInt(input.value) || 0));
+                    input.value = val;
+                    if (!dto.communityBuffLevels) dto.communityBuffLevels = {};
+                    dto.communityBuffLevels[key] = val;
                 });
             });
 
@@ -15718,6 +16480,16 @@
                 defenseLevel: 'Defense',
                 rangedLevel: 'Ranged',
                 magicLevel: 'Magic',
+                woodcuttingLevel: 'Woodcutting',
+                foragingLevel: 'Foraging',
+                milkingLevel: 'Milking',
+                cookingLevel: 'Cooking',
+                brewingLevel: 'Brewing',
+                cheesesmithingLevel: 'Cheesesmithing',
+                craftingLevel: 'Crafting',
+                tailoringLevel: 'Tailoring',
+                alchemyLevel: 'Alchemy',
+                enhancingLevel: 'Enhancing',
             };
             for (const [key, label] of Object.entries(skillLabels)) {
                 if (original[key] !== edited[key]) {
@@ -15735,6 +16507,29 @@
                         const editName = editHrid ? itemDetailMap[editHrid]?.name || editHrid.split('/').pop() : 'Empty';
                         changes.push(`${prefix} ${i + 1}: ${origName}\u2192${editName}`);
                     }
+                }
+            }
+
+            const tokenLabels = { speed: 'Speed', efficiency: 'Efficiency', success: 'Success', doubleProgress: 'DblProg' };
+            for (const [key, label] of Object.entries(tokenLabels)) {
+                const origVal = original.tokenUpgrades?.[key] || 0;
+                const editVal = edited.tokenUpgrades?.[key] || 0;
+                if (origVal !== editVal) {
+                    changes.push(`Token ${label} ${origVal}\u2192${editVal}`);
+                }
+            }
+
+            const cbLabels = {
+                productionEfficiency: 'ProdEff',
+                enhancingSpeed: 'EnhSpd',
+                gatheringQuantity: 'GathQty',
+                experience: 'Exp',
+            };
+            for (const [key, label] of Object.entries(cbLabels)) {
+                const origVal = original.communityBuffLevels?.[key] || 0;
+                const editVal = edited.communityBuffLevels?.[key] || 0;
+                if (origVal !== editVal) {
+                    changes.push(`CB ${label} ${origVal}\u2192${editVal}`);
                 }
             }
 
@@ -19036,7 +19831,7 @@
     /**
      * Lab Sim UI
      * Floating panel for configuring and running labyrinth simulations.
-     * Three tabs: Configure (editor + crate selectors), Max Level, Upgrade.
+     * Four tabs: Configure (editor + crate selectors), Max Level, Upgrade, Skilling.
      */
 
 
@@ -19062,6 +19857,7 @@
         constructor() {
             this.panel = null;
             this._editor = null;
+            this._skillingEditor = null;
             this.isRunning = false;
             this.isDragging = false;
             this.dragOffset = { x: 0, y: 0 };
@@ -19071,6 +19867,8 @@
             this._labyFindMaxMode = false;
             this._labyResults = null;
             this._upgradeAborted = false;
+            this._skillingAborted = false;
+            this._skillLoadouts = {};
         }
 
         buildPanel() {
@@ -19139,6 +19937,7 @@
             <button id="mwi-labsim-tab-configure" style="${tabStyle(true)}">Configure</button>
             <button id="mwi-labsim-tab-maxlevel" style="${tabStyle(false)}">Max Level</button>
             <button id="mwi-labsim-tab-upgrade" style="${tabStyle(false)}">Upgrade</button>
+            <button id="mwi-labsim-tab-skilling" style="${tabStyle(false)}">Skilling</button>
         `;
 
             // ── Configure tab ──
@@ -19353,6 +20152,116 @@
             upgradeContent.appendChild(upgradeProgress);
             upgradeContent.appendChild(upgradeResults);
 
+            // ── Skilling tab ──
+            const skillingContent = document.createElement('div');
+            skillingContent.id = 'mwi-labsim-skilling-content';
+            skillingContent.style.cssText = 'display:none; flex-direction:column; flex:1; overflow:hidden;';
+
+            const skillingControls = document.createElement('div');
+            skillingControls.style.cssText = `
+            display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+            padding: 10px 14px; border-bottom: 1px solid #222; flex-shrink: 0;
+        `;
+            skillingControls.innerHTML = `
+            <label style="color:#888; font-size:12px;">Room Level</label>
+            <input id="mwi-labsim-skilling-level" type="number" min="1" max="300" value="100" style="${inputStyle}">
+            <button id="mwi-labsim-skilling-calc" style="
+                background: ${ACCENT_BTN_BG};
+                color: ${ACCENT};
+                border: 1px solid ${ACCENT_BTN_BORDER};
+                border-radius: 6px;
+                padding: 5px 14px;
+                font-size: 12px;
+                font-weight: 600;
+                cursor: pointer;
+                font-family: inherit;">Calculate</button>
+            <button id="mwi-labsim-skilling-upgrade" style="
+                background: rgba(255,255,255,0.04);
+                border: 1px solid #333;
+                color: #aaa;
+                border-radius: 6px;
+                padding: 5px 10px;
+                font-size: 12px;
+                cursor: pointer;
+                font-family: inherit;">Analyze Upgrades</button>
+            <button id="mwi-labsim-skilling-stop" style="
+                display:none;
+                background:rgba(244, 67, 54, 0.2);
+                border:1px solid rgba(244, 67, 54, 0.4);
+                color:#f44336;
+                border-radius:4px;
+                padding:5px 10px;
+                font-size:12px;
+                font-weight:600;
+                cursor:pointer;
+                font-family:inherit;">Stop</button>
+        `;
+
+            const skillingCrateRow = document.createElement('div');
+            skillingCrateRow.style.cssText = `
+            display: flex; align-items: center; gap: 10px;
+            padding: 6px 14px; border-bottom: 1px solid #222; flex-shrink: 0; font-size: 12px;
+        `;
+            skillingCrateRow.innerHTML = `
+            <label style="color:#888;">Tea</label>
+            <select id="mwi-labsim-skilling-tea" style="${crateSelectStyle}">
+                <option value="">None</option>
+                <option value="/items/basic_tea_crate">Basic</option>
+                <option value="/items/advanced_tea_crate">Advanced</option>
+                <option value="/items/expert_tea_crate" selected>Expert</option>
+            </select>
+            <label style="color:#888;">Coffee</label>
+            <select id="mwi-labsim-skilling-coffee" style="${crateSelectStyle}">
+                <option value="">None</option>
+                <option value="/items/basic_coffee_crate">Basic</option>
+                <option value="/items/advanced_coffee_crate">Advanced</option>
+                <option value="/items/expert_coffee_crate" selected>Expert</option>
+            </select>
+            <label style="color:#888;">Food</label>
+            <select id="mwi-labsim-skilling-food" style="${crateSelectStyle}">
+                <option value="">None</option>
+                <option value="/items/basic_food_crate">Basic</option>
+                <option value="/items/advanced_food_crate">Advanced</option>
+                <option value="/items/expert_food_crate" selected>Expert</option>
+            </select>
+        `;
+
+            const skillingLoadoutArea = document.createElement('div');
+            skillingLoadoutArea.id = 'mwi-labsim-skilling-loadouts';
+            skillingLoadoutArea.style.cssText =
+                'padding:8px 14px; border-bottom:1px solid #222; flex-shrink:0; overflow-y:auto; max-height:160px;';
+
+            const skillingEditorArea = document.createElement('div');
+            skillingEditorArea.id = 'mwi-labsim-skilling-editor';
+            skillingEditorArea.style.cssText = 'overflow-y:auto; padding:10px 14px; max-height:200px;';
+            skillingEditorArea.innerHTML =
+                '<div style="color:#555; font-size:12px; text-align:center; padding:20px 0;">Loading loadout...</div>';
+
+            this._skillingEditor = new SimEditor({ editorEl: skillingEditorArea, labMode: true, skillingMode: true });
+
+            const skillingProgress = document.createElement('div');
+            skillingProgress.id = 'mwi-labsim-skilling-progress';
+            skillingProgress.style.cssText = 'display:none; padding:6px 14px; flex-shrink:0;';
+            skillingProgress.innerHTML = `
+            <div style="display:flex; align-items:center; gap:8px;">
+                <div style="flex:1; background:#1a1a2e; border-radius:4px; height:18px; overflow:hidden; position:relative; border:1px solid #333;">
+                    <div id="mwi-labsim-skilling-progress-fill" style="height:100%; width:0%; background:linear-gradient(90deg, ${ACCENT_BTN_BG}, ${ACCENT}); border-radius:3px; transition:width 0.2s ease;"></div>
+                    <span id="mwi-labsim-skilling-progress-text" style="position:absolute; top:0; left:0; right:0; text-align:center; font-size:11px; line-height:18px; color:#e0e0e0; font-weight:600;">0 / 0</span>
+                </div>
+            </div>
+        `;
+
+            const skillingResults = document.createElement('div');
+            skillingResults.id = 'mwi-labsim-skilling-results';
+            skillingResults.style.cssText = 'flex:1; overflow-y:auto; padding:10px 14px;';
+
+            skillingContent.appendChild(skillingControls);
+            skillingContent.appendChild(skillingCrateRow);
+            skillingContent.appendChild(skillingLoadoutArea);
+            skillingContent.appendChild(skillingEditorArea);
+            skillingContent.appendChild(skillingProgress);
+            skillingContent.appendChild(skillingResults);
+
             // Status bar
             const status = document.createElement('div');
             status.id = 'mwi-labsim-status';
@@ -19366,6 +20275,7 @@
             this.panel.appendChild(configureContent);
             this.panel.appendChild(maxLevelContent);
             this.panel.appendChild(upgradeContent);
+            this.panel.appendChild(skillingContent);
             this.panel.appendChild(status);
             document.body.appendChild(this.panel);
             registerFloatingPanel(this.panel);
@@ -19384,6 +20294,9 @@
                 .querySelector('#mwi-labsim-tab-maxlevel')
                 .addEventListener('click', () => this._switchTab('maxlevel'));
             this.panel.querySelector('#mwi-labsim-tab-upgrade').addEventListener('click', () => this._switchTab('upgrade'));
+            this.panel
+                .querySelector('#mwi-labsim-tab-skilling')
+                .addEventListener('click', () => this._switchTab('skilling'));
 
             // Max Level listeners
             this.panel.querySelector('#mwi-labsim-run').addEventListener('click', () => this._onSimulate());
@@ -19404,6 +20317,17 @@
             this.panel.querySelector('#mwi-labsim-upgrade-run').addEventListener('click', () => this._onUpgradeAnalyze());
             this.panel.querySelector('#mwi-labsim-upgrade-stop').addEventListener('click', () => {
                 this._upgradeAborted = true;
+            });
+
+            // Skilling listeners
+            this.panel
+                .querySelector('#mwi-labsim-skilling-calc')
+                .addEventListener('click', () => this._onSkillingCalculate());
+            this.panel
+                .querySelector('#mwi-labsim-skilling-upgrade')
+                .addEventListener('click', () => this._onSkillingUpgradeAnalyze());
+            this.panel.querySelector('#mwi-labsim-skilling-stop').addEventListener('click', () => {
+                this._skillingAborted = true;
             });
 
             this._populateMonsters();
@@ -19528,9 +20452,11 @@
             const configureContent = this.panel.querySelector('#mwi-labsim-configure-content');
             const maxLevelContent = this.panel.querySelector('#mwi-labsim-maxlevel-content');
             const upgradeContent = this.panel.querySelector('#mwi-labsim-upgrade-content');
+            const skillingContent = this.panel.querySelector('#mwi-labsim-skilling-content');
             const tabConfigure = this.panel.querySelector('#mwi-labsim-tab-configure');
             const tabMaxLevel = this.panel.querySelector('#mwi-labsim-tab-maxlevel');
             const tabUpgrade = this.panel.querySelector('#mwi-labsim-tab-upgrade');
+            const tabSkilling = this.panel.querySelector('#mwi-labsim-tab-skilling');
 
             const activeStyle = `flex:1; padding:7px 0; text-align:center; font-size:12px; font-weight:600; cursor:pointer; border:none; font-family:inherit; transition:all 0.1s; background:${ACCENT_BG}; color:${ACCENT}; border-bottom:2px solid ${ACCENT};`;
             const inactiveStyle =
@@ -19539,9 +20465,11 @@
             configureContent.style.display = 'none';
             maxLevelContent.style.display = 'none';
             upgradeContent.style.display = 'none';
+            skillingContent.style.display = 'none';
             tabConfigure.style.cssText = inactiveStyle;
             tabMaxLevel.style.cssText = inactiveStyle;
             tabUpgrade.style.cssText = inactiveStyle;
+            tabSkilling.style.cssText = inactiveStyle;
 
             if (tab === 'configure') {
                 configureContent.style.display = 'flex';
@@ -19558,6 +20486,14 @@
                     if (levelInput && !levelInput.dataset.userModified) {
                         levelInput.value = this._maxLevel;
                     }
+                }
+            } else if (tab === 'skilling') {
+                skillingContent.style.display = 'flex';
+                tabSkilling.style.cssText = activeStyle;
+                if (!this._skillingEditor.isInitialized()) {
+                    this._skillingEditor.initEditor().then(() => this._renderSkillLoadoutTable());
+                } else {
+                    this._renderSkillLoadoutTable();
                 }
             }
         }
@@ -20033,6 +20969,427 @@
             this._setStatus(`${results.length} upgrade candidates analyzed.`);
         }
 
+        /** @private */
+        _getSkillingCrates() {
+            const crates = [];
+            const tea = this.panel?.querySelector('#mwi-labsim-skilling-tea')?.value;
+            const coffee = this.panel?.querySelector('#mwi-labsim-skilling-coffee')?.value;
+            const food = this.panel?.querySelector('#mwi-labsim-skilling-food')?.value;
+            if (tea) crates.push(tea);
+            if (coffee) crates.push(coffee);
+            if (food) crates.push(food);
+            return crates;
+        }
+
+        /** @private */
+        _renderSkillLoadoutTable() {
+            const container = this.panel?.querySelector('#mwi-labsim-skilling-loadouts');
+            if (!container) return;
+
+            const allSnapshots = loadoutSnapshot.getAllSnapshots();
+            const nonCombatSnapshots = allSnapshots.filter(
+                (s) => s.actionTypeHrid && s.actionTypeHrid !== '/action_types/combat'
+            );
+            const allSkillsSnapshots = allSnapshots.filter((s) => !s.actionTypeHrid);
+
+            const skills = [
+                { hrid: '/skills/woodcutting', label: 'Woodcutting', actionType: '/action_types/woodcutting' },
+                { hrid: '/skills/foraging', label: 'Foraging', actionType: '/action_types/foraging' },
+                { hrid: '/skills/milking', label: 'Milking', actionType: '/action_types/milking' },
+                { hrid: '/skills/cooking', label: 'Cooking', actionType: '/action_types/cooking' },
+                { hrid: '/skills/brewing', label: 'Brewing', actionType: '/action_types/brewing' },
+                { hrid: '/skills/cheesesmithing', label: 'Cheesesmithing', actionType: '/action_types/cheesesmithing' },
+                { hrid: '/skills/crafting', label: 'Crafting', actionType: '/action_types/crafting' },
+                { hrid: '/skills/tailoring', label: 'Tailoring', actionType: '/action_types/tailoring' },
+                { hrid: '/skills/alchemy', label: 'Alchemy', actionType: '/action_types/alchemy' },
+                { hrid: '/skills/enhancing', label: 'Enhancing', actionType: '/action_types/enhancing' },
+            ];
+
+            // Auto-populate from snapshot actionTypeHrid on first render
+            if (Object.keys(this._skillLoadouts).length === 0) {
+                for (const skill of skills) {
+                    const match = nonCombatSnapshots.find((s) => s.actionTypeHrid === skill.actionType);
+                    if (match) {
+                        this._skillLoadouts[skill.hrid] = match.name;
+                    } else if (allSkillsSnapshots.length > 0) {
+                        this._skillLoadouts[skill.hrid] = allSkillsSnapshots[0].name;
+                    }
+                }
+            }
+
+            const selectStyle =
+                'background:#1a1a2e; color:#e0e0e0; border:1px solid #444; border-radius:3px; padding:1px 4px; font-size:11px; width:100%;';
+
+            let html = `<div style="color:${ACCENT}; font-weight:700; font-size:12px; margin-bottom:4px;">Skill Loadouts</div>`;
+            html += '<div style="display:grid; grid-template-columns:1fr 1fr; gap:3px 10px;">';
+
+            for (const skill of skills) {
+                const current = this._skillLoadouts[skill.hrid] || '';
+                html += `<div style="display:flex; align-items:center; gap:4px; font-size:11px;">`;
+                html += `<span style="color:#888; width:85px; flex-shrink:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${skill.label}">${skill.label}</span>`;
+                html += `<select data-skill-loadout="${skill.hrid}" style="${selectStyle}">`;
+                html += `<option value=""${!current ? ' selected' : ''}>Current Gear</option>`;
+                for (const snap of [...nonCombatSnapshots, ...allSkillsSnapshots]) {
+                    const label = snap.name + (snap.actionTypeHrid ? '' : ' (All)');
+                    const selected = current === snap.name ? ' selected' : '';
+                    html += `<option value="${snap.name}"${selected}>${label}</option>`;
+                }
+                html += '</select></div>';
+            }
+
+            html += '</div>';
+            container.innerHTML = html;
+
+            container.querySelectorAll('[data-skill-loadout]').forEach((select) => {
+                select.addEventListener('change', () => {
+                    const skillHrid = select.dataset.skillLoadout;
+                    this._skillLoadouts[skillHrid] = select.value;
+                });
+            });
+        }
+
+        /**
+         * Build per-skill equipment map from loadout assignments.
+         * @param {Object} gameData
+         * @returns {Object} { '/skills/woodcutting': { '/equipment_types/...': { hrid, enhancementLevel } }, ... }
+         */
+        _buildSkillEquipmentMap(gameData) {
+            const itemDetailMap = gameData?.itemDetailMap || {};
+            const liveEquipment = dataManager.characterEquipment;
+            const allSnapshots = loadoutSnapshot.getAllSnapshots();
+            const equipmentMap = {};
+
+            for (const [skillHrid, loadoutName] of Object.entries(this._skillLoadouts)) {
+                if (!loadoutName) continue;
+                const snapshot = allSnapshots.find((s) => s.name === loadoutName);
+                if (!snapshot?.equipment?.length) continue;
+
+                const equipment = {};
+                for (const equip of snapshot.equipment) {
+                    const itemDetail = itemDetailMap[equip.itemHrid];
+                    const equipType = itemDetail?.equipmentDetail?.type;
+                    if (!equipType) continue;
+                    let enhancementLevel = equip.enhancementLevel || 0;
+                    if (enhancementLevel === 0 && liveEquipment) {
+                        for (const [, liveItem] of liveEquipment) {
+                            if (liveItem.itemHrid === equip.itemHrid) {
+                                enhancementLevel = liveItem.enhancementLevel || 0;
+                                break;
+                            }
+                        }
+                    }
+                    equipment[equipType] = { hrid: equip.itemHrid, enhancementLevel };
+                }
+                equipmentMap[skillHrid] = equipment;
+            }
+
+            return equipmentMap;
+        }
+
+        /** @private */
+        _onSkillingCalculate() {
+            const roomLevel = parseInt(this.panel.querySelector('#mwi-labsim-skilling-level')?.value) || 100;
+            const gameData = buildGameDataPayload();
+            if (!gameData) {
+                this._setStatus('No game data available.');
+                return;
+            }
+
+            const editedDTOs = this._skillingEditor?.getEditedDTOs();
+            if (!editedDTOs) {
+                this._setStatus('No character data. Wait for editor to load.');
+                return;
+            }
+
+            const selfHrid = this._skillingEditor.getSelfHrid();
+            const dto = editedDTOs[selfHrid] || Object.values(editedDTOs)[0];
+            if (!dto) {
+                this._setStatus('No player data available.');
+                return;
+            }
+
+            const crateHrids = this._getSkillingCrates();
+            const skillEquipmentMap = this._buildSkillEquipmentMap(gameData);
+            const results = computeSkillingClearRatesFromEditor(roomLevel, dto, crateHrids, gameData, skillEquipmentMap);
+            this._renderSkillingClearResults(results, roomLevel);
+        }
+
+        /** @private */
+        _renderSkillingClearResults(results, roomLevel) {
+            const container = this.panel?.querySelector('#mwi-labsim-skilling-results');
+            if (!container) return;
+
+            const avgClearRate = results.reduce((s, r) => s + (r.clearChance || 0), 0) / results.length;
+
+            const thStyle = 'text-align:right; padding:4px; color:#888; border-bottom:1px solid #333; font-size:10px;';
+            const thLeftStyle = 'text-align:left; padding:4px; color:#888; border-bottom:1px solid #333; font-size:10px;';
+            const tdStyle = 'padding:3px 4px; text-align:right; font-size:11px;';
+
+            let html = `<div style="color:${ACCENT}; font-weight:700; font-size:13px; margin-bottom:6px;">
+            Skilling Room Level ${roomLevel}
+            <span style="color:#888; font-weight:400; font-size:11px; margin-left:8px;">
+                Avg Clear: <span style="color:${avgClearRate >= 0.95 ? '#4caf50' : avgClearRate >= 0.5 ? '#ff9800' : '#f44336'}; font-weight:600;">${(avgClearRate * 100).toFixed(1)}%</span>
+            </span>
+        </div>`;
+
+            html += '<table style="width:100%; border-collapse:collapse; font-size:11px;">';
+            html += `<thead><tr>
+            <th style="${thLeftStyle}">Skill</th>
+            <th style="${thStyle}">Level</th>
+            <th style="${thStyle}">Eff. Lvl</th>
+            <th style="${thStyle}">Success</th>
+            <th style="${thStyle}">Clear</th>
+            <th style="${thStyle}">Actions</th>
+        </tr></thead><tbody>`;
+
+            for (const r of results) {
+                const clearColor = r.clearChance >= 0.95 ? '#4caf50' : r.clearChance >= 0.5 ? '#ff9800' : '#f44336';
+                const successPct = ((r.successChance || 0) * 100).toFixed(1);
+                const clearPct = ((r.clearChance || 0) * 100).toFixed(1);
+
+                html += `<tr style="border-bottom:1px solid #1a1a1a;">
+                <td style="padding:3px 4px; color:#e0e0e0;">${r.skillName}</td>
+                <td style="${tdStyle} color:#ccc;">${r.baseLevel}</td>
+                <td style="${tdStyle} color:#ccc;">${r.effectiveLevel}</td>
+                <td style="${tdStyle} color:#ccc;">${successPct}%</td>
+                <td style="${tdStyle} color:${clearColor}; font-weight:600;">${clearPct}%</td>
+                <td style="${tdStyle} color:#888;">${r.attempts || 0}</td>
+            </tr>`;
+            }
+
+            html += '</tbody></table>';
+            container.innerHTML = html;
+            this._setStatus(`Skilling clear rates calculated for level ${roomLevel}.`);
+        }
+
+        /** @private */
+        async _onSkillingUpgradeAnalyze() {
+            const roomLevel = parseInt(this.panel.querySelector('#mwi-labsim-skilling-level')?.value) || 100;
+            const gameData = buildGameDataPayload();
+            if (!gameData) {
+                this._setStatus('No game data available.');
+                return;
+            }
+
+            const editedDTOs = this._skillingEditor?.getEditedDTOs();
+            if (!editedDTOs) {
+                this._setStatus('No character data. Wait for editor to load.');
+                return;
+            }
+
+            const selfHrid = this._skillingEditor.getSelfHrid();
+            const dto = editedDTOs[selfHrid] || Object.values(editedDTOs)[0];
+            if (!dto) {
+                this._setStatus('No player data available.');
+                return;
+            }
+
+            const crateHrids = this._getSkillingCrates();
+            const skillEquipmentMap = this._buildSkillEquipmentMap(gameData);
+
+            const progressEl = this.panel.querySelector('#mwi-labsim-skilling-progress');
+            const resultsEl = this.panel.querySelector('#mwi-labsim-skilling-results');
+            const calcBtn = this.panel.querySelector('#mwi-labsim-skilling-calc');
+            const upgradeBtn = this.panel.querySelector('#mwi-labsim-skilling-upgrade');
+            const stopBtn = this.panel.querySelector('#mwi-labsim-skilling-stop');
+            progressEl.style.display = 'block';
+            resultsEl.innerHTML = '';
+            calcBtn.style.display = 'none';
+            upgradeBtn.style.display = 'none';
+            stopBtn.style.display = 'inline-block';
+            this._skillingAborted = false;
+
+            try {
+                const analysisResult = runSkillingUpgradeAnalysis(
+                    { editorDTO: dto, roomLevel, crateHrids, skillEquipmentMap },
+                    ({ current, total, description }) => {
+                        if (this._skillingAborted) return;
+                        const fill = this.panel.querySelector('#mwi-labsim-skilling-progress-fill');
+                        const text = this.panel.querySelector('#mwi-labsim-skilling-progress-text');
+                        if (fill) fill.style.width = `${Math.round((current / total) * 100)}%`;
+                        if (text) text.textContent = `${current} / ${total}: ${description}`;
+                    },
+                    { abortSignal: () => this._skillingAborted }
+                );
+
+                this._renderSkillingUpgradeResults(analysisResult, resultsEl);
+            } catch (error) {
+                console.error('[LabSimUI] Skilling upgrade analysis failed:', error);
+                this._setStatus('Skilling upgrade analysis failed: ' + error.message);
+            } finally {
+                progressEl.style.display = 'none';
+                calcBtn.style.display = '';
+                upgradeBtn.style.display = '';
+                stopBtn.style.display = 'none';
+            }
+        }
+
+        /** @private */
+        _renderSkillingUpgradeResults(analysisResult, container) {
+            const results = analysisResult?.results;
+            if (!results || !results.length) {
+                container.innerHTML =
+                    '<div style="color:#888; font-size:12px; padding:20px 0; text-align:center;">No upgrade candidates found.</div>';
+                this._setStatus('No skilling upgrade candidates found.');
+                return;
+            }
+
+            const baseline = analysisResult.baseline;
+            const tokenResults = results.filter((r) => r.costType === 'token');
+            const goldResults = results.filter((r) => r.costType === 'gold');
+            const thStyle =
+                'text-align:right; padding:4px; color:#888; border-bottom:1px solid #333; cursor:pointer; user-select:none;';
+            const thLeftStyle =
+                'text-align:left; padding:4px; color:#888; border-bottom:1px solid #333; cursor:pointer; user-select:none;';
+            const tdStyle = 'padding:3px 4px; text-align:right;';
+
+            const tokenRows = tokenResults.map((r) => {
+                const clearRate = (r.clearRate || 0) * 100;
+                const deltaVal = (r.clearRateDelta || 0) * 100;
+                const deltaColor = deltaVal > 0 ? '#4caf50' : deltaVal < 0 ? '#f44336' : '#888';
+                const tokenCost = r.tokenCost || 0;
+                const tokensPerPct = deltaVal > 0 ? Math.round(tokenCost / deltaVal) : Infinity;
+
+                return {
+                    desc: r.candidate?.description || '',
+                    tokenCost,
+                    clearRate,
+                    clearRateStr: clearRate.toFixed(1) + '%',
+                    deltaVal,
+                    deltaStr: (deltaVal >= 0 ? '+' : '') + deltaVal.toFixed(2) + '%',
+                    deltaColor,
+                    tokensPerPct,
+                    tokensPerPctStr: deltaVal > 0 ? formatters_js.formatWithSeparator(tokensPerPct) : '\u2014',
+                };
+            });
+
+            const goldRows = goldResults.map((r) => {
+                const clearRate = (r.clearRate || 0) * 100;
+                const deltaVal = (r.clearRateDelta || 0) * 100;
+                const deltaColor = deltaVal > 0 ? '#4caf50' : deltaVal < 0 ? '#f44336' : '#888';
+                const cost = r.cost || 0;
+                const goldPerPct = deltaVal > 0 && cost ? Math.round(cost / deltaVal) : Infinity;
+
+                return {
+                    desc: r.candidate?.description || '',
+                    cost,
+                    costStr: cost ? formatters_js.formatWithSeparator(cost) : '\u2014',
+                    clearRate,
+                    clearRateStr: clearRate.toFixed(1) + '%',
+                    deltaVal,
+                    deltaStr: (deltaVal >= 0 ? '+' : '') + deltaVal.toFixed(2) + '%',
+                    deltaColor,
+                    goldPerPct,
+                    goldPerPctStr: deltaVal > 0 && cost ? formatters_js.formatWithSeparator(goldPerPct) : '\u2014',
+                };
+            });
+
+            const sortState = { token: { key: 'deltaVal', dir: 'desc' }, gold: { key: 'deltaVal', dir: 'desc' } };
+
+            const sortRows = (rows, key, dir) => {
+                rows.sort((a, b) => {
+                    const av = a[key],
+                        bv = b[key];
+                    if (typeof av === 'string') return dir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
+                    return dir === 'asc' ? av - bv : bv - av;
+                });
+            };
+
+            const arrow = (dir) => (dir === 'asc' ? ' \u25B2' : ' \u25BC');
+
+            const renderTokenTable = () => {
+                const s = sortState.token;
+                const th = (label, key, align) => {
+                    const style = align === 'left' ? thLeftStyle : thStyle;
+                    const ind = s.key === key ? arrow(s.dir) : '';
+                    return `<th data-sort-key="${key}" data-table="token" style="${style}">${label}${ind}</th>`;
+                };
+
+                let html = `<div style="color:${ACCENT}; font-weight:700; font-size:12px; margin-bottom:4px;">Token Upgrades</div>`;
+                html += '<table style="width:100%; border-collapse:collapse; font-size:11px; margin-bottom:12px;">';
+                html += `<thead><tr>
+                ${th('Upgrade', 'desc', 'left')}
+                ${th('Tokens', 'tokenCost', 'right')}
+                ${th('Clear Rate', 'clearRate', 'right')}
+                ${th('Delta', 'deltaVal', 'right')}
+                ${th('Tokens/1%', 'tokensPerPct', 'right')}
+            </tr></thead><tbody>`;
+
+                for (const row of tokenRows) {
+                    html += `<tr style="border-bottom:1px solid #1a1a1a;">
+                    <td style="padding:3px 4px; color:#e0e0e0;">${row.desc}</td>
+                    <td style="${tdStyle} color:#ccc;">${row.tokenCost || '\u2014'}</td>
+                    <td style="${tdStyle} color:#ccc;">${row.clearRateStr}</td>
+                    <td style="${tdStyle} color:${row.deltaColor}; font-weight:600;">${row.deltaStr}</td>
+                    <td style="${tdStyle} color:#888;">${row.tokensPerPctStr}</td>
+                </tr>`;
+                }
+                html += '</tbody></table>';
+                return html;
+            };
+
+            const renderGoldTable = () => {
+                const s = sortState.gold;
+                const th = (label, key, align) => {
+                    const style = align === 'left' ? thLeftStyle : thStyle;
+                    const ind = s.key === key ? arrow(s.dir) : '';
+                    return `<th data-sort-key="${key}" data-table="gold" style="${style}">${label}${ind}</th>`;
+                };
+
+                let html = `<div style="color:${ACCENT}; font-weight:700; font-size:12px; margin-bottom:4px;">Equipment Upgrades</div>`;
+                html += '<table style="width:100%; border-collapse:collapse; font-size:11px;">';
+                html += `<thead><tr>
+                ${th('Upgrade', 'desc', 'left')}
+                ${th('Cost', 'cost', 'right')}
+                ${th('Clear Rate', 'clearRate', 'right')}
+                ${th('Delta', 'deltaVal', 'right')}
+                ${th('Gold/1%', 'goldPerPct', 'right')}
+            </tr></thead><tbody>`;
+
+                for (const row of goldRows) {
+                    html += `<tr style="border-bottom:1px solid #1a1a1a;">
+                    <td style="padding:3px 4px; color:#e0e0e0;">${row.desc}</td>
+                    <td style="${tdStyle} color:#ccc;">${row.costStr}</td>
+                    <td style="${tdStyle} color:#ccc;">${row.clearRateStr}</td>
+                    <td style="${tdStyle} color:${row.deltaColor}; font-weight:600;">${row.deltaStr}</td>
+                    <td style="${tdStyle} color:#888;">${row.goldPerPctStr}</td>
+                </tr>`;
+                }
+                html += '</tbody></table>';
+                return html;
+            };
+
+            const renderAll = () => {
+                sortRows(tokenRows, sortState.token.key, sortState.token.dir);
+                sortRows(goldRows, sortState.gold.key, sortState.gold.dir);
+                let html = `<div style="color:#888; font-size:11px; margin-bottom:8px;">
+                Baseline Avg Clear: <span style="color:#e0e0e0; font-weight:600;">${((baseline?.clearRate || 0) * 100).toFixed(1)}%</span>
+            </div>`;
+                if (tokenRows.length > 0) html += renderTokenTable();
+                if (goldRows.length > 0) html += renderGoldTable();
+                container.innerHTML = html;
+            };
+
+            renderAll();
+
+            container.addEventListener('click', (e) => {
+                const th = e.target.closest('th[data-sort-key]');
+                if (!th) return;
+                const table = th.dataset.table;
+                const key = th.dataset.sortKey;
+                const state = sortState[table];
+                if (state.key === key) {
+                    state.dir = state.dir === 'desc' ? 'asc' : 'desc';
+                } else {
+                    state.key = key;
+                    state.dir = key === 'desc' ? 'asc' : 'desc';
+                }
+                renderAll();
+            });
+
+            this._setStatus(`${results.length} skilling upgrade candidates analyzed.`);
+        }
+
         toggle() {
             if (!this.panel) return;
             const visible = this.panel.style.display !== 'none';
@@ -20058,6 +21415,7 @@
             }
             this.isRunning = false;
             if (this._editor) this._editor.reset();
+            if (this._skillingEditor) this._skillingEditor.reset();
             this._maxLevel = null;
             this._labyResults = null;
         }
@@ -26205,4 +27563,4 @@ self.onmessage = function (e) {
 
     console.log('[Toolasha] Combat library loaded');
 
-})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.storage, Toolasha.Core.webSocketHook, Toolasha.Utils.timerRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Core.marketAPI, Toolasha.Utils.formatters, Toolasha.Market.expectedValueCalculator, Toolasha.Utils.reactInput, Toolasha.Utils.profitHelpers, Toolasha.Utils.marketData, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.enhancementConfig, Toolasha.Utils.teaParser, Toolasha.Utils.abilityCalc, Toolasha.Utils.dom, Toolasha.Utils.houseCostCalculator);
+})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.storage, Toolasha.Core.webSocketHook, Toolasha.Utils.timerRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Core.marketAPI, Toolasha.Utils.formatters, Toolasha.Market.expectedValueCalculator, Toolasha.Utils.reactInput, Toolasha.Utils.profitHelpers, Toolasha.Utils.marketData, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.enhancementConfig, Toolasha.Utils.teaParser, Toolasha.Utils.abilityCalc, Toolasha.Utils.equipmentParser, Toolasha.Utils.dom, Toolasha.Utils.houseCostCalculator);

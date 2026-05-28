@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.56.0
+ * Version: 2.57.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -9015,7 +9015,7 @@
 
             if (remaining !== undefined) {
                 remaining = Math.max(0, remaining);
-                span.textContent = remaining.toFixed(1) + 's';
+                span.textContent = remaining.toFixed(1) + 's / ' + this.totalTime.toFixed(1) + 's';
             }
         }
 
