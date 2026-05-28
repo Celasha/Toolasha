@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.57.0
+ * Version: 2.57.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2357,10 +2357,13 @@ ${starCSS}
             // Move tiles back from favorites section before scanning
             const existingSection = catsEl.parentElement?.querySelector('.toolasha-cf-favorites-section');
             if (existingSection) {
-                const movedTiles = existingSection.querySelectorAll('.Collection_collectionContainer__3ZlUO');
-                for (const tile of movedTiles) {
-                    if (tile._favOrigParent) {
-                        tile._favOrigParent.insertBefore(tile, tile._favOrigNext || null);
+                const movedTiles = Array.from(existingSection.querySelectorAll('.Collection_collectionContainer__3ZlUO'));
+                for (let i = movedTiles.length - 1; i >= 0; i--) {
+                    const tile = movedTiles[i];
+                    if (tile._favOrigParent && tile._favOrigParent.contains(tile._favOrigNext)) {
+                        tile._favOrigParent.insertBefore(tile, tile._favOrigNext);
+                    } else if (tile._favOrigParent) {
+                        tile._favOrigParent.appendChild(tile);
                     } else {
                         catsEl.appendChild(tile);
                     }
@@ -2570,13 +2573,17 @@ ${starCSS}
             const parent = catsEl.parentElement;
             if (!parent) return;
 
-            // Move tiles back to their original positions
+            // Move tiles back to their original positions (reverse order to keep references valid)
             const existingSection = parent.querySelector('.toolasha-cf-favorites-section');
             if (existingSection) {
-                const movedTiles = existingSection.querySelectorAll('.Collection_collectionContainer__3ZlUO');
-                for (const tile of movedTiles) {
-                    if (tile._favOrigParent) {
-                        tile._favOrigParent.insertBefore(tile, tile._favOrigNext || null);
+                const movedTiles = Array.from(existingSection.querySelectorAll('.Collection_collectionContainer__3ZlUO'));
+                // Restore in reverse order so _favOrigNext references remain valid
+                for (let i = movedTiles.length - 1; i >= 0; i--) {
+                    const tile = movedTiles[i];
+                    if (tile._favOrigParent && tile._favOrigParent.contains(tile._favOrigNext)) {
+                        tile._favOrigParent.insertBefore(tile, tile._favOrigNext);
+                    } else if (tile._favOrigParent) {
+                        tile._favOrigParent.appendChild(tile);
                     } else {
                         catsEl.appendChild(tile);
                     }
@@ -2598,9 +2605,14 @@ ${starCSS}
             header.textContent = 'Favorites';
             section.appendChild(header);
 
+            // Record positions: use the next non-favorite sibling as reference
             for (const tile of favTiles) {
                 tile._favOrigParent = tile.parentElement;
-                tile._favOrigNext = tile.nextSibling;
+                let next = tile.nextSibling;
+                while (next && next.classList?.contains('cf-favorite')) {
+                    next = next.nextSibling;
+                }
+                tile._favOrigNext = next;
                 section.appendChild(tile);
             }
 
