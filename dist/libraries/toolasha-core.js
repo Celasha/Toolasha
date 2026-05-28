@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.55.1
+ * Version: 2.56.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1699,7 +1699,17 @@
                     min: 1,
                     max: 100,
                     step: 1,
-                    help: 'Target clear rate for labyrinth skip threshold recommendations',
+                    help: 'Default target clear rate for labyrinth skip threshold recommendations',
+                },
+                labyrinthRecommendSimHours: {
+                    id: 'labyrinthRecommendSimHours',
+                    label: 'Labyrinth: Recommend sim hours per step',
+                    type: 'number',
+                    default: 1,
+                    min: 1,
+                    max: 100,
+                    step: 1,
+                    help: 'Default hours of combat simulation per binary search step in recommendations',
                 },
                 labyrinthLiveProgress: {
                     id: 'labyrinthLiveProgress',

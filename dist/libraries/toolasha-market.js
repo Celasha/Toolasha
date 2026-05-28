@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.55.1
+ * Version: 2.56.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2472,13 +2472,18 @@ self.onmessage = function (e) {
 
     /**
      * @param {Object} itemDetails - Item details from dataManager
+     * @param {'decompose'|'transmute'} alchemyType - Which alchemy action
      * @returns {number} Gold cost per alchemy action (includes bulkMultiplier)
      */
-    function calculateAlchemyCoinCost(itemDetails) {
-        const sellPrice = itemDetails.sellPrice || 0;
-        const level = itemDetails.itemLevel || 1;
+    function calculateAlchemyCoinCost(itemDetails, alchemyType) {
         const bulkMultiplier = itemDetails.alchemyDetail?.bulkMultiplier || 1;
-        return Math.max(Math.floor(sellPrice / 5), 50 + level * 5) * bulkMultiplier;
+        if (alchemyType === 'transmute') {
+            const sellPrice = itemDetails.sellPrice || 0;
+            return Math.max(50, Math.floor(sellPrice / 5)) * bulkMultiplier;
+        }
+        // Decompose / Unrefine
+        const level = itemDetails.itemLevel || 1;
+        return (10 + level) * 5 * bulkMultiplier;
     }
 
     /**
@@ -3201,7 +3206,7 @@ self.onmessage = function (e) {
                     }
                 }
 
-                const coinCost = calculateAlchemyCoinCost(itemDetails);
+                const coinCost = calculateAlchemyCoinCost(itemDetails, 'decompose');
 
                 // Calculate per-hour values
                 // Convert efficiency from percentage to decimal
@@ -3511,7 +3516,7 @@ self.onmessage = function (e) {
                     }
                 }
 
-                const coinCost = calculateAlchemyCoinCost(itemDetails);
+                const coinCost = calculateAlchemyCoinCost(itemDetails, 'transmute');
 
                 // Gross material cost (before self-return adjustment)
                 const grossMaterialCost = inputPrice * bulkMultiplier;
@@ -12990,10 +12995,9 @@ self.onmessage = function (e) {
             // Catalyst cost per action (consumed only on success)
             const catalystCostPerAction = this.useCatalyst ? successRate * this.catalystPrice : 0;
 
-            // Transmute coin cost from game data
-            const gameData = dataManager.getInitClientData();
-            const transmuteAction = gameData?.actionDetailMap?.['/actions/alchemy/transmute'];
-            const coinCost = transmuteAction?.coinCost || 0;
+            // Transmute coin cost: max(50, sellPrice / 5) × bulkMultiplier per action
+            const sellPrice = itemDetails.sellPrice || 0;
+            const coinCost = Math.max(50, Math.floor(sellPrice / 5)) * bulkMultiplier;
 
             // Total cost per transmute action
             const totalCostPerAction = itemCost * bulkMultiplier + catalystCostPerAction + coinCost;

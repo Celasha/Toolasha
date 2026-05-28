@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.55.1
+ * Version: 2.56.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -721,6 +721,13 @@
     }
 
     const loadoutSort = new LoadoutSort();
+
+    /**
+     * @returns {Promise<Array<{icon: string, name: string}>|null>}
+     */
+    async function getLoadoutSortOrder() {
+        return storage.getJSON(getStorageKey$3(), 'settings', null);
+    }
 
     var loadoutSort$1 = {
         name: 'Loadout Sort',
@@ -9235,6 +9242,7 @@
             this.simRunning = false;
             this.recommendations = new Map();
             this.recommendRunning = false;
+            this._recommendSimHours = 1;
             this.liveProgressHandler = null;
             this.liveProgressTimeout = null;
         }
@@ -9825,7 +9833,7 @@
                     monsterHrid,
                     roomLevel,
                     crates: crateHrids,
-                    hours: 1,
+                    hours: this._recommendSimHours || 1,
                     communityBuffs: { mooPass: false, comExp: 0, comDrop: 0 },
                     labyrinthCombatBuffs,
                 });
@@ -9941,8 +9949,18 @@
             if (this.recommendRunning) return;
             this.recommendRunning = true;
             this.recommendations.clear();
+            this.combatCache.clear();
 
-            const targetRate = (config.getSetting('labyrinthRecommendTargetRate') || 70) / 100;
+            const rateInput = document.getElementById('mwi-recommend-target-rate');
+            const targetPct = rateInput ? parseInt(rateInput.value, 10) : null;
+            const targetRate =
+                (targetPct > 0 && targetPct <= 100 ? targetPct : config.getSetting('labyrinthRecommendTargetRate') || 70) /
+                100;
+
+            const hoursInput = document.getElementById('mwi-recommend-sim-hours');
+            const hoursVal = hoursInput ? parseInt(hoursInput.value, 10) : null;
+            this._recommendSimHours =
+                hoursVal > 0 && hoursVal <= 100 ? hoursVal : config.getSetting('labyrinthRecommendSimHours') || 1;
             const cells = document.querySelectorAll('[class*="LabyrinthPanel_skipThreshold"]');
             const rooms = [];
 
@@ -10025,7 +10043,41 @@
 
             const container = document.createElement('div');
             container.className = RECOMMEND_CONTROLS_CLASS;
-            container.style.cssText = 'display:flex; align-items:center; gap:8px; margin-bottom:6px; font-size:0.8rem;';
+            container.style.cssText =
+                'display:flex; align-items:center; gap:8px; margin-bottom:6px; font-size:0.8rem; flex-wrap:wrap;';
+
+            const inputStyle =
+                'width:50px; background:#1a1a2e; color:#e0e0e0; border:1px solid #555; border-radius:4px; padding:2px 4px; font-size:0.75rem; text-align:center;';
+            const labelStyle = 'color:#888; font-size:0.75rem; white-space:nowrap;';
+
+            const defaultRate = config.getSetting('labyrinthRecommendTargetRate') || 70;
+            const defaultHours = config.getSetting('labyrinthRecommendSimHours') || 1;
+
+            const rateLabel = document.createElement('span');
+            rateLabel.style.cssText = labelStyle;
+            rateLabel.textContent = 'Target Win %';
+
+            const rateInput = document.createElement('input');
+            rateInput.type = 'number';
+            rateInput.id = 'mwi-recommend-target-rate';
+            rateInput.min = '1';
+            rateInput.max = '100';
+            rateInput.step = '1';
+            rateInput.value = defaultRate;
+            rateInput.style.cssText = inputStyle;
+
+            const hoursLabel = document.createElement('span');
+            hoursLabel.style.cssText = labelStyle;
+            hoursLabel.textContent = 'Sim Hours';
+
+            const hoursInput = document.createElement('input');
+            hoursInput.type = 'number';
+            hoursInput.id = 'mwi-recommend-sim-hours';
+            hoursInput.min = '1';
+            hoursInput.max = '100';
+            hoursInput.step = '1';
+            hoursInput.value = defaultHours;
+            hoursInput.style.cssText = inputStyle;
 
             const button = document.createElement('button');
             button.textContent = 'Recommend';
@@ -10033,6 +10085,10 @@
                 'padding:2px 10px; cursor:pointer; font-size:0.75rem; border-radius:4px; border:1px solid #555; background:#333; color:#ccc;';
             button.addEventListener('click', () => this.runRecommendations());
 
+            container.appendChild(rateLabel);
+            container.appendChild(rateInput);
+            container.appendChild(hoursLabel);
+            container.appendChild(hoursInput);
             container.appendChild(button);
             table.parentNode.insertBefore(container, table);
         }
@@ -14351,6 +14407,7 @@
             this._missingMembers = [];
             this._editorInitialized = false;
             this._selectedLoadoutName = '';
+            this._loadoutSortOrder = null;
         }
 
         getEditedDTOs() {
@@ -14399,6 +14456,7 @@
                 this._activeEditPlayer = selfHrid;
                 this._missingMembers = missingMembers;
                 this._editorInitialized = true;
+                this._loadoutSortOrder = await getLoadoutSortOrder();
 
                 this.renderEditor();
             } catch (error) {
@@ -14605,6 +14663,17 @@
             const combatSnapshots = allSnapshots.filter(
                 (s) => !s.actionTypeHrid || s.actionTypeHrid === '/action_types/combat'
             );
+
+            // Apply custom loadout sort order if available
+            if (this._loadoutSortOrder?.length) {
+                combatSnapshots.sort((a, b) => {
+                    const aIdx = this._loadoutSortOrder.findIndex((o) => o.name === a.name);
+                    const bIdx = this._loadoutSortOrder.findIndex((o) => o.name === b.name);
+                    const aPos = aIdx === -1 ? Infinity : aIdx;
+                    const bPos = bIdx === -1 ? Infinity : bIdx;
+                    return aPos - bPos;
+                });
+            }
             html += `<div style="display:flex; align-items:center; gap:6px; margin-bottom:8px;">`;
             if (combatSnapshots.length > 0) {
                 html += `<label style="color:#888; font-size:11px; flex-shrink:0;">Loadout</label>`;
@@ -19794,84 +19863,173 @@
 
             const tokenResults = results.filter((r) => r.costType === 'token');
             const goldResults = results.filter((r) => r.costType === 'gold');
-            const thStyle = 'text-align:right; padding:4px; color:#888; border-bottom:1px solid #333;';
+            const thStyle =
+                'text-align:right; padding:4px; color:#888; border-bottom:1px solid #333; cursor:pointer; user-select:none;';
+            const thLeftStyle =
+                'text-align:left; padding:4px; color:#888; border-bottom:1px solid #333; cursor:pointer; user-select:none;';
             const tdStyle = 'padding:3px 4px; text-align:right;';
 
-            let html = '';
+            // Pre-compute row data for sorting
+            const tokenRows = tokenResults.map((r) => {
+                let rateVal, deltaVal, rateStr;
 
-            // Token Upgrades
-            if (tokenResults.length > 0) {
-                html += `<div style="color:${ACCENT}; font-weight:700; font-size:12px; margin-bottom:4px;">Token Upgrades</div>`;
+                if (r.metricType === 'clearRate') {
+                    rateVal = (r.clearRate || 0) * 100;
+                    deltaVal = (r.clearRateDelta || 0) * 100;
+                    rateStr = rateVal.toFixed(1) + '%';
+                } else if (r.metricType === 'experience') {
+                    rateVal = 0;
+                    deltaVal = r.xpDeltaPct || 0;
+                    rateStr = 'XP';
+                } else {
+                    rateVal = (r.winRate || 0) * 100;
+                    deltaVal = (r.winRateDelta || 0) * 100;
+                    rateStr = rateVal.toFixed(2) + '%';
+                }
+
+                const deltaColor = deltaVal > 0 ? '#4caf50' : deltaVal < 0 ? '#f44336' : '#888';
+                const deltaStr = (deltaVal >= 0 ? '+' : '') + deltaVal.toFixed(2) + '%';
+
+                const tokenCost = r.tokenCost || 0;
+                const tokensPerPct = deltaVal > 0 ? Math.round(tokenCost / deltaVal) : Infinity;
+                const tokensPerPctStr = deltaVal > 0 ? formatters_js.formatWithSeparator(tokensPerPct) : '\u2014';
+
+                return {
+                    desc: r.candidate?.description || '',
+                    tokenCost,
+                    rateVal,
+                    rateStr,
+                    deltaVal,
+                    deltaStr,
+                    deltaColor,
+                    tokensPerPct,
+                    tokensPerPctStr,
+                };
+            });
+
+            const goldRows = goldResults.map((r) => {
+                const delta = (r.winRateDelta || 0) * 100;
+                const deltaColor = delta > 0 ? '#4caf50' : delta < 0 ? '#f44336' : '#888';
+                const cost = r.cost || 0;
+                const winRate = (r.winRate || 0) * 100;
+                const goldPerPct = delta > 0 && cost ? Math.round(cost / delta) : Infinity;
+
+                return {
+                    desc: r.candidate?.description || '',
+                    cost,
+                    costStr: cost ? formatters_js.formatWithSeparator(cost) : '\u2014',
+                    winRate,
+                    winRateStr: winRate.toFixed(2) + '%',
+                    deltaVal: delta,
+                    deltaStr: (delta >= 0 ? '+' : '') + delta.toFixed(2) + '%',
+                    deltaColor,
+                    goldPerPct,
+                    goldPerPctStr: delta > 0 && cost ? formatters_js.formatWithSeparator(goldPerPct) : '\u2014',
+                };
+            });
+
+            // Sort state
+            const sortState = { token: { key: 'deltaVal', dir: 'desc' }, gold: { key: 'deltaVal', dir: 'desc' } };
+
+            const sortRows = (rows, key, dir) => {
+                rows.sort((a, b) => {
+                    const av = a[key],
+                        bv = b[key];
+                    if (typeof av === 'string') return dir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
+                    return dir === 'asc' ? av - bv : bv - av;
+                });
+            };
+
+            const arrow = (dir) => (dir === 'asc' ? ' \u25B2' : ' \u25BC');
+
+            const renderTokenTable = () => {
+                const s = sortState.token;
+                const th = (label, key, align) => {
+                    const style = align === 'left' ? thLeftStyle : thStyle;
+                    const ind = s.key === key ? arrow(s.dir) : '';
+                    return `<th data-sort-key="${key}" data-table="token" style="${style}">${label}${ind}</th>`;
+                };
+
+                let html = `<div style="color:${ACCENT}; font-weight:700; font-size:12px; margin-bottom:4px;">Token Upgrades</div>`;
                 html += '<table style="width:100%; border-collapse:collapse; font-size:11px; margin-bottom:12px;">';
                 html += `<thead><tr>
-                <th style="text-align:left; padding:4px; color:#888; border-bottom:1px solid #333;">Upgrade</th>
-                <th style="${thStyle}">Tokens</th>
-                <th style="${thStyle}">Rate</th>
-                <th style="${thStyle}">Delta</th>
+                ${th('Upgrade', 'desc', 'left')}
+                ${th('Tokens', 'tokenCost', 'right')}
+                ${th('Rate', 'rateVal', 'right')}
+                ${th('Delta', 'deltaVal', 'right')}
+                ${th('Tokens/1%', 'tokensPerPct', 'right')}
             </tr></thead><tbody>`;
 
-                for (const r of tokenResults) {
-                    let rateStr, deltaStr, deltaColor;
-
-                    if (r.metricType === 'clearRate') {
-                        rateStr = ((r.clearRate || 0) * 100).toFixed(1) + '%';
-                        const delta = (r.clearRateDelta || 0) * 100;
-                        deltaColor = delta > 0 ? '#4caf50' : delta < 0 ? '#f44336' : '#888';
-                        deltaStr = (delta >= 0 ? '+' : '') + delta.toFixed(2) + '%';
-                    } else if (r.metricType === 'experience') {
-                        rateStr = 'XP';
-                        const delta = r.xpDeltaPct || 0;
-                        deltaColor = delta > 0 ? '#4caf50' : '#888';
-                        deltaStr = '+' + delta.toFixed(2) + '%';
-                    } else {
-                        rateStr = ((r.winRate || 0) * 100).toFixed(2) + '%';
-                        const delta = (r.winRateDelta || 0) * 100;
-                        deltaColor = delta > 0 ? '#4caf50' : delta < 0 ? '#f44336' : '#888';
-                        deltaStr = (delta >= 0 ? '+' : '') + delta.toFixed(2) + '%';
-                    }
-
+                for (const row of tokenRows) {
                     html += `<tr style="border-bottom:1px solid #1a1a1a;">
-                    <td style="padding:3px 4px; color:#e0e0e0;">${r.candidate?.description || ''}</td>
-                    <td style="${tdStyle} color:#ccc;">${r.tokenCost || '\u2014'}</td>
-                    <td style="${tdStyle} color:#ccc;">${rateStr}</td>
-                    <td style="${tdStyle} color:${deltaColor}; font-weight:600;">${deltaStr}</td>
+                    <td style="padding:3px 4px; color:#e0e0e0;">${row.desc}</td>
+                    <td style="${tdStyle} color:#ccc;">${row.tokenCost || '\u2014'}</td>
+                    <td style="${tdStyle} color:#ccc;">${row.rateStr}</td>
+                    <td style="${tdStyle} color:${row.deltaColor}; font-weight:600;">${row.deltaStr}</td>
+                    <td style="${tdStyle} color:#888;">${row.tokensPerPctStr}</td>
                 </tr>`;
                 }
                 html += '</tbody></table>';
-            }
+                return html;
+            };
 
-            // Gold Upgrades
-            if (goldResults.length > 0) {
-                html += `<div style="color:${ACCENT}; font-weight:700; font-size:12px; margin-bottom:4px;">Gold Upgrades</div>`;
+            const renderGoldTable = () => {
+                const s = sortState.gold;
+                const th = (label, key, align) => {
+                    const style = align === 'left' ? thLeftStyle : thStyle;
+                    const ind = s.key === key ? arrow(s.dir) : '';
+                    return `<th data-sort-key="${key}" data-table="gold" style="${style}">${label}${ind}</th>`;
+                };
+
+                let html = `<div style="color:${ACCENT}; font-weight:700; font-size:12px; margin-bottom:4px;">Gold Upgrades</div>`;
                 html += '<table style="width:100%; border-collapse:collapse; font-size:11px;">';
                 html += `<thead><tr>
-                <th style="text-align:left; padding:4px; color:#888; border-bottom:1px solid #333;">Upgrade</th>
-                <th style="${thStyle}">Cost</th>
-                <th style="${thStyle}">Win Rate</th>
-                <th style="${thStyle}">Delta</th>
-                <th style="${thStyle}">Gold/1%</th>
+                ${th('Upgrade', 'desc', 'left')}
+                ${th('Cost', 'cost', 'right')}
+                ${th('Win Rate', 'winRate', 'right')}
+                ${th('Delta', 'deltaVal', 'right')}
+                ${th('Gold/1%', 'goldPerPct', 'right')}
             </tr></thead><tbody>`;
 
-                for (const r of goldResults) {
-                    const delta = (r.winRateDelta || 0) * 100;
-                    const deltaColor = delta > 0 ? '#4caf50' : delta < 0 ? '#f44336' : '#888';
-                    const costStr = r.cost ? formatters_js.formatWithSeparator(r.cost) : '\u2014';
-                    const winRateStr = ((r.winRate || 0) * 100).toFixed(2) + '%';
-                    const deltaStr = (delta >= 0 ? '+' : '') + delta.toFixed(2) + '%';
-                    const goldPer = delta > 0 && r.cost ? formatters_js.formatWithSeparator(Math.round(r.cost / delta)) : '\u2014';
-
+                for (const row of goldRows) {
                     html += `<tr style="border-bottom:1px solid #1a1a1a;">
-                    <td style="padding:3px 4px; color:#e0e0e0;">${r.candidate?.description || ''}</td>
-                    <td style="${tdStyle} color:#ccc;">${costStr}</td>
-                    <td style="${tdStyle} color:#ccc;">${winRateStr}</td>
-                    <td style="${tdStyle} color:${deltaColor}; font-weight:600;">${deltaStr}</td>
-                    <td style="${tdStyle} color:#888;">${goldPer}</td>
+                    <td style="padding:3px 4px; color:#e0e0e0;">${row.desc}</td>
+                    <td style="${tdStyle} color:#ccc;">${row.costStr}</td>
+                    <td style="${tdStyle} color:#ccc;">${row.winRateStr}</td>
+                    <td style="${tdStyle} color:${row.deltaColor}; font-weight:600;">${row.deltaStr}</td>
+                    <td style="${tdStyle} color:#888;">${row.goldPerPctStr}</td>
                 </tr>`;
                 }
                 html += '</tbody></table>';
-            }
+                return html;
+            };
 
-            container.innerHTML = html;
+            const renderAll = () => {
+                sortRows(tokenRows, sortState.token.key, sortState.token.dir);
+                sortRows(goldRows, sortState.gold.key, sortState.gold.dir);
+                let html = '';
+                if (tokenResults.length > 0) html += renderTokenTable();
+                if (goldResults.length > 0) html += renderGoldTable();
+                container.innerHTML = html;
+            };
+
+            renderAll();
+
+            container.addEventListener('click', (e) => {
+                const th = e.target.closest('th[data-sort-key]');
+                if (!th) return;
+                const table = th.dataset.table;
+                const key = th.dataset.sortKey;
+                const state = sortState[table];
+                if (state.key === key) {
+                    state.dir = state.dir === 'desc' ? 'asc' : 'desc';
+                } else {
+                    state.key = key;
+                    state.dir = key === 'desc' ? 'asc' : 'desc';
+                }
+                renderAll();
+            });
+
             this._setStatus(`${results.length} upgrade candidates analyzed.`);
         }
 
