@@ -1,11 +1,11 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.57.1
+ * Version: 2.58.0
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (dataManager, domObserver, config, enhancementConfig_js, enhancementCalculator_js, profitConstants_js, formatters_js, marketAPI, domObserverHelpers_js, bonusRevenueCalculator_js, marketData_js, efficiency_js, profitHelpers_js, profitCalculator, uiComponents_js, actionPanelHelper_js, webSocketHook, storage, dom_js, timerRegistry_js, actionCalculator_js, cleanupRegistry_js, teaParser_js, equipmentParser_js, houseEfficiency_js, experienceParser_js, reactInput_js, experienceCalculator_js, materialCalculator_js, expectedValueCalculator, alchemyProfitCalculator) {
+(function (dataManager, domObserver, config, enhancementConfig_js, enhancementCalculator_js, profitConstants_js, formatters_js, marketAPI, domObserverHelpers_js, bonusRevenueCalculator_js, marketData_js, efficiency_js, profitHelpers_js, profitCalculator, uiComponents_js, actionPanelHelper_js, webSocketHook, storage, dom_js, timerRegistry_js, actionCalculator_js, cleanupRegistry_js, teaParser_js, buffParser_js, equipmentParser_js, houseEfficiency_js, experienceParser_js, reactInput_js, experienceCalculator_js, materialCalculator_js, expectedValueCalculator, alchemyProfitCalculator) {
     'use strict';
 
     /**
@@ -7370,6 +7370,42 @@
             }
             const totalTimeSeconds = baseActionsNeeded * actionTime;
 
+            // Calculate transmute recycle time estimate
+            let recycleTimeSeconds = null;
+            if (
+                actionDetails.hrid?.includes('transmute') &&
+                actionDetails.type === '/action_types/alchemy' &&
+                action.primaryItemHash &&
+                config.getSetting('actionBar_showRecycleTime')
+            ) {
+                const { itemHrid: transmuteItemHrid } = this.parseItemHash(action.primaryItemHash);
+                if (transmuteItemHrid) {
+                    const transmuteItemDetails = itemDetailMap[transmuteItemHrid];
+                    const dropTable = transmuteItemDetails?.alchemyDetail?.transmuteDropTable;
+                    if (dropTable) {
+                        const selfReturn = dropTable.find((d) => d.itemHrid === transmuteItemHrid);
+                        if (selfReturn && selfReturn.dropRate > 0) {
+                            const baseSuccessRate = transmuteItemDetails.alchemyDetail.transmuteSuccessRate || 0;
+                            let catalystBonus = 0;
+                            if (action.secondaryItemHash) {
+                                const { itemHrid: catHrid } = this.parseItemHash(action.secondaryItemHash);
+                                if (catHrid?.includes('prime_catalyst')) {
+                                    catalystBonus = 0.25;
+                                } else if (catHrid?.includes('catalyst_of_transmutation')) {
+                                    catalystBonus = 0.15;
+                                }
+                            }
+                            const teaBonus = buffParser_js.getAlchemySuccessBonus();
+                            const successRate = Math.min(1.0, baseSuccessRate * (1 + catalystBonus + teaBonus));
+                            const recycleRate = selfReturn.dropRate * successRate;
+                            if (recycleRate > 0 && recycleRate < 1) {
+                                recycleTimeSeconds = totalTimeSeconds / (1 - recycleRate);
+                            }
+                        }
+                    }
+                }
+            }
+
             // Calculate completion time
             const completionTime = new Date();
             completionTime.setSeconds(completionTime.getSeconds() + totalTimeSeconds);
@@ -7451,7 +7487,28 @@
             ) {
                 const itemIconHtml = this.getItemIconHtml(limitingItemHrid);
                 const matsLabel = itemIconHtml ? `${itemIconHtml}:` : '';
-                this.displayElement.innerHTML = `<span style="display: inline-block; margin-right: 0.25em;">⏱</span> ${matsLabel} ${timeStr} → ${clockTime}`;
+                let recycleHtml = '';
+                if (recycleTimeSeconds !== null) {
+                    const recycleCompletion = new Date();
+                    recycleCompletion.setSeconds(recycleCompletion.getSeconds() + recycleTimeSeconds);
+                    const recycleTimeStr = formatters_js.timeReadable(recycleTimeSeconds);
+                    const recycleIsToday = recycleCompletion.toDateString() === new Date().toDateString();
+                    const recycleClockTime = recycleCompletion.toLocaleString(
+                        'en-US',
+                        recycleIsToday
+                            ? { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true }
+                            : {
+                                  month: 'numeric',
+                                  day: 'numeric',
+                                  hour: 'numeric',
+                                  minute: '2-digit',
+                                  second: '2-digit',
+                                  hour12: true,
+                              }
+                    );
+                    recycleHtml = `<span style="color:#4dd0a0; margin-left:12px; font-size:11px;">Est. w/ recycle: ${recycleTimeStr} → ${recycleClockTime}</span>`;
+                }
+                this.displayElement.innerHTML = `<span style="display: inline-block; margin-right: 0.25em;">⏱</span> ${matsLabel} ${timeStr} → ${clockTime}${recycleHtml}`;
             } else {
                 this.displayElement.innerHTML = '';
             }
@@ -23195,4 +23252,4 @@
 
     console.log('[Toolasha] Actions library loaded');
 
-})(Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.config, Toolasha.Utils.enhancementConfig, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.profitConstants, Toolasha.Utils.formatters, Toolasha.Core.marketAPI, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.marketData, Toolasha.Utils.efficiency, Toolasha.Utils.profitHelpers, Toolasha.Market.profitCalculator, Toolasha.Utils.uiComponents, Toolasha.Utils.actionPanelHelper, Toolasha.Core.webSocketHook, Toolasha.Core.storage, Toolasha.Utils.dom, Toolasha.Utils.timerRegistry, Toolasha.Utils.actionCalculator, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.teaParser, Toolasha.Utils.equipmentParser, Toolasha.Utils.houseEfficiency, Toolasha.Utils.experienceParser, Toolasha.Utils.reactInput, Toolasha.Utils.experienceCalculator, Toolasha.Utils.materialCalculator, Toolasha.Market.expectedValueCalculator, Toolasha.Market.alchemyProfitCalculator);
+})(Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.config, Toolasha.Utils.enhancementConfig, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.profitConstants, Toolasha.Utils.formatters, Toolasha.Core.marketAPI, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.marketData, Toolasha.Utils.efficiency, Toolasha.Utils.profitHelpers, Toolasha.Market.profitCalculator, Toolasha.Utils.uiComponents, Toolasha.Utils.actionPanelHelper, Toolasha.Core.webSocketHook, Toolasha.Core.storage, Toolasha.Utils.dom, Toolasha.Utils.timerRegistry, Toolasha.Utils.actionCalculator, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.teaParser, Toolasha.Utils.buffParser, Toolasha.Utils.equipmentParser, Toolasha.Utils.houseEfficiency, Toolasha.Utils.experienceParser, Toolasha.Utils.reactInput, Toolasha.Utils.experienceCalculator, Toolasha.Utils.materialCalculator, Toolasha.Market.expectedValueCalculator, Toolasha.Market.alchemyProfitCalculator);

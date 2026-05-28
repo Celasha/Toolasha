@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.57.1
+ * Version: 2.58.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -14779,12 +14779,14 @@
      * @returns {number} Average clear rate (0-1)
      */
     function computeAverageSkillingClearRateFromEditor(roomLevel, editorDTO, crateHrids, gameData, options = {}) {
-        const { metricOverride = null, skillEquipmentMap = {} } = options;
+        const { metricOverride = null, skillEquipmentMap = {}, targetSkill = null } = options;
 
         let total = 0;
         let count = 0;
 
-        for (const skillHrid of LABYRINTH_SKILLS) {
+        const skillsToEval = targetSkill ? [targetSkill] : LABYRINTH_SKILLS;
+
+        for (const skillHrid of skillsToEval) {
             const skillId = skillHrid.replace('/skills/', '');
             const actionTypeHrid = `/action_types/${skillId}`;
             const dtoKey = SKILLING_DTO_KEYS[skillHrid];
@@ -14874,6 +14876,7 @@
         for (const equipment of equipmentSets) {
             for (const [slot, equip] of Object.entries(equipment)) {
                 if (!equip?.hrid) continue;
+                if (slot === '/equipment_types/trinket' || slot === '/equipment_types/charm') continue;
                 const dedupKey = `${slot}:${equip.hrid}:${equip.enhancementLevel || 0}`;
                 if (seen.has(dedupKey)) continue;
                 seen.add(dedupKey);
@@ -14918,7 +14921,7 @@
      * @returns {Object} { baseline, results }
      */
     function runSkillingUpgradeAnalysis(params, onProgress, options = {}) {
-        const { editorDTO, roomLevel, crateHrids, skillEquipmentMap = {} } = params;
+        const { editorDTO, roomLevel, crateHrids, skillEquipmentMap = {}, targetSkill = null } = params;
         const { abortSignal } = options;
         const gameData = buildGameDataPayload();
         if (!gameData) throw new Error('No game data available');
@@ -14926,7 +14929,7 @@
         const tokenUpgrades = editorDTO.tokenUpgrades || {};
         const buffCandidates = generateLabyrinthBuffCandidatesFromEditor(tokenUpgrades);
         const equipCandidates = generateSkillingEquipmentCandidates(editorDTO, gameData, skillEquipmentMap);
-        const clearRateOpts = { skillEquipmentMap };
+        const clearRateOpts = { skillEquipmentMap, targetSkill };
 
         const total = buffCandidates.length + equipCandidates.length + 1;
         let current = 0;
@@ -14999,7 +15002,7 @@
                 modifiedDTO,
                 crateHrids,
                 gameData,
-                { skillEquipmentMap: modifiedSkillEquipMap }
+                { skillEquipmentMap: modifiedSkillEquipMap, targetSkill }
             );
             const clearRateDelta = modifiedClearRate - baselineClearRate;
 
@@ -16626,7 +16629,11 @@
             border: 2px solid ${ACCENT_BORDER$1};
             border-radius: 10px;
             width: 600px;
-            max-height: 600px;
+            height: 600px;
+            min-width: 400px;
+            min-height: 300px;
+            max-width: 90vw;
+            max-height: 90vh;
             display: none;
             flex-direction: column;
             font-family: 'Segoe UI', sans-serif;
@@ -17016,6 +17023,22 @@
             this.panel.appendChild(seekContent);
             this.panel.appendChild(upgradeContent);
             this.panel.appendChild(status);
+
+            const resizeHandle = document.createElement('div');
+            resizeHandle.style.cssText = `
+            position: absolute;
+            bottom: 0;
+            right: 0;
+            width: 16px;
+            height: 16px;
+            cursor: nwse-resize;
+            background: linear-gradient(135deg, transparent 50%, rgba(74, 158, 255, 0.4) 50%);
+            border-radius: 0 0 8px 0;
+            z-index: 1;
+        `;
+            this.panel.appendChild(resizeHandle);
+            this._setupResize(resizeHandle);
+
             document.body.appendChild(this.panel);
             registerFloatingPanel(this.panel);
 
@@ -19271,6 +19294,34 @@
         }
 
         /**
+         * @private
+         */
+        _setupResize(handle) {
+            handle.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const startX = e.clientX;
+                const startY = e.clientY;
+                const startWidth = this.panel.offsetWidth;
+                const startHeight = this.panel.offsetHeight;
+                bringPanelToFront(this.panel);
+
+                const onMove = (ev) => {
+                    const newWidth = Math.max(400, startWidth + (ev.clientX - startX));
+                    const newHeight = Math.max(300, startHeight + (ev.clientY - startY));
+                    this.panel.style.width = `${newWidth}px`;
+                    this.panel.style.height = `${newHeight}px`;
+                };
+                const onUp = () => {
+                    document.removeEventListener('mousemove', onMove);
+                    document.removeEventListener('mouseup', onUp);
+                };
+                document.addEventListener('mousemove', onMove);
+                document.addEventListener('mouseup', onUp);
+            });
+        }
+
+        /**
          * Open the sim panel pre-loaded with an external player DTO.
          * Used by the profile page "Sim Character" button.
          * @param {Object} dto - Player DTO in sim engine format
@@ -19869,6 +19920,7 @@
             this._upgradeAborted = false;
             this._skillingAborted = false;
             this._skillLoadouts = {};
+            this._skillLoadoutsLoaded = false;
         }
 
         buildPanel() {
@@ -20195,6 +20247,27 @@
                 font-weight:600;
                 cursor:pointer;
                 font-family:inherit;">Stop</button>
+            <select id="mwi-labsim-skilling-filter" style="
+                background:#1a1a2e;
+                color:#e0e0e0;
+                border:1px solid #444;
+                border-radius:4px;
+                padding:4px 6px;
+                font-size:11px;
+                font-family:inherit;
+                margin-left:auto;">
+                <option value="">All Skills</option>
+                <option value="/skills/woodcutting">Woodcutting</option>
+                <option value="/skills/foraging">Foraging</option>
+                <option value="/skills/milking">Milking</option>
+                <option value="/skills/cooking">Cooking</option>
+                <option value="/skills/brewing">Brewing</option>
+                <option value="/skills/cheesesmithing">Cheesesmithing</option>
+                <option value="/skills/crafting">Crafting</option>
+                <option value="/skills/tailoring">Tailoring</option>
+                <option value="/skills/alchemy">Alchemy</option>
+                <option value="/skills/enhancing">Enhancing</option>
+            </select>
         `;
 
             const skillingCrateRow = document.createElement('div');
@@ -20233,7 +20306,7 @@
 
             const skillingEditorArea = document.createElement('div');
             skillingEditorArea.id = 'mwi-labsim-skilling-editor';
-            skillingEditorArea.style.cssText = 'overflow-y:auto; padding:10px 14px; max-height:200px;';
+            skillingEditorArea.style.cssText = 'overflow-y:auto; padding:10px 14px; max-height:200px; flex-shrink:0;';
             skillingEditorArea.innerHTML =
                 '<div style="color:#555; font-size:12px; text-align:center; padding:20px 0;">Loading loadout...</div>';
 
@@ -20328,6 +20401,9 @@
                 .addEventListener('click', () => this._onSkillingUpgradeAnalyze());
             this.panel.querySelector('#mwi-labsim-skilling-stop').addEventListener('click', () => {
                 this._skillingAborted = true;
+            });
+            this.panel.querySelector('#mwi-labsim-skilling-filter').addEventListener('change', () => {
+                this._renderSkillLoadoutTable();
             });
 
             this._populateMonsters();
@@ -20865,7 +20941,7 @@
             });
 
             // Sort state
-            const sortState = { token: { key: 'deltaVal', dir: 'desc' }, gold: { key: 'deltaVal', dir: 'desc' } };
+            const sortState = { token: { key: 'tokensPerPct', dir: 'asc' }, gold: { key: 'goldPerPct', dir: 'asc' } };
 
             const sortRows = (rows, key, dir) => {
                 rows.sort((a, b) => {
@@ -20982,7 +21058,7 @@
         }
 
         /** @private */
-        _renderSkillLoadoutTable() {
+        async _renderSkillLoadoutTable() {
             const container = this.panel?.querySelector('#mwi-labsim-skilling-loadouts');
             if (!container) return;
 
@@ -21005,14 +21081,33 @@
                 { hrid: '/skills/enhancing', label: 'Enhancing', actionType: '/action_types/enhancing' },
             ];
 
-            // Auto-populate from snapshot actionTypeHrid on first render
-            if (Object.keys(this._skillLoadouts).length === 0) {
+            // Load persisted overrides once
+            if (!this._skillLoadoutsLoaded) {
+                this._skillLoadoutsLoaded = true;
+                const persisted = await storage.get('labSimSkillingLoadouts', 'settings', null);
+                if (persisted && typeof persisted === 'object') {
+                    this._skillLoadouts = persisted;
+                }
+            }
+
+            // Auto-populate from game's lab automation settings for any skill not already set
+            if (Object.keys(this._skillLoadouts).length < skills.length) {
+                const charSetting = dataManager.characterData?.characterSetting;
+                const snapshots = loadoutSnapshot.snapshots || {};
                 for (const skill of skills) {
-                    const match = nonCombatSnapshots.find((s) => s.actionTypeHrid === skill.actionType);
-                    if (match) {
-                        this._skillLoadouts[skill.hrid] = match.name;
-                    } else if (allSkillsSnapshots.length > 0) {
-                        this._skillLoadouts[skill.hrid] = allSkillsSnapshots[0].name;
+                    if (this._skillLoadouts[skill.hrid]) continue;
+                    const skillId = skill.hrid.replace('/skills/', '');
+                    const pascal = skillId.charAt(0).toUpperCase() + skillId.slice(1);
+                    const loadoutId = charSetting?.[`labyrinthLoadout${pascal}`];
+                    if (loadoutId && snapshots[loadoutId]?.name) {
+                        this._skillLoadouts[skill.hrid] = snapshots[loadoutId].name;
+                    } else {
+                        const match = nonCombatSnapshots.find((s) => s.actionTypeHrid === skill.actionType);
+                        if (match) {
+                            this._skillLoadouts[skill.hrid] = match.name;
+                        } else if (allSkillsSnapshots.length > 0) {
+                            this._skillLoadouts[skill.hrid] = allSkillsSnapshots[0].name;
+                        }
                     }
                 }
             }
@@ -21020,10 +21115,13 @@
             const selectStyle =
                 'background:#1a1a2e; color:#e0e0e0; border:1px solid #444; border-radius:3px; padding:1px 4px; font-size:11px; width:100%;';
 
+            const targetSkill = this.panel.querySelector('#mwi-labsim-skilling-filter')?.value || '';
+            const visibleSkills = targetSkill ? skills.filter((s) => s.hrid === targetSkill) : skills;
+
             let html = `<div style="color:${ACCENT}; font-weight:700; font-size:12px; margin-bottom:4px;">Skill Loadouts</div>`;
             html += '<div style="display:grid; grid-template-columns:1fr 1fr; gap:3px 10px;">';
 
-            for (const skill of skills) {
+            for (const skill of visibleSkills) {
                 const current = this._skillLoadouts[skill.hrid] || '';
                 html += `<div style="display:flex; align-items:center; gap:4px; font-size:11px;">`;
                 html += `<span style="color:#888; width:85px; flex-shrink:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${skill.label}">${skill.label}</span>`;
@@ -21044,6 +21142,7 @@
                 select.addEventListener('change', () => {
                     const skillHrid = select.dataset.skillLoadout;
                     this._skillLoadouts[skillHrid] = select.value;
+                    storage.set('labSimSkillingLoadouts', this._skillLoadouts, 'settings');
                 });
             });
         }
@@ -21186,6 +21285,7 @@
 
             const crateHrids = this._getSkillingCrates();
             const skillEquipmentMap = this._buildSkillEquipmentMap(gameData);
+            const targetSkill = this.panel.querySelector('#mwi-labsim-skilling-filter')?.value || null;
 
             const progressEl = this.panel.querySelector('#mwi-labsim-skilling-progress');
             const resultsEl = this.panel.querySelector('#mwi-labsim-skilling-results');
@@ -21201,7 +21301,7 @@
 
             try {
                 const analysisResult = runSkillingUpgradeAnalysis(
-                    { editorDTO: dto, roomLevel, crateHrids, skillEquipmentMap },
+                    { editorDTO: dto, roomLevel, crateHrids, skillEquipmentMap, targetSkill },
                     ({ current, total, description }) => {
                         if (this._skillingAborted) return;
                         const fill = this.panel.querySelector('#mwi-labsim-skilling-progress-fill');
@@ -21284,7 +21384,7 @@
                 };
             });
 
-            const sortState = { token: { key: 'deltaVal', dir: 'desc' }, gold: { key: 'deltaVal', dir: 'desc' } };
+            const sortState = { token: { key: 'tokensPerPct', dir: 'asc' }, gold: { key: 'goldPerPct', dir: 'asc' } };
 
             const sortRows = (rows, key, dir) => {
                 rows.sort((a, b) => {

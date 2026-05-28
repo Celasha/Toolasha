@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.57.1
+ * Version: 2.58.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -681,6 +681,13 @@
                     label: 'Action bar: Time remaining and completion ETA',
                     type: 'checkbox',
                     default: true,
+                },
+                actionBar_showRecycleTime: {
+                    id: 'actionBar_showRecycleTime',
+                    label: 'Action bar: Transmute recycle time estimate',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Shows estimated total time accounting for self-return recycling during transmute actions',
                 },
                 actionPanel_liveCountdown: {
                     id: 'actionPanel_liveCountdown',
