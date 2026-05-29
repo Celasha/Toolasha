@@ -34,6 +34,7 @@ class LabyrinthClearRate {
         this.recommendations = new Map();
         this.recommendRunning = false;
         this._recommendSimHours = 1;
+        this._recommendTargetPct = 70;
         this.liveProgressHandler = null;
         this.liveProgressTimeout = null;
     }
@@ -744,9 +745,9 @@ class LabyrinthClearRate {
 
         const rateInput = document.getElementById('mwi-recommend-target-rate');
         const targetPct = rateInput ? parseInt(rateInput.value, 10) : null;
-        const targetRate =
-            (targetPct > 0 && targetPct <= 100 ? targetPct : config.getSetting('labyrinthRecommendTargetRate') || 70) /
-            100;
+        this._recommendTargetPct =
+            targetPct > 0 && targetPct <= 100 ? targetPct : config.getSetting('labyrinthRecommendTargetRate') || 70;
+        const targetRate = this._recommendTargetPct / 100;
 
         const hoursInput = document.getElementById('mwi-recommend-sim-hours');
         const hoursVal = hoursInput ? parseInt(hoursInput.value, 10) : null;
@@ -808,8 +809,7 @@ class LabyrinthClearRate {
             badge.style.cssText = 'font-size:0.7rem; margin-left:6px; white-space:nowrap; font-weight:bold;';
             badge.textContent = `Rec: +${rec.threshold}`;
 
-            const targetPct = config.getSetting('labyrinthRecommendTargetRate') || 70;
-            badge.title = `Recommended skip threshold for ≥${targetPct}% clear rate`;
+            badge.title = `Recommended skip threshold for ≥${this._recommendTargetPct}% clear rate`;
 
             if (currentThreshold <= rec.threshold) {
                 badge.style.color = '#00c896';
