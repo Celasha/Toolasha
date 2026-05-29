@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.58.2
+ * Version: 2.58.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -9274,6 +9274,7 @@
             this.recommendations = new Map();
             this.recommendRunning = false;
             this._recommendSimHours = 1;
+            this._recommendTargetPct = 70;
             this.liveProgressHandler = null;
             this.liveProgressTimeout = null;
         }
@@ -9984,9 +9985,9 @@
 
             const rateInput = document.getElementById('mwi-recommend-target-rate');
             const targetPct = rateInput ? parseInt(rateInput.value, 10) : null;
-            const targetRate =
-                (targetPct > 0 && targetPct <= 100 ? targetPct : config.getSetting('labyrinthRecommendTargetRate') || 70) /
-                100;
+            this._recommendTargetPct =
+                targetPct > 0 && targetPct <= 100 ? targetPct : config.getSetting('labyrinthRecommendTargetRate') || 70;
+            const targetRate = this._recommendTargetPct / 100;
 
             const hoursInput = document.getElementById('mwi-recommend-sim-hours');
             const hoursVal = hoursInput ? parseInt(hoursInput.value, 10) : null;
@@ -10048,8 +10049,7 @@
                 badge.style.cssText = 'font-size:0.7rem; margin-left:6px; white-space:nowrap; font-weight:bold;';
                 badge.textContent = `Rec: +${rec.threshold}`;
 
-                const targetPct = config.getSetting('labyrinthRecommendTargetRate') || 70;
-                badge.title = `Recommended skip threshold for ≥${targetPct}% clear rate`;
+                badge.title = `Recommended skip threshold for ≥${this._recommendTargetPct}% clear rate`;
 
                 if (currentThreshold <= rec.threshold) {
                     badge.style.color = '#00c896';
@@ -10067,7 +10067,16 @@
          * Inject recommend controls (button + target input) into the automation panel
          */
         injectRecommendControls() {
-            if (document.querySelector(`.${RECOMMEND_CONTROLS_CLASS}`)) return;
+            const defaultRate = config.getSetting('labyrinthRecommendTargetRate') || 70;
+            const defaultHours = config.getSetting('labyrinthRecommendSimHours') || 1;
+
+            if (document.querySelector(`.${RECOMMEND_CONTROLS_CLASS}`)) {
+                const rateInput = document.getElementById('mwi-recommend-target-rate');
+                const hoursInput = document.getElementById('mwi-recommend-sim-hours');
+                if (rateInput && !rateInput.dataset.userEdited) rateInput.value = defaultRate;
+                if (hoursInput && !hoursInput.dataset.userEdited) hoursInput.value = defaultHours;
+                return;
+            }
 
             const table = document.querySelector('[class*="LabyrinthPanel_automationTable"]');
             if (!table) return;
@@ -10081,9 +10090,6 @@
                 'width:50px; background:#1a1a2e; color:#e0e0e0; border:1px solid #555; border-radius:4px; padding:2px 4px; font-size:0.75rem; text-align:center;';
             const labelStyle = 'color:#888; font-size:0.75rem; white-space:nowrap;';
 
-            const defaultRate = config.getSetting('labyrinthRecommendTargetRate') || 70;
-            const defaultHours = config.getSetting('labyrinthRecommendSimHours') || 1;
-
             const rateLabel = document.createElement('span');
             rateLabel.style.cssText = labelStyle;
             rateLabel.textContent = 'Target Win %';
@@ -10096,6 +10102,9 @@
             rateInput.step = '1';
             rateInput.value = defaultRate;
             rateInput.style.cssText = inputStyle;
+            rateInput.addEventListener('input', () => {
+                rateInput.dataset.userEdited = '1';
+            });
 
             const hoursLabel = document.createElement('span');
             hoursLabel.style.cssText = labelStyle;
@@ -10109,6 +10118,9 @@
             hoursInput.step = '1';
             hoursInput.value = defaultHours;
             hoursInput.style.cssText = inputStyle;
+            hoursInput.addEventListener('input', () => {
+                hoursInput.dataset.userEdited = '1';
+            });
 
             const button = document.createElement('button');
             button.textContent = 'Recommend';
@@ -13650,7 +13662,7 @@
             return 'magic_water';
         }
 
-        // Check for primary offensive stats
+        // Check for primary offensive stats (exclude defensiveDamage — it's a tank stat)
         const melee = (combatStats.stabDamage || 0) + (combatStats.slashDamage || 0) + (combatStats.smashDamage || 0);
         const ranged = combatStats.rangedDamage || 0;
         const magic = combatStats.magicDamage || 0;
@@ -13661,6 +13673,9 @@
             if (magic >= melee && magic >= ranged) return 'magic';
             return 'melee';
         }
+
+        // Items with only defensiveDamage and no offensive damage are tanks
+        if (combatStats.defensiveDamage > 0) return 'defensive';
 
         // Check accuracy as secondary signal
         const meleeAcc =
@@ -13844,6 +13859,66 @@
     }
 
     /**
+     * Get the primary damage style of an item's combat stats.
+     * @param {Object} combatStats - Item combat stats
+     * @returns {string} 'slash', 'stab', 'smash', 'ranged', 'magic', or 'unknown'
+     */
+    function getItemDamageStyle(combatStats) {
+        if (!combatStats) return 'unknown';
+        const slash = combatStats.slashDamage || 0;
+        const stab = combatStats.stabDamage || 0;
+        const smash = combatStats.smashDamage || 0;
+        const ranged = combatStats.rangedDamage || 0;
+        const magic = combatStats.magicDamage || 0;
+
+        if (slash >= stab && slash >= smash && slash >= ranged && slash >= magic && slash > 0) return 'slash';
+        if (stab >= slash && stab >= smash && stab >= ranged && stab >= magic && stab > 0) return 'stab';
+        if (smash >= slash && smash >= stab && smash >= ranged && smash >= magic && smash > 0) return 'smash';
+        if (ranged >= slash && ranged >= stab && ranged >= smash && ranged >= magic && ranged > 0) return 'ranged';
+        if (magic > 0) return 'magic';
+        return 'unknown';
+    }
+
+    /**
+     * Find the best off-hand item for a given combat style and level range.
+     * For melee/ranged: picks highest-level defensive off-hand.
+     * For magic: prefers off-hands with magic stats, falls back to defensive.
+     * @param {Object} gameData - Game data
+     * @param {string} damageStyle - Primary damage style of the weapon
+     * @param {number} maxItemLevel - Maximum item level to consider
+     * @returns {{hrid: string, itemLevel: number}|null}
+     */
+    function findBestOffHand(gameData, damageStyle, maxItemLevel) {
+        let best = null;
+        const isMagic = damageStyle === 'magic';
+
+        for (const [itemHrid, item] of Object.entries(gameData.itemDetailMap)) {
+            const eq = item.equipmentDetail;
+            if (!eq || eq.type !== '/equipment_types/off_hand') continue;
+            if (!hasCombatStats(item)) continue;
+            if ((item.itemLevel || 0) > maxItemLevel) continue;
+
+            const level = item.itemLevel || 0;
+            const stats = eq.combatStats || {};
+
+            if (isMagic) {
+                const hasMagicStats = (stats.magicDamage || 0) > 0 || (stats.magicAccuracy || 0) > 0;
+                if (!best) {
+                    best = { hrid: itemHrid, itemLevel: level, isMagic: hasMagicStats };
+                } else if (hasMagicStats && !best.isMagic) {
+                    best = { hrid: itemHrid, itemLevel: level, isMagic: true };
+                } else if (hasMagicStats === best.isMagic && level > best.itemLevel) {
+                    best = { hrid: itemHrid, itemLevel: level, isMagic: hasMagicStats };
+                }
+            } else if (!best || level > best.itemLevel) {
+                best = { hrid: itemHrid, itemLevel: level };
+            }
+        }
+
+        return best ? { hrid: best.hrid, itemLevel: best.itemLevel } : null;
+    }
+
+    /**
      * Generate upgrade candidates for a player's equipment and/or abilities.
      * @param {Object} playerDTO - Player DTO with equipment
      * @param {Object} gameData - Game data from buildGameDataPayload()
@@ -13941,6 +14016,100 @@
                     }
                 }
             }
+
+            // Cross-slot candidates: two_hand ↔ main_hand + off_hand
+            const twoHandEquip = playerDTO.equipment['/equipment_types/two_hand'];
+            const mainHandEquip = playerDTO.equipment['/equipment_types/main_hand'];
+            const offHandEquip = playerDTO.equipment['/equipment_types/off_hand'];
+
+            if (twoHandEquip) {
+                // Case A: Player has two_hand → suggest main_hand + best off_hand
+                const twoHandItem = gameData.itemDetailMap[twoHandEquip.hrid];
+                const twoHandStats = twoHandItem?.equipmentDetail?.combatStats;
+                const damageStyle = getItemDamageStyle(twoHandStats);
+
+                if (damageStyle !== 'unknown') {
+                    const twoHandLevel = twoHandItem?.itemLevel || 0;
+                    const enhLevel = twoHandEquip.enhancementLevel || 0;
+
+                    // Find main_hand weapons with matching style at or above current level
+                    for (const [itemHrid, item] of Object.entries(gameData.itemDetailMap)) {
+                        const eq = item.equipmentDetail;
+                        if (!eq || eq.type !== '/equipment_types/main_hand') continue;
+                        if (!hasCombatStats(item)) continue;
+                        if ((item.itemLevel || 0) < twoHandLevel) continue;
+
+                        const style = getItemDamageStyle(eq.combatStats);
+                        if (style !== damageStyle) continue;
+
+                        // Find best off-hand at this tier
+                        const bestOH = findBestOffHand(gameData, damageStyle, item.itemLevel || 999);
+                        if (!bestOH) continue;
+
+                        const mainName = item.name || itemHrid.split('/').pop();
+                        const ohItem = gameData.itemDetailMap[bestOH.hrid];
+                        const ohName = ohItem?.name || bestOH.hrid.split('/').pop();
+                        const currentName = twoHandItem?.name || twoHandEquip.hrid.split('/').pop();
+
+                        candidates.push({
+                            slot: '/equipment_types/two_hand',
+                            currentHrid: twoHandEquip.hrid,
+                            currentLevel: enhLevel,
+                            upgradeHrid: itemHrid,
+                            upgradeLevel: enhLevel,
+                            addedSlots: {
+                                '/equipment_types/main_hand': { hrid: itemHrid, enhancementLevel: enhLevel },
+                                '/equipment_types/off_hand': { hrid: bestOH.hrid, enhancementLevel: enhLevel },
+                            },
+                            clearedSlots: ['/equipment_types/two_hand'],
+                            description: `${currentName} → ${mainName} + ${ohName} (+${enhLevel})`,
+                            type: 'cross_slot',
+                        });
+                    }
+                }
+            } else if (mainHandEquip) {
+                // Case B: Player has main_hand (+off_hand) → suggest best two_hand
+                const mainHandItem = gameData.itemDetailMap[mainHandEquip.hrid];
+                const mainHandStats = mainHandItem?.equipmentDetail?.combatStats;
+                const damageStyle = getItemDamageStyle(mainHandStats);
+
+                if (damageStyle !== 'unknown') {
+                    const mainHandLevel = mainHandItem?.itemLevel || 0;
+                    const enhLevel = mainHandEquip.enhancementLevel || 0;
+
+                    // Find two_hand weapons with matching style above current main_hand level
+                    for (const [itemHrid, item] of Object.entries(gameData.itemDetailMap)) {
+                        const eq = item.equipmentDetail;
+                        if (!eq || eq.type !== '/equipment_types/two_hand') continue;
+                        if (!hasCombatStats(item)) continue;
+                        if ((item.itemLevel || 0) <= mainHandLevel) continue;
+
+                        const style = getItemDamageStyle(eq.combatStats);
+                        if (style !== damageStyle) continue;
+                        if (getItemRole(eq.combatStats) === 'defensive') continue;
+
+                        const twoHandName = item.name || itemHrid.split('/').pop();
+                        const currentName = mainHandItem?.name || mainHandEquip.hrid.split('/').pop();
+
+                        const clearedSlots = ['/equipment_types/main_hand'];
+                        if (offHandEquip) clearedSlots.push('/equipment_types/off_hand');
+
+                        candidates.push({
+                            slot: '/equipment_types/main_hand',
+                            currentHrid: mainHandEquip.hrid,
+                            currentLevel: enhLevel,
+                            upgradeHrid: itemHrid,
+                            upgradeLevel: enhLevel,
+                            addedSlots: {
+                                '/equipment_types/two_hand': { hrid: itemHrid, enhancementLevel: enhLevel },
+                            },
+                            clearedSlots,
+                            description: `${currentName} → ${twoHandName} (+${enhLevel})`,
+                            type: 'cross_slot',
+                        });
+                    }
+                }
+            }
         } else if (mode === 'ability_level' || mode === 'ability_swap') {
             const playerStyle = getPlayerCombatStyle(playerDTO, gameData);
             const equippedAbilityHrids = new Set(playerDTO.abilities.filter((a) => a).map((a) => a.hrid));
@@ -14028,6 +14197,22 @@
 
         if (candidate.type === 'ability_swap') {
             return abilityCostCalculator_js.calculateAbilityLevelUpCost(candidate.upgradeHrid, 0, 0, candidate.upgradeLevel);
+        }
+
+        if (candidate.type === 'cross_slot') {
+            let buyCost = 0;
+            for (const [, item] of Object.entries(candidate.addedSlots)) {
+                const price = profitHelpers_js.resolveItemPrice(item.hrid, {
+                    side: 'buy',
+                    enhancementLevel: item.enhancementLevel,
+                });
+                buyCost += price.price;
+            }
+            const sellPrice = profitHelpers_js.resolveItemPrice(candidate.currentHrid, {
+                side: 'sell',
+                enhancementLevel: candidate.currentLevel,
+            }).price;
+            return Math.max(0, buyCost - sellPrice);
         }
 
         if (candidate.type === 'enhancement') {
@@ -14235,10 +14420,6 @@
 
     // ─── Labyrinth Buff Upgrade Candidates ──────────────────────────────────────
 
-    const LAB_ROOM_DURATION = 120;
-    const LAB_SKILLING_TIME = 10;
-    const LAB_ENHANCING_TIME = 8;
-
     const LABYRINTH_BUFF_DEFS = [
         {
             key: 'labyrinthCombatDamageLevel',
@@ -14404,68 +14585,6 @@
     }
 
     /**
-     * Compute average clear rate across all labyrinth skills at a given room level.
-     * @param {number} roomLevel
-     * @param {Object} [metricOverride] - { key, delta } to add to one metric
-     * @returns {number} Average clear rate (0-1)
-     */
-    function computeAverageSkillingClearRate(roomLevel, metricOverride = null) {
-        const skills = dataManager.getSkills();
-        if (!skills?.length) return 0;
-
-        let total = 0;
-        let count = 0;
-
-        for (const skillHrid of LABYRINTH_SKILLS) {
-            const skillId = skillHrid.replace('/skills/', '');
-            const actionTypeHrid = `/action_types/${skillId}`;
-            const metrics = labyrinthClearRate.getSkillingMetrics(skillId, actionTypeHrid);
-
-            if (metricOverride) {
-                metrics[metricOverride.key] = (metrics[metricOverride.key] || 0) + metricOverride.delta;
-            }
-
-            const skill = skills.find((s) => s.skillHrid === skillHrid);
-            const baseLevel = skill?.level || 1;
-            const effectiveLevel = baseLevel + metrics.skillLevelBonus;
-            const levelDelta = effectiveLevel - roomLevel;
-            const levelBonus = levelDelta >= 0 ? levelDelta * 0.005 : levelDelta * 0.01;
-            const successChance = Math.min(1, Math.max(0, 0.8 * (1 + levelBonus + metrics.successBonus)));
-            const doubleChance = Math.min(1, Math.max(0, metrics.doubleProgressBonus));
-
-            let clearChance;
-            if (skillHrid === '/skills/enhancing') {
-                const actionSeconds = LAB_ENHANCING_TIME / Math.max(0.05, 1 + metrics.actionSpeedBonus);
-                const attempts = Math.max(1, Math.floor(LAB_ROOM_DURATION / actionSeconds));
-                clearChance = labyrinthClearRate.computeEnhancingClearStats(
-                    attempts,
-                    successChance,
-                    doubleChance,
-                    5
-                ).clearChance;
-            } else {
-                const workPower = effectiveLevel * (1 + metrics.efficiencyBonus);
-                const progressPerSuccess = Math.max(0, Math.floor(workPower));
-                const targetProgress = roomLevel * 10;
-                const actionSeconds = LAB_SKILLING_TIME / Math.max(0.05, 1 + metrics.actionSpeedBonus);
-                const attempts = Math.max(1, Math.floor(LAB_ROOM_DURATION / actionSeconds));
-                clearChance = labyrinthClearRate.computeNonEnhancingClearStats(
-                    attempts,
-                    successChance,
-                    doubleChance,
-                    progressPerSuccess,
-                    targetProgress
-                ).clearChance;
-            }
-
-            total += clearChance;
-            count++;
-        }
-
-        return count > 0 ? total / count : 0;
-    }
-
-    /**
      * Run labyrinth upgrade analysis: baseline sim + equipment sims + buff sims.
      * Ranks upgrades by win rate / clear rate delta, grouped by cost type (token vs gold).
      * @param {Object} params
@@ -14513,18 +14632,12 @@
             cost: calculateUpgradeCost(c, gameData),
         }));
 
-        // Generate buff candidates
+        // Generate buff candidates (skilling buffs handled in skilling tab)
         const buffCandidates = generateLabyrinthBuffCandidates();
         const combatBuffCandidates = buffCandidates.filter((c) => c.category === 'combat');
-        const skillingBuffCandidates = buffCandidates.filter((c) => c.category === 'skilling');
         const experienceBuffCandidates = buffCandidates.filter((c) => c.category === 'experience');
 
-        const total =
-            candidatesWithCost.length +
-            combatBuffCandidates.length +
-            skillingBuffCandidates.length +
-            experienceBuffCandidates.length +
-            1;
+        const total = candidatesWithCost.length + combatBuffCandidates.length + experienceBuffCandidates.length + 1;
         let current = 0;
 
         // Run baseline labyrinth sim
@@ -14567,6 +14680,13 @@
                     level: candidate.upgradeLevel,
                     triggers: null,
                 };
+            } else if (candidate.type === 'cross_slot') {
+                for (const slot of candidate.clearedSlots) {
+                    modifiedDTO.equipment[slot] = null;
+                }
+                for (const [slot, item] of Object.entries(candidate.addedSlots)) {
+                    modifiedDTO.equipment[slot] = item;
+                }
             } else {
                 modifiedDTO.equipment[candidate.slot] = {
                     hrid: candidate.upgradeHrid,
@@ -14644,29 +14764,6 @@
             onProgress?.({ current, total, description: buffCandidate.description });
         }
 
-        // ── Skilling buff calculations (instant math, no sim) ──
-        const baselineClearRate = computeAverageSkillingClearRate(roomLevel);
-        for (const buffCandidate of skillingBuffCandidates) {
-            if (abortSignal?.()) break;
-
-            const modifiedClearRate = computeAverageSkillingClearRate(roomLevel, {
-                key: buffCandidate.metric,
-                delta: buffCandidate.step,
-            });
-            const clearRateDelta = modifiedClearRate - baselineClearRate;
-
-            results.push({
-                candidate: buffCandidate,
-                costType: 'token',
-                tokenCost: buffCandidate.tokenCost,
-                clearRate: modifiedClearRate,
-                clearRateDelta,
-                metricType: 'clearRate',
-            });
-            current++;
-            onProgress?.({ current, total, description: buffCandidate.description });
-        }
-
         // ── Experience buff (flat % increase, no sim needed) ──
         for (const buffCandidate of experienceBuffCandidates) {
             const currentBonus = buffCandidate.currentLevel * buffCandidate.step;
@@ -14697,7 +14794,6 @@
                 winRate: baselineWinRate,
                 encounters: baselineEncounters,
                 attempts: baselineAttempts,
-                clearRate: baselineClearRate,
             },
             results,
         };

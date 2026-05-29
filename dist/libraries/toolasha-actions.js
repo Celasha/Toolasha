@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.58.2
+ * Version: 2.58.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -9202,6 +9202,98 @@
         }
 
         /**
+         * Create the count preset row (add-mode toggle + count buttons + Max + "times" label)
+         * @param {HTMLElement} panel - Action panel element
+         * @param {HTMLElement} numberInput - The queue input element
+         * @param {Object} gameData - Cached game data
+         * @param {Object} actionDetails - Action details object
+         * @returns {DocumentFragment} Fragment containing the row elements
+         */
+        _createCountPresetRow(panel, numberInput, gameData, actionDetails) {
+            const fragment = document.createDocumentFragment();
+
+            const applyToggleStyle = (btn, active) => {
+                if (active) {
+                    btn.style.background = 'rgba(215, 183, 255, 0.2)';
+                    btn.style.color = '#d7b7ff';
+                    btn.style.borderColor = '#d7b7ff';
+                } else {
+                    btn.style.background = 'transparent';
+                    btn.style.color = 'rgba(215, 183, 255, 0.5)';
+                    btn.style.borderColor = 'rgba(215, 183, 255, 0.3)';
+                }
+            };
+
+            const addToggle = document.createElement('button');
+            addToggle.textContent = '+';
+            addToggle.title = 'Toggle add mode: click to accumulate counts instead of setting them';
+            addToggle.style.cssText = `
+            font-size: 11px;
+            font-weight: 700;
+            padding: 1px 5px;
+            border-radius: 4px;
+            border: 1px solid rgba(215, 183, 255, 0.3);
+            background: transparent;
+            color: rgba(215, 183, 255, 0.5);
+            cursor: pointer;
+            margin-right: 4px;
+            line-height: 1.4;
+            transition: background 0.15s, color 0.15s, border-color 0.15s;
+        `;
+            applyToggleStyle(addToggle, this.addMode);
+            addToggle.addEventListener('click', () => {
+                this.addMode = !this.addMode;
+                applyToggleStyle(addToggle, this.addMode);
+                storage.set('quickInput_addMode', this.addMode, 'settings');
+            });
+            fragment.appendChild(addToggle);
+
+            fragment.appendChild(document.createTextNode('Do '));
+
+            const activePresetValues = this._parsePresets(
+                config.getSettingValue('actionPanel_quickInputs_countPresets', ''),
+                [10, 100, 1000]
+            );
+            activePresetValues.forEach((value) => {
+                const button = this.createButton(formatters_js.formatKMB(value), () => {
+                    const currentInput =
+                        panel.querySelector('[class*="maxActionCountInput"] input') ||
+                        panel.querySelector('input[type="number"]') ||
+                        numberInput;
+                    if (this.addMode) {
+                        const current = parseInt(currentInput.value) || 0;
+                        this.setInputValue(currentInput, current + value);
+                    } else {
+                        this.setInputValue(currentInput, value);
+                    }
+                });
+                fragment.appendChild(button);
+            });
+
+            const maxButton = this.createButton('Max', () => {
+                const currentInput =
+                    panel.querySelector('[class*="maxActionCountInput"] input') ||
+                    panel.querySelector('input[type="number"]') ||
+                    numberInput;
+                const nameEl = panel.querySelector('[class*="SkillActionDetail_name"]');
+                const currentName = nameEl?.textContent?.trim();
+                const currentDetails =
+                    currentName && currentName !== actionDetails.name
+                        ? this.getActionDetailsByName(currentName, gameData) || actionDetails
+                        : actionDetails;
+                const maxValue = this.calculateMaxValue(panel, currentDetails, gameData);
+                if (maxValue === '∞' || maxValue > 0) {
+                    this.setInputValue(currentInput, maxValue);
+                }
+            });
+            fragment.appendChild(maxButton);
+
+            fragment.appendChild(document.createTextNode(' times'));
+
+            return fragment;
+        }
+
+        /**
          * Start observing for action panels using centralized observer
          */
         startObserving() {
@@ -9708,108 +9800,33 @@
                     queueContent.appendChild(document.createElement('div')); // Line break
 
                     // SECOND ROW: Count-based buttons (times)
-                    // Add-mode toggle: clicking presets adds to current value instead of replacing
-                    const applyToggleStyle = (btn, active) => {
-                        if (active) {
-                            btn.style.background = 'rgba(215, 183, 255, 0.2)';
-                            btn.style.color = '#d7b7ff';
-                            btn.style.borderColor = '#d7b7ff';
-                        } else {
-                            btn.style.background = 'transparent';
-                            btn.style.color = 'rgba(215, 183, 255, 0.5)';
-                            btn.style.borderColor = 'rgba(215, 183, 255, 0.3)';
-                        }
-                    };
-
-                    const addToggle = document.createElement('button');
-                    addToggle.textContent = '+';
-                    addToggle.title = 'Toggle add mode: click to accumulate counts instead of setting them';
-                    addToggle.style.cssText = `
-                    font-size: 11px;
-                    font-weight: 700;
-                    padding: 1px 5px;
-                    border-radius: 4px;
-                    border: 1px solid rgba(215, 183, 255, 0.3);
-                    background: transparent;
-                    color: rgba(215, 183, 255, 0.5);
-                    cursor: pointer;
-                    margin-right: 4px;
-                    line-height: 1.4;
-                    transition: background 0.15s, color 0.15s, border-color 0.15s;
+                    queueContent.appendChild(this._createCountPresetRow(panel, numberInput, gameData, actionDetails));
+                } else {
+                    // Combat: count presets only (no hour-based buttons)
+                    queueContent = document.createElement('div');
+                    queueContent.style.cssText = `
+                    color: var(--text-color-secondary, ${config.COLOR_TEXT_SECONDARY});
+                    font-size: 0.9em;
+                    margin-top: 8px;
+                    margin-bottom: 8px;
                 `;
-                    applyToggleStyle(addToggle, this.addMode);
-                    addToggle.addEventListener('click', () => {
-                        this.addMode = !this.addMode;
-                        applyToggleStyle(addToggle, this.addMode);
-                        storage.set('quickInput_addMode', this.addMode, 'settings');
-                    });
-                    queueContent.appendChild(addToggle);
-
-                    queueContent.appendChild(document.createTextNode('Do '));
-
-                    const activePresetValues = this._parsePresets(
-                        config.getSettingValue('actionPanel_quickInputs_countPresets', ''),
-                        [10, 100, 1000]
-                    );
-                    activePresetValues.forEach((value) => {
-                        const button = this.createButton(formatters_js.formatKMB(value), () => {
-                            const currentInput =
-                                panel.querySelector('[class*="maxActionCountInput"] input') ||
-                                panel.querySelector('input[type="number"]') ||
-                                numberInput;
-                            if (this.addMode) {
-                                const current = parseInt(currentInput.value) || 0;
-                                this.setInputValue(currentInput, current + value);
-                            } else {
-                                this.setInputValue(currentInput, value);
-                            }
-                        });
-                        queueContent.appendChild(button);
-                    });
-
-                    const maxButton = this.createButton('Max', () => {
-                        const currentInput =
-                            panel.querySelector('[class*="maxActionCountInput"] input') ||
-                            panel.querySelector('input[type="number"]') ||
-                            numberInput;
-                        const nameEl = panel.querySelector('[class*="SkillActionDetail_name"]');
-                        const currentName = nameEl?.textContent?.trim();
-                        const currentDetails =
-                            currentName && currentName !== actionDetails.name
-                                ? this.getActionDetailsByName(currentName, gameData) || actionDetails
-                                : actionDetails;
-                        const maxValue = this.calculateMaxValue(panel, currentDetails, gameData);
-                        // Handle both infinity symbol and numeric values
-                        if (maxValue === '∞' || maxValue > 0) {
-                            this.setInputValue(currentInput, maxValue);
-                        }
-                    });
-                    queueContent.appendChild(maxButton);
-
-                    queueContent.appendChild(document.createTextNode(' times'));
-                } // End hasNormalXP check - queueContent only created for non-combat
+                    queueContent.appendChild(this._createCountPresetRow(panel, numberInput, gameData, actionDetails));
+                }
 
                 // Insert sections into DOM
                 const hideActionStats = !config.getSetting('actionPanel_showProfitDetail');
                 const hideLevelProgress = !config.getSetting('actionPanel_showLevelProgress');
-                if (queueContent) {
-                    // Non-combat: Insert queueContent after the input container
-                    inputContainer.insertAdjacentElement('afterend', queueContent);
 
-                    // Anchor: last element inserted after queueContent so far
-                    let lastInserted = queueContent;
+                inputContainer.insertAdjacentElement('afterend', queueContent);
+                let lastInserted = queueContent;
 
-                    if (speedSection && !hideActionStats) {
-                        lastInserted.insertAdjacentElement('afterend', speedSection);
-                        lastInserted = speedSection;
-                    }
+                if (speedSection && !hideActionStats) {
+                    lastInserted.insertAdjacentElement('afterend', speedSection);
+                    lastInserted = speedSection;
+                }
 
-                    if (levelProgressSection && !hideLevelProgress) {
-                        lastInserted.insertAdjacentElement('afterend', levelProgressSection);
-                    }
-                } else if (levelProgressSection && !hideLevelProgress) {
-                    // Combat: Insert levelProgressSection directly after inputContainer
-                    inputContainer.insertAdjacentElement('afterend', levelProgressSection);
+                if (levelProgressSection && !hideLevelProgress) {
+                    lastInserted.insertAdjacentElement('afterend', levelProgressSection);
                 }
             } catch (error) {
                 console.error('[Toolasha] Error injecting quick input buttons:', error);
