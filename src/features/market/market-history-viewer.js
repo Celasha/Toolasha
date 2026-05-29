@@ -15,6 +15,7 @@ import dataManager from '../../core/data-manager.js';
 import { formatWithSeparator, formatKMB } from '../../utils/formatters.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
+import estimatedListingAge from './estimated-listing-age.js';
 
 class MarketHistoryViewer {
     constructor() {
@@ -2036,6 +2037,9 @@ class MarketHistoryViewer {
             // Clear local data
             this.listings = [];
             this.filteredListings = [];
+
+            // Reset EstimatedListingAge so it doesn't re-save old entries on next WebSocket event
+            await estimatedListingAge.loadHistoricalData();
 
             // Show success message
             alert('Market history cleared successfully.');
