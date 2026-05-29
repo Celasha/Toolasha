@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.58.1
+ * Version: 2.58.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -11826,6 +11826,9 @@ self.onmessage = function (e) {
                 // Clear local data
                 this.listings = [];
                 this.filteredListings = [];
+
+                // Reset EstimatedListingAge so it doesn't re-save old entries on next WebSocket event
+                await estimatedListingAge.loadHistoricalData();
 
                 // Show success message
                 alert('Market history cleared successfully.');
