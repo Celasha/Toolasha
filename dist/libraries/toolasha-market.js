@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.58.3
+ * Version: 2.58.4
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -19151,26 +19151,16 @@ self.onmessage = function (e) {
 
             // Category breakdown
             const categories = [];
-            if (raw.gold) {
-                categories.push({ label: 'Gold', value: raw.gold, prev: prevRaw?.gold });
-            }
+            categories.push({ label: 'Gold', value: raw.gold || 0, prev: prevRaw?.gold });
+
             const inventoryExGold = (raw.inventory || 0) - (raw.gold || 0);
             const prevInventoryExGold = prevRaw ? (prevRaw.inventory || 0) - (prevRaw.gold || 0) : null;
-            if (inventoryExGold > 0) {
-                categories.push({ label: 'Inventory', value: inventoryExGold, prev: prevInventoryExGold });
-            }
-            if (raw.equipment) {
-                categories.push({ label: 'Equipment', value: raw.equipment, prev: prevRaw?.equipment });
-            }
-            if (raw.listings) {
-                categories.push({ label: 'Listings', value: raw.listings, prev: prevRaw?.listings });
-            }
-            if (raw.house) {
-                categories.push({ label: 'House', value: raw.house, prev: prevRaw?.house });
-            }
-            if (raw.abilities) {
-                categories.push({ label: 'Abilities', value: raw.abilities, prev: prevRaw?.abilities });
-            }
+            categories.push({ label: 'Inventory', value: inventoryExGold, prev: prevInventoryExGold });
+
+            categories.push({ label: 'Equipment', value: raw.equipment || 0, prev: prevRaw?.equipment });
+            categories.push({ label: 'Listings', value: raw.listings || 0, prev: prevRaw?.listings });
+            categories.push({ label: 'House', value: raw.house || 0, prev: prevRaw?.house });
+            categories.push({ label: 'Abilities', value: raw.abilities || 0, prev: prevRaw?.abilities });
             if (raw.nonExcluded != null && raw.nonExcluded !== raw.total) {
                 const excluded = raw.total - raw.nonExcluded;
                 const prevExcluded = prevRaw?.nonExcluded != null ? prevRaw.total - prevRaw.nonExcluded : null;
