@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.58.4
+ * Version: 2.58.5
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -814,6 +814,13 @@
                     type: 'checkbox',
                     default: true,
                     help: 'Displays XP and level progress estimates inside action panels',
+                },
+                actionPanel_showSpeedTime: {
+                    id: 'actionPanel_showSpeedTime',
+                    label: 'Action panel: Show action speed & time',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Displays speed breakdown, efficiency, and total time inside action panels',
                 },
                 actionPanel_showExpPerHour: {
                     id: 'actionPanel_showExpPerHour',

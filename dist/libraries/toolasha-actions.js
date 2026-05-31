@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.58.4
+ * Version: 2.58.5
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -9142,6 +9142,7 @@
             this.presetHours = [0.5, 1, 2, 3, 4, 5, 6, 10, 12, 24];
             this.presetValues = [10, 100, 1000];
             this.cleanupRegistry = cleanupRegistry_js.createCleanupRegistry();
+            this._targetLevelByAction = new Map();
         }
 
         /**
@@ -9814,13 +9815,13 @@
                 }
 
                 // Insert sections into DOM
-                const hideActionStats = !config.getSetting('actionPanel_showProfitDetail');
+                const hideSpeedTime = !config.getSetting('actionPanel_showSpeedTime');
                 const hideLevelProgress = !config.getSetting('actionPanel_showLevelProgress');
 
                 inputContainer.insertAdjacentElement('afterend', queueContent);
                 let lastInserted = queueContent;
 
-                if (speedSection && !hideActionStats) {
+                if (speedSection && !hideSpeedTime) {
                     lastInserted.insertAdjacentElement('afterend', speedSection);
                     lastInserted = speedSection;
                 }
@@ -10406,6 +10407,9 @@
                 lines.push('');
 
                 // Multi-level calculator (interactive section)
+                const savedTargetLevel = this._targetLevelByAction.get(actionDetails.hrid);
+                const initialTargetLevel =
+                    savedTargetLevel && savedTargetLevel > currentLevel ? savedTargetLevel : nextLevel;
                 lines.push(
                     `<span style="font-weight: 500; color: var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY});">Target Level Calculator:</span>`
                 );
@@ -10414,7 +10418,7 @@
                 <input
                     type="number"
                     id="mwi-target-level-input"
-                    value="${nextLevel}"
+                    value="${initialTargetLevel}"
                     min="${nextLevel}"
                     max="200"
                     style="
@@ -10448,6 +10452,7 @@
 
                 const updateTargetLevel = () => {
                     const targetLevel = parseInt(targetLevelInput.value);
+                    this._targetLevelByAction.set(actionDetails.hrid, targetLevel);
 
                     if (targetLevel > currentLevel && targetLevel <= 200) {
                         const result = experienceCalculator_js.calculateMultiLevelProgress(
@@ -10475,6 +10480,11 @@
 
                 targetLevelInput.addEventListener('input', updateTargetLevel);
                 targetLevelInput.addEventListener('change', updateTargetLevel);
+
+                // If restoring a saved target level, compute and display the result immediately
+                if (initialTargetLevel !== nextLevel) {
+                    updateTargetLevel();
+                }
 
                 // Create summary for collapsed view (time to next level)
                 const summary = `${formatters_js.timeReadable(singleLevel.timeNeeded)} to Level ${nextLevel}`;
