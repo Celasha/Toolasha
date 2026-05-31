@@ -19,7 +19,7 @@ const ALLOWED_FILES = new Set([
     'AGENTS.md',
     'CLAUDE.md',
     'DOCUMENTATION.md',
-    'README.en.md',
+    'README.zh-CN.md',
     'FEATURES.md',
     'MWI-TOOLS-CHANGELOG.md',
     'userscript-header.txt',
