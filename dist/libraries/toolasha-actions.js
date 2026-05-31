@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.59.0
+ * Version: 2.59.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -7903,15 +7903,16 @@
          * @returns {string} Clean action name text
          */
         getCleanActionName(actionNameElement) {
-            // Find our marker span (if it exists)
+            // Walk direct children to join their text with spaces, preserving word boundaries
+            // that textContent would collapse (e.g. <span>Dragon</span><span>Fruit</span> → "Dragon Fruit")
             const markerSpan = actionNameElement.querySelector('.mwi-appended-stats');
-            if (markerSpan) {
-                // Remove the marker span temporarily to get clean text
-                const cleanText = actionNameElement.textContent.replace(markerSpan.textContent, '').trim();
-                return cleanText;
+            const parts = [];
+            for (const node of actionNameElement.childNodes) {
+                if (node === markerSpan) continue;
+                const text = node.textContent.trim();
+                if (text) parts.push(text);
             }
-            // No marker found, return as-is
-            return actionNameElement.textContent.trim();
+            return parts.join(' ').replace(/\s+/g, ' ').trim();
         }
 
         /**
@@ -21126,6 +21127,7 @@
             this.equipmentChangeHandler = null;
             this.sectionExpanded = new Map(); // Persistent expand/collapse state across rebuilds
             this.cachedInputField = null; // Cache input field since it gets removed when action starts
+            this._alchemyTargetLevel = null;
         }
 
         /**
@@ -22403,6 +22405,8 @@
                 lines.push('');
 
                 // Target level calculator
+                const savedTarget = this._alchemyTargetLevel;
+                const initialTargetLevel = savedTarget && savedTarget > currentLevel ? savedTarget : nextLevel;
                 lines.push(
                     `<span style="font-weight: 500; color: var(--text-color-primary, ${config.COLOR_TEXT_PRIMARY});">Target Level Calculator:</span>`
                 );
@@ -22411,7 +22415,7 @@
                 <input
                     type="number"
                     id="mwi-alchemy-target-level-input"
-                    value="${nextLevel}"
+                    value="${initialTargetLevel}"
                     min="${nextLevel}"
                     max="200"
                     style="
@@ -22444,6 +22448,7 @@
 
                 const updateTargetLevel = () => {
                     const targetLevelValue = parseInt(targetLevelInput.value);
+                    this._alchemyTargetLevel = targetLevelValue;
                     if (targetLevelValue > currentLevel && targetLevelValue <= 200) {
                         const result = experienceCalculator_js.calculateMultiLevelProgress(
                             currentLevel,
@@ -22464,6 +22469,10 @@
 
                 targetLevelInput.addEventListener('input', updateTargetLevel);
                 targetLevelInput.addEventListener('change', updateTargetLevel);
+
+                if (initialTargetLevel !== nextLevel) {
+                    updateTargetLevel();
+                }
 
                 // Create summary for collapsed view
                 const summary = `${formatters_js.timeReadable(timeNeeded)} to Level ${nextLevel}`;
