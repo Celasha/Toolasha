@@ -1465,26 +1465,16 @@ class NetworthHistoryChart {
 
         // Category breakdown
         const categories = [];
-        if (raw.gold) {
-            categories.push({ label: t('Gold'), value: raw.gold, prev: prevRaw?.gold });
-        }
+        categories.push({ label: t('Gold'), value: raw.gold || 0, prev: prevRaw?.gold });
+
         const inventoryExGold = (raw.inventory || 0) - (raw.gold || 0);
         const prevInventoryExGold = prevRaw ? (prevRaw.inventory || 0) - (prevRaw.gold || 0) : null;
-        if (inventoryExGold > 0) {
-            categories.push({ label: t('Inventory'), value: inventoryExGold, prev: prevInventoryExGold });
-        }
-        if (raw.equipment) {
-            categories.push({ label: t('Equipment'), value: raw.equipment, prev: prevRaw?.equipment });
-        }
-        if (raw.listings) {
-            categories.push({ label: t('Listings'), value: raw.listings, prev: prevRaw?.listings });
-        }
-        if (raw.house) {
-            categories.push({ label: t('House'), value: raw.house, prev: prevRaw?.house });
-        }
-        if (raw.abilities) {
-            categories.push({ label: t('Abilities'), value: raw.abilities, prev: prevRaw?.abilities });
-        }
+        categories.push({ label: t('Inventory'), value: inventoryExGold, prev: prevInventoryExGold });
+
+        categories.push({ label: t('Equipment'), value: raw.equipment || 0, prev: prevRaw?.equipment });
+        categories.push({ label: t('Listings'), value: raw.listings || 0, prev: prevRaw?.listings });
+        categories.push({ label: t('House'), value: raw.house || 0, prev: prevRaw?.house });
+        categories.push({ label: t('Abilities'), value: raw.abilities || 0, prev: prevRaw?.abilities });
         if (raw.nonExcluded != null && raw.nonExcluded !== raw.total) {
             const excluded = raw.total - raw.nonExcluded;
             const prevExcluded = prevRaw?.nonExcluded != null ? prevRaw.total - prevRaw.nonExcluded : null;
