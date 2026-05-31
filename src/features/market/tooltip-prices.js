@@ -26,6 +26,7 @@ import { parseItemCount } from '../../utils/number-parser.js';
 import { DUNGEON_CHEST_CHEST_KEYS } from '../combat-stats/combat-stats-calculator.js';
 import { calculateArtisanBonus } from '../../utils/material-calculator.js';
 import { getActionHridFromName } from '../../utils/game-lookups.js';
+import { t } from '../../core/i18n.js';
 
 // Compiled regex patterns (created once, reused for performance)
 const REGEX_ENHANCEMENT_LEVEL = /\+(\d+)$/;
@@ -571,7 +572,7 @@ class TooltipPrices {
 
         // Show message if no market data at all
         if (price.ask <= 0 && price.bid <= 0) {
-            priceDiv.innerHTML = `Price: <span style="color: ${config.COLOR_TEXT_SECONDARY}; font-style: italic;">No market data</span>`;
+            priceDiv.innerHTML = `${t('Price:')} <span style="color: ${config.COLOR_TEXT_SECONDARY}; font-style: italic;">${t('No market data')}</span>`;
             tooltipText.appendChild(priceDiv);
             return;
         }
@@ -591,7 +592,7 @@ class TooltipPrices {
         }
 
         // Format: "Price: 1,200 / 950" or "Price: 1,200 / -" or "Price: - / 950"
-        priceDiv.innerHTML = `Price: ${askDisplay} / ${bidDisplay}${totalDisplay}`;
+        priceDiv.innerHTML = `${t('Price:')} ${askDisplay} / ${bidDisplay}${totalDisplay}`;
 
         tooltipText.appendChild(priceDiv);
     }
@@ -630,13 +631,13 @@ class TooltipPrices {
 
         if (profitData.itemPrice.bid > 0 && profitData.itemPrice.ask > 0) {
             // Market data available - show profit
-            html += '<div style="font-weight: bold; margin-bottom: 4px;">PROFIT</div>';
+            html += `<div style="font-weight: bold; margin-bottom: 4px;">${t('PROFIT')}</div>`;
             html += '<div style="font-size: 0.9em; margin-left: 8px;">';
 
             const profitPerDay = profitData.profitPerDay;
             const profitColor = profitData.profitPerHour >= 0 ? config.COLOR_TOOLTIP_PROFIT : config.COLOR_TOOLTIP_LOSS;
 
-            html += `<div style="color: ${profitColor}; font-weight: bold;">Net: ${formatKMB(profitData.profitPerHour)}/hr (${formatKMB(profitPerDay)}/day)</div>`;
+            html += `<div style="color: ${profitColor}; font-weight: bold;">${t('Net: {0}/hr ({1}/day)', formatKMB(profitData.profitPerHour), formatKMB(profitPerDay))}</div>`;
 
             // Show detailed breakdown if enabled
             if (showDetailed) {
@@ -649,7 +650,7 @@ class TooltipPrices {
             if (showDetailed) {
                 html += this.buildDetailedProfitDisplay(profitData, false);
             } else {
-                html += `<div style="font-weight: bold; color: ${config.COLOR_TOOLTIP_INFO};">Cost: ${formatKMB(profitData.totalMaterialCost)}/item</div>`;
+                html += `<div style="font-weight: bold; color: ${config.COLOR_TOOLTIP_INFO};">${t('Cost: {0}/item', formatKMB(profitData.totalMaterialCost))}</div>`;
             }
         }
 
@@ -719,10 +720,10 @@ class TooltipPrices {
 
             // Table header
             html += `<tr style="border-bottom: 1px solid ${config.COLOR_BORDER};">`;
-            html += '<th style="padding: 2px 4px; text-align: left;">Material</th>';
-            html += '<th style="padding: 2px 4px; text-align: center;">Count</th>';
-            html += '<th style="padding: 2px 4px; text-align: right;">Ask</th>';
-            html += '<th style="padding: 2px 4px; text-align: right;">Bid</th>';
+            html += `<th style="padding: 2px 4px; text-align: left;">${t('Material')}</th>`;
+            html += `<th style="padding: 2px 4px; text-align: center;">${t('Count')}</th>`;
+            html += `<th style="padding: 2px 4px; text-align: right;">${t('Ask')}</th>`;
+            html += `<th style="padding: 2px 4px; text-align: right;">${t('Bid')}</th>`;
             html += '</tr>';
 
             // Resolve prices for all materials through unified chain
@@ -774,7 +775,7 @@ class TooltipPrices {
 
             // Total row
             html += `<tr style="border-bottom: 1px solid ${config.COLOR_BORDER};">`;
-            html += '<td style="padding: 2px 4px; font-weight: bold;">Total</td>';
+            html += `<td style="padding: 2px 4px; font-weight: bold;">${t('Total')}</td>`;
             html += `<td style="padding: 2px 4px; text-align: center;">${totalCount.toFixed(1)}</td>`;
             html += `<td style="padding: 2px 4px; text-align: right;">${formatKMB(totalAsk)}</td>`;
             html += `<td style="padding: 2px 4px; text-align: right;">${formatKMB(totalBid)}</td>`;
@@ -812,7 +813,7 @@ class TooltipPrices {
             const profitPerDay = profitData.profitPerDay;
             const profitColor = profitData.profitPerHour >= 0 ? config.COLOR_TOOLTIP_PROFIT : config.COLOR_TOOLTIP_LOSS;
 
-            html += `<div style="color: ${profitColor};">Profit: ${formatKMB(profitPerAction)}/action, ${formatKMB(profitData.profitPerHour)}/hour, ${formatKMB(profitPerDay)}/day</div>`;
+            html += `<div style="color: ${profitColor};">${t('Profit: {0}/action, {1}/hour, {2}/day', formatKMB(profitPerAction), formatKMB(profitData.profitPerHour), formatKMB(profitPerDay))}</div>`;
             html += '</div>';
         }
 
@@ -849,15 +850,15 @@ class TooltipPrices {
         let html = '<div style="border-top: 1px solid rgba(255,255,255,0.2); padding-top: 8px;">';
 
         // Header
-        html += '<div style="font-weight: bold; margin-bottom: 4px;">EXPECTED VALUE</div>';
+        html += `<div style="font-weight: bold; margin-bottom: 4px;">${t('EXPECTED VALUE')}</div>`;
         html += '<div style="font-size: 0.9em; margin-left: 8px;">';
 
         // Expected value (simple display)
-        html += `<div style="color: ${config.COLOR_TOOLTIP_PROFIT}; font-weight: bold;">Expected Return: ${formatTooltipPrice(evData.expectedValue)}</div>`;
+        html += `<div style="color: ${config.COLOR_TOOLTIP_PROFIT}; font-weight: bold;">${t('Expected Return: {0}', formatTooltipPrice(evData.expectedValue))}</div>`;
         if (keyPrice > 0) {
-            const keyLabel = keyName ? `Key Cost (${keyName})` : 'Key Cost';
+            const keyLabel = keyName ? `${t('Key Cost')} (${keyName})` : t('Key Cost');
             html += `<div style="color: ${config.COLOR_TOOLTIP_LOSS};">- ${keyLabel}: ${formatTooltipPrice(keyPrice)}</div>`;
-            html += `<div style="color: ${config.COLOR_TOOLTIP_PROFIT}; font-weight: bold;">Net Value: ${formatTooltipPrice(evData.expectedValue - keyPrice)}</div>`;
+            html += `<div style="color: ${config.COLOR_TOOLTIP_PROFIT}; font-weight: bold;">${t('Net Value: {0}', formatTooltipPrice(evData.expectedValue - keyPrice))}</div>`;
         }
 
         html += '</div>'; // Close summary section
@@ -870,14 +871,14 @@ class TooltipPrices {
 
             // Determine how many drops to show
             let dropsToShow = evData.drops;
-            let headerLabel = 'All Drops';
+            let headerLabel = t('All Drops');
 
             if (showDropsSetting === 'Top 5') {
                 dropsToShow = evData.drops.slice(0, 5);
-                headerLabel = 'Top 5 Drops';
+                headerLabel = t('Top 5 Drops');
             } else if (showDropsSetting === 'Top 10') {
                 dropsToShow = evData.drops.slice(0, 10);
-                headerLabel = 'Top 10 Drops';
+                headerLabel = t('Top 10 Drops');
             }
 
             html += `<div style="font-weight: bold; margin-bottom: 4px;">${headerLabel} (${evData.drops.length} total):</div>`;
@@ -887,7 +888,7 @@ class TooltipPrices {
             for (const drop of dropsToShow) {
                 if (!drop.hasPriceData) {
                     // Show item without price data in gray
-                    html += `<div style="color: ${config.COLOR_TEXT_SECONDARY};">• ${drop.itemName} (${formatPercentage(drop.dropRate, 2)}): ${drop.avgCount.toFixed(2)} avg → No price data</div>`;
+                    html += `<div style="color: ${config.COLOR_TEXT_SECONDARY};">• ${drop.itemName} (${formatPercentage(drop.dropRate, 2)}): ${drop.avgCount.toFixed(2)} avg → ${t('No price data')}</div>`;
                 } else {
                     // Format drop rate percentage
                     const dropRatePercent = formatPercentage(drop.dropRate, 2);
@@ -901,9 +902,9 @@ class TooltipPrices {
 
             // Show total
             html += '<div style="border-top: 1px solid rgba(255,255,255,0.2); margin: 4px 0;"></div>';
-            html += `<div style="font-size: 0.9em; margin-left: 8px; font-weight: bold;">Total from ${evData.drops.length} drops: ${formatTooltipPrice(evData.expectedValue)}</div>`;
+            html += `<div style="font-size: 0.9em; margin-left: 8px; font-weight: bold;">${t('Total from {0} drops: {1}', evData.drops.length, formatTooltipPrice(evData.expectedValue))}</div>`;
             if (keyPrice > 0) {
-                html += `<div style="font-size: 0.9em; margin-left: 8px; font-weight: bold;">Net after key: ${formatTooltipPrice(evData.expectedValue - keyPrice)}</div>`;
+                html += `<div style="font-size: 0.9em; margin-left: 8px; font-weight: bold;">${t('Net after key: {0}', formatTooltipPrice(evData.expectedValue - keyPrice))}</div>`;
             }
         }
 
@@ -1057,12 +1058,12 @@ class TooltipPrices {
         );
 
         let html = '<div style="border-top: 1px solid rgba(255,255,255,0.2); padding-top: 8px;">';
-        html += '<div style="font-weight: bold; margin-bottom: 4px;">GATHERING</div>';
+        html += `<div style="font-weight: bold; margin-bottom: 4px;">${t('GATHERING')}</div>`;
 
         // Solo actions section
         if (gatheringData.soloActions.length > 0) {
             html += '<div style="font-size: 0.9em; margin-left: 8px; margin-bottom: 6px;">';
-            html += '<div style="font-weight: 500; margin-bottom: 2px;">Solo:</div>';
+            html += `<div style="font-weight: 500; margin-bottom: 2px;">${t('Solo:')}</div>`;
 
             for (const action of gatheringData.soloActions) {
                 const itemsPerHourStr = action.itemsPerHour ? Math.round(action.itemsPerHour) : '?';
@@ -1078,7 +1079,7 @@ class TooltipPrices {
         // Zone actions section
         if (zoneActions.length > 0) {
             html += '<div style="font-size: 0.9em; margin-left: 8px;">';
-            html += '<div style="font-weight: 500; margin-bottom: 2px;">Found in:</div>';
+            html += `<div style="font-weight: 500; margin-bottom: 2px;">${t('Found in:')}</div>`;
 
             for (const action of zoneActions) {
                 // Use more decimal places for very rare drops (< 0.1%)
@@ -1167,7 +1168,7 @@ class TooltipPrices {
         let html = '<div style="border-top: 1px solid rgba(255,255,255,0.2); padding-top: 8px;">';
 
         // Show heading based on whether item is craftable
-        const heading = isCraftable ? 'Alternative Actions:' : 'Profits:';
+        const heading = isCraftable ? t('Alternative Actions:') : t('Profits:');
         html += `<div style="font-weight: bold; margin-bottom: 4px;">${heading}</div>`;
         html += '<div style="font-size: 0.9em; margin-left: 8px;">';
 

@@ -4,6 +4,7 @@
  */
 
 import config from '../core/config.js';
+import { t } from '../core/i18n.js';
 
 /**
  * Format numbers with thousand separators
@@ -93,6 +94,69 @@ export function timeReadable(sec) {
 }
 
 /**
+ * Convert seconds to human-readable Chinese time format
+ * Uses Chinese time units: 秒 (seconds), 分 (minutes), 时 (hours), 天 (days), 月 (months), 年 (years)
+ * @param {number} sec - Seconds to convert
+ * @returns {string} Formatted time (e.g., "1时 01分 01秒" or "3年 2月 3天")
+ *
+ * @example
+ * timeReadableZh(3661) // "1时 01分 01秒"
+ * timeReadableZh(90000) // "1天 1时"
+ * timeReadableZh(100000000) // "3年 2月 3天"
+ */
+export function timeReadableZh(sec) {
+    // For times >= 1 year, show in years/months/days
+    if (sec >= 31536000) {
+        const years = Math.floor(sec / 31536000);
+        const remainingAfterYears = sec - years * 31536000;
+        const months = Math.floor(remainingAfterYears / 2592000);
+        const remainingAfterMonths = remainingAfterYears - months * 2592000;
+        const days = Math.floor(remainingAfterMonths / 86400);
+
+        const parts = [];
+        if (years > 0) parts.push(`${years}年`);
+        if (months > 0) parts.push(`${months}月`);
+        if (days > 0) parts.push(`${days}天`);
+
+        return parts.join(' ');
+    }
+
+    // For times >= 1 day, show in days/hours/minutes
+    if (sec >= 86400) {
+        const days = Math.floor(sec / 86400);
+        const remainingAfterDays = sec - days * 86400;
+        const hours = Math.floor(remainingAfterDays / 3600);
+        const remainingAfterHours = remainingAfterDays - hours * 3600;
+        const minutes = Math.floor(remainingAfterHours / 60);
+
+        const parts = [];
+        if (days > 0) parts.push(`${days}天`);
+        if (hours > 0) parts.push(`${hours}时`);
+        if (minutes > 0) parts.push(`${minutes}分`);
+
+        return parts.join(' ');
+    }
+
+    // For times < 1 day, show as HH:MM:SS
+    const d = new Date(Math.round(sec * 1000));
+    function pad(i) {
+        return ('0' + i).slice(-2);
+    }
+
+    const hours = d.getUTCHours();
+    const minutes = d.getUTCMinutes();
+    const seconds = d.getUTCSeconds();
+
+    // For times < 1 minute, just show seconds
+    if (hours === 0 && minutes === 0) {
+        return seconds + '秒';
+    }
+
+    const str = hours + '时 ' + pad(minutes) + '分 ' + pad(seconds) + '秒';
+    return str;
+}
+
+/**
  * Format a number with thousand separators based on locale
  * @param {number} num - The number to format
  * @returns {string} Formatted number with separators
@@ -129,6 +193,39 @@ export function formatKMB(num, decimals = 1) {
         return sign + (absNum / 1e6).toFixed(decimals) + 'M';
     } else if (absNum >= 1e3) {
         return sign + (absNum / 1e3).toFixed(decimals) + 'K';
+    } else {
+        return sign + absNum.toFixed(0);
+    }
+}
+
+/**
+ * Format large numbers in Chinese 万/亿 notation
+ * @param {number} num - The number to format
+ * @param {number} decimals - Number of decimal places (default: 2)
+ * @returns {string} Formatted number (e.g., "5万", "150万", "1.2亿", "1万亿")
+ *
+ * Chinese number system: 万 = 10,000, 亿 = 100,000,000, 万亿 = 1,000,000,000,000
+ *
+ * @example
+ * formatKMBzh(50000) // "5.00万"
+ * formatKMBzh(1500000) // "150.00万"
+ * formatKMBzh(120000000) // "1.20亿"
+ * formatKMBzh(1000000000000) // "1.00万亿"
+ */
+export function formatKMBzh(num, decimals = 2) {
+    if (num === null || num === undefined) {
+        return null;
+    }
+
+    const absNum = Math.abs(num);
+    const sign = num < 0 ? '-' : '';
+
+    if (absNum >= 1e12) {
+        return sign + (absNum / 1e12).toFixed(decimals) + '万亿';
+    } else if (absNum >= 1e8) {
+        return sign + (absNum / 1e8).toFixed(decimals) + '亿';
+    } else if (absNum >= 1e4) {
+        return sign + (absNum / 1e4).toFixed(decimals) + '万';
     } else {
         return sign + absNum.toFixed(0);
     }
@@ -266,6 +363,56 @@ export function coinFormatter(num) {
 }
 
 /**
+ * Format numbers using game-style coin notation with Chinese suffixes (4-digit max display)
+ * Uses 万 (10,000) and 亿 (100,000,000) as base units instead of K/M/B/T
+ * @param {number} num - The number to format
+ * @returns {string} Formatted number (e.g., "999", "1,000", "10万", "9,999万", "10亿")
+ *
+ * @example
+ * coinFormatterZh(999) // "999"
+ * coinFormatterZh(1000) // "1,000"
+ * coinFormatterZh(9999) // "9,999"
+ * coinFormatterZh(10000) // "1万"
+ * coinFormatterZh(99999999) // "9,999万"
+ * coinFormatterZh(100000000) // "1亿"
+ * coinFormatterZh(999999999999) // "9,999亿"
+ * coinFormatterZh(1000000000000) // "1万亿"
+ */
+export function coinFormatterZh(num) {
+    if (num === null || num === undefined) {
+        return null;
+    }
+
+    const absNum = Math.abs(num);
+    const sign = num < 0 ? '-' : '';
+
+    // 0-999: raw number
+    if (absNum < 1000) {
+        return sign + Math.floor(absNum).toString();
+    }
+    // 1,000-9,999: comma format
+    if (absNum < 10000) {
+        return sign + new Intl.NumberFormat().format(Math.floor(absNum));
+    }
+    // 1万-9,999万 (10,000 to 99,999,999)
+    if (absNum < 100000000) {
+        const val = Math.floor(absNum / 10000);
+        const formatted = val >= 1000 ? new Intl.NumberFormat().format(val) : val;
+        return sign + formatted + '万';
+    }
+    // 1亿-9,999亿 (100,000,000 to 999,999,999,999)
+    if (absNum < 1000000000000) {
+        const val = Math.floor(absNum / 100000000);
+        const formatted = val >= 1000 ? new Intl.NumberFormat().format(val) : val;
+        return sign + formatted + '亿';
+    }
+    // 1万亿+ (1,000,000,000,000+)
+    const val = Math.floor(absNum / 1000000000000);
+    const formatted = val >= 1000 ? new Intl.NumberFormat().format(val) : val;
+    return sign + formatted + '万亿';
+}
+
+/**
  * Format milliseconds as relative time
  * @param {number} ageMs - Age in milliseconds
  * @returns {string} Formatted relative time (e.g., "5m", "2h 30m", "3d 12h", "14d")
@@ -284,8 +431,8 @@ export function formatRelativeTime(ageMs) {
     const days = Math.floor(hours / 24);
 
     // Edge cases
-    if (minutes < 1) return 'Just now';
-    if (days > 30) return '30+ days';
+    if (minutes < 1) return t('Just now');
+    if (days > 30) return t('30+ days');
 
     // Format based on age
     if (days > 7) return `${days}d`;

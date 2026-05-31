@@ -4,6 +4,7 @@
  * buying missing tradeable materials at ask price.
  */
 
+import { t } from '../../core/i18n.js';
 import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
 import dataManager from '../../core/data-manager.js';
@@ -166,11 +167,11 @@ function showBreakdownModal(budget, result) {
     `;
     header.innerHTML = `
         <div>
-            <span style="font-size:15px; font-weight:600; color:#e0e0e0;">Budget Calculator</span>
+            <span style="font-size:15px; font-weight:600; color:#e0e0e0;">${t('Budget Calculator')}</span>
             <span style="margin-left:10px; color:#aaa;">
-                Budget: <strong style="color:#fff;">${formatKMB(budget)}</strong>
+                ${t('Budget: {0}', formatKMB(budget))}
                 &nbsp;→&nbsp;
-                <strong style="color:#7ec87e;">${formatWithSeparator(result.n)} units</strong>
+                <strong style="color:#7ec87e;">${t('{0} units', formatWithSeparator(result.n))}</strong>
             </span>
         </div>
         <button id="mwi-budget-modal-close" style="
@@ -207,7 +208,7 @@ function showBreakdownModal(budget, result) {
 
             const askCell = ask
                 ? `<td style="${tdStyle}">${formatKMB(ask)}</td>`
-                : `<td style="${tdDimStyle}">${mat.isTradeable ? 'No data' : '—'}</td>`;
+                : `<td style="${tdDimStyle}">${mat.isTradeable ? t('No data') : '—'}</td>`;
 
             const costCell =
                 lineCost > 0
@@ -233,22 +234,22 @@ function showBreakdownModal(budget, result) {
         <table style="width:100%; border-collapse:collapse;">
             <thead>
                 <tr>
-                    <th style="${thLeftStyle}">Ingredient</th>
-                    <th style="${thStyle}">Required</th>
-                    <th style="${thStyle}">On Hand</th>
-                    <th style="${thStyle}">To Buy</th>
-                    <th style="${thStyle}">Ask Price</th>
-                    <th style="${thStyle}">Total Cost</th>
+                    <th style="${thLeftStyle}">${t('Ingredient')}</th>
+                    <th style="${thStyle}">${t('Required')}</th>
+                    <th style="${thStyle}">${t('On Hand')}</th>
+                    <th style="${thStyle}">${t('To Buy')}</th>
+                    <th style="${thStyle}">${t('Ask Price')}</th>
+                    <th style="${thStyle}">${t('Total Cost')}</th>
                 </tr>
             </thead>
             <tbody>${rows}</tbody>
             <tfoot>
                 <tr>
-                    <td colspan="5" style="${summaryRowStyle}; text-align:left; color:#aaa;">Per unit cost (ask)</td>
+                    <td colspan="5" style="${summaryRowStyle}; text-align:left; color:#aaa;">${t('Per unit cost (ask)')}</td>
                     <td style="${summaryRowStyle}">${formatKMB(Math.round(perUnitCost))}</td>
                 </tr>
                 <tr>
-                    <td colspan="5" style="${summaryRowStyle}; text-align:left; color:#aaa;">Total spend</td>
+                    <td colspan="5" style="${summaryRowStyle}; text-align:left; color:#aaa;">${t('Total spend')}</td>
                     <td style="${summaryRowStyle}; color:#7ec87e;">${formatKMB(totalSpend)}</td>
                 </tr>
             </tfoot>
@@ -363,7 +364,7 @@ class BudgetCalculator {
 
         const input = document.createElement('input');
         input.type = 'text';
-        input.placeholder = 'Budget (e.g. 50m)';
+        input.placeholder = t('Budget (e.g. 50m)');
         input.style.cssText = `
             flex: 1;
             background: #2a2a2a;
@@ -376,7 +377,7 @@ class BudgetCalculator {
         `;
 
         const calcBtn = document.createElement('button');
-        calcBtn.textContent = 'Calculate';
+        calcBtn.textContent = t('Calculate');
         calcBtn.style.cssText = `
             background: linear-gradient(180deg, rgba(126,200,126,0.2) 0%, rgba(126,200,126,0.1) 100%);
             color: #e0e0e0;
@@ -397,7 +398,7 @@ class BudgetCalculator {
         });
 
         const detailsLink = document.createElement('span');
-        detailsLink.title = 'View last breakdown';
+        detailsLink.title = t('View last breakdown');
         detailsLink.style.cssText = 'font-size:14px; cursor:pointer; opacity:0.4; user-select:none;';
         detailsLink.textContent = '📋';
         detailsLink.style.display = 'none';
@@ -425,11 +426,11 @@ class BudgetCalculator {
 
             const result = findMaxUnits(actionHrid, budget);
             if (!result) {
-                calcBtn.textContent = 'No data';
-                const t = setTimeout(() => {
-                    calcBtn.textContent = 'Calculate';
+                calcBtn.textContent = t('No data');
+                const timeout = setTimeout(() => {
+                    calcBtn.textContent = t('Calculate');
                 }, 2000);
-                this.timerRegistry.registerTimeout(t);
+                this.timerRegistry.registerTimeout(timeout);
                 return;
             }
 

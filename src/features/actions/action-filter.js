@@ -6,6 +6,7 @@
  * Works alongside existing sorting and hide negative profit features.
  */
 
+import { t } from '../../core/i18n.js';
 import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
@@ -90,7 +91,7 @@ class ActionFilter {
         const input = document.createElement('input');
         input.id = 'mwi-action-filter';
         input.type = 'text';
-        input.placeholder = 'Filter actions...';
+        input.placeholder = t('Filter actions...');
         input.className = 'MuiInputBase-input'; // Use game's input class
         input.style.padding = '8px 12px';
         input.style.fontSize = '14px';
@@ -130,16 +131,16 @@ class ActionFilter {
         // Create sort toggle button
         const SORT_MODES = ['default', 'profit', 'xp', 'coinsPerXp'];
         const SORT_LABELS = {
-            default: 'Sort: Default',
-            profit: 'Sort: Profit',
-            xp: 'Sort: XP',
-            coinsPerXp: 'Sort: Profit/XP',
+            default: t('Sort: Default'),
+            profit: t('Sort: Profit'),
+            xp: t('Sort: XP'),
+            coinsPerXp: t('Sort: Profit/XP'),
         };
         const sortBtn = document.createElement('button');
         sortBtn.id = 'mwi-action-sort-toggle';
         const updateSortBtn = () => {
             const mode = actionPanelSort.getSortMode();
-            sortBtn.textContent = SORT_LABELS[mode] || 'Sort: Default';
+            sortBtn.textContent = SORT_LABELS[mode] || t('Sort: Default');
             const isActive = mode !== 'default';
             sortBtn.style.borderColor = isActive ? config.COLOR_ACCENT : 'rgba(255, 255, 255, 0.23)';
             sortBtn.style.color = isActive ? config.COLOR_ACCENT : 'inherit';
@@ -175,7 +176,7 @@ class ActionFilter {
         modeBtn.id = 'mwi-action-profit-mode';
         const updateModeBtn = () => {
             const mode = config.getSettingValue('profitCalc_pricingMode', 'hybrid');
-            modeBtn.textContent = `Mode: ${config.getPricingModeLabel(mode)}`;
+            modeBtn.textContent = t('Mode: {0}', config.getPricingModeLabel(mode));
         };
         modeBtn.style.cssText = `
             padding: 8px 12px;
@@ -205,11 +206,12 @@ class ActionFilter {
         // Create craft toggle button
         const craftBtn = document.createElement('button');
         craftBtn.id = 'mwi-action-craft-toggle';
-        craftBtn.title =
-            'When on, uses crafting cost for upgrade items if cheaper than market, and includes crafting time in profit/hr';
+        craftBtn.title = t(
+            'When on, uses crafting cost for upgrade items if cheaper than market, and includes crafting time in profit/hr'
+        );
         const updateCraftBtn = () => {
             const enabled = config.getSetting('profitCalc_craftUpgradeItems');
-            craftBtn.textContent = enabled ? 'Craft: On' : 'Craft: Off';
+            craftBtn.textContent = enabled ? t('Craft: On') : t('Craft: Off');
         };
         craftBtn.style.cssText = `
             padding: 8px 12px;
@@ -261,7 +263,7 @@ class ActionFilter {
                 message.style.padding = '40px 20px';
                 message.style.color = 'rgba(255, 255, 255, 0.6)';
                 message.style.fontSize = '16px';
-                message.textContent = 'No matching actions';
+                message.textContent = t('No matching actions');
 
                 // Insert after the title
                 titleElement.parentElement.insertBefore(message, titleElement.nextSibling);

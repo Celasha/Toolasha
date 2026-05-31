@@ -77,7 +77,7 @@ describe('calculateTaskEfficiencyRating', () => {
         });
 
         const result = calculateTaskEfficiencyRating(profitData, 'tokens');
-        expect(result).toEqual({ value: 30, unitLabel: 'tokens/hr', error: null });
+        expect(result).toEqual({ value: 30, unitLabel: '代币/时', error: null });
     });
 
     test('calculates gold efficiency per hour', () => {
@@ -89,7 +89,7 @@ describe('calculateTaskEfficiencyRating', () => {
         });
 
         const result = calculateTaskEfficiencyRating(profitData, 'gold');
-        expect(result).toEqual({ value: 600, unitLabel: 'gold/hr', error: null });
+        expect(result).toEqual({ value: 600, unitLabel: '金币/时', error: null });
     });
 
     test('returns warning when gold rewards are unavailable', () => {
@@ -100,7 +100,7 @@ describe('calculateTaskEfficiencyRating', () => {
         });
 
         const result = calculateTaskEfficiencyRating(profitData, 'gold');
-        expect(result).toEqual({ value: null, unitLabel: 'gold/hr', error: 'Market data not loaded' });
+        expect(result).toEqual({ value: null, unitLabel: '金币/时', error: 'Market data not loaded' });
     });
 
     test('returns warning when total profit is unavailable', () => {
@@ -111,7 +111,7 @@ describe('calculateTaskEfficiencyRating', () => {
         });
 
         const result = calculateTaskEfficiencyRating(profitData, 'gold');
-        expect(result).toEqual({ value: null, unitLabel: 'gold/hr', error: 'Missing price data' });
+        expect(result).toEqual({ value: null, unitLabel: '金币/时', error: '缺失价格数据' });
     });
 });
 

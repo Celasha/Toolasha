@@ -7,6 +7,7 @@ import dataManager from '../../core/data-manager.js';
 import storage from '../../core/storage.js';
 import domObserver from '../../core/dom-observer.js';
 import config from '../../core/config.js';
+import { t } from '../../core/i18n.js';
 import { formatKMB } from '../../utils/formatters.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 
@@ -169,12 +170,12 @@ function formatTimeLeft(ms) {
     const s = (n) => (n === 1 ? '' : 's');
     const parts = [];
 
-    if (w >= 1) parts.push(`${w} week${s(w)}`);
-    if (d >= 1) parts.push(`${d} day${s(d)}`);
-    if (ms < w1 && h >= 1) parts.push(`${h} hour${s(h)}`);
-    if (ms < 6 * h1 && m >= 1) parts.push(`${m} minute${s(m)}`);
+    if (w >= 1) parts.push(t('{0} week{1}', w, s(w)));
+    if (d >= 1) parts.push(t('{0} day{1}', d, s(d)));
+    if (ms < w1 && h >= 1) parts.push(t('{0} hour{1}', h, s(h)));
+    if (ms < 6 * h1 && m >= 1) parts.push(t('{0} minute{1}', m, s(m)));
 
-    return parts.join(' ') || '< 1 minute';
+    return parts.join(' ') || t('< 1 minute');
 }
 
 class XPTracker {
@@ -307,7 +308,7 @@ class XPTracker {
 
             if (rate <= 0) return;
 
-            const rateText = `${formatKMB(rate)} xp/h`;
+            const rateText = t('{0} xp/h', formatKMB(rate));
             const rateSpan = document.createElement('span');
             rateSpan.className = 'mwi-xp-rate';
             rateSpan.textContent = rateText;
@@ -420,7 +421,7 @@ class XPTracker {
         const div = document.createElement('div');
         div.className = 'mwi-xp-time-left';
         div.style.cssText = `font-size: 12px; color: ${config.COLOR_HOURS_TO_LEVEL}; margin-top: 4px;`;
-        div.innerHTML = `<span style="font-weight:700">${timeStr}</span> till next level`;
+        div.innerHTML = `<span style="font-weight:700">${timeStr}</span> ${t('till next level')}`;
 
         divs[3].insertAdjacentElement('afterend', div);
     }

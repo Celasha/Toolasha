@@ -5,6 +5,7 @@
  */
 
 import config from '../../core/config.js';
+import { t } from '../../core/i18n.js';
 import dataManager from '../../core/data-manager.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 
@@ -212,7 +213,7 @@ class ChatCommands {
                     this.openItemDictionary(itemHrid);
                 } else {
                     // Item not found in game data (best effort normalization was used)
-                    this.showError(`Item "${command.itemName}" not found in game data`);
+                    this.showError(t('Item "{0}" not found in game data', command.itemName));
                 }
                 break;
 
@@ -226,7 +227,7 @@ class ChatCommands {
                     this.openMarketplace(itemHrid, command.enhancementLevel ?? 0);
                 } else {
                     // Item not found in game data (best effort normalization was used)
-                    this.showError(`Item "${command.itemName}" not found in game data`);
+                    this.showError(t('Item "{0}" not found in game data', command.itemName));
                 }
                 break;
         }
@@ -315,7 +316,7 @@ class ChatCommands {
         });
 
         const matchList = properNames.slice(0, 5).join(', ') + (properNames.length > 5 ? '...' : '');
-        messageDiv.textContent = `Multiple items match: ${matchList}. Please be more specific.`;
+        messageDiv.textContent = t('Multiple items match: {0}. Please be more specific.', matchList);
 
         chatHistory.appendChild(messageDiv);
         chatHistory.scrollTop = chatHistory.scrollHeight;
@@ -368,7 +369,7 @@ class ChatCommands {
      */
     openItemDictionary(itemHrid) {
         if (!this.gameCore?.handleOpenItemDictionary) {
-            this.showError('Feature unavailable after 2/21/26 game update');
+            this.showError(t('Feature unavailable after 2/21/26 game update'));
             return;
         }
 
@@ -376,7 +377,7 @@ class ChatCommands {
             this.gameCore.handleOpenItemDictionary(itemHrid);
         } catch (error) {
             console.error('[Chat Commands] Failed to open Item Dictionary:', error);
-            this.showError('Failed to open Item Dictionary');
+            this.showError(t('Failed to open Item Dictionary'));
         }
     }
 
@@ -387,7 +388,7 @@ class ChatCommands {
      */
     openMarketplace(itemHrid, enhancementLevel = 0) {
         if (!this.gameCore?.handleGoToMarketplace) {
-            this.showError('Feature unavailable after 2/21/26 game update');
+            this.showError(t('Feature unavailable after 2/21/26 game update'));
             return;
         }
 
@@ -395,7 +396,7 @@ class ChatCommands {
             this.gameCore.handleGoToMarketplace(itemHrid, enhancementLevel);
         } catch (error) {
             console.error('[Chat Commands] Failed to open marketplace:', error);
-            this.showError('Failed to open marketplace');
+            this.showError(t('Failed to open marketplace'));
         }
     }
 

@@ -6,6 +6,7 @@
 
 import domObserver from '../../core/dom-observer.js';
 import config from '../../core/config.js';
+import { t } from '../../core/i18n.js';
 import marketAPI from '../../api/marketplace.js';
 import dataManager from '../../core/data-manager.js';
 import { calculateEnhancementPath } from '../enhancement/tooltip-enhancement.js';

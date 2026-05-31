@@ -4,6 +4,7 @@
  */
 
 import { calculateTimeToLevel, calculateLevelsAfterDays, getLevelFromExp } from './skill-calculator-logic.js';
+import { t } from '../../core/i18n.js';
 
 /**
  * Create the skill calculator UI
@@ -55,7 +56,7 @@ export function createCalculatorUI(container, characterSkills, expRates, levelEx
         row.style.cssText = 'display: flex; justify-content: flex-end; margin-bottom: 4px; align-items: center;';
 
         const label = document.createElement('span');
-        label.textContent = `${skillData[skillName].displayName} to level `;
+        label.textContent = `${t('{0} to level', skillData[skillName].displayName)} `;
         label.style.marginRight = '6px';
 
         const input = document.createElement('input');
@@ -88,7 +89,7 @@ export function createCalculatorUI(container, characterSkills, expRates, levelEx
     daysInput.style.cssText = 'width: 60px; padding: 2px 4px; margin-right: 6px;';
 
     const daysLabel = document.createElement('span');
-    daysLabel.textContent = 'days after';
+    daysLabel.textContent = t('days after');
 
     daysRow.appendChild(daysInput);
     daysRow.appendChild(daysLabel);
@@ -192,24 +193,24 @@ function updateCalculatorResults(
         const currentExp = skillData[activeSkill].currentExp;
         const expRate = expRates[activeSkill] || 0;
 
-        resultsHeader.textContent = `${skillData[activeSkill].displayName} to level ${targetLevel} takes:`;
+        resultsHeader.textContent = t('{0} to level {1} takes:', skillData[activeSkill].displayName, targetLevel);
 
         if (expRate === 0) {
-            resultsContent.innerHTML = '<div>No experience gain (not trained in simulation)</div>';
+            resultsContent.innerHTML = `<div>${t('No experience gain (not trained in simulation)')}</div>`;
         } else if (targetLevel <= currentLevel) {
-            resultsContent.innerHTML = '<div>Already achieved</div>';
+            resultsContent.innerHTML = `<div>${t('Already achieved')}</div>`;
         } else {
             const timeResult = calculateTimeToLevel(currentExp, targetLevel, expRate, levelExpTable);
             if (timeResult) {
                 resultsContent.innerHTML = `<div>[${timeResult.readable}]</div>`;
             } else {
-                resultsContent.innerHTML = '<div>Invalid target level</div>';
+                resultsContent.innerHTML = `<div>${t('Invalid target level')}</div>`;
             }
         }
     } else {
         // Calculate levels after X days
         const days = Number(daysInput.value);
-        resultsHeader.textContent = `After ${days} days:`;
+        resultsHeader.textContent = t('After {0} days:', days);
 
         const projected = calculateLevelsAfterDays(characterSkills, expRates, days, levelExpTable);
 
@@ -219,14 +220,14 @@ function updateCalculatorResults(
 
             for (const skillName of skillOrder) {
                 if (projected[skillName]) {
-                    html += `<div>${capitalize(skillName)} level ${projected[skillName].level} ${projected[skillName].percentage}%</div>`;
+                    html += `<div>${t('{0} level {1} {2}%', capitalize(skillName), projected[skillName].level, projected[skillName].percentage)}</div>`;
                 }
             }
 
-            html += `<div style="margin-top: 4px; font-weight: bold;">Combat level: ${projected.combatLevel.toFixed(1)}</div>`;
+            html += `<div style="margin-top: 4px; font-weight: bold;">${t('Combat level: {0}', projected.combatLevel.toFixed(1))}</div>`;
             resultsContent.innerHTML = html;
         } else {
-            resultsContent.innerHTML = '<div>Unable to calculate projection</div>';
+            resultsContent.innerHTML = `<div>${t('Unable to calculate projection')}</div>`;
         }
     }
 }

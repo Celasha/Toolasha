@@ -21,6 +21,7 @@ import { formatKMB } from '../../utils/formatters.js';
 import { calculateExpPerHour } from '../../utils/experience-calculator.js';
 import { getDrinkConcentration, parseArtisanBonus } from '../../utils/tea-parser.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
+import { t } from '../../core/i18n.js';
 
 /**
  * Action type constants for classification
@@ -240,7 +241,7 @@ class MaxProduceable {
             user-select: none;
             filter: grayscale(100%) brightness(0.7);
         `;
-        pinIcon.title = 'Pin this action to keep it visible';
+        pinIcon.title = t('Pin this action to keep it visible');
 
         // Pin hover effect
         pinIcon.addEventListener('mouseenter', () => {
@@ -484,25 +485,25 @@ class MaxProduceable {
 
         if (showMaxProduceable) {
             html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
-            html += `<span style="color: ${canProduceColor};">Can produce: ${maxCrafts.toLocaleString()}</span></div>`;
+            html += `<span style="color: ${canProduceColor};">${t('Can produce: {0}', maxCrafts.toLocaleString())}</span></div>`;
         }
 
         if (showProfit) {
             if (hasMissingPrices) {
                 html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
-                html += `<span data-stat="profit" style="color: ${config.SCRIPT_COLOR_ALERT};">Profit/hr: -- ⚠</span></div>`;
+                html += `<span data-stat="profit" style="color: ${config.SCRIPT_COLOR_ALERT};">${t('Profit/hr: -- ⚠')}</span></div>`;
             } else if (resolvedProfitPerHour !== null) {
                 const profitColor = resolvedProfitPerHour >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
                 const profitSign = resolvedProfitPerHour >= 0 ? '' : '-';
                 const estimatedNote = outputPriceEstimated ? ' ⚠' : '';
                 html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
-                html += `<span data-stat="profit" style="color: ${profitColor};">Profit/hr: ${profitSign}${formatKMB(Math.abs(resolvedProfitPerHour))}${estimatedNote}</span></div>`;
+                html += `<span data-stat="profit" style="color: ${profitColor};">${t('Profit/hr: {0}', `${profitSign}${formatKMB(Math.abs(resolvedProfitPerHour))}${estimatedNote}`)}</span></div>`;
             }
         }
 
         if (showExp && expPerHour !== null && expPerHour > 0) {
             html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
-            html += `<span data-stat="exp" style="color: #fff;">Exp/hr: ${formatKMB(expPerHour)}</span></div>`;
+            html += `<span data-stat="exp" style="color: #fff;">${t('Exp/hr: {0}', formatKMB(expPerHour))}</span></div>`;
         }
 
         if (
@@ -517,7 +518,7 @@ class MaxProduceable {
             const efficiencyColor = coinsPerXp >= 0 ? config.COLOR_INFO : config.COLOR_WARNING;
             const efficiencySign = coinsPerXp >= 0 ? '' : '-';
             html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
-            html += `<span data-stat="overall" style="color: ${efficiencyColor};">Profit/XP: ${efficiencySign}${formatKMB(Math.abs(coinsPerXp))}</span></div>`;
+            html += `<span data-stat="overall" style="color: ${efficiencyColor};">${t('Profit/XP: {0}', `${efficiencySign}${formatKMB(Math.abs(coinsPerXp))}`)}</span></div>`;
         }
 
         data.displayElement.innerHTML = html;
@@ -773,7 +774,7 @@ class MaxProduceable {
             pinIcon.style.filter = 'grayscale(100%) brightness(0.7)';
             pinIcon.style.transform = 'scale(1)';
         }
-        pinIcon.title = isPinned ? 'Unpin this action' : 'Pin this action to keep it visible';
+        pinIcon.title = isPinned ? t('Unpin this action') : t('Pin this action to keep it visible');
     }
 
     /**

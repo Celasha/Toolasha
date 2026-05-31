@@ -21,6 +21,9 @@ import performanceMonitor from '../utils/performance-monitor.js';
 // API modules
 import marketAPI from '../api/marketplace.js';
 
+// i18n - register Chinese translations
+import '../core/i18n-zh-CN.js';
+
 // Export to global namespace
 const toolashaRoot = window.Toolasha || {};
 window.Toolasha = toolashaRoot;

@@ -4,6 +4,7 @@
  * the Guild Overview, Members, and Guild Leaderboard tabs.
  */
 
+import { t } from '../../core/i18n.js';
 import domObserver from '../../core/dom-observer.js';
 import webSocketHook from '../../core/websocket.js';
 import config from '../../core/config.js';
@@ -35,12 +36,12 @@ function formatTimeLeft(ms) {
     const s = (n) => (n === 1 ? '' : 's');
     const parts = [];
 
-    if (w >= 1) parts.push(`${w} week${s(w)}`);
-    if (d >= 1) parts.push(`${d} day${s(d)}`);
-    if (ms < w1 && h >= 1) parts.push(`${h} hour${s(h)}`);
-    if (ms < 6 * h1 && m >= 1) parts.push(`${m} minute${s(m)}`);
+    if (w >= 1) parts.push(`${w} ${t('week')}${s(w)}`);
+    if (d >= 1) parts.push(`${d} ${t('day')}${s(d)}`);
+    if (ms < w1 && h >= 1) parts.push(`${h} ${t('hour')}${s(h)}`);
+    if (ms < 6 * h1 && m >= 1) parts.push(`${m} ${t('minute')}${s(m)}`);
 
-    return parts.join(' ') || '< 1 minute';
+    return parts.join(' ') || t('< 1 minute');
 }
 
 /**
@@ -72,7 +73,7 @@ function rankBadge(rank) {
  * @returns {string} HTML
  */
 function buildChart(chart) {
-    if (chart.length === 0) return '<div style="color: var(--color-disabled);">Not enough data for chart</div>';
+    if (chart.length === 0) return `<div style="color: var(--color-disabled);">${t('Not enough data for chart')}</div>`;
 
     // Truncate outliers at 2x the median
     let maxXPH = 0;
@@ -417,7 +418,7 @@ class GuildXPDisplay {
         const stats = guildXPTracker.getGuildStats(guildName);
 
         // XP/h stats row
-        const rateLabel = stats.lastHourXPH > 0 ? 'Last hour XP/h' : 'Last XP/h';
+        const rateLabel = stats.lastHourXPH > 0 ? t('Last hour XP/h') : t('Last XP/h');
         const rateValue = stats.lastHourXPH > 0 ? stats.lastHourXPH : stats.lastXPH;
 
         const statsHTML = `
@@ -427,7 +428,7 @@ class GuildXPDisplay {
                     <div class="GuildPanel_value__Hm2I9">${fNum(rateValue)}</div>
                 </div>
                 <div class="GuildPanel_dataBlock__3qVhK">
-                    <div class="GuildPanel_label__-A63g">Last day XP/h</div>
+                    <div class="GuildPanel_label__-A63g">${t('Last day XP/h')}</div>
                     <div class="GuildPanel_value__Hm2I9">${fNum(stats.lastDayXPH)}</div>
                 </div>
             </div>`;
@@ -436,7 +437,7 @@ class GuildXPDisplay {
         const chartHTML = `
             <div class="GuildPanel_dataBlockGroup__1d2rR ${CSS_PREFIX}" style="grid-column: 1 / 3; max-width: none;">
                 <div class="GuildPanel_dataBlock__3qVhK" style="height: 240px;">
-                    <div class="GuildPanel_label__-A63g">Last week XP/h</div>
+                    <div class="GuildPanel_label__-A63g">${t('Last week XP/h')}</div>
                     ${buildChart(stats.chart)}
                 </div>
             </div>`;
@@ -537,7 +538,7 @@ class GuildXPDisplay {
 
         // Game Mode column
         addColumn(tableEl, {
-            name: 'Game Mode',
+            name: t('Game Mode'),
             insertAfter,
             data: allStats.map((s) => s.gameMode),
             format: (v) => gameModes[v] || v || '',
@@ -548,7 +549,7 @@ class GuildXPDisplay {
 
         // Joined column
         addColumn(tableEl, {
-            name: 'Joined',
+            name: t('Joined'),
             insertAfter: insertAfter + 1,
             data: allStats.map((s) => s.joinTime),
             format: (v) => (v ? new Date(v).toLocaleDateString() : ''),
@@ -559,7 +560,7 @@ class GuildXPDisplay {
 
         // Last XP/h column
         addColumn(tableEl, {
-            name: 'Last XP/h',
+            name: t('Last XP/h'),
             insertAfter: insertAfter + 2,
             data: allStats.map((s) => s.lastXPH),
             format: (v, i) => {
@@ -573,7 +574,7 @@ class GuildXPDisplay {
 
         // Last day XP/h column
         addColumn(tableEl, {
-            name: 'Last day XP/h',
+            name: t('Last day XP/h'),
             insertAfter: insertAfter + 3,
             data: allStats.map((s) => s.lastDayXPH),
             format: (v, i) => {
@@ -750,7 +751,7 @@ class GuildXPDisplay {
 
         // Last XP/h
         addColumn(tableEl, {
-            name: 'Last XP/h',
+            name: t('Last XP/h'),
             insertAfter,
             data: allStats.map((s) => s.lastXPH),
             format: (v, i) => {
@@ -765,7 +766,7 @@ class GuildXPDisplay {
 
         // Last day XP/h
         addColumn(tableEl, {
-            name: 'Last day XP/h',
+            name: t('Last day XP/h'),
             insertAfter: insertAfter + 1,
             data: allStats.map((s) => s.lastDayXPH),
             format: (v, i) => {

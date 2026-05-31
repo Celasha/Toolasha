@@ -3,6 +3,7 @@
  * Tracks dungeon progress in real-time using WebSocket messages
  */
 
+import { t } from '../../core/i18n.js';
 import webSocketHook from '../../core/websocket.js';
 import dungeonTrackerStorage from './dungeon-tracker-storage.js';
 import dataManager from '../../core/data-manager.js';
@@ -1113,7 +1114,7 @@ class DungeonTracker {
 
                 // Get dungeon name from HRID
                 const dungeonInfo = dungeonTrackerStorage.getDungeonInfo(completedRunData.dungeonHrid);
-                const dungeonName = dungeonInfo ? dungeonInfo.name : 'Unknown';
+                const dungeonName = dungeonInfo ? dungeonInfo.name : t('Unknown');
 
                 // Build run object in unified format
                 const runToSave = {
@@ -1204,7 +1205,7 @@ class DungeonTracker {
             dungeonHrid: this.currentRun.dungeonHrid,
             dungeonName: this.currentRun.dungeonHrid
                 ? dungeonTrackerStorage.getDungeonInfo(this.currentRun.dungeonHrid)?.name
-                : 'Unknown',
+                : t('Unknown'),
             tier: this.currentRun.tier,
             currentWave: this.currentRun.currentWave, // Already 1-indexed from new_battle message
             maxWaves: this.currentRun.maxWaves,
@@ -1472,7 +1473,7 @@ class DungeonTracker {
                         .find((e) => e.type === 'battle_start');
 
                     // Use battle_ended if available, otherwise fall back to battle_start
-                    const dungeonName = battleEnded?.dungeonName || battleStart?.dungeonName || 'Unknown';
+                    const dungeonName = battleEnded?.dungeonName || battleStart?.dungeonName || t('Unknown');
 
                     // Get team key
                     const teamKey = dungeonTrackerStorage.getTeamKey(event.team);

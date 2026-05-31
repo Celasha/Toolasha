@@ -11,6 +11,7 @@ import marketAPI from '../../api/marketplace.js';
 import storage from '../../core/storage.js';
 import { formatLargeNumber, formatPercentage, timeReadable } from '../../utils/formatters.js';
 import { getEnhancementMultiplier } from '../../utils/enhancement-multipliers.js';
+import { t } from '../../core/i18n.js';
 
 const PHILO_HRID = '/items/philosophers_stone';
 const PRIME_CATALYST_HRID = '/items/prime_catalyst';
@@ -80,7 +81,7 @@ class PhiloCalculator {
 
             const button = document.createElement('button');
             button.className = 'mwi-philo-calc-button';
-            button.textContent = 'Philo Gamba';
+            button.textContent = t('Philo Gamba');
             button.style.cssText = `
                 margin: 10px;
                 padding: 8px 16px;
@@ -509,7 +510,7 @@ class PhiloCalculator {
             border-bottom: 1px solid #444;
         `;
         header.innerHTML = `
-            <span style="font-size: 18px; font-weight: bold;">Philosopher's Stone Calculator</span>
+            <span style="font-size: 18px; font-weight: bold;">${t("Philosopher's Stone Calculator")}</span>
         `;
 
         const closeBtn = document.createElement('button');
@@ -585,7 +586,7 @@ class PhiloCalculator {
         // Philo price input
         const philoLabel = document.createElement('label');
         philoLabel.style.cssText = 'display: flex; align-items: center; gap: 6px; font-size: 13px;';
-        philoLabel.textContent = 'Philo Price: ';
+        philoLabel.textContent = t('Philo Price: ');
         const philoInput = document.createElement('input');
         philoInput.type = 'text';
         philoInput.value = this.philoPrice.toLocaleString();
@@ -610,7 +611,7 @@ class PhiloCalculator {
         // Catalyst price input
         const catLabel = document.createElement('label');
         catLabel.style.cssText = 'display: flex; align-items: center; gap: 6px; font-size: 13px;';
-        catLabel.textContent = 'Catalyst Price: ';
+        catLabel.textContent = t('Catalyst Price: ');
         const catInput = document.createElement('input');
         catInput.type = 'text';
         catInput.value = this.catalystPrice.toLocaleString();
@@ -676,7 +677,7 @@ class PhiloCalculator {
         // Drink Concentration Dropdown
         const drinkLabel = document.createElement('label');
         drinkLabel.style.cssText = 'display: flex; align-items: center; gap: 6px; font-size: 13px;';
-        drinkLabel.textContent = 'Drink Concentration: ';
+        drinkLabel.textContent = t('Drink Concentration: ');
         const drinkSelect = document.createElement('select');
         drinkSelect.style.cssText = `
             padding: 4px 8px;
@@ -727,10 +728,10 @@ class PhiloCalculator {
         // Filter label
         const filterLabel = document.createElement('label');
         filterLabel.style.cssText = 'display: flex; align-items: center; gap: 6px; font-size: 13px;';
-        filterLabel.textContent = 'Filter: ';
+        filterLabel.textContent = t('Filter: ');
         const filterInput = document.createElement('input');
         filterInput.type = 'text';
-        filterInput.placeholder = 'Item name...';
+        filterInput.placeholder = t('Item name...');
         filterInput.value = this.filterText;
         filterInput.style.cssText = `
             width: 140px;
@@ -751,7 +752,7 @@ class PhiloCalculator {
 
         // Refresh prices button
         const refreshBtn = document.createElement('button');
-        refreshBtn.textContent = 'Refresh Prices';
+        refreshBtn.textContent = t('Refresh Prices');
         refreshBtn.style.cssText = `
             padding: 4px 12px;
             background: #4a90e2;
@@ -769,7 +770,7 @@ class PhiloCalculator {
         });
         refreshBtn.addEventListener('click', async () => {
             refreshBtn.disabled = true;
-            refreshBtn.textContent = 'Refreshing...';
+            refreshBtn.textContent = t('Refreshing...');
             refreshBtn.style.opacity = '0.6';
             try {
                 await marketAPI.fetch(true);
@@ -783,10 +784,9 @@ class PhiloCalculator {
                 console.error('[PhiloCalculator] Failed to refresh prices:', error);
             }
             refreshBtn.disabled = false;
-            refreshBtn.textContent = 'Refresh Prices';
+            refreshBtn.textContent = t('Refresh Prices');
             refreshBtn.style.opacity = '1';
         });
-        container.appendChild(refreshBtn);
 
         return container;
     }

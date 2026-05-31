@@ -5,6 +5,7 @@
  */
 
 import config from '../../core/config.js';
+import { t } from '../../core/i18n.js';
 import dataManager from '../../core/data-manager.js';
 import webSocketHook from '../../core/websocket.js';
 import domObserver from '../../core/dom-observer.js';
@@ -62,7 +63,7 @@ const SKILL_HRID_TO_NAME = {
 function resolveSystemMessage(messageKey, meta) {
     if (messageKey === 'systemChatMessage.characterLeveledUp') {
         const skillName = SKILL_HRID_TO_NAME[meta.skillHrid] || meta.skillHrid.split('/').pop().replace(/_/g, ' ');
-        return `🎉 ${meta.name} reached ${skillName} ${meta.level}!`;
+        return t('🎉 {0} reached {1} {2}!', meta.name, skillName, meta.level);
     }
     return null;
 }
@@ -79,7 +80,7 @@ function resolveLink(link) {
         const enhancement = link.itemEnhancementLevel > 0 ? ` +${link.itemEnhancementLevel}` : '';
         const count = link.itemCount > 1 ? ` ×${link.itemCount}` : '';
         const price = formatKMB(link.price);
-        const side = link.isSell ? 'Sell' : 'Buy';
+        const side = link.isSell ? t('Sell') : t('Buy');
         return `[${itemName}${enhancement}${count} @ ${price} ${side}]`;
     }
     if (link.linkType === '/chat_link_types/item') {
@@ -219,7 +220,7 @@ class PopOutChat {
         const btn = document.createElement('button');
         btn.setAttribute('data-mwi-popout-chat', 'true');
         btn.textContent = '⧉';
-        btn.title = 'Pop out chat';
+        btn.title = t('Pop out chat');
         btn.style.cssText = `
             padding: 2px 6px;
             font-size: 13px;
@@ -434,7 +435,7 @@ class PopOutChat {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>MWI Chat</title>
+<title>${t('MWI Chat')}</title>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
@@ -584,11 +585,11 @@ class PopOutChat {
 </head>
 <body>
 <div id="topbar">
-  <span id="topbar-title">MWI Chat</span>
+  <span id="topbar-title">${t('MWI Chat')}</span>
   <span id="topbar-name"></span>
-  <button id="add-pane-btn">+ Pane</button>
-  <label id="vertical-label"><input type="checkbox" id="vertical-toggle"> Vertical</label>
-  <div id="disconnect-banner">⚠ Disconnected from game tab</div>
+  <button id="add-pane-btn">${t('+ Pane')}</button>
+  <label id="vertical-label"><input type="checkbox" id="vertical-toggle"> ${t('Vertical')}</label>
+  <div id="disconnect-banner">${t('⚠ Disconnected from game tab')}</div>
 </div>
 <div id="panes"></div>
 
@@ -602,12 +603,12 @@ class PopOutChat {
   const STORAGE_KEY = 'mwi-chat-popout-layout';
 
   const FILTER_PRESETS = [
-    { value: 'none',         label: 'No filter',      regex: null },
-    { value: 'enhanced_buy', label: 'Enhanced Buy',   regex: /\\+\\d+.*Buy\\]/i },
-    { value: 'enhanced_sell',label: 'Enhanced Sell',  regex: /\\+\\d+.*Sell\\]/i },
-    { value: 'buy_only',     label: 'Buy only',       regex: /Buy\\]/i },
-    { value: 'sell_only',    label: 'Sell only',      regex: /Sell\\]/i },
-    { value: 'custom',       label: 'Custom\u2026',   regex: null },
+    { value: 'none',         label: '${t('No filter')}',      regex: null },
+    { value: 'enhanced_buy', label: '${t('Enhanced Buy')}',   regex: /\\+\\d+.*Buy\\]/i },
+    { value: 'enhanced_sell',label: '${t('Enhanced Sell')}',  regex: /\\+\\d+.*Sell\\]/i },
+    { value: 'buy_only',     label: '${t('Buy only')}',       regex: /Buy\\]/i },
+    { value: 'sell_only',    label: '${t('Sell only')}',      regex: /Sell\\]/i },
+    { value: 'custom',       label: '${t('Custom\u2026')}',   regex: null },
   ];
 
   function buildCustomRegex(text) {
@@ -705,7 +706,7 @@ class PopOutChat {
     const dragHandle = document.createElement('span');
     dragHandle.className = 'pane-drag-handle';
     dragHandle.textContent = '⠿';
-    dragHandle.title = 'Drag to reorder';
+    dragHandle.title = '${t('Drag to reorder')}';
 
     const select = document.createElement('select');
     select.className = 'pane-channel-select';
@@ -714,7 +715,7 @@ class PopOutChat {
     const closeBtn = document.createElement('button');
     closeBtn.className = 'pane-close-btn';
     closeBtn.textContent = '✕';
-    closeBtn.title = 'Close pane';
+    closeBtn.title = '${t('Close pane')}';
     closeBtn.addEventListener('click', () => removePane(id));
 
     header.appendChild(dragHandle);
@@ -738,7 +739,7 @@ class PopOutChat {
     const filterInput = document.createElement('input');
     filterInput.className = 'pane-filter-input';
     filterInput.type = 'text';
-    filterInput.placeholder = 'text or /regex/';
+    filterInput.placeholder = '${t('text or /regex/')}';
     filterInput.value = savedFilterCustom || '';
     filterInput.style.display = filterSelect.value === 'custom' ? '' : 'none';
 
@@ -756,12 +757,12 @@ class PopOutChat {
     const input = document.createElement('input');
     input.type = 'text';
     input.className = 'pane-input';
-    input.placeholder = 'Type a message...';
+    input.placeholder = '${t('Type a message...')}';
     input.maxLength = 500;
 
     const sendBtn = document.createElement('button');
     sendBtn.className = 'pane-send-btn';
-    sendBtn.textContent = 'SEND';
+    sendBtn.textContent = '${t('SEND')}';
 
     const doSend = () => {
       const text = input.value.trim();

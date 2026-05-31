@@ -8,6 +8,7 @@
  * Ported from Ranged Way Idle's estimateQueueLength feature
  */
 
+import { t } from '../../core/i18n.js';
 import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
 import config from '../../core/config.js';
@@ -213,9 +214,12 @@ class QueueLengthEstimator {
 
         // Add tooltip
         if (isEstimated) {
-            displayElement.title = `Estimated total queue depth (extrapolated from ${listings.length} visible orders)`;
+            displayElement.title = t(
+                'Estimated total queue depth (extrapolated from {0} visible orders)',
+                listings.length
+            );
         } else {
-            displayElement.title = `Total quantity at best ${isAsk ? 'sell' : 'buy'} price`;
+            displayElement.title = t('Total quantity at best {0} price', isAsk ? 'sell' : 'buy');
         }
 
         // Insert into button container

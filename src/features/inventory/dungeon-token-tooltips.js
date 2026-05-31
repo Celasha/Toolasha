@@ -4,6 +4,7 @@
  * Supports dungeon tokens, task tokens, labyrinth tokens, seals, and cowbells.
  */
 
+import { t } from '../../core/i18n.js';
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
@@ -147,7 +148,7 @@ class DungeonTokenTooltips {
         const shopItems = this._getDungeonShopItems(tokenHrid);
         if (!shopItems || shopItems.length === 0) return;
 
-        this._injectShopTable(tooltipElement, shopItems, 'Token Shop Value:', 'Gold/Token', isCollectionTooltip);
+        this._injectShopTable(tooltipElement, shopItems, t('Token Shop Value:'), t('Gold/Token'), isCollectionTooltip);
         dom.fixTooltipOverflow(tooltipElement);
     }
 
@@ -159,7 +160,7 @@ class DungeonTokenTooltips {
         const shopItems = this._getTaskShopItems();
         if (!shopItems || shopItems.length === 0) return;
 
-        this._injectShopTable(tooltipElement, shopItems, 'Task Shop Value:', 'Gold/Token', isCollectionTooltip);
+        this._injectShopTable(tooltipElement, shopItems, t('Task Shop Value:'), t('Gold/Token'), isCollectionTooltip);
         dom.fixTooltipOverflow(tooltipElement);
     }
 
@@ -170,7 +171,13 @@ class DungeonTokenTooltips {
         const shopItems = this._getLabyrinthShopItems();
         if (!shopItems || shopItems.length === 0) return;
 
-        this._injectShopTable(tooltipElement, shopItems, 'Labyrinth Shop Value:', 'Gold/Token', isCollectionTooltip);
+        this._injectShopTable(
+            tooltipElement,
+            shopItems,
+            t('Labyrinth Shop Value:'),
+            t('Gold/Token'),
+            isCollectionTooltip
+        );
         dom.fixTooltipOverflow(tooltipElement);
     }
 
@@ -264,7 +271,7 @@ class DungeonTokenTooltips {
                 if (!askPrice || askPrice <= 0) return null;
 
                 return {
-                    name: itemDetails?.name || 'Unknown Item',
+                    name: itemDetails?.name || t('Unknown Item'),
                     cost: tokenCost,
                     askPrice,
                     goldPerToken: askPrice / tokenCost,
@@ -313,7 +320,7 @@ class DungeonTokenTooltips {
                 if (itemValue <= 0) return null;
 
                 return {
-                    name: itemDetails?.name || 'Unknown Item',
+                    name: itemDetails?.name || t('Unknown Item'),
                     cost: tokenCost,
                     askPrice: itemValue,
                     goldPerToken: itemValue / tokenCost,
@@ -350,7 +357,7 @@ class DungeonTokenTooltips {
                 const totalValue = askPrice * outputCount;
 
                 return {
-                    name: itemDetails?.name || 'Unknown Item',
+                    name: itemDetails?.name || t('Unknown Item'),
                     cost: tokenCost,
                     askPrice: totalValue,
                     goldPerToken: totalValue / tokenCost,

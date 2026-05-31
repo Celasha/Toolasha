@@ -9,6 +9,7 @@ import { constructExportObject } from './combat-sim-export.js';
 import config from '../../core/config.js';
 import storage from '../../core/storage.js';
 import domObserver from '../../core/dom-observer.js';
+import { t } from '../../core/i18n.js';
 
 /**
  * Initialize profile export button
@@ -65,7 +66,7 @@ function injectExportButton(container) {
 
     const button = document.createElement('button');
     button.id = 'toolasha-profile-export-button';
-    button.textContent = 'Export to Clipboard';
+    button.textContent = t('Export Profile');
     button.style.cssText = `
         border-radius: 5px;
         height: 30px;
@@ -110,12 +111,14 @@ async function handleExport(button) {
         const exportData = await constructExportObject(currentProfileId, true);
 
         if (!exportData) {
-            button.textContent = '✗ No Data';
+            button.textContent = '\u2717 ' + t('No Data');
             button.style.backgroundColor = '#dc3545'; // Red
             setTimeout(() => resetButton(button), 3000);
             console.error('[Profile Export] No export data available');
             alert(
-                "No character data found. Please:\n1. Refresh the game page\n2. Wait for it to fully load\n3. Try again\n\nIf viewing another player's profile, make sure you opened it in-game first."
+                t(
+                    "No character data found. Please:\n1. Refresh the game page\n2. Wait for it to fully load\n3. Try again\n\nIf viewing another player's profile, make sure you opened it in-game first."
+                )
             );
             return;
         }
@@ -125,22 +128,22 @@ async function handleExport(button) {
         await navigator.clipboard.writeText(exportString);
 
         // Success feedback
-        button.textContent = '✓ Copied';
+        button.textContent = '\u2713 ' + t('Copied');
         button.style.backgroundColor = '#28a745'; // Green
         setTimeout(() => resetButton(button), 3000);
     } catch (error) {
         console.error('[Profile Export] Export failed:', error);
 
         // Error feedback
-        button.textContent = '✗ Failed';
+        button.textContent = '\u2717 ' + t('Failed');
         button.style.backgroundColor = '#dc3545'; // Red
         setTimeout(() => resetButton(button), 3000);
 
         // Show user-friendly error
         if (error.name === 'NotAllowedError') {
-            alert('Clipboard access denied. Please allow clipboard permissions for this site.');
+            alert(t('Clipboard access denied. Please allow clipboard permissions for this site.'));
         } else {
-            alert('Export failed: ' + error.message);
+            alert(t('Export failed: ') + error.message);
         }
     }
 }
@@ -150,7 +153,7 @@ async function handleExport(button) {
  * @param {Element} button - Button element
  */
 function resetButton(button) {
-    button.textContent = 'Export to Clipboard';
+    button.textContent = t('Export Profile');
     button.style.backgroundColor = config.COLOR_ACCENT;
 }
 

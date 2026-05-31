@@ -6,6 +6,7 @@
  * - Production actions (Brewing, Cooking, Crafting, Tailoring, Cheesesmithing)
  */
 
+import { t } from '../../core/i18n.js';
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import { calculateGatheringProfit } from './gathering-profit.js';
@@ -120,7 +121,7 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
     const costs = Math.round(profitData.drinkCostPerHour + marketTax);
     const summary = formatMissingLabel(
         netMissing,
-        `${formatLargeNumber(profit)}/hr, ${formatLargeNumber(profitPerDay)}/day | Total profit: 0`
+        `${formatLargeNumber(profit)}/hr, ${formatLargeNumber(profitPerDay)}/day | ${t('Total profit: 0')}`
     );
 
     const detailsContent = document.createElement('div');
@@ -128,7 +129,7 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
     // Revenue Section
     const revenueDiv = document.createElement('div');
     const revenueLabel = formatMissingLabel(revenueMissing, `${formatLargeNumber(revenue)}/hr`);
-    revenueDiv.innerHTML = `<div style="font-weight: 500; color: ${config.COLOR_TOOLTIP_PROFIT}; margin-bottom: 4px;">Revenue: ${revenueLabel}</div>`;
+    revenueDiv.innerHTML = `<div style="font-weight: 500; color: ${config.COLOR_TOOLTIP_PROFIT}; margin-bottom: 4px;">${t('Revenue: ') + revenueLabel}</div>`;
 
     // Primary Outputs subsection
     const primaryDropsContent = document.createElement('div');
@@ -282,7 +283,7 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
     // Costs Section
     const costsDiv = document.createElement('div');
     const costsLabel = formatMissingLabel(costsMissing, `${formatLargeNumber(costs)}/hr`);
-    costsDiv.innerHTML = `<div style="font-weight: 500; color: ${config.COLOR_TOOLTIP_LOSS}; margin-top: 12px; margin-bottom: 4px;">Costs: ${costsLabel}</div>`;
+    costsDiv.innerHTML = `<div style="font-weight: 500; color: ${config.COLOR_TOOLTIP_LOSS}; margin-top: 12px; margin-bottom: 4px;">${t('Costs: ') + costsLabel}</div>`;
 
     // Drink Costs subsection
     const drinkCostsContent = document.createElement('div');
@@ -314,13 +315,13 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
     const marketTaxLine = document.createElement('div');
     marketTaxLine.style.marginLeft = '8px';
     const marketTaxLabel = marketTaxMissing ? '-- ⚠' : `${formatLargeNumber(marketTax)}/hr`;
-    marketTaxLine.textContent = `• Market Tax: 2% of revenue → ${marketTaxLabel}`;
+    marketTaxLine.textContent = t('• Market Tax: 2% of revenue → {0}', marketTaxLabel);
     marketTaxContent.appendChild(marketTaxLine);
 
     const marketTaxHeader = marketTaxMissing ? '-- ⚠' : `${formatLargeNumber(marketTax)}/hr`;
     const marketTaxSection = createCollapsibleSection(
         '',
-        `Market Tax: ${marketTaxHeader} (2%)`,
+        t('Market Tax: {0} (2%)', marketTaxHeader),
         null,
         marketTaxContent,
         false,
@@ -441,7 +442,7 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
         }
         const modifiersSection = createCollapsibleSection(
             '⚙️',
-            'Modifiers',
+            t('Modifiers'),
             modifierSummaryParts.join(' | '),
             modifierContent,
             false,
@@ -453,7 +454,7 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
     // Create "Detailed Breakdown" collapsible
     const topLevelContent = document.createElement('div');
     topLevelContent.innerHTML = `
-        <div style="margin-bottom: 4px;">Actions: ${profitData.actionsPerHour.toFixed(2)}/hr | Efficiency: +${profitData.totalEfficiency.toFixed(2)}%</div>
+        <div style="margin-bottom: 4px;">${t('Actions: {0}/hr | Efficiency: +{1}%', profitData.actionsPerHour.toFixed(2), profitData.totalEfficiency.toFixed(2))}</div>
     `;
 
     // Add Net Profit line at top level (always visible when Profitability is expanded)
@@ -465,8 +466,8 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
         margin-bottom: 8px;
     `;
     netProfitLine.textContent = netMissing
-        ? 'Net Profit: -- ⚠'
-        : `Net Profit: ${formatLargeNumber(profit)}/hr, ${formatLargeNumber(profitPerDay)}/day`;
+        ? t('Net Profit: -- ⚠')
+        : t('Net Profit: {0}/hr, {1}/day', formatLargeNumber(profit), formatLargeNumber(profitPerDay));
     topLevelContent.appendChild(netProfitLine);
 
     // Add pricing mode label
@@ -483,14 +484,15 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
         ? loadoutSnapshot.getSnapshotInfoForSkill(gatheringActionType)
         : null;
     const gatheringLoadoutLabel = gatheringSnapshotInfo
-        ? `${gatheringSnapshotInfo.name}${gatheringSnapshotInfo.isDefault ? ' (Default)' : ''}`
-        : 'Equipped';
-    modeDiv.textContent = `Pricing Mode: ${modeLabel}  •  Loadout: ${gatheringLoadoutLabel}`;
+        ? `${gatheringSnapshotInfo.name}${gatheringSnapshotInfo.isDefault ? t(' (Default)') : ''}`
+        : t('Equipped');
+    modeDiv.textContent = t('Pricing Mode: ') + modeLabel + ' • ' + t('Loadout: ') + gatheringLoadoutLabel;
+
     topLevelContent.appendChild(modeDiv);
 
     const detailedBreakdownSection = createCollapsibleSection(
         '📊',
-        'Per hour breakdown',
+        t('Per hour breakdown'),
         null,
         detailsContent,
         false,
@@ -531,7 +533,7 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
     }
 
     // Create main profit section
-    const profitSection = createCollapsibleSection('💰', 'Profitability', summary, topLevelContent, false, 0);
+    const profitSection = createCollapsibleSection('💰', t('Profitability'), summary, topLevelContent, false, 0);
     profitSection.id = 'mwi-foraging-profit';
     profitSection.setAttribute('data-mwi-profit-display', 'true');
     profitSection.dataset.mwiActionHrid = actionHrid;
@@ -549,13 +551,13 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
 
         const updateSummary = (newValue) => {
             if (netMissing) {
-                profitSummaryDiv.textContent = `${baseSummary} | Total profit: -- ⚠`;
+                profitSummaryDiv.textContent = `${baseSummary} | ${t('Total profit: -- ⚠')}`;
                 return;
             }
             const inputValue = inputField.value;
 
             if (inputValue === '∞') {
-                profitSummaryDiv.textContent = `${baseSummary} | Total profit: ∞`;
+                profitSummaryDiv.textContent = `${baseSummary} | ${t('Total profit: {0}', t('[infinite]'))}`;
             } else if (newValue > 0) {
                 const totals = calculateGatheringActionTotalsFromBase({
                     actionsCount: newValue,
@@ -568,9 +570,9 @@ export async function displayGatheringProfit(panel, actionHrid, dropTableSelecto
                     efficiencyMultiplier: profitData.efficiencyMultiplier || 1,
                 });
                 const totalProfit = Math.round(totals.totalProfit);
-                profitSummaryDiv.textContent = `${baseSummary} | Total profit: ${formatLargeNumber(totalProfit)}`;
+                profitSummaryDiv.textContent = `${baseSummary} | ${t('Total profit: {0}', formatLargeNumber(totalProfit))}`;
             } else {
-                profitSummaryDiv.textContent = `${baseSummary} | Total profit: 0`;
+                profitSummaryDiv.textContent = `${baseSummary} | ${t('Total profit: 0')}`;
             }
         };
 
@@ -733,7 +735,7 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
         : revenueEstimated
           ? `${formatLargeNumber(revenue)}/hr ⚠`
           : `${formatLargeNumber(revenue)}/hr`;
-    revenueDiv.innerHTML = `<div style="font-weight: 500; color: ${config.COLOR_TOOLTIP_PROFIT}; margin-bottom: 4px;">Revenue: ${revenueLabel}</div>`;
+    revenueDiv.innerHTML = `<div style="font-weight: 500; color: ${config.COLOR_TOOLTIP_PROFIT}; margin-bottom: 4px;">${t('Revenue: ') + revenueLabel}</div>`;
 
     // Primary Outputs subsection
     const primaryOutputContent = document.createElement('div');
@@ -847,7 +849,7 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
         : costsEstimated
           ? `${formatLargeNumber(costs)}/hr ⚠`
           : `${formatLargeNumber(costs)}/hr`;
-    costsDiv.innerHTML = `<div style="font-weight: 500; color: ${config.COLOR_TOOLTIP_LOSS}; margin-top: 12px; margin-bottom: 4px;">Costs: ${costsLabel}</div>`;
+    costsDiv.innerHTML = `<div style="font-weight: 500; color: ${config.COLOR_TOOLTIP_LOSS}; margin-top: 12px; margin-bottom: 4px;">${t('Costs: ') + costsLabel}</div>`;
 
     // Material Costs subsection
     const materialCostsContent = document.createElement('div');
@@ -927,13 +929,13 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
         : marketTaxEstimated
           ? `${formatLargeNumber(marketTax)}/hr ⚠`
           : `${formatLargeNumber(marketTax)}/hr`;
-    marketTaxLine.textContent = `• Market Tax: 2% of revenue → ${marketTaxLabel}`;
+    marketTaxLine.textContent = t('• Market Tax: 2% of revenue → {0}', marketTaxLabel);
     marketTaxContent.appendChild(marketTaxLine);
 
     const marketTaxHeader = marketTaxLabel;
     const marketTaxSection = createCollapsibleSection(
         '',
-        `Market Tax: ${marketTaxHeader} (2%)`,
+        t('Market Tax: {0} (2%)', marketTaxHeader),
         null,
         marketTaxContent,
         false,
@@ -1067,7 +1069,7 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
         }
         const modifiersSection = createCollapsibleSection(
             '⚙️',
-            'Modifiers',
+            t('Modifiers'),
             modifierSummaryParts.join(' | '),
             modifierContent,
             false,
@@ -1080,7 +1082,7 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
     const topLevelContent = document.createElement('div');
     const effectiveActionsPerHour = profitData.actionsPerHour * profitData.efficiencyMultiplier;
     topLevelContent.innerHTML = `
-        <div style="margin-bottom: 4px;">Actions: ${effectiveActionsPerHour.toFixed(2)}/hr</div>
+        <div style="margin-bottom: 4px;">${t('Actions: {0}/hr', effectiveActionsPerHour.toFixed(2))}</div>
     `;
 
     // Add Net Profit line at top level (always visible when Profitability is expanded)
@@ -1092,10 +1094,10 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
         margin-bottom: 8px;
     `;
     netProfitLine.textContent = netMissing
-        ? 'Net Profit: -- ⚠'
+        ? t('Net Profit: -- ⚠')
         : netEstimated
-          ? `Net Profit: ${formatLargeNumber(profit)}/hr ⚠, ${formatLargeNumber(profitPerDay)}/day ⚠`
-          : `Net Profit: ${formatLargeNumber(profit)}/hr, ${formatLargeNumber(profitPerDay)}/day`;
+          ? t('Net Profit: {0}/hr ⚠, {1}/day ⚠', formatLargeNumber(profit), formatLargeNumber(profitPerDay))
+          : t('Net Profit: {0}/hr, {1}/day', formatLargeNumber(profit), formatLargeNumber(profitPerDay));
     topLevelContent.appendChild(netProfitLine);
 
     // Add pricing mode label
@@ -1112,14 +1114,14 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
         ? loadoutSnapshot.getSnapshotInfoForSkill(productionActionType)
         : null;
     const productionLoadoutLabel = productionSnapshotInfo
-        ? `${productionSnapshotInfo.name}${productionSnapshotInfo.isDefault ? ' (Default)' : ''}`
-        : 'Equipped';
-    modeDiv.textContent = `Pricing Mode: ${modeLabel}  •  Loadout: ${productionLoadoutLabel}`;
+        ? `${productionSnapshotInfo.name}${productionSnapshotInfo.isDefault ? t(' (Default)') : ''}`
+        : t('Equipped');
+    modeDiv.textContent = t('Pricing Mode: ') + modeLabel + ' • ' + t('Loadout: ') + productionLoadoutLabel;
     topLevelContent.appendChild(modeDiv);
 
     const detailedBreakdownSection = createCollapsibleSection(
         '📊',
-        'Per hour breakdown',
+        t('Per hour breakdown'),
         null,
         detailsContent,
         false,
@@ -1160,7 +1162,7 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
     }
 
     // Create main profit section
-    const profitSection = createCollapsibleSection('💰', 'Profitability', summary, topLevelContent, false, 0);
+    const profitSection = createCollapsibleSection('💰', t('Profitability'), summary, topLevelContent, false, 0);
     profitSection.id = 'mwi-production-profit';
     profitSection.setAttribute('data-mwi-profit-display', 'true');
     profitSection.dataset.mwiActionHrid = actionHrid;
@@ -1176,13 +1178,13 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
 
         const updateSummary = (newValue) => {
             if (netMissing) {
-                profitSummaryDiv.textContent = `${baseSummary} | Total profit: -- ⚠`;
+                profitSummaryDiv.textContent = `${baseSummary} | ${t('Total profit: -- ⚠')}`;
                 return;
             }
             const inputValue = inputField.value;
 
             if (inputValue === '∞') {
-                profitSummaryDiv.textContent = `${baseSummary} | Total profit: ∞`;
+                profitSummaryDiv.textContent = `${baseSummary} | ${t('Total profit: {0}', t('[infinite]'))}`;
             } else if (newValue > 0) {
                 const totals = calculateProductionActionTotalsFromBase({
                     actionsCount: newValue,
@@ -1196,9 +1198,9 @@ export async function displayProductionProfit(panel, actionHrid, dropTableSelect
                     efficiencyMultiplier: profitData.efficiencyMultiplier || 1,
                 });
                 const totalProfit = Math.round(totals.totalProfit);
-                profitSummaryDiv.textContent = `${baseSummary} | Total profit: ${formatLargeNumber(totalProfit)}`;
+                profitSummaryDiv.textContent = `${baseSummary} | ${t('Total profit: {0}', formatLargeNumber(totalProfit))}`;
             } else {
-                profitSummaryDiv.textContent = `${baseSummary} | Total profit: 0`;
+                profitSummaryDiv.textContent = `${baseSummary} | ${t('Total profit: 0')}`;
             }
         };
 
@@ -1289,7 +1291,7 @@ function buildGatheringPerActionBreakdown(profitData) {
     // Revenue Section
     const revenueDiv = document.createElement('div');
     const revenueLabel = formatMissingLabel(revenueMissing, `${formatPerAction(revenuePerAction)}/action`);
-    revenueDiv.innerHTML = `<div style="font-weight: 500; color: ${config.COLOR_TOOLTIP_PROFIT}; margin-bottom: 4px;">Revenue: ${revenueLabel}</div>`;
+    revenueDiv.innerHTML = `<div style="font-weight: 500; color: ${config.COLOR_TOOLTIP_PROFIT}; margin-bottom: 4px;">${t('Revenue: ') + revenueLabel}</div>`;
 
     // Primary Outputs subsection
     const primaryDropsContent = document.createElement('div');
@@ -1462,7 +1464,7 @@ function buildGatheringPerActionBreakdown(profitData) {
     // Costs Section
     const costsDiv = document.createElement('div');
     const costsLabel = formatMissingLabel(costsMissing, `${formatPerAction(costsPerAction)}/action`);
-    costsDiv.innerHTML = `<div style="font-weight: 500; color: ${config.COLOR_TOOLTIP_LOSS}; margin-top: 12px; margin-bottom: 4px;">Costs: ${costsLabel}</div>`;
+    costsDiv.innerHTML = `<div style="font-weight: 500; color: ${config.COLOR_TOOLTIP_LOSS}; margin-top: 12px; margin-bottom: 4px;">${t('Costs: ') + costsLabel}</div>`;
 
     // Drink Costs subsection
     const drinkCostsContent = document.createElement('div');
@@ -1496,12 +1498,12 @@ function buildGatheringPerActionBreakdown(profitData) {
     const marketTaxLine = document.createElement('div');
     marketTaxLine.style.marginLeft = '8px';
     const marketTaxLabel = formatMissingLabel(marketTaxMissing, `${formatPerAction(marketTaxPerAction)}/action`);
-    marketTaxLine.textContent = `• Market Tax: 2% of revenue → ${marketTaxLabel}`;
+    marketTaxLine.textContent = t('• Market Tax: 2% of revenue → {0}', marketTaxLabel);
     marketTaxContent.appendChild(marketTaxLine);
 
     const marketTaxSection = createCollapsibleSection(
         '',
-        `Market Tax: ${marketTaxLabel} (2%)`,
+        t('Market Tax: {0} (2%)', marketTaxLabel),
         null,
         marketTaxContent,
         false,
@@ -1524,8 +1526,8 @@ function buildGatheringPerActionBreakdown(profitData) {
         margin-bottom: 8px;
     `;
     netProfitLine.textContent = netMissing
-        ? 'Net Profit: -- ⚠'
-        : `Net Profit: ${formatPerAction(profitPerAction)}/action`;
+        ? t('Net Profit: -- ⚠')
+        : t('Net Profit: {0}/action', formatPerAction(profitPerAction));
     topLevelContent.appendChild(netProfitLine);
 
     const summarySection = createCollapsibleSection(
@@ -1538,7 +1540,7 @@ function buildGatheringPerActionBreakdown(profitData) {
     );
     topLevelContent.appendChild(summarySection);
 
-    return createCollapsibleSection('🔢', 'Per action breakdown', null, topLevelContent, false, 0);
+    return createCollapsibleSection('🔢', t('Per action breakdown'), null, topLevelContent, false, 0);
 }
 
 /**
@@ -1589,7 +1591,7 @@ function buildProductionPerActionBreakdown(profitData) {
         : revenueEstimated
           ? `${formatPerAction(revenuePerAction)}/action ⚠`
           : `${formatPerAction(revenuePerAction)}/action`;
-    revenueDiv.innerHTML = `<div style="font-weight: 500; color: ${config.COLOR_TOOLTIP_PROFIT}; margin-bottom: 4px;">Revenue: ${revenueLabel}</div>`;
+    revenueDiv.innerHTML = `<div style="font-weight: 500; color: ${config.COLOR_TOOLTIP_PROFIT}; margin-bottom: 4px;">${t('Revenue: ') + revenueLabel}</div>`;
 
     // Primary Outputs subsection
     const primaryOutputContent = document.createElement('div');
@@ -1712,7 +1714,7 @@ function buildProductionPerActionBreakdown(profitData) {
         : costsEstimated
           ? `${formatPerAction(costsPerAction)}/action ⚠`
           : `${formatPerAction(costsPerAction)}/action`;
-    costsDiv.innerHTML = `<div style="font-weight: 500; color: ${config.COLOR_TOOLTIP_LOSS}; margin-top: 12px; margin-bottom: 4px;">Costs: ${costsLabel}</div>`;
+    costsDiv.innerHTML = `<div style="font-weight: 500; color: ${config.COLOR_TOOLTIP_LOSS}; margin-top: 12px; margin-bottom: 4px;">${t('Costs: ') + costsLabel}</div>`;
 
     // Material Costs subsection
     const materialCostsContent = document.createElement('div');
@@ -1786,12 +1788,12 @@ function buildProductionPerActionBreakdown(profitData) {
         : marketTaxEstimated
           ? `${formatPerAction(marketTaxPerAction)}/action ⚠`
           : `${formatPerAction(marketTaxPerAction)}/action`;
-    marketTaxLine.textContent = `• Market Tax: 2% of revenue → ${marketTaxLabel}`;
+    marketTaxLine.textContent = t('• Market Tax: 2% of revenue → {0}', marketTaxLabel);
     marketTaxContent.appendChild(marketTaxLine);
 
     const marketTaxSection = createCollapsibleSection(
         '',
-        `Market Tax: ${marketTaxLabel} (2%)`,
+        t('Market Tax: {0} (2%)', marketTaxLabel),
         null,
         marketTaxContent,
         false,
@@ -1814,10 +1816,10 @@ function buildProductionPerActionBreakdown(profitData) {
         margin-bottom: 8px;
     `;
     netProfitLine.textContent = netMissing
-        ? 'Net Profit: -- ⚠'
+        ? t('Net Profit: -- ⚠')
         : netEstimated
-          ? `Net Profit: ${formatPerAction(profitPerAction)}/action ⚠`
-          : `Net Profit: ${formatPerAction(profitPerAction)}/action`;
+          ? t('Net Profit: {0}/action ⚠', formatPerAction(profitPerAction))
+          : t('Net Profit: {0}/action', formatPerAction(profitPerAction));
     topLevelContent.appendChild(netProfitLine);
 
     const revenueSummaryLabel = revenueMissing
@@ -1840,7 +1842,7 @@ function buildProductionPerActionBreakdown(profitData) {
     );
     topLevelContent.appendChild(summarySection);
 
-    return createCollapsibleSection('🔢', 'Per action breakdown', null, topLevelContent, false, 0);
+    return createCollapsibleSection('🔢', t('Per action breakdown'), null, topLevelContent, false, 0);
 }
 
 /**
@@ -1884,7 +1886,7 @@ function buildGatheringActionsBreakdown(profitData, actionsCount) {
     // Revenue Section
     const revenueDiv = document.createElement('div');
     const revenueLabel = formatMissingLabel(revenueMissing, formatLargeNumber(totalRevenue));
-    revenueDiv.innerHTML = `<div style="font-weight: 500; color: ${config.COLOR_TOOLTIP_PROFIT}; margin-bottom: 4px;">Revenue: ${revenueLabel}</div>`;
+    revenueDiv.innerHTML = `<div style="font-weight: 500; color: ${config.COLOR_TOOLTIP_PROFIT}; margin-bottom: 4px;">${t('Revenue: ') + revenueLabel}</div>`;
 
     // Primary Outputs subsection
     const primaryDropsContent = document.createElement('div');
@@ -2058,7 +2060,7 @@ function buildGatheringActionsBreakdown(profitData, actionsCount) {
     // Costs Section
     const costsDiv = document.createElement('div');
     const costsLabel = costsMissing ? '-- ⚠' : formatLargeNumber(totalCosts);
-    costsDiv.innerHTML = `<div style="font-weight: 500; color: ${config.COLOR_TOOLTIP_LOSS}; margin-top: 12px; margin-bottom: 4px;">Costs: ${costsLabel}</div>`;
+    costsDiv.innerHTML = `<div style="font-weight: 500; color: ${config.COLOR_TOOLTIP_LOSS}; margin-top: 12px; margin-bottom: 4px;">${t('Costs: ') + costsLabel}</div>`;
 
     // Drink Costs subsection
     const drinkCostsContent = document.createElement('div');
@@ -2092,13 +2094,13 @@ function buildGatheringActionsBreakdown(profitData, actionsCount) {
     const marketTaxLine = document.createElement('div');
     marketTaxLine.style.marginLeft = '8px';
     const marketTaxLabel = marketTaxMissing ? '-- ⚠' : formatLargeNumber(totalMarketTax);
-    marketTaxLine.textContent = `• Market Tax: 2% of revenue → ${marketTaxLabel}`;
+    marketTaxLine.textContent = t('• Market Tax: 2% of revenue → {0}', marketTaxLabel);
     marketTaxContent.appendChild(marketTaxLine);
 
     const marketTaxHeader = marketTaxMissing ? '-- ⚠' : formatLargeNumber(totalMarketTax);
     const marketTaxSection = createCollapsibleSection(
         '',
-        `Market Tax: ${marketTaxHeader} (2%)`,
+        t('Market Tax: {0} (2%)', marketTaxHeader),
         null,
         marketTaxContent,
         false,
@@ -2120,7 +2122,9 @@ function buildGatheringActionsBreakdown(profitData, actionsCount) {
         color: ${profitColor};
         margin-bottom: 8px;
     `;
-    netProfitLine.textContent = netMissing ? 'Net Profit: -- ⚠' : `Net Profit: ${formatLargeNumber(totalProfit)}`;
+    netProfitLine.textContent = netMissing
+        ? t('Net Profit: -- ⚠')
+        : t('Net Profit: {0}', formatLargeNumber(totalProfit));
     topLevelContent.appendChild(netProfitLine);
 
     const actionsSummary = `Revenue: ${formatMissingLabel(revenueMissing, formatLargeNumber(totalRevenue))} | Costs: ${formatMissingLabel(
@@ -2191,7 +2195,7 @@ function buildProductionActionsBreakdown(profitData, actionsCount) {
         : revenueEstimated
           ? `${formatLargeNumber(totalRevenue)} ⚠`
           : formatLargeNumber(totalRevenue);
-    revenueDiv.innerHTML = `<div style="font-weight: 500; color: ${config.COLOR_TOOLTIP_PROFIT}; margin-bottom: 4px;">Revenue: ${revenueLabel}</div>`;
+    revenueDiv.innerHTML = `<div style="font-weight: 500; color: ${config.COLOR_TOOLTIP_PROFIT}; margin-bottom: 4px;">${t('Revenue: ') + revenueLabel}</div>`;
 
     // Primary Outputs subsection
     const primaryOutputContent = document.createElement('div');
@@ -2322,7 +2326,7 @@ function buildProductionActionsBreakdown(profitData, actionsCount) {
         : costsEstimated
           ? `${formatLargeNumber(totalCosts)} ⚠`
           : formatLargeNumber(totalCosts);
-    costsDiv.innerHTML = `<div style="font-weight: 500; color: ${config.COLOR_TOOLTIP_LOSS}; margin-top: 12px; margin-bottom: 4px;">Costs: ${costsLabel}</div>`;
+    costsDiv.innerHTML = `<div style="font-weight: 500; color: ${config.COLOR_TOOLTIP_LOSS}; margin-top: 12px; margin-bottom: 4px;">${t('Costs: ') + costsLabel}</div>`;
 
     // Material Costs subsection
     const materialCostsContent = document.createElement('div');
@@ -2399,13 +2403,13 @@ function buildProductionActionsBreakdown(profitData, actionsCount) {
         : marketTaxEstimated
           ? `${formatLargeNumber(totalMarketTax)} ⚠`
           : formatLargeNumber(totalMarketTax);
-    marketTaxLine.textContent = `• Market Tax: 2% of revenue → ${marketTaxLabel}`;
+    marketTaxLine.textContent = t('• Market Tax: 2% of revenue → {0}', marketTaxLabel);
     marketTaxContent.appendChild(marketTaxLine);
 
     const marketTaxHeader = marketTaxLabel;
     const marketTaxSection = createCollapsibleSection(
         '',
-        `Market Tax: ${marketTaxHeader} (2%)`,
+        t('Market Tax: {0} (2%)', marketTaxHeader),
         null,
         marketTaxContent,
         false,
@@ -2428,10 +2432,10 @@ function buildProductionActionsBreakdown(profitData, actionsCount) {
         margin-bottom: 8px;
     `;
     netProfitLine.textContent = netMissing
-        ? 'Net Profit: -- ⚠'
+        ? t('Net Profit: -- ⚠')
         : netEstimated
-          ? `Net Profit: ${formatLargeNumber(totalProfit)} ⚠`
-          : `Net Profit: ${formatLargeNumber(totalProfit)}`;
+          ? t('Net Profit: {0} ⚠', formatLargeNumber(totalProfit))
+          : t('Net Profit: {0}', formatLargeNumber(totalProfit));
     topLevelContent.appendChild(netProfitLine);
 
     const revenueDisplay = revenueMissing

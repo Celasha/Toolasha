@@ -10,6 +10,7 @@ import webSocketHook from '../../core/websocket.js';
 import { buildPlayerDTO, buildGameDataPayload, applyLoadoutSnapshotToDTO } from '../combat-sim/combat-sim-adapter.js';
 import { runLabyrinthSimulation } from '../combat-sim/combat-sim-runner.js';
 import loadoutSnapshot from './loadout-snapshot.js';
+import { t } from '../../core/i18n.js';
 
 const ROOM_DURATION = 120;
 const BASE_SKILLING_TIME = 10;
@@ -774,14 +775,14 @@ class LabyrinthClearRate {
                 const threshold = this.findRecommendedThreshold(roomHrid, targetRate);
                 this.recommendations.set(roomHrid, { threshold });
             } else {
-                if (button) button.textContent = `Recommending... (${completed + 1}/${totalRooms})`;
+                if (button) button.textContent = t('Recommending... ({0}/{1})', completed + 1, totalRooms);
                 const threshold = await this.findRecommendedThresholdCombat(roomHrid, targetRate);
                 this.recommendations.set(roomHrid, { threshold });
             }
             completed++;
         }
 
-        if (button) button.textContent = 'Recommend';
+        if (button) button.textContent = t('Recommend');
         this.recommendRunning = false;
         this.injectRecommendationBadges();
     }
@@ -807,9 +808,9 @@ class LabyrinthClearRate {
             const badge = document.createElement('span');
             badge.className = RECOMMEND_CLASS;
             badge.style.cssText = 'font-size:0.7rem; margin-left:6px; white-space:nowrap; font-weight:bold;';
-            badge.textContent = `Rec: +${rec.threshold}`;
+            badge.textContent = t('Rec: +{0}', rec.threshold);
 
-            badge.title = `Recommended skip threshold for ≥${this._recommendTargetPct}% clear rate`;
+            badge.title = t('Recommended skip threshold for ≥{0}% clear rate', this._recommendTargetPct);
 
             if (currentThreshold <= rec.threshold) {
                 badge.style.color = '#00c896';
@@ -852,7 +853,7 @@ class LabyrinthClearRate {
 
         const rateLabel = document.createElement('span');
         rateLabel.style.cssText = labelStyle;
-        rateLabel.textContent = 'Target Win %';
+        rateLabel.textContent = t('Target Win %');
 
         const rateInput = document.createElement('input');
         rateInput.type = 'number';
@@ -868,7 +869,7 @@ class LabyrinthClearRate {
 
         const hoursLabel = document.createElement('span');
         hoursLabel.style.cssText = labelStyle;
-        hoursLabel.textContent = 'Sim Hours';
+        hoursLabel.textContent = t('Sim Hours');
 
         const hoursInput = document.createElement('input');
         hoursInput.type = 'number';
@@ -883,7 +884,7 @@ class LabyrinthClearRate {
         });
 
         const button = document.createElement('button');
-        button.textContent = 'Recommend';
+        button.textContent = t('Recommend');
         button.style.cssText =
             'padding:2px 10px; cursor:pointer; font-size:0.75rem; border-radius:4px; border:1px solid #555; background:#333; color:#ccc;';
         button.addEventListener('click', () => this.runRecommendations());
@@ -1000,19 +1001,29 @@ class LabyrinthClearRate {
 
         const chancePct = (estimate.clearChance * 100).toFixed(1);
         if (estimate.isEnhancing) {
-            node.textContent = ` [Clear ${chancePct}% | +${estimate.currentLevel}/+${estimate.targetLevel} | ${estimate.attemptsLeft} left]`;
+            node.textContent = t(
+                ' [Clear {0}% | +{1}/+{2} | {3} left]',
+                chancePct,
+                estimate.currentLevel,
+                estimate.targetLevel,
+                estimate.attemptsLeft
+            );
         } else {
-            node.textContent = ` [Clear ${chancePct}% | ${estimate.attemptsLeft} left]`;
+            node.textContent = t(' [Clear {0}% | {1} left]', chancePct, estimate.attemptsLeft);
         }
 
         const tooltipLines = [
-            `Success: ${(estimate.successChance * 100).toFixed(1)}% | Double: ${(estimate.doubleChance * 100).toFixed(1)}%`,
-            `Actions: ${estimate.actionCounter}/${estimate.totalAttempts}`,
+            t(
+                'Success: {0}% | Double: {1}%',
+                (estimate.successChance * 100).toFixed(1),
+                (estimate.doubleChance * 100).toFixed(1)
+            ),
+            t('Actions: {0}/{1}', estimate.actionCounter, estimate.totalAttempts),
         ];
         if (estimate.isEnhancing) {
-            tooltipLines.push(`Enhance: +${estimate.currentLevel}/+${estimate.targetLevel}`);
+            tooltipLines.push(t('Enhance: +{0}/+{1}', estimate.currentLevel, estimate.targetLevel));
         } else {
-            tooltipLines.push(`Progress: ${estimate.currentWorkValue}/${estimate.targetWorkValue}`);
+            tooltipLines.push(t('Progress: {0}/{1}', estimate.currentWorkValue, estimate.targetWorkValue));
         }
         node.title = tooltipLines.join('\n');
     }
@@ -1119,7 +1130,7 @@ class LabyrinthClearRate {
         badge.className = BADGE_CLASS;
         badge.style.cssText = 'font-size:0.7rem; margin-left:6px; white-space:nowrap; color:#999;';
         badge.textContent = '...';
-        badge.title = 'Simulating combat...';
+        badge.title = t('Simulating combat...');
         cell.appendChild(badge);
         return badge;
     }
@@ -1178,34 +1189,44 @@ class LabyrinthClearRate {
 
         if (result.type === 'skilling') {
             return [
-                `Success: ${pct(result.successChance)} | Double: ${pct(result.doubleChance)}`,
-                `Actions: ${result.attempts} @ ${result.actionSeconds.toFixed(2)}s each`,
-                `Work Power: ${Math.floor(result.workPower)} → Progress: ${result.progressPerSuccess}/${result.targetProgress} per success`,
-                `Effective Level: ${Math.floor(result.effectiveLevel)} (base ${result.baseLevel} + ${Math.floor(result.effectiveLevel - result.baseLevel)})`,
-                `Room Level: ${result.roomLevel} | XP/room: ${result.xpPerRoom}`,
+                t('Success: {0} | Double: {1}', pct(result.successChance), pct(result.doubleChance)),
+                t('Actions: {0} @ {1}s each', result.attempts, result.actionSeconds.toFixed(2)),
+                t(
+                    'Work Power: {0} → Progress: {1}/{2} per success',
+                    Math.floor(result.workPower),
+                    result.progressPerSuccess,
+                    result.targetProgress
+                ),
+                t(
+                    'Effective Level: {0} (base {1} + {2})',
+                    Math.floor(result.effectiveLevel),
+                    result.baseLevel,
+                    Math.floor(result.effectiveLevel - result.baseLevel)
+                ),
+                t('Room Level: {0} | XP/room: {1}', result.roomLevel, result.xpPerRoom),
             ].join('\n');
         }
 
         if (result.type === 'enhancing') {
             return [
-                `Success: ${pct(result.successChance)} | Double: ${pct(result.doubleChance)}`,
-                `Actions: ${result.attempts} @ ${result.actionSeconds.toFixed(2)}s each`,
-                `Target: +${result.targetLevel} | Effective Level: ${Math.floor(result.effectiveLevel)}`,
-                `Room Level: ${result.roomLevel}`,
+                t('Success: {0} | Double: {1}', pct(result.successChance), pct(result.doubleChance)),
+                t('Actions: {0} @ {1}s each', result.attempts, result.actionSeconds.toFixed(2)),
+                t('Target: +{0} | Effective Level: {1}', result.targetLevel, Math.floor(result.effectiveLevel)),
+                t('Room Level: {0}', result.roomLevel),
             ].join('\n');
         }
 
         if (result.type === 'combat') {
             return [
-                `Win Rate: ${pct(result.winRate)} | Avg Fight: ${Math.round(result.avgFightSeconds)}s`,
-                `Monster: ${result.monsterName} | Room Level: ${result.roomLevel}`,
-                `Loadout: "${result.loadoutName}"`,
+                t('Win Rate: {0} | Avg Fight: {1}s', pct(result.winRate), Math.round(result.avgFightSeconds)),
+                t('Monster: {0} | Room Level: {1}', result.monsterName, result.roomLevel),
+                t('Loadout: "{0}"', result.loadoutName),
             ].join('\n');
         }
 
         const clearPct = Math.round(result.clearChance * 100);
         const timeText = this.formatTime(result.expectedSeconds);
-        return `Clear: ${clearPct}% | Expected: ${timeText} | Room level: ${roomLevel}`;
+        return t('Clear: {0}% | Expected: {1} | Room level: {2}', clearPct, timeText, roomLevel);
     }
 
     getBadgeColor(clearChance) {

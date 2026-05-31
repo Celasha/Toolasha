@@ -7,6 +7,7 @@
 import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
 import dataManager from '../../core/data-manager.js';
+import { t } from '../../core/i18n.js';
 import { computeBestCraftingPlan } from './crafting-plan-calculator.js';
 import { createCollapsibleSection } from '../../utils/ui-components.js';
 import { formatKMB, formatWithSeparator, timeReadable } from '../../utils/formatters.js';
@@ -200,21 +201,21 @@ function buildPlanUI(actionHrid, onToggle, defaultOpen = false) {
     const content = document.createElement('div');
 
     // === Summary comparison ===
-    const unitCostText = plan.unitCost === Infinity ? '?' : formatWithSeparator(Math.round(plan.unitCost));
-    const buyText = plan.buyPrice !== null ? formatWithSeparator(Math.round(plan.buyPrice)) : 'N/A';
-    const craftText = plan.craftCost !== null ? formatWithSeparator(Math.round(plan.craftCost)) : 'N/A';
-    const strategyText = plan.strategy === 'buy' ? 'Buy from market' : 'Craft from materials';
+    const unitCostText = plan.unitCost === Infinity ? '?' : t('{0}/ea', formatWithSeparator(Math.round(plan.unitCost)));
+    const buyText = plan.buyPrice !== null ? formatWithSeparator(Math.round(plan.buyPrice)) : t('N/A');
+    const craftText = plan.craftCost !== null ? formatWithSeparator(Math.round(plan.craftCost)) : t('N/A');
+    const strategyText = plan.strategy === 'buy' ? t('Buy from market') : t('Craft from materials');
 
     const summary = document.createElement('div');
     summary.style.cssText = 'margin-bottom: 6px;';
     summary.innerHTML = `
         <div style="display: flex; justify-content: space-between; color: var(--text-color-primary, #fff);">
-            <span>Optimal: <strong>${strategyText}</strong></span>
-            <span>${unitCostText}/ea</span>
+            <span>${t('Optimal:')} <strong>${strategyText}</strong></span>
+            <span>${unitCostText}</span>
         </div>
         <div style="display: flex; justify-content: space-between; color: var(--text-color-secondary, #888); font-size: 0.9em;">
-            <span>Market buy: ${buyText}</span>
-            <span>Craft cost: ${craftText}</span>
+            <span>${t('Market buy:')} ${buyText}</span>
+            <span>${t('Craft cost:')} ${craftText}</span>
         </div>
     `;
     content.appendChild(summary);
@@ -239,7 +240,7 @@ function buildPlanUI(actionHrid, onToggle, defaultOpen = false) {
         if (onToggle) onToggle();
     });
     toggleRow.appendChild(checkbox);
-    toggleRow.appendChild(document.createTextNode('Buy raw materials only'));
+    toggleRow.appendChild(document.createTextNode(t('Buy raw materials only')));
     content.appendChild(toggleRow);
 
     // === No processing toggle ===
@@ -262,7 +263,7 @@ function buildPlanUI(actionHrid, onToggle, defaultOpen = false) {
         if (onToggle) onToggle();
     });
     noProcessingRow.appendChild(noProcessingCheckbox);
-    noProcessingRow.appendChild(document.createTextNode('No processing (buy intermediates)'));
+    noProcessingRow.appendChild(document.createTextNode(t('No processing (buy intermediates)')));
     content.appendChild(noProcessingRow);
 
     // === Task mode toggle ===
@@ -285,7 +286,7 @@ function buildPlanUI(actionHrid, onToggle, defaultOpen = false) {
         if (onToggle) onToggle();
     });
     taskToggleRow.appendChild(taskCheckbox);
-    taskToggleRow.appendChild(document.createTextNode('Task mode (force last step)'));
+    taskToggleRow.appendChild(document.createTextNode(t('Task mode (force last step)')));
     content.appendChild(taskToggleRow);
 
     // === Time cost toggle ===
@@ -304,7 +305,7 @@ function buildPlanUI(actionHrid, onToggle, defaultOpen = false) {
     timeCostCheckbox.checked = timeCostEnabled;
     timeCostCheckbox.style.cssText = 'margin: 0; cursor: pointer;';
     timeCostRow.appendChild(timeCostCheckbox);
-    timeCostRow.appendChild(document.createTextNode('Factor in time cost'));
+    timeCostRow.appendChild(document.createTextNode(t('Factor in time cost')));
 
     const goldInput = document.createElement('input');
     goldInput.type = 'number';
@@ -317,7 +318,7 @@ function buildPlanUI(actionHrid, onToggle, defaultOpen = false) {
     `;
     goldInput.style.display = timeCostEnabled ? '' : 'none';
     const goldLabel = document.createElement('span');
-    goldLabel.textContent = 'gold/hr';
+    goldLabel.textContent = t('gold/hr');
     goldLabel.style.fontSize = '0.85em';
     goldLabel.style.display = timeCostEnabled ? '' : 'none';
 
@@ -339,7 +340,7 @@ function buildPlanUI(actionHrid, onToggle, defaultOpen = false) {
     // Only show breakdown if crafting is the optimal strategy
     if (plan.strategy !== 'craft' || plan.children.length === 0) {
         const costText = plan.unitCost === Infinity ? '?' : `${formatKMB(Math.round(plan.unitCost))}/ea`;
-        const section = createCollapsibleSection('', 'Best Crafting Plan', costText, content, defaultOpen, 0);
+        const section = createCollapsibleSection('', t('Best Crafting Plan'), costText, content, defaultOpen, 0);
         section.id = UI_ID;
         section.className = 'mwi-crafting-plan-section';
         return section;
@@ -360,7 +361,7 @@ function buildPlanUI(actionHrid, onToggle, defaultOpen = false) {
             color: var(--text-color-primary, #fff);
             margin-bottom: 4px;
         `;
-        shoppingHeader.textContent = 'Shopping List';
+        shoppingHeader.textContent = t('Shopping List');
         content.appendChild(shoppingHeader);
 
         // Sort by total cost descending
@@ -375,7 +376,7 @@ function buildPlanUI(actionHrid, onToggle, defaultOpen = false) {
 
         // Total buy cost
         const totalBuyCost = sortedItems.reduce((sum, item) => sum + item.totalCost, 0);
-        const totalRow = createRow('Total material cost', formatWithSeparator(Math.round(totalBuyCost)), {
+        const totalRow = createRow(t('Total material cost'), formatWithSeparator(Math.round(totalBuyCost)), {
             leftColor: 'var(--text-color-primary, #fff)',
         });
         totalRow.style.borderTop = '1px solid var(--border-color, #333)';
@@ -385,7 +386,7 @@ function buildPlanUI(actionHrid, onToggle, defaultOpen = false) {
 
         // === Buy Missing Materials button ===
         const buyButton = document.createElement('button');
-        buyButton.textContent = 'Buy Missing Materials';
+        buyButton.textContent = t('Buy Missing Materials');
         buyButton.style.cssText = `
             width: 100%; margin-top: 6px; padding: 6px;
             background: linear-gradient(135deg, #1e40af, #3b82f6);
@@ -464,7 +465,7 @@ function buildPlanUI(actionHrid, onToggle, defaultOpen = false) {
             color: var(--text-color-primary, #fff);
             margin-bottom: 4px;
         `;
-        stepsHeader.textContent = 'Crafting Steps';
+        stepsHeader.textContent = t('Crafting Steps');
         content.appendChild(stepsHeader);
 
         const gameData = dataManager.getInitClientData();
@@ -494,7 +495,7 @@ function buildPlanUI(actionHrid, onToggle, defaultOpen = false) {
         }
 
         if (totalCraftSeconds > 0) {
-            const totalTimeRow = createRow('Total craft time', timeReadable(totalCraftSeconds), {
+            const totalTimeRow = createRow(t('Total craft time'), timeReadable(totalCraftSeconds), {
                 leftColor: 'var(--text-color-primary, #fff)',
             });
             totalTimeRow.style.borderTop = '1px solid var(--border-color, #333)';
@@ -505,7 +506,7 @@ function buildPlanUI(actionHrid, onToggle, defaultOpen = false) {
     }
 
     const costText = plan.unitCost === Infinity ? '?' : `${formatKMB(Math.round(plan.unitCost))}/ea`;
-    const section = createCollapsibleSection('', 'Best Crafting Plan', costText, content, defaultOpen, 0);
+    const section = createCollapsibleSection('', t('Best Crafting Plan'), costText, content, defaultOpen, 0);
     section.id = UI_ID;
     section.className = 'mwi-crafting-plan-section';
 

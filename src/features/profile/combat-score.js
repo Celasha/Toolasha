@@ -17,6 +17,7 @@ import { createTimerRegistry } from '../../utils/timer-registry.js';
 import loadoutSnapshot from '../combat/loadout-snapshot.js';
 import combatSimUI from '../combat-sim/combat-sim-ui.js';
 import { buildPlayerDTOFromProfile } from '../combat-sim/combat-sim-adapter.js';
+import { t } from '../../core/i18n.js';
 
 /**
  * CombatScore class manages combat score display on profiles
@@ -162,9 +163,9 @@ class CombatScore {
             this.currentPanel = null;
         }
 
-        const playerName = profileData.profile?.sharableCharacter?.name || 'Player';
+        const playerName = profileData.profile?.sharableCharacter?.name || t('Player');
         const equipmentHiddenText =
-            scoreData.equipmentHidden && !scoreData.hasEquipmentData ? ' (Equipment hidden)' : '';
+            scoreData.equipmentHidden && !scoreData.hasEquipmentData ? t(' (Equipment hidden)') : '';
 
         // Create panel element
         const panel = document.createElement('div');
@@ -227,7 +228,7 @@ class CombatScore {
                     font-weight: bold;
                     font-size: 0.85rem;
                     flex: 1;
-                ">View Card</button>
+                ">${t('View Card')}</button>
                 <button id="mwi-character-card-loadout-btn" style="
                     padding: 8px 10px;
                     background: ${config.COLOR_ACCENT};
@@ -266,28 +267,28 @@ class CombatScore {
                     color: #aaa;
                     padding: 0 5px;
                     line-height: 1;
-                " title="Close">×</span>
+                " title="${t('Close')}">×</span>
             </div>
             <div style="cursor: pointer; font-weight: bold; margin-bottom: 8px; color: ${config.COLOR_PROFIT}; ${!config.getSetting('combatScore') ? 'display: none;' : ''}" id="mwi-score-toggle">
-                + Combat Score: ${numberFormatter(scoreData.total.toFixed(1))}${equipmentHiddenText}
+                + ${t('Combat Score: {0}', numberFormatter(scoreData.total.toFixed(1)))}${equipmentHiddenText}
             </div>
             <div id="mwi-score-details" style="display: none; margin-left: 10px; color: ${config.COLOR_TEXT_PRIMARY};">
                 <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-house-toggle">
-                    + House: ${numberFormatter(scoreData.house.toFixed(1))}
+                    + ${t('House: {0}', numberFormatter(scoreData.house.toFixed(1)))}
                 </div>
                 <div id="mwi-house-breakdown" style="display: none; margin-bottom: 6px;">
                     ${houseBreakdownHTML}
                 </div>
 
                 <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-ability-toggle">
-                    + Ability: ${numberFormatter(scoreData.ability.toFixed(1))}
+                    + ${t('Ability: {0}', numberFormatter(scoreData.ability.toFixed(1)))}
                 </div>
                 <div id="mwi-ability-breakdown" style="display: none; margin-bottom: 6px;">
                     ${abilityBreakdownHTML}
                 </div>
 
                 <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-equipment-toggle">
-                    + Equipment: ${numberFormatter(scoreData.equipment.toFixed(1))}
+                    + ${t('Equipment: {0}', numberFormatter(scoreData.equipment.toFixed(1)))}
                 </div>
                 <div id="mwi-equipment-breakdown" style="display: none;">
                     ${equipmentBreakdownHTML}
@@ -295,11 +296,11 @@ class CombatScore {
             </div>
 
             <div style="cursor: pointer; font-weight: bold; margin-top: 12px; margin-bottom: 8px; color: ${config.COLOR_PROFIT}; ${!config.getSetting('combatScore') ? 'display: none;' : ''}" id="mwi-skiller-score-toggle">
-                + Skiller Score: ${numberFormatter(scoreData.skillerTotal.toFixed(1))}
+                + ${t('Skiller Score: {0}', numberFormatter(scoreData.skillerTotal.toFixed(1)))}
             </div>
             <div id="mwi-skiller-score-details" style="display: none; margin-left: 10px; color: ${config.COLOR_TEXT_PRIMARY};">
                 <div style="cursor: pointer; margin-bottom: 4px;" id="mwi-skiller-equipment-toggle">
-                    + Equipment: ${numberFormatter(scoreData.skillerEquipment.toFixed(1))}
+                    + ${t('Equipment: {0}', numberFormatter(scoreData.skillerEquipment.toFixed(1)))}
                 </div>
                 <div id="mwi-skiller-equipment-breakdown" style="display: none;">
                     ${skillerEquipmentBreakdownHTML}
@@ -318,7 +319,7 @@ class CombatScore {
                         font-weight: bold;
                         font-size: 0.85rem;
                         flex: 1;
-                    ">Combat Sim Export</button>
+                    ">${t('Combat Sim Export')}</button>
                     <button id="mwi-combat-sim-loadout-btn" style="
                         padding: 8px 10px;
                         background: ${config.COLOR_ACCENT};
@@ -355,7 +356,7 @@ class CombatScore {
                     font-weight: bold;
                     font-size: 0.85rem;
                     width: 100%;
-                ">Sim Character</button>
+                ">${t('Sim Character')}</button>
                 <button id="mwi-milkonomy-export-btn" style="
                     padding: 8px 12px;
                     background: ${config.COLOR_ACCENT};
@@ -366,7 +367,7 @@ class CombatScore {
                     font-weight: bold;
                     font-size: 0.85rem;
                     width: 100%;
-                ">Milkonomy Export</button>
+                ">${t('Milkonomy Export')}</button>
                 ${viewCardButtonHTML}
             </div>
         `;
@@ -438,7 +439,8 @@ class CombatScore {
                 details.style.display = isCollapsed ? 'block' : 'none';
                 toggleBtn.textContent =
                     (isCollapsed ? '- ' : '+ ') +
-                    `Combat Score: ${numberFormatter(scoreData.total.toFixed(1))}${equipmentHiddenText}`;
+                    t('Combat Score: {0}', numberFormatter(scoreData.total.toFixed(1))) +
+                    equipmentHiddenText;
             });
         }
 
@@ -450,7 +452,7 @@ class CombatScore {
                 const isCollapsed = houseBreakdown.style.display === 'none';
                 houseBreakdown.style.display = isCollapsed ? 'block' : 'none';
                 houseToggle.textContent =
-                    (isCollapsed ? '- ' : '+ ') + `House: ${numberFormatter(scoreData.house.toFixed(1))}`;
+                    (isCollapsed ? '- ' : '+ ') + t('House: {0}', numberFormatter(scoreData.house.toFixed(1)));
             });
         }
 
@@ -462,7 +464,7 @@ class CombatScore {
                 const isCollapsed = abilityBreakdown.style.display === 'none';
                 abilityBreakdown.style.display = isCollapsed ? 'block' : 'none';
                 abilityToggle.textContent =
-                    (isCollapsed ? '- ' : '+ ') + `Ability: ${numberFormatter(scoreData.ability.toFixed(1))}`;
+                    (isCollapsed ? '- ' : '+ ') + t('Ability: {0}', numberFormatter(scoreData.ability.toFixed(1)));
             });
         }
 
@@ -474,7 +476,7 @@ class CombatScore {
                 const isCollapsed = equipmentBreakdown.style.display === 'none';
                 equipmentBreakdown.style.display = isCollapsed ? 'block' : 'none';
                 equipmentToggle.textContent =
-                    (isCollapsed ? '- ' : '+ ') + `Equipment: ${numberFormatter(scoreData.equipment.toFixed(1))}`;
+                    (isCollapsed ? '- ' : '+ ') + t('Equipment: {0}', numberFormatter(scoreData.equipment.toFixed(1)));
             });
         }
 
@@ -487,7 +489,7 @@ class CombatScore {
                 skillerScoreDetails.style.display = isCollapsed ? 'block' : 'none';
                 skillerScoreToggle.textContent =
                     (isCollapsed ? '- ' : '+ ') +
-                    `Skiller Score: ${numberFormatter(scoreData.skillerTotal.toFixed(1))}`;
+                    t('Skiller Score: {0}', numberFormatter(scoreData.skillerTotal.toFixed(1)));
             });
         }
 
@@ -500,7 +502,7 @@ class CombatScore {
                 skillerEquipmentBreakdown.style.display = isCollapsed ? 'block' : 'none';
                 skillerEquipmentToggle.textContent =
                     (isCollapsed ? '- ' : '+ ') +
-                    `Equipment: ${numberFormatter(scoreData.skillerEquipment.toFixed(1))}`;
+                    t('Equipment: {0}', numberFormatter(scoreData.skillerEquipment.toFixed(1)));
             });
         }
 
@@ -522,13 +524,13 @@ class CombatScore {
         const simCharBtn = panel.querySelector('#mwi-sim-character-btn');
         if (simCharBtn) {
             simCharBtn.addEventListener('click', () => {
-                const playerName = profileData?.profile?.sharableCharacter?.name || 'Player';
+                const playerName = profileData?.profile?.sharableCharacter?.name || t('Player');
                 const dto = buildPlayerDTOFromProfile(profileData);
                 if (!dto) {
-                    simCharBtn.textContent = '\u2717 No Data';
+                    simCharBtn.textContent = t('✗ No Data');
                     simCharBtn.style.background = config.COLOR_LOSS;
                     const resetTimeout = setTimeout(() => {
-                        simCharBtn.textContent = 'Sim Character';
+                        simCharBtn.textContent = t('Sim Character');
                         simCharBtn.style.background = 'linear-gradient(135deg, #3a7bd5, #5f3dc4)';
                     }, 3000);
                     this.timerRegistry.registerTimeout(resetTimeout);
@@ -734,7 +736,7 @@ class CombatScore {
             return;
         }
 
-        const playerName = profileData.profile?.sharableCharacter?.name || 'Player';
+        const playerName = profileData.profile?.sharableCharacter?.name || t('Player');
 
         // Create panel element
         const panel = document.createElement('div');
@@ -758,17 +760,17 @@ class CombatScore {
         // Create panel HTML
         panel.innerHTML = `
             <div id="mwi-abilities-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; flex-shrink: 0; cursor: move; user-select: none;">
-                <div style="font-weight: bold; color: ${config.COLOR_ACCENT}; font-size: 0.9rem;">${playerName} - Abilities & Triggers</div>
+                <div style="font-weight: bold; color: ${config.COLOR_ACCENT}; font-size: 0.9rem;">${playerName}${t(' - Abilities & Triggers')}</div>
                 <span id="mwi-abilities-close-btn" style="
                     cursor: pointer;
                     font-size: 18px;
                     color: #aaa;
                     padding: 0 5px;
                     line-height: 1;
-                " title="Close">×</span>
+                " title="${t('Close')}">×</span>
             </div>
             <div style="cursor: pointer; font-weight: bold; margin-bottom: 8px; color: ${config.COLOR_ACCENT}; flex-shrink: 0;" id="mwi-abilities-toggle">
-                + Show Details
+                + ${t('Show Details')}
             </div>
             <div id="mwi-abilities-details" style="display: none; overflow-y: auto; flex: 1; min-height: 0;">
                 ${abilitiesTriggersHTML}
@@ -836,7 +838,8 @@ class CombatScore {
             toggleBtn.addEventListener('click', () => {
                 const isCollapsed = details.style.display === 'none';
                 details.style.display = isCollapsed ? 'block' : 'none';
-                toggleBtn.textContent = (isCollapsed ? '- ' : '+ ') + (isCollapsed ? 'Hide Details' : 'Show Details');
+                toggleBtn.textContent =
+                    (isCollapsed ? '- ' : '+ ') + (isCollapsed ? t('Hide Details') : t('Show Details'));
                 // Re-anchor to bottom after size change
                 requestAnimationFrame(() => {
                     const bottomGap = 10;
@@ -944,7 +947,7 @@ class CombatScore {
             // Get export data in single-player format (for pasting into "Player 1 import" field)
             const exportData = await constructExportObject(currentProfileId, true);
             if (!exportData) {
-                button.textContent = '✗ No Data';
+                button.textContent = t('✗ No Data');
                 button.style.background = '${config.COLOR_LOSS}';
                 const resetTimeout = setTimeout(() => {
                     button.textContent = originalText;
@@ -957,7 +960,7 @@ class CombatScore {
             const exportString = JSON.stringify(exportData.exportObj);
             await navigator.clipboard.writeText(exportString);
 
-            button.textContent = '✓ Copied';
+            button.textContent = t('✓ Copied');
             button.style.background = '${config.COLOR_PROFIT}';
             const resetTimeout = setTimeout(() => {
                 button.textContent = originalText;
@@ -966,7 +969,7 @@ class CombatScore {
             this.timerRegistry.registerTimeout(resetTimeout);
         } catch (error) {
             console.error('[Combat Score] Combat Sim export failed:', error);
-            button.textContent = '✗ Failed';
+            button.textContent = t('✗ Failed');
             button.style.background = '${config.COLOR_LOSS}';
             const resetTimeout = setTimeout(() => {
                 button.textContent = originalText;
@@ -995,7 +998,7 @@ class CombatScore {
             // Get base export (skills, house, achievements, triggers)
             const exportData = await constructExportObject(null, true);
             if (!exportData) {
-                button.textContent = '✗ No Data';
+                button.textContent = t('✗ No Data');
                 button.style.background = '${config.COLOR_LOSS}';
                 const resetTimeout = setTimeout(() => {
                     button.textContent = originalText;
@@ -1079,7 +1082,7 @@ class CombatScore {
             const exportString = JSON.stringify(playerObj);
             await navigator.clipboard.writeText(exportString);
 
-            button.textContent = '✓ Copied';
+            button.textContent = t('✓ Copied');
             button.style.background = '${config.COLOR_PROFIT}';
             const resetTimeout = setTimeout(() => {
                 button.textContent = originalText;
@@ -1088,7 +1091,7 @@ class CombatScore {
             this.timerRegistry.registerTimeout(resetTimeout);
         } catch (error) {
             console.error('[Combat Score] Combat Sim snapshot export failed:', error);
-            button.textContent = '✗ Failed';
+            button.textContent = t('✗ Failed');
             button.style.background = '${config.COLOR_LOSS}';
             const resetTimeout = setTimeout(() => {
                 button.textContent = originalText;
@@ -1113,7 +1116,7 @@ class CombatScore {
             // Get export data (pass profile ID if viewing external profile)
             const exportData = await constructMilkonomyExport(currentProfileId);
             if (!exportData) {
-                button.textContent = '✗ No Data';
+                button.textContent = t('✗ No Data');
                 button.style.background = '${config.COLOR_LOSS}';
                 const resetTimeout = setTimeout(() => {
                     button.textContent = originalText;
@@ -1126,7 +1129,7 @@ class CombatScore {
             const exportString = JSON.stringify(exportData);
             await navigator.clipboard.writeText(exportString);
 
-            button.textContent = '✓ Copied';
+            button.textContent = t('✓ Copied');
             button.style.background = '${config.COLOR_PROFIT}';
             const resetTimeout = setTimeout(() => {
                 button.textContent = originalText;
@@ -1135,7 +1138,7 @@ class CombatScore {
             this.timerRegistry.registerTimeout(resetTimeout);
         } catch (error) {
             console.error('[Combat Score] Milkonomy export failed:', error);
-            button.textContent = '✗ Failed';
+            button.textContent = t('✗ Failed');
             button.style.background = '${config.COLOR_LOSS}';
             const resetTimeout = setTimeout(() => {
                 button.textContent = originalText;
@@ -1171,10 +1174,10 @@ class CombatScore {
      */
     formatDependency(dependencyHrid) {
         const map = {
-            '/combat_trigger_dependencies/self': 'Self',
-            '/combat_trigger_dependencies/targeted_enemy': 'Target',
-            '/combat_trigger_dependencies/all_enemies': 'All Enemies',
-            '/combat_trigger_dependencies/all_allies': 'All Allies',
+            '/combat_trigger_dependencies/self': t('Self'),
+            '/combat_trigger_dependencies/targeted_enemy': t('Target'),
+            '/combat_trigger_dependencies/all_enemies': t('All Enemies'),
+            '/combat_trigger_dependencies/all_allies': t('All Allies'),
         };
         return map[dependencyHrid] || dependencyHrid.split('/').pop().replace(/_/g, ' ');
     }
@@ -1186,11 +1189,11 @@ class CombatScore {
      */
     formatCondition(conditionHrid) {
         const map = {
-            '/combat_trigger_conditions/current_hp': 'HP',
-            '/combat_trigger_conditions/missing_hp': 'Missing HP',
-            '/combat_trigger_conditions/current_mp': 'MP',
-            '/combat_trigger_conditions/missing_mp': 'Missing MP',
-            '/combat_trigger_conditions/number_of_active_units': 'Active Units',
+            '/combat_trigger_conditions/current_hp': t('HP'),
+            '/combat_trigger_conditions/missing_hp': t('Missing HP'),
+            '/combat_trigger_conditions/current_mp': t('MP'),
+            '/combat_trigger_conditions/missing_mp': t('Missing MP'),
+            '/combat_trigger_conditions/number_of_active_units': t('Active Units'),
         };
         if (map[conditionHrid]) return map[conditionHrid];
 
@@ -1214,8 +1217,8 @@ class CombatScore {
             '/combat_trigger_comparators/greater_than': '>',
             '/combat_trigger_comparators/less_than': '<',
             '/combat_trigger_comparators/equal': '=',
-            '/combat_trigger_comparators/is_active': 'is active',
-            '/combat_trigger_comparators/is_inactive': 'is inactive',
+            '/combat_trigger_comparators/is_active': t('is active'),
+            '/combat_trigger_comparators/is_inactive': t('is inactive'),
         };
         return map[comparatorHrid] || comparatorHrid.split('/').pop().replace(/_/g, ' ');
     }
@@ -1231,7 +1234,7 @@ class CombatScore {
         const comparator = this.formatComparator(condition.comparatorHrid);
 
         // Handle is_active/is_inactive specially
-        if (comparator === 'is active' || comparator === 'is inactive') {
+        if (condition.comparatorHrid.endsWith('is_active') || condition.comparatorHrid.endsWith('is_inactive')) {
             return `${dependency}: ${conditionName} ${comparator}`;
         }
 
@@ -1244,7 +1247,7 @@ class CombatScore {
      * @returns {string} Formatted trigger string
      */
     formatTriggers(conditions) {
-        if (!conditions || conditions.length === 0) return 'No trigger';
+        if (!conditions || conditions.length === 0) return t('No trigger');
 
         return conditions.map((c) => this.formatTriggerCondition(c)).join(' AND ');
     }
@@ -1304,7 +1307,7 @@ class CombatScore {
             for (const ability of abilities) {
                 const abilityIconId = ability.abilityHrid.split('/').pop();
                 const triggers = abilityTriggers[ability.abilityHrid];
-                const triggerText = triggers ? this.formatTriggers(triggers) : 'No trigger';
+                const triggerText = triggers ? this.formatTriggers(triggers) : t('No trigger');
 
                 html += `
                     <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 6px;">
@@ -1321,13 +1324,13 @@ class CombatScore {
         const consumableKeys = Object.keys(consumableTriggers);
         if (consumableKeys.length > 0 && itemsSpriteUrl) {
             if (abilities.length > 0) {
-                html += `<div style="margin-top: 6px; margin-bottom: 6px; font-weight: 600; color: ${config.COLOR_TEXT_SECONDARY}; font-size: 0.85rem;">Food & Drinks</div>`;
+                html += `<div style="margin-top: 6px; margin-bottom: 6px; font-weight: 600; color: ${config.COLOR_TEXT_SECONDARY}; font-size: 0.85rem;">${t('Food & Drinks')}</div>`;
             }
 
             for (const itemHrid of consumableKeys) {
                 const itemIconId = itemHrid.split('/').pop();
                 const triggers = consumableTriggers[itemHrid];
-                const triggerText = triggers ? this.formatTriggers(triggers) : 'No trigger';
+                const triggerText = triggers ? this.formatTriggers(triggers) : t('No trigger');
 
                 html += `
                     <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 6px;">

@@ -15,6 +15,7 @@ import storage from '../../core/storage.js';
 import config from '../../core/config.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { registerFloatingPanel, unregisterFloatingPanel } from '../../utils/panel-z-index.js';
+import { t } from '../../core/i18n.js';
 
 class DungeonTrackerUI {
     constructor() {
@@ -129,18 +130,18 @@ class DungeonTrackerUI {
                 ">
                     <div style="flex: 1;">
                         <span id="mwi-dt-dungeon-name" style="font-weight: bold; font-size: 14px; color: #4a9eff;">
-                            Loading...
+                            ${t('Loading...')}
                         </span>
                     </div>
                     <div style="flex: 0; padding: 0 10px; white-space: nowrap;">
-                        <span id="mwi-dt-time-label" style="font-size: 12px; color: #aaa;" title="Time since dungeon started">Elapsed: </span>
+                        <span id="mwi-dt-time-label" style="font-size: 12px; color: #aaa;" title="${t('Time since dungeon started')}">${t('Elapsed: ')}</span>
                         <span id="mwi-dt-current-time" style="font-size: 13px; color: #fff; font-weight: bold;">
                             00:00
                         </span>
                     </div>
                     <div style="flex: 1; display: flex; gap: 8px; align-items: center; justify-content: flex-end;">
                         <span id="mwi-dt-wave-counter" style="font-size: 13px; color: #aaa;">
-                            Wave 1/50
+                            ${t('Wave')} 1/50
                         </span>
                         <button id="mwi-dt-collapse-btn" style="
                             background: none;
@@ -150,7 +151,7 @@ class DungeonTrackerUI {
                             font-size: 16px;
                             padding: 0 4px;
                             line-height: 1;
-                        " title="Collapse/Expand">▼</button>
+                        " title="${t('Collapse/Expand')}">▼</button>
                     </div>
                 </div>
 
@@ -164,13 +165,13 @@ class DungeonTrackerUI {
                     color: #ccc;
                     gap: 12px;
                 ">
-                    <span>Last Run: <span id="mwi-dt-header-last" style="color: #fff; font-weight: bold;">--:--</span></span>
+                    <span>${t('Last Run:')} <span id="mwi-dt-header-last" style="color: #fff; font-weight: bold;">--:--</span></span>
                     <span>|</span>
-                    <span>Avg Run: <span id="mwi-dt-header-avg" style="color: #fff; font-weight: bold;">--:--</span></span>
+                    <span>${t('Avg Run:')} <span id="mwi-dt-header-avg" style="color: #fff; font-weight: bold;">--:--</span></span>
                     <span>|</span>
-                    <span>Runs: <span id="mwi-dt-header-runs" style="color: #fff; font-weight: bold;">0</span></span>
+                    <span>${t('Runs:')} <span id="mwi-dt-header-runs" style="color: #fff; font-weight: bold;">0</span></span>
                     <span>|</span>
-                    <span>Keys: <span id="mwi-dt-header-keys" style="color: #fff; font-weight: bold;">0</span></span>
+                    <span>${t('Keys:')} <span id="mwi-dt-header-keys" style="color: #fff; font-weight: bold;">0</span></span>
                 </div>
             </div>
 
@@ -203,19 +204,19 @@ class DungeonTrackerUI {
                 <!-- Run-level stats (2x2 grid) -->
                 <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; font-size: 11px; color: #ccc; padding-top: 4px; border-top: 1px solid #444;">
                     <div style="text-align: center;">
-                        <div style="color: #aaa; font-size: 10px;">Avg Run</div>
+                        <div style="color: #aaa; font-size: 10px;">${t('Avg Run')}</div>
                         <div id="mwi-dt-avg-time" style="color: #fff; font-weight: bold;">--:--</div>
                     </div>
                     <div style="text-align: center;">
-                        <div style="color: #aaa; font-size: 10px;">Last Run</div>
+                        <div style="color: #aaa; font-size: 10px;">${t('Last Run')}</div>
                         <div id="mwi-dt-last-time" style="color: #fff; font-weight: bold;">--:--</div>
                     </div>
                     <div style="text-align: center;">
-                        <div style="color: #aaa; font-size: 10px;">Fastest Run</div>
+                        <div style="color: #aaa; font-size: 10px;">${t('Fastest Run')}</div>
                         <div id="mwi-dt-fastest-time" style="color: #5fda5f; font-weight: bold;">--:--</div>
                     </div>
                     <div style="text-align: center;">
-                        <div style="color: #aaa; font-size: 10px;">Slowest Run</div>
+                        <div style="color: #aaa; font-size: 10px;">${t('Slowest Run')}</div>
                         <div id="mwi-dt-slowest-time" style="color: #ff6b6b; font-weight: bold;">--:--</div>
                     </div>
                 </div>
@@ -231,7 +232,7 @@ class DungeonTrackerUI {
                         font-size: 12px;
                         color: #ccc;
                     ">
-                        <span>Keys: <span id="mwi-dt-character-name">Loading...</span> (<span id="mwi-dt-self-keys">0</span>)</span>
+                        <span>${t('Keys:')} <span id="mwi-dt-character-name">${t('Loading...')}</span> (<span id="mwi-dt-self-keys">0</span>)</span>
                         <span id="mwi-dt-keys-toggle" style="font-size: 10px;">▼</span>
                     </div>
                     <div id="mwi-dt-keys-list" style="
@@ -254,7 +255,7 @@ class DungeonTrackerUI {
                         padding: 4px 0;
                         margin-bottom: 8px;
                     ">
-                        <span style="font-size: 12px; font-weight: bold; color: #ccc;">Run History <span id="mwi-dt-run-history-toggle" style="font-size: 10px;">▼</span></span>
+                        <span style="font-size: 12px; font-weight: bold; color: #ccc;">${t('Run History')} <span id="mwi-dt-run-history-toggle" style="font-size: 10px;">▼</span></span>
                         <div style="display: flex; gap: 4px;">
                             <button id="mwi-dt-backfill-btn" style="
                                 background: none;
@@ -265,7 +266,7 @@ class DungeonTrackerUI {
                                 padding: 2px 8px;
                                 border-radius: 3px;
                                 font-weight: bold;
-                            " title="Scan party chat and import historical runs">⟳ Backfill</button>
+                            " title="${t('Scan party chat and import historical runs')}">⟳ ${t('Backfill')}</button>
                             <button id="mwi-dt-clear-all" style="
                                 background: none;
                                 border: 1px solid #ff6b6b;
@@ -275,7 +276,7 @@ class DungeonTrackerUI {
                                 padding: 2px 8px;
                                 border-radius: 3px;
                                 font-weight: bold;
-                            " title="Clear all runs">✕ Clear</button>
+                            " title="${t('Clear all runs')}">✕ ${t('Clear')}</button>
                         </div>
                     </div>
 
@@ -289,7 +290,7 @@ class DungeonTrackerUI {
                         margin-bottom: 8px;
                     ">
                         <div style="margin-bottom: 6px;">
-                            <label style="margin-right: 6px;">Group by:</label>
+                            <label style="margin-right: 6px;">${t('Group by:')}</label>
                             <select id="mwi-dt-group-by" style="
                                 background: #333;
                                 color: #fff;
@@ -298,13 +299,13 @@ class DungeonTrackerUI {
                                 padding: 2px 4px;
                                 font-size: 11px;
                             ">
-                                <option value="team">Team</option>
-                                <option value="dungeon">Dungeon</option>
+                                <option value="team">${t('Team')}</option>
+                                <option value="dungeon">${t('Dungeon')}</option>
                             </select>
                         </div>
                         <div style="display: flex; gap: 12px;">
                             <div>
-                                <label style="margin-right: 6px;">Dungeon:</label>
+                                <label style="margin-right: 6px;">${t('Dungeon:')}</label>
                                 <select id="mwi-dt-filter-dungeon" style="
                                     background: #333;
                                     color: #fff;
@@ -314,11 +315,11 @@ class DungeonTrackerUI {
                                     font-size: 11px;
                                     min-width: 100px;
                                 ">
-                                    <option value="all">All Dungeons</option>
+                                    <option value="all">${t('All Dungeons')}</option>
                                 </select>
                             </div>
                             <div>
-                                <label style="margin-right: 6px;">Team:</label>
+                                <label style="margin-right: 6px;">${t('Team:')}</label>
                                 <select id="mwi-dt-filter-team" style="
                                     background: #333;
                                     color: #fff;
@@ -328,7 +329,7 @@ class DungeonTrackerUI {
                                     font-size: 11px;
                                     min-width: 100px;
                                 ">
-                                    <option value="all">All Teams</option>
+                                    <option value="all">${t('All Teams')}</option>
                                 </select>
                             </div>
                         </div>
@@ -342,7 +343,7 @@ class DungeonTrackerUI {
                         color: #ccc;
                     ">
                         <!-- Run list populated dynamically -->
-                        <div style="color: #888; font-style: italic; text-align: center; padding: 8px;">No runs yet</div>
+                        <div style="color: #888; font-style: italic; text-align: center; padding: 8px;">${t('No runs yet')}</div>
                     </div>
                 </div>
 
@@ -356,7 +357,7 @@ class DungeonTrackerUI {
                         padding: 4px 0;
                         margin-bottom: 8px;
                     ">
-                        <span style="font-size: 12px; font-weight: bold; color: #ccc;">📊 Run Chart <span id="mwi-dt-chart-toggle" style="font-size: 10px;">▼</span></span>
+                        <span style="font-size: 12px; font-weight: bold; color: #ccc;">📊 ${t('Run Chart')} <span id="mwi-dt-chart-toggle" style="font-size: 10px;">▼</span></span>
                         <button id="mwi-dt-chart-popout-btn" style="
                             background: none;
                             border: 1px solid #4a9eff;
@@ -366,7 +367,7 @@ class DungeonTrackerUI {
                             padding: 2px 8px;
                             border-radius: 3px;
                             font-weight: bold;
-                        " title="Pop out chart">⇱ Pop-out</button>
+                        " title="${t('Pop out chart')}">⇱ ${t('Pop-out')}</button>
                     </div>
                     <div id="mwi-dt-chart-container" style="
                         display: block;
@@ -412,14 +413,14 @@ class DungeonTrackerUI {
             if (run.dungeonName && run.tier !== null) {
                 dungeonName.textContent = `${run.dungeonName} (T${run.tier})`;
             } else {
-                dungeonName.textContent = 'Dungeon Loading...';
+                dungeonName.textContent = t('Dungeon Loading...');
             }
         }
 
         // Update wave counter
         const waveCounter = this.container.querySelector('#mwi-dt-wave-counter');
         if (waveCounter && run.maxWaves) {
-            waveCounter.textContent = `Wave ${run.currentWave}/${run.maxWaves}`;
+            waveCounter.textContent = `${t('Wave')} ${run.currentWave}/${run.maxWaves}`;
         }
 
         // Update current elapsed time
@@ -432,11 +433,11 @@ class DungeonTrackerUI {
         const timeLabel = this.container.querySelector('#mwi-dt-time-label');
         if (timeLabel) {
             if (run.hibernationDetected) {
-                timeLabel.textContent = 'Chat: ';
-                timeLabel.title = 'Using party chat timestamps (computer sleep detected)';
+                timeLabel.textContent = t('Chat: ');
+                timeLabel.title = t('Using party chat timestamps (computer sleep detected)');
             } else {
-                timeLabel.textContent = 'Elapsed: ';
-                timeLabel.title = 'Time since dungeon started';
+                timeLabel.textContent = t('Elapsed: ');
+                timeLabel.title = t('Time since dungeon started');
             }
         }
 
@@ -500,7 +501,7 @@ class DungeonTrackerUI {
         }
 
         if (!characterName) {
-            characterName = 'You'; // Final fallback
+            characterName = t('You'); // Final fallback
         }
 
         // Update character name in Keys section
@@ -589,7 +590,9 @@ class DungeonTrackerUI {
 
         if (playerNames.length === 0) {
             keysList.innerHTML =
-                '<div style="color: #888; font-style: italic; text-align: center; padding: 8px;">No key data yet</div>';
+                '<div style="color: #888; font-style: italic; text-align: center; padding: 8px;">' +
+                t('No key data yet') +
+                '</div>';
             return;
         }
 

@@ -4,6 +4,7 @@
  * Port of Edible Tools loot tracker feature, integrated into Toolasha architecture
  */
 
+import { t } from '../../core/i18n.js';
 import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
 import webSocketHook from '../../core/websocket.js';
@@ -310,13 +311,13 @@ class LootLogStats {
         header.style.cssText = `color: ${config.COLOR_GOLD}; font-weight: bold;`;
 
         if (askTotal === 0 && bidTotal === 0) {
-            header.textContent = 'Total Value: —';
+            header.textContent = t('Total Value: —');
             wrapper.appendChild(header);
             secondDiv.appendChild(wrapper);
             return;
         }
 
-        header.textContent = `▶ Total Value: ${formatKMB(askTotal)}/${formatKMB(bidTotal)}`;
+        header.textContent = t('▶ Total Value: {0}/{1}', formatKMB(askTotal), formatKMB(bidTotal));
         header.style.cursor = 'pointer';
         wrapper.appendChild(header);
 
@@ -363,7 +364,7 @@ class LootLogStats {
             let bidPerItem = 0;
 
             if (baseHrid === '/items/coin') {
-                name = 'Coins';
+                name = t('Coins');
                 askPerItem = 1;
                 bidPerItem = 1;
             } else {
@@ -450,7 +451,7 @@ class LootLogStats {
             if (item.askTotal > 0 || item.bidTotal > 0) {
                 totalSpan.textContent = `${formatKMB(item.askTotal)}/${formatKMB(item.bidTotal)}`;
             } else {
-                totalSpan.textContent = '—';
+                totalSpan.textContent = t('—');
             }
             row.appendChild(totalSpan);
 
@@ -524,7 +525,7 @@ class LootLogStats {
         // Create average time span
         const avgTimeSpan = document.createElement('span');
         avgTimeSpan.className = 'mwi-loot-log-avgtime';
-        avgTimeSpan.textContent = `⏱${this.formatDuration(avgTime)}`;
+        avgTimeSpan.textContent = t('⏱{0}', this.formatDuration(avgTime));
         avgTimeSpan.style.marginRight = '16px';
         avgTimeSpan.style.marginLeft = '2ch';
         avgTimeSpan.style.color = config.COLOR_INFO;
@@ -541,9 +542,9 @@ class LootLogStats {
         dayValueSpan.className = 'mwi-loot-log-day-value';
 
         if (dayValueAsk === 0 && dayValueBid === 0) {
-            dayValueSpan.textContent = 'Daily Output: —';
+            dayValueSpan.textContent = t('Daily Output: —');
         } else {
-            dayValueSpan.textContent = `Daily Output: ${formatKMB(dayValueAsk)}/${formatKMB(dayValueBid)}`;
+            dayValueSpan.textContent = t('Daily Output: {0}/{1}', formatKMB(dayValueAsk), formatKMB(dayValueBid));
         }
 
         dayValueSpan.style.float = 'right';
@@ -583,7 +584,7 @@ class LootLogStats {
             color: rgba(96, 165, 250, 0.7);
             font-size: 0.85em;
         `;
-        separator.textContent = `— Historical Entries (${historicalEntries.length}) —`;
+        separator.textContent = t('— Historical Entries ({0}) —', historicalEntries.length);
 
         // Create wrapper
         const wrapper = document.createElement('div');
@@ -603,7 +604,10 @@ class LootLogStats {
         if (historicalEntries.length > this.historicalBatchSize) {
             const showMoreBtn = document.createElement('button');
             showMoreBtn.className = 'mwi-loot-log-history-more';
-            showMoreBtn.textContent = `Show more (${historicalEntries.length - this.historicalRendered} remaining)`;
+            showMoreBtn.textContent = t(
+                'Show more ({0} remaining)',
+                historicalEntries.length - this.historicalRendered
+            );
             showMoreBtn.style.cssText = `
                 display: block;
                 width: 100%;
@@ -630,7 +634,7 @@ class LootLogStats {
                 if (remaining <= 0) {
                     showMoreBtn.remove();
                 } else {
-                    showMoreBtn.textContent = `Show more (${remaining} remaining)`;
+                    showMoreBtn.textContent = t('Show more ({0} remaining)', remaining);
                 }
             });
             wrapper.appendChild(showMoreBtn);
@@ -695,7 +699,7 @@ class LootLogStats {
                 if (remaining === 0) {
                     wrapper.remove();
                 } else if (sep) {
-                    sep.textContent = `— Historical Entries (${remaining}) —`;
+                    sep.textContent = t('— Historical Entries ({0}) —', remaining);
                 }
             }
         });
@@ -723,7 +727,7 @@ class LootLogStats {
         timeDiv.style.cssText = 'margin-bottom: 2px;';
 
         const startDate = new Date(entry.startTime);
-        timeDiv.textContent = `Start Time: ${startDate.toLocaleString()}`;
+        timeDiv.textContent = t('Start Time: {0}', startDate.toLocaleString());
         entryEl.appendChild(timeDiv);
 
         this.injectTotalValue(timeDiv, entry);
@@ -734,7 +738,7 @@ class LootLogStats {
 
         if (entry.startTime && entry.endTime) {
             const durationSec = (new Date(entry.endTime) - new Date(entry.startTime)) / 1000;
-            durationDiv.textContent = `Duration: ${this.formatDuration(durationSec)}`;
+            durationDiv.textContent = t('Duration: {0}', this.formatDuration(durationSec));
         }
         entryEl.appendChild(durationDiv);
 
@@ -853,7 +857,7 @@ class LootLogStats {
      * @returns {string}
      */
     getActionName(actionHrid) {
-        if (!actionHrid) return 'Unknown';
+        if (!actionHrid) return t('Unknown');
         const details = dataManager.getActionDetails(actionHrid);
         if (details?.name) return details.name;
         return actionHrid.split('/').pop().replace(/_/g, ' ');
@@ -896,7 +900,7 @@ class LootLogStats {
 
 // Export as feature module
 export default {
-    name: 'Loot Log Statistics',
+    name: t('Loot Log Statistics'),
     initialize: async () => {
         const lootLogStats = new LootLogStats();
         await lootLogStats.initialize();

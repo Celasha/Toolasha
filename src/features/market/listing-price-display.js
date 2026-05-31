@@ -15,6 +15,7 @@ import estimatedListingAge from './estimated-listing-age.js';
 import { coinFormatter, formatKMB, formatRelativeTime } from '../../utils/formatters.js';
 import { calculatePriceAfterTax } from '../../utils/profit-helpers.js';
 import { createCleanupRegistry } from '../../utils/cleanup-registry.js';
+import { t } from '../../core/i18n.js';
 
 /**
  * Create a styled table cell for the listings table.
@@ -370,28 +371,28 @@ class ListingPriceDisplay {
         // Create "Top Order Price" header
         const topOrderHeader = document.createElement('th');
         topOrderHeader.classList.add('mwi-listing-price-header');
-        topOrderHeader.textContent = 'Top Order Price';
+        topOrderHeader.textContent = t('Top Order Price');
 
         // Create "Top Order Age" header (if setting enabled)
         let topOrderAgeHeader = null;
         if (config.getSetting('market_showTopOrderAge')) {
             topOrderAgeHeader = document.createElement('th');
             topOrderAgeHeader.classList.add('mwi-listing-price-header');
-            topOrderAgeHeader.textContent = 'Top Order Age';
-            topOrderAgeHeader.title = 'Estimated age of the top competing order';
+            topOrderAgeHeader.textContent = t('Top Order Age');
+            topOrderAgeHeader.title = t('Estimated age of the top competing order');
         }
 
         // Create "Total Price" header
         const totalPriceHeader = document.createElement('th');
         totalPriceHeader.classList.add('mwi-listing-price-header');
-        totalPriceHeader.textContent = 'Total Price';
+        totalPriceHeader.textContent = t('Total Price');
 
         // Create "Listed" header (if setting enabled)
         let listedHeader = null;
         if (config.getSetting('market_showListingAge')) {
             listedHeader = document.createElement('th');
             listedHeader.classList.add('mwi-listing-price-header');
-            listedHeader.textContent = 'Listed';
+            listedHeader.textContent = t('Listed');
         }
 
         // Insert headers (order: Top Order Price, Top Order Age, Total Price, Listed)
@@ -749,7 +750,7 @@ class ListingPriceDisplay {
 
         if (!cacheEntry) {
             // No order book data available
-            return createStyledCell('N/A', config.COLOR_TEXT_SECONDARY, { fontSize: '0.9em' });
+            return createStyledCell(t('N/A'), config.COLOR_TEXT_SECONDARY, { fontSize: '0.9em' });
         }
 
         // Support both old format (direct data) and new format ({data, lastUpdated})
@@ -758,14 +759,14 @@ class ListingPriceDisplay {
 
         if (!orderBookData || !orderBookData.orderBooks || orderBookData.orderBooks.length === 0) {
             // No order book data available
-            return createStyledCell('N/A', config.COLOR_TEXT_SECONDARY, { fontSize: '0.9em' });
+            return createStyledCell(t('N/A'), config.COLOR_TEXT_SECONDARY, { fontSize: '0.9em' });
         }
 
         // Order books are indexed by enhancement level (same as createTopOrderPriceCell)
         const orderBook = orderBookData.orderBooks[enhancementLevel] ?? null;
 
         if (!orderBook) {
-            return createStyledCell('N/A', config.COLOR_TEXT_SECONDARY, { fontSize: '0.9em' });
+            return createStyledCell(t('N/A'), config.COLOR_TEXT_SECONDARY, { fontSize: '0.9em' });
         }
 
         // Get top order — asks sorted ascending (best = index 0), bids sorted descending (best = index 0)
@@ -773,7 +774,7 @@ class ListingPriceDisplay {
 
         if (!topOrders || topOrders.length === 0) {
             // No competing orders
-            return createStyledCell('None', '#00FF00', { fontSize: '0.9em' }); // Green = you're the only one
+            return createStyledCell(t('None'), '#00FF00', { fontSize: '0.9em' }); // Green = you're the only one
         }
 
         const topOrder = topOrders[0];
@@ -786,7 +787,7 @@ class ListingPriceDisplay {
         const ageMs = Date.now() - estimatedTimestamp;
         const formatted = formatRelativeTime(ageMs);
 
-        return createStyledCell(`~${formatted}`, estimatedListingAge.getStalenessColor(lastUpdated), {
+        return createStyledCell(t('~{0}', formatted), estimatedListingAge.getStalenessColor(lastUpdated), {
             fontSize: '0.9em',
             title: lastUpdated ? estimatedListingAge.getStalenessTooltip(lastUpdated) : undefined,
         });
@@ -850,7 +851,7 @@ class ListingPriceDisplay {
      * @returns {HTMLElement} Empty table cell element
      */
     createPlaceholderCell() {
-        return createStyledCell('N/A', config.COLOR_TEXT_SECONDARY, { fontSize: '0.9em' });
+        return createStyledCell(t('N/A'), config.COLOR_TEXT_SECONDARY, { fontSize: '0.9em' });
     }
 
     /**

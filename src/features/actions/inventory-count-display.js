@@ -5,6 +5,7 @@
  *  - Action detail panels (SkillActionDetail_regularComponent) — inline after the action name heading
  */
 
+import { t } from '../../core/i18n.js';
 import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
 import config from '../../core/config.js';
@@ -235,7 +236,7 @@ class InventoryCountDisplay {
             margin-top: 2px;
             pointer-events: none;
         `;
-        span.textContent = count > 0 ? `(${formatCount(count)} in inventory)` : '';
+        span.textContent = count > 0 ? t('({0} in inventory)', formatCount(count)) : '';
 
         // Insert after the info container (nameEl's parent) so it sits on its own
         // line below the action name row. Inserting after nameEl itself puts the span
@@ -271,7 +272,7 @@ class InventoryCountDisplay {
             if (!span || !span.dataset.outputHrid) continue;
             const count = countMap.get(span.dataset.outputHrid) || 0;
             span.style.color = config.COLOR_INV_COUNT;
-            span.textContent = count > 0 ? `(${formatCount(count)} in inventory)` : '';
+            span.textContent = count > 0 ? t('({0} in inventory)', formatCount(count)) : '';
         }
     }
 

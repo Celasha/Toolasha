@@ -3,6 +3,7 @@
  * Sends browser notification when action queue becomes empty
  */
 
+import { t } from '../../core/i18n.js';
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import webSocketHook from '../../core/websocket.js';
@@ -118,8 +119,8 @@ class EmptyQueueNotification {
             }
 
             // Use standard Notification API
-            const notification = new Notification('Milky Way Idle', {
-                body: 'Your action queue is empty!',
+            const notification = new Notification(t('Milky Way Idle'), {
+                body: t('Your action queue is empty!'),
                 icon: 'https://www.milkywayidle.com/favicon.ico',
                 tag: 'empty-queue',
                 requireInteraction: false,

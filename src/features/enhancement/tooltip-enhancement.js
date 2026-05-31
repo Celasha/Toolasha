@@ -16,6 +16,7 @@ import dataManager from '../../core/data-manager.js';
 import { formatLargeNumber, numberFormatter, formatKMB } from '../../utils/formatters.js';
 import { getItemPrice, getItemPrices } from '../../utils/market-data.js';
 import { parseArtisanBonus, getDrinkConcentration } from '../../utils/tea-parser.js';
+import { t } from '../../core/i18n.js';
 import marketAPI from '../../api/marketplace.js';
 
 const _costCache = new Map();
@@ -213,7 +214,7 @@ export function calculateEnhancementPath(itemHrid, currentEnhancementLevel, conf
         // No mirror used - return traditional result
         optimalStrategy = {
             protectFrom: optimalTraditional.protectFrom,
-            label: optimalTraditional.protectFrom === 0 ? 'Never' : `+${optimalTraditional.protectFrom}`,
+            label: optimalTraditional.protectFrom === 0 ? t('Never') : `+${optimalTraditional.protectFrom}`,
             expectedAttempts: optimalTraditional.expectedAttempts,
             totalTime: optimalTraditional.totalTime,
             baseCost: optimalTraditional.baseCost,
@@ -396,7 +397,7 @@ function buildMirrorOptimizedResult(
 
     return {
         protectFrom: optimalTraditional.protectFrom,
-        label: optimalTraditional.protectFrom === 0 ? 'Never' : `From +${optimalTraditional.protectFrom}`,
+        label: optimalTraditional.protectFrom === 0 ? t('Never') : `From +${optimalTraditional.protectFrom}`,
         expectedAttempts: totalAttempts,
         totalTime: totalTime,
         baseCost: 0, // Not applicable for mirror phase
@@ -921,7 +922,7 @@ export function buildEnhancementTooltipHTML(enhancementData) {
         const rows = [];
 
         // Base item row
-        const baseItemLabel = optimalStrategy.baseAskIsCrafted ? 'Craft Item' : 'Buy Item';
+        const baseItemLabel = optimalStrategy.baseAskIsCrafted ? t('Craft Item') : t('Buy Item');
         rows.push({
             name: toolashaConfig.isFeatureEnabled('enhanceSim_baseItemCraftingCost') ? baseItemLabel : 'Base Item',
             count: 1,
@@ -951,7 +952,7 @@ export function buildEnhancementTooltipHTML(enhancementData) {
             totalAsk += askPrice * count;
             totalBid += bidPrice * count;
 
-            let protName = 'Protection';
+            let protName = t('Protection');
             if (optimalStrategy.protectionItemHrid) {
                 const gameData = dataManager.getInitClientData();
                 const protDetails = gameData?.itemDetailMap[optimalStrategy.protectionItemHrid];

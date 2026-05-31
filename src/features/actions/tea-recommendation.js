@@ -11,6 +11,7 @@ import alchemyProfit from '../alchemy/alchemy-profit.js';
 import { findOptimalTeas, getTeaBuffDescription, getRelevantTeas } from '../../utils/tea-optimizer.js';
 import { formatKMB } from '../../utils/formatters.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
+import { t } from '../../core/i18n.js';
 
 /**
  * Get the currently selected location tab name
@@ -161,11 +162,11 @@ class TeaRecommendation {
         `;
 
         // Create XP button
-        const xpButton = this.createButton('XP', 'xp', config.COLOR_INFO);
+        const xpButton = this.createButton(t('XP'), 'xp', config.COLOR_INFO);
         // Create Gold button
-        const goldButton = this.createButton('Gold', 'gold', config.COLOR_PROFIT);
+        const goldButton = this.createButton(t('Gold'), 'gold', config.COLOR_PROFIT);
         // Create Both button
-        const bothButton = this.createButton('Both', 'both', config.COLOR_ACCENT);
+        const bothButton = this.createButton(t('Both'), 'both', config.COLOR_ACCENT);
 
         buttonContainer.appendChild(xpButton);
         buttonContainer.appendChild(goldButton);
@@ -237,7 +238,7 @@ class TeaRecommendation {
         // Get current skill name — action filter doesn't track alchemy, so override when needed
         const skillName = isAlchemy ? 'Alchemy' : actionFilter.getCurrentSkillName();
         if (!skillName) {
-            this.showError(anchorButton, 'Could not detect current skill');
+            this.showError(anchorButton, t('Could not detect current skill'));
             return;
         }
 
@@ -249,7 +250,7 @@ class TeaRecommendation {
         if (isAlchemy) {
             alchemyContext = await getAlchemyContext();
             if (!alchemyContext) {
-                this.showError(anchorButton, 'No item selected in alchemy panel');
+                this.showError(anchorButton, t('No item selected in alchemy panel'));
                 return;
             }
         }
@@ -348,18 +349,23 @@ class TeaRecommendation {
             cursor: grab;
             user-select: none;
         `;
-        header.title = 'Drag to move';
+        header.title = t('Drag to move');
         if (drilldownAction) {
-            header.textContent = `Optimal ${goalLabel}/hr for ${drilldownAction}`;
+            header.textContent = t('Optimal {0}/hr for {1}', goalLabel, drilldownAction);
         } else if (alchemyContext) {
             const dcPercent = result.drinkConcentration ? (result.drinkConcentration * 100).toFixed(2) : 0;
             const dcSuffix = dcPercent > 0 ? ` (${dcPercent}% DC)` : '';
-            header.textContent = `Optimal ${goalLabel}/hr for ${alchemyContext.actionType}: ${alchemyContext.itemName}${dcSuffix}`;
+            header.textContent = t(
+                'Optimal {0}/hr for {1}: {2}',
+                goalLabel,
+                alchemyContext.actionType,
+                alchemyContext.itemName + dcSuffix
+            );
         } else {
             const displayName = locationTab || skillName;
             const dcPercent = result.drinkConcentration ? (result.drinkConcentration * 100).toFixed(2) : 0;
             const dcSuffix = dcPercent > 0 ? ` (${dcPercent}% DC)` : '';
-            header.textContent = `Optimal ${goalLabel}/hr for ${displayName}${dcSuffix}`;
+            header.textContent = t('Optimal {0}/hr for {1}', goalLabel, displayName + dcSuffix);
         }
         popup.appendChild(header);
         this.makeDraggable(popup, header);
@@ -375,7 +381,7 @@ class TeaRecommendation {
                 background: rgba(0, 0, 0, 0.3);
                 border-radius: 4px;
             `;
-            noResult.textContent = 'No valid combinations with current constraints.';
+            noResult.textContent = t('No valid combinations with current constraints.');
             popup.appendChild(noResult);
         } else {
             const teaList = document.createElement('div');
@@ -433,11 +439,11 @@ class TeaRecommendation {
         stats.innerHTML = `
             <div style="margin-bottom: 4px;">
                 <span style="color: ${goal === 'xp' ? config.COLOR_INFO : config.COLOR_PROFIT};">
-                    Avg ${goalLabel}/hr: ${avgValue}
+                    ${t('Avg {0}/hr: {1}', goalLabel, avgValue)}
                 </span>
             </div>
             <div style="font-size: 11px;">
-                Level ${result.playerLevel} •
+                ${t('Level')} ${result.playerLevel} •
             </div>
         `;
 
@@ -449,7 +455,7 @@ class TeaRecommendation {
                 text-decoration: underline;
                 color: rgba(255, 255, 255, 0.5);
             `;
-            backLink.textContent = `← All ${skillName} actions`;
+            backLink.textContent = t('← All {0} actions', skillName);
             backLink.addEventListener('click', () => {
                 const allResult = findOptimalTeas(skillName, goal, locationTab, null, null, alchemyContext);
                 if (!allResult.error && allResult.optimal) {
@@ -466,13 +472,18 @@ class TeaRecommendation {
             } else if (goal === 'gold') {
                 actionsText =
                     excludedCount > 0
-                        ? `${profitableCount} profitable of ${result.actionsEvaluated} (+${excludedCount} excluded)`
-                        : `${profitableCount} profitable of ${result.actionsEvaluated}`;
+                        ? t(
+                              '{0} profitable of {1} (+{2} excluded)',
+                              profitableCount,
+                              result.actionsEvaluated,
+                              excludedCount
+                          )
+                        : t('{0} profitable of {1}', profitableCount, result.actionsEvaluated);
             } else {
                 actionsText =
                     excludedCount > 0
-                        ? `${result.actionsEvaluated} actions (+${excludedCount} excluded)`
-                        : `${result.actionsEvaluated} actions evaluated`;
+                        ? t('{0} actions (+{1} excluded)', result.actionsEvaluated, excludedCount)
+                        : t('{0} actions evaluated', result.actionsEvaluated);
             }
 
             const actionsToggle = document.createElement('span');
@@ -482,7 +493,7 @@ class TeaRecommendation {
                 color: rgba(255, 255, 255, 0.5);
             `;
             actionsToggle.textContent = actionsText;
-            actionsToggle.title = 'Click to expand';
+            actionsToggle.title = t('Click to expand');
 
             const actionsDetail = document.createElement('div');
             actionsDetail.style.cssText = `
@@ -560,7 +571,7 @@ class TeaRecommendation {
                         color: rgba(255, 255, 255, 0.4);
                         padding-top: 4px;
                     `;
-                    separator.textContent = `Excluded (${excludedActions.length} - level too low)`;
+                    separator.textContent = t('Excluded ({0} - level too low)', excludedActions.length);
                     actionsDetail.appendChild(separator);
                 }
 
@@ -580,7 +591,7 @@ class TeaRecommendation {
                     `;
 
                     const levelReq = document.createElement('span');
-                    levelReq.textContent = `Lvl ${excluded.requiredLevel}`;
+                    levelReq.textContent = t('Lvl {0}', excluded.requiredLevel);
                     levelReq.style.cssText = `
                         color: rgba(255, 255, 255, 0.35);
                         font-style: italic;
@@ -601,13 +612,13 @@ class TeaRecommendation {
                 } else if (goal === 'gold') {
                     expandedText =
                         excludedCount > 0
-                            ? `▼ ${profitableCount} profitable (+${excludedCount})`
-                            : `▼ ${profitableCount} profitable`;
+                            ? t('▼ {0} profitable (+{1})', profitableCount, excludedCount)
+                            : t('▼ {0} profitable', profitableCount);
                 } else {
                     expandedText =
                         excludedCount > 0
-                            ? `▼ ${result.actionsEvaluated} (+${excludedCount})`
-                            : `▼ ${result.actionsEvaluated} actions`;
+                            ? t('▼ {0} (+{1})', result.actionsEvaluated, excludedCount)
+                            : t('▼ {0} actions', result.actionsEvaluated);
                 }
                 actionsToggle.textContent = isHidden ? expandedText : actionsText;
             });
@@ -628,8 +639,8 @@ class TeaRecommendation {
                 text-decoration: underline;
                 color: ${config.COLOR_GOLD};
             `;
-            costToggle.textContent = `Tea cost: ${formatKMB(costData.total)}/hr ▶`;
-            costToggle.title = 'Click to expand';
+            costToggle.textContent = t('Tea cost: {0}/hr ▶', formatKMB(costData.total));
+            costToggle.title = t('Click to expand');
 
             const costDetail = document.createElement('div');
             costDetail.style.cssText = `
@@ -652,7 +663,7 @@ class TeaRecommendation {
                 border-bottom: 1px solid rgba(255, 255, 255, 0.15);
                 margin-bottom: 4px;
             `;
-            ['Tea', 'Units/hr', 'Unit cost', 'Cost/hr'].forEach((label) => {
+            [t('Tea'), t('Units/hr'), t('Unit cost'), t('Cost/hr')].forEach((label) => {
                 const cell = document.createElement('span');
                 cell.textContent = label;
                 cell.style.textAlign = 'right';
@@ -700,7 +711,7 @@ class TeaRecommendation {
                 border-top: 1px solid rgba(255, 255, 255, 0.15);
                 color: rgba(255, 255, 255, 0.5);
             `;
-            ['Total', '', '', formatKMB(costData.total)].forEach((text, i) => {
+            [t('Total'), '', '', formatKMB(costData.total)].forEach((text, i) => {
                 const cell = document.createElement('span');
                 cell.textContent = text;
                 cell.style.textAlign = i === 0 ? 'left' : 'right';
@@ -712,7 +723,7 @@ class TeaRecommendation {
             costToggle.addEventListener('click', () => {
                 const isHidden = costDetail.style.display === 'none';
                 costDetail.style.display = isHidden ? 'block' : 'none';
-                costToggle.textContent = `Tea cost: ${formatKMB(costData.total)}/hr ${isHidden ? '▼' : '▶'}`;
+                costToggle.textContent = t('Tea cost: {0}/hr {1}', formatKMB(costData.total), isHidden ? '▼' : '▶');
             });
 
             costSection.appendChild(costToggle);
@@ -737,7 +748,7 @@ class TeaRecommendation {
                 color: rgba(255, 255, 255, 0.5);
                 margin-bottom: 6px;
             `;
-            altHeader.textContent = 'Alternatives:';
+            altHeader.textContent = t('Alternatives:');
             altSection.appendChild(altHeader);
 
             // Show top 3 alternatives (skip the optimal)
@@ -768,7 +779,7 @@ class TeaRecommendation {
 
         const constraintHeader = document.createElement('div');
         constraintHeader.style.cssText = `font-size: 11px; color: rgba(255,255,255,0.5); margin-bottom: 6px;`;
-        constraintHeader.textContent = 'Tea Constraints:';
+        constraintHeader.textContent = t('Tea Constraints:');
         constraintSection.appendChild(constraintHeader);
 
         const relevantTeas = getRelevantTeas(skillName.toLowerCase(), goal);
@@ -804,7 +815,7 @@ class TeaRecommendation {
             // Pin button ⊕
             const pinBtn = document.createElement('button');
             pinBtn.textContent = '⊕';
-            pinBtn.title = isPinned ? 'Remove pin' : 'Pin (force include)';
+            pinBtn.title = isPinned ? t('Remove pin') : t('Pin (force include)');
             pinBtn.style.cssText = `
                 background: transparent;
                 border: 1px solid ${isPinned ? config.COLOR_GOLD : 'rgba(255,255,255,0.2)'};
@@ -827,7 +838,7 @@ class TeaRecommendation {
             // Ban button ⊘
             const banBtn = document.createElement('button');
             banBtn.textContent = '⊘';
-            banBtn.title = isBanned ? 'Remove ban' : 'Ban (force exclude)';
+            banBtn.title = isBanned ? t('Remove ban') : t('Ban (force exclude)');
             banBtn.style.cssText = `
                 background: transparent;
                 border: 1px solid ${isBanned ? config.COLOR_LOSS : 'rgba(255,255,255,0.2)'};
@@ -921,8 +932,8 @@ class TeaRecommendation {
             cursor: grab;
             user-select: none;
         `;
-        header.textContent = `Optimal Teas for ${displayName}`;
-        header.title = 'Drag to move';
+        header.textContent = t('Optimal Teas for {0}', displayName);
+        header.title = t('Drag to move');
         popup.appendChild(header);
 
         this.makeDraggable(popup, header);

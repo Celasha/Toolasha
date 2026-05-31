@@ -5,6 +5,7 @@
 
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
+import { t } from '../../core/i18n.js';
 
 const LINK_ID = 'mwi-milkyway-market-link';
 
@@ -62,7 +63,7 @@ class MilkyWayMarketLink {
         link.href = url;
         link.target = '_blank';
         link.rel = 'noopener noreferrer';
-        link.textContent = 'MilkyWay Market \u2197';
+        link.textContent = t('MilkyWay Market ↗');
         link.style.cssText = `
             font-size: 10px;
             color: #888;

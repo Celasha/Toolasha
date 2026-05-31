@@ -5,6 +5,7 @@
  * Exports character data for solo or party simulation testing
  */
 
+import { t } from '../../core/i18n.js';
 import dataManager from '../../core/data-manager.js';
 import storage from '../../core/storage.js';
 
@@ -447,7 +448,7 @@ export async function constructExportObject(externalProfileId = null, singlePlay
 
             return {
                 exportObj: playerObj,
-                playerIDs: [profile.characterName, 'Player 2', 'Player 3', 'Player 4', 'Player 5'],
+                playerIDs: [profile.characterName, t('Player 2'), t('Player 3'), t('Player 4'), t('Player 5')],
                 importedPlayerPositions: [true, false, false, false, false],
                 zone: '/actions/combat/fly',
                 isZoneDungeon: false,
@@ -467,7 +468,7 @@ export async function constructExportObject(externalProfileId = null, singlePlay
 
         return {
             exportObj,
-            playerIDs: [profile.characterName, 'Player 2', 'Player 3', 'Player 4', 'Player 5'],
+            playerIDs: [profile.characterName, t('Player 2'), t('Player 3'), t('Player 4'), t('Player 5')],
             importedPlayerPositions: [true, false, false, false, false],
             zone: '/actions/combat/fly',
             isZoneDungeon: false,
@@ -482,7 +483,7 @@ export async function constructExportObject(externalProfileId = null, singlePlay
         exportObj[i] = BLANK;
     }
 
-    const playerIDs = ['Player 1', 'Player 2', 'Player 3', 'Player 4', 'Player 5'];
+    const playerIDs = [t('Player 1'), t('Player 2'), t('Player 3'), t('Player 4'), t('Player 5')];
     const importedPlayerPositions = [false, false, false, false, false];
     let zone = '/actions/combat/fly';
     let isZoneDungeon = false;
@@ -495,7 +496,7 @@ export async function constructExportObject(externalProfileId = null, singlePlay
 
     if (!hasParty) {
         exportObj[1] = JSON.stringify(constructSelfPlayer(characterObj, clientObj));
-        playerIDs[0] = characterObj.character?.name || 'Player 1';
+        playerIDs[0] = characterObj.character?.name || t('Player 1');
         importedPlayerPositions[0] = true;
 
         // Get current combat zone and tier
@@ -531,7 +532,7 @@ export async function constructExportObject(externalProfileId = null, singlePlay
                             '- profiles have:',
                             profileList.map((p) => p.characterID)
                         );
-                        playerIDs[slotIndex - 1] = 'Open profile in game';
+                        playerIDs[slotIndex - 1] = t('Open profile in game');
                     }
                 }
                 slotIndex++;

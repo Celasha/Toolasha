@@ -3,6 +3,7 @@
  * Shows a warning message when market data cannot be fetched
  */
 
+import { t } from '../../core/i18n.js';
 import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
 
@@ -74,7 +75,7 @@ class NetworkAlert {
      * Show the network alert
      * @param {string} message - Alert message to display
      */
-    show(message = '⚠️ Market data unavailable') {
+    show(message = t('⚠️ Market data unavailable')) {
         if (!config.getSetting('networkAlert')) {
             return;
         }

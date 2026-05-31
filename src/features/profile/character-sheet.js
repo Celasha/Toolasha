@@ -1,3 +1,5 @@
+import { t } from '../../core/i18n.js';
+
 /**
  * Utilities to parse the MWI character share modal into a urpt string
  * for https://tib-san.gitlab.io/mwi-character-sheet/. Food is not present in the modal, so it is
@@ -191,7 +193,7 @@ export function buildSegmentsFromCharacterData(characterData, clientData, consum
 
     // Extract general info
     const character = characterData.sharableCharacter || characterData;
-    const name = character.name || 'Player';
+    const name = character.name || t('Player');
 
     // Avatar/outfit/icon - extract from sharableCharacter first, then fall back to items
     let avatar = 'person_default';

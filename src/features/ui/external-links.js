@@ -3,6 +3,7 @@
  * Adds links to external MWI tools in the left sidebar navigation
  */
 
+import { t } from '../../core/i18n.js';
 import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
 
@@ -60,27 +61,27 @@ class ExternalLinks {
     addLinks(container) {
         const links = [
             {
-                label: 'Combat Sim',
+                label: t('Combat Sim'),
                 url: 'https://shykai.github.io/MWICombatSimulatorTest/dist/',
             },
             {
-                label: 'Milkyway Market',
+                label: t('Milkyway Market'),
                 url: 'https://milkyway.market/',
             },
             {
-                label: 'Enhancelator',
+                label: t('Enhancelator'),
                 url: 'https://doh-nuts.github.io/Enhancelator/',
             },
             {
-                label: 'Milkonomy',
+                label: t('Milkonomy'),
                 url: 'https://hyhfish.github.io/milkonomy/#/dashboard',
             },
             {
-                label: "Socko's Combat Tracker",
+                label: t("Socko's Combat Tracker"),
                 url: 'https://sockosnewcombattracker.pages.dev/',
             },
             {
-                label: 'mwilinks',
+                label: t('mwilinks'),
                 url: 'https://www.mwilinks.site/',
             },
         ];

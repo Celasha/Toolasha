@@ -38,6 +38,7 @@ import {
 } from '../../utils/profit-helpers.js';
 import { calculateEnhancementPredictions } from '../enhancement/enhancement-xp.js';
 import { BASE_SUCCESS_RATES } from '../../utils/enhancement-calculator.js';
+import { t } from '../../core/i18n.js';
 
 /**
  * ActionTimeDisplay class manages the time display panel and queue tooltips
@@ -285,7 +286,7 @@ class ActionTimeDisplay {
                 const actionObj = this.matchActionFromDiv(actionDiv, currentActions, usedActionIds);
 
                 if (!actionObj) {
-                    this.appendTimeToActionDiv(actionDiv, '[Unknown action]');
+                    this.appendTimeToActionDiv(actionDiv, t('[Unknown action]'));
                     continue;
                 }
 
@@ -305,7 +306,7 @@ class ActionTimeDisplay {
                 // Format time text
                 let timeText;
                 if (result.isTrulyInfinite) {
-                    timeText = '[∞]';
+                    timeText = t('[∞]');
                 } else if (result.isInfinite && result.materialLimit !== null) {
                     const timeStr = timeReadable(result.totalTime);
                     timeText = `[${timeStr} · ${result.limitLabel}: ${this.formatLargeNumber(result.materialLimit)}]`;
@@ -321,7 +322,7 @@ class ActionTimeDisplay {
                     const hours = String(completionDate.getHours()).padStart(2, '0');
                     const minutes = String(completionDate.getMinutes()).padStart(2, '0');
                     const seconds = String(completionDate.getSeconds()).padStart(2, '0');
-                    timeText += ` Complete at ${hours}:${minutes}:${seconds}`;
+                    timeText += ` ${t('Complete at')} ${hours}:${minutes}:${seconds}`;
                 }
 
                 this.appendTimeToActionDiv(actionDiv, timeText);
@@ -344,9 +345,10 @@ class ActionTimeDisplay {
 
                 let totalText;
                 if (hasInfinite) {
-                    totalText = accumulatedTime > 0 ? `Total: ${timeReadable(accumulatedTime)} + [∞]` : 'Total: [∞]';
+                    totalText =
+                        accumulatedTime > 0 ? t('Total: {0} + [∞]', timeReadable(accumulatedTime)) : t('Total: [∞]');
                 } else {
-                    totalText = `Total: ${timeReadable(accumulatedTime)}`;
+                    totalText = t('Total: {0}', timeReadable(accumulatedTime));
                 }
                 totalDiv.textContent = totalText;
                 actionsContainer.appendChild(totalDiv);
@@ -516,13 +518,13 @@ class ActionTimeDisplay {
 
         // Derive limit label
         if (limitType === 'gold') {
-            limitLabel = 'gold';
+            limitLabel = t('gold');
         } else if (limitType && limitType.startsWith('material:')) {
-            limitLabel = 'mat';
+            limitLabel = t('mat');
         } else if (limitType && limitType.startsWith('upgrade:')) {
-            limitLabel = 'upgrade';
+            limitLabel = t('upgrade');
         } else {
-            limitLabel = 'max';
+            limitLabel = t('max');
         }
 
         return {
@@ -1171,17 +1173,17 @@ class ActionTimeDisplay {
         // Queue count
         if (config.getSetting('actionBar_showQueueCount')) {
             if (queueSizeDisplay !== Infinity) {
-                statsToAppend.push(`(${queueSizeDisplay.toLocaleString()} queued)`);
+                statsToAppend.push(`(${queueSizeDisplay.toLocaleString()} ${t('queued')})`);
             } else if (materialLimit !== null) {
                 let limitLabel = '';
                 if (limitType === 'gold') {
-                    limitLabel = 'gold limit';
+                    limitLabel = t('gold limit');
                 } else if (limitType && limitType.startsWith('material:')) {
-                    limitLabel = 'mat limit';
+                    limitLabel = t('mat limit');
                 } else if (limitType && limitType.startsWith('upgrade:')) {
-                    limitLabel = 'upgrade limit';
+                    limitLabel = t('upgrade limit');
                 } else {
-                    limitLabel = 'max';
+                    limitLabel = t('max');
                 }
                 statsToAppend.push(`(∞ · ${limitLabel}: ${this.formatLargeNumber(materialLimit)})`);
             } else {
@@ -1232,7 +1234,7 @@ class ActionTimeDisplay {
                               hour12: true,
                           }
                 );
-                recycleHtml = `<span style="color:#4dd0a0; margin-left:12px; font-size:11px;">Est. w/ recycle: ${recycleTimeStr} → ${recycleClockTime}</span>`;
+                recycleHtml = `<span style="color:#4dd0a0; margin-left:12px; font-size:11px;">${t('Est. w/ recycle: {0} → {1}', recycleTimeStr, recycleClockTime)}</span>`;
             }
             this.displayElement.innerHTML = `<span style="display: inline-block; margin-right: 0.25em;">⏱</span> ${matsLabel} ${timeStr} → ${clockTime}${recycleHtml}`;
         } else {
@@ -1414,11 +1416,11 @@ class ActionTimeDisplay {
         if (config.getSetting('actionBar_showActionDuration')) {
             statsToAppend.push(`${perActionTime.toFixed(2)}s/action`);
         }
-        statsToAppend.push(`${actualSuccessRate.toFixed(1)}% success`);
-        statsToAppend.push(`~${formatWithSeparator(expectedAttempts)} to target`);
+        statsToAppend.push(`${actualSuccessRate.toFixed(1)}${t('% success')}`);
+        statsToAppend.push(`${t('~{0} to target', formatWithSeparator(expectedAttempts))}`);
 
         if (protectFrom > 0 && expectedProtections > 0) {
-            statsToAppend.push(`~${formatWithSeparator(expectedProtections)} protections`);
+            statsToAppend.push(t('~{0} protections', formatWithSeparator(expectedProtections)));
         }
 
         this.appendStatsToActionName(actionNameElement, statsToAppend.join(' · '));
@@ -1458,7 +1460,7 @@ class ActionTimeDisplay {
             }
 
             const itemIconHtml = this.getItemIconHtml(limitingItemHrid);
-            const matsLabel = itemIconHtml ? `${itemIconHtml}:` : 'Mats:';
+            const matsLabel = itemIconHtml ? `${itemIconHtml}:` : t('Mats:');
             this.displayElement.innerHTML = `<span style="display: inline-block; margin-right: 0.25em;">⏱</span> ${matsLabel} ${timeStr} → ${clockTime} (${formatWithSeparator(materialLimit)} actions)`;
         } else {
             this.displayElement.innerHTML = '';

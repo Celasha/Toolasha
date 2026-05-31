@@ -5,6 +5,7 @@
  * (foraging, woodcutting, milking)
  */
 
+import { t } from '../../core/i18n.js';
 import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
 import config from '../../core/config.js';
@@ -429,12 +430,12 @@ class GatheringStats {
             const profitColor = profitPerHour >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
             const profitSign = profitPerHour >= 0 ? '' : '-';
             html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
-            html += `<span data-stat="profit" style="color: ${profitColor};">Profit/hr: ${profitSign}${formatKMB(Math.abs(profitPerHour))}</span></div>`;
+            html += `<span data-stat="profit" style="color: ${profitColor};">${t('Profit/hr: {0}', `${profitSign}${formatKMB(Math.abs(profitPerHour))}`)}</span></div>`;
         }
 
         if (showExp && expPerHour !== null && expPerHour > 0) {
             html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
-            html += `<span data-stat="exp" style="color: #fff;">Exp/hr: ${formatKMB(expPerHour)}</span></div>`;
+            html += `<span data-stat="exp" style="color: #fff;">${t('Exp/hr: {0}', formatKMB(expPerHour))}</span></div>`;
         }
 
         if (showProfit && showExp && profitPerHour !== null && expPerHour !== null && expPerHour > 0) {
@@ -442,7 +443,7 @@ class GatheringStats {
             const efficiencyColor = coinsPerXp >= 0 ? config.COLOR_INFO : config.COLOR_WARNING;
             const efficiencySign = coinsPerXp >= 0 ? '' : '-';
             html += `<div class="mwi-action-stat-line" style="white-space: nowrap;">`;
-            html += `<span data-stat="overall" style="color: ${efficiencyColor};">Profit/XP: ${efficiencySign}${formatKMB(Math.abs(coinsPerXp))}</span></div>`;
+            html += `<span data-stat="overall" style="color: ${efficiencyColor};">${t('Profit/XP: {0}', `${efficiencySign}${formatKMB(Math.abs(coinsPerXp))}`)}</span></div>`;
         }
 
         data.displayElement.innerHTML = html;

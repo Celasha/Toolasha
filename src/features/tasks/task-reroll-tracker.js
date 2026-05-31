@@ -3,6 +3,7 @@
  * Tracks and displays reroll costs for tasks using WebSocket messages
  */
 
+import { t } from '../../core/i18n.js';
 import { formatKMB } from '../../utils/formatters.js';
 import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
@@ -411,7 +412,7 @@ class TaskRerollTracker {
         }
 
         if (parts.length > 0) {
-            displayElement.textContent = `Reroll spent: ${parts.join(' + ')}`;
+            displayElement.textContent = t('Reroll spent: ') + parts.join(' + ');
             displayElement.style.display = 'block';
         } else {
             displayElement.style.display = 'none';

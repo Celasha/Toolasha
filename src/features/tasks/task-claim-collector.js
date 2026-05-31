@@ -7,6 +7,7 @@
  */
 
 import { GAME } from '../../utils/selectors.js';
+import { t } from '../../core/i18n.js';
 import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
 
@@ -81,7 +82,7 @@ class TaskClaimCollector {
 
         const count = this._getClaimableButtons(taskList).length;
         if (count > 0) {
-            this.proxyButton.textContent = count > 1 ? `Claim Reward (${count})` : 'Claim Reward';
+            this.proxyButton.textContent = count > 1 ? `${t('Claim Reward')} (${count})` : t('Claim Reward');
             this.proxyButton.style.display = '';
         } else {
             this.proxyButton.style.display = 'none';

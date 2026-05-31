@@ -13,6 +13,7 @@ import config from '../../core/config.js';
 import storage from '../../core/storage.js';
 import marketAPI from '../../api/marketplace.js';
 import { formatRelativeTime } from '../../utils/formatters.js';
+import { t } from '../../core/i18n.js';
 
 class EstimatedListingAge {
     constructor() {
@@ -647,8 +648,8 @@ class EstimatedListingAge {
         // Add header
         const header = document.createElement('th');
         header.classList.add('mwi-estimated-age-header');
-        header.textContent = '~Age';
-        header.title = 'Estimated listing age (based on listing ID)';
+        header.textContent = t('~Age');
+        header.title = t('Estimated listing age (based on listing ID)');
         thead.appendChild(header);
 
         // Track which of user's listings have been matched to prevent duplicates
@@ -685,7 +686,7 @@ class EstimatedListingAge {
                     // Estimated timestamp for other listings
                     const estimatedTimestamp = this.estimateTimestamp(listingId);
                     const formatted = this.formatTimestamp(estimatedTimestamp);
-                    cell.textContent = `~${formatted}`;
+                    cell.textContent = t('~{0}', formatted);
                     cell.style.color = '#999999'; // Gray to indicate estimate
                     cell.style.fontSize = '0.9em';
                 }
@@ -733,7 +734,7 @@ class EstimatedListingAge {
                         cell.style.color = '#00FF00'; // Green for YOUR listing
                         cell.style.fontSize = '0.9em';
                     } else {
-                        cell.textContent = '~Unknown';
+                        cell.textContent = t('~Unknown');
                         cell.style.color = '#666666';
                         cell.style.fontSize = '0.9em';
                     }
@@ -889,12 +890,12 @@ class EstimatedListingAge {
      */
     getStalenessTooltip(lastUpdated) {
         if (!lastUpdated) {
-            return 'Order book data - Visit market page to refresh';
+            return t('Order book data - Visit market page to refresh');
         }
 
         const age = Date.now() - lastUpdated;
         const relativeTime = formatRelativeTime(age);
-        return `Order book data from ${relativeTime} ago - Visit market page to refresh`;
+        return t('Order book data from {0} ago - Visit market page to refresh', relativeTime);
     }
 
     /**

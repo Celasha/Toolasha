@@ -17,6 +17,9 @@ import {
     formatCurrency,
     formatCompactNumber,
     formatLargeNumber,
+    timeReadableZh,
+    formatKMBzh,
+    coinFormatterZh,
 } from './formatters.js';
 
 // Mock config module for formatLargeNumber tests
@@ -27,6 +30,15 @@ vi.mock('../core/config.js', () => ({
             return undefined;
         }),
     },
+}));
+
+// Mock i18n module — pass-through for testing (English fallback)
+vi.mock('../core/i18n.js', () => ({
+    t: vi.fn((str, ...args) => {
+        if (args.length === 0) return str;
+        return str.replace(/\{(\d+)\}/g, (_, index) => args[parseInt(index, 10)] ?? `{${index}}`);
+    }),
+    registerLocale: vi.fn(),
 }));
 
 describe('numberFormatter', () => {
@@ -386,5 +398,133 @@ describe('formatLargeNumber', () => {
     test('respects decimal parameter', () => {
         expect(formatLargeNumber(1500000, 2)).toBe('1.50M');
         expect(formatLargeNumber(2300, 0)).toBe('2K');
+    });
+});
+
+describe('timeReadableZh', () => {
+    describe('seconds format (< 1 minute)', () => {
+        test('formats seconds only with 秒', () => {
+            expect(timeReadableZh(30)).toBe('30秒');
+            expect(timeReadableZh(59)).toBe('59秒');
+        });
+    });
+
+    describe('hours:minutes:seconds format (< 1 day)', () => {
+        test('formats hours, minutes, and seconds with Chinese units', () => {
+            expect(timeReadableZh(3661)).toBe('1时 01分 01秒');
+            expect(timeReadableZh(3600)).toBe('1时 00分 00秒');
+        });
+
+        test('formats minutes and seconds without hours', () => {
+            expect(timeReadableZh(125)).toBe('0时 02分 05秒');
+        });
+    });
+
+    describe('days format (>= 1 day, < 1 year)', () => {
+        test('formats single day', () => {
+            expect(timeReadableZh(86400)).toBe('1天');
+        });
+
+        test('formats days with hours', () => {
+            expect(timeReadableZh(90000)).toBe('1天 1时');
+        });
+
+        test('formats multiple days', () => {
+            expect(timeReadableZh(172800)).toBe('2天');
+        });
+    });
+
+    describe('years format (>= 1 year)', () => {
+        test('formats single year', () => {
+            expect(timeReadableZh(31536000)).toBe('1年');
+        });
+
+        test('formats years, months, and days', () => {
+            const result = timeReadableZh(100000000);
+            expect(result).toContain('年');
+            expect(result).toContain('月');
+        });
+
+        test('formats multiple years', () => {
+            expect(timeReadableZh(63072000)).toBe('2年');
+        });
+    });
+});
+
+describe('formatKMBzh', () => {
+    test('formats small numbers without suffix', () => {
+        expect(formatKMBzh(999)).toBe('999');
+        expect(formatKMBzh(1500)).toBe('1500');
+    });
+
+    test('formats with 万 suffix', () => {
+        expect(formatKMBzh(50000)).toBe('5.00万');
+        expect(formatKMBzh(1500000)).toBe('150.00万');
+    });
+
+    test('formats with 亿 suffix', () => {
+        expect(formatKMBzh(120000000)).toBe('1.20亿');
+        expect(formatKMBzh(1500000000)).toBe('15.00亿');
+        expect(formatKMBzh(10000000000)).toBe('100.00亿');
+    });
+
+    test('formats with 万亿 suffix', () => {
+        expect(formatKMBzh(1000000000000)).toBe('1.00万亿');
+    });
+
+    test('respects decimal parameter', () => {
+        expect(formatKMBzh(50000, 0)).toBe('5万');
+        expect(formatKMBzh(120000000, 1)).toBe('1.2亿');
+    });
+
+    test('handles negative numbers', () => {
+        expect(formatKMBzh(-50000)).toBe('-5.00万');
+        expect(formatKMBzh(-120000000)).toBe('-1.20亿');
+    });
+
+    test('handles null and undefined', () => {
+        expect(formatKMBzh(null)).toBe(null);
+        expect(formatKMBzh(undefined)).toBe(null);
+    });
+});
+
+describe('coinFormatterZh', () => {
+    test('formats 0-999 as raw numbers', () => {
+        expect(coinFormatterZh(999)).toBe('999');
+        expect(coinFormatterZh(500)).toBe('500');
+        expect(coinFormatterZh(0)).toBe('0');
+    });
+
+    test('formats 1,000-9,999 with comma', () => {
+        expect(coinFormatterZh(1000)).toBe('1,000');
+        expect(coinFormatterZh(9999)).toBe('9,999');
+    });
+
+    test('formats 1万-9,999万 range', () => {
+        expect(coinFormatterZh(10000)).toBe('1万');
+        expect(coinFormatterZh(999999)).toBe('99万');
+        expect(coinFormatterZh(10000000)).toBe('1,000万');
+        expect(coinFormatterZh(99999999)).toBe('9,999万');
+    });
+
+    test('formats 1亿-9,999亿 range', () => {
+        expect(coinFormatterZh(100000000)).toBe('1亿');
+        expect(coinFormatterZh(999999999)).toBe('9亿');
+        expect(coinFormatterZh(10000000000)).toBe('100亿');
+    });
+
+    test('formats 万亿+ range', () => {
+        expect(coinFormatterZh(1000000000000)).toBe('1万亿');
+        expect(coinFormatterZh(100000000000000)).toBe('100万亿');
+    });
+
+    test('handles negative numbers', () => {
+        expect(coinFormatterZh(-1000)).toBe('-1,000');
+        expect(coinFormatterZh(-10000)).toBe('-1万');
+    });
+
+    test('handles null and undefined', () => {
+        expect(coinFormatterZh(null)).toBe(null);
+        expect(coinFormatterZh(undefined)).toBe(null);
     });
 });

@@ -3,6 +3,7 @@
  * Ranks all enhanceable items by expected XP per hour at the user's current stats.
  */
 
+import { t } from '../../core/i18n.js';
 import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
 import dataManager from '../../core/data-manager.js';
@@ -148,7 +149,7 @@ class XPHCalculator {
 
         const btn = document.createElement('button');
         btn.className = BTN_CLASS;
-        btn.textContent = 'XPH Calc';
+        btn.textContent = t('XPH Calc');
         btn.style.cssText = `
             background: linear-gradient(180deg, rgba(0,200,150,0.2) 0%, rgba(0,200,150,0.1) 100%);
             color: #e0e0e0;
@@ -207,7 +208,7 @@ class XPHCalculator {
             flex-shrink: 0;
         `;
         header.innerHTML = `
-            <span style="font-weight:700; font-size:14px; color:#00c896;">Enhancement XPH Calculator</span>
+            <span style="font-weight:700; font-size:14px; color:#00c896;">${t('Enhancement XPH Calculator')}</span>
             <button id="mwi-xph-close" style="
                 background:none; border:none; color:#aaa; font-size:22px;
                 cursor:pointer; padding:0; line-height:1;">×</button>
@@ -232,9 +233,9 @@ class XPHCalculator {
             'width:46px; background:#1a1a2e; color:#e0e0e0; border:1px solid #444; border-radius:4px; padding:3px 6px; font-size:12px; text-align:center;';
 
         controls.innerHTML = `
-            <label style="color:#888; font-size:12px;">Max level</label>
+            <label style="color:#888; font-size:12px;">${t('Max level')}</label>
             <input id="mwi-xph-maxlevel" type="number" min="1" max="20" value="${defaultMax}" style="${inputStyle}">
-            <label style="color:#888; font-size:12px; margin-left:6px;">Protect from</label>
+            <label style="color:#888; font-size:12px; margin-left:6px;">${t('Protect from')}</label>
             <input id="mwi-xph-protect" type="number" min="0" max="19" value="${defaultProtect}" style="${inputStyle}">
             <button id="mwi-xph-run" style="
                 margin-left: auto;
@@ -245,7 +246,7 @@ class XPHCalculator {
                 padding: 5px 14px;
                 font-size: 12px;
                 font-weight: 600;
-                cursor: pointer;">Calculate</button>
+                cursor: pointer;">${t('Calculate')}</button>
         `;
 
         // Table container
@@ -258,10 +259,10 @@ class XPHCalculator {
             <table style="width:100%; border-collapse:collapse;">
                 <thead style="position:sticky; top:0; background:#0a0a14; z-index:1;">
                     <tr>
-                        <th id="mwi-xph-th-name" style="${thBase} text-align:left;"># Item</th>
-                        <th id="mwi-xph-th-xph"  style="${thBase} text-align:right;">XP/hr ▼</th>
-                        <th id="mwi-xph-th-gpx"  style="${thBase} text-align:right;">Gold/XP</th>
-                        <th id="mwi-xph-th-cphr" style="${thBase} text-align:right;">Cost/hr</th>
+                        <th id="mwi-xph-th-name" style="${thBase} text-align:left;">${t('# Item')}</th>
+                        <th id="mwi-xph-th-xph"  style="${thBase} text-align:right;">${t('XP/hr')} ▼</th>
+                        <th id="mwi-xph-th-gpx"  style="${thBase} text-align:right;">${t('Gold/XP')}</th>
+                        <th id="mwi-xph-th-cphr" style="${thBase} text-align:right;">${t('Cost/hr')}</th>
                     </tr>
                 </thead>
                 <tbody id="mwi-xph-tbody"></tbody>
@@ -273,7 +274,7 @@ class XPHCalculator {
         status.id = 'mwi-xph-status';
         status.style.cssText =
             'padding:6px 14px; color:#555; font-size:11px; border-top:1px solid #1a1a1a; flex-shrink:0; text-align:center;';
-        status.textContent = 'Enter parameters and click Calculate.';
+        status.textContent = t('Enter parameters and click Calculate.');
 
         this.panel.appendChild(header);
         this.panel.appendChild(controls);
@@ -329,7 +330,7 @@ class XPHCalculator {
         );
 
         const status = this.panel.querySelector('#mwi-xph-status');
-        status.textContent = 'Calculating…';
+        status.textContent = t('Calculating…');
         this.tableBody.innerHTML = '';
 
         const t = setTimeout(() => {
@@ -337,7 +338,7 @@ class XPHCalculator {
                 this._compute(maxLevel, protectFrom);
             } catch (err) {
                 console.error('[XPHCalculator] Error:', err);
-                status.textContent = 'Error during calculation.';
+                status.textContent = t('Error during calculation.');
             }
         }, 10);
         this.timerRegistry.registerTimeout(t);
@@ -347,7 +348,7 @@ class XPHCalculator {
         const gameData = dataManager.getInitClientData();
         const status = this.panel.querySelector('#mwi-xph-status');
         if (!gameData) {
-            status.textContent = 'No game data available.';
+            status.textContent = t('No game data available.');
             return;
         }
 
@@ -367,8 +368,9 @@ class XPHCalculator {
         this._updateSortIndicators();
 
         const withCost = results.filter((r) => r.costPerHour !== null).length;
-        const partialNote = results.some((r) => r.costPartial) ? ' * = partial price data.' : '';
-        status.textContent = `${results.length} items · ${withCost} with cost data.${partialNote}`;
+        const partialNote = results.some((r) => r.costPartial) ? ` ${t('* = partial price data.')}` : '';
+        status.textContent =
+            t('{count} items · {withCost} with cost data', { count: results.length, withCost }) + partialNote;
     }
 
     _sort(col) {

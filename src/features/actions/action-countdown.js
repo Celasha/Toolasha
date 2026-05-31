@@ -4,6 +4,7 @@
  * Syncs to the game's progress bar fill via scaleX transform.
  */
 
+import { t } from '../../core/i18n.js';
 import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
 import dataManager from '../../core/data-manager.js';
@@ -147,7 +148,7 @@ class ActionCountdown {
 
         if (remaining !== undefined) {
             remaining = Math.max(0, remaining);
-            span.textContent = remaining.toFixed(1) + 's / ' + this.totalTime.toFixed(1) + 's';
+            span.textContent = remaining.toFixed(1) + t('s / ') + this.totalTime.toFixed(1) + 's';
         }
     }
 

@@ -8,6 +8,7 @@ import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
 import webSocketHook from '../../core/websocket.js';
+import { t } from '../../core/i18n.js';
 import { setReactInputValue } from '../../utils/react-input.js';
 import { findActionInput } from '../../utils/action-panel-helper.js';
 import { calculateTaskProfit, calculateTaskRewardValue } from './task-profit-calculator.js';
@@ -80,14 +81,14 @@ function calculateTaskEfficiencyRating(profitData, ratingMode) {
         if (profitData.rewards?.error || profitData.totalProfit === null || profitData.totalProfit === undefined) {
             return {
                 value: null,
-                unitLabel: 'gold/hr',
-                error: profitData.rewards?.error || 'Missing price data',
+                unitLabel: t('gold/hr'),
+                error: profitData.rewards?.error || t('Missing price data'),
             };
         }
 
         return {
             value: profitData.totalProfit / hours,
-            unitLabel: 'gold/hr',
+            unitLabel: t('gold/hr'),
             error: null,
         };
     }
@@ -95,7 +96,7 @@ function calculateTaskEfficiencyRating(profitData, ratingMode) {
     const tokensReceived = profitData.rewards?.breakdown?.tokensReceived ?? 0;
     return {
         value: tokensReceived / hours,
-        unitLabel: 'tokens/hr',
+        unitLabel: t('tokens/hr'),
         error: null,
     };
 }
@@ -806,7 +807,7 @@ class TaskProfitDisplay {
             console.error('[Task Profit Display] Failed to calculate profit:', error);
 
             // Display error state in UI
-            this.displayErrorState(taskNode, 'Unable to calculate profit');
+            this.displayErrorState(taskNode, t('Unable to calculate profit'));
 
             // Remove from pending queue if present
             this.pendingTaskNodes.delete(taskNode);
@@ -919,13 +920,16 @@ class TaskProfitDisplay {
         let html = '<div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">';
         html +=
             '<select class="mwi-combat-est-loadout" style="font-size:11px; background:#1a1a1a; color:#ccc; border:1px solid #444; border-radius:3px; padding:2px 4px;">';
-        html += '<option value="">— Current Gear —</option>';
+        html += `<option value="">${t('— Current Gear —')}</option>`;
         for (const s of snapshots) {
             html += `<option value="${s.name}">${s.name}</option>`;
         }
         html += '</select>';
         html +=
-            '<button class="mwi-combat-est-btn" style="font-size:11px; padding:2px 8px; background:#1a3a5c; color:#4a9eff; border:1px solid #4a9eff44; border-radius:3px; cursor:pointer;">⚔ Estimate</button>';
+            '<button class="mwi-combat-est-btn" style="font-size:11px; padding:2px 8px; background:#1a3a5c; color:#4a9eff; border:1px solid #4a9eff44; border-radius:3px; cursor:pointer;">' +
+            '⚔ ' +
+            t('Estimate') +
+            '</button>';
         html += '</div>';
         container.innerHTML = html;
 
@@ -968,17 +972,19 @@ class TaskProfitDisplay {
                       )
                     : [],
             });
-            container.innerHTML = '<span style="color:#f87171; font-size:11px;">Could not identify monster.</span>';
+            container.innerHTML =
+                '<span style="color:#f87171; font-size:11px;">' + t('Could not identify monster.') + '</span>';
             return;
         }
 
         const zoneHrid = dataManager.getCombatZoneForMonster(monsterHrid);
         if (!zoneHrid) {
-            container.innerHTML = '<span style="color:#f87171; font-size:11px;">No zone found for monster.</span>';
+            container.innerHTML =
+                '<span style="color:#f87171; font-size:11px;">' + t('No zone found for monster.') + '</span>';
             return;
         }
 
-        container.innerHTML = '<span style="color:#888; font-size:11px;">⏳ Simulating…</span>';
+        container.innerHTML = '<span style="color:#888; font-size:11px;">' + '⏳ ' + t('Simulating...') + '</span>';
 
         try {
             const gameData = buildGameDataPayload();
@@ -1065,9 +1071,9 @@ class TaskProfitDisplay {
             );
         } catch (e) {
             console.error('[TaskProfit] Combat estimate failed:', e);
-            container.innerHTML = '<span style="color:#f87171; font-size:11px;">Estimate failed. </span>';
+            container.innerHTML = '<span style="color:#f87171; font-size:11px;">' + t('Estimate failed. ') + '</span>';
             const retry = document.createElement('span');
-            retry.textContent = 'Retry';
+            retry.textContent = t('Retry');
             retry.style.cssText = 'color:#4a9eff; cursor:pointer; font-size:11px;';
             retry.addEventListener('click', () => this._renderCombatEstimateConfig(container, taskData));
             container.appendChild(retry);
@@ -1132,31 +1138,37 @@ class TaskProfitDisplay {
 
         const remaining = Math.max((taskData.quantity ?? 0) - (taskData.currentProgress ?? 0), 0);
         const lines = [];
-        lines.push('<div style="font-weight: bold; margin-bottom: 4px;">Task Profit Breakdown</div>');
+        lines.push(`<div style="font-weight: bold; margin-bottom: 4px;">${t('Task Profit Breakdown')}</div>`);
         lines.push('<div style="border-bottom: 1px solid #555; margin-bottom: 4px;"></div>');
         lines.push(
-            `<div style="margin-bottom: 2px; color: #aaa;">Monster: ${monsterName} × ${remaining.toLocaleString()} kills (${formatKMB(killsPerHour)}/hr)</div>`
+            `<div style="margin-bottom: 2px; color: #aaa;">${t('Monster:')} ${monsterName} × ${remaining.toLocaleString()} ${t('kills')} (${formatKMB(killsPerHour)}/hr)</div>`
         );
-        lines.push(`<div style="margin-bottom: 4px; color: #aaa;">Loadout: ${loadoutName || 'Current Gear'}</div>`);
+        lines.push(
+            `<div style="margin-bottom: 4px; color: #aaa;">${t('Loadout:')} ${loadoutName || t('Current Gear')}</div>`
+        );
 
         // Task Rewards — matching skilling section exactly
-        lines.push('<div style="margin-bottom: 4px; color: #aaa;">Task Rewards:</div>');
-        lines.push(`<div style="margin-left: 10px;">Coins: ${formatKMB(rewardValue.coins)}</div>`);
+        lines.push(`<div style="margin-bottom: 4px; color: #aaa;">${t('Task Rewards:')}</div>`);
+        lines.push(`<div style="margin-left: 10px;">${t('Coins:')} ${formatKMB(rewardValue.coins)}</div>`);
         if (!rewardValue.error) {
-            lines.push(`<div style="margin-left: 10px;">Task Tokens: ${formatKMB(rewardValue.taskTokens)}</div>`);
             lines.push(
-                `<div style="margin-left: 20px; font-size: 0.65rem; color: #888;">(${rewardValue.breakdown.tokensReceived} tokens @ ${formatKMB(Math.round(rewardValue.breakdown.tokenValue))} each)</div>`
+                `<div style="margin-left: 10px;">${t('Task Tokens:')} ${formatKMB(rewardValue.taskTokens)}</div>`
             );
-            lines.push(`<div style="margin-left: 10px;">Purple's Gift: ${formatKMB(rewardValue.purpleGift)}</div>`);
             lines.push(
-                `<div style="margin-left: 20px; font-size: 0.65rem; color: #888;">(${formatKMB(Math.round(rewardValue.breakdown.giftPerTask))} per task)</div>`
+                `<div style="margin-left: 20px; font-size: 0.65rem; color: #888;">(${rewardValue.breakdown.tokensReceived} ${t('tokens')} @ ${formatKMB(Math.round(rewardValue.breakdown.tokenValue))} ${t('each')})</div>`
+            );
+            lines.push(
+                `<div style="margin-left: 10px;">${t("Purple's Gift:")} ${formatKMB(rewardValue.purpleGift)}</div>`
+            );
+            lines.push(
+                `<div style="margin-left: 20px; font-size: 0.65rem; color: #888;">(${formatKMB(Math.round(rewardValue.breakdown.giftPerTask))} ${t('per task')})</div>`
             );
         }
 
         // Drops — total over task duration
         if (dropEntries.length > 0) {
             lines.push(
-                `<div style="margin-top: 6px; margin-bottom: 4px; color: #aaa;">Drops: ${formatKMB(Math.round(totalDropValue))}</div>`
+                `<div style="margin-top: 6px; margin-bottom: 4px; color: #aaa;">${t('Drops:')} ${formatKMB(Math.round(totalDropValue))}</div>`
             );
             for (const d of dropEntries.slice(0, 8)) {
                 const taskCount = d.countPerHour * completionHours;
@@ -1170,7 +1182,7 @@ class TaskProfitDisplay {
         // Consumables — total over task duration
         if (consumableEntries.length > 0) {
             lines.push(
-                `<div style="margin-top: 6px; margin-bottom: 4px; color: #aaa;">Consumables: -${formatKMB(Math.round(totalConsumableCost))}</div>`
+                `<div style="margin-top: 6px; margin-bottom: 4px; color: #aaa;">${t('Consumables:')} -${formatKMB(Math.round(totalConsumableCost))}</div>`
             );
             for (const c of consumableEntries) {
                 const taskCount = c.countPerHour * completionHours;
@@ -1184,7 +1196,7 @@ class TaskProfitDisplay {
         breakdown.innerHTML = lines.join('');
 
         const rerunBtn = document.createElement('button');
-        rerunBtn.textContent = 'Re-run';
+        rerunBtn.textContent = t('Re-run');
         rerunBtn.style.cssText =
             'margin-top:6px; font-size:11px; padding:2px 8px; background:#1a3a5c; color:#4a9eff; border:1px solid #4a9eff44; border-radius:3px; cursor:pointer;';
         rerunBtn.addEventListener('click', (e) => {
@@ -1230,7 +1242,7 @@ class TaskProfitDisplay {
         if (profitData.error) {
             profitContainer.innerHTML = `
                 <div style="color: ${config.SCRIPT_COLOR_ALERT};">
-                    Unable to calculate profit
+                    ${t('Unable to calculate profit')}
                 </div>
             `;
             actionNode.appendChild(profitContainer);
@@ -1431,7 +1443,7 @@ class TaskProfitDisplay {
         const formatTotalValue = (value) => (showTotals ? formatKMB(value) : '-- ⚠');
         const formatPerActionValue = (value) => (showTotals ? formatKMB(Math.round(value)) : '-- ⚠');
 
-        lines.push('<div style="font-weight: bold; margin-bottom: 4px;">Task Profit Breakdown</div>');
+        lines.push(`<div style="font-weight: bold; margin-bottom: 4px;">${t('Task Profit Breakdown')}</div>`);
         lines.push('<div style="border-bottom: 1px solid #555; margin-bottom: 4px;"></div>');
 
         // Show warning if market data unavailable
@@ -1442,15 +1454,15 @@ class TaskProfitDisplay {
         }
 
         // Task Rewards section
-        lines.push('<div style="margin-bottom: 4px; color: #aaa;">Task Rewards:</div>');
-        lines.push(`<div style="margin-left: 10px;">Coins: ${formatKMB(profitData.rewards.coins)}</div>`);
+        lines.push(`<div style="margin-bottom: 4px; color: #aaa;">${t('Task Rewards:')}</div>`);
+        lines.push(`<div style="margin-left: 10px;">${t('Coins:')} ${formatKMB(profitData.rewards.coins)}</div>`);
 
         if (!profitData.rewards.error) {
             lines.push(
                 `<div style="margin-left: 10px;">Task Tokens: ${formatKMB(profitData.rewards.taskTokens)}</div>`
             );
             lines.push(
-                `<div style="margin-left: 20px; font-size: 0.65rem; color: #888;">(${profitData.rewards.breakdown.tokensReceived} tokens @ ${formatKMB(Math.round(profitData.rewards.breakdown.tokenValue))} each)</div>`
+                `<div style="margin-left: 20px; font-size: 0.65rem; color: #888;">(${profitData.rewards.breakdown.tokensReceived} ${t('tokens')} @ ${formatKMB(Math.round(profitData.rewards.breakdown.tokenValue))} ${t('each')})</div>`
             );
             lines.push(
                 `<div style="margin-left: 10px;">Purple's Gift: ${formatKMB(profitData.rewards.purpleGift)}</div>`
@@ -1460,19 +1472,19 @@ class TaskProfitDisplay {
             );
         } else {
             lines.push(
-                `<div style="margin-left: 10px; color: #888; font-style: italic;">Task Tokens: Loading...</div>`
+                `<div style="margin-left: 10px; color: #888; font-style: italic;">${t('Task Tokens: Loading...')}</div>`
             );
             lines.push(
-                `<div style="margin-left: 10px; color: #888; font-style: italic;">Purple's Gift: Loading...</div>`
+                `<div style="margin-left: 10px; color: #888; font-style: italic;">${t("Purple's Gift: Loading...")}</div>`
             );
         }
         // Action profit section
-        lines.push('<div style="margin-top: 6px; margin-bottom: 4px; color: #aaa;">Action Profit:</div>');
+        lines.push(`<div style="margin-top: 6px; margin-bottom: 4px; color: #aaa;">${t('Action Profit:')}</div>`);
 
         if (profitData.type === 'gathering') {
             // Gathering Value (expandable)
             lines.push(
-                `<div class="mwi-expandable-header" data-section="gathering" style="margin-left: 10px; cursor: pointer; user-select: none;">Gathering Value: ${formatTotalValue(profitData.action.totalValue)} ▸</div>`
+                `<div class="mwi-expandable-header" data-section="gathering" style="margin-left: 10px; cursor: pointer; user-select: none;">${t('Gathering Value:')} ${formatTotalValue(profitData.action.totalValue)} ▸</div>`
             );
             lines.push(
                 `<div class="mwi-expandable-section" data-section="gathering" style="display: none; margin-left: 20px; font-size: 0.65rem; color: #888; margin-top: 2px;">`
@@ -1493,7 +1505,7 @@ class TaskProfitDisplay {
                     const processingRevenueTotal = (details.processingRevenueBonusPerAction || 0) * quantity;
                     const primaryOutputTotal = baseRevenueTotal + gourmetRevenueTotal + processingRevenueTotal;
                     lines.push(
-                        `<div style="margin-top: 2px; color: #aaa;">Primary Outputs: ${formatTotalValue(Math.round(primaryOutputTotal))}</div>`
+                        `<div style="margin-top: 2px; color: #aaa;">${t('Primary Outputs:')} ${formatTotalValue(Math.round(primaryOutputTotal))}</div>`
                     );
                     for (const output of details.baseOutputs) {
                         const itemsPerAction = output.itemsPerAction ?? output.itemsPerHour / actionsPerHour;
@@ -1501,7 +1513,7 @@ class TaskProfitDisplay {
                         const itemsForTask = itemsPerAction * quantity;
                         const revenueForTask = revenuePerAction * quantity;
                         const dropRateText =
-                            output.dropRate < 1.0 ? ` (${formatPercentage(output.dropRate, 1)} drop)` : '';
+                            output.dropRate < 1.0 ? ` (${formatPercentage(output.dropRate, 1)} ${t('drop')})` : '';
                         const missingPriceNote = output.missingPrice ? ' ⚠' : '';
                         lines.push(
                             `<div>• ${output.name} (Base): ${itemsForTask.toFixed(1)} items @ ${formatKMB(Math.round(output.priceEach))}${missingPriceNote} = ${formatKMB(Math.round(revenueForTask))}${dropRateText}</div>`
@@ -1564,7 +1576,7 @@ class TaskProfitDisplay {
                             0
                         );
                         lines.push(
-                            `<div style="margin-top: 4px; color: #aaa;">Essence Drops: ${formatTotalValue(Math.round(totalEssenceRevenue))}</div>`
+                            `<div style="margin-top: 4px; color: #aaa;">${t('Essence Drops:')} ${formatTotalValue(Math.round(totalEssenceRevenue))}</div>`
                         );
                         for (const drop of essenceDrops) {
                             const dropsForTask = (drop.dropsPerAction || 0) * quantity;
@@ -1582,7 +1594,7 @@ class TaskProfitDisplay {
                             0
                         );
                         lines.push(
-                            `<div style="margin-top: 4px; color: #aaa;">Rare Finds: ${formatTotalValue(Math.round(totalRareRevenue))}</div>`
+                            `<div style="margin-top: 4px; color: #aaa;">${t('Rare Finds:')} ${formatTotalValue(Math.round(totalRareRevenue))}</div>`
                         );
                         for (const drop of rareFindDrops) {
                             const dropsForTask = (drop.dropsPerAction || 0) * quantity;
@@ -1607,7 +1619,7 @@ class TaskProfitDisplay {
 
             // Net Production (expandable)
             lines.push(
-                `<div class="mwi-expandable-header" data-section="production" style="margin-left: 10px; cursor: pointer; user-select: none;">Net Production: ${formatTotalValue(netProductionValue)} ▸</div>`
+                `<div class="mwi-expandable-header" data-section="production" style="margin-left: 10px; cursor: pointer; user-select: none;">${t('Net Production:')} ${formatTotalValue(netProductionValue)} ▸</div>`
             );
             lines.push(
                 `<div class="mwi-expandable-section" data-section="production" style="display: none; margin-left: 20px; font-size: 0.65rem; color: #888; margin-top: 2px;">`
@@ -1624,7 +1636,7 @@ class TaskProfitDisplay {
                 const primaryOutputTotal = baseRevenueTotal + gourmetRevenueTotal;
 
                 lines.push(
-                    `<div style="margin-top: 2px; color: #aaa;">Primary Outputs: ${formatTotalValue(Math.round(primaryOutputTotal))}</div>`
+                    `<div style="margin-top: 2px; color: #aaa;">${t('Primary Outputs:')} ${formatTotalValue(Math.round(primaryOutputTotal))}</div>`
                 );
 
                 lines.push(
@@ -1649,7 +1661,7 @@ class TaskProfitDisplay {
                         0
                     );
                     lines.push(
-                        `<div style="margin-top: 4px; color: #aaa;">Essence Drops: ${formatTotalValue(Math.round(totalEssenceRevenue))}</div>`
+                        `<div style="margin-top: 4px; color: #aaa;">${t('Essence Drops:')} ${formatTotalValue(Math.round(totalEssenceRevenue))}</div>`
                     );
                     for (const drop of essenceDrops) {
                         const dropsForTask = (drop.dropsPerAction || 0) * profitData.action.breakdown.quantity;
@@ -1667,7 +1679,7 @@ class TaskProfitDisplay {
                         0
                     );
                     lines.push(
-                        `<div style="margin-top: 4px; color: #aaa;">Rare Finds: ${formatTotalValue(Math.round(totalRareRevenue))}</div>`
+                        `<div style="margin-top: 4px; color: #aaa;">${t('Rare Finds:')} ${formatTotalValue(Math.round(totalRareRevenue))}</div>`
                     );
                     for (const drop of rareFindDrops) {
                         const dropsForTask = (drop.dropsPerAction || 0) * profitData.action.breakdown.quantity;
@@ -1688,7 +1700,7 @@ class TaskProfitDisplay {
                 );
                 const hoursNeeded = effectiveActionsPerHour > 0 ? actionsNeeded / effectiveActionsPerHour : 0;
                 lines.push(
-                    `<div style="margin-top: 4px; color: #aaa;">Material Costs: ${formatTotalValue(profitData.action.breakdown.materialCost)}</div>`
+                    `<div style="margin-top: 4px; color: #aaa;">${t('Material Costs:')} ${formatTotalValue(profitData.action.breakdown.materialCost)}</div>`
                 );
 
                 for (const mat of details.materialCosts) {
@@ -1728,7 +1740,7 @@ class TaskProfitDisplay {
               ? '#4ade80'
               : config.COLOR_LOSS;
         lines.push(
-            `<div style="font-weight: bold; color: ${totalProfitColor};">Total Profit: ${formatTotalValue(profitData.totalProfit)}</div>`
+            `<div style="font-weight: bold; color: ${totalProfitColor};">${t('Total Profit:')} ${formatTotalValue(profitData.totalProfit)}</div>`
         );
 
         return lines.join('');
@@ -1775,7 +1787,7 @@ class TaskProfitDisplay {
             color: #888;
             font-style: italic;
         `;
-        loadingContainer.textContent = '⏳ Loading market data...';
+        loadingContainer.textContent = `⏳ ${t('Loading market data...')}`;
 
         // Store task key for reroll detection
         const taskKey = `${taskData.description}|${taskData.quantity}`;
@@ -1845,7 +1857,7 @@ class TaskProfitDisplay {
 
         // Determine if active (first in queue) or queued
         const isActive = matchActionHrid === activeActionHrid;
-        const label = isActive ? '▶ Active' : '⏸ Queued';
+        const label = isActive ? t('▶ Active') : t('⏸ Queued');
         const color = isActive ? config.COLOR_ACCENT : config.SCRIPT_COLOR_SECONDARY;
 
         if (existingIndicator) {

@@ -4,6 +4,7 @@
  */
 
 import config from '../../core/config.js';
+import { t } from '../../core/i18n.js';
 import domObserver from '../../core/dom-observer.js';
 import marketAPI from '../../api/marketplace.js';
 import storage from '../../core/storage.js';
@@ -229,11 +230,11 @@ class InventorySort {
 
         // Sort label and buttons
         const sortLabel = document.createElement('span');
-        sortLabel.textContent = 'Sort:';
+        sortLabel.textContent = t('Sort:');
 
-        const askButton = this.createSortButton('Ask', 'ask');
-        const bidButton = this.createSortButton('Bid', 'bid');
-        const noneButton = this.createSortButton('None', 'none');
+        const askButton = this.createSortButton(t('Ask'), 'ask');
+        const bidButton = this.createSortButton(t('Bid'), 'bid');
+        const noneButton = this.createSortButton(t('None'), 'none');
 
         // Assemble controls
         this.controlsContainer.appendChild(sortLabel);

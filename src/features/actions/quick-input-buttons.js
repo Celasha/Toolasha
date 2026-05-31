@@ -43,6 +43,7 @@ import { createCleanupRegistry } from '../../utils/cleanup-registry.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
 import scrollSimulator from '../combat/scroll-simulator.js';
 import { SCROLL_BUFF_ITEMS } from '../../utils/scroll-buff-values.js';
+import { t } from '../../core/i18n.js';
 
 let _qibSpriteUrl = null;
 function scrollSpriteHtml(buffTypeHrid, size = 14) {
@@ -153,7 +154,7 @@ class QuickInputButtons {
 
         const addToggle = document.createElement('button');
         addToggle.textContent = '+';
-        addToggle.title = 'Toggle add mode: click to accumulate counts instead of setting them';
+        addToggle.title = t('Toggle add mode: click to accumulate counts instead of setting them');
         addToggle.style.cssText = `
             font-size: 11px;
             font-weight: 700;
@@ -175,7 +176,7 @@ class QuickInputButtons {
         });
         fragment.appendChild(addToggle);
 
-        fragment.appendChild(document.createTextNode('Do '));
+        fragment.appendChild(document.createTextNode(t('Do ')));
 
         const activePresetValues = this._parsePresets(
             config.getSettingValue('actionPanel_quickInputs_countPresets', ''),
@@ -197,7 +198,7 @@ class QuickInputButtons {
             fragment.appendChild(button);
         });
 
-        const maxButton = this.createButton('Max', () => {
+        const maxButton = this.createButton(t('Max'), () => {
             const currentInput =
                 panel.querySelector('[class*="maxActionCountInput"] input') ||
                 panel.querySelector('input[type="number"]') ||
@@ -215,7 +216,7 @@ class QuickInputButtons {
         });
         fragment.appendChild(maxButton);
 
-        fragment.appendChild(document.createTextNode(' times'));
+        fragment.appendChild(document.createTextNode(t(' times')));
 
         return fragment;
     }
@@ -542,7 +543,7 @@ class QuickInputButtons {
                     const inputValue = numberInput.value;
 
                     if (inputValue === '∞') {
-                        totalTimeLine.textContent = 'Total time: ∞';
+                        totalTimeLine.textContent = t('Total time: ∞');
                         return;
                     }
 
@@ -553,9 +554,9 @@ class QuickInputButtons {
                         // Calculate time-consuming actions needed
                         const baseActionsNeeded = Math.ceil(queueCount / efficiencyMultiplier);
                         const totalSeconds = baseActionsNeeded * actionTime;
-                        totalTimeLine.textContent = `Total time: ${timeReadable(totalSeconds)}`;
+                        totalTimeLine.textContent = t('Total time: {0}', timeReadable(totalSeconds));
                     } else {
-                        totalTimeLine.textContent = 'Total time: 0s';
+                        totalTimeLine.textContent = t('Total time: 0s');
                     }
                 };
 
@@ -603,11 +604,11 @@ class QuickInputButtons {
                 const actionsPerHourWithEfficiency = Math.round(
                     calculateEffectiveActionsPerHour(calculateActionsPerHour(actionTime), efficiencyMultiplier)
                 );
-                const initialSummary = `${actionsPerHourWithEfficiency}/hr | Total time: 0s`;
+                const initialSummary = t('{0}/hr | Total time: 0s', actionsPerHourWithEfficiency);
 
                 speedSection = createCollapsibleSection(
                     '⏱',
-                    'Action Speed & Time',
+                    t('Action Speed & Time'),
                     initialSummary,
                     speedContent,
                     false // Collapsed by default
@@ -625,15 +626,22 @@ class QuickInputButtons {
                     if (speedSummaryDiv) {
                         const inputValue = numberInput.value;
                         if (inputValue === '∞') {
-                            speedSummaryDiv.textContent = `${actionsPerHourWithEfficiency}/hr | Total time: ∞`;
+                            speedSummaryDiv.textContent = t('{0}/hr | Total time: ∞', actionsPerHourWithEfficiency);
                         } else {
                             const queueCount = parseInt(inputValue) || 0;
                             if (queueCount > 0) {
                                 const baseActionsNeeded = Math.ceil(queueCount / efficiencyMultiplier);
                                 const totalSeconds = baseActionsNeeded * actionTime;
-                                speedSummaryDiv.textContent = `${actionsPerHourWithEfficiency}/hr | Total time: ${timeReadable(totalSeconds)}`;
+                                speedSummaryDiv.textContent = t(
+                                    '{0}/hr | Total time: {1}',
+                                    actionsPerHourWithEfficiency,
+                                    timeReadable(totalSeconds)
+                                );
                             } else {
-                                speedSummaryDiv.textContent = `${actionsPerHourWithEfficiency}/hr | Total time: 0s`;
+                                speedSummaryDiv.textContent = t(
+                                    '{0}/hr | Total time: 0s',
+                                    actionsPerHourWithEfficiency
+                                );
                             }
                         }
                     }
@@ -701,7 +709,7 @@ class QuickInputButtons {
                 `;
 
                 // FIRST ROW: Time-based buttons (hours)
-                queueContent.appendChild(document.createTextNode('Do '));
+                queueContent.appendChild(document.createTextNode(t('Do ')));
 
                 const activePresetHours = this._parsePresets(
                     config.getSettingValue('actionPanel_quickInputs_hourPresets', ''),
@@ -860,7 +868,7 @@ class QuickInputButtons {
         };
 
         const roomHrid = roomMapping[actionType];
-        if (!roomHrid) return 'Unknown Room';
+        if (!roomHrid) return t('Unknown Room');
 
         const room = houseRooms.get(roomHrid);
         const roomName = roomHrid
@@ -1395,7 +1403,7 @@ class QuickInputButtons {
                     // Auto-fill queue input when target level changes
                     this.setInputValue(numberInput, result.actionsNeeded);
                 } else {
-                    targetLevelResult.textContent = 'Invalid level';
+                    targetLevelResult.textContent = t('Invalid level');
                     targetLevelResult.style.color = 'var(--color-error, #ff4444)';
                 }
             };

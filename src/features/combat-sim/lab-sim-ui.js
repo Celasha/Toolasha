@@ -26,6 +26,7 @@ import { formatWithSeparator } from '../../utils/formatters.js';
 import { SimEditor } from './sim-editor.js';
 import labyrinthClearRate from '../combat/labyrinth-clear-rate.js';
 import loadoutSnapshot from '../combat/loadout-snapshot.js';
+import { t } from '../../core/i18n.js';
 
 const PANEL_ID = 'mwi-lab-sim-panel';
 const ACCENT = '#4a9eff';
@@ -105,7 +106,7 @@ class LabSimUI {
             flex-shrink: 0;
         `;
         header.innerHTML = `
-            <span style="font-weight:700; font-size:14px; color:${ACCENT};">Lab Simulator</span>
+            <span style="font-weight:700; font-size:14px; color:${ACCENT};">${t('Lab Simulator')}</span>
             <button id="mwi-labsim-close" style="
                 background:none; border:none; color:#aaa; font-size:22px;
                 cursor:pointer; padding:0; line-height:1;">\u00d7</button>
@@ -131,10 +132,10 @@ class LabSimUI {
             border-bottom: 2px solid ${active ? ACCENT : 'transparent'};
         `;
         tabBar.innerHTML = `
-            <button id="mwi-labsim-tab-configure" style="${tabStyle(true)}">Configure</button>
-            <button id="mwi-labsim-tab-maxlevel" style="${tabStyle(false)}">Max Level</button>
-            <button id="mwi-labsim-tab-upgrade" style="${tabStyle(false)}">Upgrade</button>
-            <button id="mwi-labsim-tab-skilling" style="${tabStyle(false)}">Skilling</button>
+            <button id="mwi-labsim-tab-configure" style="${tabStyle(true)}">${t('Configure')}</button>
+            <button id="mwi-labsim-tab-maxlevel" style="${tabStyle(false)}">${t('Max Level')}</button>
+            <button id="mwi-labsim-tab-upgrade" style="${tabStyle(false)}">${t('Upgrade')}</button>
+            <button id="mwi-labsim-tab-skilling" style="${tabStyle(false)}">${t('Skilling')}</button>
         `;
 
         // ── Configure tab ──
@@ -155,26 +156,26 @@ class LabSimUI {
         const crateSelectStyle =
             'background:#1a1a2e; color:#e0e0e0; border:1px solid #444; border-radius:4px; padding:3px 6px; font-size:12px;';
         crateRow.innerHTML = `
-            <label style="color:#888;">Tea</label>
+            <label style="color:#888;">${t('Tea')}</label>
             <select id="mwi-labsim-tea" style="${crateSelectStyle}">
-                <option value="">None</option>
-                <option value="/items/basic_tea_crate">Basic</option>
-                <option value="/items/advanced_tea_crate">Advanced</option>
-                <option value="/items/expert_tea_crate" selected>Expert</option>
+                <option value="">${t('None')}</option>
+                <option value="/items/basic_tea_crate">${t('Basic')}</option>
+                <option value="/items/advanced_tea_crate">${t('Advanced')}</option>
+                <option value="/items/expert_tea_crate" selected>${t('Expert')}</option>
             </select>
-            <label style="color:#888;">Coffee</label>
+            <label style="color:#888;">${t('Coffee')}</label>
             <select id="mwi-labsim-coffee" style="${crateSelectStyle}">
-                <option value="">None</option>
-                <option value="/items/basic_coffee_crate">Basic</option>
-                <option value="/items/advanced_coffee_crate">Advanced</option>
-                <option value="/items/expert_coffee_crate" selected>Expert</option>
+                <option value="">${t('None')}</option>
+                <option value="/items/basic_coffee_crate">${t('Basic')}</option>
+                <option value="/items/advanced_coffee_crate">${t('Advanced')}</option>
+                <option value="/items/expert_coffee_crate" selected>${t('Expert')}</option>
             </select>
-            <label style="color:#888;">Food</label>
+            <label style="color:#888;">${t('Food')}</label>
             <select id="mwi-labsim-food" style="${crateSelectStyle}">
-                <option value="">None</option>
-                <option value="/items/basic_food_crate">Basic</option>
-                <option value="/items/advanced_food_crate">Advanced</option>
-                <option value="/items/expert_food_crate" selected>Expert</option>
+                <option value="">${t('None')}</option>
+                <option value="/items/basic_food_crate">${t('Basic')}</option>
+                <option value="/items/advanced_food_crate">${t('Advanced')}</option>
+                <option value="/items/expert_food_crate" selected>${t('Expert')}</option>
             </select>
         `;
 
@@ -182,7 +183,9 @@ class LabSimUI {
         editorArea.id = 'mwi-labsim-editor';
         editorArea.style.cssText = 'flex:1; overflow-y:auto; padding:10px 14px;';
         editorArea.innerHTML =
-            '<div style="color:#555; font-size:12px; text-align:center; padding:20px 0;">Loading loadout...</div>';
+            '<div style="color:#555; font-size:12px; text-align:center; padding:20px 0;">' +
+            t('Loading loadout...') +
+            '</div>';
 
         this._editor = new SimEditor({ editorEl: editorArea, labMode: true });
 
@@ -196,7 +199,7 @@ class LabSimUI {
         buffsHeader.style.cssText =
             'display:flex; align-items:center; justify-content:space-between; padding:6px 14px; cursor:pointer; color:#888; font-size:12px;';
         buffsHeader.innerHTML = `
-            <span>Labyrinth Buffs</span>
+            <span>${t('Labyrinth Buffs')}</span>
             <span id="mwi-labsim-buffs-toggle" style="font-size:10px;">\u25B6</span>
         `;
 
@@ -233,11 +236,11 @@ class LabSimUI {
             padding: 10px 14px; border-bottom: 1px solid #222; flex-shrink: 0;
         `;
         maxLevelControls.innerHTML = `
-            <label style="color:#888; font-size:12px;">Monster</label>
+            <label style="color:#888; font-size:12px;">${t('Monster')}</label>
             <select id="mwi-labsim-monster" style="${selectStyle}"></select>
-            <label style="color:#888; font-size:12px;">Level</label>
+            <label style="color:#888; font-size:12px;">${t('Level')}</label>
             <input id="mwi-labsim-level" type="number" min="20" max="300" value="100" style="${inputStyle}">
-            <label style="color:#888; font-size:12px;">Hours</label>
+            <label style="color:#888; font-size:12px;">${t('Hours')}</label>
             <input id="mwi-labsim-hours" type="number" min="1" max="10000" value="10" style="${inputStyle}">
             <button id="mwi-labsim-run" style="
                 margin-left: auto;
@@ -248,7 +251,7 @@ class LabSimUI {
                 padding: 5px 14px;
                 font-size: 12px;
                 font-weight: 600;
-                cursor: pointer;">Simulate</button>
+                cursor: pointer;">${t('Simulate')}</button>
         `;
 
         const findMaxRow = document.createElement('div');
@@ -257,9 +260,9 @@ class LabSimUI {
             padding: 6px 14px; border-bottom: 1px solid #222; flex-shrink: 0; font-size: 12px;
         `;
         findMaxRow.innerHTML = `
-            <label style="display:flex; align-items:center; gap:4px; color:#888; cursor:pointer;" title="Binary search for highest beatable level at the specified win rate threshold">
+            <label style="display:flex; align-items:center; gap:4px; color:#888; cursor:pointer;" title="${t('Binary search for highest beatable level at the specified win rate threshold')}">
                 <input type="checkbox" id="mwi-labsim-findmax" style="margin:0; cursor:pointer;">
-                Find Max \u2265
+                ${t('Find Max')} \u2265
             </label>
             <input id="mwi-labsim-threshold" type="number" min="1" max="100" value="95" style="width:44px; background:#1a1a2e; color:#e0e0e0; border:1px solid #444; border-radius:4px; padding:3px 4px; font-size:12px; text-align:center;">
             <span style="color:#888; font-size:12px;">%</span>
@@ -276,7 +279,7 @@ class LabSimUI {
                 </div>
                 <button id="mwi-labsim-stop" style="
                     background:rgba(255,80,80,0.2); color:#f44; border:1px solid rgba(255,80,80,0.4);
-                    border-radius:4px; padding:2px 10px; font-size:11px; cursor:pointer; font-weight:600;">Stop</button>
+                    border-radius:4px; padding:2px 10px; font-size:11px; cursor:pointer; font-weight:600;">${t('Stop')}</button>
             </div>
         `;
 
@@ -300,11 +303,11 @@ class LabSimUI {
             padding: 10px 14px; border-bottom: 1px solid #222; flex-shrink: 0;
         `;
         upgradeControls.innerHTML = `
-            <label style="color:#888; font-size:12px;">Player</label>
+            <label style="color:#888; font-size:12px;">${t('Player')}</label>
             <select id="mwi-labsim-upgrade-player" style="${selectStyle}"></select>
-            <label style="color:#888; font-size:12px;">Enemy Level</label>
+            <label style="color:#888; font-size:12px;">${t('Enemy Level')}</label>
             <input id="mwi-labsim-upgrade-level" type="number" min="20" max="300" value="100" style="${inputStyle}"
-                title="Defaults to Max Level result when available">
+                title="${t('Defaults to Max Level result when available')}">
             <button id="mwi-labsim-upgrade-run" style="
                 margin-left: auto;
                 background: ${ACCENT_BTN_BG};
@@ -315,7 +318,7 @@ class LabSimUI {
                 font-size: 12px;
                 font-weight: 600;
                 cursor: pointer;
-                font-family: inherit;">Analyze</button>
+                font-family: inherit;">${t('Analyze')}</button>
             <button id="mwi-labsim-upgrade-stop" style="
                 display:none;
                 background:rgba(244, 67, 54, 0.2);
@@ -326,7 +329,7 @@ class LabSimUI {
                 font-size:12px;
                 font-weight:600;
                 cursor:pointer;
-                font-family:inherit;">Stop</button>
+                font-family:inherit;">${t('Stop')}</button>
         `;
 
         const upgradeProgress = document.createElement('div');
@@ -360,7 +363,7 @@ class LabSimUI {
             padding: 10px 14px; border-bottom: 1px solid #222; flex-shrink: 0;
         `;
         skillingControls.innerHTML = `
-            <label style="color:#888; font-size:12px;">Room Level</label>
+            <label style="color:#888; font-size:12px;">${t('Room Level')}</label>
             <input id="mwi-labsim-skilling-level" type="number" min="1" max="300" value="100" style="${inputStyle}">
             <button id="mwi-labsim-skilling-calc" style="
                 background: ${ACCENT_BTN_BG};
@@ -371,7 +374,7 @@ class LabSimUI {
                 font-size: 12px;
                 font-weight: 600;
                 cursor: pointer;
-                font-family: inherit;">Calculate</button>
+                font-family: inherit;">${t('Calculate')}</button>
             <button id="mwi-labsim-skilling-upgrade" style="
                 background: rgba(255,255,255,0.04);
                 border: 1px solid #333;
@@ -380,7 +383,7 @@ class LabSimUI {
                 padding: 5px 10px;
                 font-size: 12px;
                 cursor: pointer;
-                font-family: inherit;">Analyze Upgrades</button>
+                font-family: inherit;">${t('Analyze Upgrades')}</button>
             <button id="mwi-labsim-skilling-stop" style="
                 display:none;
                 background:rgba(244, 67, 54, 0.2);
@@ -391,7 +394,7 @@ class LabSimUI {
                 font-size:12px;
                 font-weight:600;
                 cursor:pointer;
-                font-family:inherit;">Stop</button>
+                font-family:inherit;">${t('Stop')}</button>
             <select id="mwi-labsim-skilling-filter" style="
                 background:#1a1a2e;
                 color:#e0e0e0;
@@ -401,17 +404,17 @@ class LabSimUI {
                 font-size:11px;
                 font-family:inherit;
                 margin-left:auto;">
-                <option value="">All Skills</option>
-                <option value="/skills/woodcutting">Woodcutting</option>
-                <option value="/skills/foraging">Foraging</option>
-                <option value="/skills/milking">Milking</option>
-                <option value="/skills/cooking">Cooking</option>
-                <option value="/skills/brewing">Brewing</option>
-                <option value="/skills/cheesesmithing">Cheesesmithing</option>
-                <option value="/skills/crafting">Crafting</option>
-                <option value="/skills/tailoring">Tailoring</option>
-                <option value="/skills/alchemy">Alchemy</option>
-                <option value="/skills/enhancing">Enhancing</option>
+                <option value="">${t('All Skills')}</option>
+                <option value="/skills/woodcutting">${t('Woodcutting')}</option>
+                <option value="/skills/foraging">${t('Foraging')}</option>
+                <option value="/skills/milking">${t('Milking')}</option>
+                <option value="/skills/cooking">${t('Cooking')}</option>
+                <option value="/skills/brewing">${t('Brewing')}</option>
+                <option value="/skills/cheesesmithing">${t('Cheesesmithing')}</option>
+                <option value="/skills/crafting">${t('Crafting')}</option>
+                <option value="/skills/tailoring">${t('Tailoring')}</option>
+                <option value="/skills/alchemy">${t('Alchemy')}</option>
+                <option value="/skills/enhancing">${t('Enhancing')}</option>
             </select>
         `;
 
@@ -421,26 +424,26 @@ class LabSimUI {
             padding: 6px 14px; border-bottom: 1px solid #222; flex-shrink: 0; font-size: 12px;
         `;
         skillingCrateRow.innerHTML = `
-            <label style="color:#888;">Tea</label>
+            <label style="color:#888;">${t('Tea')}</label>
             <select id="mwi-labsim-skilling-tea" style="${crateSelectStyle}">
-                <option value="">None</option>
-                <option value="/items/basic_tea_crate">Basic</option>
-                <option value="/items/advanced_tea_crate">Advanced</option>
-                <option value="/items/expert_tea_crate" selected>Expert</option>
+                <option value="">${t('None')}</option>
+                <option value="/items/basic_tea_crate">${t('Basic')}</option>
+                <option value="/items/advanced_tea_crate">${t('Advanced')}</option>
+                <option value="/items/expert_tea_crate" selected>${t('Expert')}</option>
             </select>
-            <label style="color:#888;">Coffee</label>
+            <label style="color:#888;">${t('Coffee')}</label>
             <select id="mwi-labsim-skilling-coffee" style="${crateSelectStyle}">
-                <option value="">None</option>
-                <option value="/items/basic_coffee_crate">Basic</option>
-                <option value="/items/advanced_coffee_crate">Advanced</option>
-                <option value="/items/expert_coffee_crate" selected>Expert</option>
+                <option value="">${t('None')}</option>
+                <option value="/items/basic_coffee_crate">${t('Basic')}</option>
+                <option value="/items/advanced_coffee_crate">${t('Advanced')}</option>
+                <option value="/items/expert_coffee_crate" selected>${t('Expert')}</option>
             </select>
-            <label style="color:#888;">Food</label>
+            <label style="color:#888;">${t('Food')}</label>
             <select id="mwi-labsim-skilling-food" style="${crateSelectStyle}">
-                <option value="">None</option>
-                <option value="/items/basic_food_crate">Basic</option>
-                <option value="/items/advanced_food_crate">Advanced</option>
-                <option value="/items/expert_food_crate" selected>Expert</option>
+                <option value="">${t('None')}</option>
+                <option value="/items/basic_food_crate">${t('Basic')}</option>
+                <option value="/items/advanced_food_crate">${t('Advanced')}</option>
+                <option value="/items/expert_food_crate" selected>${t('Expert')}</option>
             </select>
         `;
 
@@ -453,7 +456,9 @@ class LabSimUI {
         skillingEditorArea.id = 'mwi-labsim-skilling-editor';
         skillingEditorArea.style.cssText = 'overflow-y:auto; padding:10px 14px; max-height:200px; flex-shrink:0;';
         skillingEditorArea.innerHTML =
-            '<div style="color:#555; font-size:12px; text-align:center; padding:20px 0;">Loading loadout...</div>';
+            '<div style="color:#555; font-size:12px; text-align:center; padding:20px 0;">' +
+            t('Loading loadout...') +
+            '</div>';
 
         this._skillingEditor = new SimEditor({ editorEl: skillingEditorArea, labMode: true, skillingMode: true });
 
@@ -485,7 +490,7 @@ class LabSimUI {
         status.id = 'mwi-labsim-status';
         status.style.cssText =
             'padding:6px 14px; color:#555; font-size:11px; border-top:1px solid #1a1a1a; flex-shrink:0; text-align:center;';
-        status.textContent = 'Select a monster and click Simulate.';
+        status.textContent = t('Select a monster and click Simulate.');
 
         // Assemble
         this.panel.appendChild(header);
@@ -537,7 +542,7 @@ class LabSimUI {
         this.panel.querySelector('#mwi-labsim-stop').addEventListener('click', () => {
             cancelSimulation();
             this.isRunning = false;
-            this._setStatus('Labyrinth simulation cancelled.');
+            this._setStatus(t('Labyrinth simulation cancelled.'));
             this.panel.querySelector('#mwi-labsim-progress').style.display = 'none';
         });
         this.panel.querySelector('#mwi-labsim-findmax').addEventListener('change', (e) => {
@@ -595,14 +600,14 @@ class LabSimUI {
         playerInfo.forEach((p, i) => {
             const option = document.createElement('option');
             option.value = i;
-            option.textContent = p.name || `Player ${i + 1}`;
+            option.textContent = p.name || `${t('Player')} ${i + 1}`;
             select.appendChild(option);
         });
 
         if (playerInfo.length === 0) {
             const option = document.createElement('option');
             option.value = 0;
-            option.textContent = 'Player 1';
+            option.textContent = t('Player 1');
             select.appendChild(option);
         }
     }
@@ -614,38 +619,38 @@ class LabSimUI {
 
         const info = dataManager.characterData?.characterInfo;
         if (!info) {
-            container.innerHTML = '<div style="color:#555;">No character data available.</div>';
+            container.innerHTML = `<div style="color:#555;">${t('No character data available.')}</div>`;
             return;
         }
 
         const groups = [
             {
-                label: 'Combat',
+                label: t('Combat'),
                 buffs: [
-                    { key: 'labyrinthCombatDamageLevel', name: 'Damage' },
-                    { key: 'labyrinthAttackSpeedLevel', name: 'Atk Speed' },
-                    { key: 'labyrinthCastSpeedLevel', name: 'Cast Speed' },
-                    { key: 'labyrinthCriticalRateLevel', name: 'Crit Rate' },
+                    { key: 'labyrinthCombatDamageLevel', name: t('Damage') },
+                    { key: 'labyrinthAttackSpeedLevel', name: t('Atk Speed') },
+                    { key: 'labyrinthCastSpeedLevel', name: t('Cast Speed') },
+                    { key: 'labyrinthCriticalRateLevel', name: t('Crit Rate') },
                 ],
             },
             {
-                label: 'Skilling',
+                label: t('Skilling'),
                 buffs: [
-                    { key: 'labyrinthSkillActionSpeedLevel', name: 'Speed' },
-                    { key: 'labyrinthSkillingEfficiencyLevel', name: 'Efficiency' },
-                    { key: 'labyrinthSkillingSuccessLevel', name: 'Success' },
-                    { key: 'labyrinthSkillingDoubleProgressLevel', name: 'Double' },
+                    { key: 'labyrinthSkillActionSpeedLevel', name: t('Speed') },
+                    { key: 'labyrinthSkillingEfficiencyLevel', name: t('Efficiency') },
+                    { key: 'labyrinthSkillingSuccessLevel', name: t('Success') },
+                    { key: 'labyrinthSkillingDoubleProgressLevel', name: t('Double') },
                 ],
             },
             {
-                label: 'Other',
+                label: t('Other'),
                 buffs: [
-                    { key: 'labyrinthExperienceLevel', name: 'Experience' },
-                    { key: 'labyrinthCooldownLevel', name: 'Cooldown' },
-                    { key: 'labyrinthTorchLevel', name: 'Torch' },
-                    { key: 'labyrinthShroudLevel', name: 'Shroud' },
-                    { key: 'labyrinthBeaconLevel', name: 'Beacon' },
-                    { key: 'labyrinthAutomationLevel', name: 'Automation' },
+                    { key: 'labyrinthExperienceLevel', name: t('Experience') },
+                    { key: 'labyrinthCooldownLevel', name: t('Cooldown') },
+                    { key: 'labyrinthTorchLevel', name: t('Torch') },
+                    { key: 'labyrinthShroudLevel', name: t('Shroud') },
+                    { key: 'labyrinthBeaconLevel', name: t('Beacon') },
+                    { key: 'labyrinthAutomationLevel', name: t('Automation') },
                 ],
             },
         ];
@@ -745,7 +750,7 @@ class LabSimUI {
     async _onSimulate() {
         if (this.isRunning) {
             cancelSimulation();
-            this._setStatus('Labyrinth simulation cancelled.');
+            this._setStatus(t('Labyrinth simulation cancelled.'));
             return;
         }
 
@@ -757,13 +762,13 @@ class LabSimUI {
         );
 
         if (!monsterHrid) {
-            this._setStatus('Select a monster first.');
+            this._setStatus(t('Select a monster first.'));
             return;
         }
 
         const gameData = buildGameDataPayload();
         if (!gameData) {
-            this._setStatus('No game data available.');
+            this._setStatus(t('No game data available.'));
             return;
         }
 
@@ -780,7 +785,7 @@ class LabSimUI {
         }
 
         if (!playerDTOs.length) {
-            this._setStatus('No character data available.');
+            this._setStatus(t('No character data available.'));
             return;
         }
 
@@ -827,7 +832,7 @@ class LabSimUI {
                     (progress) => {
                         const percent = Math.round((progress.step / progress.totalSteps) * 100);
                         progressFill.style.width = `${percent}%`;
-                        progressText.textContent = `Level ${progress.level} — ${(progress.winRate * 100).toFixed(0)}% (step ${progress.step}/${progress.totalSteps})`;
+                        progressText.textContent = `${t('Level')} ${progress.level} — ${(progress.winRate * 100).toFixed(0)}% (${t('step')} ${progress.step}/${progress.totalSteps})`;
                     }
                 );
 
@@ -864,7 +869,7 @@ class LabSimUI {
         } catch (error) {
             if (error.message !== 'Cancelled') {
                 console.error('[LabSimUI] Simulation failed:', error);
-                this._setStatus('Simulation failed: ' + error.message);
+                this._setStatus(t('Simulation failed:') + ' ' + error.message);
             }
         } finally {
             this.isRunning = false;
@@ -894,19 +899,19 @@ class LabSimUI {
         container.innerHTML = `
             <div style="margin-bottom:12px;">
                 <div style="color:${ACCENT}; font-weight:700; font-size:13px; margin-bottom:6px;">
-                    ${monsterName} \u2014 Level ${roomLevel}
+                    ${monsterName} \u2014 ${t('Level')} ${roomLevel}
                 </div>
                 <div style="display:grid; grid-template-columns:1fr 1fr; gap:4px 20px; font-size:12px;">
-                    <div><span style="color:#888;">Win Rate:</span> <span style="color:${parseFloat(winRate) >= 95 ? '#4caf50' : parseFloat(winRate) >= 50 ? '#ff9800' : '#f44336'}; font-weight:600;">${winRate}%</span></div>
-                    <div><span style="color:#888;">Encounters:</span> ${formatWithSeparator(attempts)}</div>
-                    <div><span style="color:#888;">Deaths:</span> <span style="color:${deaths > 0 ? '#f44336' : '#4caf50'};">${formatWithSeparator(deaths)}</span></div>
-                    <div><span style="color:#888;">Sim Time:</span> ${simHours.toFixed(1)}h</div>
+                    <div><span style="color:#888;">${t('Win Rate:')}</span> <span style="color:${parseFloat(winRate) >= 95 ? '#4caf50' : parseFloat(winRate) >= 50 ? '#ff9800' : '#f44336'}; font-weight:600;">${winRate}%</span></div>
+                    <div><span style="color:#888;">${t('Encounters:')}</span> ${formatWithSeparator(attempts)}</div>
+                    <div><span style="color:#888;">${t('Deaths:')}</span> <span style="color:${deaths > 0 ? '#f44336' : '#4caf50'};">${formatWithSeparator(deaths)}</span></div>
+                    <div><span style="color:#888;">${t('Sim Time:')}</span> ${simHours.toFixed(1)}h</div>
                 </div>
-                <div style="color:#555; font-size:10px; margin-top:6px;">Completed in ${totalElapsed}</div>
+                <div style="color:#555; font-size:10px; margin-top:6px;">${t('Completed in')} ${totalElapsed}</div>
             </div>
         `;
 
-        this._setStatus(`Simulation complete \u2014 ${winRate}% win rate at level ${roomLevel}.`);
+        this._setStatus(t('Simulation complete — {0}% win rate at level {1}.', winRate, roomLevel));
     }
 
     /** @private */
@@ -920,21 +925,21 @@ class LabSimUI {
         container.innerHTML = `
             <div style="margin-bottom:12px;">
                 <div style="color:${ACCENT}; font-weight:700; font-size:13px; margin-bottom:6px;">
-                    ${monsterName} \u2014 Find Max Result
+                    ${monsterName} \u2014 ${t('Find Max Result')}
                 </div>
                 <div style="font-size:24px; font-weight:700; color:#4caf50; margin-bottom:6px;">
-                    Level ${maxResult.maxLevel}
+                    ${t('Level')} ${maxResult.maxLevel}
                 </div>
                 <div style="font-size:12px; color:#888;">
-                    Win Rate: <span style="color:#e0e0e0; font-weight:600;">${(maxResult.winRate * 100).toFixed(1)}%</span>
-                    at level ${maxResult.maxLevel}
+                    ${t('Win Rate:')} <span style="color:#e0e0e0; font-weight:600;">${(maxResult.winRate * 100).toFixed(1)}%</span>
+                    ${t('at level')} ${maxResult.maxLevel}
                 </div>
-                <div style="color:#555; font-size:10px; margin-top:6px;">Completed in ${totalElapsed} (${maxResult.steps} steps)</div>
+                <div style="color:#555; font-size:10px; margin-top:6px;">${t('Completed in')} ${totalElapsed} (${maxResult.steps} ${t('steps')})</div>
             </div>
         `;
 
         this._setStatus(
-            `Max beatable level: ${maxResult.maxLevel} (${(maxResult.winRate * 100).toFixed(1)}% win rate).`
+            t('Max beatable level: {0} ({1}% win rate).', maxResult.maxLevel, (maxResult.winRate * 100).toFixed(1))
         );
     }
 
@@ -949,7 +954,7 @@ class LabSimUI {
         );
 
         if (!monsterHrid) {
-            this._setStatus('Select a monster in the Max Level tab first.');
+            this._setStatus(t('Select a monster in the Max Level tab first.'));
             return;
         }
 
@@ -957,7 +962,7 @@ class LabSimUI {
 
         const gameData = buildGameDataPayload();
         if (!gameData) {
-            this._setStatus('No game data available.');
+            this._setStatus(t('No game data available.'));
             return;
         }
 
@@ -971,7 +976,7 @@ class LabSimUI {
         }
 
         if (!playerDTOs?.length || !playerDTOs[playerIndex]) {
-            this._setStatus('No player data available.');
+            this._setStatus(t('No player data available.'));
             return;
         }
 
@@ -1015,7 +1020,7 @@ class LabSimUI {
         } catch (error) {
             if (error.message !== 'Cancelled' && error.message !== 'Aborted') {
                 console.error('[LabSimUI] Upgrade analysis failed:', error);
-                this._setStatus('Upgrade analysis failed: ' + error.message);
+                this._setStatus(t('Upgrade analysis failed:') + ' ' + error.message);
             }
         } finally {
             progressEl.style.display = 'none';
@@ -1028,9 +1033,8 @@ class LabSimUI {
     _renderUpgradeResults(analysisResult, container) {
         const results = analysisResult?.results;
         if (!results || !results.length) {
-            container.innerHTML =
-                '<div style="color:#888; font-size:12px; padding:20px 0; text-align:center;">No upgrade candidates found.</div>';
-            this._setStatus('No upgrade candidates found.');
+            container.innerHTML = `<div style="color:#888; font-size:12px; padding:20px 0; text-align:center;">${t('No upgrade candidates found.')}</div>`;
+            this._setStatus(t('No upgrade candidates found.'));
             return;
         }
 
@@ -1123,14 +1127,14 @@ class LabSimUI {
                 return `<th data-sort-key="${key}" data-table="token" style="${style}">${label}${ind}</th>`;
             };
 
-            let html = `<div style="color:${ACCENT}; font-weight:700; font-size:12px; margin-bottom:4px;">Token Upgrades</div>`;
+            let html = `<div style="color:${ACCENT}; font-weight:700; font-size:12px; margin-bottom:4px;">${t('Token Upgrades')}</div>`;
             html += '<table style="width:100%; border-collapse:collapse; font-size:11px; margin-bottom:12px;">';
             html += `<thead><tr>
-                ${th('Upgrade', 'desc', 'left')}
-                ${th('Tokens', 'tokenCost', 'right')}
-                ${th('Rate', 'rateVal', 'right')}
-                ${th('Delta', 'deltaVal', 'right')}
-                ${th('Tokens/1%', 'tokensPerPct', 'right')}
+                ${th(t('Upgrade'), 'desc', 'left')}
+                ${th(t('Tokens'), 'tokenCost', 'right')}
+                ${th(t('Rate'), 'rateVal', 'right')}
+                ${th(t('Delta'), 'deltaVal', 'right')}
+                ${th(t('Tokens/1%'), 'tokensPerPct', 'right')}
             </tr></thead><tbody>`;
 
             for (const row of tokenRows) {
@@ -1154,14 +1158,14 @@ class LabSimUI {
                 return `<th data-sort-key="${key}" data-table="gold" style="${style}">${label}${ind}</th>`;
             };
 
-            let html = `<div style="color:${ACCENT}; font-weight:700; font-size:12px; margin-bottom:4px;">Gold Upgrades</div>`;
+            let html = `<div style="color:${ACCENT}; font-weight:700; font-size:12px; margin-bottom:4px;">${t('Gold Upgrades')}</div>`;
             html += '<table style="width:100%; border-collapse:collapse; font-size:11px;">';
             html += `<thead><tr>
-                ${th('Upgrade', 'desc', 'left')}
-                ${th('Cost', 'cost', 'right')}
-                ${th('Win Rate', 'winRate', 'right')}
-                ${th('Delta', 'deltaVal', 'right')}
-                ${th('Gold/1%', 'goldPerPct', 'right')}
+                ${th(t('Upgrade'), 'desc', 'left')}
+                ${th(t('Cost'), 'cost', 'right')}
+                ${th(t('Win Rate'), 'winRate', 'right')}
+                ${th(t('Delta'), 'deltaVal', 'right')}
+                ${th(t('Gold/1%'), 'goldPerPct', 'right')}
             </tr></thead><tbody>`;
 
             for (const row of goldRows) {
@@ -1203,7 +1207,7 @@ class LabSimUI {
             renderAll();
         });
 
-        this._setStatus(`${results.length} upgrade candidates analyzed.`);
+        this._setStatus(t('{0} upgrade candidates analyzed.', results.length));
     }
 
     /** @private */
@@ -1230,16 +1234,16 @@ class LabSimUI {
         const allSkillsSnapshots = allSnapshots.filter((s) => !s.actionTypeHrid);
 
         const skills = [
-            { hrid: '/skills/woodcutting', label: 'Woodcutting', actionType: '/action_types/woodcutting' },
-            { hrid: '/skills/foraging', label: 'Foraging', actionType: '/action_types/foraging' },
-            { hrid: '/skills/milking', label: 'Milking', actionType: '/action_types/milking' },
-            { hrid: '/skills/cooking', label: 'Cooking', actionType: '/action_types/cooking' },
-            { hrid: '/skills/brewing', label: 'Brewing', actionType: '/action_types/brewing' },
-            { hrid: '/skills/cheesesmithing', label: 'Cheesesmithing', actionType: '/action_types/cheesesmithing' },
-            { hrid: '/skills/crafting', label: 'Crafting', actionType: '/action_types/crafting' },
-            { hrid: '/skills/tailoring', label: 'Tailoring', actionType: '/action_types/tailoring' },
-            { hrid: '/skills/alchemy', label: 'Alchemy', actionType: '/action_types/alchemy' },
-            { hrid: '/skills/enhancing', label: 'Enhancing', actionType: '/action_types/enhancing' },
+            { hrid: '/skills/woodcutting', label: t('Woodcutting'), actionType: '/action_types/woodcutting' },
+            { hrid: '/skills/foraging', label: t('Foraging'), actionType: '/action_types/foraging' },
+            { hrid: '/skills/milking', label: t('Milking'), actionType: '/action_types/milking' },
+            { hrid: '/skills/cooking', label: t('Cooking'), actionType: '/action_types/cooking' },
+            { hrid: '/skills/brewing', label: t('Brewing'), actionType: '/action_types/brewing' },
+            { hrid: '/skills/cheesesmithing', label: t('Cheesesmithing'), actionType: '/action_types/cheesesmithing' },
+            { hrid: '/skills/crafting', label: t('Crafting'), actionType: '/action_types/crafting' },
+            { hrid: '/skills/tailoring', label: t('Tailoring'), actionType: '/action_types/tailoring' },
+            { hrid: '/skills/alchemy', label: t('Alchemy'), actionType: '/action_types/alchemy' },
+            { hrid: '/skills/enhancing', label: t('Enhancing'), actionType: '/action_types/enhancing' },
         ];
 
         // Load persisted overrides once
@@ -1282,7 +1286,7 @@ class LabSimUI {
 
         const arrow = collapsed ? '&#9654;' : '&#9660;';
         let html = `<div id="mwi-labsim-loadout-toggle" style="color:${ACCENT}; font-weight:700; font-size:12px; margin-bottom:4px; cursor:pointer; user-select:none;">
-            <span style="display:inline-block; width:14px; font-size:10px;">${arrow}</span> Skill Loadouts
+            <span style="display:inline-block; width:14px; font-size:10px;">${arrow}</span> ${t('Skill Loadouts')}
         </div>`;
         html += `<div id="mwi-labsim-loadout-grid" style="display:${collapsed ? 'none' : 'grid'}; grid-template-columns:1fr 1fr; gap:3px 10px;">`;
 
@@ -1291,9 +1295,9 @@ class LabSimUI {
             html += `<div style="display:flex; align-items:center; gap:4px; font-size:11px;">`;
             html += `<span style="color:#888; width:85px; flex-shrink:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${skill.label}">${skill.label}</span>`;
             html += `<select data-skill-loadout="${skill.hrid}" style="${selectStyle}">`;
-            html += `<option value=""${!current ? ' selected' : ''}>Current Gear</option>`;
+            html += `<option value=""${!current ? ' selected' : ''}>${t('Current Gear')}</option>`;
             for (const snap of [...nonCombatSnapshots, ...allSkillsSnapshots]) {
-                const label = snap.name + (snap.actionTypeHrid ? '' : ' (All)');
+                const label = snap.name + (snap.actionTypeHrid ? '' : ` ${t('(All)')}`);
                 const selected = current === snap.name ? ' selected' : '';
                 html += `<option value="${snap.name}"${selected}>${label}</option>`;
             }
@@ -1360,20 +1364,20 @@ class LabSimUI {
         const roomLevel = parseInt(this.panel.querySelector('#mwi-labsim-skilling-level')?.value) || 100;
         const gameData = buildGameDataPayload();
         if (!gameData) {
-            this._setStatus('No game data available.');
+            this._setStatus(t('No game data available.'));
             return;
         }
 
         const editedDTOs = this._skillingEditor?.getEditedDTOs();
         if (!editedDTOs) {
-            this._setStatus('No character data. Wait for editor to load.');
+            this._setStatus(t('No character data. Wait for editor to load.'));
             return;
         }
 
         const selfHrid = this._skillingEditor.getSelfHrid();
         const dto = editedDTOs[selfHrid] || Object.values(editedDTOs)[0];
         if (!dto) {
-            this._setStatus('No player data available.');
+            this._setStatus(t('No player data available.'));
             return;
         }
 
@@ -1395,20 +1399,20 @@ class LabSimUI {
         const tdStyle = 'padding:3px 4px; text-align:right; font-size:11px;';
 
         let html = `<div style="color:${ACCENT}; font-weight:700; font-size:13px; margin-bottom:6px;">
-            Skilling Room Level ${roomLevel}
+            ${t('Skilling Room Level')} ${roomLevel}
             <span style="color:#888; font-weight:400; font-size:11px; margin-left:8px;">
-                Avg Clear: <span style="color:${avgClearRate >= 0.95 ? '#4caf50' : avgClearRate >= 0.5 ? '#ff9800' : '#f44336'}; font-weight:600;">${(avgClearRate * 100).toFixed(1)}%</span>
+                ${t('Avg Clear:')} <span style="color:${avgClearRate >= 0.95 ? '#4caf50' : avgClearRate >= 0.5 ? '#ff9800' : '#f44336'}; font-weight:600;">${(avgClearRate * 100).toFixed(1)}%</span>
             </span>
         </div>`;
 
         html += '<table style="width:100%; border-collapse:collapse; font-size:11px;">';
         html += `<thead><tr>
-            <th style="${thLeftStyle}">Skill</th>
-            <th style="${thStyle}">Level</th>
-            <th style="${thStyle}">Eff. Lvl</th>
-            <th style="${thStyle}">Success</th>
-            <th style="${thStyle}">Clear</th>
-            <th style="${thStyle}">Actions</th>
+            <th style="${thLeftStyle}">${t('Skill')}</th>
+            <th style="${thStyle}">${t('Level')}</th>
+            <th style="${thStyle}">${t('Eff. Lvl')}</th>
+            <th style="${thStyle}">${t('Success')}</th>
+            <th style="${thStyle}">${t('Clear')}</th>
+            <th style="${thStyle}">${t('Actions')}</th>
         </tr></thead><tbody>`;
 
         for (const r of results) {
@@ -1428,7 +1432,7 @@ class LabSimUI {
 
         html += '</tbody></table>';
         container.innerHTML = html;
-        this._setStatus(`Skilling clear rates calculated for level ${roomLevel}.`);
+        this._setStatus(t('Skilling clear rates calculated for level {0}.', roomLevel));
     }
 
     /** @private */
@@ -1436,20 +1440,20 @@ class LabSimUI {
         const roomLevel = parseInt(this.panel.querySelector('#mwi-labsim-skilling-level')?.value) || 100;
         const gameData = buildGameDataPayload();
         if (!gameData) {
-            this._setStatus('No game data available.');
+            this._setStatus(t('No game data available.'));
             return;
         }
 
         const editedDTOs = this._skillingEditor?.getEditedDTOs();
         if (!editedDTOs) {
-            this._setStatus('No character data. Wait for editor to load.');
+            this._setStatus(t('No character data. Wait for editor to load.'));
             return;
         }
 
         const selfHrid = this._skillingEditor.getSelfHrid();
         const dto = editedDTOs[selfHrid] || Object.values(editedDTOs)[0];
         if (!dto) {
-            this._setStatus('No player data available.');
+            this._setStatus(t('No player data available.'));
             return;
         }
 
@@ -1485,7 +1489,7 @@ class LabSimUI {
             this._renderSkillingUpgradeResults(analysisResult, resultsEl);
         } catch (error) {
             console.error('[LabSimUI] Skilling upgrade analysis failed:', error);
-            this._setStatus('Skilling upgrade analysis failed: ' + error.message);
+            this._setStatus(t('Skilling upgrade analysis failed:') + ' ' + error.message);
         } finally {
             progressEl.style.display = 'none';
             calcBtn.style.display = '';
@@ -1498,9 +1502,8 @@ class LabSimUI {
     _renderSkillingUpgradeResults(analysisResult, container) {
         const results = analysisResult?.results;
         if (!results || !results.length) {
-            container.innerHTML =
-                '<div style="color:#888; font-size:12px; padding:20px 0; text-align:center;">No upgrade candidates found.</div>';
-            this._setStatus('No skilling upgrade candidates found.');
+            container.innerHTML = `<div style="color:#888; font-size:12px; padding:20px 0; text-align:center;">${t('No upgrade candidates found.')}</div>`;
+            this._setStatus(t('No skilling upgrade candidates found.'));
             return;
         }
 
@@ -1575,14 +1578,14 @@ class LabSimUI {
                 return `<th data-sort-key="${key}" data-table="token" style="${style}">${label}${ind}</th>`;
             };
 
-            let html = `<div style="color:${ACCENT}; font-weight:700; font-size:12px; margin-bottom:4px;">Token Upgrades</div>`;
+            let html = `<div style="color:${ACCENT}; font-weight:700; font-size:12px; margin-bottom:4px;">${t('Token Upgrades')}</div>`;
             html += '<table style="width:100%; border-collapse:collapse; font-size:11px; margin-bottom:12px;">';
             html += `<thead><tr>
-                ${th('Upgrade', 'desc', 'left')}
-                ${th('Tokens', 'tokenCost', 'right')}
-                ${th('Clear Rate', 'clearRate', 'right')}
-                ${th('Delta', 'deltaVal', 'right')}
-                ${th('Tokens/1%', 'tokensPerPct', 'right')}
+                ${th(t('Upgrade'), 'desc', 'left')}
+                ${th(t('Tokens'), 'tokenCost', 'right')}
+                ${th(t('Clear Rate'), 'clearRate', 'right')}
+                ${th(t('Delta'), 'deltaVal', 'right')}
+                ${th(t('Tokens/1%'), 'tokensPerPct', 'right')}
             </tr></thead><tbody>`;
 
             for (const row of tokenRows) {
@@ -1606,14 +1609,14 @@ class LabSimUI {
                 return `<th data-sort-key="${key}" data-table="gold" style="${style}">${label}${ind}</th>`;
             };
 
-            let html = `<div style="color:${ACCENT}; font-weight:700; font-size:12px; margin-bottom:4px;">Equipment Upgrades</div>`;
+            let html = `<div style="color:${ACCENT}; font-weight:700; font-size:12px; margin-bottom:4px;">${t('Equipment Upgrades')}</div>`;
             html += '<table style="width:100%; border-collapse:collapse; font-size:11px;">';
             html += `<thead><tr>
-                ${th('Upgrade', 'desc', 'left')}
-                ${th('Cost', 'cost', 'right')}
-                ${th('Clear Rate', 'clearRate', 'right')}
-                ${th('Delta', 'deltaVal', 'right')}
-                ${th('Gold/1%', 'goldPerPct', 'right')}
+                ${th(t('Upgrade'), 'desc', 'left')}
+                ${th(t('Cost'), 'cost', 'right')}
+                ${th(t('Clear Rate'), 'clearRate', 'right')}
+                ${th(t('Delta'), 'deltaVal', 'right')}
+                ${th(t('Gold/1%'), 'goldPerPct', 'right')}
             </tr></thead><tbody>`;
 
             for (const row of goldRows) {
@@ -1633,7 +1636,7 @@ class LabSimUI {
             sortRows(tokenRows, sortState.token.key, sortState.token.dir);
             sortRows(goldRows, sortState.gold.key, sortState.gold.dir);
             let html = `<div style="color:#888; font-size:11px; margin-bottom:8px;">
-                Baseline Avg Clear: <span style="color:#e0e0e0; font-weight:600;">${((baseline?.clearRate || 0) * 100).toFixed(1)}%</span>
+                ${t('Baseline Avg Clear:')} <span style="color:#e0e0e0; font-weight:600;">${((baseline?.clearRate || 0) * 100).toFixed(1)}%</span>
             </div>`;
             if (tokenRows.length > 0) html += renderTokenTable();
             if (goldRows.length > 0) html += renderGoldTable();
@@ -1657,7 +1660,7 @@ class LabSimUI {
             renderAll();
         });
 
-        this._setStatus(`${results.length} skilling upgrade candidates analyzed.`);
+        this._setStatus(t('{0} skilling upgrade candidates analyzed.', results.length));
     }
 
     toggle() {

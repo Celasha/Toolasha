@@ -5,6 +5,7 @@
  * (shows a custom popover since the game provides no interaction for those).
  */
 
+import { t } from '../../core/i18n.js';
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
@@ -195,14 +196,14 @@ class CollectionNavigation {
         popover.appendChild(nameDiv);
 
         // View Action button
-        const viewActionBtn = this.createNavButton('View Action', () => {
+        const viewActionBtn = this.createNavButton(t('View Action'), () => {
             this.dismissPopover();
             navigateToItem(itemHrid);
         });
         popover.appendChild(viewActionBtn);
 
         // Item Dictionary button
-        const dictBtn = this.createNavButton('Item Dictionary', () => {
+        const dictBtn = this.createNavButton(t('Item Dictionary'), () => {
             this.dismissPopover();
             const game = getGameObject();
             const itemDetails = dataManager.getItemDetails(itemHrid);
@@ -293,12 +294,12 @@ class CollectionNavigation {
             return;
         }
 
-        const viewActionBtn = this.createNavButton('View Action', () => {
+        const viewActionBtn = this.createNavButton(t('View Action'), () => {
             navigateToItem(itemHrid);
         });
         actionMenu.appendChild(viewActionBtn);
 
-        const dictBtn = this.createNavButton('Item Dictionary', () => {
+        const dictBtn = this.createNavButton(t('Item Dictionary'), () => {
             const game = getGameObject();
             const itemDetails = dataManager.getItemDetails(itemHrid);
             if (game?.handleOpenItemDictionary && itemDetails) {

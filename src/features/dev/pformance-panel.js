@@ -5,6 +5,7 @@
  */
 
 import config from '../../core/config.js';
+import { t } from '../../core/i18n.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { registerFloatingPanel, unregisterFloatingPanel, bringPanelToFront } from '../../utils/panel-z-index.js';
 
@@ -106,7 +107,7 @@ class PFormancePanel {
         this.headerEl = header;
 
         const title = document.createElement('span');
-        title.textContent = 'PFormance';
+        title.textContent = t('PFormance');
         title.style.fontWeight = 'bold';
         title.style.color = COLORS.accent;
 
@@ -121,7 +122,7 @@ class PFormancePanel {
         });
 
         const closeBtn = this._headerButton('✕', () => this._removePanel());
-        closeBtn.title = 'Close';
+        closeBtn.title = t('Close');
 
         buttons.appendChild(collapseBtn);
         buttons.appendChild(closeBtn);
@@ -236,12 +237,12 @@ class PFormancePanel {
 
         this.contentEl.innerHTML = '';
         this.contentEl.appendChild(
-            this._createSection('Feature Init', initEntries, this.featureSectionCollapsed, (v) => {
+            this._createSection(t('Feature Init'), initEntries, this.featureSectionCollapsed, (v) => {
                 this.featureSectionCollapsed = v;
             })
         );
         this.contentEl.appendChild(
-            this._createSection('DOM Observers', domEntries, this.domSectionCollapsed, (v) => {
+            this._createSection(t('DOM Observers'), domEntries, this.domSectionCollapsed, (v) => {
                 this.domSectionCollapsed = v;
             })
         );
@@ -288,7 +289,7 @@ class PFormancePanel {
 
         if (entries.length === 0) {
             const empty = document.createElement('div');
-            empty.textContent = 'No data';
+            empty.textContent = t('No data');
             empty.style.padding = '4px 6px';
             empty.style.color = COLORS.textDim;
             empty.style.fontSize = '11px';
@@ -305,7 +306,10 @@ class PFormancePanel {
 
         const thead = document.createElement('thead');
         const headRow = document.createElement('tr');
-        const columns = title === 'Feature Init' ? ['Name', 'Time (ms)'] : ['Name', 'Calls/s', 'Total ms', 'CPU %'];
+        const columns =
+            title === t('Feature Init')
+                ? [t('Name'), t('Time (ms)')]
+                : [t('Name'), t('Calls/s'), t('Total ms'), t('CPU %')];
 
         for (const col of columns) {
             const th = document.createElement('th');

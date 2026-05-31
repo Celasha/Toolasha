@@ -4,6 +4,7 @@
  * Injected as a tab in the alchemy panel tab bar.
  */
 
+import { t } from '../../core/i18n.js';
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import { coinifyHistoryTracker } from './coinify-history-tracker.js';
@@ -124,10 +125,10 @@ class CoinifyHistoryViewer {
                 // Replace first text node (the label) while keeping badge span
                 const badgeSpan = badge.querySelector('.MuiBadge-badge');
                 badge.textContent = '';
-                badge.appendChild(document.createTextNode('Coinify History'));
+                badge.appendChild(document.createTextNode(t('Coinify History')));
                 if (badgeSpan) badge.appendChild(badgeSpan);
             } else {
-                tab.textContent = 'Coinify History';
+                tab.textContent = t('Coinify History');
             }
 
             tab.addEventListener('click', (e) => {
@@ -227,7 +228,7 @@ class CoinifyHistoryViewer {
         `;
 
         const title = document.createElement('h2');
-        title.textContent = 'Coinify History';
+        title.textContent = t('Coinify History');
         title.style.cssText = 'margin: 0; color: #fff;';
 
         const closeBtn = document.createElement('button');
@@ -393,15 +394,15 @@ class CoinifyHistoryViewer {
         headerRow.style.background = '#1a1a1a';
 
         const columns = [
-            { key: 'startTime', label: 'Session Start', filterable: true },
-            { key: 'inputItemHrid', label: 'Input Item', filterable: true },
-            { key: 'enhancementLevel', label: 'Enh. Level', filterable: false },
-            { key: 'totalAttempts', label: 'Attempts', filterable: false },
-            { key: 'totalSuccesses', label: 'Successes', filterable: false },
-            { key: '_successRate', label: 'Success Rate', filterable: false },
-            { key: 'totalCoinsEarned', label: 'Coins Earned', filterable: false },
-            { key: '_catalystOfCoinification', label: 'Catalyst of Coinification', filterable: false },
-            { key: '_primeCatalyst', label: 'Prime Catalyst', filterable: false },
+            { key: 'startTime', label: t('Session Start'), filterable: true },
+            { key: 'inputItemHrid', label: t('Input Item'), filterable: true },
+            { key: 'enhancementLevel', label: t('Enh. Level'), filterable: false },
+            { key: 'totalAttempts', label: t('Attempts'), filterable: false },
+            { key: 'totalSuccesses', label: t('Successes'), filterable: false },
+            { key: '_successRate', label: t('Success Rate'), filterable: false },
+            { key: 'totalCoinsEarned', label: t('Coins Earned'), filterable: false },
+            { key: '_catalystOfCoinification', label: t('Catalyst of Coinification'), filterable: false },
+            { key: '_primeCatalyst', label: t('Prime Catalyst'), filterable: false },
             { key: '_delete', label: '', filterable: false },
         ];
 
@@ -488,8 +489,8 @@ class CoinifyHistoryViewer {
             cell.colSpan = columns.length;
             cell.textContent =
                 this.sessions.length === 0
-                    ? 'No coinify history recorded yet.'
-                    : 'No sessions match the current filters.';
+                    ? t('No coinify history recorded yet.')
+                    : t('No sessions match the current filters.');
             cell.style.cssText = 'padding: 20px; text-align: center; color: #888;';
             row.appendChild(cell);
             tbody.appendChild(row);
@@ -531,7 +532,7 @@ class CoinifyHistoryViewer {
                 // Successes
                 const successCell = document.createElement('td');
                 const failures = session.totalAttempts - session.totalSuccesses;
-                successCell.textContent = `${session.totalSuccesses} (${failures} failed)`;
+                successCell.textContent = t('{0} ({1} failed)', session.totalSuccesses, failures);
                 successCell.style.cssText = `
                     padding: 6px 10px;
                     color: ${failures > 0 ? '#fbbf24' : '#4ade80'};
@@ -575,7 +576,7 @@ class CoinifyHistoryViewer {
                 deleteCell.style.cssText = 'padding: 6px 4px; text-align: center;';
                 const deleteBtn = document.createElement('button');
                 deleteBtn.textContent = '✕';
-                deleteBtn.title = 'Delete this session';
+                deleteBtn.title = t('Delete this session');
                 deleteBtn.style.cssText = `
                     background: none; border: none; color: #dc2626;
                     cursor: pointer; font-size: 14px; padding: 2px 6px;
@@ -637,7 +638,7 @@ class CoinifyHistoryViewer {
         // Stats
         const stats = document.createElement('span');
         stats.style.cssText = 'color: #aaa; font-size: 14px;';
-        stats.textContent = `${this.filteredSessions.length} session${this.filteredSessions.length !== 1 ? 's' : ''}`;
+        stats.textContent = t('{0} sessions', this.filteredSessions.length);
         controls.appendChild(stats);
 
         const rightGroup = document.createElement('div');
@@ -646,7 +647,7 @@ class CoinifyHistoryViewer {
         // Clear All Filters button (only when filters active)
         if (this.hasAnyFilter()) {
             const clearFiltersBtn = document.createElement('button');
-            clearFiltersBtn.textContent = 'Clear All Filters';
+            clearFiltersBtn.textContent = t('Clear All Filters');
             clearFiltersBtn.style.cssText = `
                 padding: 6px 12px; background: #e67e22; color: white;
                 border: none; border-radius: 4px; cursor: pointer;
@@ -657,7 +658,7 @@ class CoinifyHistoryViewer {
 
         // Export button
         const exportBtn = document.createElement('button');
-        exportBtn.textContent = 'Export';
+        exportBtn.textContent = t('Export');
         exportBtn.style.cssText = `
             padding: 6px 12px; background: #2563eb; color: white;
             border: none; border-radius: 4px; cursor: pointer;
@@ -667,7 +668,7 @@ class CoinifyHistoryViewer {
 
         // Clear History button
         const clearBtn = document.createElement('button');
-        clearBtn.textContent = 'Clear History';
+        clearBtn.textContent = t('Clear History');
         clearBtn.style.cssText = `
             padding: 6px 12px; background: #dc2626; color: white;
             border: none; border-radius: 4px; cursor: pointer;
@@ -692,7 +693,7 @@ class CoinifyHistoryViewer {
             if (this.filters.dateFrom) parts.push(this.filters.dateFrom.toLocaleDateString());
             if (this.filters.dateTo) parts.push(this.filters.dateTo.toLocaleDateString());
             badges.push({
-                label: `Date: ${parts.join(' - ')}`,
+                label: t('Date: {0}', parts.join(' - ')),
                 onRemove: () => {
                     this.filters.dateFrom = null;
                     this.filters.dateTo = null;
@@ -706,9 +707,9 @@ class CoinifyHistoryViewer {
             const label =
                 this.filters.selectedInputItems.length === 1
                     ? this.getItemName(this.filters.selectedInputItems[0])
-                    : `${this.filters.selectedInputItems.length} input items`;
+                    : t('{0} input items', this.filters.selectedInputItems.length);
             badges.push({
-                label: `Input: ${label}`,
+                label: t('Input: {0}', label),
                 icon: this.filters.selectedInputItems[0],
                 onRemove: () => {
                     this.filters.selectedInputItems = [];
@@ -759,7 +760,7 @@ class CoinifyHistoryViewer {
         leftSide.style.cssText = 'display: flex; gap: 8px; align-items: center; color: #aaa;';
 
         const label = document.createElement('span');
-        label.textContent = 'Rows per page:';
+        label.textContent = t('Rows per page:');
 
         const rowsInput = document.createElement('input');
         rowsInput.type = 'number';
@@ -795,7 +796,7 @@ class CoinifyHistoryViewer {
         });
 
         showAllLabel.appendChild(showAllCheckbox);
-        showAllLabel.appendChild(document.createTextNode('Show All'));
+        showAllLabel.appendChild(document.createTextNode(t('Show All')));
 
         leftSide.appendChild(label);
         leftSide.appendChild(rowsInput);
@@ -825,7 +826,7 @@ class CoinifyHistoryViewer {
             });
 
             const pageInfo = document.createElement('span');
-            pageInfo.textContent = `Page ${this.currentPage} of ${totalPages || 1}`;
+            pageInfo.textContent = t('Page {0} of {1}', this.currentPage, totalPages || 1);
 
             const nextBtn = document.createElement('button');
             nextBtn.textContent = '▶';
@@ -849,7 +850,7 @@ class CoinifyHistoryViewer {
             rightSide.appendChild(nextBtn);
         } else {
             const info = document.createElement('span');
-            info.textContent = `Showing all ${this.filteredSessions.length} sessions`;
+            info.textContent = t('Showing all {0} sessions', this.filteredSessions.length);
             rightSide.appendChild(info);
         }
 
@@ -925,7 +926,7 @@ class CoinifyHistoryViewer {
      * @returns {HTMLElement}
      */
     createDateFilterPopup() {
-        const popup = this.createPopupBase('Filter by Date');
+        const popup = this.createPopupBase(t('Filter by Date'));
 
         // Compute available range
         if (!this.cachedDateRange) {
@@ -948,18 +949,22 @@ class CoinifyHistoryViewer {
                 color: #aaa; font-size: 11px; margin-bottom: 10px;
                 padding: 6px; background: #1a1a1a; border-radius: 3px;
             `;
-            rangeInfo.textContent = `Available: ${minDate.toLocaleDateString()} - ${maxDate.toLocaleDateString()}`;
+            rangeInfo.textContent = t(
+                'Available: {0} - {1}',
+                minDate.toLocaleDateString(),
+                maxDate.toLocaleDateString()
+            );
             popup.appendChild(rangeInfo);
         }
 
         const fromInput = this.createDateInput(
-            'From:',
+            t('From:'),
             this.filters.dateFrom ? this.filters.dateFrom.toISOString().split('T')[0] : '',
             minDate,
             maxDate
         );
         const toInput = this.createDateInput(
-            'To:',
+            t('To:'),
             this.filters.dateTo ? this.filters.dateTo.toISOString().split('T')[0] : '',
             minDate,
             maxDate
@@ -996,7 +1001,7 @@ class CoinifyHistoryViewer {
      * @returns {HTMLElement}
      */
     createInputItemFilterPopup() {
-        const popup = this.createPopupBase('Filter by Input Item');
+        const popup = this.createPopupBase(t('Filter by Input Item'));
         popup.style.minWidth = '220px';
 
         // Gather unique input items from all sessions
@@ -1014,7 +1019,7 @@ class CoinifyHistoryViewer {
         // Search box
         const searchInput = document.createElement('input');
         searchInput.type = 'text';
-        searchInput.placeholder = 'Search items...';
+        searchInput.placeholder = t('Search items...');
         searchInput.style.cssText = `
             width: 100%; padding: 6px; margin-bottom: 8px;
             background: #1a1a1a; border: 1px solid #555;
@@ -1141,7 +1146,7 @@ class CoinifyHistoryViewer {
         row.style.cssText = 'display: flex; gap: 8px; margin-top: 10px;';
 
         const applyBtn = document.createElement('button');
-        applyBtn.textContent = 'Apply';
+        applyBtn.textContent = t('Apply');
         applyBtn.style.cssText = `
             flex: 1; padding: 6px; background: #4a90e2; color: white;
             border: none; border-radius: 3px; cursor: pointer;
@@ -1149,7 +1154,7 @@ class CoinifyHistoryViewer {
         applyBtn.addEventListener('click', onApply);
 
         const clearBtn = document.createElement('button');
-        clearBtn.textContent = 'Clear';
+        clearBtn.textContent = t('Clear');
         clearBtn.style.cssText = `
             flex: 1; padding: 6px; background: #666; color: white;
             border: none; border-radius: 3px; cursor: pointer;
@@ -1312,7 +1317,10 @@ class CoinifyHistoryViewer {
      */
     async clearHistory() {
         const confirmed = confirm(
-            `This will permanently delete ALL coinify history (${this.sessions.length} sessions).\nThis cannot be undone.\n\nAre you sure?`
+            t(
+                'This will permanently delete ALL coinify history ({0} sessions).\nThis cannot be undone.\n\nAre you sure?',
+                this.sessions.length
+            )
         );
         if (!confirmed) return;
 
@@ -1320,12 +1328,12 @@ class CoinifyHistoryViewer {
             await coinifyHistoryTracker.clearHistory();
             this.sessions = [];
             this.filteredSessions = [];
-            alert('Coinify history cleared.');
+            alert(t('Coinify history cleared.'));
             this.applyFilters();
             this.renderTable();
         } catch (error) {
             console.error('[CoinifyHistoryViewer] Failed to clear history:', error);
-            alert(`Failed to clear history: ${error.message}`);
+            alert(t('Failed to clear history: {0}', error.message));
         }
     }
 }

@@ -12,6 +12,7 @@ import { registerFloatingPanel, unregisterFloatingPanel, bringPanelToFront } fro
 import scrollSimulator from './scroll-simulator.js';
 import loadoutSnapshot from './loadout-snapshot.js';
 import { SCROLL_BUFF_ITEMS, SCROLL_BUFF_LABELS } from '../../utils/scroll-buff-values.js';
+import { t } from '../../core/i18n.js';
 
 const BUTTON_ID = 'toolasha-scroll-sim-btn';
 const POPUP_ID = 'toolasha-scroll-sim-popup';
@@ -152,8 +153,8 @@ class ScrollSimPopup {
 
         const title = document.createElement('span');
         title.style.cssText = `font-size: 0.9rem; font-weight: 600; color: ${config.COLOR_ACCENT};`;
-        const contextLabel = this.loadoutName ? this.loadoutName : 'Defaults';
-        title.textContent = `Scroll Simulation — ${contextLabel}`;
+        const contextLabel = this.loadoutName ? this.loadoutName : t('Scroll Defaults');
+        title.textContent = `${t('Scroll Simulation')} — ${contextLabel}`;
 
         const closeBtn = document.createElement('button');
         closeBtn.textContent = '×';
@@ -203,8 +204,8 @@ class ScrollSimPopup {
             line-height: 1.4;
         `;
         note.textContent = this.loadoutName
-            ? 'These scrolls override the defaults when this loadout is active for a skill.'
-            : 'Applied when no loadout matches the current skill (or loadout snapshots are disabled).';
+            ? t('These scrolls override the defaults when this loadout is active for a skill.')
+            : t('Applied when no loadout matches the current skill (or loadout snapshots are disabled).');
         body.appendChild(note);
 
         // Scroll rows
@@ -332,7 +333,7 @@ function injectButton(navButtons) {
 
     const button = document.createElement('button');
     button.id = BUTTON_ID;
-    button.textContent = 'Scroll Simulation';
+    button.textContent = t('Scroll Simulation');
     button.className = 'Button_button__1Fe9z';
     button.style.cssText = `white-space: nowrap;`;
     button.addEventListener('click', () => popup.open(loadoutName));
@@ -369,7 +370,7 @@ function disable() {
 }
 
 export default {
-    name: 'Scroll Simulator UI',
+    name: t('Scroll Simulator UI'),
     initialize,
     openDefaultsPopup,
     disable,

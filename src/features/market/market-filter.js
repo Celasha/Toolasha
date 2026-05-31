@@ -6,6 +6,7 @@
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
+import { t } from '../../core/i18n.js';
 
 class MarketFilter {
     constructor() {
@@ -121,7 +122,7 @@ class MarketFilter {
         container.style.cssText = 'display: flex; align-items: center; gap: 4px;';
 
         const label = document.createElement('label');
-        label.textContent = type === 'min' ? 'Level >= ' : 'Level < ';
+        label.textContent = type === 'min' ? t('Level >= ') : t('Level < ');
         label.style.cssText = 'font-size: 12px; color: rgba(255, 255, 255, 0.7);';
 
         const select = document.createElement('select');
@@ -138,7 +139,7 @@ class MarketFilter {
         levels.forEach((level) => {
             const option = document.createElement('option');
             option.value = level;
-            option.textContent = level === 1000 ? 'All' : level;
+            option.textContent = level === 1000 ? t('All') : level;
             if ((type === 'min' && level === 1) || (type === 'max' && level === 1000)) {
                 option.selected = true;
             }
@@ -169,7 +170,7 @@ class MarketFilter {
         container.style.cssText = 'display: flex; align-items: center; gap: 4px;';
 
         const label = document.createElement('label');
-        label.textContent = 'Class: ';
+        label.textContent = t('Class: ');
         label.style.cssText = 'font-size: 12px; color: rgba(255, 255, 255, 0.7);';
 
         const select = document.createElement('select');
@@ -178,7 +179,7 @@ class MarketFilter {
             'padding: 4px 8px; border-radius: 4px; background: rgba(0, 0, 0, 0.3); color: #fff; border: 1px solid rgba(91, 141, 239, 0.3);';
 
         const classes = [
-            { value: 'all', label: 'All' },
+            { value: 'all', label: t('All') },
             { value: 'attack', label: 'Attack' },
             { value: 'melee', label: 'Melee' },
             { value: 'defense', label: 'Defense' },
@@ -213,7 +214,7 @@ class MarketFilter {
         container.style.cssText = 'display: flex; align-items: center; gap: 4px;';
 
         const label = document.createElement('label');
-        label.textContent = 'Slot: ';
+        label.textContent = t('Slot: ');
         label.style.cssText = 'font-size: 12px; color: rgba(255, 255, 255, 0.7);';
 
         const select = document.createElement('select');
@@ -222,7 +223,7 @@ class MarketFilter {
             'padding: 4px 8px; border-radius: 4px; background: rgba(0, 0, 0, 0.3); color: #fff; border: 1px solid rgba(91, 141, 239, 0.3);';
 
         const slots = [
-            { value: 'all', label: 'All' },
+            { value: 'all', label: t('All') },
             { value: 'main_hand', label: 'Main Hand' },
             { value: 'off_hand', label: 'Off Hand' },
             { value: 'two_hand', label: 'Two Hand' },

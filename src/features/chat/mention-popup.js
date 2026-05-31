@@ -4,6 +4,7 @@
  */
 
 import config from '../../core/config.js';
+import { t } from '../../core/i18n.js';
 import { registerFloatingPanel, unregisterFloatingPanel, bringPanelToFront } from '../../utils/panel-z-index.js';
 
 class MentionPopup {
@@ -129,7 +130,7 @@ class MentionPopup {
             font-weight: 600;
             color: ${config.COLOR_ACCENT};
         `;
-        title.textContent = `Mentions — ${channelDisplayName}`;
+        title.textContent = t('Mentions — {0}', channelDisplayName);
 
         const closeBtn = document.createElement('button');
         closeBtn.textContent = '×';
@@ -176,7 +177,7 @@ class MentionPopup {
      */
     _updateContent(mentions, channelDisplayName) {
         const title = this.container.querySelector('#mwi-mention-popup-title');
-        if (title) title.textContent = `Mentions — ${channelDisplayName}`;
+        if (title) title.textContent = t('Mentions — {0}', channelDisplayName);
 
         const body = this.container.querySelector('#mwi-mention-popup-body');
         if (body) {
@@ -199,7 +200,7 @@ class MentionPopup {
                 font-size: 0.85rem;
                 text-align: center;
             `;
-            empty.textContent = 'No mentions';
+            empty.textContent = t('No mentions');
             body.appendChild(empty);
             return;
         }

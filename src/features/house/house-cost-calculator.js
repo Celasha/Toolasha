@@ -3,6 +3,7 @@
  * Calculates material and coin costs for house room upgrades
  */
 
+import { t } from '../../core/i18n.js';
 import dataManager from '../../core/data-manager.js';
 import marketAPI from '../../api/marketplace.js';
 import { getItemPrice } from '../../utils/market-data.js';
@@ -180,12 +181,12 @@ class HouseCostCalculator {
      */
     getItemName(itemHrid) {
         if (itemHrid === '/items/coin') {
-            return 'Gold';
+            return t('Gold');
         }
 
         const initData = dataManager.getInitClientData();
         const itemData = initData?.itemDetailMap?.[itemHrid];
-        return itemData?.name || 'Unknown Item';
+        return itemData?.name || t('Unknown Item');
     }
 
     /**
@@ -196,7 +197,7 @@ class HouseCostCalculator {
     getRoomName(houseRoomHrid) {
         const initData = dataManager.getInitClientData();
         const roomData = initData?.houseRoomDetailMap?.[houseRoomHrid];
-        return roomData?.name || 'Unknown Room';
+        return roomData?.name || t('Unknown Room');
     }
 }
 

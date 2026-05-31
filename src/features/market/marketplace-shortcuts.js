@@ -12,6 +12,7 @@ import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { setReactInputValue } from '../../utils/react-input.js';
 import estimatedListingAge from './estimated-listing-age.js';
 import { formatRelativeTime, formatWithSeparator } from '../../utils/formatters.js';
+import { t } from '../../core/i18n.js';
 
 /** Native input value setter for triggering React state updates */
 const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
@@ -140,14 +141,15 @@ class MarketplaceShortcuts {
                     const ageMs = Date.now() - new Date(topAsk.createdTimestamp).getTime();
                     if (ageMs > 0) {
                         const ageStr = formatRelativeTime(ageMs);
-                        ageHtml = `<div style="font-size: 0.7em; opacity: 0.7; margin-top: 1px;">Top ask: ~${ageStr}</div>`;
+                        ageHtml = `<div style="font-size: 0.7em; opacity: 0.7; margin-top: 1px;">${t('Top ask: ~{0}', ageStr)}</div>`;
                     }
                 }
             }
         }
 
         toggle.innerHTML =
-            '<span style="flex: 1; text-align: center;">Marketplace Action' +
+            '<span style="flex: 1; text-align: center;">' +
+            t('Marketplace Action') +
             ageHtml +
             '</span>' +
             '<span class="mwi-mp-chevron" style="font-size: 0.65em; transition: transform 0.15s; display: inline-block;">▼</span>';
@@ -175,10 +177,10 @@ class MarketplaceShortcuts {
 
         // Action buttons
         const actions = [
-            { label: 'Sell Now', type: 'sell', color: '#c2410c' },
-            { label: 'Buy Now', type: 'buy', color: '#2fc4a7' },
-            { label: 'New Sell Listing', type: 'sell-listing', color: '#9a3412' },
-            { label: 'New Buy Listing', type: 'buy-listing', color: '#2fc4a7' },
+            { label: t('Sell Now'), type: 'sell', color: '#c2410c' },
+            { label: t('Buy Now'), type: 'buy', color: '#2fc4a7' },
+            { label: t('New Sell Listing'), type: 'sell-listing', color: '#9a3412' },
+            { label: t('New Buy Listing'), type: 'buy-listing', color: '#2fc4a7' },
         ];
 
         for (const action of actions) {
@@ -481,7 +483,7 @@ class MarketplaceShortcuts {
             // + toggle button
             const addToggle = document.createElement('button');
             addToggle.textContent = '+';
-            addToggle.title = 'Toggle add mode: click to accumulate counts instead of setting them';
+            addToggle.title = t('Toggle add mode: click to accumulate counts instead of setting them');
             addToggle.style.cssText = `
                 font-size: 11px;
                 font-weight: 700;
@@ -627,7 +629,7 @@ class MarketplaceShortcuts {
             const ownedEl = document.createElement('div');
             ownedEl.className = 'mwi-owned-count';
             ownedEl.style.cssText = `text-align: center; font-size: 13px; color: ${config.COLOR_TEXT_SECONDARY}; margin: 4px 0;`;
-            ownedEl.innerHTML = `Owned: <span style="color: ${config.COLOR_ACCENT}; font-weight: 600;">${formatWithSeparator(count)}</span>`;
+            ownedEl.innerHTML = `${t('Owned: ')}<span style="color: ${config.COLOR_ACCENT}; font-weight: 600;">${formatWithSeparator(count)}</span>`;
             quantityRow.insertAdjacentElement('beforebegin', ownedEl);
         }, 100);
     }

@@ -6,6 +6,7 @@
 import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
 import config from '../../core/config.js';
+import { t } from '../../core/i18n.js';
 import { formatLargeNumber } from '../../utils/formatters.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
@@ -171,7 +172,7 @@ class RemainingXP {
             // Create the remaining XP display
             const xpDisplay = document.createElement('span');
             xpDisplay.className = 'mwi-remaining-xp';
-            xpDisplay.textContent = `${formatLargeNumber(remainingXP)} XP left`;
+            xpDisplay.textContent = t('{0} XP left', formatLargeNumber(remainingXP));
 
             // Build style with optional text shadow
             const useBlackBorder = config.getSetting('skillRemainingXP_blackBorder', true);

@@ -4,6 +4,7 @@
  */
 
 import dungeonTrackerStorage from './dungeon-tracker-storage.js';
+import { t } from '../../core/i18n.js';
 
 class DungeonTrackerUIChart {
     constructor(state, formatTimeFunc) {
@@ -46,7 +47,7 @@ class DungeonTrackerUIChart {
 
         // Prepare data
         // Label runs oldest to newest (Run 1 = oldest, Run N = most recent)
-        const labels = filteredRuns.map((_, i) => `Run ${i + 1}`);
+        const labels = filteredRuns.map((_, i) => `${t('Run ')}${i + 1}`);
         const durations = filteredRuns.map((r) => (r.duration || r.totalTime || 0) / 60000); // Convert to minutes
 
         // Calculate stats
@@ -57,7 +58,7 @@ class DungeonTrackerUIChart {
         // Create datasets
         const datasets = [
             {
-                label: 'Run Times',
+                label: t('Run Times'),
                 data: durations,
                 borderColor: 'rgb(75, 192, 192)',
                 backgroundColor: 'rgba(75, 192, 192, 0.2)',
@@ -68,7 +69,7 @@ class DungeonTrackerUIChart {
                 fill: false,
             },
             {
-                label: 'Average',
+                label: t('Average'),
                 data: new Array(durations.length).fill(avgDuration),
                 borderColor: 'rgb(255, 159, 64)',
                 borderWidth: 2,
@@ -78,7 +79,7 @@ class DungeonTrackerUIChart {
                 fill: false,
             },
             {
-                label: 'Fastest',
+                label: t('Fastest'),
                 data: new Array(durations.length).fill(fastestDuration),
                 borderColor: 'rgb(75, 192, 75)',
                 borderWidth: 2,
@@ -88,7 +89,7 @@ class DungeonTrackerUIChart {
                 fill: false,
             },
             {
-                label: 'Slowest',
+                label: t('Slowest'),
                 data: new Array(durations.length).fill(slowestDuration),
                 borderColor: 'rgb(255, 99, 132)',
                 borderWidth: 2,
@@ -148,7 +149,7 @@ class DungeonTrackerUIChart {
                                 const value = context.parsed.y;
                                 const minutes = Math.floor(value);
                                 const seconds = Math.floor((value - minutes) * 60);
-                                return `${label}: ${minutes}m ${seconds}s`;
+                                return `${label}: ${minutes}${t('m')} ${seconds}${t('s')}`;
                             },
                         },
                     },
@@ -157,7 +158,7 @@ class DungeonTrackerUIChart {
                     x: {
                         title: {
                             display: true,
-                            text: 'Run Number',
+                            text: t('Run Number'),
                             color: '#ccc',
                         },
                         ticks: {
@@ -170,7 +171,7 @@ class DungeonTrackerUIChart {
                     y: {
                         title: {
                             display: true,
-                            text: 'Duration (minutes)',
+                            text: t('Duration (minutes)'),
                             color: '#ccc',
                         },
                         ticks: {
@@ -227,7 +228,7 @@ class DungeonTrackerUIChart {
         `;
 
         const title = document.createElement('h3');
-        title.textContent = '📊 Dungeon Run Chart';
+        title.textContent = `📊 ${t('Dungeon Run Chart')}`;
         title.style.cssText = 'color: #ccc; margin: 0; font-size: 18px;';
 
         const closeBtn = document.createElement('button');
@@ -311,7 +312,7 @@ class DungeonTrackerUIChart {
 
         // Prepare data (same as main chart)
         // Label runs in reverse chronological order to match list (newest = Run 1, oldest = Run N)
-        const labels = filteredRuns.map((_, i) => `Run ${filteredRuns.length - i}`);
+        const labels = filteredRuns.map((_, i) => `${t('Run ')}${filteredRuns.length - i}`);
         const durations = filteredRuns.map((r) => (r.duration || r.totalTime || 0) / 60000);
 
         const avgDuration = durations.reduce((a, b) => a + b, 0) / durations.length;
@@ -320,7 +321,7 @@ class DungeonTrackerUIChart {
 
         const datasets = [
             {
-                label: 'Run Times',
+                label: t('Run Times'),
                 data: durations,
                 borderColor: 'rgb(75, 192, 192)',
                 backgroundColor: 'rgba(75, 192, 192, 0.2)',
@@ -331,7 +332,7 @@ class DungeonTrackerUIChart {
                 fill: false,
             },
             {
-                label: 'Average',
+                label: t('Average'),
                 data: new Array(durations.length).fill(avgDuration),
                 borderColor: 'rgb(255, 159, 64)',
                 borderWidth: 2,
@@ -341,7 +342,7 @@ class DungeonTrackerUIChart {
                 fill: false,
             },
             {
-                label: 'Fastest',
+                label: t('Fastest'),
                 data: new Array(durations.length).fill(fastestDuration),
                 borderColor: 'rgb(75, 192, 75)',
                 borderWidth: 2,
@@ -351,7 +352,7 @@ class DungeonTrackerUIChart {
                 fill: false,
             },
             {
-                label: 'Slowest',
+                label: t('Slowest'),
                 data: new Array(durations.length).fill(slowestDuration),
                 borderColor: 'rgb(255, 99, 132)',
                 borderWidth: 2,
@@ -405,7 +406,7 @@ class DungeonTrackerUIChart {
                                 const value = context.parsed.y;
                                 const minutes = Math.floor(value);
                                 const seconds = Math.floor((value - minutes) * 60);
-                                return `${label}: ${minutes}m ${seconds}s`;
+                                return `${label}: ${minutes}${t('m')} ${seconds}${t('s')}`;
                             },
                         },
                     },
@@ -414,7 +415,7 @@ class DungeonTrackerUIChart {
                     x: {
                         title: {
                             display: true,
-                            text: 'Run Number',
+                            text: t('Run Number'),
                             color: '#ccc',
                             font: {
                                 size: 14,
@@ -430,7 +431,7 @@ class DungeonTrackerUIChart {
                     y: {
                         title: {
                             display: true,
-                            text: 'Duration (minutes)',
+                            text: t('Duration (minutes)'),
                             color: '#ccc',
                             font: {
                                 size: 14,

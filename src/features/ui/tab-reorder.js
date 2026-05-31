@@ -7,6 +7,7 @@
  * re-renders and click→panel mapping are unaffected.
  */
 
+import { t } from '../../core/i18n.js';
 import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
 import dataManager from '../../core/data-manager.js';

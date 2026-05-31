@@ -7,6 +7,7 @@
  * Per-character configuration stored in IndexedDB.
  */
 
+import { t } from '../../core/i18n.js';
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
@@ -67,7 +68,7 @@ class TaskAutoReroll {
         const btn = document.createElement('span');
         btn.className = 'mwi-task-autoreroll-btn';
         btn.textContent = '\u{1F3AF}';
-        btn.title = 'Configure task auto-reroll reminders';
+        btn.title = t('Configure task auto-reroll reminders');
         btn.style.cssText = 'cursor:pointer; font-size:16px; margin-left:6px; opacity:0.7; transition:opacity 0.1s;';
         btn.addEventListener('mouseover', () => {
             btn.style.opacity = '1';
@@ -107,7 +108,7 @@ class TaskAutoReroll {
 
         const badge = document.createElement('div');
         badge.className = 'mwi-autoreroll-badge';
-        badge.textContent = 'Reroll!';
+        badge.textContent = t('Reroll!');
         badge.style.cssText = `
             position: absolute;
             top: 4px;
@@ -275,7 +276,7 @@ class TaskAutoReroll {
             flex-shrink: 0;
         `;
         header.innerHTML = `
-            <span style="font-weight:700; font-size:14px; color:#ef4444;">Auto-Reroll List</span>
+            <span style="font-weight:700; font-size:14px; color:#ef4444;">${t('Auto-Reroll List')}</span>
             <button id="mwi-task-autoreroll-close" style="
                 background:none; border:none; color:#aaa; font-size:22px;
                 cursor:pointer; padding:0; line-height:1;">\u00d7</button>
@@ -285,7 +286,7 @@ class TaskAutoReroll {
         searchDiv.style.cssText = 'padding: 8px 14px; flex-shrink: 0;';
         const searchInput = document.createElement('input');
         searchInput.type = 'search';
-        searchInput.placeholder = 'Search actions, monsters, zones...';
+        searchInput.placeholder = t('Search actions, monsters, zones...');
         searchInput.style.cssText = `
             width: 100%;
             padding: 6px 10px;
@@ -315,8 +316,7 @@ class TaskAutoReroll {
 
             let html = '';
             if (!query && filtered.length === 0) {
-                html =
-                    '<div style="color:#666; text-align:center; padding:20px 0;">No auto-reroll tasks yet. Search to add.</div>';
+                html = `<div style="color:#666; text-align:center; padding:20px 0;">${t('No auto-reroll tasks yet. Search to add.')}</div>`;
             }
 
             for (const item of filtered.slice(0, 50)) {
@@ -352,7 +352,7 @@ class TaskAutoReroll {
             }
 
             if (filtered.length > 50) {
-                html += `<div style="color:#666; text-align:center; padding:8px;">...${filtered.length - 50} more (refine search)</div>`;
+                html += `<div style="color:#666; text-align:center; padding:8px;">...${filtered.length - 50} ${t('more (refine search)')}</div>`;
             }
 
             listContainer.innerHTML = html;
@@ -430,7 +430,7 @@ class TaskAutoReroll {
 const taskAutoReroll = new TaskAutoReroll();
 
 export default {
-    name: 'Task Auto-Reroll Reminder',
+    name: t('Task Auto-Reroll Reminder'),
     initialize: async () => {
         await taskAutoReroll.initialize();
     },

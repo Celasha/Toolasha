@@ -4,6 +4,7 @@
  * for the active alchemy type (Coinify, Decompose, Transmute).
  */
 
+import { t } from '../../core/i18n.js';
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import alchemyProfitCalculator from '../market/alchemy-profit-calculator.js';
@@ -128,10 +129,10 @@ class AlchemyBestItems {
             if (badge) {
                 const badgeSpan = badge.querySelector('.MuiBadge-badge');
                 badge.textContent = '';
-                badge.appendChild(document.createTextNode('Best Items'));
+                badge.appendChild(document.createTextNode(t('Best Items')));
                 if (badgeSpan) badge.appendChild(badgeSpan);
             } else {
-                tab.textContent = 'Best Items';
+                tab.textContent = t('Best Items');
             }
 
             tab.addEventListener('click', (e) => {
@@ -346,12 +347,12 @@ class AlchemyBestItems {
         // Sort toggle
         const sortLabel = document.createElement('span');
         sortLabel.style.cssText = 'color: #aaa; font-size: 0.75rem;';
-        sortLabel.textContent = 'Sort by:';
+        sortLabel.textContent = t('Sort by:');
         controls.appendChild(sortLabel);
 
         for (const mode of ['profit', 'xp']) {
             const btn = document.createElement('button');
-            btn.textContent = mode === 'profit' ? 'Profit/hr' : 'XP/hr';
+            btn.textContent = mode === 'profit' ? t('Profit/hr') : t('XP/hr');
             btn.setAttribute('data-mwi-sort-btn', mode);
             btn.style.cssText = `
                 padding: 3px 8px; border-radius: 4px; cursor: pointer;
@@ -367,7 +368,7 @@ class AlchemyBestItems {
         // Profitable only toggle
         const profitToggle = document.createElement('button');
         profitToggle.setAttribute('data-mwi-profit-toggle', 'true');
-        profitToggle.textContent = 'Profitable only';
+        profitToggle.textContent = t('Profitable only');
         profitToggle.style.cssText = `
             padding: 3px 8px; border-radius: 4px; cursor: pointer;
             border: 1px solid #555; font-size: 0.75rem; color: #fff;
@@ -386,7 +387,7 @@ class AlchemyBestItems {
         searchRow.style.cssText = 'display: flex; margin-bottom: 8px;';
         const searchInput = document.createElement('input');
         searchInput.type = 'text';
-        searchInput.placeholder = 'Search items...';
+        searchInput.placeholder = t('Search items...');
         searchInput.setAttribute('data-mwi-best-search', 'true');
         searchInput.style.cssText = `
             flex: 1; padding: 5px 10px; border-radius: 4px;
@@ -414,14 +415,14 @@ class AlchemyBestItems {
         // Profit/hr filter
         const profitFilter = document.createElement('span');
         profitFilter.style.cssText = 'display: flex; align-items: center; gap: 4px;';
-        profitFilter.innerHTML = 'Profit/hr:';
+        profitFilter.innerHTML = t('Profit/hr:');
         const profitMin = document.createElement('input');
         profitMin.type = 'text';
-        profitMin.placeholder = 'Min';
+        profitMin.placeholder = t('Min');
         profitMin.style.cssText = filterInputStyle;
         const profitMax = document.createElement('input');
         profitMax.type = 'text';
-        profitMax.placeholder = 'Max';
+        profitMax.placeholder = t('Max');
         profitMax.style.cssText = filterInputStyle;
 
         const parseFilterValue = (val) => {
@@ -452,14 +453,14 @@ class AlchemyBestItems {
         // Item price filter
         const priceFilter = document.createElement('span');
         priceFilter.style.cssText = 'display: flex; align-items: center; gap: 4px;';
-        priceFilter.innerHTML = 'Item price:';
+        priceFilter.innerHTML = t('Item price:');
         const priceMin = document.createElement('input');
         priceMin.type = 'text';
-        priceMin.placeholder = 'Min';
+        priceMin.placeholder = t('Min');
         priceMin.style.cssText = filterInputStyle;
         const priceMax = document.createElement('input');
         priceMax.type = 'text';
-        priceMax.placeholder = 'Max';
+        priceMax.placeholder = t('Max');
         priceMax.style.cssText = filterInputStyle;
         priceMin.addEventListener('change', onFilterChange);
         priceMax.addEventListener('change', onFilterChange);
@@ -512,7 +513,7 @@ class AlchemyBestItems {
         const title = this.modal.querySelector('[data-mwi-best-title]');
         if (title) {
             const typeLabel = this.currentType.charAt(0).toUpperCase() + this.currentType.slice(1);
-            title.textContent = `Best Items \u2014 ${typeLabel}`;
+            title.textContent = t('Best Items — {0}', typeLabel);
         }
 
         // Update tab styling
@@ -547,7 +548,7 @@ class AlchemyBestItems {
 
         for (const col of ['#', 'Item', 'Lvl', 'Catalyst', 'Profit/hr', 'XP/hr']) {
             const th = document.createElement('th');
-            th.textContent = col;
+            th.textContent = t(col);
             th.style.cssText = 'padding: 6px 8px; text-align: left; color: #aaa; font-weight: 500;';
             if (col === '#' || col === 'Lvl') th.style.textAlign = 'center';
             if (col === 'Profit/hr' || col === 'XP/hr') th.style.textAlign = 'right';
@@ -629,13 +630,15 @@ class AlchemyBestItems {
 
         if (sorted.length === 0) {
             container.innerHTML =
-                '<div style="color: #888; padding: 20px; text-align: center;">No eligible items found</div>';
+                '<div style="color: #888; padding: 20px; text-align: center;">' +
+                t('No eligible items found') +
+                '</div>';
         } else {
             container.appendChild(table);
             if (sorted.length > maxRows) {
                 const more = document.createElement('div');
                 more.style.cssText = 'color: #888; text-align: center; padding: 8px; font-size: 0.75rem;';
-                more.textContent = `Showing top ${maxRows} of ${sorted.length} items`;
+                more.textContent = t('Showing top {0} of {1} items', maxRows, sorted.length);
                 container.appendChild(more);
             }
         }
@@ -672,7 +675,7 @@ class AlchemyBestItems {
         const profitData = item.profitData;
 
         if (!profitData) {
-            container.textContent = 'No breakdown data available';
+            container.textContent = t('No breakdown data available');
             container.style.color = '#888';
             return container;
         }
@@ -684,7 +687,7 @@ class AlchemyBestItems {
             const totalRevenue = profitData.dropRevenues
                 .filter((d) => !d.isSelfReturn)
                 .reduce((sum, d) => sum + d.revenuePerHour, 0);
-            revenueHeader.textContent = `Revenue: ${formatKMB(Math.round(totalRevenue))}/hr`;
+            revenueHeader.textContent = t('Revenue: {0}/hr', formatKMB(Math.round(totalRevenue)));
             container.appendChild(revenueHeader);
 
             for (const drop of profitData.dropRevenues) {
@@ -716,7 +719,7 @@ class AlchemyBestItems {
         if (totalCosts > 0 || profitData.requirementCosts?.length > 0) {
             const costsHeader = document.createElement('div');
             costsHeader.style.cssText = 'color: #fff; font-weight: 500; margin-top: 6px; margin-bottom: 2px;';
-            costsHeader.textContent = `Costs: ${formatKMB(Math.round(totalCosts))}/hr`;
+            costsHeader.textContent = t('Costs: {0}/hr', formatKMB(Math.round(totalCosts)));
             container.appendChild(costsHeader);
 
             // Input materials

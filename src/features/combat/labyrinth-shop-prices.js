@@ -7,6 +7,7 @@ import domObserver from '../../core/dom-observer.js';
 import config from '../../core/config.js';
 import marketAPI from '../../api/marketplace.js';
 import { formatKMB } from '../../utils/formatters.js';
+import { t } from '../../core/i18n.js';
 
 class LabyrinthShopPrices {
     constructor() {

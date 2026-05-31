@@ -4,6 +4,7 @@
  * Supports time range selection, gap handling, and tooltip breakdown.
  */
 
+import { t } from '../../core/i18n.js';
 import networthHistory, { GAP_THRESHOLD_MS } from './networth-history.js';
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
@@ -18,12 +19,12 @@ const RANGE_MS = {
 };
 
 const CATEGORIES = [
-    { key: 'gold', label: 'Gold', color: '#eab308' },
-    { key: 'inventory', label: 'Inventory', color: '#3b82f6' },
-    { key: 'equipment', label: 'Equipment', color: '#ef4444' },
-    { key: 'listings', label: 'Listings', color: '#8b5cf6' },
-    { key: 'house', label: 'House', color: '#f97316' },
-    { key: 'abilities', label: 'Abilities', color: '#06b6d4' },
+    { key: 'gold', label: t('Gold'), color: '#eab308' },
+    { key: 'inventory', label: t('Inventory'), color: '#3b82f6' },
+    { key: 'equipment', label: t('Equipment'), color: '#ef4444' },
+    { key: 'listings', label: t('Listings'), color: '#8b5cf6' },
+    { key: 'house', label: t('House'), color: '#f97316' },
+    { key: 'abilities', label: t('Abilities'), color: '#06b6d4' },
 ];
 
 class NetworthHistoryChart {
@@ -143,7 +144,7 @@ class NetworthHistoryChart {
         `;
 
         const title = document.createElement('h3');
-        title.textContent = 'Net Worth History';
+        title.textContent = t('Net Worth History');
         title.style.cssText = 'color: #ccc; margin: 0; font-size: 18px;';
 
         const closeBtn = document.createElement('button');
@@ -175,7 +176,7 @@ class NetworthHistoryChart {
         const ranges = ['24h', '7d', '30d', 'all'];
         for (const range of ranges) {
             const btn = document.createElement('button');
-            btn.textContent = range === 'all' ? 'All' : range.toUpperCase();
+            btn.textContent = range === 'all' ? t('All') : range.toUpperCase();
             btn.dataset.range = range;
             btn.className = 'mwi-nw-range-btn';
             btn.style.cssText = `
@@ -195,7 +196,7 @@ class NetworthHistoryChart {
 
         // Connect Gaps toggle
         const gapToggle = document.createElement('button');
-        gapToggle.textContent = 'Connect Gaps';
+        gapToggle.textContent = t('Connect Gaps');
         gapToggle.className = 'mwi-nw-gap-toggle';
         const updateGapToggleStyle = () => {
             gapToggle.style.cssText = `
@@ -220,7 +221,7 @@ class NetworthHistoryChart {
 
         // Show Bars toggle
         const barToggle = document.createElement('button');
-        barToggle.textContent = 'Show Bars';
+        barToggle.textContent = t('Show Bars');
         barToggle.className = 'mwi-nw-bar-toggle';
         const updateBarToggleStyle = () => {
             barToggle.style.cssText = `
@@ -245,7 +246,7 @@ class NetworthHistoryChart {
 
         // Moving Average dropdown
         const maLabel = document.createElement('span');
-        maLabel.textContent = 'Avg:';
+        maLabel.textContent = t('Avg:');
         maLabel.style.cssText = 'color: #999; font-size: 12px; margin-left: 8px;';
         rangeRow.appendChild(maLabel);
 
@@ -262,7 +263,7 @@ class NetworthHistoryChart {
             color-scheme: dark;
         `;
         const maOptions = [
-            { value: 0, label: 'Off' },
+            { value: 0, label: t('Off') },
             { value: 3, label: '3h' },
             { value: 6, label: '6h' },
             { value: 12, label: '12h' },
@@ -275,7 +276,7 @@ class NetworthHistoryChart {
         if (isCustomValue) {
             maOptions.push({ value: this.movingAvgWindow, label: `${this.movingAvgWindow}h` });
         }
-        maOptions.push({ value: -1, label: 'Custom...' });
+        maOptions.push({ value: -1, label: t('Custom…') });
         for (const opt of maOptions) {
             const option = document.createElement('option');
             option.value = opt.value;
@@ -286,7 +287,7 @@ class NetworthHistoryChart {
         maSelect.addEventListener('change', () => {
             const val = parseInt(maSelect.value, 10);
             if (val === -1) {
-                const input = prompt('Enter moving average window in hours:');
+                const input = prompt(t('Enter moving average window in hours:'));
                 const parsed = parseInt(input, 10);
                 if (parsed > 0) {
                     this.movingAvgWindow = parsed;
@@ -330,7 +331,7 @@ class NetworthHistoryChart {
 
         // From label + input
         const fromLabel = document.createElement('span');
-        fromLabel.textContent = 'From:';
+        fromLabel.textContent = t('From:');
         fromLabel.style.cssText = 'color: #999; font-size: 12px;';
         rangeRow.appendChild(fromLabel);
 
@@ -345,7 +346,7 @@ class NetworthHistoryChart {
 
         // To label + input
         const toLabel = document.createElement('span');
-        toLabel.textContent = 'To:';
+        toLabel.textContent = t('To:');
         toLabel.style.cssText = 'color: #999; font-size: 12px;';
         rangeRow.appendChild(toLabel);
 
@@ -397,7 +398,7 @@ class NetworthHistoryChart {
             flex-shrink: 0;
         `;
         totalBtn.appendChild(totalDot);
-        totalBtn.appendChild(document.createTextNode('Total'));
+        totalBtn.appendChild(document.createTextNode(t('Total')));
         updateTotalBtnStyle();
         totalBtn.addEventListener('click', () => {
             this.categoryVisibility.showTotal = !this.categoryVisibility.showTotal;
@@ -439,7 +440,7 @@ class NetworthHistoryChart {
             flex-shrink: 0;
         `;
         nonExclBtn.appendChild(nonExclDot);
-        nonExclBtn.appendChild(document.createTextNode('Non-Excluded'));
+        nonExclBtn.appendChild(document.createTextNode(t('Non-Excluded')));
         updateNonExclBtnStyle();
         nonExclBtn.addEventListener('click', () => {
             this.categoryVisibility.showNonExcluded = !this.categoryVisibility.showNonExcluded;
@@ -480,7 +481,7 @@ class NetworthHistoryChart {
                 flex-shrink: 0;
             `;
             btn.appendChild(dot);
-            btn.appendChild(document.createTextNode(cat.label));
+            btn.appendChild(document.createTextNode(t(cat.label)));
             updateCatBtnStyle();
             btn.addEventListener('click', () => {
                 this.categoryVisibility[cat.key] = !this.categoryVisibility[cat.key];
@@ -816,7 +817,7 @@ class NetworthHistoryChart {
 
         const visibleCategories = CATEGORIES.filter((c) => this.categoryVisibility[c.key]);
         const yAxisTitle =
-            !this.categoryVisibility.showTotal && visibleCategories.length > 0 ? 'Category Value' : 'Net Worth';
+            !this.categoryVisibility.showTotal && visibleCategories.length > 0 ? t('Category Value') : t('Net Worth');
 
         this.chartInstance = new Chart(ctx, {
             type: 'line',
@@ -902,7 +903,7 @@ class NetworthHistoryChart {
         if (!statsRow) return;
 
         if (filtered.length === 0) {
-            statsRow.innerHTML = '<span style="color: #666;">No data available for this range</span>';
+            statsRow.innerHTML = `<span style="color: #666;">${t('No data available for this range')}</span>`;
             return;
         }
 
@@ -929,18 +930,18 @@ class NetworthHistoryChart {
             const ratePerHour = hoursElapsed > 0 ? (last.total - first.total) / hoursElapsed : 0;
 
             parts.push(
-                `<span>Current: <strong style="color: ${config.COLOR_ACCENT};">${networthFormatter(Math.round(currentTotal))}</strong></span>`
+                `<span>${t('Current:')} <strong style="color: ${config.COLOR_ACCENT};">${networthFormatter(Math.round(currentTotal))}</strong></span>`
             );
 
             if (filtered.length >= 2) {
                 const color = rangeChange >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
                 const sign = rangeChange >= 0 ? '+' : '';
                 const breakdownAttr = is24hRange
-                    ? ' id="mwi-nw-24h-toggle" style="cursor: pointer;" title="Click for item breakdown"'
+                    ? ` id="mwi-nw-24h-toggle" style="cursor: pointer;" title="${t('Click for item breakdown')}"`
                     : '';
                 const breakdownArrow = is24hRange ? ' <span style="font-size: 10px; color: #666;">▼</span>' : '';
                 parts.push(
-                    `<span${breakdownAttr}>Last ${rangeLabel}: <strong style="color: ${color};">${sign}${networthFormatter(Math.round(rangeChange))} (${sign}${rangePercent.toFixed(1)}%)</strong>${breakdownArrow}</span>`
+                    `<span${breakdownAttr}>${t('Last {0}:', rangeLabel)} <strong style="color: ${color};">${sign}${networthFormatter(Math.round(rangeChange))} (${sign}${rangePercent.toFixed(1)}%)</strong>${breakdownArrow}</span>`
                 );
             }
 
@@ -948,7 +949,7 @@ class NetworthHistoryChart {
                 const color = ratePerHour >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
                 const sign = ratePerHour >= 0 ? '+' : '';
                 parts.push(
-                    `<span>Rate: <strong style="color: ${color};">${sign}${networthFormatter(Math.round(ratePerHour))}/hr</strong></span>`
+                    `<span>${t('Rate:')} <strong style="color: ${color};">${sign}${networthFormatter(Math.round(ratePerHour))}/hr</strong></span>`
                 );
             }
         }
@@ -961,7 +962,7 @@ class NetworthHistoryChart {
             const lastNE = last.nonExcluded ?? last.total;
             const neRate = hoursElapsed > 0 ? (lastNE - firstNE) / hoursElapsed : 0;
 
-            let neStatHtml = `<span style="color: #a78bfa;">Non-Excl</span>: <strong style="color: #a78bfa;">${networthFormatter(Math.round(currentNE))}</strong>`;
+            let neStatHtml = `<span style="color: #a78bfa;">${t('Non-Excl')}</span>: <strong style="color: #a78bfa;">${networthFormatter(Math.round(currentNE))}</strong>`;
 
             if (filtered.length >= 2) {
                 const neChange = currentNE - firstNE;
@@ -995,7 +996,7 @@ class NetworthHistoryChart {
             const catChangeColor = catChange >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
             const catChangeSign = catChange >= 0 ? '+' : '';
 
-            let statHtml = `${cat.label}: <strong style="color: ${catChangeColor};">Last ${rangeLabel}: ${catChangeSign}${networthFormatter(Math.round(catChange))}</strong>`;
+            let statHtml = `${t(cat.label)}: <strong style="color: ${catChangeColor};">${t('Last {0}:', rangeLabel)} ${catChangeSign}${networthFormatter(Math.round(catChange))}</strong>`;
 
             if (hoursElapsed >= 1) {
                 statHtml += ` <span style="font-size: 11px; color: #aaa;">${rateSign}<span style="color: ${rateColor};">${networthFormatter(Math.round(rate))}/hr</span></span>`;
@@ -1005,7 +1006,7 @@ class NetworthHistoryChart {
         }
 
         if (parts.length === 0) {
-            statsRow.innerHTML = '<span style="color: #666;">No data available for this range</span>';
+            statsRow.innerHTML = `<span style="color: #666;">${t('No data available for this range')}</span>`;
             return;
         }
 
@@ -1078,15 +1079,14 @@ class NetworthHistoryChart {
     render24hBreakdown(container) {
         const currentData = this.networthFeature?.currentData;
         if (!currentData) {
-            container.innerHTML = '<span style="color: #666;">No live data available</span>';
+            container.innerHTML = `<span style="color: #666;">${t('No live data available')}</span>`;
             return;
         }
 
         const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
         const oldSnapshot = networthHistory.getDetailSnapshot(oneDayAgo);
         if (!oldSnapshot) {
-            container.innerHTML =
-                '<span style="color: #666;">No detail snapshot available yet (data collected hourly)</span>';
+            container.innerHTML = `<span style="color: #666;">${t('No detail snapshot available yet (data collected hourly)')}</span>`;
             return;
         }
 
@@ -1098,7 +1098,7 @@ class NetworthHistoryChart {
         currentItems['/items/coin:0'] = {
             count: Math.round(currentData.coins),
             value: Math.round(currentData.coins),
-            name: 'Gold',
+            name: t('Gold'),
         };
 
         // Inventory items
@@ -1213,7 +1213,7 @@ class NetworthHistoryChart {
                     const baseName = details?.name || itemHrid.replace('/items/', '');
                     name = Number(enhLevel) > 0 ? `${baseName} +${enhLevel}` : baseName;
                 }
-                const prefix = key.startsWith('listing:sell:') ? 'Sell Listing' : 'Buy Listing';
+                const prefix = key.startsWith('listing:sell:') ? t('Sell Listing') : t('Buy Listing');
                 otherTotal += totalDiff;
                 otherItems.push({ name: `${prefix}: ${name}`, key, value: totalDiff });
                 continue;
@@ -1271,7 +1271,7 @@ class NetworthHistoryChart {
         }
 
         if (activityItems.length === 0 && marketItems.length === 0 && otherItems.length === 0) {
-            container.innerHTML = '<span style="color: #666;">No item-level changes in the last 24h</span>';
+            container.innerHTML = `<span style="color: #666;">${t('No item-level changes in the last 24h')}</span>`;
             return;
         }
 
@@ -1287,7 +1287,7 @@ class NetworthHistoryChart {
             const actColor = activityTotal >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
             const actSign = activityTotal >= 0 ? '+' : '';
             html += `<div style="font-weight: bold; margin-bottom: 4px; display: flex; justify-content: space-between;">`;
-            html += `<span>Activity</span>`;
+            html += `<span>${t('Activity')}</span>`;
             html += `<span style="color: ${actColor};">${actSign}${networthFormatter(activityTotal)}</span>`;
             html += `</div>`;
 
@@ -1314,7 +1314,7 @@ class NetworthHistoryChart {
             const mktColor = marketTotal >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
             const mktSign = marketTotal >= 0 ? '+' : '';
             html += `<div style="font-weight: bold; margin-top: 8px; margin-bottom: 4px; display: flex; justify-content: space-between;${activityItems.length > 0 ? ' padding-top: 6px; border-top: 1px solid #333;' : ''}">`;
-            html += `<span>Market Movement</span>`;
+            html += `<span>${t('Market Movement')}</span>`;
             html += `<span style="color: ${mktColor};">${mktSign}${networthFormatter(marketTotal)}</span>`;
             html += `</div>`;
 
@@ -1345,7 +1345,7 @@ class NetworthHistoryChart {
             const residual = last24hChange - activityTotal - marketTotal - otherTotal;
             if (Math.abs(residual) > 0) {
                 otherTotal += residual;
-                otherItems.push({ name: 'Rounding', key: '_rounding', value: residual });
+                otherItems.push({ name: t('Rounding'), key: '_rounding', value: residual });
             }
         }
 
@@ -1354,7 +1354,7 @@ class NetworthHistoryChart {
             const otherColor = otherTotal >= 0 ? config.COLOR_PROFIT : config.COLOR_LOSS;
             const otherSign = otherTotal >= 0 ? '+' : '';
             html += `<div style="font-weight: bold; margin-top: 8px; margin-bottom: 4px; display: flex; justify-content: space-between;${hasPrevSections ? ' padding-top: 6px; border-top: 1px solid #333;' : ''}">`;
-            html += `<span>Other</span>`;
+            html += `<span>${t('Other')}</span>`;
             html += `<span style="color: ${otherColor};">${otherSign}${networthFormatter(otherTotal)}</span>`;
             html += `</div>`;
 
@@ -1372,7 +1372,7 @@ class NetworthHistoryChart {
 
         // Snapshot age note
         const ageHours = Math.round((Date.now() - oldSnapshot.t) / 3_600_000);
-        html += `<div style="color: #555; font-size: 10px; margin-top: 6px; text-align: right;">Compared to snapshot from ${ageHours}h ago</div>`;
+        html += `<div style="color: #555; font-size: 10px; margin-top: 6px; text-align: right;">${t('Compared to snapshot from {0}h ago', ageHours)}</div>`;
 
         container.innerHTML = html;
     }
@@ -1461,34 +1461,34 @@ class NetworthHistoryChart {
 
         // Total
         const totalDelta = this._formatDelta(raw.total, prevRaw?.total);
-        html += `<div style="color:#4ade80;">&#9632; Total: ${networthFormatter(raw.total)}${totalDelta}</div>`;
+        html += `<div style="color:#4ade80;">&#9632; ${t('Total:')} ${networthFormatter(raw.total)}${totalDelta}</div>`;
 
         // Category breakdown
         const categories = [];
         if (raw.gold) {
-            categories.push({ label: 'Gold', value: raw.gold, prev: prevRaw?.gold });
+            categories.push({ label: t('Gold'), value: raw.gold, prev: prevRaw?.gold });
         }
         const inventoryExGold = (raw.inventory || 0) - (raw.gold || 0);
         const prevInventoryExGold = prevRaw ? (prevRaw.inventory || 0) - (prevRaw.gold || 0) : null;
         if (inventoryExGold > 0) {
-            categories.push({ label: 'Inventory', value: inventoryExGold, prev: prevInventoryExGold });
+            categories.push({ label: t('Inventory'), value: inventoryExGold, prev: prevInventoryExGold });
         }
         if (raw.equipment) {
-            categories.push({ label: 'Equipment', value: raw.equipment, prev: prevRaw?.equipment });
+            categories.push({ label: t('Equipment'), value: raw.equipment, prev: prevRaw?.equipment });
         }
         if (raw.listings) {
-            categories.push({ label: 'Listings', value: raw.listings, prev: prevRaw?.listings });
+            categories.push({ label: t('Listings'), value: raw.listings, prev: prevRaw?.listings });
         }
         if (raw.house) {
-            categories.push({ label: 'House', value: raw.house, prev: prevRaw?.house });
+            categories.push({ label: t('House'), value: raw.house, prev: prevRaw?.house });
         }
         if (raw.abilities) {
-            categories.push({ label: 'Abilities', value: raw.abilities, prev: prevRaw?.abilities });
+            categories.push({ label: t('Abilities'), value: raw.abilities, prev: prevRaw?.abilities });
         }
         if (raw.nonExcluded != null && raw.nonExcluded !== raw.total) {
             const excluded = raw.total - raw.nonExcluded;
             const prevExcluded = prevRaw?.nonExcluded != null ? prevRaw.total - prevRaw.nonExcluded : null;
-            categories.push({ label: 'Excluded', value: excluded, prev: prevExcluded });
+            categories.push({ label: t('Excluded'), value: excluded, prev: prevExcluded });
         }
 
         for (const cat of categories) {
@@ -1579,8 +1579,8 @@ class NetworthHistoryChart {
         popup.innerHTML = `
             <div style="margin-bottom:4px;font-weight:500;color:#fff;">${date}</div>
             <div style="margin-bottom:10px;color:${config.COLOR_ACCENT};">${networthFormatter(snapshot.total)}</div>
-            <button id="mwi-nw-delete-confirm" style="background:#ef4444;color:#fff;border:none;border-radius:4px;padding:3px 10px;cursor:pointer;font-size:11px;margin-right:6px;">Delete point</button>
-            <button id="mwi-nw-delete-cancel" style="background:#2a2a2a;color:#999;border:1px solid #444;border-radius:4px;padding:3px 10px;cursor:pointer;font-size:11px;">Cancel</button>
+            <button id="mwi-nw-delete-confirm" style="background:#ef4444;color:#fff;border:none;border-radius:4px;padding:3px 10px;cursor:pointer;font-size:11px;margin-right:6px;">${t('Delete point')}</button>
+            <button id="mwi-nw-delete-cancel" style="background:#2a2a2a;color:#999;border:1px solid #444;border-radius:4px;padding:3px 10px;cursor:pointer;font-size:11px;">${t('Cancel')}</button>
         `;
 
         document.body.appendChild(popup);

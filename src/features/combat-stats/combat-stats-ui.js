@@ -9,6 +9,7 @@ import combatStatsDataCollector from './combat-stats-data-collector.js';
 import { calculateAllPlayerStats } from './combat-stats-calculator.js';
 import { formatWithSeparator, coinFormatter, formatKMB, formatPercentage } from '../../utils/formatters.js';
 import expectedValueCalculator from '../market/expected-value-calculator.js';
+import { t } from '../../core/i18n.js';
 
 class CombatStatsUI {
     constructor() {
@@ -107,7 +108,7 @@ class CombatStatsUI {
         const button = document.createElement('div');
         button.className =
             'MuiButtonBase-root MuiTab-root MuiTab-textColorPrimary css-1q2h7u5 toolasha-combat-stats-btn';
-        button.textContent = 'Statistics';
+        button.textContent = t('Statistics');
         button.style.cursor = 'pointer';
 
         button.onclick = () => this.showPopup();
@@ -236,7 +237,7 @@ class CombatStatsUI {
             const marketData = await marketAPI.fetch();
             if (!marketData) {
                 console.error('[Combat Stats] Market data not available');
-                alert('Market data not available. Please try again.');
+                alert(t('Market data not available. Please try again.'));
                 return;
             }
         }
@@ -251,7 +252,7 @@ class CombatStatsUI {
         }
 
         if (!combatData || !combatData.players || combatData.players.length === 0) {
-            alert('No combat data available. Start a combat run first.');
+            alert(t('No combat data available. Start a combat run first.'));
             return;
         }
 
@@ -330,7 +331,7 @@ class CombatStatsUI {
         `;
 
         const title = document.createElement('h2');
-        title.textContent = 'Combat Statistics';
+        title.textContent = t('Combat Statistics');
         title.style.cssText = `
             margin: 0;
             color: ${textColor};
@@ -346,7 +347,7 @@ class CombatStatsUI {
         `;
 
         const resetButton = document.createElement('button');
-        resetButton.textContent = 'Reset Consumable Tracking';
+        resetButton.textContent = t('Reset Consumable Tracking');
         resetButton.style.cssText = `
             background: #4a4a4a;
             border: 1px solid #5a5a5a;
@@ -363,7 +364,9 @@ class CombatStatsUI {
             resetButton.style.background = '#4a4a4a';
         };
         resetButton.onclick = async () => {
-            if (confirm('Reset consumable tracking? This will clear all tracked consumption data and start fresh.')) {
+            if (
+                confirm(t('Reset consumable tracking? This will clear all tracked consumption data and start fresh.'))
+            ) {
                 await combatStatsDataCollector.resetConsumableTracking();
 
                 // Clear stale consumable data from the in-memory snapshot so the
@@ -534,25 +537,25 @@ class CombatStatsUI {
         const priceKey = config.getSettingValue('profitCalc_keyPricingMode') || 'ask';
 
         const statsRows = [
-            { label: 'Duration', value: stats.durationFormatted || '0s' },
-            { label: 'Encounters/Hour', value: formatNum(stats.encountersPerHour) },
+            { label: t('Duration'), value: stats.durationFormatted || '0s' },
+            { label: t('Encounters/Hour'), value: formatNum(stats.encountersPerHour) },
             {
-                label: 'Income',
+                label: t('Income'),
                 value: formatNum(stats.income[priceKey]),
                 ...(stats.isDungeonRun && stats.incomeBreakdown?.length > 0
                     ? { expandable: true, incomeBreakdown: stats.incomeBreakdown }
                     : {}),
             },
-            { label: 'Daily Income', value: `${formatNum(stats.dailyIncome[priceKey])}/d` },
+            { label: t('Daily Income'), value: `${formatNum(stats.dailyIncome[priceKey])}/d` },
             {
-                label: 'Consumable Costs',
+                label: t('Consumable Costs'),
                 value: formatNumDecimals(stats.consumableCosts),
                 color: '#ff6b6b',
                 expandable: true,
                 breakdown: stats.consumableBreakdown,
             },
             {
-                label: 'Daily Consumable Costs',
+                label: t('Daily Consumable Costs'),
                 value: `${formatNumDecimals(stats.dailyConsumableCosts)}/d`,
                 color: '#ff6b6b',
                 expandable: true,
@@ -562,7 +565,7 @@ class CombatStatsUI {
             ...(stats.keyBreakdown && stats.keyBreakdown.length > 0
                 ? [
                       {
-                          label: 'Key Costs',
+                          label: t('Key Costs'),
                           value: formatNum(stats.keyCosts[priceKey]),
                           color: '#ff6b6b',
                           expandable: true,
@@ -571,7 +574,7 @@ class CombatStatsUI {
                           showKeyPricingNote: true,
                       },
                       {
-                          label: 'Daily Key Costs',
+                          label: t('Daily Key Costs'),
                           value: `${formatNum(stats.dailyKeyCosts)}/d`,
                           color: '#ff6b6b',
                           expandable: true,
@@ -583,14 +586,14 @@ class CombatStatsUI {
                   ]
                 : []),
             {
-                label: 'Daily Profit',
+                label: t('Daily Profit'),
                 value: `${formatNum(stats.dailyProfit[priceKey])}/d`,
                 color: stats.dailyProfit[priceKey] >= 0 ? '#51cf66' : '#ff6b6b',
             },
-            { label: 'Total EXP', value: formatNum(stats.totalExp) },
-            { label: 'EXP/hour', value: `${formatNum(stats.expPerHour)}/h` },
-            { label: 'Death Count', value: `${stats.deathCount}` },
-            { label: 'Deaths/hr', value: `${stats.deathsPerHour.toFixed(2)}/h` },
+            { label: t('Total EXP'), value: formatNum(stats.totalExp) },
+            { label: t('EXP/hour'), value: `${formatNum(stats.expPerHour)}/h` },
+            { label: t('Death Count'), value: `${stats.deathCount}` },
+            { label: t('Deaths/hr'), value: `${stats.deathsPerHour.toFixed(2)}/h` },
         ];
 
         const statsContainer = document.createElement('div');
@@ -648,7 +651,7 @@ class CombatStatsUI {
                                 font-size: 12px;
                                 color: #aaa;
                             `;
-                            pricingNote.textContent = `Pricing: ${config.getPricingModeLabel(pricingMode)}`;
+                            pricingNote.textContent = t('Pricing: {0}', config.getPricingModeLabel(pricingMode));
                             breakdownDiv.appendChild(pricingNote);
 
                             // Column header
@@ -811,7 +814,10 @@ class CombatStatsUI {
                                     color: #aaa;
                                     margin-bottom: 6px;
                                 `;
-                                keyPricingNote.textContent = `Pricing: ${keyPricing === 'bid' ? 'Bid (patient buy)' : 'Ask (instant buy)'}`;
+                                keyPricingNote.textContent = t(
+                                    'Pricing: {0}',
+                                    keyPricing === 'bid' ? t('Bid (patient buy)') : t('Ask (instant buy)')
+                                );
                                 breakdownDiv.appendChild(keyPricingNote);
                             }
 
@@ -931,7 +937,7 @@ class CombatStatsUI {
                                 breakdownDiv.appendChild(trackingNote);
                             }
                         } else if (breakdownDiv) {
-                            breakdownDiv.textContent = 'No consumables used';
+                            breakdownDiv.textContent = t('No consumables used');
                             breakdownDiv.style.color = '#888';
                         }
 
@@ -952,7 +958,7 @@ class CombatStatsUI {
         // Drop list
         if (stats.lootList && stats.lootList.length > 0) {
             const dropHeader = document.createElement('div');
-            dropHeader.textContent = 'Drops';
+            dropHeader.textContent = t('Drops');
             dropHeader.style.cssText = `
                 font-weight: bold;
                 margin-top: 10px;

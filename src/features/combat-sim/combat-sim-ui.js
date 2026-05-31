@@ -24,6 +24,7 @@ import { runSimulation, cancelSimulation } from './combat-sim-runner.js';
 import { runAllZonesSimulation, cancelAllZonesSimulation } from './all-zones-runner.js';
 import { runUpgradeAnalysis } from './upgrade-advisor.js';
 import { SimEditor } from './sim-editor.js';
+import { t } from '../../core/i18n.js';
 
 const PANEL_ID = 'mwi-combat-sim-panel';
 const ACCENT = '#4a9eff';
@@ -123,7 +124,7 @@ class CombatSimUI {
             flex-shrink: 0;
         `;
         header.innerHTML = `
-            <span style="font-weight:700; font-size:14px; color:${ACCENT};">Combat Simulator</span>
+            <span style="font-weight:700; font-size:14px; color:${ACCENT};">${t('Combat Simulator')}</span>
             <button id="mwi-csim-close" style="
                 background:none; border:none; color:#aaa; font-size:22px;
                 cursor:pointer; padding:0; line-height:1;">×</button>
@@ -155,10 +156,10 @@ class CombatSimUI {
             border-bottom: 2px solid ${active ? ACCENT : 'transparent'};
         `;
         tabBar.innerHTML = `
-            <button id="mwi-csim-tab-configure" style="${tabStyle(true)}">Configure</button>
-            <button id="mwi-csim-tab-results" style="${tabStyle(false)}">Results</button>
-            <button id="mwi-csim-tab-seek" style="${tabStyle(false)}">Seek</button>
-            <button id="mwi-csim-tab-upgrade" style="${tabStyle(false)}">Upgrade</button>
+            <button id="mwi-csim-tab-configure" style="${tabStyle(true)}">${t('Configure')}</button>
+            <button id="mwi-csim-tab-results" style="${tabStyle(false)}">${t('Results')}</button>
+            <button id="mwi-csim-tab-seek" style="${tabStyle(false)}">${t('Seek')}</button>
+            <button id="mwi-csim-tab-upgrade" style="${tabStyle(false)}">${t('Upgrade')}</button>
         `;
 
         // Configure tab content
@@ -184,12 +185,12 @@ class CombatSimUI {
             'width:60px; background:#1a1a2e; color:#e0e0e0; border:1px solid #444; border-radius:4px; padding:3px 6px; font-size:12px; text-align:center;';
 
         controls.innerHTML = `
-            <label style="color:#888; font-size:12px;">Zone</label>
+            <label style="color:#888; font-size:12px;">${t('Zone')}</label>
             <select id="mwi-csim-zone" style="${selectStyle}"></select>
-            <label style="color:#888; font-size:12px;">Tier</label>
+            <label style="color:#888; font-size:12px;">${t('Tier')}</label>
             <select id="mwi-csim-tier" style="${selectStyle} flex:0; width:64px; min-width:64px;">
             </select>
-            <label style="color:#888; font-size:12px;">Hours</label>
+            <label style="color:#888; font-size:12px;">${t('Hours')}</label>
             <input id="mwi-csim-hours" type="number" min="1" max="10000" value="${config.getSettingValue('combatSim_defaultHours', 100)}" style="${inputStyle}">
             <button id="mwi-csim-run" style="
                 margin-left: auto;
@@ -200,7 +201,7 @@ class CombatSimUI {
                 padding: 5px 14px;
                 font-size: 12px;
                 font-weight: 600;
-                cursor: pointer;">Simulate</button>
+                cursor: pointer;">${t('Simulate')}</button>
         `;
 
         // All Zones controls row
@@ -220,17 +221,17 @@ class CombatSimUI {
         allZonesRow.innerHTML = `
             <label style="${labelStyle}">
                 <input type="checkbox" id="mwi-csim-allzones-group" style="${checkboxStyle}">
-                Sim All Zones
+                ${t('Sim All Zones')}
             </label>
             <label style="${labelStyle}">
                 <input type="checkbox" id="mwi-csim-allzones-solo" style="${checkboxStyle}">
-                Sim All Solo
+                ${t('Sim All Solo')}
             </label>
-            <label id="mwi-csim-allzones-hours-label" style="color:#888; font-size:12px; display:none;">Hours</label>
+            <label id="mwi-csim-allzones-hours-label" style="color:#888; font-size:12px; display:none;">${t('Hours')}</label>
             <input id="mwi-csim-allzones-hours" type="number" min="1" max="10000" value="${config.getSettingValue('combatSim_allZonesDefaultHours', 10)}" style="display:none; width:60px; background:#1a1a2e; color:#e0e0e0; border:1px solid #444; border-radius:4px; padding:3px 6px; font-size:12px; text-align:center;">
-            <label id="mwi-csim-earlyexit-label" style="${labelStyle} display:none;" title="Stop simming higher tiers for a zone if both XP/hr and profit/hr declined vs the previous tier">
+            <label id="mwi-csim-earlyexit-label" style="${labelStyle} display:none;" title="${t('Stop simming higher tiers for a zone if both XP/hr and profit/hr declined vs the previous tier')}">
                 <input type="checkbox" id="mwi-csim-earlyexit" style="${checkboxStyle}" checked>
-                Skip Worse Tiers
+                ${t('Skip Worse Tiers')}
             </label>
         `;
 
@@ -250,7 +251,7 @@ class CombatSimUI {
         const editorArea = document.createElement('div');
         editorArea.id = 'mwi-csim-editor';
         editorArea.style.cssText = 'flex:1; overflow-y:auto; padding:10px 14px;';
-        editorArea.innerHTML = `<div style="color:#555; font-size:12px; text-align:center; padding:20px 0;">Loading loadout...</div>`;
+        editorArea.innerHTML = `<div style="color:#555; font-size:12px; text-align:center; padding:20px 0;">${t('Loading loadout...')}</div>`;
 
         this._editor = new SimEditor({ editorEl: editorArea, labMode: false });
 
@@ -303,7 +304,7 @@ class CombatSimUI {
                     font-weight:600;
                     cursor:pointer;
                     font-family:inherit;
-                    flex-shrink:0;">Stop</button>
+                    flex-shrink:0;">${t('Stop')}</button>
             </div>
         `;
 
@@ -331,13 +332,13 @@ class CombatSimUI {
             flex-shrink: 0;
         `;
         seekControls.innerHTML = `
-            <label style="color:#888; font-size:12px;">Item</label>
-            <input id="mwi-csim-seek-input" type="text" placeholder="Search item..." style="
+            <label style="color:#888; font-size:12px;">${t('Item')}</label>
+            <input id="mwi-csim-seek-input" type="text" placeholder="${t('Search item...')}" style="
                 flex:1; min-width:0;
                 background:#1a1a2e; color:#e0e0e0;
                 border:1px solid #444; border-radius:4px;
                 padding:3px 6px; font-size:12px; font-family:inherit;">
-            <label style="color:#888; font-size:12px;">Hours</label>
+            <label style="color:#888; font-size:12px;">${t('Hours')}</label>
             <input id="mwi-csim-seek-hours" type="number" min="1" max="10000" value="${config.getSettingValue('combatSim_seekDefaultHours', 10)}" style="
                 width:60px; background:#1a1a2e; color:#e0e0e0;
                 border:1px solid #444; border-radius:4px;
@@ -351,7 +352,7 @@ class CombatSimUI {
                 font-size: 12px;
                 font-weight: 600;
                 cursor: pointer;
-                font-family: inherit;">Seek</button>
+                font-family: inherit;">${t('Seek')}</button>
             <button id="mwi-csim-seek-stop" style="
                 display:none;
                 background:rgba(244, 67, 54, 0.2);
@@ -362,7 +363,7 @@ class CombatSimUI {
                 font-size:12px;
                 font-weight:600;
                 cursor:pointer;
-                font-family:inherit;">Stop</button>
+                font-family:inherit;">${t('Stop')}</button>
         `;
 
         const seekSuggestions = document.createElement('div');
@@ -413,25 +414,25 @@ class CombatSimUI {
             flex-shrink: 0;
         `;
         upgradeControls.innerHTML = `
-            <label style="color:#888; font-size:12px;">Player</label>
+            <label style="color:#888; font-size:12px;">${t('Player')}</label>
             <select id="mwi-csim-upgrade-player" style="${selectStyle}"></select>
-            <label style="color:#888; font-size:12px;">Mode</label>
+            <label style="color:#888; font-size:12px;">${t('Mode')}</label>
             <select id="mwi-csim-upgrade-mode" style="${selectStyle}">
-                <option value="equipment">Equipment</option>
-                <option value="ability_level">Ability Levels</option>
-                <option value="ability_swap">Ability Swaps</option>
+                <option value="equipment">${t('Equipment')}</option>
+                <option value="ability_level">${t('Ability Levels')}</option>
+                <option value="ability_swap">${t('Ability Swaps')}</option>
             </select>
             <span id="mwi-csim-upgrade-level-group" style="display:none; align-items:center; gap:4px;">
                 <select id="mwi-csim-upgrade-level-type" style="
                     background:#1a1a2e; color:#e0e0e0; border:1px solid #444;
                     border-radius:3px; padding:3px 5px; font-size:12px;">
-                    <option value="increment">+Levels</option>
-                    <option value="target">Target Lv</option>
+                    <option value="increment">${t('+Levels')}</option>
+                    <option value="target">${t('Target Lv')}</option>
                 </select>
                 <input id="mwi-csim-upgrade-target-level" type="number" min="1" max="200" value="5" placeholder="+5" style="
                     width:55px; background:#1a1a2e; color:#e0e0e0; border:1px solid #444;
                     border-radius:3px; padding:3px 5px; font-size:12px; text-align:center;"
-                    title="Number of levels to add to each ability">
+                    title="${t('Number of levels to add to each ability')}">
             </span>
             <button id="mwi-csim-upgrade-run" style="
                 background: ${ACCENT_BTN_BG};
@@ -442,7 +443,7 @@ class CombatSimUI {
                 font-size: 12px;
                 font-weight: 600;
                 cursor: pointer;
-                font-family: inherit;">Analyze</button>
+                font-family: inherit;">${t('Analyze')}</button>
             <button id="mwi-csim-upgrade-stop" style="
                 display:none;
                 background:rgba(244, 67, 54, 0.2);
@@ -453,7 +454,7 @@ class CombatSimUI {
                 font-size:12px;
                 font-weight:600;
                 cursor:pointer;
-                font-family:inherit;">Stop</button>
+                font-family:inherit;">${t('Stop')}</button>
         `;
 
         const upgradeProgress = document.createElement('div');
@@ -481,7 +482,7 @@ class CombatSimUI {
         status.id = 'mwi-csim-status';
         status.style.cssText =
             'padding:6px 14px; color:#555; font-size:11px; border-top:1px solid #1a1a1a; flex-shrink:0; text-align:center;';
-        status.textContent = 'Select a zone and click Simulate.';
+        status.textContent = t('Select a zone and click Simulate.');
 
         this.panel.appendChild(header);
         this.panel.appendChild(tabBar);
@@ -541,11 +542,11 @@ class CombatSimUI {
             if (e.target.value === 'increment') {
                 input.value = '5';
                 input.placeholder = '+5';
-                input.title = 'Number of levels to add to each ability';
+                input.title = t('Number of levels to add to each ability');
             } else {
                 input.value = '';
                 input.placeholder = 'e.g. 80';
-                input.title = 'Absolute target level for all abilities';
+                input.title = t('Absolute target level for all abilities');
             }
         });
         this.panel.querySelector('#mwi-csim-upgrade-target-level').addEventListener('change', (e) => {
@@ -730,7 +731,7 @@ class CombatSimUI {
         checklist.innerHTML = `
             <label style="display:flex; align-items:center; gap:4px; color:${ACCENT}; font-size:11px; font-weight:600; margin-bottom:4px; cursor:pointer;">
                 <input type="checkbox" id="${checkAllId}" checked style="margin:0; cursor:pointer;">
-                Check All
+                ${t('Check All')}
             </label>
         `;
 
@@ -790,26 +791,26 @@ class CombatSimUI {
         container.style.display = 'block';
 
         const skillCols = [
-            { key: 'totalXP', label: 'Total XP/hr' },
-            { key: 'profitDay', label: 'Profit/day' },
-            { key: 'stamina', label: 'Stam' },
-            { key: 'intelligence', label: 'Int' },
-            { key: 'attack', label: 'Atk' },
-            { key: 'melee', label: 'Melee' },
-            { key: 'defense', label: 'Def' },
-            { key: 'ranged', label: 'Ranged' },
-            { key: 'magic', label: 'Magic' },
+            { key: 'totalXP', label: t('Total XP/hr') },
+            { key: 'profitDay', label: t('Profit/day') },
+            { key: 'stamina', label: t('Stam') },
+            { key: 'intelligence', label: t('Int') },
+            { key: 'attack', label: t('Atk') },
+            { key: 'melee', label: t('Melee') },
+            { key: 'defense', label: t('Def') },
+            { key: 'ranged', label: t('Ranged') },
+            { key: 'magic', label: t('Magic') },
         ];
 
         const cols = [
-            { key: 'zone', label: 'Zone' },
-            { key: 'tier', label: 'T' },
-            { key: 'encounters', label: 'Enc/hr' },
-            { key: 'deaths', label: 'Deaths/hr' },
+            { key: 'zone', label: t('Zone') },
+            { key: 'tier', label: t('T') },
+            { key: 'encounters', label: t('Enc/hr') },
+            { key: 'deaths', label: t('Deaths/hr') },
             ...skillCols,
-            { key: 'revenue', label: 'Rev/hr' },
-            { key: 'expenses', label: 'Cost/hr' },
-            { key: 'profit', label: 'Profit/hr' },
+            { key: 'revenue', label: t('Rev/hr') },
+            { key: 'expenses', label: t('Cost/hr') },
+            { key: 'profit', label: t('Profit/hr') },
         ];
 
         // Build row data
@@ -1054,7 +1055,7 @@ class CombatSimUI {
             if (match) {
                 this._seekSelectedItem = match;
             } else {
-                this._setStatus('No item selected. Type a name and pick from the list.');
+                this._setStatus(t('No item selected. Type a name and pick from the list.'));
                 return;
             }
         }
@@ -1063,7 +1064,7 @@ class CombatSimUI {
 
         const gameData = buildGameDataPayload();
         if (!gameData) {
-            this._setStatus('No game data available.');
+            this._setStatus(t('No game data available.'));
             return;
         }
 
@@ -1094,7 +1095,7 @@ class CombatSimUI {
         }
 
         if (!playerDTOs.length) {
-            this._setStatus('No character data available.');
+            this._setStatus(t('No character data available.'));
             return;
         }
 
@@ -1122,7 +1123,7 @@ class CombatSimUI {
         const zoneCount = zones.length;
         this.elapsedTimer = setInterval(() => {
             const elapsed = (Date.now() - simStartTime) / 1000;
-            this._setStatus(`Seeking ${itemName} in ${zoneCount} zone/tiers... ${formatElapsed(elapsed)}`);
+            this._setStatus(t('Seeking {0} in {1} zone/tiers... {2}', itemName, zoneCount, formatElapsed(elapsed)));
         }, 100);
 
         try {
@@ -1173,15 +1174,17 @@ class CombatSimUI {
             this._seekSortCol = 'itemsPerHour';
             this._seekSortAsc = false;
             this._displaySeekResults(seekRows, itemName);
-            this._setStatus(`Seek complete in ${totalElapsed}: ${seekRows.length} sources found for ${itemName}`);
+            this._setStatus(
+                t('Seek complete in {0}: {1} sources found for {2}', totalElapsed, seekRows.length, itemName)
+            );
         } catch (error) {
             clearInterval(this.elapsedTimer);
             this.elapsedTimer = null;
             if (error.message === 'Cancelled') {
-                this._setStatus('Seek cancelled.');
+                this._setStatus(t('Seek cancelled.'));
             } else {
                 console.error('[CombatSimUI] Seek simulation failed:', error);
-                this._setStatus(`Seek error: ${error.message || 'Unknown error'}`);
+                this._setStatus(t('Seek error: {0}', error.message || t('Unknown error')));
             }
         } finally {
             this.isRunning = false;
@@ -1351,22 +1354,22 @@ class CombatSimUI {
         if (tab === 'configure') {
             configureContent.style.display = 'flex';
             tabConfigure.style.cssText = activeStyle;
-            this._setStatus('Select a zone and click Simulate.');
+            this._setStatus(t('Select a zone and click Simulate.'));
         } else if (tab === 'seek') {
             if (seekContent) seekContent.style.display = 'flex';
             if (tabSeek) tabSeek.style.cssText = activeStyle;
             this._populateSeekItems();
-            this._setStatus('Search for a combat drop item, then click Seek.');
+            this._setStatus(t('Search for a combat drop item, then click Seek.'));
         } else if (tab === 'upgrade') {
             if (upgradeContent) upgradeContent.style.display = 'flex';
             if (tabUpgrade) tabUpgrade.style.cssText = activeStyle;
             this._populateUpgradePlayerSelector();
-            this._setStatus('Select a player and click Analyze.');
+            this._setStatus(t('Select a player and click Analyze.'));
         } else {
             resultsContent.style.display = 'flex';
             tabResults.style.cssText = activeStyle;
             if (!this.isRunning && !this._lastSimResult && !this._allZonesResults) {
-                this._setStatus('No results yet. Run a simulation first.');
+                this._setStatus(t('No results yet. Run a simulation first.'));
             }
         }
     }
@@ -1380,7 +1383,7 @@ class CombatSimUI {
             // Stop the running simulation
             cancelSimulation();
             cancelAllZonesSimulation();
-            this._setStatus('Simulation cancelled.');
+            this._setStatus(t('Simulation cancelled.'));
             this._switchTab('configure');
             return;
         }
@@ -1402,13 +1405,13 @@ class CombatSimUI {
         );
 
         if (!zoneHrid) {
-            this._setStatus('No zone selected.');
+            this._setStatus(t('No zone selected.'));
             return;
         }
 
         const gameData = buildGameDataPayload();
         if (!gameData) {
-            this._setStatus('No game data available.');
+            this._setStatus(t('No game data available.'));
             return;
         }
 
@@ -1433,7 +1436,7 @@ class CombatSimUI {
         }
 
         if (!playerDTOs.length) {
-            this._setStatus('No character data available.');
+            this._setStatus(t('No character data available.'));
             return;
         }
 
@@ -1442,7 +1445,10 @@ class CombatSimUI {
         const selectedZone = zones.find((z) => z.hrid === zoneHrid);
         if (selectedZone && !selectedZone.isDungeon && playerDTOs.length > 3) {
             this._showWarning(
-                `Non-dungeon zones support max 3 players (you have ${playerDTOs.length}). Remove players to continue.`
+                t(
+                    'Non-dungeon zones support max 3 players (you have {0}). Remove players to continue.',
+                    playerDTOs.length
+                )
             );
             return;
         }
@@ -1455,8 +1461,12 @@ class CombatSimUI {
         // Show party info
         const partyInfo =
             playerDTOs.length > 1
-                ? `Party (${playerDTOs.length} loaded${missingMembers.length ? ', ' + missingMembers.length + ' missing' : ''})`
-                : 'Solo';
+                ? t(
+                      'Party ({0} loaded{1})',
+                      playerDTOs.length,
+                      missingMembers.length ? ', ' + missingMembers.length + ' ' + t('missing') : ''
+                  )
+                : t('Solo');
 
         // Disable Simulate button during run
         this.isRunning = true;
@@ -1481,7 +1491,7 @@ class CombatSimUI {
         const simStartTime = Date.now();
         this.elapsedTimer = setInterval(() => {
             const elapsed = (Date.now() - simStartTime) / 1000;
-            this._setStatus(`Simulating (${partyInfo})... ${formatElapsed(elapsed)}`);
+            this._setStatus(t('Simulating ({0})... {1}', partyInfo, formatElapsed(elapsed)));
         }, 100);
 
         try {
@@ -1502,7 +1512,7 @@ class CombatSimUI {
             this._lastGameData = gameData;
 
             // Generate label before displaying (display may re-render)
-            const historyLabel = this._editor?.generateSimLabel() || 'Current Gear';
+            const historyLabel = this._editor?.generateSimLabel() || t('Current Gear');
 
             // Add history entry (metrics filled after _displayResults computes them)
             const historyEntry = {
@@ -1543,27 +1553,35 @@ class CombatSimUI {
             this._displayResults(simResult, hours, gameData);
             this._switchTab('results');
             const modeLabels = {
-                conservative: 'Buy: Ask / Sell: Bid',
-                hybrid: 'Buy: Ask / Sell: Ask',
-                optimistic: 'Buy: Bid / Sell: Ask',
-                patientBuy: 'Buy: Bid / Sell: Bid',
+                conservative: t('Buy: Ask / Sell: Bid'),
+                hybrid: t('Buy: Ask / Sell: Ask'),
+                optimistic: t('Buy: Bid / Sell: Ask'),
+                patientBuy: t('Buy: Bid / Sell: Bid'),
             };
             const mode = config.getSettingValue('profitCalc_pricingMode', 'hybrid');
             const modeLabel = modeLabels[mode] || mode;
             const missingNote = missingMembers.length
-                ? ` | Missing: ${missingMembers.join(', ')} (open their profiles)`
+                ? t(' | Missing: {0} (open their profiles)', missingMembers.join(', '))
                 : '';
             this._setStatus(
-                `Simulation complete in ${totalElapsed}: ${formatWithSeparator(hours)} hours · ${partyInfo} · Pricing: ${modeLabel}${missingNote}`
+                t(
+                    'Simulation complete in {0}: {1} hours \u00b7 {2} \u00b7 {3}: {4}{5}',
+                    totalElapsed,
+                    formatWithSeparator(hours),
+                    partyInfo,
+                    t('Pricing'),
+                    modeLabel,
+                    missingNote
+                )
             );
         } catch (error) {
             clearInterval(this.elapsedTimer);
             this.elapsedTimer = null;
             if (error.message === 'Cancelled') {
-                this._setStatus('Simulation cancelled.');
+                this._setStatus(t('Simulation cancelled.'));
             } else {
                 console.error('[CombatSimUI] Simulation failed:', error);
-                this._setStatus(`Simulation error: ${error.message || 'Unknown error'}`);
+                this._setStatus(t('Simulation error: {0}', error.message || t('Unknown error')));
             }
         } finally {
             this.isRunning = false;
@@ -1579,7 +1597,7 @@ class CombatSimUI {
     async _onSimulateAllZones() {
         const selectedZones = this._getSelectedAllZones();
         if (!selectedZones.length) {
-            this._setStatus('No zones selected.');
+            this._setStatus(t('No zones selected.'));
             return;
         }
 
@@ -1594,7 +1612,7 @@ class CombatSimUI {
 
         const gameData = buildGameDataPayload();
         if (!gameData) {
-            this._setStatus('No game data available.');
+            this._setStatus(t('No game data available.'));
             return;
         }
 
@@ -1611,14 +1629,17 @@ class CombatSimUI {
         }
 
         if (!playerDTOs.length) {
-            this._setStatus('No character data available.');
+            this._setStatus(t('No character data available.'));
             return;
         }
 
         // All-zones is always non-dungeon — enforce 3-player max
         if (playerDTOs.length > 3) {
             this._showWarning(
-                `Non-dungeon zones support max 3 players (you have ${playerDTOs.length}). Remove players to continue.`
+                t(
+                    'Non-dungeon zones support max 3 players (you have {0}). Remove players to continue.',
+                    playerDTOs.length
+                )
             );
             return;
         }
@@ -1648,7 +1669,7 @@ class CombatSimUI {
         const zoneCount = selectedZones.length;
         this.elapsedTimer = setInterval(() => {
             const elapsed = (Date.now() - simStartTime) / 1000;
-            this._setStatus(`Simulating ${zoneCount} zones... ${formatElapsed(elapsed)}`);
+            this._setStatus(t('Simulating {0} zones... {1}', zoneCount, formatElapsed(elapsed)));
         }, 100);
 
         try {
@@ -1692,16 +1713,21 @@ class CombatSimUI {
             this._displayAllZonesResults(zoneResults, hours, gameData);
             this._switchTab('results');
             this._setStatus(
-                `All zones complete in ${totalElapsed}: ${zoneCount} zones · ${formatWithSeparator(hours)} hours each`
+                t(
+                    'All zones complete in {0}: {1} zones \u00b7 {2} hours each',
+                    totalElapsed,
+                    zoneCount,
+                    formatWithSeparator(hours)
+                )
             );
         } catch (error) {
             clearInterval(this.elapsedTimer);
             this.elapsedTimer = null;
             if (error.message === 'Cancelled') {
-                this._setStatus('Simulation cancelled.');
+                this._setStatus(t('Simulation cancelled.'));
             } else {
                 console.error('[CombatSimUI] All zones simulation failed:', error);
-                this._setStatus(`Simulation error: ${error.message || 'Unknown error'}`);
+                this._setStatus(t('Simulation error: {0}', error.message || t('Unknown error')));
             }
         } finally {
             this.isRunning = false;
@@ -1783,13 +1809,13 @@ class CombatSimUI {
         const deathsPerHr = playerDeaths / hours;
 
         html += `<div style="${sectionStyle}">`;
-        html += `<div style="${headingStyle}">Overview</div>`;
+        html += `<div style="${headingStyle}">${t('Overview')}</div>`;
         html += `<div style="${rowStyle}">`;
-        html += `<span style="${labelStyle}">Encounters/hr</span>`;
+        html += `<span style="${labelStyle}">${t('Encounters/hr')}</span>`;
         html += `<span style="${valueStyle}">${formatWithSeparator(Math.round(encountersPerHr))}${this._formatDelta(encountersPerHr, prevEncPerHr)}</span>`;
         html += '</div>';
         html += `<div style="${rowStyle}">`;
-        html += `<span style="${labelStyle}">Deaths/hr</span>`;
+        html += `<span style="${labelStyle}">${t('Deaths/hr')}</span>`;
         html += `<span style="${valueStyle}">${this._formatDeaths(deathsPerHr)}${this._formatDelta(deathsPerHr, prevDeathsPerHr, false)}</span>`;
         html += '</div>';
 
@@ -1819,7 +1845,7 @@ class CombatSimUI {
                 prevDps = prevTotalDamage / (compHours * 3600);
             }
             html += `<div style="${rowStyle}">`;
-            html += `<span style="${labelStyle}">Party DPS (est.)</span>`;
+            html += `<span style="${labelStyle}">${t('Party DPS (est.)')}</span>`;
             html += `<span style="${valueStyle}">${formatWithSeparator(Math.round(dps))}${this._formatDelta(dps, prevDps)}</span>`;
             html += '</div>';
         }
@@ -1830,15 +1856,15 @@ class CombatSimUI {
             const failedPerHr = simResult.dungeonsFailed / hours;
 
             html += `<div style="${rowStyle}">`;
-            html += `<span style="${labelStyle}">Dungeons completed/hr</span>`;
+            html += `<span style="${labelStyle}">${t('Dungeons completed/hr')}</span>`;
             html += `<span style="${valueStyle}">${this._formatRate(completedPerHr)}</span>`;
             html += '</div>';
             html += `<div style="${rowStyle}">`;
-            html += `<span style="${labelStyle}">Dungeons failed/hr</span>`;
+            html += `<span style="${labelStyle}">${t('Dungeons failed/hr')}</span>`;
             html += `<span style="${valueStyle}">${this._formatRate(failedPerHr)}</span>`;
             html += '</div>';
             html += `<div style="${rowStyle}">`;
-            html += `<span style="${labelStyle}">Total completed / failed</span>`;
+            html += `<span style="${labelStyle}">${t('Total completed / failed')}</span>`;
             html += `<span style="${valueStyle}">${formatWithSeparator(simResult.dungeonsCompleted)} / ${formatWithSeparator(simResult.dungeonsFailed)}</span>`;
             html += '</div>';
             if (simResult.dungeonsCompleted > 0) {
@@ -1853,12 +1879,12 @@ class CombatSimUI {
                     avgTimeStr = `${avgMin}m ${avgSec}s`;
                 }
                 html += `<div style="${rowStyle}">`;
-                html += `<span style="${labelStyle}">Avg completion time</span>`;
+                html += `<span style="${labelStyle}">${t('Avg completion time')}</span>`;
                 html += `<span style="${valueStyle}">${avgTimeStr}</span>`;
                 html += '</div>';
             }
             html += `<div style="${rowStyle}">`;
-            html += `<span style="${labelStyle}">Max wave reached</span>`;
+            html += `<span style="${labelStyle}">${t('Max wave reached')}</span>`;
             html += `<span style="${valueStyle}">${simResult.maxWaveReached}</span>`;
             html += '</div>';
         }
@@ -1883,7 +1909,7 @@ class CombatSimUI {
         const xpEntries = Object.entries(xpTotals).filter(([, total]) => total > 0);
         if (xpEntries.length > 0) {
             html += `<div style="${sectionStyle}">`;
-            html += `<div style="${headingStyle}">XP/hr</div>`;
+            html += `<div style="${headingStyle}">${t('XP/hr')}</div>`;
             for (const [skill, total] of xpEntries) {
                 const perHr = Math.round(total / hours);
                 const prevVal = hasPrev ? prevXpPerHr[skill] || null : null;
@@ -1897,7 +1923,7 @@ class CombatSimUI {
             const totalXpPerHr = xpEntries.reduce((sum, [, total]) => sum + Math.round(total / hours), 0);
             const prevTotalXpPerHr = hasPrev ? Object.values(prevXpPerHr).reduce((sum, v) => sum + v, 0) : null;
             html += `<div style="display:flex; justify-content:space-between; padding:4px 0 0; font-size:12px; border-top:1px solid #333; margin-top:4px;">`;
-            html += `<span style="color:#aaa; font-weight:700;">Total</span>`;
+            html += `<span style="color:#aaa; font-weight:700;">${t('Total')}</span>`;
             html += `<span style="${valueStyle}">${formatWithSeparator(totalXpPerHr)}${this._formatDelta(totalXpPerHr, prevTotalXpPerHr)}</span>`;
             html += '</div>';
             html += '</div>';
@@ -1950,16 +1976,16 @@ class CombatSimUI {
                 const colGold = 'flex:0; white-space:nowrap; min-width:76px; text-align:right; white-space:normal;';
 
                 html += `<div style="${sectionStyle}">`;
-                html += `<div style="${headingStyle}">Drops</div>`;
+                html += `<div style="${headingStyle}">${t('Drops')}</div>`;
                 // Column headers
                 html += `<div style="display:flex; align-items:center; padding:0 0 4px; font-size:10px; gap:6px; color:#666;">`;
-                html += `<span style="flex:1;">Item</span>`;
-                html += `<span style="${colNum}">/hr</span>`;
-                html += `<span style="${colNum}">/day</span>`;
-                html += `<span style="${colGold}">Gold/hr</span>`;
-                html += `<span style="${colGold}">Gold/day</span>`;
-                html += `<span style="${colNum}">Total</span>`;
-                html += `<span style="${colGold}">Total Gold</span>`;
+                html += `<span style="flex:1;">${t('Item')}</span>`;
+                html += `<span style="${colNum}">${t('/hr')}</span>`;
+                html += `<span style="${colNum}">${t('/day')}</span>`;
+                html += `<span style="${colGold}">${t('Gold/hr')}</span>`;
+                html += `<span style="${colGold}">${t('Gold/day')}</span>`;
+                html += `<span style="${colNum}">${t('Total')}</span>`;
+                html += `<span style="${colGold}">${t('Total Gold')}</span>`;
                 html += '</div>';
 
                 for (const drop of dropData) {
@@ -1999,7 +2025,7 @@ class CombatSimUI {
                         ? this._formatDelta(dropGoldPerHr, prevRevPerHr, true, true)
                         : '';
                 html += `<div style="display:flex; align-items:center; padding:4px 0 0; font-size:12px; border-top:1px solid #333; margin-top:4px; gap:6px;">`;
-                html += `<span style="color:#aaa; font-weight:700; flex:1;">Total Revenue</span>`;
+                html += `<span style="color:#aaa; font-weight:700; flex:1;">${t('Total Revenue')}</span>`;
                 const revDayDelta =
                     prevRevPerHr !== null && prevRevPerHr !== undefined
                         ? this._formatDelta(dropGoldPerHr * 24, prevRevPerHr * 24, true, true)
@@ -2044,16 +2070,16 @@ class CombatSimUI {
             const costColor = '#ff6b6b';
 
             html += `<div style="${sectionStyle}">`;
-            html += `<div style="${headingStyle}">Consumable Costs</div>`;
+            html += `<div style="${headingStyle}">${t('Consumable Costs')}</div>`;
             // Column headers
             html += `<div style="display:flex; align-items:center; padding:0 0 4px; font-size:10px; gap:6px; color:#666;">`;
-            html += `<span style="flex:1;">Item</span>`;
-            html += `<span style="${colNum}">/hr</span>`;
-            html += `<span style="${colNum}">/day</span>`;
-            html += `<span style="${colGold}">Cost/hr</span>`;
-            html += `<span style="${colGold}">Cost/day</span>`;
-            html += `<span style="${colNum}">Total</span>`;
-            html += `<span style="${colGold}">Total Cost</span>`;
+            html += `<span style="flex:1;">${t('Item')}</span>`;
+            html += `<span style="${colNum}">${t('/hr')}</span>`;
+            html += `<span style="${colNum}">${t('/day')}</span>`;
+            html += `<span style="${colGold}">${t('Cost/hr')}</span>`;
+            html += `<span style="${colGold}">${t('Cost/day')}</span>`;
+            html += `<span style="${colNum}">${t('Total')}</span>`;
+            html += `<span style="${colGold}">${t('Total Cost')}</span>`;
             html += '</div>';
 
             for (const cons of consumableEntries) {
@@ -2095,7 +2121,7 @@ class CombatSimUI {
                     ? this._formatDelta(consumableGoldPerHr * 24, prevConsumableCostPerHr * 24, false, true)
                     : '';
             html += `<div style="display:flex; align-items:center; padding:4px 0 0; font-size:12px; border-top:1px solid #333; margin-top:4px; gap:6px;">`;
-            html += `<span style="color:#aaa; font-weight:700; flex:1;">Total Expenses</span>`;
+            html += `<span style="color:#aaa; font-weight:700; flex:1;">${t('Total Expenses')}</span>`;
             html += `<span style="${colNum}"></span>`;
             html += `<span style="${colNum}"></span>`;
             html += `<span style="color:${costColor}; font-weight:700; ${colGold}">${formatKMB(Math.round(consumableGoldPerHr))}<br>${expDelta}</span>`;
@@ -2114,15 +2140,15 @@ class CombatSimUI {
             const costColor = '#ff6b6b';
 
             html += `<div style="${sectionStyle}">`;
-            html += `<div style="${headingStyle}">Key Costs</div>`;
+            html += `<div style="${headingStyle}">${t('Key Costs')}</div>`;
             html += `<div style="display:flex; align-items:center; padding:0 0 4px; font-size:10px; gap:6px; color:#666;">`;
-            html += `<span style="flex:1;">Item</span>`;
-            html += `<span style="${colNum}">/hr</span>`;
-            html += `<span style="${colNum}">/day</span>`;
-            html += `<span style="${colGold}">Cost/hr</span>`;
-            html += `<span style="${colGold}">Cost/day</span>`;
-            html += `<span style="${colNum}">Total</span>`;
-            html += `<span style="${colGold}">Total Cost</span>`;
+            html += `<span style="flex:1;">${t('Item')}</span>`;
+            html += `<span style="${colNum}">${t('/hr')}</span>`;
+            html += `<span style="${colNum}">${t('/day')}</span>`;
+            html += `<span style="${colGold}">${t('Cost/hr')}</span>`;
+            html += `<span style="${colGold}">${t('Cost/day')}</span>`;
+            html += `<span style="${colNum}">${t('Total')}</span>`;
+            html += `<span style="${colGold}">${t('Total Cost')}</span>`;
             html += '</div>';
 
             for (const key of dungeonKeyCosts) {
@@ -2150,7 +2176,7 @@ class CombatSimUI {
 
             // Totals row
             html += `<div style="display:flex; align-items:center; padding:4px 0 0; font-size:12px; border-top:1px solid #333; margin-top:4px; gap:6px;">`;
-            html += `<span style="color:#aaa; font-weight:700; flex:1;">Total Key Costs</span>`;
+            html += `<span style="color:#aaa; font-weight:700; flex:1;">Total ${t('Key Costs')}</span>`;
             html += `<span style="${colNum}"></span>`;
             html += `<span style="${colNum}"></span>`;
             html += `<span style="color:${costColor}; font-weight:700; ${colGold}">${formatKMB(Math.round(keyCostPerHr))}</span>`;
@@ -2183,7 +2209,7 @@ class CombatSimUI {
         const profitDaySign = netProfitPerDay >= 0 ? '' : '-';
 
         html += `<div style="${sectionStyle}">`;
-        html += `<div style="${headingStyle}">Net Profit</div>`;
+        html += `<div style="${headingStyle}">${t('Net Profit')}</div>`;
         const netColGold = 'flex:0; white-space:nowrap; min-width:76px; text-align:right; white-space:normal;';
         const netColNum = 'flex:0; white-space:nowrap; min-width:56px; text-align:right;';
         // Column headers
@@ -2191,13 +2217,13 @@ class CombatSimUI {
         html += `<span style="flex:1;"></span>`;
         html += `<span style="${netColNum}"></span>`;
         html += `<span style="${netColNum}"></span>`;
-        html += `<span style="${netColGold}">/hr</span>`;
-        html += `<span style="${netColGold}">/day</span>`;
+        html += `<span style="${netColGold}">${t('/hr')}</span>`;
+        html += `<span style="${netColGold}">${t('/day')}</span>`;
         html += `<span style="${netColNum}"></span>`;
-        html += `<span style="${netColGold}">Total</span>`;
+        html += `<span style="${netColGold}">${t('Total')}</span>`;
         html += '</div>';
         html += `<div style="display:flex; align-items:center; padding:2px 0; font-size:13px; gap:6px;">`;
-        html += `<span style="color:#aaa; font-weight:700; flex:1;">Profit</span>`;
+        html += `<span style="color:#aaa; font-weight:700; flex:1;">${t('Profit')}</span>`;
         html += `<span style="${netColNum}"></span>`;
         html += `<span style="${netColNum}"></span>`;
         const profitDayDelta =
@@ -2479,15 +2505,14 @@ class CombatSimUI {
             ACCENT +
             '; font-weight:700; font-size:12px; margin-bottom:6px; cursor:pointer; user-select:none;" data-toggle="history-section">';
         html +=
-            '<span data-arrow="history-section" style="display:inline-block; width:14px; font-size:10px;">&#9660;</span> Comparison (' +
-            history.length +
-            ' runs)';
+            '<span data-arrow="history-section" style="display:inline-block; width:14px; font-size:10px;">&#9660;</span> ' +
+            t('Comparison ({0} runs)', history.length);
         html += '</div>';
         html += '<div id="mwi-csim-history-section" style="display:block;">';
 
         // Baseline selector
         html += '<div style="display:flex; align-items:center; gap:6px; margin-bottom:6px; font-size:11px;">';
-        html += '<span style="color:#888;">Baseline:</span>';
+        html += '<span style="color:#888;">' + t('Baseline:') + '</span>';
         html +=
             '<select id="mwi-csim-baseline-select" style="flex:1; background:#1a1a2e; color:#e0e0e0; border:1px solid #444; border-radius:4px; padding:1px 4px; font-size:11px; font-family:inherit;">';
         for (let i = 0; i < history.length; i++) {
@@ -2499,12 +2524,12 @@ class CombatSimUI {
         // Table
         html += '<table style="width:100%; font-size:11px; border-collapse:collapse;">';
         html += '<tr style="border-bottom:1px solid #333; color:#666;">';
-        html += '<th style="text-align:left; padding:2px 4px;">Scenario</th>';
-        html += '<th style="text-align:right; padding:2px 4px;">EPH</th>';
-        html += '<th style="text-align:right; padding:2px 4px;">DPS</th>';
-        html += '<th style="text-align:right; padding:2px 4px;">Profit/hr</th>';
-        html += '<th style="text-align:right; padding:2px 4px;">XP/hr</th>';
-        if (hasDungeon) html += '<th style="text-align:right; padding:2px 4px;">Success</th>';
+        html += '<th style="text-align:left; padding:2px 4px;">' + t('Scenario') + '</th>';
+        html += '<th style="text-align:right; padding:2px 4px;">' + t('EPH') + '</th>';
+        html += '<th style="text-align:right; padding:2px 4px;">' + t('DPS') + '</th>';
+        html += '<th style="text-align:right; padding:2px 4px;">' + t('Profit/hr') + '</th>';
+        html += '<th style="text-align:right; padding:2px 4px;">' + t('XP/hr') + '</th>';
+        if (hasDungeon) html += '<th style="text-align:right; padding:2px 4px;">' + t('Success') + '</th>';
         html += '<th style="width:20px;"></th>';
         html += '<th style="width:20px;"></th>';
         html += '</tr>';
@@ -2546,7 +2571,9 @@ class CombatSimUI {
         html +=
             '<td style="text-align:center; padding:2px; cursor:pointer; color:#555;" data-delete-history="' +
             baseIdx +
-            '" title="Delete result">✕</td>';
+            '" title="' +
+            t('Delete result') +
+            '">✕</td>';
         html += '</tr>';
         for (const idx of this._comparisonSlots) {
             if (idx === baseIdx || idx >= history.length) continue;
@@ -2602,11 +2629,15 @@ class CombatSimUI {
             html +=
                 '<td style="text-align:center; padding:2px; cursor:pointer; color:#666;" data-remove-comparison="' +
                 idx +
-                '" title="Remove from comparison">×</td>';
+                '" title="' +
+                t('Remove from comparison') +
+                '">×</td>';
             html +=
                 '<td style="text-align:center; padding:2px; cursor:pointer; color:#555;" data-delete-history="' +
                 idx +
-                '" title="Delete result">✕</td>';
+                '" title="' +
+                t('Delete result') +
+                '">✕</td>';
             html += '</tr>';
         }
 
@@ -2920,7 +2951,7 @@ class CombatSimUI {
         if (typeSelect) typeSelect.value = 'increment';
         input.value = '5';
         input.placeholder = '+5';
-        input.title = 'Number of levels to add to each ability';
+        input.title = t('Number of levels to add to each ability');
     }
 
     /**
@@ -2947,13 +2978,13 @@ class CombatSimUI {
         );
 
         if (!zoneHrid) {
-            this._setStatus('Select a zone in Configure tab first.');
+            this._setStatus(t('Select a zone in Configure tab first.'));
             return;
         }
 
         const gameData = buildGameDataPayload();
         if (!gameData) {
-            this._setStatus('No game data available.');
+            this._setStatus(t('No game data available.'));
             return;
         }
 
@@ -2968,7 +2999,7 @@ class CombatSimUI {
         }
 
         if (!playerDTOs?.length || !playerDTOs[playerIndex]) {
-            this._setStatus('No player data available. Configure a simulation first.');
+            this._setStatus(t('No player data available. Configure a simulation first.'));
             return;
         }
 
@@ -3011,14 +3042,14 @@ class CombatSimUI {
             );
 
             if (this._upgradeAborted) {
-                this._setStatus('Analysis cancelled.');
+                this._setStatus(t('Analysis cancelled.'));
             } else {
                 this._renderUpgradeResults(results);
                 this._setStatus(`Analysis complete. ${results.results.length} upgrades evaluated.`);
             }
         } catch (error) {
             console.error('[CombatSimUI] Upgrade analysis failed:', error);
-            this._setStatus('Analysis failed: ' + error.message);
+            this._setStatus(t('Analysis failed:') + ' ' + error.message);
         } finally {
             progressEl.style.display = 'none';
             runBtn.style.display = 'inline-block';
@@ -3047,11 +3078,11 @@ class CombatSimUI {
 
         let html = `<table style="${tableStyle}">
             <thead><tr>
-                <th style="${thStyle}">Upgrade</th>
-                <th style="${thStyle}">Cost</th>
-                <th style="${thStyle}">Gold/0.1% DPS</th>
-                <th style="${thStyle}">Gold/0.1% EXP</th>
-                <th style="${thStyle}">Gold/0.1% Profit</th>
+                <th style="${thStyle}">${t('Upgrade')}</th>
+                <th style="${thStyle}">${t('Cost')}</th>
+                <th style="${thStyle}">${t('Gold/0.1% DPS')}</th>
+                <th style="${thStyle}">${t('Gold/0.1% EXP')}</th>
+                <th style="${thStyle}">${t('Gold/0.1% Profit')}</th>
             </tr></thead><tbody>`;
 
         // Find best (lowest non-Infinity) value in each gold/0.1% column
@@ -3112,33 +3143,33 @@ class CombatSimUI {
                 <td colspan="5" style="padding:6px 12px; background:#0d0d1a; border-bottom:1px solid #222;">
                     <div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr 1fr; gap:8px; font-size:11px;">
                         <div>
-                            <div style="color:#888;">DPS</div>
+                            <div style="color:#888;">${t('DPS')}</div>
                             <div style="color:#e0e0e0;">${formatKMB(r.metrics.dps)}</div>
                             <div style="color:${deltaColor(dpsValueDelta)};">${fmtDelta(dpsValueDelta)} (${r.deltas.dps >= 0 ? '+' : ''}${r.deltas.dps.toFixed(2)}%)</div>
                         </div>
                         <div>
-                            <div style="color:#888;">EXP/hr</div>
+                            <div style="color:#888;">${t('EXP/hr')}</div>
                             <div style="color:#e0e0e0;">${formatKMB(r.metrics.xpPerHour)}</div>
                             <div style="color:${deltaColor(xpValueDelta)};">${fmtDelta(xpValueDelta)} (${r.deltas.xp >= 0 ? '+' : ''}${r.deltas.xp.toFixed(2)}%)</div>
                         </div>
                         <div>
-                            <div style="color:#888;">Profit/hr</div>
+                            <div style="color:#888;">${t('Profit/hr')}</div>
                             <div style="color:#e0e0e0;">${formatKMB(r.metrics.profitPerHour)}</div>
                             <div style="color:${deltaColor(profitValueDelta)};">${fmtDelta(profitValueDelta)} (${r.deltas.profit >= 0 ? '+' : ''}${r.deltas.profit.toFixed(2)}%)</div>
                         </div>
                         <div>
-                            <div style="color:#888;">EPH</div>
+                            <div style="color:#888;">${t('EPH')}</div>
                             <div style="color:#e0e0e0;">${r.metrics.encountersPerHour.toFixed(1)}</div>
                             <div style="color:${deltaColor(ephDelta)};">${fmtDeltaSmall(ephDelta)} (${r.deltas.encounters >= 0 ? '+' : ''}${r.deltas.encounters.toFixed(2)}%)</div>
                         </div>
                         <div>
-                            <div style="color:#888;">DPH</div>
+                            <div style="color:#888;">${t('DPH')}</div>
                             <div style="color:#e0e0e0;">${r.metrics.deathsPerHour.toFixed(1)}</div>
                             <div style="color:${deathDeltaColor(dphDelta)};">${fmtDeltaSmall(dphDelta)} (${r.deltas.deaths >= 0 ? '+' : ''}${r.deltas.deaths.toFixed(2)}%)</div>
                         </div>
                     </div>
                     <div style="margin-top:6px; color:#666; font-size:10px;">
-                        Baseline: DPS ${formatKMB(results.baseline.dps)} | EXP ${formatKMB(results.baseline.xpPerHour)} | Profit ${formatKMB(results.baseline.profitPerHour)} | EPH ${results.baseline.encountersPerHour.toFixed(1)} | DPH ${results.baseline.deathsPerHour.toFixed(1)}
+                        ${t('Baseline:')} DPS ${formatKMB(results.baseline.dps)} | EXP ${formatKMB(results.baseline.xpPerHour)} | Profit ${formatKMB(results.baseline.profitPerHour)} | EPH ${results.baseline.encountersPerHour.toFixed(1)} | DPH ${results.baseline.deathsPerHour.toFixed(1)}
                     </div>
                 </td>
             </tr>`;

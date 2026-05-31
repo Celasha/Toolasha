@@ -3,6 +3,7 @@
  * Dims inventory items that are NOT needed for current non-combat tasks
  */
 
+import { t } from '../../core/i18n.js';
 import domObserver from '../../core/dom-observer.js';
 import { calculateTaskProfit } from './task-profit-calculator.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
@@ -56,7 +57,7 @@ class TaskInventoryHighlighter {
         // Create button
         this.highlightButton = document.createElement('button');
         this.highlightButton.className = 'Button_button__1Fe9z Button_small__3fqC7';
-        this.highlightButton.textContent = 'Highlight Task Items';
+        this.highlightButton.textContent = t('Highlight Task Items');
         this.highlightButton.style.marginLeft = '8px';
         this.highlightButton.setAttribute('data-mwi-task-highlight', 'true');
 
@@ -95,7 +96,7 @@ class TaskInventoryHighlighter {
 
         // Update button state
         this.isHighlightActive = true;
-        this.highlightButton.textContent = 'Clear Highlight';
+        this.highlightButton.textContent = t('Clear Highlight');
         this.highlightButton.style.backgroundColor = '#22c55e';
     }
 
@@ -115,7 +116,7 @@ class TaskInventoryHighlighter {
         // Update button state
         this.isHighlightActive = false;
         if (this.highlightButton) {
-            this.highlightButton.textContent = 'Highlight Task Items';
+            this.highlightButton.textContent = t('Highlight Task Items');
             this.highlightButton.style.backgroundColor = '';
         }
     }

@@ -27,6 +27,7 @@ import { getEnhancingParams } from '../../utils/enhancement-config.js';
 import { createMutationWatcher } from '../../utils/dom-observer-helpers.js';
 import { getActionHridFromName } from '../../utils/game-lookups.js';
 import { setReactInputValue } from '../../utils/react-input.js';
+import { t } from '../../core/i18n.js';
 
 /**
  * Module-level state
@@ -483,7 +484,7 @@ function createEnhancementMissingMaterialsButton(
 ) {
     const button = document.createElement('button');
     button.id = 'mwi-missing-mats-button';
-    button.textContent = 'Missing Mats Marketplace';
+    button.textContent = t('Missing Mats Marketplace');
     button.disabled = disabled;
     button.style.cssText = `
         width: 100%;
@@ -605,9 +606,9 @@ async function handleEnhancementMissingMaterialsClick(
 function createMissingMaterialsButton(missingMaterials, actionHrid, numActions, disabled = false) {
     const button = document.createElement('button');
     button.id = 'mwi-missing-mats-button';
-    button.textContent = 'Missing Mats Marketplace';
+    button.textContent = t('Missing Mats Marketplace');
     button.disabled = disabled;
-    button.title = disabled && numActions <= 0 ? 'Enter a quantity to check missing materials' : '';
+    button.title = disabled && numActions <= 0 ? t('Enter a quantity to check missing materials') : '';
     button.style.cssText = `
         width: 100%;
         padding: 10px 16px;
@@ -778,7 +779,7 @@ function createStrategyIndicator(strategyInfo) {
     `;
 
     if (strategyInfo.protectFrom === 0) {
-        indicator.textContent = 'No protection needed';
+        indicator.textContent = t('No protection needed');
     } else {
         // Get item sprite URL from existing DOM
         const spriteUse = document.querySelector('use[href*="items_sprite"]');
@@ -796,7 +797,7 @@ function createStrategyIndicator(strategyInfo) {
         }
 
         const label = document.createElement('span');
-        label.textContent = `From: +${strategyInfo.protectFrom}`;
+        label.textContent = t('From: +{0}', strategyInfo.protectFrom);
         indicator.appendChild(label);
     }
 
@@ -851,7 +852,7 @@ function createReturnTab(referenceTab) {
     if (badgeSpan) {
         badgeSpan.innerHTML = `
             <div style="text-align: center;">
-                <div>\u21a9 Return</div>
+                <div>${t('\u21a9 Return')}</div>
                 <div style="font-size: 0.75em; color: #60a5fa;">${displayName}</div>
             </div>
         `;
@@ -1065,15 +1066,15 @@ function updateTabBadge(tab, material) {
 
     if (!material.isTradeable) {
         statusColor = '#888888'; // Gray - not tradeable
-        statusText = 'Not Tradeable';
+        statusText = t('Not Tradeable');
     } else if (material.missing > 0) {
         statusColor = '#ef4444'; // Red - missing materials
         // Show queued amount if any materials are reserved by queue
         const queuedText = material.queued > 0 ? ` (${formatWithSeparator(material.queued)} Q'd)` : '';
-        statusText = `Missing: ${formatWithSeparator(material.missing)}${queuedText}`;
+        statusText = t('Missing: {0}', `${formatWithSeparator(material.missing)}${queuedText}`);
     } else {
         statusColor = '#4ade80'; // Green - sufficient materials
-        statusText = `Sufficient (${formatWithSeparator(material.required)})`;
+        statusText = t('Sufficient ({0})', formatWithSeparator(material.required));
     }
 
     // Title case: capitalize first letter of each word

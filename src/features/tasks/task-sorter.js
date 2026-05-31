@@ -10,6 +10,7 @@ import taskIcons from './task-icons.js';
 import taskIconFilters from './task-icon-filters.js';
 import domObserver from '../../core/dom-observer.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
+import { t } from '../../core/i18n.js';
 
 class TaskSorter {
     constructor() {
@@ -73,7 +74,7 @@ class TaskSorter {
         if (!config.getSetting('taskSorter_hideButton')) {
             this.sortButton = document.createElement('button');
             this.sortButton.className = 'Button_button__1Fe9z Button_small__3fqC7';
-            this.sortButton.textContent = 'Sort Tasks';
+            this.sortButton.textContent = t('Sort Tasks');
             this.sortButton.style.marginLeft = '8px';
             this.sortButton.setAttribute('data-mwi-task-sort', 'true');
             this.sortButton.addEventListener('click', () => this.sortTasks());

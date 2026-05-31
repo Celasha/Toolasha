@@ -5,6 +5,7 @@
  * then requires a second click within 3 seconds to proceed.
  */
 
+import { t } from '../../core/i18n.js';
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import domObserver from '../../core/dom-observer.js';
@@ -102,7 +103,7 @@ class AlchemyActionProtection {
             alchemyPanel.dataset.mwiAlchemyLocked = '1';
 
             const categoryName = this._getCategoryDisplayName(categoryHrid);
-            this._showWarning(alchemyPanel, `Protected category (${categoryName})! Unlocks in 3s...`);
+            this._showWarning(alchemyPanel, t('Protected category ({0})! Unlocks in 3s...', categoryName));
 
             if (this.lockdownTimer) clearTimeout(this.lockdownTimer);
             if (this.confirmTimer) clearTimeout(this.confirmTimer);
@@ -110,7 +111,7 @@ class AlchemyActionProtection {
             this.lockdownTimer = setTimeout(() => {
                 alchemyPanel.dataset.mwiAlchemyLocked = '';
                 alchemyPanel.dataset.mwiAlchemyConfirmed = '1';
-                this._showWarning(alchemyPanel, 'Click again to confirm.');
+                this._showWarning(alchemyPanel, t('Click again to confirm.'));
 
                 this.confirmTimer = setTimeout(() => {
                     alchemyPanel.dataset.mwiAlchemyConfirmed = '';
@@ -170,7 +171,7 @@ class AlchemyActionProtection {
         pinIcon.innerHTML = '\u{1F4CC}';
         pinIcon.style.cssText =
             'cursor:pointer; font-size:16px; transition:all 0.2s; text-align:center; filter: grayscale(100%) brightness(0.7); display:none;';
-        pinIcon.title = 'Pin this action';
+        pinIcon.title = t('Pin this action');
 
         const updatePinIcon = () => {
             const alchemyType = this._getAlchemyType();
@@ -185,11 +186,11 @@ class AlchemyActionProtection {
             if (isPinned) {
                 pinIcon.style.filter = 'grayscale(0%) brightness(1.2) drop-shadow(0 0 3px rgba(255, 100, 0, 0.8))';
                 pinIcon.style.transform = 'scale(1.1)';
-                pinIcon.title = 'Unpin this action';
+                pinIcon.title = t('Unpin this action');
             } else {
                 pinIcon.style.filter = 'grayscale(100%) brightness(0.7)';
                 pinIcon.style.transform = 'scale(1)';
-                pinIcon.title = 'Pin this action';
+                pinIcon.title = t('Pin this action');
             }
         };
 
@@ -384,7 +385,7 @@ class AlchemyActionProtection {
         }
 
         const color = hasEnough ? '#4caf50' : '#ff6b6b';
-        const text = `Gold for ${label}: ${formatLargeNumber(goldNeeded)} / ${formatLargeNumber(goldBalance)}`;
+        const text = t('Gold for {0}: {1} / {2}', label, formatLargeNumber(goldNeeded), formatLargeNumber(goldBalance));
         if (summaryDiv.textContent === text && summaryDiv.style.display === 'block') return;
         summaryDiv.style.display = 'block';
         summaryDiv.style.color = color;
@@ -455,7 +456,7 @@ class AlchemyActionProtection {
 
         const header = document.createElement('div');
         header.style.cssText = 'display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;';
-        header.innerHTML = `<h3 style="margin:0; font-size:16px; color:#eee;">Alchemy Action Protection</h3>`;
+        header.innerHTML = `<h3 style="margin:0; font-size:16px; color:#eee;">${t('Alchemy Action Protection')}</h3>`;
 
         const closeBtn = document.createElement('button');
         closeBtn.textContent = '\u2715';
@@ -467,8 +468,9 @@ class AlchemyActionProtection {
 
         const desc = document.createElement('p');
         desc.style.cssText = 'color:#999; margin:0 0 10px 0; font-size:12px;';
-        desc.textContent =
-            'Select which item categories to protect from each alchemy action. Protected items require a 3-second confirmation before the action proceeds.';
+        desc.textContent = t(
+            'Select which item categories to protect from each alchemy action. Protected items require a 3-second confirmation before the action proceeds.'
+        );
         popup.appendChild(desc);
 
         const alchemyTypes = ['coinify', 'decompose', 'transmute'];
@@ -604,7 +606,7 @@ class AlchemyActionProtection {
 const alchemyActionProtection = new AlchemyActionProtection();
 
 export default {
-    name: 'Alchemy Action Protection',
+    name: t('Alchemy Action Protection'),
     initialize: async () => {
         await alchemyActionProtection.initialize();
     },

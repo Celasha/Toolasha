@@ -12,6 +12,7 @@ import { setReactInputValue } from '../../utils/react-input.js';
 import { createTimerRegistry } from '../../utils/timer-registry.js';
 import dataManager from '../../core/data-manager.js';
 import { createCalculatorUI, extractExpRates } from '../combat-sim-integration/skill-calculator-ui.js';
+import { t } from '../../core/i18n.js';
 
 const timerRegistry = createTimerRegistry();
 const IMPORT_CONTAINER_ID = 'toolasha-import-container';
@@ -96,7 +97,7 @@ function injectImportButton(exportButton) {
     const button = document.createElement('button');
     button.id = 'toolasha-import-button';
     // Include hidden text for JIGS compatibility (JIGS searches for "Import solo/group")
-    button.innerHTML = 'Import from Toolasha<span style="display:none;">Import solo/group</span>';
+    button.innerHTML = t('Import from Toolasha') + '<span style="display:none;">Import solo/group</span>';
     button.style.backgroundColor = config.COLOR_ACCENT;
     button.style.color = 'white';
     button.style.padding = '10px 20px';
@@ -135,16 +136,18 @@ async function importDataToSimulator(button) {
         const exportData = await constructExportObject();
 
         if (!exportData) {
-            button.textContent = 'Error: No character data';
+            button.textContent = t('Error: No character data');
             button.style.backgroundColor = '#dc3545'; // Red
             const resetTimeout = setTimeout(() => {
-                button.innerHTML = 'Import from Toolasha<span style="display:none;">Import solo/group</span>';
+                button.innerHTML = t('Import from Toolasha') + '<span style="display:none;">Import solo/group</span>';
                 button.style.backgroundColor = config.COLOR_ACCENT;
             }, 3000);
             timerRegistry.registerTimeout(resetTimeout);
             console.error('[Toolasha Combat Sim] No export data available');
             alert(
-                'No character data found. Please:\n1. Refresh the game page\n2. Wait for it to fully load\n3. Try again'
+                t(
+                    'No character data found. Please:\n1. Refresh the game page\n2. Wait for it to fully load\n3. Try again'
+                )
             );
             return;
         }
@@ -267,10 +270,10 @@ async function importDataToSimulator(button) {
             }
 
             // Update button status
-            button.textContent = '✓ Imported';
+            button.textContent = '\u2713 ' + t('Imported');
             button.style.backgroundColor = '#28a745'; // Green
             const successResetTimeout = setTimeout(() => {
-                button.innerHTML = 'Import from Toolasha<span style="display:none;">Import solo/group</span>';
+                button.innerHTML = t('Import from Toolasha') + '<span style="display:none;">Import solo/group</span>';
                 button.style.backgroundColor = config.COLOR_ACCENT;
             }, 3000);
             timerRegistry.registerTimeout(successResetTimeout);
@@ -278,10 +281,10 @@ async function importDataToSimulator(button) {
         timerRegistry.registerTimeout(importTimeout);
     } catch (error) {
         console.error('[Toolasha Combat Sim] Import failed:', error);
-        button.textContent = 'Import Failed';
+        button.textContent = t('Import Failed');
         button.style.backgroundColor = '#dc3545'; // Red
         const failResetTimeout = setTimeout(() => {
-            button.innerHTML = 'Import from Toolasha<span style="display:none;">Import solo/group</span>';
+            button.innerHTML = t('Import from Toolasha') + '<span style="display:none;">Import solo/group</span>';
             button.style.backgroundColor = config.COLOR_ACCENT;
         }, 3000);
         timerRegistry.registerTimeout(failResetTimeout);

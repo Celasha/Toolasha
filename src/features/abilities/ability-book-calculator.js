@@ -4,6 +4,7 @@
  * Appears in Item Dictionary when viewing ability books
  */
 
+import { t } from '../../core/i18n.js';
 import config from '../../core/config.js';
 import dataManager from '../../core/data-manager.js';
 import marketAPI from '../../api/marketplace.js';
@@ -225,10 +226,10 @@ class AbilityBookCalculator {
 
         calculatorDiv.innerHTML = `
             <div style="margin-bottom: 8px; font-size: 0.95em;">
-                <strong>Current level:</strong> ${currentLevel}
+                <strong>${t('Current level:')}</strong> ${currentLevel}
             </div>
             <div style="margin-bottom: 8px;">
-                <label for="tillLevelInput">To level: </label>
+                <label for="tillLevelInput">${t('To level:')} </label>
                 <input
                     id="tillLevelInput"
                     type="number"
@@ -239,12 +240,12 @@ class AbilityBookCalculator {
                 >
             </div>
             <div id="tillLevelNumber" style="font-size: 0.95em;">
-                Books needed: <strong>${numberFormatter(booksNeeded)}</strong>
+                ${t('Books needed:')} <strong>${numberFormatter(booksNeeded)}</strong>
                 <br>
-                Cost: ${formatKMB(Math.ceil(booksNeeded * ask))} / ${formatKMB(Math.ceil(booksNeeded * bid))} (ask / bid)
+                ${t('Cost: {0} / {1} (ask / bid)', formatKMB(Math.ceil(booksNeeded * ask)), formatKMB(Math.ceil(booksNeeded * bid)))}
             </div>
             <div style="font-size: 0.85em; color: #999; margin-top: 8px; font-style: italic;">
-                Refresh page to update current level
+                ${t('Refresh page to update current level')}
             </div>
         `;
 
@@ -261,13 +262,13 @@ class AbilityBookCalculator {
                 const books = this.calculateBooksNeeded(currentLevel, currentXp, target, xpPerBook);
                 currentBooks = books;
                 display.innerHTML = `
-                    Books needed: <strong>${numberFormatter(books)}</strong>
+                    ${t('Books needed:')} <strong>${numberFormatter(books)}</strong>
                     <br>
-                    Cost: ${formatKMB(Math.ceil(books * ask))} / ${formatKMB(Math.ceil(books * bid))} (ask / bid)
+                    ${t('Cost: {0} / {1} (ask / bid)', formatKMB(Math.ceil(books * ask)), formatKMB(Math.ceil(books * bid)))}
                 `;
             } else {
                 currentBooks = 0;
-                display.innerHTML = '<span style="color: ${config.COLOR_LOSS};">Invalid target level</span>';
+                display.innerHTML = `<span style="color: ${config.COLOR_LOSS};">${t('Invalid target level')}</span>`;
             }
         };
 
@@ -276,7 +277,7 @@ class AbilityBookCalculator {
 
         // Buy on Marketplace button
         const buyButton = document.createElement('button');
-        buyButton.textContent = 'Buy on Marketplace';
+        buyButton.textContent = t('Buy on Marketplace');
         buyButton.style.cssText = `
             margin-top: 8px;
             padding: 4px 10px;

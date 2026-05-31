@@ -5,6 +5,7 @@
 
 import dungeonTrackerStorage from './dungeon-tracker-storage.js';
 import storage from '../../core/storage.js';
+import { t } from '../../core/i18n.js';
 
 class DungeonTrackerUIHistory {
     constructor(state, formatTimeFunc) {
@@ -25,7 +26,7 @@ class DungeonTrackerUIHistory {
             if (!groups[key]) {
                 groups[key] = {
                     key: key,
-                    label: key === 'Solo' ? 'Solo Runs' : key,
+                    label: key === 'Solo' ? t('Solo Runs') : key,
                     runs: [],
                 };
             }
@@ -48,7 +49,7 @@ class DungeonTrackerUIHistory {
         const groups = {};
 
         for (const run of runs) {
-            const key = run.dungeonName || 'Unknown';
+            const key = run.dungeonName || t('Unknown');
             if (!groups[key]) {
                 groups[key] = {
                     key: key,
@@ -105,8 +106,7 @@ class DungeonTrackerUIHistory {
             const allRuns = await dungeonTrackerStorage.getAllRuns();
 
             if (allRuns.length === 0) {
-                runList.innerHTML =
-                    '<div style="color: #888; font-style: italic; text-align: center; padding: 8px;">No runs yet</div>';
+                runList.innerHTML = `<div style="color: #888; font-style: italic; text-align: center; padding: 8px;">${t('No runs yet')}</div>`;
                 // Update filter dropdowns with empty options
                 this.updateFilterDropdowns(container, [], []);
                 return;
@@ -122,8 +122,7 @@ class DungeonTrackerUIHistory {
             }
 
             if (filteredRuns.length === 0) {
-                runList.innerHTML =
-                    '<div style="color: #888; font-style: italic; text-align: center; padding: 8px;">No runs match filters</div>';
+                runList.innerHTML = `<div style="color: #888; font-style: italic; text-align: center; padding: 8px;">${t('No runs match filters')}</div>`;
                 return;
             }
 
@@ -140,8 +139,7 @@ class DungeonTrackerUIHistory {
             this.updateFilterDropdowns(container, dungeons, teams);
         } catch (error) {
             console.error('[Dungeon Tracker UI History] Update error:', error);
-            runList.innerHTML =
-                '<div style="color: #ff6b6b; text-align: center; padding: 8px;">Error loading run history</div>';
+            runList.innerHTML = `<div style="color: #ff6b6b; text-align: center; padding: 8px;">${t('Error loading run history')}</div>`;
         }
     }
 
@@ -157,7 +155,7 @@ class DungeonTrackerUIHistory {
         if (dungeonFilter) {
             const currentValue = dungeonFilter.value;
             dungeonFilter.innerHTML =
-                '<option value="all">All Dungeons</option>' +
+                `<option value="all">${t('All Dungeons')}</option>` +
                 dungeons.map((dungeon) => `<option value="${dungeon}">${dungeon}</option>`).join('');
             // Restore selection if still valid
             if (dungeons.includes(currentValue)) {
@@ -172,7 +170,7 @@ class DungeonTrackerUIHistory {
         if (teamFilter) {
             const currentValue = teamFilter.value;
             teamFilter.innerHTML =
-                '<option value="all">All Teams</option>' +
+                `<option value="all">${t('All Teams')}</option>` +
                 teams.map((team) => `<option value="${team}">${team}</option>`).join('');
             // Restore selection if still valid
             if (teams.includes(currentValue)) {
@@ -220,7 +218,7 @@ class DungeonTrackerUIHistory {
                                 ${group.label}
                             </div>
                             <div style="font-size: 10px; color: #aaa;">
-                                Runs: ${group.stats.totalRuns} | Avg: ${avgTime} | Best: ${bestTime} | Worst: ${worstTime}
+                                ${t('Runs: {0} | Avg: {1} | Best: {2} | Worst: {3}', group.stats.totalRuns, avgTime, bestTime, worstTime)}
                             </div>
                         </div>
                         <span class="mwi-dt-group-toggle" style="color: #aaa; font-size: 10px;">${toggleIcon}</span>
@@ -288,7 +286,7 @@ class DungeonTrackerUIHistory {
             const timeStr = this.formatTime(run.duration);
             const dateObj = new Date(run.timestamp);
             const dateTime = dateObj.toLocaleString();
-            const dungeonLabel = run.dungeonName || 'Unknown';
+            const dungeonLabel = run.dungeonName || t('Unknown');
 
             html += `
                 <div style="
@@ -313,7 +311,7 @@ class DungeonTrackerUIHistory {
                         padding: 1px 4px;
                         border-radius: 2px;
                         font-weight: bold;
-                    " title="Delete this run">✕</button>
+                    " title="${t('Delete this run')}">✕</button>
                 </div>
             `;
         });

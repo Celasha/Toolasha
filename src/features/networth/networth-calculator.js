@@ -8,6 +8,7 @@
  * - Abilities (equipped + others)
  */
 
+import { t } from '../../core/i18n.js';
 import dataManager from '../../core/data-manager.js';
 import marketAPI from '../../api/marketplace.js';
 import { calculateAbilityCost } from '../../utils/ability-cost-calculator.js';
@@ -633,7 +634,7 @@ export async function calculateNetworth() {
 
         // Check exclusions in priority order: assetType > item > loadout
         if (entireEquippedExcluded) {
-            trackExcluded('assetType', 'equipped', 'All Equipped Items', value);
+            trackExcluded('assetType', 'equipped', t('All Equipped Items'), value);
             continue;
         }
         if (isExcluded('item', item.itemHrid)) {
@@ -705,12 +706,12 @@ export async function calculateNetworth() {
         }
         // Coin is never excluded by category — it must be excluded individually
         if (item.itemHrid !== '/items/coin' && isExcluded('category', categoryHrid)) {
-            const categoryName = gameData.itemCategoryDetailMap?.[categoryHrid]?.name || 'Other';
+            const categoryName = gameData.itemCategoryDetailMap?.[categoryHrid]?.name || t('Other');
             trackExcluded('category', categoryHrid, `${categoryName} (category)`, value);
             continue;
         }
         if (isAbilityBook && !booksAsInventory && isExcluded('assetType', 'abilityBooks')) {
-            trackExcluded('assetType', 'abilityBooks', 'All Ability Books', value);
+            trackExcluded('assetType', 'abilityBooks', t('All Ability Books'), value);
             continue;
         }
 
@@ -723,9 +724,9 @@ export async function calculateNetworth() {
             inventoryValue += value;
             inventoryBreakdown.push(itemData);
 
-            // Coin is always listed individually — never bucketed into a category
+            // Coin is never excluded by category — it must be excluded individually
             if (item.itemHrid !== '/items/coin') {
-                const categoryName = gameData.itemCategoryDetailMap?.[categoryHrid]?.name || 'Other';
+                const categoryName = gameData.itemCategoryDetailMap?.[categoryHrid]?.name || t('Other');
 
                 if (!inventoryByCategory[categoryName]) {
                     inventoryByCategory[categoryName] = {
@@ -801,14 +802,14 @@ export async function calculateNetworth() {
 
     // Apply listings exclusion
     if (isExcluded('assetType', 'listings') && listingsValue > 0) {
-        trackExcluded('assetType', 'listings', 'All Market Listings', listingsValue);
+        trackExcluded('assetType', 'listings', t('All Market Listings'), listingsValue);
         listingsValue = 0;
     }
 
     // Calculate houses value — apply per-room and whole-section exclusions
     let housesData = calculateAllHousesCost(characterHouseRooms);
     if (isExcluded('assetType', 'houses') && housesData.totalCost > 0) {
-        trackExcluded('assetType', 'houses', 'All Houses', housesData.totalCost);
+        trackExcluded('assetType', 'houses', t('All Houses'), housesData.totalCost);
         housesData = { totalCost: 0, breakdown: [] };
     } else {
         let excludedRoomCost = 0;
@@ -829,7 +830,7 @@ export async function calculateNetworth() {
     // Calculate abilities value — apply per-ability and whole-section exclusions
     let abilitiesData = calculateAllAbilitiesCost(characterAbilities, abilityCombatTriggersMap);
     if (isExcluded('assetType', 'abilities') && abilitiesData.totalCost > 0) {
-        trackExcluded('assetType', 'abilities', 'All Abilities', abilitiesData.totalCost);
+        trackExcluded('assetType', 'abilities', t('All Abilities'), abilitiesData.totalCost);
         abilitiesData = {
             totalCost: 0,
             equippedCost: 0,
