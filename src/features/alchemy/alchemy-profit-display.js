@@ -276,47 +276,43 @@ class AlchemyProfitDisplay {
             const drops = await alchemyProfit.extractDrops(actionHrid);
             const requirements = await alchemyProfit.extractRequirements();
 
-            // Determine action type from actionHrid (most reliable) or DOM tab state
+            // Determine action type from DOM tab state (primary) or actionHrid (fallback).
+            // Tab detection is preferred because getCurrentActionHrid() returns ANY running
+            // alchemy action across all slots, which may differ from the tab being viewed.
             let isCoinify = false;
             let isTransmute = false;
             let isDecompose = false;
 
-            if (actionHrid) {
-                // Player is actively performing an alchemy action - use actionHrid
+            const tabContainer = document.querySelector('[class*="AlchemyPanel_tabsComponentContainer"]');
+            const selectedTab = tabContainer?.querySelector('[role="tab"][aria-selected="true"]');
+            const tabText = selectedTab?.textContent?.trim()?.toLowerCase() || '';
+
+            if (tabText.includes('coinify')) {
+                isCoinify = true;
+            } else if (tabText.includes('transmute')) {
+                isTransmute = true;
+            } else if (tabText.includes('decompose')) {
+                isDecompose = true;
+            } else if (actionHrid) {
                 isCoinify = actionHrid === '/actions/alchemy/coinify';
                 isTransmute = actionHrid === '/actions/alchemy/transmute';
                 isDecompose = actionHrid === '/actions/alchemy/decompose';
             } else {
-                // Not actively performing - check which tab is selected in the DOM
-                // Use [role="tab"] selector which reliably matches MUI tab elements
-                const tabContainer = document.querySelector('[class*="AlchemyPanel_tabsComponentContainer"]');
-                const selectedTab = tabContainer?.querySelector('[role="tab"][aria-selected="true"]');
-                const tabText = selectedTab?.textContent?.trim()?.toLowerCase() || '';
-
-                if (tabText.includes('coinify')) {
-                    isCoinify = true;
-                } else if (tabText.includes('transmute')) {
-                    isTransmute = true;
-                } else if (tabText.includes('decompose')) {
-                    isDecompose = true;
-                } else {
-                    // Final fallback: use drop/item data heuristics
-                    isCoinify = drops.length > 0 && drops[0].itemHrid === '/items/coin';
-                    if (!isCoinify && requirements && requirements.length > 0) {
-                        const reqItemHrid = requirements[0].itemHrid;
-                        const reqItemDetails = dataManager.getItemDetails(reqItemHrid);
-                        const hasDecompose =
-                            Array.isArray(reqItemDetails?.alchemyDetail?.decomposeItems) &&
-                            reqItemDetails.alchemyDetail.decomposeItems.length > 0;
-                        const hasTransmute = !!reqItemDetails?.alchemyDetail?.transmuteDropTable;
-                        // If both exist, default to transmute; if only one, use that one
-                        if (hasDecompose && !hasTransmute) {
-                            isDecompose = true;
-                        } else if (hasTransmute) {
-                            isTransmute = true;
-                        } else if (hasDecompose) {
-                            isDecompose = true;
-                        }
+                // Final fallback: use drop/item data heuristics
+                isCoinify = drops.length > 0 && drops[0].itemHrid === '/items/coin';
+                if (!isCoinify && requirements && requirements.length > 0) {
+                    const reqItemHrid = requirements[0].itemHrid;
+                    const reqItemDetails = dataManager.getItemDetails(reqItemHrid);
+                    const hasDecompose =
+                        Array.isArray(reqItemDetails?.alchemyDetail?.decomposeItems) &&
+                        reqItemDetails.alchemyDetail.decomposeItems.length > 0;
+                    const hasTransmute = !!reqItemDetails?.alchemyDetail?.transmuteDropTable;
+                    if (hasDecompose && !hasTransmute) {
+                        isDecompose = true;
+                    } else if (hasTransmute) {
+                        isTransmute = true;
+                    } else if (hasDecompose) {
+                        isDecompose = true;
                     }
                 }
             }
@@ -998,9 +994,9 @@ class AlchemyProfitDisplay {
         if (!gameData || !itemHrid) return 0;
 
         const itemDetails = gameData.itemDetailMap?.[itemHrid];
-        if (!itemDetails || !itemDetails.itemLevel) return 0;
+        if (!itemDetails) return 0;
 
-        const baseXP = this.getAlchemyBaseXP(actionType, itemDetails.itemLevel);
+        const baseXP = this.getAlchemyBaseXP(actionType, itemDetails.itemLevel || 0);
         if (baseXP === 0) return 0;
 
         // Calculate wisdom multiplier
