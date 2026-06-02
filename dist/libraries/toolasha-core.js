@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.59.3
+ * Version: 2.59.4
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -3503,35 +3503,6 @@
         }
 
         /**
-         * Last-resort recovery hook using MWIT-style direct MessageEvent.prototype.data approach.
-         * Called only when the primary hook has failed (30-second timeout fired).
-         * @returns {boolean} True if hook was installed
-         */
-        reinstallSimpleHook() {
-            const dataProperty = Object.getOwnPropertyDescriptor(MessageEvent.prototype, 'data');
-            if (!dataProperty || !dataProperty.get) return false;
-
-            const hookInstance = this;
-            const oriGet = dataProperty.get;
-
-            dataProperty.get = function () {
-                const socket = this.currentTarget;
-                if (!(socket instanceof WebSocket)) return oriGet.call(this);
-                if (!hookInstance.isGameSocket(socket)) return oriGet.call(this);
-
-                const message = oriGet.call(this);
-                Object.defineProperty(this, 'data', { value: message });
-
-                hookInstance.processMessage(message);
-                return message;
-            };
-
-            Object.defineProperty(MessageEvent.prototype, 'data', dataProperty);
-            console.warn('[WebSocket Hook] Fallback hook installed after timeout');
-            return true;
-        }
-
-        /**
          * Cleanup any pending retry timeouts
          */
         cleanup() {
@@ -3947,26 +3918,10 @@
 
                 // Give up after max attempts
                 if (fallbackAttempts >= maxAttempts) {
-                    console.error('[DataManager] Character data not received after 30 seconds. Attempting recovery...');
+                    console.error(
+                        '[DataManager] Character data not received after 30 seconds. WebSocket hook may have failed.'
+                    );
                     stopFallbackInterval();
-
-                    webSocketHook.reinstallSimpleHook();
-
-                    let recoveryAttempts = 0;
-                    this.recoveryInterval = setInterval(() => {
-                        recoveryAttempts++;
-                        if (this.characterData) {
-                            clearInterval(this.recoveryInterval);
-                            this.recoveryInterval = null;
-                            console.log('[DataManager] Recovery successful - character data received.');
-                            return;
-                        }
-                        if (recoveryAttempts >= 20) {
-                            clearInterval(this.recoveryInterval);
-                            this.recoveryInterval = null;
-                            console.error('[DataManager] Recovery failed. Please reload the page.');
-                        }
-                    }, 500);
                 }
             }, 500); // Check every 500ms
         }
@@ -3983,11 +3938,6 @@
             if (this.fallbackInterval) {
                 clearInterval(this.fallbackInterval);
                 this.fallbackInterval = null;
-            }
-
-            if (this.recoveryInterval) {
-                clearInterval(this.recoveryInterval);
-                this.recoveryInterval = null;
             }
         }
 

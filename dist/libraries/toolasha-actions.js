@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.59.3
+ * Version: 2.59.4
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -23125,10 +23125,17 @@
                 rankTd.style.cssText = 'padding: 4px 8px; text-align: center; color: #888;';
                 row.appendChild(rankTd);
 
-                // Name
+                // Name (clickable → marketplace)
                 const nameTd = document.createElement('td');
-                nameTd.textContent = item.name;
-                nameTd.style.cssText = 'padding: 4px 8px; color: #ddd;';
+                nameTd.style.cssText = 'padding: 4px 8px;';
+                const nameLink = document.createElement('span');
+                nameLink.textContent = item.name;
+                nameLink.style.cssText = 'color: #93c5fd; cursor: pointer; text-decoration: underline;';
+                nameLink.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    navigateToMarketplace(item.itemHrid);
+                });
+                nameTd.appendChild(nameLink);
                 row.appendChild(nameTd);
 
                 // Level

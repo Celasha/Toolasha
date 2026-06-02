@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.59.3
+ * Version: 2.59.4
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -19645,7 +19645,8 @@ ${starCSS}
                 const titleEl = document.querySelector('[class*="SettingsPanel_title"]');
                 if (titleEl) {
                     if (targetButton.id === 'toolasha-settings-tab') {
-                        titleEl.textContent = '⚙️ Toolasha Settings (refresh to apply)';
+                        const ver = (typeof unsafeWindow !== 'undefined' ? unsafeWindow : window).Toolasha?.version || '';
+                        titleEl.textContent = `⚙️ Toolasha ${ver ? `v${ver} ` : ''}Settings (refresh to apply)`;
                     } else {
                         titleEl.textContent = 'Settings';
                     }

@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 2.59.3
+ * Version: 2.59.4
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -6601,6 +6601,7 @@ self.onmessage = function (e) {
                 allStats[rareFindStat] ||
                 allStats[experienceStat] ||
                 allStats.skillingSpeed ||
+                allStats.skillingRareFind ||
                 allStats.skillingExperience;
 
             if (!hasSkillStats) continue;
@@ -6614,7 +6615,7 @@ self.onmessage = function (e) {
                 // Named bonuses (dynamic based on skill)
                 toolBonus: allStats[successStat] || 0,
                 speedBonus: (allStats[speedStat] || 0) + (allStats.skillingSpeed || 0), // Combine speed sources
-                rareFindBonus: allStats[rareFindStat] || 0,
+                rareFindBonus: (allStats[rareFindStat] || 0) + (allStats.skillingRareFind || 0),
                 experienceBonus: (allStats[experienceStat] || 0) + (allStats.skillingExperience || 0), // Combine experience sources
                 // Generic access to all stats
                 allStats: allStats,
