@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.59.4
+ * Version: 2.59.5
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1848,6 +1848,13 @@
                     label: 'Show total profit for gathering/production tasks',
                     type: 'checkbox',
                     default: true,
+                },
+                taskCombatEstimate: {
+                    id: 'taskCombatEstimate',
+                    label: 'Show combat estimate on combat tasks',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Displays a loadout dropdown and estimate button on combat task cards.',
                 },
                 taskEfficiencyRating: {
                     id: 'taskEfficiencyRating',
