@@ -8,6 +8,7 @@
  * - library-headers/*.txt (all library @version tags)
  * - README.md (badge and footer version)
  * - src/main.js (Toolasha.version property)
+ * - src/entrypoint.js (Toolasha.version property)
  *
  * This ensures all version references stay in sync automatically.
  *
@@ -103,22 +104,29 @@ function syncVersion() {
             filesUpdated.push('README.md');
         }
 
-        // 4. Update src/main.js (Toolasha.version property)
-        const mainJsPath = join(rootDir, 'src', 'main.js');
-        let mainJsContent = readFileSync(mainJsPath, 'utf8');
+        // 4. Update src/main.js and src/entrypoint.js (Toolasha.version property)
+        const versionFiles = [
+            join(rootDir, 'src', 'main.js'),
+            join(rootDir, 'src', 'entrypoint.js'),
+        ];
 
-        // Match: version: 'X.X.X',
-        const mainJsRegex = /(version:\s+['"])[\d.]+(['"],)/;
+        // Match: version: 'X.X.X', or version = 'X.X.X';
+        const versionPropertyRegex = /(version\s*[:=]\s*['"])[\d.]+(['"][,;])/;
 
-        if (!mainJsRegex.test(mainJsContent)) {
-            console.error('❌ Error: Could not find version property in src/main.js');
-            process.exit(1);
-        }
+        for (const filePath of versionFiles) {
+            let fileContent = readFileSync(filePath, 'utf8');
 
-        const updatedMainJs = mainJsContent.replace(mainJsRegex, `$1${version}$2`);
-        if (updatedMainJs !== mainJsContent) {
-            writeFileSync(mainJsPath, updatedMainJs, 'utf8');
-            filesUpdated.push('src/main.js');
+            if (!versionPropertyRegex.test(fileContent)) {
+                console.warn(`⚠️  Warning: Could not find version property in ${filePath}`);
+                continue;
+            }
+
+            const updatedContent = fileContent.replace(versionPropertyRegex, `$1${version}$2`);
+            if (updatedContent !== fileContent) {
+                writeFileSync(filePath, updatedContent, 'utf8');
+                const relativePath = filePath.replace(rootDir + '/', '');
+                filesUpdated.push(relativePath);
+            }
         }
 
         // Report results
