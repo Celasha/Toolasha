@@ -542,35 +542,6 @@ class WebSocketHook {
     }
 
     /**
-     * Last-resort recovery hook using MWIT-style direct MessageEvent.prototype.data approach.
-     * Called only when the primary hook has failed (30-second timeout fired).
-     * @returns {boolean} True if hook was installed
-     */
-    reinstallSimpleHook() {
-        const dataProperty = Object.getOwnPropertyDescriptor(MessageEvent.prototype, 'data');
-        if (!dataProperty || !dataProperty.get) return false;
-
-        const hookInstance = this;
-        const oriGet = dataProperty.get;
-
-        dataProperty.get = function () {
-            const socket = this.currentTarget;
-            if (!(socket instanceof WebSocket)) return oriGet.call(this);
-            if (!hookInstance.isGameSocket(socket)) return oriGet.call(this);
-
-            const message = oriGet.call(this);
-            Object.defineProperty(this, 'data', { value: message });
-
-            hookInstance.processMessage(message);
-            return message;
-        };
-
-        Object.defineProperty(MessageEvent.prototype, 'data', dataProperty);
-        console.warn('[WebSocket Hook] Fallback hook installed after timeout');
-        return true;
-    }
-
-    /**
      * Cleanup any pending retry timeouts
      */
     cleanup() {
