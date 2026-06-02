@@ -79,6 +79,7 @@ export function detectSkillGear(skillName, equipment, itemDetailMap) {
             allStats[rareFindStat] ||
             allStats[experienceStat] ||
             allStats.skillingSpeed ||
+            allStats.skillingRareFind ||
             allStats.skillingExperience;
 
         if (!hasSkillStats) continue;
@@ -92,7 +93,7 @@ export function detectSkillGear(skillName, equipment, itemDetailMap) {
             // Named bonuses (dynamic based on skill)
             toolBonus: allStats[successStat] || 0,
             speedBonus: (allStats[speedStat] || 0) + (allStats.skillingSpeed || 0), // Combine speed sources
-            rareFindBonus: allStats[rareFindStat] || 0,
+            rareFindBonus: (allStats[rareFindStat] || 0) + (allStats.skillingRareFind || 0),
             experienceBonus: (allStats[experienceStat] || 0) + (allStats.skillingExperience || 0), // Combine experience sources
             // Generic access to all stats
             allStats: allStats,
