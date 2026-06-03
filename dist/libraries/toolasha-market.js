@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.59.5
+ * Version: 2.60.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -7109,6 +7109,7 @@ self.onmessage = function (e) {
         constructor() {
             this.unregisterObserver = null;
             this.isInitialized = false;
+            this.itemsUpdatedHandler = null;
         }
 
         /**
@@ -7125,6 +7126,7 @@ self.onmessage = function (e) {
 
             this.isInitialized = true;
             this.setupObserver();
+            this.setupInventoryListener();
         }
 
         /**
@@ -7145,6 +7147,23 @@ self.onmessage = function (e) {
             if (existingContainer) {
                 this.updateItemCounts(existingContainer);
             }
+        }
+
+        /**
+         * Listen for inventory changes and refresh counts
+         */
+        setupInventoryListener() {
+            let debounceTimer = null;
+            this.itemsUpdatedHandler = () => {
+                if (debounceTimer) clearTimeout(debounceTimer);
+                debounceTimer = setTimeout(() => {
+                    const container = document.querySelector('[class*="MarketplacePanel_marketItems"]');
+                    if (container) {
+                        this.updateItemCounts(container);
+                    }
+                }, 250);
+            };
+            dataManager.on('items_updated', this.itemsUpdatedHandler);
         }
 
         /**
@@ -7258,6 +7277,11 @@ self.onmessage = function (e) {
             if (this.unregisterObserver) {
                 this.unregisterObserver();
                 this.unregisterObserver = null;
+            }
+
+            if (this.itemsUpdatedHandler) {
+                dataManager.off('items_updated', this.itemsUpdatedHandler);
+                this.itemsUpdatedHandler = null;
             }
 
             // Remove all injected count displays and reset opacity

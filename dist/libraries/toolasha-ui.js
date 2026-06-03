@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.59.5
+ * Version: 2.60.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -8552,12 +8552,15 @@ ${starCSS}
                 .getAllSnapshots()
                 .filter((s) => !s.actionTypeHrid || s.actionTypeHrid === '/action_types/combat');
 
+            const defaultLoadout = config.getSettingValue('combatSim_defaultLoadout', '');
+
             let html = '<div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">';
             html +=
                 '<select class="mwi-combat-est-loadout" style="font-size:11px; background:#1a1a1a; color:#ccc; border:1px solid #444; border-radius:3px; padding:2px 4px;">';
-            html += '<option value="">— Current Gear —</option>';
+            html += `<option value=""${!defaultLoadout ? ' selected' : ''}>— Current Gear —</option>`;
             for (const s of snapshots) {
-                html += `<option value="${s.name}">${s.name}</option>`;
+                const selected = s.name === defaultLoadout ? ' selected' : '';
+                html += `<option value="${s.name}"${selected}>${s.name}</option>`;
             }
             html += '</select>';
             html +=
@@ -8836,6 +8839,34 @@ ${starCSS}
             });
 
             container.appendChild(mainLine);
+
+            // Efficiency rating (tokens/hr or gold/hr) — matching skilling task format
+            if (config.getSetting('taskEfficiencyRating') && completionSeconds > 0) {
+                const ratingMode = config.getSettingValue('taskEfficiencyRatingMode', RATING_MODE_TOKENS);
+                const hours = completionSeconds / 3600;
+                let ratingValue, unitLabel;
+
+                if (ratingMode === RATING_MODE_GOLD) {
+                    ratingValue = totalProfit / hours;
+                    unitLabel = 'gold/hr';
+                } else {
+                    const tokensReceived = rewardValue.breakdown?.tokensReceived ?? 0;
+                    ratingValue = tokensReceived / hours;
+                    unitLabel = 'tokens/hr';
+                }
+
+                const ratingLine = document.createElement('div');
+                ratingLine.className = 'mwi-task-profit-rating';
+                ratingLine.style.cssText = 'margin-top: 2px; font-size: 0.7rem;';
+                ratingLine.dataset.ratingValue = `${ratingValue}`;
+                ratingLine.dataset.ratingMode = ratingMode;
+                ratingLine.style.color = config.COLOR_ACCENT;
+                ratingLine.textContent = `⚡ ${formatters_js.formatKMB(ratingValue)} ${unitLabel}`;
+                container.appendChild(ratingLine);
+
+                this.updateEfficiencyGradientColors();
+            }
+
             container.appendChild(breakdown);
         }
 
@@ -19278,7 +19309,8 @@ ${starCSS}
 
                 case 'select': {
                     const value = currentSetting?.value ?? settingDef.default ?? '';
-                    const options = settingDef.options || [];
+                    const options =
+                        typeof settingDef.options === 'function' ? settingDef.options() : settingDef.options || [];
                     const optionsHTML = options
                         .map((option) => {
                             const optValue = typeof option === 'object' ? option.value : option;

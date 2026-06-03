@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.59.5
+ * Version: 2.60.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -832,6 +832,13 @@
                 lines.push(
                     `<div style="color: #88ff88; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">Equipment:</span> +${equipmentSuccess.toFixed(2)}%</div>`
                 );
+                const successSlots = (params.slotBreakdown || []).filter((s) => s.success > 0);
+                for (const slot of successSlots) {
+                    const label = slot.enhancementLevel > 0 ? `${slot.name} +${slot.enhancementLevel}` : slot.name;
+                    lines.push(
+                        `<div style="color: #88ff88; font-size: 0.75em; padding-left: 20px;"><span style="color: #555;">└</span> ${label}: +${slot.success.toFixed(2)}%</div>`
+                    );
+                }
             }
             if (houseSuccess > 0) {
                 lines.push(
@@ -866,6 +873,13 @@
                 lines.push(
                     `<div style="color: #aaddff; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">Equipment:</span> +${(speedBreakdown.equipment * 100).toFixed(1)}%</div>`
                 );
+                const speedSlots = (params.slotBreakdown || []).filter((s) => s.speed > 0);
+                for (const slot of speedSlots) {
+                    const label = slot.enhancementLevel > 0 ? `${slot.name} +${slot.enhancementLevel}` : slot.name;
+                    lines.push(
+                        `<div style="color: #aaddff; font-size: 0.75em; padding-left: 20px;"><span style="color: #555;">└</span> ${label}: +${slot.speed.toFixed(1)}%</div>`
+                    );
+                }
             }
             if (speedBreakdown.house > 0) {
                 lines.push(
@@ -903,11 +917,15 @@
         );
 
         if (params.teas.blessed) {
-            // Calculate Blessed Tea bonus with Guzzling Pouch concentration
-            const blessedBonus = 1.1; // Base 1.1% from Blessed Tea
+            const blessedBonus = 1.1;
             lines.push(
-                `<div style="color: #ffdd88;"><span style="color: #888;">Blessed:</span> +${blessedBonus.toFixed(1)}%</div>`
+                `<div class="mwi-enh-toggle" data-target="mwi-enh-blessed" style="color: #ffdd88; cursor: pointer;"><span style="color: #888;">Blessed:</span> +${blessedBonus.toFixed(1)}% <span class="mwi-enh-arrow" style="color: #666; font-size: 0.8em;">▸</span></div>`
             );
+            lines.push('<div id="mwi-enh-blessed" style="display: none;">');
+            lines.push(
+                `<div style="color: #ffdd88; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">Blessed Tea:</span> ${blessedBonus}% chance to skip a level</div>`
+            );
+            lines.push('</div>');
         }
         if (params.rareFindBonus > 0) {
             lines.push(
@@ -915,26 +933,33 @@
             );
             lines.push('<div id="mwi-enh-rarefind" style="display: none;">');
 
-            // Show breakdown if available
+            // Show breakdown
             const achievementRareFind = params.achievementRareFindBonus || 0;
-            if (params.houseRareFindBonus > 0 || achievementRareFind > 0) {
-                const equipmentRareFind = Math.max(
-                    0,
-                    params.rareFindBonus - params.houseRareFindBonus - achievementRareFind
+            const equipmentRareFind = Math.max(
+                0,
+                params.rareFindBonus - (params.houseRareFindBonus || 0) - achievementRareFind
+            );
+            if (equipmentRareFind > 0) {
+                lines.push(
+                    `<div style="color: #ffaa55; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">Equipment:</span> +${equipmentRareFind.toFixed(1)}%</div>`
                 );
-                if (equipmentRareFind > 0) {
+                const rfSlots = (params.slotBreakdown || []).filter((s) => s.rareFind > 0);
+                for (const slot of rfSlots) {
+                    const label = slot.enhancementLevel > 0 ? `${slot.name} +${slot.enhancementLevel}` : slot.name;
                     lines.push(
-                        `<div style="color: #ffaa55; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">Equipment:</span> +${equipmentRareFind.toFixed(1)}%</div>`
+                        `<div style="color: #ffaa55; font-size: 0.75em; padding-left: 20px;"><span style="color: #555;">└</span> ${label}: +${slot.rareFind.toFixed(1)}%</div>`
                     );
                 }
+            }
+            if (params.houseRareFindBonus > 0) {
                 lines.push(
                     `<div style="color: #ffaa55; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">House Rooms:</span> +${params.houseRareFindBonus.toFixed(1)}%</div>`
                 );
-                if (achievementRareFind > 0) {
-                    lines.push(
-                        `<div style="color: #ffaa55; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">Achievement:</span> +${achievementRareFind.toFixed(1)}%</div>`
-                    );
-                }
+            }
+            if (achievementRareFind > 0) {
+                lines.push(
+                    `<div style="color: #ffaa55; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">Achievement:</span> +${achievementRareFind.toFixed(1)}%</div>`
+                );
             }
             lines.push('</div>');
         }
@@ -958,6 +983,13 @@
                 lines.push(
                     `<div style="color: #ffdd88; font-size: 0.8em; padding-left: 10px;"><span style="color: #666;">Equipment:</span> +${equipmentExperience.toFixed(1)}%</div>`
                 );
+                const expSlots = (params.slotBreakdown || []).filter((s) => s.experience > 0);
+                for (const slot of expSlots) {
+                    const label = slot.enhancementLevel > 0 ? `${slot.name} +${slot.enhancementLevel}` : slot.name;
+                    lines.push(
+                        `<div style="color: #ffdd88; font-size: 0.75em; padding-left: 20px;"><span style="color: #555;">└</span> ${label}: +${slot.experience.toFixed(1)}%</div>`
+                    );
+                }
             }
             if (houseWisdom > 0) {
                 lines.push(
@@ -1137,14 +1169,21 @@
             }
         }
 
-        // Save scroll position before removing existing display
+        // Save scroll position and expand state before removing existing display
         let savedScrollTop = 0;
+        const expandedSections = new Set();
         const existing = panel.querySelector('#mwi-enhancement-stats');
         if (existing) {
             const scrollContainer = existing.querySelector('#mwi-enhancement-table-scroll');
             if (scrollContainer) {
                 savedScrollTop = scrollContainer.scrollTop;
             }
+            existing.querySelectorAll('.mwi-enh-toggle').forEach((toggle) => {
+                const target = existing.querySelector(`#${toggle.dataset.target}`);
+                if (target && target.style.display !== 'none') {
+                    expandedSections.add(toggle.dataset.target);
+                }
+            });
             existing.remove();
         }
 
@@ -1188,6 +1227,15 @@
                 target.style.display = isHidden ? '' : 'none';
                 if (arrow) arrow.textContent = isHidden ? '▾' : '▸';
             });
+            // Restore previously expanded sections
+            if (expandedSections.has(toggle.dataset.target)) {
+                const target = container.querySelector(`#${toggle.dataset.target}`);
+                if (target) {
+                    target.style.display = '';
+                    const arrow = toggle.querySelector('.mwi-enh-arrow');
+                    if (arrow) arrow.textContent = '▾';
+                }
+            }
         });
 
         // Attach event listener to expand costs table button
@@ -9354,7 +9402,7 @@
                 const currentActionName = actionNameElement?.textContent?.trim() || '';
                 const previousActionName = panel.dataset.mwiInjectedAction || '';
 
-                if (panel.querySelector('.mwi-collapsible-section')) {
+                if (panel.querySelector('.mwi-collapsible-section') || panel.querySelector('.mwi-quick-input-btn')) {
                     if (currentActionName && currentActionName === previousActionName) {
                         return;
                     }
