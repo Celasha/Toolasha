@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.60.0
+ * Version: 2.61.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -7976,6 +7976,7 @@ ${starCSS}
             this.isInitialized = false;
             this.timerRegistry = timerRegistry_js.createTimerRegistry();
             this.marketDataInitPromise = null; // Guard against duplicate market data inits
+            this._simQueue = Promise.resolve();
         }
 
         /**
@@ -8409,7 +8410,15 @@ ${starCSS}
                         const estimateContainer = document.createElement('div');
                         estimateContainer.className = 'mwi-task-profit';
                         estimateContainer.style.cssText = 'margin-top: 4px; font-size: 0.75rem;';
-                        this._renderCombatEstimateConfig(estimateContainer, taskData);
+
+                        if (config.getSetting('combatSim_autoEstimate')) {
+                            const defaultLoadout = config.getSettingValue('combatSim_defaultLoadout', '');
+                            this._simQueue = this._simQueue.then(() =>
+                                this._runCombatSimEstimate(estimateContainer, taskData, defaultLoadout)
+                            );
+                        } else {
+                            this._renderCombatEstimateConfig(estimateContainer, taskData);
+                        }
 
                         if (actionNode) {
                             actionNode.appendChild(estimateContainer);
@@ -8564,13 +8573,32 @@ ${starCSS}
             }
             html += '</select>';
             html +=
+                '<button class="mwi-combat-est-mode" data-mode="solo" title="Solo: simulate only target monster. Zone: simulate full zone spawn table." style="font-size:11px; padding:2px 6px; background:#1a1a1a; color:#ccc; border:1px solid #444; border-radius:3px; cursor:pointer;">Solo</button>';
+            html +=
                 '<button class="mwi-combat-est-btn" style="font-size:11px; padding:2px 8px; background:#1a3a5c; color:#4a9eff; border:1px solid #4a9eff44; border-radius:3px; cursor:pointer;">⚔ Estimate</button>';
             html += '</div>';
             container.innerHTML = html;
 
+            const modeBtn = container.querySelector('.mwi-combat-est-mode');
+            modeBtn.addEventListener('click', () => {
+                const current = modeBtn.dataset.mode;
+                if (current === 'solo') {
+                    modeBtn.dataset.mode = 'zone';
+                    modeBtn.textContent = 'Zone';
+                    modeBtn.style.color = '#aaddff';
+                    modeBtn.style.borderColor = '#4a9eff44';
+                } else {
+                    modeBtn.dataset.mode = 'solo';
+                    modeBtn.textContent = 'Solo';
+                    modeBtn.style.color = '#ccc';
+                    modeBtn.style.borderColor = '#444';
+                }
+            });
+
             container.querySelector('.mwi-combat-est-btn').addEventListener('click', () => {
                 const loadoutName = container.querySelector('.mwi-combat-est-loadout').value;
-                this._runCombatSimEstimate(container, taskData, loadoutName);
+                const mode = modeBtn.dataset.mode;
+                this._runCombatSimEstimate(container, taskData, loadoutName, mode);
             });
         }
 
@@ -8579,9 +8607,10 @@ ${starCSS}
          * @param {Element} container - Container element to render into
          * @param {Object} taskData - Parsed task data
          * @param {string} loadoutName - Loadout snapshot name (empty = current gear)
+         * @param {string} mode - 'solo' (single monster) or 'zone' (full spawn table)
          * @private
          */
-        async _runCombatSimEstimate(container, taskData, loadoutName) {
+        async _runCombatSimEstimate(container, taskData, loadoutName, mode = 'solo') {
             // Extract monster name from "Defeat - Monster Name" description
             const match = taskData.description.match(/^Defeat\s*-\s*(.+)$/i);
             const monsterName = match?.[1]?.trim() || null;
@@ -8630,41 +8659,46 @@ ${starCSS}
                     applyLoadoutSnapshotToDTO(players[0], loadoutName, gameData);
                 }
 
-                // Single-monster mode: filter zone spawn table to only the target monster.
-                // Preserve all fields from the real spawn entry (rate, strength, difficultyTier, etc.)
-                // so the sim engine's weighted-selection logic works correctly.
                 const zoneAction = gameData.actionDetailMap[zoneHrid];
                 const allSpawns = zoneAction.combatZoneInfo?.fightInfo?.randomSpawnInfo?.spawns || [];
-                const monsterSpawn = allSpawns.find((s) => s.combatMonsterHrid === monsterHrid) || {
-                    combatMonsterHrid: monsterHrid,
-                    rate: 1,
-                    strength: 1,
-                    difficultyTier: 0,
-                };
-                const filteredGameData = {
-                    ...gameData,
-                    actionDetailMap: {
-                        ...gameData.actionDetailMap,
-                        [zoneHrid]: {
-                            ...zoneAction,
-                            combatZoneInfo: {
-                                ...zoneAction.combatZoneInfo,
-                                fightInfo: {
-                                    ...zoneAction.combatZoneInfo.fightInfo,
-                                    randomSpawnInfo: {
-                                        ...zoneAction.combatZoneInfo.fightInfo.randomSpawnInfo,
-                                        spawns: [monsterSpawn],
+
+                let simGameData;
+                if (mode === 'zone') {
+                    // Zone mode: use full unfiltered spawn table
+                    simGameData = gameData;
+                } else {
+                    // Solo mode: filter spawn table to only the target monster
+                    const monsterSpawn = allSpawns.find((s) => s.combatMonsterHrid === monsterHrid) || {
+                        combatMonsterHrid: monsterHrid,
+                        rate: 1,
+                        strength: 1,
+                        difficultyTier: 0,
+                    };
+                    simGameData = {
+                        ...gameData,
+                        actionDetailMap: {
+                            ...gameData.actionDetailMap,
+                            [zoneHrid]: {
+                                ...zoneAction,
+                                combatZoneInfo: {
+                                    ...zoneAction.combatZoneInfo,
+                                    fightInfo: {
+                                        ...zoneAction.combatZoneInfo.fightInfo,
+                                        randomSpawnInfo: {
+                                            ...zoneAction.combatZoneInfo.fightInfo.randomSpawnInfo,
+                                            spawns: [monsterSpawn],
+                                        },
+                                        bossSpawns: [],
                                     },
-                                    bossSpawns: [],
                                 },
                             },
                         },
-                    },
-                };
+                    };
+                }
 
                 const SIM_HOURS = 1;
                 const simResult = await runSimulation({
-                    gameData: filteredGameData,
+                    gameData: simGameData,
                     playerDTOs: players,
                     zoneHrid,
                     difficultyTier: 0,
@@ -8681,7 +8715,7 @@ ${starCSS}
                 const playerHrid = players[0]?.hrid || 'player1';
                 const { netPerHour, dropEntries, consumableEntries } = calculateSimRevenue(
                     simResult,
-                    filteredGameData,
+                    simGameData,
                     playerHrid,
                     SIM_HOURS
                 );
@@ -8700,7 +8734,10 @@ ${starCSS}
                     netPerHour,
                     rewardValue,
                     dropEntries,
-                    consumableEntries
+                    consumableEntries,
+                    mode,
+                    simResult,
+                    zoneHrid
                 );
             } catch (e) {
                 console.error('[TaskProfit] Combat estimate failed:', e);
@@ -8738,7 +8775,10 @@ ${starCSS}
             netPerHour,
             rewardValue,
             dropEntries,
-            consumableEntries
+            consumableEntries,
+            mode,
+            simResult,
+            zoneHrid
         ) {
             container.innerHTML = '';
             if (completionSeconds !== null) {
@@ -8868,6 +8908,45 @@ ${starCSS}
             }
 
             container.appendChild(breakdown);
+
+            // Zone summary: show aggregate time to clear all tasks in this zone
+            if (mode === 'zone' && simResult && zoneHrid) {
+                const taskListNode = document.querySelector(selectors_js.GAME.TASK_LIST);
+                const allTaskInfos = taskListNode ? taskListNode.querySelectorAll(selectors_js.GAME.TASK_INFO) : [];
+                const zoneTasks = [];
+
+                for (const node of allTaskInfos) {
+                    const td = this.parseTaskData(node);
+                    if (!td) continue;
+                    const m = td.description.match(/^Defeat\s*-\s*(.+)$/i);
+                    if (!m) continue;
+                    const mName = m[1].trim();
+                    const mHrid = dataManager.getMonsterHridFromName(mName);
+                    if (!mHrid) continue;
+                    const mZone = dataManager.getCombatZoneForMonster(mHrid);
+                    if (mZone !== zoneHrid) continue;
+
+                    const rem = Math.max((td.quantity ?? 0) - (td.currentProgress ?? 0), 0);
+                    const mKills = simResult.deaths?.[mHrid] ?? 0;
+                    const mKillsPerHour = mKills / 1; // SIM_HOURS = 1
+                    const hoursNeeded = mKillsPerHour > 0 ? rem / mKillsPerHour : Infinity;
+                    zoneTasks.push({ name: mName, remaining: rem, killsPerHour: mKillsPerHour, hoursNeeded });
+                }
+
+                if (zoneTasks.length > 1) {
+                    const bottleneck = zoneTasks.reduce((a, b) => (a.hoursNeeded > b.hoursNeeded ? a : b));
+                    const totalSeconds = Math.round(bottleneck.hoursNeeded * 3600);
+                    const totalFightsPerHour = Object.values(simResult.deaths).reduce((s, v) => s + v, 0);
+                    const fightsNeeded = Math.round(totalFightsPerHour * bottleneck.hoursNeeded);
+
+                    const summary = document.createElement('div');
+                    summary.style.cssText =
+                        'margin-top: 4px; font-size: 0.7rem; color: #aaddff; border-top: 1px solid #333; padding-top: 4px;';
+                    const zoneName = dataManager.getInitClientData()?.actionDetailMap?.[zoneHrid]?.name || 'Zone';
+                    summary.textContent = `${zoneName}: ~${formatters_js.formatKMB(fightsNeeded)} fights | ${formatters_js.timeReadable(totalSeconds)} (bottleneck: ${bottleneck.name})`;
+                    container.appendChild(summary);
+                }
+            }
         }
 
         /**
@@ -13117,7 +13196,7 @@ ${starCSS}
             this.proxyButton = document.createElement('button');
             this.proxyButton.id = PROXY_BTN_ID;
             this.proxyButton.className = 'Button_button__1Fe9z Button_small__3fqC7';
-            this.proxyButton.style.marginLeft = '8px';
+            this.proxyButton.style.cssText = 'margin-left: 8px; min-width: 130px;';
             this.proxyButton.addEventListener('click', () => this._claimNext());
 
             const highlightBtn = headerElement.querySelector('[data-mwi-task-highlight]');

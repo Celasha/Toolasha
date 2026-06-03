@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 2.60.0
+ * Version: 2.61.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -7049,7 +7049,7 @@ self.onmessage = function (e) {
         };
         const CAPE_HRIDS = {
             '/items/chance_cape': 'normal',
-            '/items/chance_cape_r': 'refined',
+            '/items/chance_cape_refined': 'refined',
         };
         const CHARM_HRIDS = {
             '/items/trainee_enhancing_charm': 'trainee',
@@ -7159,7 +7159,7 @@ self.onmessage = function (e) {
         };
         const CAPE_TIERS = {
             normal: '/items/chance_cape',
-            refined: '/items/chance_cape_r',
+            refined: '/items/chance_cape_refined',
         };
         const CHARM_TIERS = {
             trainee: '/items/trainee_enhancing_charm',

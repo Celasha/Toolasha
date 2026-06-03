@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.60.0
+ * Version: 2.61.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -20095,7 +20095,7 @@
         { key: 'expPerHour', label: 'XP/hr', align: 'right', filterable: false },
     ];
 
-    const GRID_COLUMNS = '1fr 120px 50px 90px 90px';
+    const GRID_COLUMNS = '28px 1fr 120px 50px 90px 90px';
 
     /**
      * Get game object via React fiber tree traversal
@@ -20341,6 +20341,10 @@
                 });
             }
 
+            if (!this.itemsSpriteUrl) {
+                this.itemsSpriteUrl = await assetManifest.getSpriteUrl('items');
+            }
+
             this.renderTable();
         }
 
@@ -20512,6 +20516,10 @@
             user-select: none;
         `;
 
+            // Empty header for icon column
+            const iconHeader = document.createElement('div');
+            headerRow.appendChild(iconHeader);
+
             for (const col of COLUMNS) {
                 const th = document.createElement('div');
                 th.style.cssText = `
@@ -20598,7 +20606,14 @@
                 background: ${rowBg};
             `;
 
+                const iconSlug = action.outputItemHrid ? action.outputItemHrid.split('/').pop() : '';
+                const iconHtml =
+                    this.itemsSpriteUrl && iconSlug
+                        ? `<svg width="24" height="24"><use href="${this.itemsSpriteUrl}#${iconSlug}"></use></svg>`
+                        : '';
+
                 row.innerHTML = `
+                <span style="display: flex; align-items: center; justify-content: center;">${iconHtml}</span>
                 <span style="font-weight: 500; text-align: left;">${action.name}</span>
                 <span style="color: #aaa; font-size: 0.9em; text-align: left;">${action.skill}</span>
                 <span style="color: #aaa; text-align: left;">${action.level}</span>
@@ -23294,6 +23309,20 @@
         }
 
         /**
+         * Create a clickable item name span that navigates to marketplace
+         */
+        _makeItemLink(name, itemHrid) {
+            const link = document.createElement('span');
+            link.textContent = name;
+            link.style.cssText = 'color: #93c5fd; cursor: pointer; text-decoration: underline;';
+            link.addEventListener('click', (e) => {
+                e.stopPropagation();
+                navigateToMarketplace(itemHrid);
+            });
+            return link;
+        }
+
+        /**
          * Render breakdown content for an expanded item row
          */
         renderBreakdownContent(item) {
@@ -23331,7 +23360,11 @@
                         line.style.textDecoration = 'line-through';
                         line.style.opacity = '0.6';
                     }
-                    line.textContent = `\u2022 ${itemName}: ${dropsDisplay}/hr (${dropRatePct} \u00d7 ${formatters_js.formatPercentage(profitData.successRate, 1)} success) @ ${formatters_js.formatWithSeparator(Math.round(drop.price))} \u2192 ${formatters_js.formatKMB(Math.round(drop.revenuePerHour))}/hr`;
+                    line.append(
+                        `\u2022 `,
+                        this._makeItemLink(itemName, drop.itemHrid),
+                        `: ${dropsDisplay}/hr (${dropRatePct} \u00d7 ${formatters_js.formatPercentage(profitData.successRate, 1)} success) @ ${formatters_js.formatWithSeparator(Math.round(drop.price))} \u2192 ${formatters_js.formatKMB(Math.round(drop.revenuePerHour))}/hr`
+                    );
                     container.appendChild(line);
                 }
             }
@@ -23355,7 +23388,11 @@
                         const itemName = itemDetails?.name || req.itemHrid.split('/').pop();
                         const line = document.createElement('div');
                         line.style.cssText = 'margin-left: 8px; color: #aaa;';
-                        line.textContent = `\u2022 ${itemName}: ${req.count}\u00d7 @ ${formatters_js.formatWithSeparator(Math.round(req.price))} \u2192 ${formatters_js.formatKMB(Math.round(req.costPerHour))}/hr`;
+                        line.append(
+                            `\u2022 `,
+                            this._makeItemLink(itemName, req.itemHrid),
+                            `: ${req.count}\u00d7 @ ${formatters_js.formatWithSeparator(Math.round(req.price))} \u2192 ${formatters_js.formatKMB(Math.round(req.costPerHour))}/hr`
+                        );
                         container.appendChild(line);
                     }
                 }
@@ -23366,7 +23403,11 @@
                     const catName = catDetails?.name || profitData.catalystCost.itemHrid.split('/').pop();
                     const line = document.createElement('div');
                     line.style.cssText = 'margin-left: 8px; color: #aaa;';
-                    line.textContent = `\u2022 ${catName} @ ${formatters_js.formatWithSeparator(Math.round(profitData.catalystCost.price))} \u2192 ${formatters_js.formatKMB(Math.round(profitData.catalystCostPerHour))}/hr`;
+                    line.append(
+                        `\u2022 `,
+                        this._makeItemLink(catName, profitData.catalystCost.itemHrid),
+                        ` @ ${formatters_js.formatWithSeparator(Math.round(profitData.catalystCost.price))} \u2192 ${formatters_js.formatKMB(Math.round(profitData.catalystCostPerHour))}/hr`
+                    );
                     container.appendChild(line);
                 }
 
@@ -23377,7 +23418,11 @@
                         const teaName = teaDetails?.name || tea.itemHrid.split('/').pop();
                         const line = document.createElement('div');
                         line.style.cssText = 'margin-left: 8px; color: #aaa;';
-                        line.textContent = `\u2022 ${teaName} \u2192 ${formatters_js.formatKMB(Math.round(tea.costPerHour))}/hr`;
+                        line.append(
+                            `\u2022 `,
+                            this._makeItemLink(teaName, tea.itemHrid),
+                            ` \u2192 ${formatters_js.formatKMB(Math.round(tea.costPerHour))}/hr`
+                        );
                         container.appendChild(line);
                     }
                 }

@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.60.0
+ * Version: 2.61.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1808,6 +1808,13 @@
                         ];
                     },
                     help: 'Loadout to use by default for combat estimates instead of currently equipped gear',
+                },
+                combatSim_autoEstimate: {
+                    id: 'combatSim_autoEstimate',
+                    label: 'Combat Simulator: Auto-run estimate on task cards',
+                    type: 'checkbox',
+                    default: false,
+                    help: 'Automatically run combat estimates using the default loadout when task cards appear',
                 },
                 combatStats: {
                     id: 'combatStats',
