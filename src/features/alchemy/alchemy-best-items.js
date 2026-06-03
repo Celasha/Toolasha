@@ -673,6 +673,20 @@ class AlchemyBestItems {
     }
 
     /**
+     * Create a clickable item name span that navigates to marketplace
+     */
+    _makeItemLink(name, itemHrid) {
+        const link = document.createElement('span');
+        link.textContent = name;
+        link.style.cssText = 'color: #93c5fd; cursor: pointer; text-decoration: underline;';
+        link.addEventListener('click', (e) => {
+            e.stopPropagation();
+            navigateToMarketplace(itemHrid);
+        });
+        return link;
+    }
+
+    /**
      * Render breakdown content for an expanded item row
      */
     renderBreakdownContent(item) {
@@ -710,7 +724,11 @@ class AlchemyBestItems {
                     line.style.textDecoration = 'line-through';
                     line.style.opacity = '0.6';
                 }
-                line.textContent = `\u2022 ${itemName}: ${dropsDisplay}/hr (${dropRatePct} \u00d7 ${formatPercentage(profitData.successRate, 1)} success) @ ${formatWithSeparator(Math.round(drop.price))} \u2192 ${formatKMB(Math.round(drop.revenuePerHour))}/hr`;
+                line.append(
+                    `\u2022 `,
+                    this._makeItemLink(itemName, drop.itemHrid),
+                    `: ${dropsDisplay}/hr (${dropRatePct} \u00d7 ${formatPercentage(profitData.successRate, 1)} success) @ ${formatWithSeparator(Math.round(drop.price))} \u2192 ${formatKMB(Math.round(drop.revenuePerHour))}/hr`
+                );
                 container.appendChild(line);
             }
         }
@@ -734,7 +752,11 @@ class AlchemyBestItems {
                     const itemName = itemDetails?.name || req.itemHrid.split('/').pop();
                     const line = document.createElement('div');
                     line.style.cssText = 'margin-left: 8px; color: #aaa;';
-                    line.textContent = `\u2022 ${itemName}: ${req.count}\u00d7 @ ${formatWithSeparator(Math.round(req.price))} \u2192 ${formatKMB(Math.round(req.costPerHour))}/hr`;
+                    line.append(
+                        `\u2022 `,
+                        this._makeItemLink(itemName, req.itemHrid),
+                        `: ${req.count}\u00d7 @ ${formatWithSeparator(Math.round(req.price))} \u2192 ${formatKMB(Math.round(req.costPerHour))}/hr`
+                    );
                     container.appendChild(line);
                 }
             }
@@ -745,7 +767,11 @@ class AlchemyBestItems {
                 const catName = catDetails?.name || profitData.catalystCost.itemHrid.split('/').pop();
                 const line = document.createElement('div');
                 line.style.cssText = 'margin-left: 8px; color: #aaa;';
-                line.textContent = `\u2022 ${catName} @ ${formatWithSeparator(Math.round(profitData.catalystCost.price))} \u2192 ${formatKMB(Math.round(profitData.catalystCostPerHour))}/hr`;
+                line.append(
+                    `\u2022 `,
+                    this._makeItemLink(catName, profitData.catalystCost.itemHrid),
+                    ` @ ${formatWithSeparator(Math.round(profitData.catalystCost.price))} \u2192 ${formatKMB(Math.round(profitData.catalystCostPerHour))}/hr`
+                );
                 container.appendChild(line);
             }
 
@@ -756,7 +782,11 @@ class AlchemyBestItems {
                     const teaName = teaDetails?.name || tea.itemHrid.split('/').pop();
                     const line = document.createElement('div');
                     line.style.cssText = 'margin-left: 8px; color: #aaa;';
-                    line.textContent = `\u2022 ${teaName} \u2192 ${formatKMB(Math.round(tea.costPerHour))}/hr`;
+                    line.append(
+                        `\u2022 `,
+                        this._makeItemLink(teaName, tea.itemHrid),
+                        ` \u2192 ${formatKMB(Math.round(tea.costPerHour))}/hr`
+                    );
                     container.appendChild(line);
                 }
             }
