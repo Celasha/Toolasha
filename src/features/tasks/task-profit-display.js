@@ -344,6 +344,7 @@ class TaskProfitDisplay {
         this.isInitialized = false;
         this.timerRegistry = createTimerRegistry();
         this.marketDataInitPromise = null; // Guard against duplicate market data inits
+        this._simQueue = Promise.resolve();
     }
 
     /**
@@ -777,7 +778,15 @@ class TaskProfitDisplay {
                     const estimateContainer = document.createElement('div');
                     estimateContainer.className = 'mwi-task-profit';
                     estimateContainer.style.cssText = 'margin-top: 4px; font-size: 0.75rem;';
-                    this._renderCombatEstimateConfig(estimateContainer, taskData);
+
+                    if (config.getSetting('combatSim_autoEstimate')) {
+                        const defaultLoadout = config.getSettingValue('combatSim_defaultLoadout', '');
+                        this._simQueue = this._simQueue.then(() =>
+                            this._runCombatSimEstimate(estimateContainer, taskData, defaultLoadout)
+                        );
+                    } else {
+                        this._renderCombatEstimateConfig(estimateContainer, taskData);
+                    }
 
                     if (actionNode) {
                         actionNode.appendChild(estimateContainer);

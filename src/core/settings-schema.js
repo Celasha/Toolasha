@@ -1254,6 +1254,13 @@ export const settingsGroups = {
                 },
                 help: 'Loadout to use by default for combat estimates instead of currently equipped gear',
             },
+            combatSim_autoEstimate: {
+                id: 'combatSim_autoEstimate',
+                label: 'Combat Simulator: Auto-run estimate on task cards',
+                type: 'checkbox',
+                default: false,
+                help: 'Automatically run combat estimates using the default loadout when task cards appear',
+            },
             combatStats: {
                 id: 'combatStats',
                 label: 'Combat Statistics: Show Statistics tab in Combat panel',
