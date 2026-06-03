@@ -260,7 +260,7 @@ class QuickInputButtons {
             const currentActionName = actionNameElement?.textContent?.trim() || '';
             const previousActionName = panel.dataset.mwiInjectedAction || '';
 
-            if (panel.querySelector('.mwi-collapsible-section')) {
+            if (panel.querySelector('.mwi-collapsible-section') || panel.querySelector('.mwi-quick-input-btn')) {
                 if (currentActionName && currentActionName === previousActionName) {
                     return;
                 }
