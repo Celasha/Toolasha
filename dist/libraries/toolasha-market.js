@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.61.0
+ * Version: 2.61.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -8837,7 +8837,7 @@ self.onmessage = function (e) {
                 }
             }
 
-            // Extract quantity (3rd cell) - format: "+7 0 / 1" or "0 / 1" (enhancement level may prefix)
+            // Extract quantity (3rd cell) - format: "+7 0 / 1" or "0 / 1" or "62075 / 405K"
             let filledQuantity = null;
             let orderQuantity = null;
             const quantityCell = row.children[2];
@@ -8845,10 +8845,15 @@ self.onmessage = function (e) {
                 let text = quantityCell.textContent.trim();
                 // Strip leading enhancement level prefix (e.g., "+7" from "+70 / 1")
                 text = text.replace(/^\+\d+\s*/, '');
-                const match = text.match(/(\d+)\s*\/\s*(\d+)/);
+                const match = text.match(/([0-9,.]+)\s*([KMB]?)\s*\/\s*([0-9,.]+)\s*([KMB]?)/i);
                 if (match) {
-                    filledQuantity = Number(match[1]);
-                    orderQuantity = Number(match[2]);
+                    const suffixMultiplier = (s) => {
+                        if (!s) return 1;
+                        const c = s.toUpperCase();
+                        return c === 'K' ? 1000 : c === 'M' ? 1000000 : c === 'B' ? 1000000000 : 1;
+                    };
+                    filledQuantity = Math.round(parseFloat(match[1].replace(/,/g, '')) * suffixMultiplier(match[2]));
+                    orderQuantity = Math.round(parseFloat(match[3].replace(/,/g, '')) * suffixMultiplier(match[4]));
                 }
             }
 
