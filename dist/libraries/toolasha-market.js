@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.61.2
+ * Version: 2.61.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -8749,20 +8749,8 @@ self.onmessage = function (e) {
             const listings = Object.values(this.allListings);
             const used = new Set();
 
-            console.log(
-                `[LP-DIAG] === addDataToRows === ${listings.length} listings, ${tbody.querySelectorAll('tr').length} rows`
-            );
-            for (const l of listings) {
-                console.log(
-                    `[LP-DIAG] listing: id=${l.id} hrid=${l.itemHrid} enh=${l.enhancementLevel} sell=${l.isSell} price=${l.price} filled=${l.filledQuantity}/${l.orderQuantity}`
-                );
-            }
-
             for (const row of tbody.querySelectorAll('tr')) {
                 const rowInfo = this.extractRowInfo(row);
-                console.log(
-                    `[LP-DIAG] row extracted: hrid=${rowInfo.itemHrid} enh=${rowInfo.enhancementLevel} sell=${rowInfo.isSell} price=${rowInfo.price} filled=${rowInfo.filledQuantity}/${rowInfo.orderQuantity}`
-                );
 
                 // Find matching listing with improved criteria
                 const matchedListing = listings.find((listing) => {
@@ -8775,24 +8763,22 @@ self.onmessage = function (e) {
                     const priceMatch = !rowInfo.price || Math.abs(listing.price - rowInfo.price) < 0.01;
 
                     if (!itemMatch || !enhancementMatch || !typeMatch || !priceMatch) {
-                        if (listing.itemHrid === rowInfo.itemHrid) {
-                            console.log(
-                                `[LP-DIAG]   same-item MISMATCH: item=${itemMatch} enh=${enhancementMatch}(${listing.enhancementLevel}vs${rowInfo.enhancementLevel}) type=${typeMatch}(${listing.isSell}vs${rowInfo.isSell}) price=${priceMatch}(${listing.price}vs${rowInfo.price})`
-                            );
-                        }
                         return false;
                     }
 
                     // If quantity info is available from row, use it for precise matching
                     if (rowInfo.filledQuantity !== null && rowInfo.orderQuantity !== null) {
-                        const quantityMatch =
-                            listing.filledQuantity === rowInfo.filledQuantity &&
-                            listing.orderQuantity === rowInfo.orderQuantity;
-                        if (!quantityMatch) {
-                            console.log(
-                                `[LP-DIAG]   QUANTITY MISMATCH: listing filled=${listing.filledQuantity}/${listing.orderQuantity} vs row filled=${rowInfo.filledQuantity}/${rowInfo.orderQuantity}`
-                            );
-                        }
+                        const filledMatch =
+                            rowInfo.filledSuffixMultiplier > 1
+                                ? Math.floor(listing.filledQuantity / rowInfo.filledSuffixMultiplier) ===
+                                  Math.floor(rowInfo.filledQuantity / rowInfo.filledSuffixMultiplier)
+                                : listing.filledQuantity === rowInfo.filledQuantity;
+                        const orderMatch =
+                            rowInfo.orderSuffixMultiplier > 1
+                                ? Math.floor(listing.orderQuantity / rowInfo.orderSuffixMultiplier) ===
+                                  Math.floor(rowInfo.orderQuantity / rowInfo.orderSuffixMultiplier)
+                                : listing.orderQuantity === rowInfo.orderQuantity;
+                        const quantityMatch = filledMatch && orderMatch;
                         return quantityMatch;
                     }
 
@@ -8802,7 +8788,6 @@ self.onmessage = function (e) {
 
                 if (matchedListing) {
                     used.add(matchedListing.id);
-                    console.log(`[LP-DIAG]   MATCHED: ${matchedListing.itemHrid} id=${matchedListing.id}`);
                     // Store listing data in row dataset
                     row.dataset.listingId = matchedListing.id;
                     row.dataset.itemHrid = matchedListing.itemHrid;
@@ -8814,11 +8799,6 @@ self.onmessage = function (e) {
                     row.dataset.createdTimestamp = matchedListing.createdTimestamp;
                     row.dataset.unclaimedCoinCount = matchedListing.unclaimedCoinCount;
                     row.dataset.unclaimedItemCount = matchedListing.unclaimedItemCount;
-                } else {
-                    // No match - leave row without dataset (placeholder cells will be added)
-                    console.warn(
-                        `[LP-DIAG]   NO MATCH for row: hrid=${rowInfo.itemHrid} enh=${rowInfo.enhancementLevel} sell=${rowInfo.isSell} price=${rowInfo.price} filled=${rowInfo.filledQuantity}/${rowInfo.orderQuantity} rawText="${row.textContent.substring(0, 100)}"`
-                    );
                 }
             }
         }
@@ -8868,26 +8848,24 @@ self.onmessage = function (e) {
             // Extract quantity (3rd cell) - format: "+7 0 / 1" or "0 / 1" or "62075 / 405K"
             let filledQuantity = null;
             let orderQuantity = null;
+            let filledSuffixMultiplier = 1;
+            let orderSuffixMultiplier = 1;
             const quantityCell = row.children[2];
             if (quantityCell) {
                 let text = quantityCell.textContent.trim();
-                const rawQuantityText = text;
                 // Strip leading enhancement level prefix (e.g., "+7" from "+70 / 1")
                 text = text.replace(/^\+\d+\s*/, '');
                 const match = text.match(/([0-9,.]+)\s*([KMB]?)\s*\/\s*([0-9,.]+)\s*([KMB]?)/i);
                 if (match) {
-                    const suffixMultiplier = (s) => {
+                    const getSuffixMultiplier = (s) => {
                         if (!s) return 1;
                         const c = s.toUpperCase();
                         return c === 'K' ? 1000 : c === 'M' ? 1000000 : c === 'B' ? 1000000000 : 1;
                     };
-                    filledQuantity = Math.round(parseFloat(match[1].replace(/,/g, '')) * suffixMultiplier(match[2]));
-                    orderQuantity = Math.round(parseFloat(match[3].replace(/,/g, '')) * suffixMultiplier(match[4]));
-                    console.log(
-                        `[LP-DIAG] qty parse: raw="${rawQuantityText}" stripped="${text}" → filled=${filledQuantity} order=${orderQuantity} (match: [${match[1]}][${match[2]}]/[${match[3]}][${match[4]}])`
-                    );
-                } else {
-                    console.warn(`[LP-DIAG] qty parse FAILED: raw="${rawQuantityText}" stripped="${text}"`);
+                    filledSuffixMultiplier = getSuffixMultiplier(match[2]);
+                    orderSuffixMultiplier = getSuffixMultiplier(match[4]);
+                    filledQuantity = Math.round(parseFloat(match[1].replace(/,/g, '')) * filledSuffixMultiplier);
+                    orderQuantity = Math.round(parseFloat(match[3].replace(/,/g, '')) * orderSuffixMultiplier);
                 }
             }
 
@@ -8948,7 +8926,16 @@ self.onmessage = function (e) {
                 price = numStr ? Number(numStr) * multiplier : NaN;
             }
 
-            return { itemHrid, enhancementLevel, isSell, price, filledQuantity, orderQuantity };
+            return {
+                itemHrid,
+                enhancementLevel,
+                isSell,
+                price,
+                filledQuantity,
+                orderQuantity,
+                filledSuffixMultiplier,
+                orderSuffixMultiplier,
+            };
         }
 
         /**
@@ -8980,17 +8967,6 @@ self.onmessage = function (e) {
                     const filledQuantity = Number(dataset.filledQuantity);
                     const unclaimedCoinCount = Number(dataset.unclaimedCoinCount) || 0;
                     const unclaimedItemCount = Number(dataset.unclaimedItemCount) || 0;
-
-                    const cacheEntry = estimatedListingAge.orderBooksCache[itemHrid];
-                    console.log(
-                        `[LP-DIAG] priceDisplay: hrid=${itemHrid} enh=${enhancementLevel} sell=${isSell} cacheExists=${!!cacheEntry} cacheKeys=${cacheEntry ? Object.keys(cacheEntry).join(',') : 'N/A'}`
-                    );
-                    if (cacheEntry) {
-                        const obd = cacheEntry.data || cacheEntry;
-                        console.log(
-                            `[LP-DIAG]   orderBooks exists=${!!obd?.orderBooks} length=${obd?.orderBooks?.length} enhLevel=${enhancementLevel} bookAtLevel=${!!obd?.orderBooks?.[enhancementLevel]}`
-                        );
-                    }
 
                     // Create Top Order Price cell
                     const topOrderCell = this.createTopOrderPriceCell(
