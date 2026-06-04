@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.61.4
+ * Version: 2.61.5
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -15822,6 +15822,13 @@
 
 
     const UI_ID = 'mwi-crafting-plan';
+
+    const PRICING_MODES = [
+        { value: 'conservative', label: 'Instant Buy' },
+        { value: 'hybrid', label: 'Instant Buy / Patient Sell' },
+        { value: 'optimistic', label: 'Patient Buy / Patient Sell' },
+        { value: 'patientBuy', label: 'Patient Buy' },
+    ];
     const craftingPlanTabs = [];
     let cleanupObserver = null;
     const autofillManager = createAutofillManager('CraftingPlan');
@@ -16017,6 +16024,40 @@
         </div>
     `;
         content.appendChild(summary);
+
+        // === Pricing mode toggle ===
+        const currentMode = PRICING_MODES.find((m) => m.value === mode) || PRICING_MODES[0];
+        const pricingRow = document.createElement('div');
+        pricingRow.style.cssText = `
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.85em;
+        color: var(--text-color-secondary, #888);
+        margin-bottom: 4px;
+    `;
+        const pricingLabel = document.createElement('span');
+        pricingLabel.textContent = 'Pricing:';
+        const pricingBtn = document.createElement('button');
+        pricingBtn.textContent = currentMode.label;
+        pricingBtn.style.cssText = `
+        font-size: 0.85em;
+        padding: 1px 6px;
+        background: var(--bg-color-tertiary, #1a1a1a);
+        color: var(--text-color-secondary, #ccc);
+        border: 1px solid var(--border-color, #444);
+        border-radius: 3px;
+        cursor: pointer;
+    `;
+        pricingBtn.addEventListener('click', () => {
+            const idx = PRICING_MODES.findIndex((m) => m.value === mode);
+            const next = PRICING_MODES[(idx + 1) % PRICING_MODES.length];
+            config.setSetting('profitCalc_pricingMode', next.value);
+            if (onToggle) onToggle();
+        });
+        pricingRow.appendChild(pricingLabel);
+        pricingRow.appendChild(pricingBtn);
+        content.appendChild(pricingRow);
 
         // === Buy intermediates toggle ===
         const toggleRow = document.createElement('label');
@@ -16270,11 +16311,13 @@
             const skills = dataManager.getSkills();
             const equipment = dataManager.getEquipment();
             let totalCraftSeconds = 0;
+            let totalXP = 0;
 
             for (let i = 0; i < craftSteps.length; i++) {
                 const step = craftSteps[i];
                 const qty = formatters_js.formatWithSeparator(step.quantity);
                 let timeStr = '';
+                let xpStr = '';
                 if (step.actionHrid) {
                     const actionDetails = gameData?.actionDetailMap?.[step.actionHrid];
                     if (actionDetails) {
@@ -16286,7 +16329,18 @@
                         const effMultiplier = efficiency_js.calculateEfficiencyMultiplier(stats.totalEfficiency);
                         const totalSeconds = (stats.actionTime * step.actionsNeeded) / effMultiplier;
                         totalCraftSeconds += totalSeconds;
-                        timeStr = ` (${formatters_js.timeReadable(totalSeconds)})`;
+                        timeStr = ` (${formatters_js.timeReadable(totalSeconds)}`;
+                    }
+                    const expData = experienceCalculator_js.calculateExpPerHour(step.actionHrid);
+                    if (expData?.expPerHour > 0 && expData.actionsPerHour > 0) {
+                        const xpPerAction = expData.expPerHour / expData.actionsPerHour;
+                        totalXP += xpPerAction * step.actionsNeeded;
+                        xpStr = ` · ${formatters_js.formatKMB(expData.expPerHour)} xp/hr`;
+                    }
+                    if (timeStr) {
+                        timeStr += `${xpStr})`;
+                    } else if (xpStr) {
+                        timeStr = ` (${xpStr.slice(3)})`;
                     }
                 }
                 content.appendChild(createRow(`${i + 1}. ${step.itemName}`, `x${qty}${timeStr}`));
@@ -16300,6 +16354,14 @@
                 totalTimeRow.style.marginTop = '4px';
                 totalTimeRow.style.paddingTop = '4px';
                 content.appendChild(totalTimeRow);
+            }
+
+            if (totalXP > 0) {
+                content.appendChild(
+                    createRow('Total XP', formatters_js.formatKMB(Math.round(totalXP)), {
+                        leftColor: 'var(--text-color-primary, #fff)',
+                    })
+                );
             }
         }
 
