@@ -1,235 +1,12 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.62.0
+ * Version: 2.62.1
  * License: CC-BY-NC-SA-4.0
  */
 
 (function (dataManager, domObserver, config, enhancementConfig_js, enhancementCalculator_js, profitConstants_js, formatters_js, marketAPI, domObserverHelpers_js, bonusRevenueCalculator_js, marketData_js, efficiency_js, profitHelpers_js, profitCalculator, uiComponents_js, actionPanelHelper_js, webSocketHook, storage, dom_js, timerRegistry_js, actionCalculator_js, cleanupRegistry_js, teaParser_js, buffParser_js, equipmentParser_js, houseEfficiency_js, experienceParser_js, reactInput_js, experienceCalculator_js, materialCalculator_js, expectedValueCalculator, alchemyProfitCalculator) {
     'use strict';
-
-    /**
-     * Enhancement XP Calculations
-     * Based on Ultimate Enhancement Tracker formulas
-     */
-
-
-    /**
-     * Get base item level from item HRID
-     * @param {string} itemHrid - Item HRID
-     * @returns {number} Base item level
-     */
-    function getBaseItemLevel(itemHrid) {
-        try {
-            const gameData = dataManager.getInitClientData();
-            const itemData = gameData?.itemDetailMap?.[itemHrid];
-
-            if (itemData?.itemLevel) {
-                return itemData.itemLevel;
-            }
-
-            return 0;
-        } catch {
-            return 0;
-        }
-    }
-
-    /**
-     * Calculate enhancing action time from the game's buff maps
-     * Reads the pre-computed action_speed flatBoost values from all buff sources
-     * and adds level advantage, matching the game's actual speed calculation
-     * @param {string} itemHrid - Item HRID being enhanced
-     * @returns {number} Per-action time in seconds
-     */
-    function getEnhancingActionTime(itemHrid) {
-        try {
-            const charData = dataManager.characterData;
-            if (!charData) return 12;
-
-            // Get base time from game data
-            const actionDetails = dataManager.getActionDetails('/actions/enhancing/enhance');
-            const baseTime = actionDetails?.baseTimeCost ? actionDetails.baseTimeCost / 1e9 : 12;
-
-            // Get enhancing skill level
-            const enhancingSkill = charData.characterSkills?.find((s) => s.skillHrid === '/skills/enhancing');
-            const baseLevel = enhancingSkill?.level || 1;
-
-            // Get tea level bonus from consumable buff map
-            let teaLevelBonus = 0;
-            const consumableBuffs = charData.consumableActionTypeBuffsMap?.['/action_types/enhancing'];
-            if (Array.isArray(consumableBuffs)) {
-                for (const buff of consumableBuffs) {
-                    if (buff.typeHrid === '/buff_types/enhancing_level') {
-                        teaLevelBonus = buff.flatBoost || 0;
-                    }
-                }
-            }
-
-            // Sum action_speed flatBoost from ALL buff sources (equipment, house, community, tea)
-            let totalSpeedBuff = 0;
-
-            const buffMaps = [
-                charData.equipmentActionTypeBuffsMap,
-                charData.houseActionTypeBuffsMap,
-                charData.communityActionTypeBuffsMap,
-                charData.consumableActionTypeBuffsMap,
-            ];
-
-            for (const buffMap of buffMaps) {
-                const enhancingBuffs = buffMap?.['/action_types/enhancing'];
-                if (!Array.isArray(enhancingBuffs)) continue;
-
-                for (const buff of enhancingBuffs) {
-                    if (buff.typeHrid === '/buff_types/action_speed') {
-                        totalSpeedBuff += buff.flatBoost || 0;
-                    }
-                }
-            }
-
-            // Add personal buffs (Labyrinth seals)
-            totalSpeedBuff += dataManager.getPersonalBuffFlatBoost('/action_types/enhancing', '/buff_types/action_speed');
-
-            // Add level advantage: (effectiveLevel - itemLevel) / 100
-            const effectiveLevel = baseLevel + teaLevelBonus;
-            const itemLevel = getBaseItemLevel(itemHrid);
-            if (effectiveLevel > itemLevel) {
-                totalSpeedBuff += (effectiveLevel - itemLevel) / 100;
-            }
-
-            return Math.max(profitConstants_js.MIN_ACTION_TIME_SECONDS, baseTime / (1 + totalSpeedBuff));
-        } catch {
-            return 12;
-        }
-    }
-
-    /**
-     * Get enhancing speed breakdown from the game's buff maps
-     * Returns per-source speed values and total, matching the game's actual calculation
-     * @param {string} itemHrid - Item HRID being enhanced
-     * @returns {Object} Speed breakdown with total and per-source values (as percentages)
-     */
-    function getEnhancingSpeedBreakdown(itemHrid) {
-        try {
-            const charData = dataManager.characterData;
-            if (!charData)
-                return { total: 0, equipment: 0, house: 0, community: 0, consumable: 0, personal: 0, levelAdvantage: 0 };
-
-            // Get enhancing skill level
-            const enhancingSkill = charData.characterSkills?.find((s) => s.skillHrid === '/skills/enhancing');
-            const baseLevel = enhancingSkill?.level || 1;
-
-            // Get tea level bonus from consumable buff map
-            let teaLevelBonus = 0;
-            const consumableBuffs = charData.consumableActionTypeBuffsMap?.['/action_types/enhancing'];
-            if (Array.isArray(consumableBuffs)) {
-                for (const buff of consumableBuffs) {
-                    if (buff.typeHrid === '/buff_types/enhancing_level') {
-                        teaLevelBonus = buff.flatBoost || 0;
-                    }
-                }
-            }
-
-            // Read action_speed flatBoost from each buff source individually
-            const sources = {
-                equipment: charData.equipmentActionTypeBuffsMap,
-                house: charData.houseActionTypeBuffsMap,
-                community: charData.communityActionTypeBuffsMap,
-                consumable: charData.consumableActionTypeBuffsMap,
-            };
-
-            const breakdown = { equipment: 0, house: 0, community: 0, consumable: 0, personal: 0, levelAdvantage: 0 };
-
-            for (const [source, buffMap] of Object.entries(sources)) {
-                const enhancingBuffs = buffMap?.['/action_types/enhancing'];
-                if (!Array.isArray(enhancingBuffs)) continue;
-
-                for (const buff of enhancingBuffs) {
-                    if (buff.typeHrid === '/buff_types/action_speed') {
-                        breakdown[source] += buff.flatBoost || 0;
-                    }
-                }
-            }
-
-            // Personal buffs (Labyrinth seals)
-            breakdown.personal = dataManager.getPersonalBuffFlatBoost(
-                '/action_types/enhancing',
-                '/buff_types/action_speed'
-            );
-
-            // Level advantage
-            const effectiveLevel = baseLevel + teaLevelBonus;
-            const itemLevel = getBaseItemLevel(itemHrid);
-            if (effectiveLevel > itemLevel) {
-                breakdown.levelAdvantage = (effectiveLevel - itemLevel) / 100;
-            }
-
-            // Total (as decimal, e.g. 1.56 for +156%)
-            breakdown.total =
-                breakdown.equipment +
-                breakdown.house +
-                breakdown.community +
-                breakdown.consumable +
-                breakdown.personal +
-                breakdown.levelAdvantage;
-
-            return breakdown;
-        } catch {
-            return { total: 0, equipment: 0, house: 0, community: 0, consumable: 0, personal: 0, levelAdvantage: 0 };
-        }
-    }
-
-    /**
-     * Calculate enhancement predictions using character stats
-     * @param {string} itemHrid - Item HRID being enhanced
-     * @param {number} startLevel - Starting enhancement level
-     * @param {number} targetLevel - Target enhancement level
-     * @param {number} protectFrom - Level to start using protection
-     * @returns {Object|null} Prediction data or null if cannot calculate
-     */
-    function calculateEnhancementPredictions(itemHrid, startLevel, targetLevel, protectFrom) {
-        try {
-            // Get item level
-            const itemLevel = getBaseItemLevel(itemHrid);
-
-            // Use getEnhancingParams() for all character stats (level, speed, success, teas, etc.)
-            const params = enhancementConfig_js.getEnhancingParams();
-
-            // Check for blessed tea
-            const hasBlessed = params.teas?.blessed || false;
-
-            // Calculate predictions (Markov chain for attempts, protections, success rates)
-            const result = enhancementCalculator_js.calculateEnhancement({
-                enhancingLevel: params.enhancingLevel,
-                houseLevel: params.houseLevel,
-                toolBonus: params.toolBonus,
-                speedBonus: params.speedBonus,
-                itemLevel,
-                targetLevel,
-                startLevel,
-                protectFrom,
-                blessedTea: hasBlessed,
-                guzzlingBonus: params.guzzlingBonus,
-            });
-
-            if (!result) {
-                return null;
-            }
-
-            // Calculate per-action time from the game's buff maps (authoritative source)
-            // instead of the hardcoded formula in calculateEnhancement
-            const perActionTime = getEnhancingActionTime(itemHrid);
-
-            return {
-                expectedAttempts: Math.round(result.attemptsRounded),
-                expectedProtections: Math.round(result.protectionCount),
-                expectedTime: perActionTime * result.attempts,
-                perActionTime,
-                successMultiplier: result.successMultiplier,
-            };
-        } catch {
-            return null;
-        }
-    }
 
     /**
      * Enhancement Display
@@ -333,8 +110,28 @@
             // Detect protection item once (avoid repeated DOM queries)
             const protectionItemHrid = getProtectionItemFromUI(panel);
 
-            // Calculate per-action time from game's buff maps (authoritative source)
-            const speedBreakdown = getEnhancingSpeedBreakdown(itemHrid);
+            // Build speed breakdown from params (respects manual override)
+            const itemLevel = dataManager.getInitClientData()?.itemDetailMap?.[itemHrid]?.itemLevel || 0;
+            const levelAdvantage = params.enhancingLevel > itemLevel ? (params.enhancingLevel - itemLevel) / 100 : 0;
+            const autoDetect = config.getSettingValue('enhanceSim_autoDetect', false);
+            const personalSpeed = autoDetect
+                ? dataManager.getPersonalBuffFlatBoost('/action_types/enhancing', '/buff_types/action_speed')
+                : 0;
+            const speedBreakdown = {
+                equipment: (params.equipmentSpeedBonus || 0) / 100,
+                house: (params.houseSpeedBonus || 0) / 100,
+                community: (params.communitySpeedBonus || 0) / 100,
+                consumable: (params.teaSpeedBonus || 0) / 100,
+                personal: personalSpeed,
+                levelAdvantage,
+                total:
+                    (params.equipmentSpeedBonus || 0) / 100 +
+                    (params.houseSpeedBonus || 0) / 100 +
+                    (params.communitySpeedBonus || 0) / 100 +
+                    (params.teaSpeedBonus || 0) / 100 +
+                    personalSpeed +
+                    levelAdvantage,
+            };
             const actionDetails = dataManager.getActionDetails('/actions/enhancing/enhance');
             const baseTime = actionDetails?.baseTimeCost ? actionDetails.baseTimeCost / 1e9 : 12;
             const perActionTime = Math.max(profitConstants_js.MIN_ACTION_TIME_SECONDS, baseTime / (1 + speedBreakdown.total));
@@ -6368,6 +6165,153 @@
     const tooltipObserver = new TooltipObserver();
 
     /**
+     * Enhancement XP Calculations
+     * Based on Ultimate Enhancement Tracker formulas
+     */
+
+
+    /**
+     * Get base item level from item HRID
+     * @param {string} itemHrid - Item HRID
+     * @returns {number} Base item level
+     */
+    function getBaseItemLevel(itemHrid) {
+        try {
+            const gameData = dataManager.getInitClientData();
+            const itemData = gameData?.itemDetailMap?.[itemHrid];
+
+            if (itemData?.itemLevel) {
+                return itemData.itemLevel;
+            }
+
+            return 0;
+        } catch {
+            return 0;
+        }
+    }
+
+    /**
+     * Calculate enhancing action time from the game's buff maps
+     * Reads the pre-computed action_speed flatBoost values from all buff sources
+     * and adds level advantage, matching the game's actual speed calculation
+     * @param {string} itemHrid - Item HRID being enhanced
+     * @returns {number} Per-action time in seconds
+     */
+    function getEnhancingActionTime(itemHrid) {
+        try {
+            const charData = dataManager.characterData;
+            if (!charData) return 12;
+
+            // Get base time from game data
+            const actionDetails = dataManager.getActionDetails('/actions/enhancing/enhance');
+            const baseTime = actionDetails?.baseTimeCost ? actionDetails.baseTimeCost / 1e9 : 12;
+
+            // Get enhancing skill level
+            const enhancingSkill = charData.characterSkills?.find((s) => s.skillHrid === '/skills/enhancing');
+            const baseLevel = enhancingSkill?.level || 1;
+
+            // Get tea level bonus from consumable buff map
+            let teaLevelBonus = 0;
+            const consumableBuffs = charData.consumableActionTypeBuffsMap?.['/action_types/enhancing'];
+            if (Array.isArray(consumableBuffs)) {
+                for (const buff of consumableBuffs) {
+                    if (buff.typeHrid === '/buff_types/enhancing_level') {
+                        teaLevelBonus = buff.flatBoost || 0;
+                    }
+                }
+            }
+
+            // Sum action_speed flatBoost from ALL buff sources (equipment, house, community, tea)
+            let totalSpeedBuff = 0;
+
+            const buffMaps = [
+                charData.equipmentActionTypeBuffsMap,
+                charData.houseActionTypeBuffsMap,
+                charData.communityActionTypeBuffsMap,
+                charData.consumableActionTypeBuffsMap,
+            ];
+
+            for (const buffMap of buffMaps) {
+                const enhancingBuffs = buffMap?.['/action_types/enhancing'];
+                if (!Array.isArray(enhancingBuffs)) continue;
+
+                for (const buff of enhancingBuffs) {
+                    if (buff.typeHrid === '/buff_types/action_speed') {
+                        totalSpeedBuff += buff.flatBoost || 0;
+                    }
+                }
+            }
+
+            // Add personal buffs (Labyrinth seals)
+            totalSpeedBuff += dataManager.getPersonalBuffFlatBoost('/action_types/enhancing', '/buff_types/action_speed');
+
+            // Add level advantage: (effectiveLevel - itemLevel) / 100
+            const effectiveLevel = baseLevel + teaLevelBonus;
+            const itemLevel = getBaseItemLevel(itemHrid);
+            if (effectiveLevel > itemLevel) {
+                totalSpeedBuff += (effectiveLevel - itemLevel) / 100;
+            }
+
+            return Math.max(profitConstants_js.MIN_ACTION_TIME_SECONDS, baseTime / (1 + totalSpeedBuff));
+        } catch {
+            return 12;
+        }
+    }
+
+    /**
+     * Calculate enhancement predictions using character stats
+     * @param {string} itemHrid - Item HRID being enhanced
+     * @param {number} startLevel - Starting enhancement level
+     * @param {number} targetLevel - Target enhancement level
+     * @param {number} protectFrom - Level to start using protection
+     * @returns {Object|null} Prediction data or null if cannot calculate
+     */
+    function calculateEnhancementPredictions(itemHrid, startLevel, targetLevel, protectFrom) {
+        try {
+            // Get item level
+            const itemLevel = getBaseItemLevel(itemHrid);
+
+            // Use getEnhancingParams() for all character stats (level, speed, success, teas, etc.)
+            const params = enhancementConfig_js.getEnhancingParams();
+
+            // Check for blessed tea
+            const hasBlessed = params.teas?.blessed || false;
+
+            // Calculate predictions (Markov chain for attempts, protections, success rates)
+            const result = enhancementCalculator_js.calculateEnhancement({
+                enhancingLevel: params.enhancingLevel,
+                houseLevel: params.houseLevel,
+                toolBonus: params.toolBonus,
+                speedBonus: params.speedBonus,
+                itemLevel,
+                targetLevel,
+                startLevel,
+                protectFrom,
+                blessedTea: hasBlessed,
+                guzzlingBonus: params.guzzlingBonus,
+            });
+
+            if (!result) {
+                return null;
+            }
+
+            // Calculate per-action time from the game's buff maps (authoritative source)
+            // instead of the hardcoded formula in calculateEnhancement
+            const perActionTime = getEnhancingActionTime(itemHrid);
+
+            return {
+                expectedAttempts: Math.round(result.attemptsRounded),
+                expectedProtections: Math.round(result.protectionCount),
+                expectedTime: perActionTime * result.attempts,
+                perActionTime,
+                successMultiplier: result.successMultiplier,
+            };
+        } catch {
+            return null;
+        }
+    }
+
+    /**
      * Action Time Display Module
      *
      * Displays estimated completion time for queued actions.
@@ -7484,25 +7428,24 @@
             // Format completion time
             const now = new Date();
             const isToday = completionTime.toDateString() === now.toDateString();
+            const use24h = config.getSettingValue('market_listingTimeFormat', '24hour') === '24hour';
 
             let clockTime;
             if (isToday) {
-                // Today: Just show time in 12-hour format
                 clockTime = completionTime.toLocaleString('en-US', {
                     hour: 'numeric',
                     minute: '2-digit',
                     second: '2-digit',
-                    hour12: true,
+                    hour12: !use24h,
                 });
             } else {
-                // Future date: Show date and time in 12-hour format
                 clockTime = completionTime.toLocaleString('en-US', {
                     month: 'numeric',
                     day: 'numeric',
                     hour: 'numeric',
                     minute: '2-digit',
                     second: '2-digit',
-                    hour12: true,
+                    hour12: !use24h,
                 });
             }
 
@@ -7561,17 +7504,18 @@
                     recycleCompletion.setSeconds(recycleCompletion.getSeconds() + recycleTimeSeconds);
                     const recycleTimeStr = formatters_js.timeReadable(recycleTimeSeconds);
                     const recycleIsToday = recycleCompletion.toDateString() === new Date().toDateString();
+                    const recycleUse24h = config.getSettingValue('market_listingTimeFormat', '24hour') === '24hour';
                     const recycleClockTime = recycleCompletion.toLocaleString(
                         'en-US',
                         recycleIsToday
-                            ? { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true }
+                            ? { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: !recycleUse24h }
                             : {
                                   month: 'numeric',
                                   day: 'numeric',
                                   hour: 'numeric',
                                   minute: '2-digit',
                                   second: '2-digit',
-                                  hour12: true,
+                                  hour12: !recycleUse24h,
                               }
                     );
                     recycleHtml = `<span style="color:#4dd0a0; margin-left:12px; font-size:11px;">Est. w/ recycle: ${recycleTimeStr} → ${recycleClockTime}</span>`;
@@ -7779,6 +7723,7 @@
 
                 const now = new Date();
                 const isToday = completionTime.toDateString() === now.toDateString();
+                const use24h = config.getSettingValue('market_listingTimeFormat', '24hour') === '24hour';
 
                 let clockTime;
                 if (isToday) {
@@ -7786,7 +7731,7 @@
                         hour: 'numeric',
                         minute: '2-digit',
                         second: '2-digit',
-                        hour12: true,
+                        hour12: !use24h,
                     });
                 } else {
                     clockTime = completionTime.toLocaleString('en-US', {
@@ -7795,7 +7740,7 @@
                         hour: 'numeric',
                         minute: '2-digit',
                         second: '2-digit',
-                        hour12: true,
+                        hour12: !use24h,
                     });
                 }
 

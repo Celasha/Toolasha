@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.62.0
+ * Version: 2.62.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2288,14 +2288,14 @@
                 },
                 market_listingTimeFormat: {
                     id: 'market_listingTimeFormat',
-                    label: 'Market: Time format for date/time display',
+                    label: 'Time format for date/time display',
                     type: 'select',
                     default: '24hour',
                     options: [
                         { value: '24hour', label: '24-hour (14:30)' },
                         { value: '12hour', label: '12-hour (2:30 PM)' },
                     ],
-                    help: 'Time format when using Date/Time display (only applies if Date/Time format is selected)',
+                    help: 'Time format used in marketplace listings and action completion times',
                 },
                 market_listingDateFormat: {
                     id: 'market_listingDateFormat',
