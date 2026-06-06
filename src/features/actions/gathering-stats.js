@@ -139,6 +139,9 @@ class GatheringStats {
             });
             // Register with shared sort manager
             actionPanelSort.registerPanel(actionPanel, actionHrid);
+            if (existingDisplay) {
+                this.scheduleStatsLayoutSync(actionPanel, existingDisplay);
+            }
             // Trigger sort
             actionPanelSort.triggerSort();
             return;
@@ -172,12 +175,7 @@ class GatheringStats {
         // Append directly to action panel with absolute positioning
         actionPanel.appendChild(display);
 
-        // Set marginBottom to the bar's actual rendered height so the grid row
-        // reserves exactly the right amount of space below the tile.
-        requestAnimationFrame(() => {
-            const h = display.offsetHeight;
-            if (h > 0) actionPanel.style.marginBottom = `${h}px`;
-        });
+        this.scheduleStatsLayoutSync(actionPanel, display);
 
         // Store reference
         this.actionElements.set(actionPanel, {
@@ -313,6 +311,8 @@ class GatheringStats {
 
         // Trigger sort via shared manager
         actionPanelSort.triggerSort();
+
+        this.syncAllStatsLayouts();
     }
 
     /**
@@ -489,6 +489,7 @@ class GatheringStats {
         data.displayElement.innerHTML = html;
         if (!html) {
             data.displayElement.style.display = 'none';
+            this.syncStatsLayout(actionPanel, data.displayElement);
             return;
         }
         data.displayElement.style.display = 'block';
@@ -552,10 +553,48 @@ class GatheringStats {
             // Reveal now that sizing is complete.
             displayElement.style.visibility = '';
 
-            // Keep marginBottom in sync with the bar's actual rendered height.
-            const h = displayElement.offsetHeight;
-            if (h > 0) actionPanel.style.marginBottom = `${h}px`;
+            this.syncStatsLayout(actionPanel, displayElement);
+            this.scheduleStatsLayoutSync(actionPanel, displayElement);
         });
+    }
+
+    syncStatsLayout(actionPanel, displayElement) {
+        if (!actionPanel || !displayElement) return;
+        if (!document.body.contains(actionPanel) || !document.body.contains(displayElement)) return;
+
+        actionPanel.style.alignSelf = 'flex-start';
+        actionPanel.style.overflow = 'visible';
+
+        if (actionPanel.style.position !== 'relative' && actionPanel.style.position !== 'absolute') {
+            actionPanel.style.position = 'relative';
+        }
+
+        if (displayElement.style.display === 'none') {
+            actionPanel.style.marginBottom = '';
+            return;
+        }
+
+        const height = Math.ceil(displayElement.getBoundingClientRect().height || displayElement.offsetHeight || 0);
+
+        if (height > 0) {
+            actionPanel.style.marginBottom = `${height}px`;
+        }
+    }
+
+    scheduleStatsLayoutSync(actionPanel, displayElement) {
+        requestAnimationFrame(() => {
+            this.syncStatsLayout(actionPanel, displayElement);
+            requestAnimationFrame(() => {
+                this.syncStatsLayout(actionPanel, displayElement);
+            });
+        });
+    }
+
+    syncAllStatsLayouts() {
+        for (const [actionPanel, data] of this.actionElements.entries()) {
+            if (!document.body.contains(actionPanel) || !data.displayElement) continue;
+            this.scheduleStatsLayoutSync(actionPanel, data.displayElement);
+        }
     }
 
     /**
