@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.62.1
+ * Version: 2.62.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -7691,7 +7691,10 @@ ${starCSS}
         const efficiencyMultiplier = profitData.action.details.efficiencyMultiplier || 1;
         const baseActionsNeeded = Math.ceil(remainingActions / (efficiencyMultiplier > 0 ? efficiencyMultiplier : 1));
 
-        return profitHelpers_js.calculateSecondsForActions(baseActionsNeeded, actionsPerHour);
+        const taskSpeedBonus = dataManager.getTaskSpeedBonus();
+        const adjustedActionsPerHour = actionsPerHour * (1 + taskSpeedBonus / 100);
+
+        return profitHelpers_js.calculateSecondsForActions(baseActionsNeeded, adjustedActionsPerHour);
     }
 
     /**
