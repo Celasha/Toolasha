@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.62.4
+ * Version: 2.62.5
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -10979,6 +10979,7 @@
             this.itemsUpdatedDebounceTimer = null; // Debounce timer for items_updated events
             this.DEBOUNCE_DELAY = 300; // 300ms debounce for event handlers
             this.timerRegistry = timerRegistry_js.createTimerRegistry();
+            this.resizeObserver = null;
         }
 
         /**
@@ -11099,6 +11100,7 @@
                 this.updatePinIcon(existingPin, actionHrid);
                 if (existingDisplay) {
                     this.scheduleStatsLayoutSync(actionPanel, existingDisplay);
+                    this.getResizeObserver().observe(existingDisplay);
                 }
                 // Note: Profit update is deferred to updateAllCounts() in setupObserver()
                 return;
@@ -11136,6 +11138,7 @@
                 actionPanel.appendChild(display);
 
                 this.scheduleStatsLayoutSync(actionPanel, display);
+                this.getResizeObserver().observe(display);
             }
 
             // Create pin icon (for ALL actions - gathering and production)
@@ -11693,6 +11696,22 @@
             });
         }
 
+        getResizeObserver() {
+            if (!this.resizeObserver) {
+                this.resizeObserver = new ResizeObserver((entries) => {
+                    for (const entry of entries) {
+                        const displayElement = entry.target;
+                        const actionPanel = displayElement.parentElement;
+                        if (actionPanel) {
+                            this.syncStatsLayout(actionPanel, displayElement);
+                            this.scheduleStatsLayoutSync(actionPanel, displayElement);
+                        }
+                    }
+                });
+            }
+            return this.resizeObserver;
+        }
+
         syncStatsLayout(actionPanel, displayElement) {
             if (!actionPanel || !displayElement) return;
             if (!document.body.contains(actionPanel) || !document.body.contains(displayElement)) return;
@@ -11777,6 +11796,11 @@
             }
 
             this.timerRegistry.clearAll();
+
+            if (this.resizeObserver) {
+                this.resizeObserver.disconnect();
+                this.resizeObserver = null;
+            }
 
             // CRITICAL: Remove injected DOM elements BEFORE clearing Maps
             // This prevents detached SVG elements from accumulating
@@ -11881,6 +11905,7 @@
             this.consumablesUpdatedDebounceTimer = null; // Debounce timer for consumables_updated events
             this.indicatorUpdateDebounceTimer = null; // Debounce timer for indicator rendering
             this.DEBOUNCE_DELAY = 300; // 300ms debounce for event handlers
+            this.resizeObserver = null;
         }
 
         /**
@@ -11993,6 +12018,7 @@
                 actionPanelSort.registerPanel(actionPanel, actionHrid);
                 if (existingDisplay) {
                     this.scheduleStatsLayoutSync(actionPanel, existingDisplay);
+                    this.getResizeObserver().observe(existingDisplay);
                 }
                 // Trigger sort
                 actionPanelSort.triggerSort();
@@ -12028,6 +12054,7 @@
             actionPanel.appendChild(display);
 
             this.scheduleStatsLayoutSync(actionPanel, display);
+            this.getResizeObserver().observe(display);
 
             // Store reference
             this.actionElements.set(actionPanel, {
@@ -12410,6 +12437,22 @@
             });
         }
 
+        getResizeObserver() {
+            if (!this.resizeObserver) {
+                this.resizeObserver = new ResizeObserver((entries) => {
+                    for (const entry of entries) {
+                        const displayElement = entry.target;
+                        const actionPanel = displayElement.parentElement;
+                        if (actionPanel) {
+                            this.syncStatsLayout(actionPanel, displayElement);
+                            this.scheduleStatsLayoutSync(actionPanel, displayElement);
+                        }
+                    }
+                });
+            }
+            return this.resizeObserver;
+        }
+
         syncStatsLayout(actionPanel, displayElement) {
             if (!actionPanel || !displayElement) return;
             if (!document.body.contains(actionPanel) || !document.body.contains(displayElement)) return;
@@ -12455,6 +12498,12 @@
         clearAllReferences() {
             clearTimeout(this.indicatorUpdateDebounceTimer);
             this.indicatorUpdateDebounceTimer = null;
+
+            if (this.resizeObserver) {
+                this.resizeObserver.disconnect();
+                this.resizeObserver = null;
+            }
+
             // CRITICAL: Remove injected DOM elements BEFORE clearing Maps
             // This prevents detached SVG elements from accumulating
             // Note: .remove() is safe to call even if element is already detached
