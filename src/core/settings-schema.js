@@ -434,6 +434,13 @@ export const settingsGroups = {
                 type: 'checkbox',
                 default: true,
             },
+            itemTooltip_effectivePrices: {
+                id: 'itemTooltip_effectivePrices',
+                label: 'Show effective (after-tax) prices',
+                type: 'checkbox',
+                default: false,
+                help: 'Shows what you actually receive after the 2% marketplace tax next to ask/bid prices in item tooltips',
+            },
             itemTooltip_artisanPrices: {
                 id: 'itemTooltip_artisanPrices',
                 label: 'Adjust tooltip prices for Artisan Tea reduction',

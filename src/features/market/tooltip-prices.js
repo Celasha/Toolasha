@@ -20,7 +20,8 @@ import { calculateGatheringProfit } from '../actions/gathering-profit.js';
 import { getEnhancingParams, getAutoDetectedParams } from '../../utils/enhancement-config.js';
 import { numberFormatter, formatKMB, networthFormatter, formatPercentage } from '../../utils/formatters.js';
 import { getItemPrices } from '../../utils/market-data.js';
-import { resolveItemPrice } from '../../utils/profit-helpers.js';
+import { resolveItemPrice, calculatePriceAfterTax } from '../../utils/profit-helpers.js';
+import { MARKET_TAX, COWBELL_BAG_HRID, COWBELL_BAG_TAX } from '../../utils/profit-constants.js';
 import dom from '../../utils/dom.js';
 import { parseItemCount } from '../../utils/number-parser.js';
 import { DUNGEON_CHEST_CHEST_KEYS } from '../combat-stats/combat-stats-calculator.js';
@@ -300,7 +301,7 @@ class TooltipPrices {
             // Get item amount from tooltip (for stacks)
             const amount = this.extractItemAmount(tooltipElement);
             const artisanAmount = this._getArtisanAdjustedAmount(tooltipElement, amount);
-            this.injectPriceDisplay(tooltipElement, price, amount, isCollectionTooltip, artisanAmount);
+            this.injectPriceDisplay(tooltipElement, price, amount, isCollectionTooltip, artisanAmount, itemHrid);
         }
 
         // Always show detailed craft profit if enabled
@@ -551,8 +552,16 @@ class TooltipPrices {
      * @param {number} amount - Item amount (base recipe amount)
      * @param {boolean} isCollectionTooltip - True if this is a collection tooltip
      * @param {number|null} artisanAmount - Artisan-adjusted amount, or null if not applicable
+     * @param {string|null} itemHrid - Item HRID for tax rate lookup
      */
-    injectPriceDisplay(tooltipElement, price, amount, isCollectionTooltip = false, artisanAmount = null) {
+    injectPriceDisplay(
+        tooltipElement,
+        price,
+        amount,
+        isCollectionTooltip = false,
+        artisanAmount = null,
+        itemHrid = null
+    ) {
         const tooltipText = isCollectionTooltip
             ? tooltipElement.querySelector('.Collection_tooltipContent__2IcSJ')
             : tooltipElement.querySelector('.ItemTooltipText_itemTooltipText__zFq3A');
@@ -592,6 +601,13 @@ class TooltipPrices {
 
         // Format: "Price: 1,200 / 950" or "Price: 1,200 / -" or "Price: - / 950"
         priceDiv.innerHTML = `Price: ${askDisplay} / ${bidDisplay}${totalDisplay}`;
+
+        if (config.getSetting('itemTooltip_effectivePrices') && (price.ask > 0 || price.bid > 0)) {
+            const taxRate = itemHrid === COWBELL_BAG_HRID ? COWBELL_BAG_TAX : MARKET_TAX;
+            const effAsk = price.ask > 0 ? formatTooltipPrice(calculatePriceAfterTax(price.ask, taxRate)) : '-';
+            const effBid = price.bid > 0 ? formatTooltipPrice(calculatePriceAfterTax(price.bid, taxRate)) : '-';
+            priceDiv.innerHTML += `<br><span style="color: ${config.COLOR_TEXT_SECONDARY};">Eff: ${effAsk} / ${effBid}</span>`;
+        }
 
         tooltipText.appendChild(priceDiv);
     }
