@@ -1142,25 +1142,24 @@ class ActionTimeDisplay {
         // Format completion time
         const now = new Date();
         const isToday = completionTime.toDateString() === now.toDateString();
+        const use24h = config.getSettingValue('market_listingTimeFormat', '24hour') === '24hour';
 
         let clockTime;
         if (isToday) {
-            // Today: Just show time in 12-hour format
             clockTime = completionTime.toLocaleString('en-US', {
                 hour: 'numeric',
                 minute: '2-digit',
                 second: '2-digit',
-                hour12: true,
+                hour12: !use24h,
             });
         } else {
-            // Future date: Show date and time in 12-hour format
             clockTime = completionTime.toLocaleString('en-US', {
                 month: 'numeric',
                 day: 'numeric',
                 hour: 'numeric',
                 minute: '2-digit',
                 second: '2-digit',
-                hour12: true,
+                hour12: !use24h,
             });
         }
 
@@ -1219,17 +1218,18 @@ class ActionTimeDisplay {
                 recycleCompletion.setSeconds(recycleCompletion.getSeconds() + recycleTimeSeconds);
                 const recycleTimeStr = timeReadable(recycleTimeSeconds);
                 const recycleIsToday = recycleCompletion.toDateString() === new Date().toDateString();
+                const recycleUse24h = config.getSettingValue('market_listingTimeFormat', '24hour') === '24hour';
                 const recycleClockTime = recycleCompletion.toLocaleString(
                     'en-US',
                     recycleIsToday
-                        ? { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true }
+                        ? { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: !recycleUse24h }
                         : {
                               month: 'numeric',
                               day: 'numeric',
                               hour: 'numeric',
                               minute: '2-digit',
                               second: '2-digit',
-                              hour12: true,
+                              hour12: !recycleUse24h,
                           }
                 );
                 recycleHtml = `<span style="color:#4dd0a0; margin-left:12px; font-size:11px;">Est. w/ recycle: ${recycleTimeStr} → ${recycleClockTime}</span>`;
@@ -1437,6 +1437,7 @@ class ActionTimeDisplay {
 
             const now = new Date();
             const isToday = completionTime.toDateString() === now.toDateString();
+            const use24h = config.getSettingValue('market_listingTimeFormat', '24hour') === '24hour';
 
             let clockTime;
             if (isToday) {
@@ -1444,7 +1445,7 @@ class ActionTimeDisplay {
                     hour: 'numeric',
                     minute: '2-digit',
                     second: '2-digit',
-                    hour12: true,
+                    hour12: !use24h,
                 });
             } else {
                 clockTime = completionTime.toLocaleString('en-US', {
@@ -1453,7 +1454,7 @@ class ActionTimeDisplay {
                     hour: 'numeric',
                     minute: '2-digit',
                     second: '2-digit',
-                    hour12: true,
+                    hour12: !use24h,
                 });
             }
 
