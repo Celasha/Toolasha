@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.62.2
+ * Version: 2.62.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -24926,18 +24926,6 @@ self.onmessage = function (e) {
             // from the custom tab for ~200ms while the new tile had no toolasha-ct-visible class.
             let rafId = null;
             this._onItemsUpdated = (data) => {
-                // --- DIAGNOSTIC: log items_updated trigger ---
-                const _diagItems = data?.endCharacterItems || [];
-                const _diagCharm = _diagItems.find((i) => i.itemHrid === '/items/advanced_magic_charm');
-                if (_diagCharm) {
-                    console.log(
-                        `[CT-DIAG] items_updated has charm | count:${_diagCharm.count} loc:${_diagCharm.itemLocationHrid} isActive:${this._isActive}`
-                    );
-                }
-                if (_diagItems.length > 10) {
-                    console.log(`[CT-DIAG] items_updated BULK (${_diagItems.length} items) isActive:${this._isActive}`);
-                }
-                // --- END DIAGNOSTIC ---
                 if (rafId) cancelAnimationFrame(rafId);
                 rafId = requestAnimationFrame(() => {
                     rafId = null;
@@ -25203,18 +25191,6 @@ self.onmessage = function (e) {
             // Build tile map from all tiles currently in invContainer
             const tileMap = this._buildTileMap(invContainer);
 
-            // --- DIAGNOSTIC: track a specific item through the layout pipeline ---
-            const _diagHrid = '/items/advanced_magic_charm';
-            const _diagInTileMap = tileMap.has(_diagHrid);
-            const _diagAssigned = getAssignedItemSet(this._config).has(_diagHrid);
-            const _diagInTabItems = this._config.tabs.some((t) => t.items.includes(_diagHrid));
-            if (_diagInTileMap || _diagInTabItems) {
-                console.log(
-                    `[CT-DIAG] _applyLayoutSync | tileMap:${_diagInTileMap} assigned:${_diagAssigned} inTabItems:${_diagInTabItems} fullRebuild:${needsFullRebuild} tiles:${invContainer.querySelectorAll('[class*="Item_itemContainer"]').length}`
-                );
-            }
-            // --- END DIAGNOSTIC ---
-
             // Reset all tiles: remove visible class, clear inline order, and drag state
             const allTiles = invContainer.querySelectorAll('[class*="Item_itemContainer"]');
             for (const tile of allTiles) {
@@ -25259,15 +25235,6 @@ self.onmessage = function (e) {
                     this._allClaimedHrids = new Set();
                     orderCounter = this._injectAccordionHeaders(invContainer, this._config.tabs, 0, tileMap, orderCounter);
                 }
-
-                // --- DIAGNOSTIC: after claiming, check if tracked item was claimed ---
-                const _dHrid = '/items/advanced_magic_charm';
-                const _dClaimed = this._allClaimedHrids?.has(_dHrid);
-                const _dStillInMap = tileMap.has(_dHrid);
-                if (_dClaimed || _dStillInMap) {
-                    console.log(`[CT-DIAG] post-claim | claimed:${_dClaimed} stillInTileMap:${_dStillInMap}`);
-                }
-                // --- END DIAGNOSTIC ---
 
                 if (config.getSettingValue('inventoryTabs_showUnorganized')) {
                     orderCounter = this._injectUnorganized(invContainer, tileMap, orderCounter);
@@ -26224,15 +26191,6 @@ self.onmessage = function (e) {
                     }
                 }
             }
-            // --- DIAGNOSTIC: check if tracked item ended up in unorganized ---
-            const _diagUnorg = remainingEntries.find((e) => e.hrid === '/items/advanced_magic_charm');
-            if (_diagUnorg) {
-                console.warn(
-                    `[CT-DIAG] ITEM IN UNORGANIZED! hrid=${_diagUnorg.hrid} assignedSet.has=${assignedSet.has(_diagUnorg.hrid)} tileMap still had it (not claimed by tab)`
-                );
-            }
-            // --- END DIAGNOSTIC ---
-
             if (remainingEntries.length === 0) return orderCounter;
 
             const totalTiles = remainingEntries.reduce((sum, e) => sum + e.tiles.length, 0);
@@ -27009,7 +26967,6 @@ self.onmessage = function (e) {
             }
 
             if (anyChanged) {
-                console.log(`[CT-DIAG] _checkBindingEnhancements CHANGED config! Saving.`);
                 this._save();
                 if (this._isActive) this._applyLayout();
             }

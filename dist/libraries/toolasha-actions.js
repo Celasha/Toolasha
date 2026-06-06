@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.62.2
+ * Version: 2.62.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -7785,9 +7785,10 @@
                 queuedActions = limitResult?.maxActions ?? Infinity;
             }
 
-            if (queuedActions === Infinity) return null;
-
-            const realisticActions = Math.min(queuedActions, predictions.expectedAttempts);
+            const realisticActions =
+                queuedActions === Infinity
+                    ? predictions.expectedAttempts
+                    : Math.min(queuedActions, predictions.expectedAttempts);
             const totalTime = realisticActions * perActionTime;
 
             return { count: realisticActions, totalTime };
@@ -11119,7 +11120,7 @@
                 top: 100%;
                 left: 0;
                 right: 0;
-                font-size: 0.55em;
+                font-size: 11px;
                 padding: 4px 8px;
                 text-align: center;
                 background: rgba(0, 0, 0, 0.7);
@@ -11964,7 +11965,7 @@
             top: 100%;
             left: 0;
             right: 0;
-            font-size: 0.55em;
+            font-size: 11px;
             padding: 4px 8px;
             text-align: center;
             background: rgba(0, 0, 0, 0.7);

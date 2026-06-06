@@ -1,11 +1,11 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.62.2
+ * Version: 2.62.3
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (config, dataManager, domObserver, formatters_js, timerRegistry_js, domObserverHelpers_js, dom_js, storage, marketAPI, efficiency_js, webSocketHook, reactInput_js, actionPanelHelper_js, expectedValueCalculator, bonusRevenueCalculator_js, marketData_js, profitConstants_js, profitHelpers_js, profitCalculator, selectors_js, cleanupRegistry_js, settingsSchema_js, settingsStorage, enhancementConfig_js, materialCalculator_js, enhancementCalculator_js, teaParser_js, actionCalculator_js) {
+(function (config, dataManager, domObserver, formatters_js, timerRegistry_js, domObserverHelpers_js, dom_js, storage, marketAPI, efficiency_js, webSocketHook, reactInput_js, actionPanelHelper_js, expectedValueCalculator, bonusRevenueCalculator_js, marketData_js, profitConstants_js, profitHelpers_js, profitCalculator, selectors_js, actionCalculator_js, equipmentParser_js, cleanupRegistry_js, settingsSchema_js, settingsStorage, enhancementConfig_js, materialCalculator_js, enhancementCalculator_js, teaParser_js) {
     'use strict';
 
     /**
@@ -7669,6 +7669,17 @@ ${starCSS}
     const RATING_MODE_TOKENS = 'tokens';
     const RATING_MODE_GOLD = 'gold';
 
+    const HOUSE_ROOM_MAP = {
+        '/action_types/cheesesmithing': '/house_rooms/forge',
+        '/action_types/cooking': '/house_rooms/kitchen',
+        '/action_types/crafting': '/house_rooms/workshop',
+        '/action_types/foraging': '/house_rooms/garden',
+        '/action_types/milking': '/house_rooms/dairy_barn',
+        '/action_types/tailoring': '/house_rooms/sewing_parlor',
+        '/action_types/woodcutting': '/house_rooms/log_shed',
+        '/action_types/brewing': '/house_rooms/brewery',
+    };
+
     /**
      * Calculate task completion time in seconds based on task progress and action rates
      * @param {Object} profitData - Profit calculation result
@@ -9472,6 +9483,19 @@ ${starCSS}
                 );
             }
 
+            // Action Speed & Time (expandable)
+            const speedTimeHTML = this.buildSpeedTimeHTML(profitData);
+            if (speedTimeHTML) {
+                lines.push(
+                    `<div class="mwi-expandable-header" data-section="speedtime" style="margin-top: 6px; cursor: pointer; user-select: none; color: #aaa;">Action Speed & Time ▸</div>`
+                );
+                lines.push(
+                    `<div class="mwi-expandable-section" data-section="speedtime" style="display: none; margin-left: 10px; font-size: 0.65rem; color: #888; margin-top: 2px;">`
+                );
+                lines.push(speedTimeHTML);
+                lines.push('</div>');
+            }
+
             // Total
             lines.push('<div style="border-top: 1px solid #555; margin-top: 6px; padding-top: 4px;"></div>');
             const totalProfitColor = profitData.hasMissingPrices
@@ -9481,6 +9505,187 @@ ${starCSS}
                   : config.COLOR_LOSS;
             lines.push(
                 `<div style="font-weight: bold; color: ${totalProfitColor};">Total Profit: ${formatTotalValue(profitData.totalProfit)}</div>`
+            );
+
+            return lines.join('');
+        }
+
+        /**
+         * Build speed, efficiency, and timing breakdown HTML for the expandable section
+         * @param {Object} profitData - Profit calculation result
+         * @returns {string} HTML string or empty string if unavailable
+         */
+        buildSpeedTimeHTML(profitData) {
+            const actionHrid = profitData.taskInfo?.actionHrid;
+            if (!actionHrid) return '';
+
+            const gameData = dataManager.getInitClientData();
+            const actionDetails = gameData?.actionDetailMap?.[actionHrid];
+            if (!actionDetails) return '';
+
+            const skills = dataManager.getSkills();
+            const equipment = dataManager.getEquipment();
+            const itemDetailMap = gameData.itemDetailMap || {};
+
+            const stats = actionCalculator_js.calculateActionStats(actionDetails, {
+                skills,
+                equipment,
+                itemDetailMap,
+                actionHrid: null,
+                includeCommunityBuff: true,
+                includeBreakdown: true,
+            });
+            if (!stats) return '';
+
+            const { actionTime: timeAfterEquip, totalEfficiency, efficiencyBreakdown: eb } = stats;
+            const baseTime = actionDetails.baseTimeCost / 1e9;
+            const speedBonus = equipmentParser_js.parseEquipmentSpeedBonuses(equipment, actionDetails.type, itemDetailMap);
+            const personalSpeedBonus = dataManager.getPersonalBuffFlatBoost(actionDetails.type, '/buff_types/action_speed');
+            const displayTimeAfterEquip = Math.max(profitConstants_js.MIN_ACTION_TIME_SECONDS, timeAfterEquip);
+
+            const isTaskAction = dataManager.isTaskAction(actionHrid);
+            const taskSpeedBonus = isTaskAction ? dataManager.getTaskSpeedBonus() : 0;
+            const finalActionTime =
+                taskSpeedBonus > 0
+                    ? Math.max(profitConstants_js.MIN_ACTION_TIME_SECONDS, timeAfterEquip / (1 + taskSpeedBonus / 100))
+                    : displayTimeAfterEquip;
+
+            const efficiencyMultiplier = 1 + totalEfficiency / 100;
+            const actionsPerHour = profitHelpers_js.calculateActionsPerHour(finalActionTime);
+            const effectiveAPH = actionsPerHour * efficiencyMultiplier;
+
+            const totalQuantity = profitData.taskInfo?.quantity || 0;
+            const currentProgress = profitData.taskInfo?.currentProgress || 0;
+            const remaining = Math.max(totalQuantity - currentProgress, 0);
+            const baseActionsNeeded = remaining > 0 ? Math.ceil(remaining / efficiencyMultiplier) : 0;
+            const completionSeconds = baseActionsNeeded * finalActionTime;
+
+            const lines = [];
+
+            // Speed
+            lines.push(`<div>Base: ${baseTime.toFixed(2)}s → ${displayTimeAfterEquip.toFixed(2)}s</div>`);
+            if (speedBonus + personalSpeedBonus > 0) {
+                lines.push(
+                    `<div>Speed: +${formatters_js.formatPercentage(speedBonus + personalSpeedBonus, 1)} | ${profitHelpers_js.calculateActionsPerHour(timeAfterEquip).toFixed(0)}/hr</div>`
+                );
+            } else {
+                lines.push(`<div>${profitHelpers_js.calculateActionsPerHour(timeAfterEquip).toFixed(0)}/hr</div>`);
+            }
+
+            const allSpeedBonuses = equipmentParser_js.debugEquipmentSpeedBonuses(equipment, itemDetailMap);
+            const skillName = actionDetails.type.replace('/action_types/', '');
+            const skillSpecificSpeed = skillName + 'Speed';
+            const relevantSpeeds = allSpeedBonuses.filter(
+                (item) => item.speedType === skillSpecificSpeed || item.speedType === 'skillingSpeed'
+            );
+            for (const item of relevantSpeeds) {
+                const enhText = item.enhancementLevel > 0 ? ` +${item.enhancementLevel}` : '';
+                lines.push(
+                    `<div style="margin-left: 10px;">- ${item.itemName}${enhText}: +${formatters_js.formatPercentage(item.scaledBonus, 1)}</div>`
+                );
+            }
+            if (personalSpeedBonus > 0) {
+                lines.push(
+                    `<div style="margin-left: 10px;">- Scroll of Action Speed: +${formatters_js.formatPercentage(personalSpeedBonus, 1)}</div>`
+                );
+            }
+
+            // Task Speed
+            if (isTaskAction && taskSpeedBonus > 0) {
+                lines.push(
+                    `<div style="margin-top: 4px; font-weight: 500; color: #ccc;">Task Speed (multiplicative): +${taskSpeedBonus.toFixed(2)}%</div>`
+                );
+                lines.push(
+                    `<div>${displayTimeAfterEquip.toFixed(2)}s → ${finalActionTime.toFixed(2)}s | ${actionsPerHour.toFixed(0)}/hr</div>`
+                );
+                const trinketSlot = equipment.get('/item_locations/trinket');
+                if (trinketSlot?.itemHrid) {
+                    const badgeDetails = itemDetailMap[trinketSlot.itemHrid];
+                    if (badgeDetails) {
+                        const enhText = trinketSlot.enhancementLevel > 0 ? ` +${trinketSlot.enhancementLevel}` : '';
+                        const baseTaskSpeed = badgeDetails.equipmentDetail?.noncombatStats?.taskSpeed || 0;
+                        const enhBonus = badgeDetails.equipmentDetail?.noncombatEnhancementBonuses?.taskSpeed || 0;
+                        const enhLevel = trinketSlot.enhancementLevel || 0;
+                        const detailText =
+                            enhBonus > 0
+                                ? ` (${(baseTaskSpeed * 100).toFixed(2)}% + ${(enhBonus * enhLevel * 100).toFixed(2)}%)`
+                                : '';
+                        lines.push(
+                            `<div style="margin-left: 10px;">- ${badgeDetails.name}${enhText}: +${taskSpeedBonus.toFixed(2)}%${detailText}</div>`
+                        );
+                    }
+                }
+            }
+
+            // Efficiency
+            lines.push(
+                `<div style="margin-top: 4px; font-weight: 500; color: #ccc;">Efficiency: +${totalEfficiency.toFixed(2)}% → Output: ×${efficiencyMultiplier.toFixed(2)} (${Math.round(effectiveAPH)}/hr)</div>`
+            );
+            if (eb.levelEfficiency > 0 || eb.actionLevelBreakdown?.length > 0) {
+                lines.push(`<div style="margin-left: 10px;">- Level: +${eb.levelEfficiency.toFixed(2)}%</div>`);
+                const rawLevelDelta = eb.skillLevel - eb.baseRequirement;
+                lines.push(
+                    `<div style="margin-left: 20px;">- Raw level delta: +${rawLevelDelta.toFixed(2)}% (${eb.skillLevel} - ${eb.baseRequirement} base requirement)</div>`
+                );
+                if (eb.actionLevelBreakdown?.length > 0) {
+                    for (const tea of eb.actionLevelBreakdown) {
+                        lines.push(
+                            `<div style="margin-left: 20px;">- ${tea.name} impact: ${(-tea.baseActionLevel).toFixed(2)}% (raises requirement)</div>`
+                        );
+                        if (tea.dcContribution > 0) {
+                            lines.push(
+                                `<div style="margin-left: 30px;">- Drink Concentration: ${(-tea.dcContribution).toFixed(2)}%</div>`
+                            );
+                        }
+                    }
+                }
+            }
+            if (eb.houseEfficiency > 0) {
+                const roomHrid = HOUSE_ROOM_MAP[actionDetails.type];
+                let roomLabel = 'Unknown Room';
+                if (roomHrid) {
+                    const room = dataManager.getHouseRooms().get(roomHrid);
+                    const roomName = roomHrid
+                        .split('/')
+                        .pop()
+                        .split('_')
+                        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+                        .join(' ');
+                    roomLabel = `${roomName} level ${room?.level || 0}`;
+                }
+                lines.push(
+                    `<div style="margin-left: 10px;">- House: +${eb.houseEfficiency.toFixed(2)}% (${roomLabel})</div>`
+                );
+            }
+            if (eb.equipmentEfficiency > 0) {
+                lines.push(`<div style="margin-left: 10px;">- Equipment: +${eb.equipmentEfficiency.toFixed(2)}%</div>`);
+            }
+            if (eb.achievementEfficiency > 0) {
+                lines.push(`<div style="margin-left: 10px;">- Achievement: +${eb.achievementEfficiency.toFixed(2)}%</div>`);
+            }
+            if (eb.teaBreakdown?.length > 0) {
+                for (const tea of eb.teaBreakdown) {
+                    lines.push(`<div style="margin-left: 10px;">- ${tea.name}: +${tea.baseEfficiency.toFixed(2)}%</div>`);
+                    if (tea.dcContribution > 0) {
+                        lines.push(
+                            `<div style="margin-left: 20px;">- Drink Concentration: +${tea.dcContribution.toFixed(2)}%</div>`
+                        );
+                    }
+                }
+            }
+            if (eb.communityEfficiency > 0) {
+                const communityBuffLevel = dataManager.getCommunityBuffLevel('/community_buff_types/production_efficiency');
+                lines.push(
+                    `<div style="margin-left: 10px;">- Community: +${eb.communityEfficiency.toFixed(2)}% (Production Efficiency T${communityBuffLevel})</div>`
+                );
+            }
+            if (eb.personalEfficiency > 0) {
+                lines.push(`<div style="margin-left: 10px;">- Seal: +${eb.personalEfficiency.toFixed(2)}%</div>`);
+            }
+
+            // Total time
+            lines.push(
+                `<div style="margin-top: 4px; font-weight: 500; color: ${config.COLOR_INFO};">Total time: ${formatters_js.timeReadable(completionSeconds)}</div>`
             );
 
             return lines.join('');
@@ -33728,4 +33933,4 @@ ${starCSS}
 
     console.log('[Toolasha] UI library loaded');
 
-})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Utils.formatters, Toolasha.Utils.timerRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.dom, Toolasha.Core.storage, Toolasha.Core.marketAPI, Toolasha.Utils.efficiency, Toolasha.Core.webSocketHook, Toolasha.Utils.reactInput, Toolasha.Utils.actionPanelHelper, Toolasha.Market.expectedValueCalculator, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.marketData, Toolasha.Utils.profitConstants, Toolasha.Utils.profitHelpers, Toolasha.Market.profitCalculator, Toolasha.Utils.selectors, Toolasha.Utils.cleanupRegistry, Toolasha.Core, Toolasha.Core.settingsStorage, Toolasha.Utils.enhancementConfig, Toolasha.Utils.materialCalculator, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.teaParser, Toolasha.Utils.actionCalculator);
+})(Toolasha.Core.config, Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Utils.formatters, Toolasha.Utils.timerRegistry, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.dom, Toolasha.Core.storage, Toolasha.Core.marketAPI, Toolasha.Utils.efficiency, Toolasha.Core.webSocketHook, Toolasha.Utils.reactInput, Toolasha.Utils.actionPanelHelper, Toolasha.Market.expectedValueCalculator, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.marketData, Toolasha.Utils.profitConstants, Toolasha.Utils.profitHelpers, Toolasha.Market.profitCalculator, Toolasha.Utils.selectors, Toolasha.Utils.actionCalculator, Toolasha.Utils.equipmentParser, Toolasha.Utils.cleanupRegistry, Toolasha.Core, Toolasha.Core.settingsStorage, Toolasha.Utils.enhancementConfig, Toolasha.Utils.materialCalculator, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.teaParser);
