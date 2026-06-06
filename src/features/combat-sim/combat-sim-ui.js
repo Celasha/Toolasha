@@ -433,6 +433,10 @@ class CombatSimUI {
                     border-radius:3px; padding:3px 5px; font-size:12px; text-align:center;"
                     title="Number of levels to add to each ability">
             </span>
+            <label style="display:flex; align-items:center; gap:4px; color:#888; font-size:12px; cursor:pointer;">
+                <input type="checkbox" id="mwi-csim-upgrade-skip-back" style="margin:0; cursor:pointer;">
+                Skip Back
+            </label>
             <button id="mwi-csim-upgrade-run" style="
                 background: ${ACCENT_BTN_BG};
                 color: ${ACCENT};
@@ -2986,6 +2990,7 @@ class CombatSimUI {
         const communityBuffs = getCommunityBuffs();
 
         try {
+            const skipBackSlot = this.panel.querySelector('#mwi-csim-upgrade-skip-back')?.checked || false;
             const results = await runUpgradeAnalysis(
                 {
                     playerDTOs,
@@ -2997,6 +3002,7 @@ class CombatSimUI {
                     upgradeMode,
                     abilityLevelType,
                     abilityTargetLevel,
+                    skipBackSlot,
                 },
                 ({ current, total, description }) => {
                     if (this._upgradeAborted) return;

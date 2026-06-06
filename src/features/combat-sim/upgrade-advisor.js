@@ -555,7 +555,8 @@ export function generateCandidates(
     gameData,
     mode = 'equipment',
     abilityTargetLevel = 0,
-    abilityLevelType = 'increment'
+    abilityLevelType = 'increment',
+    skipBackSlot = false
 ) {
     const candidates = [];
 
@@ -572,6 +573,7 @@ export function generateCandidates(
 
             // Skip trinkets and items with no combat stats (tools, etc.)
             if (slot === '/equipment_types/trinket') continue;
+            if (skipBackSlot && slot === '/equipment_types/back') continue;
             if (!hasCombatStats(itemDetails)) continue;
 
             // Enhancement upgrade: next breakpoint
@@ -889,6 +891,7 @@ export async function runUpgradeAnalysis(params, onProgress, options = {}) {
         upgradeMode,
         abilityLevelType,
         abilityTargetLevel,
+        skipBackSlot,
     } = params;
     const { abortSignal } = options;
     const gameData = buildGameDataPayload();
@@ -898,7 +901,14 @@ export async function runUpgradeAnalysis(params, onProgress, options = {}) {
     const playerHrid = playerDTO.hrid;
 
     // Generate candidates and compute costs
-    const candidates = generateCandidates(playerDTO, gameData, upgradeMode, abilityTargetLevel, abilityLevelType);
+    const candidates = generateCandidates(
+        playerDTO,
+        gameData,
+        upgradeMode,
+        abilityTargetLevel,
+        abilityLevelType,
+        skipBackSlot
+    );
     const candidatesWithCost = candidates.map((c) => ({
         ...c,
         cost: calculateUpgradeCost(c, gameData),
@@ -1238,6 +1248,7 @@ export async function runLabyrinthUpgradeAnalysis(params, onProgress, options = 
         upgradeMode,
         abilityLevelType,
         abilityTargetLevel,
+        skipBackSlot,
     } = params;
     const { abortSignal } = options;
     const gameData = buildGameDataPayload();
@@ -1249,7 +1260,14 @@ export async function runLabyrinthUpgradeAnalysis(params, onProgress, options = 
         Object.keys(gameData.actionDetailMap).find((k) => k.includes('/actions/combat/')) || '/actions/combat/fly';
 
     // Generate equipment candidates
-    const candidates = generateCandidates(playerDTO, gameData, upgradeMode, abilityTargetLevel, abilityLevelType);
+    const candidates = generateCandidates(
+        playerDTO,
+        gameData,
+        upgradeMode,
+        abilityTargetLevel,
+        abilityLevelType,
+        skipBackSlot
+    );
     const candidatesWithCost = candidates.map((c) => ({
         ...c,
         cost: calculateUpgradeCost(c, gameData),
