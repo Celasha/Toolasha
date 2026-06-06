@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.61.5
+ * Version: 2.62.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -6942,6 +6942,7 @@
      * Injects a battle/wave counter next to the action name in the top-left header panel.
      * - Regular zones: "Battle #N" — from battleId in new_battle message
      * - Dungeons: "Wave N · Battle #N" — wave from wave index, battle from battleId
+     * - Labyrinth: "Attempt #N" — from entryCount in labyrinth_updated room data
      *
      * Target: Header_actionName (inline with zone name, e.g. "Chimerical Den · Wave 5")
      * domObserver watches Header_actionName so the span is re-injected whenever
@@ -6957,10 +6958,13 @@
         constructor() {
             this.initialized = false;
             this.newBattleHandler = null;
+            this.labyrinthHandler = null;
             this.unregisterObserver = null;
             this.battleId = 0;
             this.currentWave = 0;
             this.isDungeon = false;
+            this.isLabyrinth = false;
+            this.labyrinthAttempt = 0;
         }
 
         initialize() {
@@ -6969,6 +6973,9 @@
 
             this.newBattleHandler = (data) => this._onNewBattle(data);
             webSocketHook.on('new_battle', this.newBattleHandler);
+
+            this.labyrinthHandler = (data) => this._onLabyrinthUpdated(data);
+            webSocketHook.on('labyrinth_updated', this.labyrinthHandler);
 
             this._onActionsUpdated = (data) => this._checkCombatEnded(data);
             dataManager.on('actions_updated', this._onActionsUpdated);
@@ -6981,7 +6988,7 @@
         }
 
         _checkCombatEnded(data) {
-            if (this.battleId === 0) return;
+            if (this.battleId === 0 && this.labyrinthAttempt === 0) return;
 
             const combatEnded = data.endCharacterActions?.some(
                 (a) => a.isDone && a.actionHrid?.startsWith('/actions/combat/')
@@ -6997,7 +7004,33 @@
                 this.battleId = 0;
                 this.currentWave = 0;
                 this.isDungeon = false;
+                this.isLabyrinth = false;
+                this.labyrinthAttempt = 0;
                 document.getElementById(COUNTER_ID)?.remove();
+            }
+        }
+
+        _onLabyrinthUpdated(data) {
+            const labyrinth = data.labyrinth;
+            if (!labyrinth?.isActive) return;
+
+            let pathCoords;
+            try {
+                pathCoords = JSON.parse(labyrinth.pathData || '[]');
+            } catch {
+                return;
+            }
+            if (!pathCoords.length) return;
+
+            const active = pathCoords[pathCoords.length - 1];
+            const room = labyrinth.roomData?.[active.y]?.[active.x];
+            if (!room || room.roomType !== '/labyrinth_room_types/combat') return;
+
+            const entryCount = room.entryCount || 0;
+            if (entryCount > 0) {
+                this.isLabyrinth = true;
+                this.labyrinthAttempt = entryCount;
+                this._injectOrUpdate();
             }
         }
 
@@ -7019,7 +7052,7 @@
         }
 
         _injectOrUpdate() {
-            if (this.battleId === 0) {
+            if (this.battleId === 0 && this.labyrinthAttempt === 0) {
                 document.getElementById(COUNTER_ID)?.remove();
                 return;
             }
@@ -7036,7 +7069,9 @@
                 nameRow.appendChild(el);
             }
 
-            if (this.isDungeon) {
+            if (this.isLabyrinth) {
+                el.textContent = `· Attempt #${this.labyrinthAttempt}`;
+            } else if (this.isDungeon) {
                 el.textContent = `· Wave ${this.currentWave} · Battle #${this.battleId}`;
             } else {
                 el.textContent = `· Battle #${this.battleId}`;
@@ -7047,6 +7082,10 @@
             if (this.newBattleHandler) {
                 webSocketHook.off('new_battle', this.newBattleHandler);
                 this.newBattleHandler = null;
+            }
+            if (this.labyrinthHandler) {
+                webSocketHook.off('labyrinth_updated', this.labyrinthHandler);
+                this.labyrinthHandler = null;
             }
             if (this._onActionsUpdated) {
                 dataManager.off('actions_updated', this._onActionsUpdated);
@@ -10071,8 +10110,8 @@
          * Inject recommend controls (button + target input) into the automation panel
          */
         injectRecommendControls() {
-            const defaultRate = config.getSetting('labyrinthRecommendTargetRate') || 70;
-            const defaultHours = config.getSetting('labyrinthRecommendSimHours') || 1;
+            const defaultRate = config.getSettingValue('labyrinthRecommendTargetRate', 70);
+            const defaultHours = config.getSettingValue('labyrinthRecommendSimHours', 1);
 
             if (document.querySelector(`.${RECOMMEND_CONTROLS_CLASS}`)) {
                 const rateInput = document.getElementById('mwi-recommend-target-rate');
@@ -13914,8 +13953,12 @@
                 } else if (hasMagicStats === best.isMagic && level > best.itemLevel) {
                     best = { hrid: itemHrid, itemLevel: level, isMagic: hasMagicStats };
                 }
-            } else if (!best || level > best.itemLevel) {
-                best = { hrid: itemHrid, itemLevel: level };
+            } else {
+                const hasMagicStats = (stats.magicDamage || 0) > 0;
+                if (hasMagicStats) continue;
+                if (!best || level > best.itemLevel) {
+                    best = { hrid: itemHrid, itemLevel: level };
+                }
             }
         }
 
@@ -13936,7 +13979,8 @@
         gameData,
         mode = 'equipment',
         abilityTargetLevel = 0,
-        abilityLevelType = 'increment'
+        abilityLevelType = 'increment',
+        skipBackSlot = false
     ) {
         const candidates = [];
 
@@ -13953,6 +13997,7 @@
 
                 // Skip trinkets and items with no combat stats (tools, etc.)
                 if (slot === '/equipment_types/trinket') continue;
+                if (skipBackSlot && slot === '/equipment_types/back') continue;
                 if (!hasCombatStats(itemDetails)) continue;
 
                 // Enhancement upgrade: next breakpoint
@@ -14270,6 +14315,7 @@
             upgradeMode,
             abilityLevelType,
             abilityTargetLevel,
+            skipBackSlot,
         } = params;
         const { abortSignal } = options;
         const gameData = buildGameDataPayload();
@@ -14279,7 +14325,14 @@
         const playerHrid = playerDTO.hrid;
 
         // Generate candidates and compute costs
-        const candidates = generateCandidates(playerDTO, gameData, upgradeMode, abilityTargetLevel, abilityLevelType);
+        const candidates = generateCandidates(
+            playerDTO,
+            gameData,
+            upgradeMode,
+            abilityTargetLevel,
+            abilityLevelType,
+            skipBackSlot
+        );
         const candidatesWithCost = candidates.map((c) => ({
             ...c,
             cost: calculateUpgradeCost(c, gameData),
@@ -14619,6 +14672,7 @@
             upgradeMode,
             abilityLevelType,
             abilityTargetLevel,
+            skipBackSlot,
         } = params;
         const { abortSignal } = options;
         const gameData = buildGameDataPayload();
@@ -14630,7 +14684,14 @@
             Object.keys(gameData.actionDetailMap).find((k) => k.includes('/actions/combat/')) || '/actions/combat/fly';
 
         // Generate equipment candidates
-        const candidates = generateCandidates(playerDTO, gameData, upgradeMode, abilityTargetLevel, abilityLevelType);
+        const candidates = generateCandidates(
+            playerDTO,
+            gameData,
+            upgradeMode,
+            abilityTargetLevel,
+            abilityLevelType,
+            skipBackSlot
+        );
         const candidatesWithCost = candidates.map((c) => ({
             ...c,
             cost: calculateUpgradeCost(c, gameData),
@@ -17066,6 +17127,10 @@
                     border-radius:3px; padding:3px 5px; font-size:12px; text-align:center;"
                     title="Number of levels to add to each ability">
             </span>
+            <label style="display:flex; align-items:center; gap:4px; color:#888; font-size:12px; cursor:pointer;">
+                <input type="checkbox" id="mwi-csim-upgrade-skip-back" style="margin:0; cursor:pointer;">
+                Skip Back
+            </label>
             <button id="mwi-csim-upgrade-run" style="
                 background: ${ACCENT_BTN_BG$1};
                 color: ${ACCENT$1};
@@ -19619,6 +19684,7 @@
             const communityBuffs = getCommunityBuffs();
 
             try {
+                const skipBackSlot = this.panel.querySelector('#mwi-csim-upgrade-skip-back')?.checked || false;
                 const results = await runUpgradeAnalysis(
                     {
                         playerDTOs,
@@ -19630,6 +19696,7 @@
                         upgradeMode,
                         abilityLevelType,
                         abilityTargetLevel,
+                        skipBackSlot,
                     },
                     ({ current, total, description }) => {
                         if (this._upgradeAborted) return;
@@ -20197,7 +20264,7 @@
             <label style="color:#888; font-size:12px;">Level</label>
             <input id="mwi-labsim-level" type="number" min="20" max="300" value="100" style="${inputStyle}">
             <label style="color:#888; font-size:12px;">Hours</label>
-            <input id="mwi-labsim-hours" type="number" min="1" max="10000" value="10" style="${inputStyle}">
+            <input id="mwi-labsim-hours" type="number" min="1" max="10000" value="${config.getSettingValue('labyrinthRecommendSimHours', 10)}" style="${inputStyle}">
             <button id="mwi-labsim-run" style="
                 margin-left: auto;
                 background: ${ACCENT_BTN_BG};
@@ -20220,7 +20287,7 @@
                 <input type="checkbox" id="mwi-labsim-findmax" style="margin:0; cursor:pointer;">
                 Find Max \u2265
             </label>
-            <input id="mwi-labsim-threshold" type="number" min="1" max="100" value="95" style="width:44px; background:#1a1a2e; color:#e0e0e0; border:1px solid #444; border-radius:4px; padding:3px 4px; font-size:12px; text-align:center;">
+            <input id="mwi-labsim-threshold" type="number" min="1" max="100" value="${config.getSettingValue('labyrinthRecommendTargetRate', 95)}" style="width:44px; background:#1a1a2e; color:#e0e0e0; border:1px solid #444; border-radius:4px; padding:3px 4px; font-size:12px; text-align:center;">
             <span style="color:#888; font-size:12px;">%</span>
         `;
 
