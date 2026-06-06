@@ -1029,10 +1029,13 @@ class TaskProfitDisplay {
 
             const zoneAction = gameData.actionDetailMap[zoneHrid];
             const allSpawns = zoneAction.combatZoneInfo?.fightInfo?.randomSpawnInfo?.spawns || [];
+            const bossSpawns = zoneAction.combatZoneInfo?.fightInfo?.bossSpawns || [];
+            const isBossTarget = bossSpawns.some((s) => s.combatMonsterHrid === monsterHrid);
 
             let simGameData;
-            if (mode === 'zone') {
-                // Zone mode: use full unfiltered spawn table
+            if (mode === 'zone' || isBossTarget) {
+                // Zone mode or boss target: use full unfiltered spawn table
+                // Bosses need the full zone (9 regular fights per boss spawn)
                 simGameData = gameData;
             } else {
                 // Solo mode: filter spawn table to only the target monster
