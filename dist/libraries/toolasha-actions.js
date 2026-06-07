@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.62.5
+ * Version: 2.62.6
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -7596,9 +7596,23 @@
 
             const { expectedAttempts, expectedProtections, perActionTime, successMultiplier } = predictions;
 
+            // Detect Philosopher's Mirror — guarantees success on every attempt
+            let protectionItemHrid = null;
+            if (action.secondaryItemHash) {
+                const { itemHrid: secItemHrid } = this.parseItemHash(action.secondaryItemHash);
+                protectionItemHrid = secItemHrid;
+            }
+            if (!protectionItemHrid && action.enhancingProtectionItemHrid) {
+                protectionItemHrid = action.enhancingProtectionItemHrid;
+            }
+            const usesMirror = protectionItemHrid === '/items/philosophers_mirror';
+
+            const effectiveAttempts = usesMirror ? targetLevel - currentLevel : expectedAttempts;
+            const effectiveProtections = usesMirror ? 0 : expectedProtections;
+
             // Calculate current level success rate
             const baseRate = currentLevel < enhancementCalculator_js.BASE_SUCCESS_RATES.length ? enhancementCalculator_js.BASE_SUCCESS_RATES[currentLevel] : 30;
-            const actualSuccessRate = Math.min(100, baseRate * successMultiplier);
+            const actualSuccessRate = usesMirror ? 100 : Math.min(100, baseRate * successMultiplier);
 
             // Determine queue count
             let queuedActions;
@@ -7626,30 +7640,15 @@
                 // Also check protection item availability if protection is active
                 if (
                     protectFrom > 0 &&
-                    expectedProtections > 0 &&
+                    effectiveProtections > 0 &&
                     config.getSetting('actionPanel_enhanceMatLimitProtections')
                 ) {
-                    let protectionItemHrid = null;
-
-                    // Extract from secondaryItemHash
-                    if (action.secondaryItemHash) {
-                        const { itemHrid: secItemHrid } = this.parseItemHash(action.secondaryItemHash);
-                        protectionItemHrid = secItemHrid;
-                    }
-
-                    // Fallback to direct field
-                    if (!protectionItemHrid && action.enhancingProtectionItemHrid) {
-                        protectionItemHrid = action.enhancingProtectionItemHrid;
-                    }
-
                     if (protectionItemHrid) {
                         const byHrid = inventoryLookup?.byHrid || {};
                         const availableProtections = byHrid[protectionItemHrid] || 0;
 
-                        if (availableProtections < expectedProtections) {
-                            // Protection items are the bottleneck — estimate how many attempts
-                            // we can sustain. Protection usage ratio = expectedProtections / expectedAttempts
-                            const protectionRatio = expectedProtections / expectedAttempts;
+                        if (availableProtections < effectiveProtections) {
+                            const protectionRatio = effectiveProtections / effectiveAttempts;
                             const maxAttemptsFromProtection =
                                 protectionRatio > 0 ? Math.floor(availableProtections / protectionRatio) : Infinity;
 
@@ -7659,6 +7658,17 @@
                                 limitingItemHrid = protectionItemHrid;
                             }
                         }
+                    }
+                }
+
+                // Philosopher's Mirror is consumed 1 per action — treat as material limit
+                if (usesMirror) {
+                    const byHrid = inventoryLookup?.byHrid || {};
+                    const availableMirrors = byHrid['/items/philosophers_mirror'] || 0;
+                    if (availableMirrors < queuedActions) {
+                        queuedActions = availableMirrors;
+                        materialLimit = availableMirrors;
+                        limitingItemHrid = '/items/philosophers_mirror';
                     }
                 }
             }
@@ -7701,10 +7711,10 @@
                 statsToAppend.push(`${perActionTime.toFixed(2)}s/action`);
             }
             statsToAppend.push(`${actualSuccessRate.toFixed(1)}% success`);
-            statsToAppend.push(`~${formatters_js.formatWithSeparator(expectedAttempts)} to target`);
+            statsToAppend.push(`~${formatters_js.formatWithSeparator(effectiveAttempts)} to target`);
 
-            if (protectFrom > 0 && expectedProtections > 0) {
-                statsToAppend.push(`~${formatters_js.formatWithSeparator(expectedProtections)} protections`);
+            if (protectFrom > 0 && effectiveProtections > 0) {
+                statsToAppend.push(`~${formatters_js.formatWithSeparator(effectiveProtections)} protections`);
             }
 
             this.appendStatsToActionName(actionNameElement, statsToAppend.join(' · '));
@@ -7775,6 +7785,24 @@
             if (!predictions || predictions.expectedAttempts <= 0) return null;
 
             const perActionTime = predictions.perActionTime;
+
+            // Philosopher's Mirror guarantees success — exactly (target - current) actions
+            let usesMirror = false;
+            if (actionObj.secondaryItemHash) {
+                const { itemHrid: secItemHrid } = this.parseItemHash(actionObj.secondaryItemHash);
+                if (secItemHrid === '/items/philosophers_mirror') usesMirror = true;
+            }
+            if (!usesMirror && actionObj.enhancingProtectionItemHrid === '/items/philosophers_mirror') {
+                usesMirror = true;
+            }
+
+            if (usesMirror) {
+                let actions = targetLevel - currentLevel;
+                if (actionObj.hasMaxCount) {
+                    actions = Math.min(actions, actionObj.maxCount - actionObj.currentCount);
+                }
+                return { count: actions, totalTime: actions * perActionTime };
+            }
 
             // Determine queue count
             let queuedActions;
