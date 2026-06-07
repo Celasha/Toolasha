@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.62.6
+ * Version: 2.62.7
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1881,6 +1881,13 @@
                     label: 'Show total profit for gathering/production tasks',
                     type: 'checkbox',
                     default: true,
+                },
+                taskSpeedBreakdown: {
+                    id: 'taskSpeedBreakdown',
+                    label: 'Show expandable speed & time breakdown on tasks',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Displays an expandable action speed, efficiency, and timing breakdown on task cards.',
                 },
                 taskCombatEstimate: {
                     id: 'taskCombatEstimate',
