@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.62.7
+ * Version: 2.62.9
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -18337,6 +18337,7 @@ ${starCSS}
 
     function injectButton(navButtons) {
         if (document.getElementById(BUTTON_ID)) return;
+        if (!config.getSetting('simulateScrollEffects')) return;
 
         const loadoutName = getLoadoutName(navButtons);
 
@@ -18367,6 +18368,13 @@ ${starCSS}
             const panel = node.closest('[class*="LoadoutsPanel_selectedLoadout"]') || node.parentElement;
             const navButtons = panel?.querySelector('[class*="LoadoutsPanel_navButtons"]');
             if (navButtons) injectButton(navButtons);
+        });
+
+        config.onSettingChange('simulateScrollEffects', (enabled) => {
+            if (!enabled) {
+                document.getElementById(BUTTON_ID)?.remove();
+                popup.close();
+            }
         });
     }
 
@@ -27461,6 +27469,7 @@ ${starCSS}
             this.timerRegistry = timerRegistry_js.createTimerRegistry();
             this.handlers = {};
             this.pinChangeListeners = [];
+            this.sortModeListeners = [];
         }
 
         /**
@@ -27491,6 +27500,7 @@ ${starCSS}
             this.pinnedActions = new Set(pinnedData);
             this.sortMode = await storage.get(this._getSortStorageKey(), 'settings', 'default');
             this.initialized = true;
+            this._notifySortModeListeners();
 
             // Listen for character switch to clear character-specific data
             if (!this.handlers.characterSwitch) {
@@ -27525,6 +27535,7 @@ ${starCSS}
             this.pinnedActions = new Set(pinnedData);
             this.sortMode = await storage.get(this._getSortStorageKey(), 'settings', 'default');
             this.initialized = true;
+            this._notifySortModeListeners();
         }
 
         /**
@@ -27592,6 +27603,7 @@ ${starCSS}
         setSortMode(mode) {
             this.sortMode = mode;
             storage.set(this._getSortStorageKey(), mode, 'settings');
+            this._notifySortModeListeners();
         }
 
         /**
@@ -27600,6 +27612,14 @@ ${starCSS}
          */
         getSortMode() {
             return this.sortMode;
+        }
+
+        onSortModeChange(callback) {
+            this.sortModeListeners.push(callback);
+        }
+
+        _notifySortModeListeners() {
+            for (const cb of this.sortModeListeners) cb(this.sortMode);
         }
 
         /**

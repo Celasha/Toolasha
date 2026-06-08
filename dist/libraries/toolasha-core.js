@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.62.7
+ * Version: 2.62.9
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -5363,8 +5363,22 @@
 
             settingsStorage.setCharacterId(characterId);
 
+            const previousMap = this.settingsMap;
+
             // Load settings from settings-storage (which uses settings-schema as source of truth)
             this.settingsMap = await settingsStorage.loadSettings();
+
+            // Fire change callbacks for settings that differ from what was previously loaded
+            for (const key of Object.keys(this.settingChangeCallbacks)) {
+                const prev = previousMap[key];
+                const curr = this.settingsMap[key];
+                if (!prev || !curr) continue;
+                const prevVal = prev.hasOwnProperty('value') ? prev.value : prev.isTrue;
+                const currVal = curr.hasOwnProperty('value') ? curr.value : curr.isTrue;
+                if (prevVal !== currVal) {
+                    for (const cb of this.settingChangeCallbacks[key]) cb(currVal);
+                }
+            }
         }
 
         /**

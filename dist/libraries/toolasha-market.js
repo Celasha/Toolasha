@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.62.7
+ * Version: 2.62.9
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -18677,7 +18677,7 @@ self.onmessage = function (e) {
                 const rangeChange = currentTotal - first.total;
                 const rangePercent = first.total > 0 ? (rangeChange / first.total) * 100 : 0;
 
-                const ratePerHour = hoursElapsed > 0 ? (last.total - first.total) / hoursElapsed : 0;
+                const ratePerHour = hoursElapsed > 0 ? (currentTotal - first.total) / hoursElapsed : 0;
 
                 parts.push(
                     `<span>Current: <strong style="color: ${config.COLOR_ACCENT};">${formatters_js.networthFormatter(Math.round(currentTotal))}</strong></span>`
@@ -18709,8 +18709,7 @@ self.onmessage = function (e) {
             if (this.categoryVisibility.showNonExcluded && hasNonExclStats) {
                 const currentNE = this.networthFeature?.currentData?.totalNetworth ?? last.nonExcluded ?? last.total;
                 const firstNE = first.nonExcluded ?? first.total;
-                const lastNE = last.nonExcluded ?? last.total;
-                const neRate = hoursElapsed > 0 ? (lastNE - firstNE) / hoursElapsed : 0;
+                const neRate = hoursElapsed > 0 ? (currentNE - firstNE) / hoursElapsed : 0;
 
                 let neStatHtml = `<span style="color: #a78bfa;">Non-Excl</span>: <strong style="color: #a78bfa;">${formatters_js.networthFormatter(Math.round(currentNE))}</strong>`;
 
@@ -24874,6 +24873,7 @@ self.onmessage = function (e) {
             this._actionBtnsEl = null; // +Tab/Export/Import appended to sort controls row on Toolasha tab
             this._tileObserver = null; // MutationObserver for instant tile visibility on React swaps
             this._observedContainer = null; // Container currently being observed by _tileObserver
+            this._dragBoundTiles = new WeakSet();
         }
 
         // -----------------------------------------------------------------------
@@ -25198,7 +25198,6 @@ self.onmessage = function (e) {
                 tile.style.order = '';
                 tile.draggable = false;
                 delete tile.dataset.toolashaTabId;
-                delete tile.dataset.toolashaDragBound;
             }
 
             // Force full rebuild when tile count OR config item count changed — the lightweight path
@@ -26077,13 +26076,13 @@ self.onmessage = function (e) {
 
         /**
          * Make a tile draggable and attach drag/drop event handlers.
-         * Uses dataset.toolashaDragBound to prevent duplicate listeners.
+         * Uses a WeakSet to prevent duplicate listeners (immune to layout resets).
          * @param {HTMLElement} tile
          */
         _setupTileDrag(tile) {
             tile.draggable = true;
-            if (tile.dataset.toolashaDragBound) return;
-            tile.dataset.toolashaDragBound = '1';
+            if (this._dragBoundTiles.has(tile)) return;
+            this._dragBoundTiles.add(tile);
 
             tile.addEventListener('dragstart', (e) => {
                 const hrid = this._getHridFromTile(tile);
@@ -26701,10 +26700,14 @@ self.onmessage = function (e) {
         }
 
         _renderAssignedItems(container, tabId) {
+            const scrollParent = container.closest('.toolasha-ct-modal-body');
+            const scrollPos = scrollParent?.scrollTop ?? 0;
+
             container.innerHTML = '';
             const tab = findTab(this._config, tabId)?.tab;
             if (!tab || tab.items.length === 0) {
                 container.innerHTML = '<div style="color:#555;font-size:12px;padding:4px;">No items assigned</div>';
+                if (scrollParent) scrollParent.scrollTop = scrollPos;
                 return;
             }
 
@@ -26795,6 +26798,21 @@ self.onmessage = function (e) {
                     row.appendChild(toTopBtn);
                 }
 
+                if (index < tab.items.length - 1) {
+                    const toBottomBtn = document.createElement('button');
+                    toBottomBtn.className = 'toolasha-ct-node-btn';
+                    toBottomBtn.textContent = '⇊';
+                    toBottomBtn.title = 'Move to bottom';
+                    if (index > 0) toBottomBtn.style.marginLeft = '0';
+                    toBottomBtn.addEventListener('click', () => {
+                        this._config = reorderItem(this._config, tabId, index, tab.items.length - 1);
+                        this._save();
+                        this._renderAssignedItems(container, tabId);
+                        if (this._isActive) this._applyLayout();
+                    });
+                    row.appendChild(toBottomBtn);
+                }
+
                 const removeBtn = document.createElement('button');
                 removeBtn.className = 'toolasha-ct-node-btn';
                 removeBtn.textContent = '×';
@@ -26812,6 +26830,8 @@ self.onmessage = function (e) {
                 row.appendChild(removeBtn);
                 container.appendChild(row);
             });
+
+            if (scrollParent) scrollParent.scrollTop = scrollPos;
         }
 
         // -----------------------------------------------------------------------

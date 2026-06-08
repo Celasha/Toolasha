@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.62.7
+ * Version: 2.62.9
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -4475,6 +4475,7 @@
             this.timerRegistry = timerRegistry_js.createTimerRegistry();
             this.handlers = {};
             this.pinChangeListeners = [];
+            this.sortModeListeners = [];
         }
 
         /**
@@ -4505,6 +4506,7 @@
             this.pinnedActions = new Set(pinnedData);
             this.sortMode = await storage.get(this._getSortStorageKey(), 'settings', 'default');
             this.initialized = true;
+            this._notifySortModeListeners();
 
             // Listen for character switch to clear character-specific data
             if (!this.handlers.characterSwitch) {
@@ -4539,6 +4541,7 @@
             this.pinnedActions = new Set(pinnedData);
             this.sortMode = await storage.get(this._getSortStorageKey(), 'settings', 'default');
             this.initialized = true;
+            this._notifySortModeListeners();
         }
 
         /**
@@ -4606,6 +4609,7 @@
         setSortMode(mode) {
             this.sortMode = mode;
             storage.set(this._getSortStorageKey(), mode, 'settings');
+            this._notifySortModeListeners();
         }
 
         /**
@@ -4614,6 +4618,14 @@
          */
         getSortMode() {
             return this.sortMode;
+        }
+
+        onSortModeChange(callback) {
+            this.sortModeListeners.push(callback);
+        }
+
+        _notifySortModeListeners() {
+            for (const cb of this.sortModeListeners) cb(this.sortMode);
         }
 
         /**
@@ -4861,6 +4873,9 @@
             this.filterTimeout = null;
             this.unregisterHandlers = [];
             this.currentTitleElement = null; // Track which title we're attached to
+            this._updateModeBtn = null;
+            this._updateCraftBtn = null;
+            this._updateSortBtn = null;
         }
 
         /**
@@ -4879,6 +4894,18 @@
             );
 
             this.unregisterHandlers.push(unregisterTitleObserver);
+
+            // Re-update button labels when config finishes loading from storage
+            config.onSettingChange('profitCalc_pricingMode', () => {
+                if (this._updateModeBtn) this._updateModeBtn();
+            });
+            config.onSettingChange('profitCalc_craftUpgradeItems', () => {
+                if (this._updateCraftBtn) this._updateCraftBtn();
+            });
+            actionPanelSort.onSortModeChange(() => {
+                if (this._updateSortBtn) this._updateSortBtn();
+            });
+
             this.initialized = true;
         }
 
@@ -4991,6 +5018,7 @@
             flex-shrink: 0;
         `;
             updateSortBtn();
+            this._updateSortBtn = updateSortBtn;
             sortBtn.addEventListener('click', () => {
                 const current = actionPanelSort.getSortMode();
                 const nextIndex = (SORT_MODES.indexOf(current) + 1) % SORT_MODES.length;
@@ -5024,6 +5052,7 @@
             flex-shrink: 0;
         `;
             updateModeBtn();
+            this._updateModeBtn = updateModeBtn;
             modeBtn.addEventListener('click', async () => {
                 const current = config.getSettingValue('profitCalc_pricingMode', 'hybrid');
                 const nextIndex = (PROFIT_MODES.indexOf(current) + 1) % PROFIT_MODES.length;
@@ -5058,6 +5087,7 @@
             flex-shrink: 0;
         `;
             updateCraftBtn();
+            this._updateCraftBtn = updateCraftBtn;
             craftBtn.addEventListener('click', async () => {
                 const current = config.getSetting('profitCalc_craftUpgradeItems');
                 config.setSetting('profitCalc_craftUpgradeItems', !current);
@@ -5280,6 +5310,15 @@
                 this.modeButton.remove();
                 this.modeButton = null;
             }
+
+            if (this.craftButton && this.craftButton.parentElement) {
+                this.craftButton.remove();
+                this.craftButton = null;
+            }
+
+            this._updateModeBtn = null;
+            this._updateCraftBtn = null;
+            this._updateSortBtn = null;
 
             if (this.noResultsMessage && this.noResultsMessage.parentElement) {
                 this.noResultsMessage.remove();

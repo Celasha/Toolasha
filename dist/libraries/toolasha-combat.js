@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.62.7
+ * Version: 2.62.9
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1545,6 +1545,7 @@
 
     function injectButton(navButtons) {
         if (document.getElementById(BUTTON_ID)) return;
+        if (!config.getSetting('simulateScrollEffects')) return;
 
         const loadoutName = getLoadoutName(navButtons);
 
@@ -1575,6 +1576,13 @@
             const panel = node.closest('[class*="LoadoutsPanel_selectedLoadout"]') || node.parentElement;
             const navButtons = panel?.querySelector('[class*="LoadoutsPanel_navButtons"]');
             if (navButtons) injectButton(navButtons);
+        });
+
+        config.onSettingChange('simulateScrollEffects', (enabled) => {
+            if (!enabled) {
+                document.getElementById(BUTTON_ID)?.remove();
+                popup.close();
+            }
         });
     }
 
