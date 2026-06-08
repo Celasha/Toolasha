@@ -2620,6 +2620,9 @@ export default class CustomTabsUI {
         const loadoutSnapshot = getLoadoutSnapshot();
 
         for (const baseHrid of relevantBases) {
+            // Cache may have been invalidated by a prior iteration's snapshot update
+            if (!this._boundBaseHrids) break;
+
             // Find highest enhancement level of this item in current inventory
             let highestOwned = -1;
             for (const item of inventory) {
@@ -2645,8 +2648,8 @@ export default class CustomTabsUI {
             // Also update the loadout snapshot
             loadoutSnapshot.updateEnhancementLevel(baseHrid, highestOwned);
 
-            // Update the cached level
-            this._boundBaseHrids.set(baseHrid, highestOwned);
+            // Update the cached level (may have been nulled by the snapshot update listener)
+            if (this._boundBaseHrids) this._boundBaseHrids.set(baseHrid, highestOwned);
         }
 
         if (anyChanged) {
