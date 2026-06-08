@@ -2446,35 +2446,39 @@ export default class CustomTabsUI {
                 dragFromIndex = null;
             });
 
-            if (index > 0) {
-                const toTopBtn = document.createElement('button');
-                toTopBtn.className = 'toolasha-ct-node-btn';
-                toTopBtn.textContent = '⇈';
-                toTopBtn.title = 'Move to top';
-                toTopBtn.style.marginLeft = '0';
+            const toTopBtn = document.createElement('button');
+            toTopBtn.className = 'toolasha-ct-node-btn';
+            toTopBtn.textContent = '⇈';
+            toTopBtn.title = 'Move to top';
+            toTopBtn.style.marginLeft = '0';
+            if (index === 0) {
+                toTopBtn.style.visibility = 'hidden';
+            } else {
                 toTopBtn.addEventListener('click', () => {
                     this._config = reorderItem(this._config, tabId, index, 0);
                     this._save();
                     this._renderAssignedItems(container, tabId);
                     if (this._isActive) this._applyLayout();
                 });
-                row.appendChild(toTopBtn);
             }
+            row.appendChild(toTopBtn);
 
-            if (index < tab.items.length - 1) {
-                const toBottomBtn = document.createElement('button');
-                toBottomBtn.className = 'toolasha-ct-node-btn';
-                toBottomBtn.textContent = '⇊';
-                toBottomBtn.title = 'Move to bottom';
-                if (index > 0) toBottomBtn.style.marginLeft = '0';
+            const toBottomBtn = document.createElement('button');
+            toBottomBtn.className = 'toolasha-ct-node-btn';
+            toBottomBtn.textContent = '⇊';
+            toBottomBtn.title = 'Move to bottom';
+            toBottomBtn.style.marginLeft = '0';
+            if (index >= tab.items.length - 1) {
+                toBottomBtn.style.visibility = 'hidden';
+            } else {
                 toBottomBtn.addEventListener('click', () => {
                     this._config = reorderItem(this._config, tabId, index, tab.items.length - 1);
                     this._save();
                     this._renderAssignedItems(container, tabId);
                     if (this._isActive) this._applyLayout();
                 });
-                row.appendChild(toBottomBtn);
             }
+            row.appendChild(toBottomBtn);
 
             const removeBtn = document.createElement('button');
             removeBtn.className = 'toolasha-ct-node-btn';
