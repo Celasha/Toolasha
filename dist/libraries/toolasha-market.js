@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.62.9
+ * Version: 2.62.10
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -26783,35 +26783,39 @@ self.onmessage = function (e) {
                     dragFromIndex = null;
                 });
 
-                if (index > 0) {
-                    const toTopBtn = document.createElement('button');
-                    toTopBtn.className = 'toolasha-ct-node-btn';
-                    toTopBtn.textContent = '⇈';
-                    toTopBtn.title = 'Move to top';
-                    toTopBtn.style.marginLeft = '0';
+                const toTopBtn = document.createElement('button');
+                toTopBtn.className = 'toolasha-ct-node-btn';
+                toTopBtn.textContent = '⇈';
+                toTopBtn.title = 'Move to top';
+                toTopBtn.style.marginLeft = '0';
+                if (index === 0) {
+                    toTopBtn.style.visibility = 'hidden';
+                } else {
                     toTopBtn.addEventListener('click', () => {
                         this._config = reorderItem(this._config, tabId, index, 0);
                         this._save();
                         this._renderAssignedItems(container, tabId);
                         if (this._isActive) this._applyLayout();
                     });
-                    row.appendChild(toTopBtn);
                 }
+                row.appendChild(toTopBtn);
 
-                if (index < tab.items.length - 1) {
-                    const toBottomBtn = document.createElement('button');
-                    toBottomBtn.className = 'toolasha-ct-node-btn';
-                    toBottomBtn.textContent = '⇊';
-                    toBottomBtn.title = 'Move to bottom';
-                    if (index > 0) toBottomBtn.style.marginLeft = '0';
+                const toBottomBtn = document.createElement('button');
+                toBottomBtn.className = 'toolasha-ct-node-btn';
+                toBottomBtn.textContent = '⇊';
+                toBottomBtn.title = 'Move to bottom';
+                toBottomBtn.style.marginLeft = '0';
+                if (index >= tab.items.length - 1) {
+                    toBottomBtn.style.visibility = 'hidden';
+                } else {
                     toBottomBtn.addEventListener('click', () => {
                         this._config = reorderItem(this._config, tabId, index, tab.items.length - 1);
                         this._save();
                         this._renderAssignedItems(container, tabId);
                         if (this._isActive) this._applyLayout();
                     });
-                    row.appendChild(toBottomBtn);
                 }
+                row.appendChild(toBottomBtn);
 
                 const removeBtn = document.createElement('button');
                 removeBtn.className = 'toolasha-ct-node-btn';
@@ -26957,6 +26961,9 @@ self.onmessage = function (e) {
             const loadoutSnapshot = getLoadoutSnapshot();
 
             for (const baseHrid of relevantBases) {
+                // Cache may have been invalidated by a prior iteration's snapshot update
+                if (!this._boundBaseHrids) break;
+
                 // Find highest enhancement level of this item in current inventory
                 let highestOwned = -1;
                 for (const item of inventory) {
@@ -26982,8 +26989,8 @@ self.onmessage = function (e) {
                 // Also update the loadout snapshot
                 loadoutSnapshot.updateEnhancementLevel(baseHrid, highestOwned);
 
-                // Update the cached level
-                this._boundBaseHrids.set(baseHrid, highestOwned);
+                // Update the cached level (may have been nulled by the snapshot update listener)
+                if (this._boundBaseHrids) this._boundBaseHrids.set(baseHrid, highestOwned);
             }
 
             if (anyChanged) {
