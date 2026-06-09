@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.62.10
+ * Version: 2.62.11
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -5177,6 +5177,9 @@
             // Apply current filter if one is active
             if (this.filterValue) {
                 this.applyFilterToPanel(actionPanel);
+                if (actionPanel.dataset.mwiFilterHidden === 'true') {
+                    actionPanel.style.display = 'none';
+                }
             }
         }
 
