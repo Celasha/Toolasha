@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.62.11
+ * Version: 2.62.12
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -4927,9 +4927,9 @@
             // Track the new title element
             this.currentTitleElement = titleElement;
 
-            // Reset filter state for new page
+            // Reset UI refs for new page (panels are NOT cleared — they may have been
+            // registered before this title appeared in the same mutation batch)
             this.filterValue = '';
-            this.panels.clear();
             this.filterInput = null;
             this.sortButton = null;
             this.modeButton = null;
@@ -5285,18 +5285,19 @@
             // Reset filter value
             this.filterValue = '';
 
-            // Clear all panel filter states
-            for (const actionPanel of this.panels.keys()) {
-                actionPanel.dataset.mwiFilterHidden = 'false';
+            // Reset filter attributes on still-attached panels; purge detached ones
+            for (const [actionPanel] of this.panels.entries()) {
+                if (!actionPanel.parentElement) {
+                    this.panels.delete(actionPanel);
+                } else {
+                    actionPanel.dataset.mwiFilterHidden = 'false';
+                }
             }
 
             // Hide "No results" message
             if (this.noResultsMessage) {
                 this.noResultsMessage.style.display = 'none';
             }
-
-            // Clear panels registry
-            this.panels.clear();
 
             // Remove injected input
             if (this.filterInput && this.filterInput.parentElement) {
@@ -5404,6 +5405,7 @@
 
             // Clear filter
             this.clearFilter();
+            this.panels.clear();
 
             this.initialized = false;
         }
