@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.62.12
+ * Version: 2.62.13
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -19930,6 +19930,7 @@
 
         for (const item of inventory) {
             if (item.itemLocationHrid !== '/item_locations/inventory') continue;
+            if (item.enhancementLevel) continue;
             const count = item.count || 0;
             if (!count) continue;
             map.set(item.itemHrid, (map.get(item.itemHrid) || 0) + count);
@@ -19983,9 +19984,24 @@
 
         initialize() {
             if (this.isInitialized) return;
-            if (!config.getSetting('inventoryCountDisplay', true)) return;
 
             this.isInitialized = true;
+
+            config.onSettingChange('inventoryCountDisplay', (enabled) => {
+                if (enabled) {
+                    this._enable();
+                } else {
+                    this._disable();
+                }
+            });
+
+            if (config.getSetting('inventoryCountDisplay', true)) {
+                this._enable();
+            }
+        }
+
+        _enable() {
+            if (this.unregisterObservers.length > 0) return;
 
             this._setupTileObserver();
             this._setupDetailObserver();
@@ -20000,6 +20016,17 @@
             this.unregisterObservers.push(() => {
                 dataManager.off('items_updated', this.itemsUpdatedHandler);
             });
+        }
+
+        _disable() {
+            this.unregisterObservers.forEach((fn) => fn());
+            this.unregisterObservers = [];
+
+            document.querySelectorAll('.mwi-inv-count-tile').forEach((el) => el.remove());
+            document.querySelectorAll('.mwi-inv-count-detail').forEach((el) => el.remove());
+
+            this.tileElements.clear();
+            this.detailPanels.clear();
         }
 
         // ─── Tile observer ────────────────────────────────────────────────────────
@@ -20187,14 +20214,7 @@
         }
 
         disable() {
-            this.unregisterObservers.forEach((fn) => fn());
-            this.unregisterObservers = [];
-
-            document.querySelectorAll('.mwi-inv-count-tile').forEach((el) => el.remove());
-            document.querySelectorAll('.mwi-inv-count-detail').forEach((el) => el.remove());
-
-            this.tileElements.clear();
-            this.detailPanels.clear();
+            this._disable();
             this.isInitialized = false;
         }
     }
