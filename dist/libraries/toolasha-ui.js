@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.62.13
+ * Version: 2.62.14
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -3366,26 +3366,7 @@ ${starCSS}
          */
         formatTimestamp(isoString) {
             if (!isoString) return '';
-
-            const timeFormat = config.getSettingValue('market_listingTimeFormat', '24hour');
-            const dateFormat = config.getSettingValue('market_listingDateFormat', 'MM-DD');
-            const use12Hour = timeFormat === '12hour';
-
-            const date = new Date(isoString);
-            const month = String(date.getMonth() + 1).padStart(2, '0');
-            const day = String(date.getDate()).padStart(2, '0');
-            const datePart = dateFormat === 'DD-MM' ? `${day}-${month}` : `${month}-${day}`;
-
-            const timePart = date
-                .toLocaleString('en-US', {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                    second: '2-digit',
-                    hour12: use12Hour,
-                })
-                .trim();
-
-            return `${datePart} ${timePart}`;
+            return formatters_js.formatDateTime(new Date(isoString));
         }
 
         /**
@@ -13200,7 +13181,7 @@ ${starCSS}
                 section.appendChild(this.createRow('Status', 'Tasks full!', config.COLOR_LOSS));
             } else {
                 const overflowTimeStr = formatters_js.timeReadable(overflow.msUntilOverflow / 1000);
-                const overflowDateStr = overflow.overflowDate.toLocaleString();
+                const overflowDateStr = formatters_js.formatDateTime(overflow.overflowDate);
                 section.appendChild(this.createRow('Full in', overflowTimeStr, config.COLOR_INFO));
                 section.appendChild(this.createRow('Full at', overflowDateStr, config.COLOR_TEXT_SECONDARY));
             }
@@ -16086,7 +16067,7 @@ ${starCSS}
             timeDiv.style.cssText = 'margin-bottom: 2px;';
 
             const startDate = new Date(entry.startTime);
-            timeDiv.textContent = `Start Time: ${startDate.toLocaleString()}`;
+            timeDiv.textContent = `Start Time: ${formatters_js.formatDateTime(startDate)}`;
             entryEl.appendChild(timeDiv);
 
             this.injectTotalValue(timeDiv, entry);
@@ -23043,7 +23024,7 @@ ${starCSS}
 
                     // Session Start
                     const dateCell = document.createElement('td');
-                    dateCell.textContent = new Date(session.startTime).toLocaleString();
+                    dateCell.textContent = formatters_js.formatDateTime(new Date(session.startTime));
                     dateCell.style.padding = '6px 10px';
                     row.appendChild(dateCell);
 
@@ -23219,8 +23200,8 @@ ${starCSS}
 
             if (this.filters.dateFrom || this.filters.dateTo) {
                 const parts = [];
-                if (this.filters.dateFrom) parts.push(this.filters.dateFrom.toLocaleDateString());
-                if (this.filters.dateTo) parts.push(this.filters.dateTo.toLocaleDateString());
+                if (this.filters.dateFrom) parts.push(formatters_js.formatDateTime(this.filters.dateFrom, { includeTime: false }));
+                if (this.filters.dateTo) parts.push(formatters_js.formatDateTime(this.filters.dateTo, { includeTime: false }));
                 badges.push({
                     label: `Date: ${parts.join(' - ')}`,
                     onRemove: () => {
@@ -23492,7 +23473,7 @@ ${starCSS}
                 color: #aaa; font-size: 11px; margin-bottom: 10px;
                 padding: 6px; background: #1a1a1a; border-radius: 3px;
             `;
-                rangeInfo.textContent = `Available: ${minDate.toLocaleDateString()} - ${maxDate.toLocaleDateString()}`;
+                rangeInfo.textContent = `Available: ${formatters_js.formatDateTime(minDate, { includeTime: false })} - ${formatters_js.formatDateTime(maxDate, { includeTime: false })}`;
                 popup.appendChild(rangeInfo);
             }
 
@@ -23842,7 +23823,7 @@ ${starCSS}
             const headers = ['Session Start', 'Input Item', 'Attempts', 'Successes', 'Failures', 'Results'];
 
             const rows = this.sessions.map((session) => {
-                const start = new Date(session.startTime).toLocaleString();
+                const start = formatters_js.formatDateTime(new Date(session.startTime));
                 const inputName = this.getItemName(session.inputItemHrid);
                 const failures = session.totalAttempts - session.totalSuccesses;
 
@@ -24760,7 +24741,7 @@ ${starCSS}
 
                     // Session Start
                     const dateCell = document.createElement('td');
-                    dateCell.textContent = new Date(session.startTime).toLocaleString();
+                    dateCell.textContent = formatters_js.formatDateTime(new Date(session.startTime));
                     dateCell.style.padding = '6px 10px';
                     row.appendChild(dateCell);
 
@@ -24946,8 +24927,8 @@ ${starCSS}
 
             if (this.filters.dateFrom || this.filters.dateTo) {
                 const parts = [];
-                if (this.filters.dateFrom) parts.push(this.filters.dateFrom.toLocaleDateString());
-                if (this.filters.dateTo) parts.push(this.filters.dateTo.toLocaleDateString());
+                if (this.filters.dateFrom) parts.push(formatters_js.formatDateTime(this.filters.dateFrom, { includeTime: false }));
+                if (this.filters.dateTo) parts.push(formatters_js.formatDateTime(this.filters.dateTo, { includeTime: false }));
                 badges.push({
                     label: `Date: ${parts.join(' - ')}`,
                     onRemove: () => {
@@ -25205,7 +25186,7 @@ ${starCSS}
                 color: #aaa; font-size: 11px; margin-bottom: 10px;
                 padding: 6px; background: #1a1a1a; border-radius: 3px;
             `;
-                rangeInfo.textContent = `Available: ${minDate.toLocaleDateString()} - ${maxDate.toLocaleDateString()}`;
+                rangeInfo.textContent = `Available: ${formatters_js.formatDateTime(minDate, { includeTime: false })} - ${formatters_js.formatDateTime(maxDate, { includeTime: false })}`;
                 popup.appendChild(rangeInfo);
             }
 
@@ -25527,7 +25508,7 @@ ${starCSS}
             ];
 
             const rows = this.sessions.map((session) => {
-                const start = new Date(session.startTime).toLocaleString();
+                const start = formatters_js.formatDateTime(new Date(session.startTime));
                 const inputName = this.getItemName(session.inputItemHrid);
                 const failures = session.totalAttempts - session.totalSuccesses;
                 const rate =
@@ -26515,7 +26496,7 @@ ${starCSS}
 
                     // Session Start
                     const dateCell = document.createElement('td');
-                    dateCell.textContent = new Date(session.startTime).toLocaleString();
+                    dateCell.textContent = formatters_js.formatDateTime(new Date(session.startTime));
                     dateCell.style.padding = '6px 10px';
                     row.appendChild(dateCell);
 
@@ -26738,8 +26719,8 @@ ${starCSS}
 
             if (this.filters.dateFrom || this.filters.dateTo) {
                 const parts = [];
-                if (this.filters.dateFrom) parts.push(this.filters.dateFrom.toLocaleDateString());
-                if (this.filters.dateTo) parts.push(this.filters.dateTo.toLocaleDateString());
+                if (this.filters.dateFrom) parts.push(formatters_js.formatDateTime(this.filters.dateFrom, { includeTime: false }));
+                if (this.filters.dateTo) parts.push(formatters_js.formatDateTime(this.filters.dateTo, { includeTime: false }));
                 badges.push({
                     label: `Date: ${parts.join(' - ')}`,
                     onRemove: () => {
@@ -27011,7 +26992,7 @@ ${starCSS}
                 color: #aaa; font-size: 11px; margin-bottom: 10px;
                 padding: 6px; background: #1a1a1a; border-radius: 3px;
             `;
-                rangeInfo.textContent = `Available: ${minDate.toLocaleDateString()} - ${maxDate.toLocaleDateString()}`;
+                rangeInfo.textContent = `Available: ${formatters_js.formatDateTime(minDate, { includeTime: false })} - ${formatters_js.formatDateTime(maxDate, { includeTime: false })}`;
                 popup.appendChild(rangeInfo);
             }
 
@@ -27372,7 +27353,7 @@ ${starCSS}
             ];
 
             const rows = this.sessions.map((session) => {
-                const start = new Date(session.startTime).toLocaleString();
+                const start = formatters_js.formatDateTime(new Date(session.startTime));
                 const inputName = this.getItemName(session.inputItemHrid);
                 const failures = session.totalAttempts - session.totalSuccesses;
                 const rate =
@@ -30574,7 +30555,7 @@ ${starCSS}
          * Format number with commas
          */
         formatNumber(num) {
-            return Math.floor(num).toLocaleString();
+            return formatters_js.formatLargeNumber(Math.floor(num));
         }
 
         /**
@@ -32539,7 +32520,7 @@ ${starCSS}
             else if (i === hLegend.length - 1 && leftPct > 90) labelTransform = 'translate(-100%, 0)';
             legendHTML += `<div style="position: absolute; top: 0; left: ${leftPct}%; flex-direction: column;">
             <div style="width: 1px; height: 8px; background-color: var(--color-space-300);"></div>
-            <div style="font-size: 10px; width: 80px; transform: ${labelTransform};">${new Date(d.t).toLocaleString()}</div>
+            <div style="font-size: 10px; width: 80px; transform: ${labelTransform};">${formatters_js.formatDateTime(new Date(d.t), { includeSeconds: false })}</div>
         </div>`;
         }
 
@@ -32933,7 +32914,7 @@ ${starCSS}
                 name: 'Joined',
                 insertAfter: insertAfter + 1,
                 data: allStats.map((s) => s.joinTime),
-                format: (v) => (v ? new Date(v).toLocaleDateString() : ''),
+                format: (v) => (v ? formatters_js.formatDateTime(new Date(v), { includeTime: false }) : ''),
                 makeSortable: true,
                 sortId: 'joinTime',
                 sortData: allStats.map((s) => (s.joinTime ? +new Date(s.joinTime) : 0)),
@@ -33201,7 +33182,7 @@ ${starCSS}
             <div class="MuiTooltip-tooltip MuiTooltip-tooltipPlacementTop css-1spb1s5" style="opacity: 1;">
                 <div class="ItemTooltipText_itemTooltipText__zFq3A">
                     <div class="ItemTooltipText_name__2JAHA">
-                        <span>${new Date(t).toLocaleString()}</span>
+                        <span>${formatters_js.formatDateTime(new Date(t), { includeSeconds: false })}</span>
                     </div>
                     <div>
                         <span>${fNum(xpH)} XP/h${truncated ? ' (anomalous)' : ''}</span>

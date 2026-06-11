@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 2.62.13
+ * Version: 2.62.14
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -436,11 +436,43 @@
         return useAbbreviations ? formatKMB(value, decimals) : formatWithSeparator(value);
     }
 
+    /**
+     * Format a Date using the user's date/time format settings.
+     * @param {Date} date - The date to format
+     * @param {Object} [options]
+     * @param {boolean} [options.includeDate=true] - Include the date portion (MM-DD or DD-MM)
+     * @param {boolean} [options.includeTime=true] - Include the time portion
+     * @param {boolean} [options.includeSeconds=true] - Include seconds in time
+     * @returns {string}
+     */
+    function formatDateTime(date, options = {}) {
+        const { includeDate = true, includeTime = true, includeSeconds = true } = options;
+        const use24h = config.getSettingValue('market_listingTimeFormat', '24hour') === '24hour';
+        const dateFormat = config.getSettingValue('market_listingDateFormat', 'MM-DD');
+
+        const parts = [];
+
+        if (includeDate) {
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            parts.push(dateFormat === 'DD-MM' ? `${day}-${month}` : `${month}-${day}`);
+        }
+
+        if (includeTime) {
+            const timeOpts = { hour: 'numeric', minute: '2-digit', hour12: !use24h };
+            if (includeSeconds) timeOpts.second = '2-digit';
+            parts.push(date.toLocaleString('en-US', timeOpts).trim());
+        }
+
+        return parts.join(' ');
+    }
+
     var formatters = /*#__PURE__*/Object.freeze({
         __proto__: null,
         coinFormatter: coinFormatter,
         formatCompactNumber: formatCompactNumber,
         formatCurrency: formatCurrency,
+        formatDateTime: formatDateTime,
         formatKMB: formatKMB,
         formatKMB3Digits: formatKMB3Digits,
         formatLargeNumber: formatLargeNumber,

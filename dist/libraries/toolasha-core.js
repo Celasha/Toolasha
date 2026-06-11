@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.62.13
+ * Version: 2.62.14
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2306,14 +2306,14 @@
                 },
                 market_listingDateFormat: {
                     id: 'market_listingDateFormat',
-                    label: 'Market: Date format for date/time display',
+                    label: 'Date format for date/time display',
                     type: 'select',
                     default: 'MM-DD',
                     options: [
                         { value: 'MM-DD', label: 'MM-DD (01-13)' },
                         { value: 'DD-MM', label: 'DD-MM (13-01)' },
                     ],
-                    help: 'Date format when using Date/Time display (only applies if Date/Time format is selected)',
+                    help: 'Date format used in marketplace listings and action completion times',
                 },
                 market_showOrderTotals: {
                     id: 'market_showOrderTotals',

@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.62.13
+ * Version: 2.62.14
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1046,10 +1046,10 @@
         }
 
         if (xpPerHour !== null && xpPerHour > 0) {
-            html += '<div style="margin-top: 4px;">XP/hr: ' + xpPerHour.toLocaleString() + '</div>';
+            html += '<div style="margin-top: 4px;">XP/hr: ' + formatters_js.formatLargeNumber(xpPerHour) + '</div>';
         }
         if (totalExpectedXP !== null && totalExpectedXP > 0) {
-            html += '<div>Total XP: ~' + totalExpectedXP.toLocaleString() + '</div>';
+            html += '<div>Total XP: ~' + formatters_js.formatLargeNumber(totalExpectedXP) + '</div>';
         }
 
         html += '</div>'; // Close margin-left div
@@ -7347,25 +7347,7 @@ self.onmessage = function (e) {
                 return formatters_js.formatRelativeTime(ageMs);
             } else {
                 // Show date/time (e.g., "01-13 14:30:45" or "01-13 2:30:45 PM")
-                const timeFormat = config.getSettingValue('market_listingTimeFormat', '24hour');
-                const dateFormat = config.getSettingValue('market_listingDateFormat', 'MM-DD');
-                const use12Hour = timeFormat === '12hour';
-
-                const date = new Date(timestamp);
-                const month = String(date.getMonth() + 1).padStart(2, '0');
-                const day = String(date.getDate()).padStart(2, '0');
-                const datePart = dateFormat === 'DD-MM' ? `${day}-${month}` : `${month}-${day}`;
-
-                const timePart = date
-                    .toLocaleString('en-US', {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                        second: '2-digit',
-                        hour12: use12Hour,
-                    })
-                    .trim();
-
-                return `${datePart} ${timePart}`;
+                return formatters_js.formatDateTime(new Date(timestamp));
             }
         }
 
@@ -10907,10 +10889,10 @@ self.onmessage = function (e) {
             if (this.filters.dateFrom || this.filters.dateTo) {
                 const dateText = [];
                 if (this.filters.dateFrom) {
-                    dateText.push(this.filters.dateFrom.toLocaleDateString());
+                    dateText.push(formatters_js.formatDateTime(this.filters.dateFrom, { includeTime: false }));
                 }
                 if (this.filters.dateTo) {
-                    dateText.push(this.filters.dateTo.toLocaleDateString());
+                    dateText.push(formatters_js.formatDateTime(this.filters.dateTo, { includeTime: false }));
                 }
                 badges.push({
                     label: `Date: ${dateText.join(' - ')}`,
@@ -11253,7 +11235,7 @@ self.onmessage = function (e) {
                     const dateCell = document.createElement('td');
                     // Use createdTimestamp if available, otherwise fall back to numeric timestamp
                     const dateValue = listing.createdTimestamp || listing.timestamp;
-                    dateCell.textContent = new Date(dateValue).toLocaleString();
+                    dateCell.textContent = formatters_js.formatDateTime(new Date(dateValue));
                     dateCell.style.padding = '4px 10px';
                     row.appendChild(dateCell);
 
@@ -12134,7 +12116,7 @@ self.onmessage = function (e) {
                 background: #1a1a1a;
                 border-radius: 3px;
             `;
-                rangeInfo.textContent = `Available: ${minDate.toLocaleDateString()} - ${maxDate.toLocaleDateString()}`;
+                rangeInfo.textContent = `Available: ${formatters_js.formatDateTime(minDate, { includeTime: false })} - ${formatters_js.formatDateTime(maxDate, { includeTime: false })}`;
                 popup.appendChild(rangeInfo);
             }
 
@@ -18613,15 +18595,9 @@ self.onmessage = function (e) {
                                 callback: (value) => {
                                     const d = new Date(value);
                                     if (isShortRange) {
-                                        return d.toLocaleTimeString([], {
-                                            hour: '2-digit',
-                                            minute: '2-digit',
-                                        });
+                                        return formatters_js.formatDateTime(d, { includeDate: false, includeSeconds: false });
                                     }
-                                    return d.toLocaleDateString([], {
-                                        month: 'short',
-                                        day: 'numeric',
-                                    });
+                                    return formatters_js.formatDateTime(d, { includeTime: false });
                                 },
                             },
                             grid: { color: '#333' },
@@ -19199,12 +19175,7 @@ self.onmessage = function (e) {
             const prevRaw = this._getPreviousRaw(totalPoint.dataset.data, totalPoint.dataIndex);
 
             // Title
-            const title = new Date(totalPoint.raw.x).toLocaleString([], {
-                month: 'short',
-                day: 'numeric',
-                hour: 'numeric',
-                minute: '2-digit',
-            });
+            const title = formatters_js.formatDateTime(new Date(totalPoint.raw.x), { includeSeconds: false });
 
             // Build lines
             let html = `<div style="font-weight:bold; color:#fff; margin-bottom:4px;">${title}</div>`;
@@ -19309,12 +19280,7 @@ self.onmessage = function (e) {
             min-width: 180px;
         `;
 
-            const date = new Date(snapshot.t).toLocaleString([], {
-                month: 'short',
-                day: 'numeric',
-                hour: 'numeric',
-                minute: '2-digit',
-            });
+            const date = formatters_js.formatDateTime(new Date(snapshot.t), { includeSeconds: false });
 
             popup.innerHTML = `
             <div style="margin-bottom:4px;font-weight:500;color:#fff;">${date}</div>

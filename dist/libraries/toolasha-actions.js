@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.62.13
+ * Version: 2.62.14
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -344,7 +344,7 @@
                 `<div style="color: #fff; font-size: 0.85em; margin-top: 4px;">• Use mirrors starting at <strong>+${mirrorStartLevel}</strong></div>`
             );
             lines.push(
-                `<div style="color: #88ff88; font-size: 0.85em;">• Total savings to +20: <strong>${Math.round(totalSavings).toLocaleString()}</strong> coins</div>`
+                `<div style="color: #88ff88; font-size: 0.85em;">• Total savings to +20: <strong>${formatters_js.formatLargeNumber(Math.round(totalSavings))}</strong> coins</div>`
             );
             lines.push(
                 `<div style="color: #aaa; font-size: 0.75em; margin-top: 4px; font-style: italic;">Rows highlighted in gold show where mirror is cheaper</div>`
@@ -430,10 +430,10 @@
 
             lines.push(`<td style="padding: 6px 4px; text-align: right; color: #ccc;">${formatters_js.timeReadable(data.time)}</td>`);
             lines.push(
-                `<td style="padding: 6px 4px; text-align: right; color: ${config.COLOR_XP_RATE};">${data.xpPerHour > 0 ? data.xpPerHour.toLocaleString() : '-'}</td>`
+                `<td style="padding: 6px 4px; text-align: right; color: ${config.COLOR_XP_RATE};">${data.xpPerHour > 0 ? formatters_js.formatLargeNumber(data.xpPerHour) : '-'}</td>`
             );
             lines.push(
-                `<td style="padding: 6px 4px; text-align: right; color: #ffa500;">${Math.round(data.cost).toLocaleString()}</td>`
+                `<td style="padding: 6px 4px; text-align: right; color: #ffa500;">${formatters_js.formatLargeNumber(Math.round(data.cost))}</td>`
             );
 
             // Add Mirror Cost column if Philosopher's Mirror is equipped
@@ -6370,6 +6370,16 @@
 
 
     /**
+     * Format a completion Date as a clock string, respecting user's time/date format settings.
+     * @param {Date} completionTime
+     * @param {boolean} includeDate - Whether to include the date portion
+     * @returns {string}
+     */
+    function formatCompletionTime(completionTime, includeDate) {
+        return formatters_js.formatDateTime(completionTime, { includeDate, includeTime: true, includeSeconds: true });
+    }
+
+    /**
      * ActionTimeDisplay class manages the time display panel and queue tooltips
      */
     class ActionTimeDisplay {
@@ -6648,10 +6658,7 @@
                     if (!hasInfinite && !result.isTrulyInfinite) {
                         const completionDate = new Date();
                         completionDate.setSeconds(completionDate.getSeconds() + accumulatedTime);
-                        const hours = String(completionDate.getHours()).padStart(2, '0');
-                        const minutes = String(completionDate.getMinutes()).padStart(2, '0');
-                        const seconds = String(completionDate.getSeconds()).padStart(2, '0');
-                        timeText += ` Complete at ${hours}:${minutes}:${seconds}`;
+                        timeText += ` Complete at ${formatCompletionTime(completionDate, false)}`;
                     }
 
                     this.appendTimeToActionDiv(actionDiv, timeText);
@@ -7472,26 +7479,7 @@
             // Format completion time
             const now = new Date();
             const isToday = completionTime.toDateString() === now.toDateString();
-            const use24h = config.getSettingValue('market_listingTimeFormat', '24hour') === '24hour';
-
-            let clockTime;
-            if (isToday) {
-                clockTime = completionTime.toLocaleString('en-US', {
-                    hour: 'numeric',
-                    minute: '2-digit',
-                    second: '2-digit',
-                    hour12: !use24h,
-                });
-            } else {
-                clockTime = completionTime.toLocaleString('en-US', {
-                    month: 'numeric',
-                    day: 'numeric',
-                    hour: 'numeric',
-                    minute: '2-digit',
-                    second: '2-digit',
-                    hour12: !use24h,
-                });
-            }
+            const clockTime = formatCompletionTime(completionTime, !isToday);
 
             // Build display HTML
             // Line 1: Append stats to game's action name div
@@ -7548,20 +7536,7 @@
                     recycleCompletion.setSeconds(recycleCompletion.getSeconds() + recycleTimeSeconds);
                     const recycleTimeStr = formatters_js.timeReadable(recycleTimeSeconds);
                     const recycleIsToday = recycleCompletion.toDateString() === new Date().toDateString();
-                    const recycleUse24h = config.getSettingValue('market_listingTimeFormat', '24hour') === '24hour';
-                    const recycleClockTime = recycleCompletion.toLocaleString(
-                        'en-US',
-                        recycleIsToday
-                            ? { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: !recycleUse24h }
-                            : {
-                                  month: 'numeric',
-                                  day: 'numeric',
-                                  hour: 'numeric',
-                                  minute: '2-digit',
-                                  second: '2-digit',
-                                  hour12: !recycleUse24h,
-                              }
-                    );
+                    const recycleClockTime = formatCompletionTime(recycleCompletion, !recycleIsToday);
                     recycleHtml = `<span style="color:#4dd0a0; margin-left:12px; font-size:11px;">Est. w/ recycle: ${recycleTimeStr} → ${recycleClockTime}</span>`;
                 }
                 this.displayElement.innerHTML = `<span style="display: inline-block; margin-right: 0.25em;">⏱</span> ${matsLabel} ${timeStr} → ${clockTime}${recycleHtml}`;
@@ -7777,26 +7752,7 @@
 
                 const now = new Date();
                 const isToday = completionTime.toDateString() === now.toDateString();
-                const use24h = config.getSettingValue('market_listingTimeFormat', '24hour') === '24hour';
-
-                let clockTime;
-                if (isToday) {
-                    clockTime = completionTime.toLocaleString('en-US', {
-                        hour: 'numeric',
-                        minute: '2-digit',
-                        second: '2-digit',
-                        hour12: !use24h,
-                    });
-                } else {
-                    clockTime = completionTime.toLocaleString('en-US', {
-                        month: 'numeric',
-                        day: 'numeric',
-                        hour: 'numeric',
-                        minute: '2-digit',
-                        second: '2-digit',
-                        hour12: !use24h,
-                    });
-                }
+                const clockTime = formatCompletionTime(completionTime, !isToday);
 
                 const itemIconHtml = this.getItemIconHtml(limitingItemHrid);
                 const matsLabel = itemIconHtml ? `${itemIconHtml}:` : 'Mats:';
@@ -8722,11 +8678,7 @@
                         const completionDate = new Date();
                         completionDate.setSeconds(completionDate.getSeconds() + accumulatedTime);
 
-                        const hours = String(completionDate.getHours()).padStart(2, '0');
-                        const minutes = String(completionDate.getMinutes()).padStart(2, '0');
-                        const seconds = String(completionDate.getSeconds()).padStart(2, '0');
-
-                        completionText = ` Complete at ${hours}:${minutes}:${seconds}`;
+                        completionText = ` Complete at ${formatCompletionTime(completionDate, false)}`;
                     }
 
                     // Create time display element
@@ -10870,16 +10822,16 @@
                 // Range output (e.g., "1.3 - 4")
                 const minOutput = parseFloat(output[0].trim());
                 const maxOutput = parseFloat(output[1].trim());
-                const expectedMin = (minOutput * amount * dropRate * successRate).toLocaleString('en-US', {
+                const expectedMin = (minOutput * amount * dropRate * successRate).toLocaleString(undefined, {
                     minimumFractionDigits: 1,
                     maximumFractionDigits: 1,
                 });
-                const expectedMax = (maxOutput * amount * dropRate * successRate).toLocaleString('en-US', {
+                const expectedMax = (maxOutput * amount * dropRate * successRate).toLocaleString(undefined, {
                     minimumFractionDigits: 1,
                     maximumFractionDigits: 1,
                 });
                 const expectedAvg = (((minOutput + maxOutput) / 2) * amount * dropRate * successRate).toLocaleString(
-                    'en-US',
+                    undefined,
                     {
                         minimumFractionDigits: 1,
                         maximumFractionDigits: 1,
@@ -10889,7 +10841,7 @@
             } else {
                 // Single value output
                 const value = parseFloat(output[0].trim());
-                const expectedValue = (value * amount * dropRate * successRate).toLocaleString('en-US', {
+                const expectedValue = (value * amount * dropRate * successRate).toLocaleString(undefined, {
                     minimumFractionDigits: 1,
                     maximumFractionDigits: 1,
                 });
@@ -10963,7 +10915,7 @@
                 const totalXP = modifiedXP * amount;
 
                 // Set total XP text (formatted with 1 decimal place and thousand separators)
-                clone.childNodes[0].textContent = totalXP.toLocaleString('en-US', {
+                clone.childNodes[0].textContent = totalXP.toLocaleString(undefined, {
                     minimumFractionDigits: 1,
                     maximumFractionDigits: 1,
                 });
