@@ -654,6 +654,21 @@ function registerFeatures() {
             async: false,
         },
         {
+            key: 'guildActivityCalculator',
+            name: 'Guild Activity Calculator',
+            category: 'Guild',
+            module: UI.guildActivityCalculator,
+            async: false,
+        },
+        {
+            key: 'guildActivityDisplay',
+            name: 'Guild Activity Display',
+            category: 'Guild',
+            module: UI.guildActivityDisplay,
+            async: false,
+            customCheck: () => config.getSetting('guildActivityCalculator'),
+        },
+        {
             key: 'emptyQueueNotification',
             name: 'Empty Queue Notification',
             category: 'Notifications',

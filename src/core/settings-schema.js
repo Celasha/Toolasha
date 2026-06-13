@@ -1830,6 +1830,13 @@ export const settingsGroups = {
                 default: true,
                 help: 'Displays XP/hr rates, rankings, and a weekly chart on the Guild Overview, Members, and Guild Leaderboard tabs. Disable the standalone Guild XP/h userscript if using this.',
             },
+            guildActivityCalculator: {
+                id: 'guildActivityCalculator',
+                label: 'Guild Activity Calculator',
+                type: 'checkbox',
+                default: true,
+                help: 'Tracks guild activity sessions and shows projected stars/hr, tokens/hr, budget usage, and difficulty comparisons on the Guild panel.',
+            },
         },
     },
 
