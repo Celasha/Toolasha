@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.62.14
+ * Version: 2.63.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1075,7 +1075,7 @@
         if (!itemDetails?.enhancementCosts?.length) return '';
 
         const showPrices = config.getSetting('itemTooltip_prices');
-        const useKMB = config.getSetting('formatting_useKMBFormat');
+        const useKMB = formatters_js.isAbbreviationEnabled();
         const fmt = (n) => (n != null && n > 0 ? (useKMB ? formatters_js.formatLargeNumber(n, 0) : formatters_js.numberFormatter(Math.round(n))) : '—');
         const fmtCost = (n) =>
             n != null && n > 0 ? (useKMB ? formatters_js.formatLargeNumber(n, 1) : formatters_js.numberFormatter(Math.round(n))) : '—';
@@ -4309,7 +4309,7 @@ self.onmessage = function (e) {
      * @returns {string} Formatted number
      */
     function formatTooltipPrice(num) {
-        const useKMB = config.getSetting('formatting_useKMBFormat');
+        const useKMB = formatters_js.isAbbreviationEnabled();
         return useKMB ? formatters_js.networthFormatter(num) : formatters_js.numberFormatter(num);
     }
 

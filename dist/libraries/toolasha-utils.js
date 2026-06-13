@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 2.62.14
+ * Version: 2.63.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -13,6 +13,18 @@
      * Pure functions for formatting numbers and time
      */
 
+
+    /**
+     * Check if number abbreviation (K/M/B) is enabled based on user settings.
+     * Returns true for both 'compact' and 'threshold' modes, false for 'full'.
+     * Also handles legacy boolean values from old settings.
+     * @returns {boolean}
+     */
+    function isAbbreviationEnabled() {
+        const mode = config.getSettingValue('formatting_useKMBFormat', 'compact');
+        if (mode === false || mode === 'full') return false;
+        return true;
+    }
 
     /**
      * Format numbers with thousand separators
@@ -416,24 +428,74 @@
     }
 
     /**
-     * Format large numbers based on user preference
-     * Uses K/M/B notation or full numbers depending on setting
-     * @param {number} value - The number to format
-     * @param {number} decimals - Number of decimal places for K/M/B format (default: 1)
-     * @returns {string} Formatted number (e.g., "1.5M" or "1,500,000")
+     * Format large numbers with threshold-based abbreviation.
+     * Keeps full comma-separated digits until the number exceeds 4 display digits,
+     * then abbreviates with the configured precision.
+     * @param {number} num - The number to format
+     * @param {number} decimals - Number of decimal places (default: user setting)
+     * @returns {string} Formatted number (e.g., "9,999" or "10.0K" or "1.25M")
      *
      * @example
-     * // With K/M/B enabled (default)
-     * formatLargeNumber(1500000) // "1.5M"
-     * formatLargeNumber(2300) // "2.3K"
-     *
-     * // With K/M/B disabled
-     * formatLargeNumber(1500000) // "1,500,000"
-     * formatLargeNumber(2300) // "2,300"
+     * formatThreshold(9999, 2) // "9,999"
+     * formatThreshold(10000, 2) // "10.00K"
+     * formatThreshold(1250000, 2) // "1.25M"
      */
-    function formatLargeNumber(value, decimals = 1) {
-        const useAbbreviations = config.getSetting('formatting_useKMBFormat') !== false;
-        return useAbbreviations ? formatKMB(value, decimals) : formatWithSeparator(value);
+    function formatThreshold(num, decimals = 1) {
+        if (num === null || num === undefined) {
+            return null;
+        }
+
+        const absNum = Math.abs(num);
+        const sign = num < 0 ? '-' : '';
+
+        if (absNum < 10000) {
+            return sign + new Intl.NumberFormat().format(Math.round(absNum));
+        }
+
+        return sign + _abbreviate(absNum, decimals);
+    }
+
+    /**
+     * Internal: abbreviate a positive number with K/M/B suffix.
+     * @private
+     */
+    function _abbreviate(absNum, decimals) {
+        if (absNum >= 1e9) {
+            return (absNum / 1e9).toFixed(decimals) + 'B';
+        } else if (absNum >= 1e6) {
+            return (absNum / 1e6).toFixed(decimals) + 'M';
+        } else if (absNum >= 1e3) {
+            return (absNum / 1e3).toFixed(decimals) + 'K';
+        }
+        return absNum.toFixed(0);
+    }
+
+    /**
+     * Format large numbers based on user preference
+     * Dispatches to full, threshold, or compact format based on settings
+     * @param {number} value - The number to format
+     * @param {number} [decimals] - Override decimal places (if omitted, uses user setting)
+     * @returns {string} Formatted number
+     *
+     * @example
+     * // compact mode, precision 2: formatLargeNumber(1500000) → "1.50M"
+     * // threshold mode, precision 2: formatLargeNumber(9999) → "9,999", formatLargeNumber(10000) → "10.00K"
+     * // full mode: formatLargeNumber(1500000) → "1,500,000"
+     */
+    function formatLargeNumber(value, decimals) {
+        const mode = config.getSettingValue('formatting_useKMBFormat', 'compact');
+
+        if (mode === 'full' || mode === false) {
+            return formatWithSeparator(value);
+        }
+
+        const precision = decimals !== undefined ? decimals : Number(config.getSettingValue('formatting_precision', '2'));
+
+        if (mode === 'threshold') {
+            return formatThreshold(value, precision);
+        }
+
+        return formatKMB(value, precision);
     }
 
     /**
@@ -478,7 +540,9 @@
         formatLargeNumber: formatLargeNumber,
         formatPercentage: formatPercentage,
         formatRelativeTime: formatRelativeTime,
+        formatThreshold: formatThreshold,
         formatWithSeparator: formatWithSeparator,
+        isAbbreviationEnabled: isAbbreviationEnabled,
         networthFormatter: networthFormatter,
         numberFormatter: numberFormatter,
         timeReadable: timeReadable

@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.62.14
+ * Version: 2.63.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -4034,6 +4034,7 @@ ${starCSS}
         { hrid: '/chat_channel_types/trade', name: 'Trade' },
         { hrid: '/chat_channel_types/global', name: 'Global' },
         { hrid: '/chat_channel_types/local', name: 'Local' },
+        { hrid: '/chat_channel_types/help', name: 'Help' },
         { hrid: '/chat_channel_types/party', name: 'Party' },
         { hrid: '/chat_channel_types/guild', name: 'Guild' },
         { hrid: '/chat_channel_types/whisper', name: 'Whisper' },
@@ -7690,13 +7691,36 @@ ${starCSS}
     }
 
     /**
+     * Calculate total task time in seconds (full quantity, ignoring progress)
+     * Used for rate calculations (gold/hr) where we need the overall rate, not time remaining.
+     * @param {Object} profitData - Profit calculation result
+     * @returns {number|null} Total task time in seconds or null if unavailable
+     */
+    function calculateTaskTotalSeconds(profitData) {
+        const actionsPerHour = profitData?.action?.details?.actionsPerHour;
+        const totalQuantity = profitData?.taskInfo?.quantity;
+
+        if (!actionsPerHour || !totalQuantity) {
+            return null;
+        }
+
+        const efficiencyMultiplier = profitData.action?.details?.efficiencyMultiplier || 1;
+        const baseActionsNeeded = Math.ceil(totalQuantity / (efficiencyMultiplier > 0 ? efficiencyMultiplier : 1));
+
+        const taskSpeedBonus = dataManager.getTaskSpeedBonus();
+        const adjustedActionsPerHour = actionsPerHour * (1 + taskSpeedBonus / 100);
+
+        return profitHelpers_js.calculateSecondsForActions(baseActionsNeeded, adjustedActionsPerHour);
+    }
+
+    /**
      * Calculate task efficiency rating data
      * @param {Object} profitData - Profit calculation result
      * @param {string} ratingMode - Rating mode (tokens or gold)
      * @returns {Object|null} Rating data or null if unavailable
      */
     function calculateTaskEfficiencyRating(profitData, ratingMode) {
-        const completionSeconds = calculateTaskCompletionSeconds(profitData);
+        const completionSeconds = calculateTaskTotalSeconds(profitData);
         if (!completionSeconds || completionSeconds <= 0) {
             return null;
         }
@@ -8879,17 +8903,23 @@ ${starCSS}
             container.appendChild(mainLine);
 
             // Efficiency rating (tokens/hr or gold/hr) — matching skilling task format
-            if (config.getSetting('taskEfficiencyRating') && completionSeconds > 0) {
+            // Use total task time (not remaining) so rate doesn't inflate as task progresses
+            const totalKills = taskData.quantity ?? 0;
+            const totalTaskSeconds = killsPerHour > 0 ? Math.round((totalKills / killsPerHour) * 3600) : 0;
+            if (config.getSetting('taskEfficiencyRating') && totalTaskSeconds > 0) {
                 const ratingMode = config.getSettingValue('taskEfficiencyRatingMode', RATING_MODE_TOKENS);
-                const hours = completionSeconds / 3600;
+                const totalHours = totalTaskSeconds / 3600;
+                const totalDropValueFull = dropEntries.reduce((s, d) => s + d.totalValue * totalHours, 0);
+                const totalConsumableCostFull = consumableEntries.reduce((s, c) => s + c.totalCost * totalHours, 0);
+                const totalProfitFull = Math.round(totalDropValueFull - totalConsumableCostFull + rewardValue.total);
                 let ratingValue, unitLabel;
 
                 if (ratingMode === RATING_MODE_GOLD) {
-                    ratingValue = totalProfit / hours;
+                    ratingValue = totalProfitFull / totalHours;
                     unitLabel = 'gold/hr';
                 } else {
                     const tokensReceived = rewardValue.breakdown?.tokensReceived ?? 0;
-                    ratingValue = tokensReceived / hours;
+                    ratingValue = tokensReceived / totalHours;
                     unitLabel = 'tokens/hr';
                 }
 
@@ -14842,7 +14872,7 @@ ${starCSS}
      */
 
 
-    const STORE_NAME$3 = 'xpHistory';
+    const STORE_NAME$4 = 'xpHistory';
     const WINDOW_10M$1 = 10 * 60 * 1000;
     const WINDOW_1H$1 = 60 * 60 * 1000;
     const WINDOW_1W$1 = 7 * 24 * 60 * 60 * 1000;
@@ -15060,7 +15090,7 @@ ${starCSS}
             this.characterId = charId;
 
             // Load persisted history for this character
-            const stored = await storage.get(`xpHistory_${charId}`, STORE_NAME$3, {});
+            const stored = await storage.get(`xpHistory_${charId}`, STORE_NAME$4, {});
             this.xpHistory = stored;
 
             const t = data.currentTimestamp ? +new Date(data.currentTimestamp) : Date.now();
@@ -15078,7 +15108,7 @@ ${starCSS}
             });
 
             // Don't await — write is fire-and-forget, no need to block initialization
-            storage.set(`xpHistory_${charId}`, this.xpHistory, STORE_NAME$3);
+            storage.set(`xpHistory_${charId}`, this.xpHistory, STORE_NAME$4);
 
             this._updateNavBars();
         }
@@ -15105,7 +15135,7 @@ ${starCSS}
                 pushXP$1(this.xpHistory[skillId], { t, xp: skillEntry.experience });
             });
 
-            storage.set(`xpHistory_${this.characterId}`, this.xpHistory, STORE_NAME$3);
+            storage.set(`xpHistory_${this.characterId}`, this.xpHistory, STORE_NAME$4);
 
             this._updateNavBars();
         }
@@ -15285,7 +15315,7 @@ ${starCSS}
      */
 
 
-    const STORE_NAME$2 = 'lootLogHistory';
+    const STORE_NAME$3 = 'lootLogHistory';
     const MAX_ENTRIES = 500;
 
     class LootLogHistory {
@@ -15300,7 +15330,7 @@ ${starCSS}
         async _load() {
             const key = this._getKey();
             if (!key) return [];
-            return await storage.get(key, STORE_NAME$2, []);
+            return await storage.get(key, STORE_NAME$3, []);
         }
 
         /**
@@ -15309,7 +15339,7 @@ ${starCSS}
         async _save(entries) {
             const key = this._getKey();
             if (!key) return;
-            await storage.set(key, entries, STORE_NAME$2, true);
+            await storage.set(key, entries, STORE_NAME$3, true);
         }
 
         /**
@@ -15345,7 +15375,7 @@ ${starCSS}
         async clearHistory() {
             const key = this._getKey();
             if (!key) return;
-            await storage.delete(key, STORE_NAME$2);
+            await storage.delete(key, STORE_NAME$3);
         }
     }
 
@@ -31791,7 +31821,7 @@ ${starCSS}
      */
 
 
-    const STORE_NAME$1 = 'guildHistory';
+    const STORE_NAME$2 = 'guildHistory';
     const WINDOW_10M = 10 * 60 * 1000;
     const WINDOW_1H = 60 * 60 * 1000;
     const WINDOW_1D = 24 * 60 * 60 * 1000;
@@ -32031,7 +32061,7 @@ ${starCSS}
             }
 
             // Load persisted player leaderboard history
-            this.playerXPHistory = await storage.get('playerXP_leaderboard', STORE_NAME$1, {});
+            this.playerXPHistory = await storage.get('playerXP_leaderboard', STORE_NAME$2, {});
 
             this.initialized = true;
         }
@@ -32072,9 +32102,9 @@ ${starCSS}
             }
 
             // Load persisted histories
-            this.guildXPHistory = await storage.get(`guildXP_${guildName}`, STORE_NAME$1, {});
+            this.guildXPHistory = await storage.get(`guildXP_${guildName}`, STORE_NAME$2, {});
             if (this.ownGuildID) {
-                this.memberXPHistory = await storage.get(`memberXP_${this.ownGuildID}`, STORE_NAME$1, {});
+                this.memberXPHistory = await storage.get(`memberXP_${this.ownGuildID}`, STORE_NAME$2, {});
             }
 
             const t = data.currentTimestamp ? +new Date(data.currentTimestamp) : Date.now();
@@ -32094,9 +32124,9 @@ ${starCSS}
             }
 
             // Persist
-            await storage.set(`guildXP_${guildName}`, this.guildXPHistory, STORE_NAME$1);
+            await storage.set(`guildXP_${guildName}`, this.guildXPHistory, STORE_NAME$2);
             if (this.ownGuildID) {
-                await storage.set(`memberXP_${this.ownGuildID}`, this.memberXPHistory, STORE_NAME$1);
+                await storage.set(`memberXP_${this.ownGuildID}`, this.memberXPHistory, STORE_NAME$2);
             }
         }
 
@@ -32118,7 +32148,7 @@ ${starCSS}
 
             const t = Date.now();
             pushXP(this.guildXPHistory[name], { t, xp: guild.experience });
-            storage.set(`guildXP_${name}`, this.guildXPHistory, STORE_NAME$1);
+            storage.set(`guildXP_${name}`, this.guildXPHistory, STORE_NAME$2);
         }
 
         /**
@@ -32135,7 +32165,7 @@ ${starCSS}
 
             if (newGuildID && this.ownGuildID && newGuildID !== this.ownGuildID) {
                 // Guild switched — clear stale member data and load fresh from storage
-                this.memberXPHistory = await storage.get(`memberXP_${newGuildID}`, STORE_NAME$1, {});
+                this.memberXPHistory = await storage.get(`memberXP_${newGuildID}`, STORE_NAME$2, {});
                 this.memberMeta = {};
             }
 
@@ -32165,7 +32195,7 @@ ${starCSS}
             }
 
             if (this.ownGuildID) {
-                storage.set(`memberXP_${this.ownGuildID}`, this.memberXPHistory, STORE_NAME$1);
+                storage.set(`memberXP_${this.ownGuildID}`, this.memberXPHistory, STORE_NAME$2);
             }
         }
 
@@ -32194,7 +32224,7 @@ ${starCSS}
 
                 // Persist using own guild name as key (all guild histories stored together)
                 if (this.ownGuildName) {
-                    storage.set(`guildXP_${this.ownGuildName}`, this.guildXPHistory, STORE_NAME$1);
+                    storage.set(`guildXP_${this.ownGuildName}`, this.guildXPHistory, STORE_NAME$2);
                 }
             } else {
                 for (const row of rows) {
@@ -32208,7 +32238,7 @@ ${starCSS}
                     pushXP(this.playerXPHistory[name], { t, xp });
                 }
 
-                storage.set('playerXP_leaderboard', this.playerXPHistory, STORE_NAME$1);
+                storage.set('playerXP_leaderboard', this.playerXPHistory, STORE_NAME$2);
             }
         }
 
@@ -32336,7 +32366,7 @@ ${starCSS}
         async resetMemberData() {
             if (!this.ownGuildID) return;
             this.memberXPHistory = {};
-            await storage.set(`memberXP_${this.ownGuildID}`, {}, STORE_NAME$1);
+            await storage.set(`memberXP_${this.ownGuildID}`, {}, STORE_NAME$2);
         }
 
         /**
@@ -32375,7 +32405,7 @@ ${starCSS}
      */
 
 
-    const CSS_PREFIX = 'mwi-guild-xp';
+    const CSS_PREFIX$1 = 'mwi-guild-xp';
 
     // ─── Formatting helpers ─────────────────────────────────────────────────────
 
@@ -32502,7 +32532,7 @@ ${starCSS}
                 ? 'background-image: linear-gradient(45deg, var(--color-space-300) 25%, transparent 25%, transparent 50%, var(--color-space-300) 50%, var(--color-space-300) 75%, transparent 75%); background-size: 10px 10px;'
                 : 'background-color: var(--color-space-300);';
 
-            barsHTML += `<div class="${CSS_PREFIX}__bar"
+            barsHTML += `<div class="${CSS_PREFIX$1}__bar"
             style="height: ${heightPct}%; width: ${widthPct}%; border-right: 1px solid var(--color-space-700); box-sizing: border-box; ${bgStyle}"
             data-xph="${d.xpH}"
             ${d.truncated ? 'data-truncated="true"' : ''}
@@ -32525,7 +32555,7 @@ ${starCSS}
         }
 
         return `
-        <div class="${CSS_PREFIX}" style="
+        <div class="${CSS_PREFIX$1}" style="
             display: grid;
             grid-template-columns: auto auto 1fr;
             grid-template-rows: 1fr auto;
@@ -32564,7 +32594,7 @@ ${starCSS}
      * @returns {string} HTML
      */
     function sortIcon(direction) {
-        return `<span class="${CSS_PREFIX}__sort-icon" style="display: inline-flex; flex-direction: column; vertical-align: middle; margin-left: 2px;">
+        return `<span class="${CSS_PREFIX$1}__sort-icon" style="display: inline-flex; flex-direction: column; vertical-align: middle; margin-left: 2px;">
         <span style="font-size: 8px; line-height: 8px;">${direction === 'asc' ? '\u25B2' : '\u25B3'}</span>
         <span style="font-size: 8px; line-height: 8px;">${direction === 'desc' ? '\u25BC' : '\u25BD'}</span>
     </span>`;
@@ -32623,7 +32653,7 @@ ${starCSS}
             // Update all sort icons in this table
             const theadTr = thEl.parentElement;
             for (const th of theadTr.children) {
-                const icon = th.querySelector(`.${CSS_PREFIX}__sort-icon`);
+                const icon = th.querySelector(`.${CSS_PREFIX$1}__sort-icon`);
                 if (icon) {
                     const d = th.dataset.sortId === tableEl.dataset.sortId ? direction : 'none';
                     icon.outerHTML = sortIcon(d);
@@ -32647,7 +32677,7 @@ ${starCSS}
      */
     function addColumn(tableEl, options) {
         // Don't add duplicate columns
-        if (tableEl.querySelector(`th.${CSS_PREFIX}[data-name="${options.name}"]`)) return;
+        if (tableEl.querySelector(`th.${CSS_PREFIX$1}[data-name="${options.name}"]`)) return;
 
         const theadTr = tableEl.querySelector('thead tr');
         if (!theadTr) return;
@@ -32656,7 +32686,7 @@ ${starCSS}
 
         // Add header
         const th = document.createElement('th');
-        th.className = CSS_PREFIX;
+        th.className = CSS_PREFIX$1;
         th.dataset.name = options.name;
         th.textContent = options.name;
 
@@ -32672,7 +32702,7 @@ ${starCSS}
 
         for (let i = 0; i < rows.length; i++) {
             const td = document.createElement('td');
-            td.className = CSS_PREFIX;
+            td.className = CSS_PREFIX$1;
 
             const value = i < options.data.length ? options.data[i] : null;
             if (options.format) {
@@ -32772,7 +32802,7 @@ ${starCSS}
 
         _renderOverview(dataGridEl) {
             // Remove previous injection
-            dataGridEl.querySelectorAll(`.${CSS_PREFIX}`).forEach((el) => el.remove());
+            dataGridEl.querySelectorAll(`.${CSS_PREFIX$1}`).forEach((el) => el.remove());
 
             const guildName = guildXPTracker.getOwnGuildName();
             if (!guildName) return;
@@ -32784,7 +32814,7 @@ ${starCSS}
             const rateValue = stats.lastHourXPH > 0 ? stats.lastHourXPH : stats.lastXPH;
 
             const statsHTML = `
-            <div class="GuildPanel_dataBlockGroup__1d2rR ${CSS_PREFIX}">
+            <div class="GuildPanel_dataBlockGroup__1d2rR ${CSS_PREFIX$1}">
                 <div class="GuildPanel_dataBlock__3qVhK">
                     <div class="GuildPanel_label__-A63g">${rateLabel}</div>
                     <div class="GuildPanel_value__Hm2I9">${fNum(rateValue)}</div>
@@ -32797,7 +32827,7 @@ ${starCSS}
 
             // Chart row
             const chartHTML = `
-            <div class="GuildPanel_dataBlockGroup__1d2rR ${CSS_PREFIX}" style="grid-column: 1 / 3; max-width: none;">
+            <div class="GuildPanel_dataBlockGroup__1d2rR ${CSS_PREFIX$1}" style="grid-column: 1 / 3; max-width: none;">
                 <div class="GuildPanel_dataBlock__3qVhK" style="height: 240px;">
                     <div class="GuildPanel_label__-A63g">Last week XP/h</div>
                     ${buildChart(stats.chart)}
@@ -32807,7 +32837,7 @@ ${starCSS}
             dataGridEl.insertAdjacentHTML('beforeend', statsHTML + chartHTML);
 
             // Attach chart bar event listeners
-            dataGridEl.querySelectorAll(`.${CSS_PREFIX}__bar`).forEach((bar) => {
+            dataGridEl.querySelectorAll(`.${CSS_PREFIX$1}__bar`).forEach((bar) => {
                 bar.addEventListener('mouseenter', this._onBarEnter);
                 bar.addEventListener('mouseleave', this._onBarLeave);
             });
@@ -32815,7 +32845,7 @@ ${starCSS}
             // Time to level
             const timeToLevel = guildXPTracker.getTimeToLevel(guildName);
             if (timeToLevel !== null) {
-                const ttlHTML = `<div class="${CSS_PREFIX}" style="color: var(--color-space-300); font-size: 13px;">${formatTimeLeft(timeToLevel)}</div>`;
+                const ttlHTML = `<div class="${CSS_PREFIX$1}" style="color: var(--color-space-300); font-size: 13px;">${formatTimeLeft(timeToLevel)}</div>`;
                 // Find the "Exp to Next Level" data block and append
                 const dataBlocks = dataGridEl.querySelectorAll('.GuildPanel_dataBlock__3qVhK');
                 for (const block of dataBlocks) {
@@ -32839,7 +32869,7 @@ ${starCSS}
 
         _renderMembers(tableEl) {
             // Skip if already rendered
-            if (tableEl.querySelector(`.${CSS_PREFIX}`)) return;
+            if (tableEl.querySelector(`.${CSS_PREFIX$1}`)) return;
 
             const guildID = guildXPTracker.getOwnGuildID();
             if (!guildID) return;
@@ -32950,7 +32980,7 @@ ${starCSS}
 
             // Make existing columns sortable
             const nameHeader = theadTr.children[0];
-            if (nameHeader && !nameHeader.querySelector(`.${CSS_PREFIX}__sort-icon`)) {
+            if (nameHeader && !nameHeader.querySelector(`.${CSS_PREFIX$1}__sort-icon`)) {
                 makeColumnSortable(nameHeader, {
                     sortId: 'name',
                     valueGetter: (trEl) => trEl.children[0]?.textContent?.trim() || '',
@@ -32959,7 +32989,7 @@ ${starCSS}
 
             // Guild Exp column
             const expHeader = Array.from(theadTr.children).find((el) => el.textContent.includes('Guild Exp'));
-            if (expHeader && !expHeader.querySelector(`.${CSS_PREFIX}__sort-icon`)) {
+            if (expHeader && !expHeader.querySelector(`.${CSS_PREFIX$1}__sort-icon`)) {
                 makeColumnSortable(expHeader, {
                     sortId: 'xp',
                     valueGetter: (trEl) => {
@@ -32973,7 +33003,7 @@ ${starCSS}
             // Role column
             const rolePriority = { Leader: 1, General: 2, Officer: 3, Member: 4 };
             const roleHeader = Array.from(theadTr.children).find((el) => el.textContent.trim() === 'Role');
-            if (roleHeader && !roleHeader.querySelector(`.${CSS_PREFIX}__sort-icon`)) {
+            if (roleHeader && !roleHeader.querySelector(`.${CSS_PREFIX$1}__sort-icon`)) {
                 const roleColIndex = Array.from(theadTr.children).indexOf(roleHeader);
                 makeColumnSortable(roleHeader, {
                     sortId: 'role',
@@ -32986,7 +33016,7 @@ ${starCSS}
 
             // Activity column
             const activityHeader = Array.from(theadTr.children).find((el) => el.textContent.trim() === 'Activity');
-            if (activityHeader && !activityHeader.querySelector(`.${CSS_PREFIX}__sort-icon`)) {
+            if (activityHeader && !activityHeader.querySelector(`.${CSS_PREFIX$1}__sort-icon`)) {
                 const activityColIndex = Array.from(theadTr.children).indexOf(activityHeader);
                 makeColumnSortable(activityHeader, {
                     sortId: 'activity',
@@ -33011,7 +33041,7 @@ ${starCSS}
 
             // Status column
             const statusHeader = Array.from(theadTr.children).find((el) => el.textContent.trim() === 'Status');
-            if (statusHeader && !statusHeader.querySelector(`.${CSS_PREFIX}__sort-icon`)) {
+            if (statusHeader && !statusHeader.querySelector(`.${CSS_PREFIX$1}__sort-icon`)) {
                 const statusColIndex = Array.from(theadTr.children).indexOf(statusHeader);
                 makeColumnSortable(statusHeader, {
                     sortId: 'status',
@@ -33064,7 +33094,7 @@ ${starCSS}
 
         _renderLeaderboard(tableEl) {
             // Skip if already rendered
-            if (tableEl.querySelector(`.${CSS_PREFIX}`)) return;
+            if (tableEl.querySelector(`.${CSS_PREFIX$1}`)) return;
 
             const isGuildLeaderboard = !!tableEl.closest('[class*="GuildPanel"]');
 
@@ -33143,7 +33173,7 @@ ${starCSS}
 
             // Make Rank column sortable
             const rankHeader = Array.from(theadTr.children).find((el) => el.textContent.trim() === 'Rank');
-            if (rankHeader && !rankHeader.querySelector(`.${CSS_PREFIX}__sort-icon`)) {
+            if (rankHeader && !rankHeader.querySelector(`.${CSS_PREFIX$1}__sort-icon`)) {
                 makeColumnSortable(rankHeader, {
                     sortId: 'rank',
                     skipFirst: true,
@@ -33159,7 +33189,7 @@ ${starCSS}
             const tableEl = document.querySelector('[class*="LeaderboardPanel_leaderboardTable"]');
             if (tableEl) {
                 // Remove existing columns and re-render
-                tableEl.querySelectorAll(`.${CSS_PREFIX}`).forEach((el) => el.remove());
+                tableEl.querySelectorAll(`.${CSS_PREFIX$1}`).forEach((el) => el.remove());
                 this._renderLeaderboard(tableEl);
             }
         }
@@ -33176,7 +33206,7 @@ ${starCSS}
             const dbb = document.body.getBoundingClientRect();
 
             const tooltipHTML = `<div role="tooltip"
-            class="${CSS_PREFIX}__tooltip MuiPopper-root MuiTooltip-popper css-112l0a2"
+            class="${CSS_PREFIX$1}__tooltip MuiPopper-root MuiTooltip-popper css-112l0a2"
             style="position: absolute; inset: auto auto 0px 0px; margin: 0px; transform: translate(${Math.floor(bb.x - dbb.x)}px, ${Math.floor(bb.y - dbb.bottom)}px) translate(-50%, 0);"
             data-popper-placement="top">
             <div class="MuiTooltip-tooltip MuiTooltip-tooltipPlacementTop css-1spb1s5" style="opacity: 1;">
@@ -33192,12 +33222,12 @@ ${starCSS}
         </div>`;
 
             // Remove existing tooltip
-            document.body.querySelectorAll(`.${CSS_PREFIX}__tooltip`).forEach((el) => el.remove());
+            document.body.querySelectorAll(`.${CSS_PREFIX$1}__tooltip`).forEach((el) => el.remove());
             document.body.insertAdjacentHTML('beforeend', tooltipHTML);
         }
 
         _onBarLeave() {
-            document.body.querySelectorAll(`.${CSS_PREFIX}__tooltip`).forEach((el) => el.remove());
+            document.body.querySelectorAll(`.${CSS_PREFIX$1}__tooltip`).forEach((el) => el.remove());
         }
 
         // ─── Cleanup ─────────────────────────────────────────────────────────────
@@ -33210,8 +33240,8 @@ ${starCSS}
             this.timerRegistry.clearAll();
 
             // Remove all injected elements
-            document.querySelectorAll(`.${CSS_PREFIX}`).forEach((el) => el.remove());
-            document.querySelectorAll(`.${CSS_PREFIX}__tooltip`).forEach((el) => el.remove());
+            document.querySelectorAll(`.${CSS_PREFIX$1}`).forEach((el) => el.remove());
+            document.querySelectorAll(`.${CSS_PREFIX$1}__tooltip`).forEach((el) => el.remove());
 
             this.initialized = false;
         }
@@ -33223,6 +33253,1236 @@ ${starCSS}
         name: 'Guild XP Display',
         initialize: () => guildXPDisplay.initialize(),
         cleanup: () => guildXPDisplay.disable(),
+    };
+
+    /**
+     * Guild Activity Tracker
+     * Intercepts guild activity WebSocket messages to track session stats,
+     * budget usage, and calculate projections for guild skilling/combat activities.
+     *
+     * SR Formula: SR = 0.84 + (effectiveLevel - difficulty) * 0.004
+     * where effectiveLevel = skillLevel + floor(drinkLevelBonus * (1 + drinkConcentration))
+     * and difficulty = 100 + tier * 10
+     *
+     * Data sources:
+     * - guild_activity_progress — live session stats (successRate, progressPerAction, etc.)
+     * - guild_activity_member_updated — star completion + budget tracking
+     * - guild_updated — guild-wide star totals
+     * - guild_characters_updated — per-member progress
+     */
+
+
+    const STORE_NAME$1 = 'guildHistory';
+    const SESSION_DURATION_MS = 600_000;
+    const TARGET_WORK_PER_TIER = 300;
+    const BASE_TARGET_WORK = 2700;
+    const GUILD_BASE_TIME_MS = 10_000;
+
+    const SR_BASE = 0.84;
+    const SR_PER_LEVEL = 0.004;
+
+    const ACTIVITY_TO_SKILL = {
+        '/guild_skilling/milking': '/skills/milking',
+        '/guild_skilling/foraging': '/skills/foraging',
+        '/guild_skilling/woodcutting': '/skills/woodcutting',
+        '/guild_skilling/cheesesmithing': '/skills/cheesesmithing',
+        '/guild_skilling/crafting': '/skills/crafting',
+        '/guild_skilling/tailoring': '/skills/tailoring',
+        '/guild_skilling/cooking': '/skills/cooking',
+        '/guild_skilling/brewing': '/skills/brewing',
+        '/guild_skilling/alchemy': '/skills/alchemy',
+        '/guild_skilling/enhancing': '/skills/enhancing',
+    };
+
+    const GATHERING_SKILLS = new Set(['/skills/milking', '/skills/foraging', '/skills/woodcutting']);
+    const GOURMET_SKILLS = new Set(['/skills/cooking', '/skills/brewing']);
+
+    class GuildActivityTracker {
+        constructor() {
+            this.currentSession = null;
+            this.budget = null;
+            this.observedTiers = {};
+            this.guildStars = {};
+            this.memberProgress = {};
+            this.weeklyActivitySet = null;
+            this.unregisterHandlers = [];
+            this._initialized = false;
+        }
+
+        initialize() {
+            if (!config.getSetting('guildActivityCalculator')) return;
+            if (this._initialized) return;
+            this._initialized = true;
+
+            this._boundOnProgress = (data) => this._onActivityProgress(data);
+            this._boundOnMemberUpdated = (data) => this._onMemberUpdated(data);
+            this._boundOnGuildUpdated = (data) => this._onGuildUpdated(data);
+            this._boundOnMembersUpdated = (data) => this._onMembersUpdated(data);
+            this._boundOnCharacterInit = () => this._onCharacterInit();
+
+            webSocketHook.on('guild_activity_progress', this._boundOnProgress);
+            webSocketHook.on('guild_activity_member_updated', this._boundOnMemberUpdated);
+            webSocketHook.on('guild_updated', this._boundOnGuildUpdated);
+            webSocketHook.on('guild_characters_updated', this._boundOnMembersUpdated);
+            dataManager.on('character_initialized', this._boundOnCharacterInit);
+
+            this.unregisterHandlers.push(
+                () => webSocketHook.off('guild_activity_progress', this._boundOnProgress),
+                () => webSocketHook.off('guild_activity_member_updated', this._boundOnMemberUpdated),
+                () => webSocketHook.off('guild_updated', this._boundOnGuildUpdated),
+                () => webSocketHook.off('guild_characters_updated', this._boundOnMembersUpdated),
+                () => dataManager.off('character_initialized', this._boundOnCharacterInit)
+            );
+
+            this._onCharacterInit();
+            this._loadStoredData();
+        }
+
+        disable() {
+            for (const unreg of this.unregisterHandlers) {
+                unreg();
+            }
+            this.unregisterHandlers = [];
+            this.currentSession = null;
+            this._initialized = false;
+        }
+
+        async _loadStoredData() {
+            try {
+                this.observedTiers = await storage.get('observedTiers', STORE_NAME$1, {});
+            } catch (error) {
+                console.error('[GuildActivityTracker] Failed to load stored data:', error);
+                this.observedTiers = {};
+            }
+        }
+
+        async _saveObservedTiers() {
+            try {
+                await storage.set('observedTiers', this.observedTiers, STORE_NAME$1);
+            } catch (error) {
+                console.error('[GuildActivityTracker] Failed to save observed tiers:', error);
+            }
+        }
+
+        _onCharacterInit() {
+            const charData = dataManager.characterData;
+            if (!charData) return;
+
+            if (charData.guildWeeklyActivitySet) {
+                this.weeklyActivitySet = charData.guildWeeklyActivitySet;
+            }
+
+            if (charData.guild) {
+                this._parseGuildStars(charData.guild.currentWeekActivitiesData);
+            }
+
+            if (charData.guildCharacterMap) {
+                this._parseMemberProgress(charData.guildCharacterMap);
+            }
+        }
+
+        _onActivityProgress(data) {
+            const session = {
+                activityHrid: data.activityHrid,
+                tier: data.tier,
+                currentProgress: data.currentProgress,
+                successRate: data.successRate,
+                efficiency: data.efficiency,
+                doubleProgressChance: data.doubleProgressChance,
+                progressPerAction: data.progressPerAction,
+                targetLevel: data.targetLevel,
+                actionTimeMs: data.actionTimeMs,
+                timeoutAt: data.timeoutAt,
+                targetWorkValue: data.targetWorkValue,
+                currentWorkValue: data.currentWorkValue,
+                currentEnhLevel: data.currentEnhLevel,
+                actionCounter: data.actionCounter,
+                lastUpdate: Date.now(),
+            };
+
+            this.currentSession = session;
+
+            const key = `${data.activityHrid}:${data.tier}`;
+            this.observedTiers[key] = {
+                activityHrid: data.activityHrid,
+                tier: data.tier,
+                successRate: data.successRate,
+                efficiency: data.efficiency,
+                doubleProgressChance: data.doubleProgressChance,
+                progressPerAction: data.progressPerAction,
+                targetWorkValue: data.targetWorkValue,
+                targetLevel: data.targetLevel,
+                actionTimeMs: data.actionTimeMs,
+                skillLevel: this._getSkillLevel(data.activityHrid),
+                observedAt: Date.now(),
+            };
+            this._saveObservedTiers();
+
+            this._notifyListeners();
+        }
+
+        _onMemberUpdated(data) {
+            this.budget = {
+                secondsRemaining: data.budgetSecondsRemaining,
+                secondsCap: data.budgetSecondsCap,
+                updatedAt: Date.now(),
+            };
+
+            if (data.progressMap) {
+                this.memberProgress = { ...data.progressMap };
+            }
+
+            this._notifyListeners();
+        }
+
+        _onGuildUpdated(data) {
+            if (data.guild?.currentWeekActivitiesData) {
+                this._parseGuildStars(data.guild.currentWeekActivitiesData);
+            }
+            if (data.guildWeeklyActivitySet) {
+                this.weeklyActivitySet = data.guildWeeklyActivitySet;
+            }
+            this._notifyListeners();
+        }
+
+        _onMembersUpdated(data) {
+            if (data.guildCharacterMap) {
+                this._parseMemberProgress(data.guildCharacterMap);
+            }
+            this._notifyListeners();
+        }
+
+        _parseGuildStars(jsonString) {
+            try {
+                this.guildStars = typeof jsonString === 'string' ? JSON.parse(jsonString) : jsonString || {};
+            } catch {
+                this.guildStars = {};
+            }
+        }
+
+        _parseMemberProgress(charMap) {
+            const selfId = dataManager.characterData?.character?.id;
+            if (!selfId || !charMap[selfId]) return;
+
+            const self = charMap[selfId];
+            if (self.weeklyActivityProgressData) {
+                try {
+                    this.memberProgress =
+                        typeof self.weeklyActivityProgressData === 'string'
+                            ? JSON.parse(self.weeklyActivityProgressData)
+                            : self.weeklyActivityProgressData;
+                } catch {
+                    this.memberProgress = {};
+                }
+            }
+            if (self.weeklyActivitySecondsUsed !== undefined) {
+                const cap = this.budget?.secondsCap || 7200;
+                this.budget = {
+                    secondsRemaining: cap - self.weeklyActivitySecondsUsed,
+                    secondsCap: cap,
+                    updatedAt: Date.now(),
+                };
+            }
+        }
+
+        // ─── Public API ─────────────────────────────────────────────────────────────
+
+        getCurrentSession() {
+            return this.currentSession;
+        }
+
+        getBudget() {
+            return this.budget;
+        }
+
+        getGuildStars() {
+            return { ...this.guildStars };
+        }
+
+        getMemberProgress() {
+            return { ...this.memberProgress };
+        }
+
+        getWeeklyActivitySet() {
+            return this.weeklyActivitySet;
+        }
+
+        /**
+         * Calculate probability of completing at least 1 star within a 10-minute session.
+         * Uses normal approximation of binomial distribution.
+         * @param {object} stats - Session stats
+         * @returns {number} Probability (0-1)
+         */
+        calculateSessionCompletionChance(stats) {
+            if (!stats || !stats.successRate || !stats.actionTimeMs) return 0;
+
+            const n = Math.floor(SESSION_DURATION_MS / stats.actionTimeMs);
+            const p = Math.min(1, stats.successRate);
+            const isEnhancing = stats.targetLevel != null;
+
+            let needSuccesses;
+            if (isEnhancing) {
+                needSuccesses = stats.targetLevel;
+            } else {
+                if (!stats.progressPerAction || !stats.targetWorkValue) return 0;
+                const progressPerSuccess = stats.progressPerAction * (1 + (stats.doubleProgressChance || 0));
+                needSuccesses = Math.ceil(stats.targetWorkValue / progressPerSuccess);
+            }
+
+            if (needSuccesses <= 0) return 1;
+            if (needSuccesses > n) return 0;
+
+            const mean = n * p;
+            const std = Math.sqrt(n * p * (1 - p));
+            if (std === 0) return mean >= needSuccesses ? 1 : 0;
+
+            const z = (mean - needSuccesses + 0.5) / std;
+            return this._normalCDF(z);
+        }
+
+        _normalCDF(z) {
+            const a1 = 0.254829592;
+            const a2 = -0.284496736;
+            const a3 = 1.421413741;
+            const a4 = -1.453152027;
+            const a5 = 1.061405429;
+            const pp = 0.3275911;
+            const sign = z < 0 ? -1 : 1;
+            const x = Math.abs(z) / Math.SQRT2;
+            const t = 1.0 / (1.0 + pp * x);
+            const y = 1.0 - ((((a5 * t + a4) * t + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
+            return 0.5 * (1.0 + sign * y);
+        }
+
+        calculateStarsPerSession(stats) {
+            if (!stats || !stats.progressPerAction || !stats.targetWorkValue) return 0;
+
+            const actionsPerSession = SESSION_DURATION_MS / stats.actionTimeMs;
+            const successfulActions = actionsPerSession * stats.successRate;
+            const baseProgress = successfulActions * stats.progressPerAction;
+            const totalProgress = baseProgress * (1 + stats.doubleProgressChance);
+            return totalProgress / stats.targetWorkValue;
+        }
+
+        /**
+         * Calculate projected stars per 10-minute session for enhancing activity.
+         * @param {object} stats - Session stats
+         * @returns {number} Expected stars per session
+         */
+        calculateEnhancingStarsPerSession(stats) {
+            if (!stats || !stats.targetLevel || !stats.successRate) return 0;
+
+            const expectedAttemptsPerStar = stats.targetLevel / stats.successRate;
+            const msPerStar = expectedAttemptsPerStar * stats.actionTimeMs;
+            return SESSION_DURATION_MS / msPerStar;
+        }
+
+        // ─── SR Formula ─────────────────────────────────────────────────────────────
+
+        /**
+         * Compute exact SR for an activity at a given difficulty using the derived formula.
+         * @param {string} activityHrid - Activity hrid
+         * @param {number} difficulty - Difficulty level (100 + tier * 10)
+         * @returns {number} Success rate (clamped to [0.01, 1.0])
+         */
+        _computeSR(activityHrid, difficulty) {
+            const skillLevel = this._getSkillLevel(activityHrid);
+            if (!skillLevel) return 0.5;
+
+            const drinkLevelBonus = this._getDrinkLevelBonus(activityHrid);
+            const drinkConcentration = dataManager.characterData?.noncombatStats?.drinkConcentration || 0;
+            const effectiveLevel = skillLevel + Math.floor(drinkLevelBonus * (1 + drinkConcentration));
+
+            const sr = SR_BASE + (effectiveLevel - difficulty) * SR_PER_LEVEL;
+            return Math.max(0.01, Math.min(1.0, sr));
+        }
+
+        /**
+         * Sum all applicable level buffs from active drinks for a guild activity.
+         * Looks for buff_types/action_level (generic) and buff_types/{skill}_level (specific).
+         * @param {string} activityHrid - Activity hrid
+         * @returns {number} Total drink level bonus (before concentration amplification)
+         */
+        _getDrinkLevelBonus(activityHrid) {
+            const skillHrid = ACTIVITY_TO_SKILL[activityHrid];
+            if (!skillHrid) return 0;
+
+            const actionTypeHrid = skillHrid.replace('/skills/', '/action_types/');
+            const drinks = dataManager.getActionDrinkSlots(actionTypeHrid);
+            const itemDetailMap = dataManager.getInitClientData()?.itemDetailMap;
+            if (!drinks || !itemDetailMap) return 0;
+
+            const skillName = skillHrid.replace('/skills/', '');
+            const skillLevelType = `/buff_types/${skillName}_level`;
+
+            let total = 0;
+            for (const drink of drinks) {
+                if (!drink) continue;
+                const itemHrid = drink.itemHrid || drink;
+                const detail = itemDetailMap[itemHrid];
+                if (!detail?.consumableDetail?.buffs) continue;
+
+                for (const buff of detail.consumableDetail.buffs) {
+                    if (buff.typeHrid === '/buff_types/action_level' || buff.typeHrid === skillLevelType) {
+                        total += buff.flatBoost;
+                    }
+                }
+            }
+
+            return total;
+        }
+
+        /**
+         * Sum a specific buff type from active drinks for a guild activity.
+         * @param {string} activityHrid - Activity hrid
+         * @param {string} buffTypeHrid - Buff type to sum (e.g., '/buff_types/efficiency')
+         * @returns {number} Total buff value (before concentration amplification)
+         */
+        _getDrinkBuffBonus(activityHrid, buffTypeHrid) {
+            const skillHrid = ACTIVITY_TO_SKILL[activityHrid];
+            if (!skillHrid) return 0;
+
+            const actionTypeHrid = skillHrid.replace('/skills/', '/action_types/');
+            const drinks = dataManager.getActionDrinkSlots(actionTypeHrid);
+            const itemDetailMap = dataManager.getInitClientData()?.itemDetailMap;
+            if (!drinks || !itemDetailMap) return 0;
+
+            let total = 0;
+            for (const drink of drinks) {
+                if (!drink) continue;
+                const itemHrid = drink.itemHrid || drink;
+                const detail = itemDetailMap[itemHrid];
+                if (!detail?.consumableDetail?.buffs) continue;
+
+                for (const buff of detail.consumableDetail.buffs) {
+                    if (buff.typeHrid === buffTypeHrid) {
+                        total += buff.flatBoost;
+                    }
+                }
+            }
+
+            return total;
+        }
+
+        /**
+         * Get the house room efficiency bonus for an activity's action type.
+         * @param {string} actionTypeHrid - Action type hrid
+         * @returns {number} House room efficiency bonus
+         */
+        _getHouseRoomEfficiency(actionTypeHrid) {
+            const houseRooms = dataManager.getHouseRooms();
+            const houseRoomDetailMap = dataManager.getInitClientData()?.houseRoomDetailMap;
+            if (!houseRooms || !houseRoomDetailMap) return 0;
+
+            for (const [roomHrid, room] of houseRooms) {
+                if (!room.level || room.level <= 0) continue;
+                const roomDef = houseRoomDetailMap[roomHrid];
+                if (!roomDef?.usableInActionTypeMap?.[actionTypeHrid]) continue;
+
+                const actionBuffs = roomDef.actionBuffs || [];
+                for (const buff of actionBuffs) {
+                    if (buff.typeHrid === '/buff_types/efficiency') {
+                        return buff.flatBoostLevelBonus * room.level;
+                    }
+                }
+            }
+
+            return 0;
+        }
+
+        /**
+         * Get the house room action speed bonus for an activity's action type.
+         * @param {string} actionTypeHrid - Action type hrid
+         * @returns {number} House room speed bonus
+         */
+        _getHouseRoomSpeed(actionTypeHrid) {
+            const houseRooms = dataManager.getHouseRooms();
+            const houseRoomDetailMap = dataManager.getInitClientData()?.houseRoomDetailMap;
+            if (!houseRooms || !houseRoomDetailMap) return 0;
+
+            for (const [roomHrid, room] of houseRooms) {
+                if (!room.level || room.level <= 0) continue;
+                const roomDef = houseRoomDetailMap[roomHrid];
+                if (!roomDef?.usableInActionTypeMap?.[actionTypeHrid]) continue;
+
+                const actionBuffs = roomDef.actionBuffs || [];
+                for (const buff of actionBuffs) {
+                    if (buff.typeHrid === '/buff_types/action_speed') {
+                        return buff.flatBoostLevelBonus * room.level;
+                    }
+                }
+            }
+
+            return 0;
+        }
+
+        /**
+         * Get a community buff value at its current level.
+         * Formula: flatBoost + flatBoostLevelBonus * level
+         * @param {string} communityBuffHrid - Community buff hrid
+         * @returns {number} Total buff value
+         */
+        _getCommunityBuffValue(communityBuffHrid) {
+            const level = dataManager.getCommunityBuffLevel(communityBuffHrid);
+            if (!level) return 0;
+
+            const communityBuffMap = dataManager.getInitClientData()?.communityBuffTypeDetailMap;
+            if (!communityBuffMap) return 0;
+
+            const def = communityBuffMap[communityBuffHrid];
+            if (!def?.buff) return 0;
+
+            return def.buff.flatBoost + def.buff.flatBoostLevelBonus * level;
+        }
+
+        /**
+         * Compute total efficiency for a guild activity from all sources.
+         * efficiency = equipEff + drinkEff*(1+DC) + houseEff + communityEff
+         * @param {string} activityHrid - Activity hrid
+         * @returns {number} Total efficiency
+         */
+        _computeEfficiency(activityHrid) {
+            const skillHrid = ACTIVITY_TO_SKILL[activityHrid];
+            const actionTypeHrid = skillHrid?.replace('/skills/', '/action_types/');
+            if (!actionTypeHrid) return 0;
+
+            const equipment = dataManager.getEquipment();
+            const itemDetailMap = dataManager.getInitClientData()?.itemDetailMap;
+            const drinkConcentration = dataManager.characterData?.noncombatStats?.drinkConcentration || 0;
+
+            const equipEfficiency =
+                equipment && itemDetailMap
+                    ? equipmentParser_js.parseEquipmentEfficiencyBonuses(equipment, actionTypeHrid, itemDetailMap) / 100
+                    : 0;
+
+            const drinkEfficiency = this._getDrinkBuffBonus(activityHrid, '/buff_types/efficiency');
+            const houseEfficiency = this._getHouseRoomEfficiency(actionTypeHrid);
+
+            const isProcessing = !GATHERING_SKILLS.has(skillHrid) && skillHrid !== '/skills/enhancing';
+            const communityEfficiency = isProcessing
+                ? this._getCommunityBuffValue('/community_buff_types/production_efficiency')
+                : 0;
+
+            return equipEfficiency + drinkEfficiency * (1 + drinkConcentration) + houseEfficiency + communityEfficiency;
+        }
+
+        /**
+         * Compute doubleProgressChance for a guild activity.
+         * - Gathering: equipGathering + drinkGathering*(1+DC) + communityGathering
+         * - Cooking/Brewing: drinkGourmet*(1+DC)
+         * - Others: 0
+         * @param {string} activityHrid - Activity hrid
+         * @returns {number} Double progress chance
+         */
+        _computeDoubleProgressChance(activityHrid) {
+            const skillHrid = ACTIVITY_TO_SKILL[activityHrid];
+            if (!skillHrid) return 0;
+
+            const drinkConcentration = dataManager.characterData?.noncombatStats?.drinkConcentration || 0;
+
+            if (GATHERING_SKILLS.has(skillHrid)) {
+                const equipGathering = dataManager.characterData?.noncombatStats?.gatheringQuantity || 0;
+                const drinkGathering = this._getDrinkBuffBonus(activityHrid, '/buff_types/gathering');
+                const communityGathering = this._getCommunityBuffValue('/community_buff_types/gathering_quantity');
+                return equipGathering + drinkGathering * (1 + drinkConcentration) + communityGathering;
+            }
+
+            if (GOURMET_SKILLS.has(skillHrid)) {
+                const drinkGourmet = this._getDrinkBuffBonus(activityHrid, '/buff_types/gourmet');
+                return drinkGourmet * (1 + drinkConcentration);
+            }
+
+            return 0;
+        }
+
+        /**
+         * Compute all stats for a guild activity from current character state.
+         * All values are exact (derived from game formulas).
+         * @param {string} activityHrid - Activity hrid
+         * @returns {object} Computed stats
+         */
+        _computeBaseStats(activityHrid) {
+            const skillHrid = ACTIVITY_TO_SKILL[activityHrid];
+            const actionTypeHrid = skillHrid?.replace('/skills/', '/action_types/');
+            const isEnhancing = activityHrid.includes('enhancing');
+
+            const equipment = dataManager.getEquipment();
+            const itemDetailMap = dataManager.getInitClientData()?.itemDetailMap;
+            const drinkConcentration = dataManager.characterData?.noncombatStats?.drinkConcentration || 0;
+
+            // Speed: equipment + house room + community (enhancing only)
+            let speedBonus =
+                equipment && itemDetailMap && actionTypeHrid
+                    ? equipmentParser_js.parseEquipmentSpeedBonuses(equipment, actionTypeHrid, itemDetailMap)
+                    : 0;
+            if (actionTypeHrid) {
+                speedBonus += this._getHouseRoomSpeed(actionTypeHrid);
+            }
+            if (isEnhancing) {
+                speedBonus += this._getCommunityBuffValue('/community_buff_types/enhancing_speed');
+            }
+            const actionTimeMs = Math.round(GUILD_BASE_TIME_MS / (1 + speedBonus));
+
+            const totalEfficiency = this._computeEfficiency(activityHrid);
+            const doubleProgressChance = this._computeDoubleProgressChance(activityHrid);
+
+            const skillLevel = this._getSkillLevel(activityHrid);
+            const drinkLevelBonus = this._getDrinkLevelBonus(activityHrid);
+            const effectiveLevel = (skillLevel || 1) + Math.floor(drinkLevelBonus * (1 + drinkConcentration));
+
+            const progressPerAction = effectiveLevel * (1 + totalEfficiency);
+
+            return {
+                activityHrid,
+                tier: 0,
+                successRate: 0,
+                efficiency: totalEfficiency,
+                doubleProgressChance,
+                progressPerAction,
+                targetWorkValue: BASE_TARGET_WORK,
+                targetLevel: isEnhancing ? 5 : null,
+                actionTimeMs,
+            };
+        }
+
+        // ─── Tier Comparison ────────────────────────────────────────────────────────
+
+        /**
+         * Get tier comparison data for an activity.
+         * Uses exact SR formula and observed data for tier-independent stats.
+         * Falls back to computed estimates when no observation exists.
+         * @param {string} activityHrid - Activity hrid
+         * @returns {Array} Array of tier data with stars/hr calculations
+         */
+        getTierComparison(activityHrid) {
+            const isEnhancing = activityHrid.includes('enhancing');
+            const baseStats = this._computeBaseStats(activityHrid);
+
+            if (!baseStats.actionTimeMs) return [];
+
+            const results = [];
+
+            for (let tier = 0; tier <= 20; tier++) {
+                const difficulty = 100 + tier * 10;
+                const sr = this._computeSR(activityHrid, difficulty);
+
+                if (sr <= 0) continue;
+
+                const targetWorkValue = isEnhancing
+                    ? baseStats.targetWorkValue
+                    : BASE_TARGET_WORK + tier * TARGET_WORK_PER_TIER;
+
+                const stats = {
+                    ...baseStats,
+                    tier,
+                    successRate: sr,
+                    targetWorkValue,
+                };
+
+                const starsPerSession = isEnhancing
+                    ? this.calculateEnhancingStarsPerSession(stats)
+                    : this.calculateStarsPerSession(stats);
+
+                const sessionsPerHour = 3600_000 / SESSION_DURATION_MS;
+                const starsPerHour = starsPerSession * sessionsPerHour;
+                const tokensPerHour = starsPerHour * (activityHrid.includes('combat') ? 200 : 100);
+
+                results.push({
+                    tier,
+                    difficultyLevel: difficulty,
+                    successRate: sr,
+                    targetWorkValue,
+                    completionChance: this.calculateSessionCompletionChance(stats),
+                    starsPerSession,
+                    starsPerHour,
+                    tokensPerHour,
+                });
+            }
+
+            return results;
+        }
+
+        _getSkillLevel(activityHrid) {
+            const skillHrid = ACTIVITY_TO_SKILL[activityHrid];
+            if (!skillHrid) return null;
+            const skills = dataManager.getSkills();
+            if (!skills) return null;
+            const skill = skills.find((s) => s.skillHrid === skillHrid);
+            return skill?.level || null;
+        }
+
+        _listeners = new Set();
+
+        onUpdate(callback) {
+            this._listeners.add(callback);
+            return () => this._listeners.delete(callback);
+        }
+
+        _notifyListeners() {
+            for (const cb of this._listeners) {
+                try {
+                    cb();
+                } catch (error) {
+                    console.error('[GuildActivityTracker] Listener error:', error);
+                }
+            }
+        }
+    }
+
+    const guildActivityTracker = new GuildActivityTracker();
+
+    var guildActivityCalculator = {
+        name: 'Guild Activity Calculator',
+        initialize: () => guildActivityTracker.initialize(),
+        cleanup: () => guildActivityTracker.disable(),
+    };
+
+    /**
+     * Guild Activity Display
+     * Renders the guild activity calculator panel in the Toolasha settings section.
+     * Shows live session stats, budget tracking, tier comparisons, and guild progress.
+     */
+
+
+    const CSS_PREFIX = 'mwi-guild-activity';
+    const ACTIVITY_NAMES = {
+        '/guild_skilling/milking': 'Milking',
+        '/guild_skilling/foraging': 'Foraging',
+        '/guild_skilling/woodcutting': 'Woodcutting',
+        '/guild_skilling/cheesesmithing': 'Cheesesmithing',
+        '/guild_skilling/crafting': 'Crafting',
+        '/guild_skilling/tailoring': 'Tailoring',
+        '/guild_skilling/cooking': 'Cooking',
+        '/guild_skilling/brewing': 'Brewing',
+        '/guild_skilling/alchemy': 'Alchemy',
+        '/guild_skilling/enhancing': 'Enhancing',
+        '/guild_combat/vanguard': 'Trial Vanguard',
+        '/guild_combat/deadeye': 'Trial Deadeye',
+        '/guild_combat/magus': 'Trial Magus',
+        '/guild_combat/warden': 'Trial Warden',
+        '/guild_combat/swarm': 'Trial Swarm',
+    };
+
+    class GuildActivityDisplay {
+        constructor() {
+            this.timerRegistry = timerRegistry_js.createTimerRegistry();
+            this.unregisterObservers = [];
+            this._unsubTracker = null;
+            this._panelEl = null;
+            this._activeTab = null; // 'calculator' | 'simulator'
+            this._simActivity = null;
+            this._initialized = false;
+        }
+
+        initialize() {
+            if (!config.getSetting('guildActivityCalculator')) return;
+            if (this._initialized) return;
+            this._initialized = true;
+
+            const unregPanel = domObserver.onClass('GuildActivityDisplay-Inject', 'GuildPanel_guildPanel', (el) =>
+                this._injectTab(el)
+            );
+            this.unregisterObservers.push(unregPanel);
+
+            this._unsubTracker = guildActivityTracker.onUpdate(() => this._refresh());
+
+            const intervalId = setInterval(() => this._refreshTimer(), 1000);
+            this.timerRegistry.registerInterval(intervalId);
+
+            const existingPanel = document.querySelector('[class*="GuildPanel_guildPanel"]');
+            if (existingPanel) {
+                this._injectTab(existingPanel);
+            }
+        }
+
+        disable() {
+            for (const unreg of this.unregisterObservers) {
+                unreg();
+            }
+            this.unregisterObservers = [];
+            this.timerRegistry.clearAll();
+            if (this._unsubTracker) {
+                this._unsubTracker();
+                this._unsubTracker = null;
+            }
+            document.querySelectorAll(`.${CSS_PREFIX}`).forEach((el) => el.remove());
+            this._panelEl = null;
+            this._initialized = false;
+        }
+
+        _injectTab(guildPanelEl) {
+            if (guildPanelEl.querySelector(`.${CSS_PREFIX}`)) return;
+
+            const tabRow =
+                guildPanelEl.querySelector('[role="tablist"]') ||
+                guildPanelEl.querySelector('.MuiTabs-flexContainer') ||
+                guildPanelEl.querySelector('[class*="TabsComponent_tabsContainer"]');
+            if (!tabRow) return;
+
+            const calcTab = this._createTab('Calculator');
+            calcTab.addEventListener('click', () => this._showPanel(guildPanelEl, 'calculator'));
+            tabRow.appendChild(calcTab);
+
+            const simTab = this._createTab('Simulator');
+            simTab.classList.add(`${CSS_PREFIX}__tab--sim`);
+            simTab.addEventListener('click', () => this._showPanel(guildPanelEl, 'simulator'));
+            tabRow.appendChild(simTab);
+
+            const otherTabs = tabRow.querySelectorAll('[role="tab"]:not(.' + CSS_PREFIX + '__tab)');
+            for (const otherTab of otherTabs) {
+                otherTab.addEventListener('click', () => this._dismissPanel(guildPanelEl));
+            }
+        }
+
+        _createTab(label) {
+            const tab = document.createElement('button');
+            tab.className = `${CSS_PREFIX} ${CSS_PREFIX}__tab MuiButtonBase-root MuiTab-root MuiTab-textColorPrimary`;
+            tab.setAttribute('role', 'tab');
+            tab.setAttribute('aria-selected', 'false');
+            tab.setAttribute('tabindex', '-1');
+            tab.style.minWidth = '90px';
+            const span = document.createElement('span');
+            span.className = 'MuiTab-wrapper';
+            span.textContent = label;
+            tab.appendChild(span);
+            return tab;
+        }
+
+        _getContentSiblings(guildPanelEl) {
+            const tabRow =
+                guildPanelEl.querySelector('[role="tablist"]') || guildPanelEl.querySelector('.MuiTabs-flexContainer');
+            if (!tabRow) return [];
+
+            const tabContainer = tabRow.closest('[class*="Tabs"]') || tabRow.parentElement;
+            const siblings = [];
+            let el = tabContainer.nextElementSibling;
+            while (el) {
+                if (!el.classList.contains(`${CSS_PREFIX}__panel`)) {
+                    siblings.push(el);
+                }
+                el = el.nextElementSibling;
+            }
+            return siblings;
+        }
+
+        _dismissPanel(guildPanelEl) {
+            const panel = guildPanelEl.querySelector(`.${CSS_PREFIX}__panel`);
+            if (!panel) return;
+            panel.remove();
+            this._panelEl = null;
+            this._activeTab = null;
+
+            for (const el of this._getContentSiblings(guildPanelEl)) {
+                el.style.display = '';
+            }
+
+            for (const tab of guildPanelEl.querySelectorAll(`.${CSS_PREFIX}__tab`)) {
+                tab.classList.remove('Mui-selected');
+                tab.setAttribute('aria-selected', 'false');
+            }
+        }
+
+        _showPanel(guildPanelEl, mode) {
+            const existingPanel = guildPanelEl.querySelector(`.${CSS_PREFIX}__panel`);
+            if (existingPanel && this._activeTab === mode) {
+                this._dismissPanel(guildPanelEl);
+                return;
+            }
+            if (existingPanel) {
+                existingPanel.remove();
+                this._panelEl = null;
+            }
+
+            for (const el of this._getContentSiblings(guildPanelEl)) {
+                el.style.display = 'none';
+            }
+
+            for (const tab of guildPanelEl.querySelectorAll(`.${CSS_PREFIX}__tab`)) {
+                const isSim = tab.classList.contains(`${CSS_PREFIX}__tab--sim`);
+                const isActive = (mode === 'simulator' && isSim) || (mode === 'calculator' && !isSim);
+                tab.classList.toggle('Mui-selected', isActive);
+                tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
+            }
+
+            const panel = document.createElement('div');
+            panel.className = `${CSS_PREFIX}__panel`;
+            panel.style.cssText = `
+            padding: 12px;
+            color: ${config.COLOR_TEXT_PRIMARY};
+            font-size: 13px;
+        `;
+
+            const tabRow =
+                guildPanelEl.querySelector('[role="tablist"]') || guildPanelEl.querySelector('.MuiTabs-flexContainer');
+            const tabContainer = tabRow?.closest('[class*="Tabs"]') || tabRow?.parentElement;
+            if (tabContainer) {
+                tabContainer.parentElement.appendChild(panel);
+            } else {
+                guildPanelEl.appendChild(panel);
+            }
+
+            this._panelEl = panel;
+            this._activeTab = mode;
+
+            if (mode === 'calculator') {
+                this._renderPanel();
+            } else {
+                this._renderSimulator();
+            }
+        }
+
+        _refresh() {
+            if (!this._panelEl) return;
+            if (this._activeTab === 'simulator') {
+                this._renderSimulator();
+            } else {
+                this._renderPanel();
+            }
+        }
+
+        _refreshTimer() {
+            const timerEl = this._panelEl?.querySelector(`.${CSS_PREFIX}__timer`);
+            if (timerEl) {
+                const session = guildActivityTracker.getCurrentSession();
+                if (!session?.timeoutAt) {
+                    timerEl.textContent = '--:--';
+                } else {
+                    const remaining = new Date(session.timeoutAt).getTime() - Date.now();
+                    if (remaining <= 0) {
+                        timerEl.textContent = '0:00';
+                    } else {
+                        const min = Math.floor(remaining / 60000);
+                        const sec = Math.floor((remaining % 60000) / 1000);
+                        timerEl.textContent = `${min}:${sec.toString().padStart(2, '0')}`;
+                    }
+                }
+            }
+
+            const guildPanelEl = document.querySelector('[class*="GuildPanel_guildPanel"]');
+            if (guildPanelEl && !guildPanelEl.querySelector(`.${CSS_PREFIX}`)) {
+                this._injectTab(guildPanelEl);
+            }
+        }
+
+        _renderPanel() {
+            if (!this._panelEl) return;
+
+            const session = guildActivityTracker.getCurrentSession();
+            const budget = guildActivityTracker.getBudget();
+            const guildStars = guildActivityTracker.getGuildStars();
+            const memberProgress = guildActivityTracker.getMemberProgress();
+            const activitySet = guildActivityTracker.getWeeklyActivitySet();
+
+            let html = `<style>
+            .${CSS_PREFIX}__section { margin-bottom: 16px; }
+            .${CSS_PREFIX}__section-title { font-weight: bold; margin-bottom: 6px; font-size: 13px; }
+            .${CSS_PREFIX}__stat-row { display: flex; justify-content: space-between; padding: 2px 0; }
+        </style>`;
+
+            // ─── Budget Section ──────────────────────────────────────────
+            html += this._renderBudget(budget);
+
+            // ─── Live Session Section ────────────────────────────────────
+            html += this._renderSession(session);
+
+            // ─── Weekly Progress ─────────────────────────────────────────
+            html += this._renderWeeklyProgress(guildStars, memberProgress, activitySet);
+
+            // ─── Tier Comparison ─────────────────────────────────────────
+            if (session) {
+                html += this._renderTierComparison(session);
+            }
+
+            this._panelEl.innerHTML = html;
+        }
+
+        _renderBudget(budget) {
+            if (!budget) {
+                return `<div class="${CSS_PREFIX}__section">
+                <div class="${CSS_PREFIX}__section-title">Weekly Budget</div>
+                <div style="color: ${config.COLOR_TEXT_SECONDARY};">No budget data yet — start a guild activity</div>
+            </div>`;
+            }
+
+            const used = budget.secondsCap - budget.secondsRemaining;
+            const pct = Math.min(100, (used / budget.secondsCap) * 100);
+            const usedMin = Math.floor(used / 60);
+            const capMin = Math.floor(budget.secondsCap / 60);
+            const remainMin = Math.floor(budget.secondsRemaining / 60);
+
+            return `<div class="${CSS_PREFIX}__section">
+            <div class="${CSS_PREFIX}__section-title">Weekly Budget</div>
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                <div style="flex: 1; height: 8px; background: rgba(255,255,255,0.1); border-radius: 4px; overflow: hidden;">
+                    <div style="height: 100%; width: ${pct}%; background: ${pct >= 90 ? config.COLOR_LOSS : config.COLOR_ACCENT}; border-radius: 4px;"></div>
+                </div>
+                <span style="white-space: nowrap;">${usedMin}m / ${capMin}m</span>
+            </div>
+            <div style="color: ${config.COLOR_TEXT_SECONDARY};">${remainMin}m remaining</div>
+        </div>`;
+        }
+
+        _renderSession(session) {
+            if (!session) {
+                return `<div class="${CSS_PREFIX}__section">
+                <div class="${CSS_PREFIX}__section-title">Current Session</div>
+                <div style="color: ${config.COLOR_TEXT_SECONDARY};">No active guild activity</div>
+            </div>`;
+            }
+
+            const name = ACTIVITY_NAMES[session.activityHrid] || session.activityHrid;
+            const isEnhancing = session.targetLevel != null;
+            const starsPerSession = isEnhancing
+                ? guildActivityTracker.calculateEnhancingStarsPerSession(session)
+                : guildActivityTracker.calculateStarsPerSession(session);
+            const starsPerHour = starsPerSession * 6;
+            const tokenReward = session.activityHrid.includes('combat') ? 200 : 100;
+            const tokensPerHour = starsPerHour * tokenReward;
+
+            let statsHTML = '';
+            if (isEnhancing) {
+                statsHTML = `
+                <div class="${CSS_PREFIX}__stat-row">
+                    <span>Target Level</span><span>${session.targetLevel}</span>
+                </div>
+                <div class="${CSS_PREFIX}__stat-row">
+                    <span>Current Level</span><span>${session.currentEnhLevel}</span>
+                </div>
+                <div class="${CSS_PREFIX}__stat-row">
+                    <span>Success Rate</span><span>${(session.successRate * 100).toFixed(1)}%</span>
+                </div>
+                <div class="${CSS_PREFIX}__stat-row">
+                    <span>Action Time</span><span>${(session.actionTimeMs / 1000).toFixed(2)}s</span>
+                </div>
+                <div class="${CSS_PREFIX}__stat-row">
+                    <span>Attempts</span><span>${session.actionCounter}</span>
+                </div>`;
+            } else {
+                const progressPct =
+                    session.targetWorkValue > 0
+                        ? ((session.currentWorkValue / session.targetWorkValue) * 100).toFixed(1)
+                        : '0';
+                statsHTML = `
+                <div class="${CSS_PREFIX}__stat-row">
+                    <span>Work Power</span><span>${session.progressPerAction.toFixed(2)}</span>
+                </div>
+                <div class="${CSS_PREFIX}__stat-row">
+                    <span>Success Rate</span><span>${(session.successRate * 100).toFixed(1)}%</span>
+                </div>
+                <div class="${CSS_PREFIX}__stat-row">
+                    <span>Double Progress</span><span>${(session.doubleProgressChance * 100).toFixed(2)}%</span>
+                </div>
+                <div class="${CSS_PREFIX}__stat-row">
+                    <span>Action Time</span><span>${(session.actionTimeMs / 1000).toFixed(2)}s</span>
+                </div>
+                <div class="${CSS_PREFIX}__stat-row">
+                    <span>Progress</span><span>${formatters_js.formatWithSeparator(Math.floor(session.currentWorkValue))} / ${formatters_js.formatWithSeparator(session.targetWorkValue)} (${progressPct}%)</span>
+                </div>`;
+            }
+
+            return `<div class="${CSS_PREFIX}__section">
+            <div class="${CSS_PREFIX}__section-title" style="display: flex; justify-content: space-between; align-items: center;">
+                <span>${name} — Tier ${session.tier} (Lv.${100 + session.tier * 10})</span>
+                <span class="${CSS_PREFIX}__timer" style="font-family: monospace; color: ${config.COLOR_ACCENT};">--:--</span>
+            </div>
+            ${statsHTML}
+            <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.1);">
+                <div class="${CSS_PREFIX}__stat-row">
+                    <span style="color: ${config.COLOR_ACCENT};">Stars/session</span>
+                    <span style="color: ${config.COLOR_ACCENT};">${starsPerSession.toFixed(2)}</span>
+                </div>
+                <div class="${CSS_PREFIX}__stat-row">
+                    <span style="color: ${config.COLOR_ACCENT};">Stars/hr</span>
+                    <span style="color: ${config.COLOR_ACCENT};">${starsPerHour.toFixed(1)}</span>
+                </div>
+                <div class="${CSS_PREFIX}__stat-row">
+                    <span style="color: ${config.COLOR_ACCENT};">Tokens/hr</span>
+                    <span style="color: ${config.COLOR_ACCENT};">${formatters_js.formatWithSeparator(Math.round(tokensPerHour))}</span>
+                </div>
+            </div>
+        </div>`;
+        }
+
+        _renderWeeklyProgress(guildStars, memberProgress, activitySet) {
+            if (!activitySet) return '';
+
+            const allActivities = [...(activitySet.skillHrids || []), ...(activitySet.combatHrids || [])];
+
+            if (allActivities.length === 0) return '';
+
+            let rows = '';
+            for (const hrid of allActivities) {
+                const name = ACTIVITY_NAMES[hrid] || hrid.split('/').pop();
+                const guildCount = guildStars[hrid] || 0;
+                const myCount = memberProgress[hrid] || 0;
+                rows += `<tr>
+                <td style="padding: 3px 8px;">${name}</td>
+                <td style="padding: 3px 8px; text-align: right;">${myCount}</td>
+                <td style="padding: 3px 8px; text-align: right;">${guildCount}</td>
+            </tr>`;
+            }
+
+            return `<div class="${CSS_PREFIX}__section">
+            <div class="${CSS_PREFIX}__section-title">This Week's Activities</div>
+            <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+                <thead>
+                    <tr style="color: ${config.COLOR_TEXT_SECONDARY}; border-bottom: 1px solid rgba(255,255,255,0.1);">
+                        <th style="padding: 3px 8px; text-align: left;">Activity</th>
+                        <th style="padding: 3px 8px; text-align: right;">My Stars</th>
+                        <th style="padding: 3px 8px; text-align: right;">Guild Stars</th>
+                    </tr>
+                </thead>
+                <tbody>${rows}</tbody>
+            </table>
+        </div>`;
+        }
+
+        _renderTierComparison(session) {
+            const comparison = guildActivityTracker.getTierComparison(session.activityHrid);
+            if (comparison.length === 0) return '';
+
+            const isEnhancing = session.targetLevel != null;
+            let rows = '';
+            for (const tier of comparison) {
+                const isCurrentTier = tier.tier === session.tier;
+                const rowStyle = isCurrentTier ? `background: rgba(34, 197, 94, 0.1); font-weight: bold;` : '';
+                const goalCell = isEnhancing
+                    ? ''
+                    : `<td style="padding: 3px 6px; text-align: right;">${formatters_js.formatWithSeparator(tier.targetWorkValue)}</td>`;
+                rows += `<tr style="${rowStyle}">
+                <td style="padding: 3px 6px;">${tier.difficultyLevel}</td>
+                <td style="padding: 3px 6px; text-align: right;">${Math.min(100, tier.successRate * 100).toFixed(0)}%</td>
+                <td style="padding: 3px 6px; text-align: right;">${(tier.completionChance * 100).toFixed(0)}%</td>
+                ${goalCell}
+                <td style="padding: 3px 6px; text-align: right;">${tier.starsPerSession.toFixed(2)}</td>
+                <td style="padding: 3px 6px; text-align: right;">${tier.starsPerHour.toFixed(1)}</td>
+                <td style="padding: 3px 6px; text-align: right;">${formatters_js.formatWithSeparator(Math.round(tier.tokensPerHour))}</td>
+            </tr>`;
+            }
+
+            const name = ACTIVITY_NAMES[session.activityHrid] || session.activityHrid.split('/').pop();
+            const goalHeader = isEnhancing ? '' : '<th style="padding: 3px 6px; text-align: right;">Goal</th>';
+
+            return `<div class="${CSS_PREFIX}__section">
+            <div class="${CSS_PREFIX}__section-title">Difficulty Comparison — ${name}</div>
+            <div style="overflow-x: auto;">
+                <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+                    <thead>
+                        <tr style="color: ${config.COLOR_TEXT_SECONDARY}; border-bottom: 1px solid rgba(255,255,255,0.1);">
+                            <th style="padding: 3px 6px; text-align: left;">Lv.</th>
+                            <th style="padding: 3px 6px; text-align: right;">Hit %</th>
+                            <th style="padding: 3px 6px; text-align: right;">Session %</th>
+                            ${goalHeader}
+                            <th style="padding: 3px 6px; text-align: right;">★/sess</th>
+                            <th style="padding: 3px 6px; text-align: right;">★/hr</th>
+                            <th style="padding: 3px 6px; text-align: right;">Tok/hr</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>
+        </div>`;
+        }
+
+        _renderSimulator() {
+            if (!this._panelEl) return;
+
+            const allActivities = Object.keys(ACTIVITY_NAMES);
+            const selected = this._simActivity || allActivities[0];
+
+            const comparison = guildActivityTracker.getTierComparison(selected);
+            const name = ACTIVITY_NAMES[selected] || selected;
+            const isEnhancing = selected.includes('enhancing');
+
+            let optionsHTML = '';
+            for (const hrid of allActivities) {
+                const label = ACTIVITY_NAMES[hrid];
+                const sel = hrid === selected ? ' selected' : '';
+                optionsHTML += `<option value="${hrid}"${sel}>${label}</option>`;
+            }
+
+            let html = `<style>
+            .${CSS_PREFIX}__section { margin-bottom: 16px; }
+            .${CSS_PREFIX}__section-title { font-weight: bold; margin-bottom: 6px; font-size: 13px; }
+        </style>`;
+
+            html += `<div class="${CSS_PREFIX}__section">
+            <div class="${CSS_PREFIX}__section-title">Simulator</div>
+            <div style="margin-bottom: 12px;">
+                <select class="${CSS_PREFIX}__sim-select" style="
+                    background: rgba(255,255,255,0.1);
+                    color: ${config.COLOR_TEXT_PRIMARY};
+                    border: 1px solid rgba(255,255,255,0.2);
+                    border-radius: 4px;
+                    padding: 6px 8px;
+                    font-size: 13px;
+                    width: 100%;
+                ">${optionsHTML}</select>
+            </div>
+        </div>`;
+
+            if (comparison.length === 0) {
+                html += `<div style="color: ${config.COLOR_TEXT_SECONDARY};">
+                Unable to compute projections for ${name}. Skill level data not available.
+            </div>`;
+            } else {
+                let rows = '';
+                const goalHeader = isEnhancing ? '' : '<th style="padding: 3px 6px; text-align: right;">Goal</th>';
+
+                for (const tier of comparison) {
+                    const goalCell = isEnhancing
+                        ? ''
+                        : `<td style="padding: 3px 6px; text-align: right;">${formatters_js.formatWithSeparator(tier.targetWorkValue)}</td>`;
+                    rows += `<tr>
+                    <td style="padding: 3px 6px;">${tier.difficultyLevel}</td>
+                    <td style="padding: 3px 6px; text-align: right;">${Math.min(100, tier.successRate * 100).toFixed(0)}%</td>
+                    <td style="padding: 3px 6px; text-align: right;">${(tier.completionChance * 100).toFixed(0)}%</td>
+                    ${goalCell}
+                    <td style="padding: 3px 6px; text-align: right;">${tier.starsPerSession.toFixed(2)}</td>
+                    <td style="padding: 3px 6px; text-align: right;">${tier.starsPerHour.toFixed(1)}</td>
+                    <td style="padding: 3px 6px; text-align: right;">${formatters_js.formatWithSeparator(Math.round(tier.tokensPerHour))}</td>
+                </tr>`;
+                }
+
+                html += `<div class="${CSS_PREFIX}__section">
+                <div class="${CSS_PREFIX}__section-title">Tier Projection — ${name}</div>
+                <div style="overflow-x: auto;">
+                    <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+                        <thead>
+                            <tr style="color: ${config.COLOR_TEXT_SECONDARY}; border-bottom: 1px solid rgba(255,255,255,0.1);">
+                                <th style="padding: 3px 6px; text-align: left;">Lv.</th>
+                                <th style="padding: 3px 6px; text-align: right;">Hit %</th>
+                                <th style="padding: 3px 6px; text-align: right;">Session %</th>
+                                ${goalHeader}
+                                <th style="padding: 3px 6px; text-align: right;">★/sess</th>
+                                <th style="padding: 3px 6px; text-align: right;">★/hr</th>
+                                <th style="padding: 3px 6px; text-align: right;">Tok/hr</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                </div>
+            </div>`;
+            }
+
+            this._panelEl.innerHTML = html;
+
+            const select = this._panelEl.querySelector(`.${CSS_PREFIX}__sim-select`);
+            if (select) {
+                select.addEventListener('change', (e) => {
+                    this._simActivity = e.target.value;
+                    this._renderSimulator();
+                });
+            }
+        }
+    }
+
+    const guildActivityDisplay = new GuildActivityDisplay();
+
+    var guildActivityDisplay$1 = {
+        name: 'Guild Activity Display',
+        initialize: () => guildActivityDisplay.initialize(),
+        cleanup: () => guildActivityDisplay.disable(),
     };
 
     /**
@@ -33959,6 +35219,8 @@ ${starCSS}
         xphCalculator,
         guildXPTracker: guildXPTracker$1,
         guildXPDisplay: guildXPDisplay$1,
+        guildActivityCalculator,
+        guildActivityDisplay: guildActivityDisplay$1,
         emptyQueueNotification,
         queueMonitor,
         pformancePanel,
