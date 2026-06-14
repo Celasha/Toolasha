@@ -2622,10 +2622,22 @@ export default class CustomTabsUI {
         const inventory = dataManager.characterItems || [];
         let anyChanged = false;
         const loadoutSnapshot = getLoadoutSnapshot();
+        const snapshots = loadoutSnapshot.snapshots || {};
 
         for (const baseHrid of relevantBases) {
             // Cache may have been invalidated by a prior iteration's snapshot update
             if (!this._boundBaseHrids) break;
+
+            // Only auto-upgrade if all source loadouts use "highest enhancement" mode
+            // (useExactEnhancement: false means the game auto-equips highest owned)
+            const loadoutNames = this._boundBaseLoadouts?.get(baseHrid);
+            if (loadoutNames) {
+                const allUseHighest = [...loadoutNames].every((name) => {
+                    const snap = Object.values(snapshots).find((s) => s.name === name);
+                    return snap && !snap.useExactEnhancement;
+                });
+                if (!allUseHighest) continue;
+            }
 
             // Find highest enhancement level of this item in current inventory
             let highestOwned = -1;
@@ -2668,10 +2680,11 @@ export default class CustomTabsUI {
      */
     _rebuildBoundBaseHrids() {
         this._boundBaseHrids = new Map();
+        this._boundBaseLoadouts = new Map(); // baseHrid → Set<loadoutName>
         const walk = (tabs) => {
             for (const tab of tabs) {
                 if (tab.loadoutBindings) {
-                    for (const items of Object.values(tab.loadoutBindings)) {
+                    for (const [loadoutName, items] of Object.entries(tab.loadoutBindings)) {
                         for (const hrid of items) {
                             const base = getBaseHrid(hrid);
                             const plusIdx = hrid.lastIndexOf('+');
@@ -2681,6 +2694,10 @@ export default class CustomTabsUI {
                                     : 0;
                             const existing = this._boundBaseHrids.get(base) ?? -1;
                             if (level > existing) this._boundBaseHrids.set(base, level);
+                            if (!this._boundBaseLoadouts.has(base)) {
+                                this._boundBaseLoadouts.set(base, new Set());
+                            }
+                            this._boundBaseLoadouts.get(base).add(loadoutName);
                         }
                     }
                 }

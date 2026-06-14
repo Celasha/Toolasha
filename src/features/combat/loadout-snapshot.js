@@ -95,6 +95,7 @@ function buildSnapshot(loadout) {
         name: loadout.name,
         actionTypeHrid: loadout.actionTypeHrid || '',
         isDefault: !!loadout.isDefault,
+        useExactEnhancement: loadout.useExactEnhancement ?? false,
         equipment,
         abilities,
         food,
