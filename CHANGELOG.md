@@ -2,10 +2,9 @@
 
 ## [2.64.1](https://github.com/Celasha/Toolasha/compare/v2.64.0...v2.64.1) (2026-06-14)
 
-
 ### Bug Fixes
 
-* use base + tea crate only for labyrinth room-assignment effective level ([832da33](https://github.com/Celasha/Toolasha/commit/832da336fab14fddbe91f6b8b5dda1ebb79354f8))
+- use base + tea crate only for labyrinth room-assignment effective level ([832da33](https://github.com/Celasha/Toolasha/commit/832da336fab14fddbe91f6b8b5dda1ebb79354f8))
 
 ## [2.64.0](https://github.com/Celasha/Toolasha/compare/v2.63.0...v2.64.0) (2026-06-14)
 
