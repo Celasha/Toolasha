@@ -168,6 +168,31 @@ class LabyrinthClearRate {
     }
 
     /**
+     * Get crate buffs for combat rooms (coffee + food only, no tea)
+     */
+    getCombatCrateBuffs() {
+        const labyrinth = dataManager.characterData?.characterLabyrinth;
+        const setting = dataManager.characterData?.characterSetting;
+        const gameData = dataManager.getInitClientData();
+        if (!gameData?.labyrinthCrateDetailMap) return [];
+
+        const crateHrids = [
+            labyrinth?.coffeeCrateItemHrid || setting?.labyrinthCoffeeCrateHrid || '',
+            labyrinth?.foodCrateItemHrid || setting?.labyrinthFoodCrateHrid || '',
+        ];
+
+        const allBuffs = [];
+        for (const hrid of crateHrids) {
+            if (!hrid) continue;
+            const buffs = gameData.labyrinthCrateDetailMap[hrid];
+            if (Array.isArray(buffs)) {
+                allBuffs.push(...buffs);
+            }
+        }
+        return allBuffs;
+    }
+
+    /**
      * Aggregate all buff sources into skilling metrics for a given skill
      * @param {string} skillId - e.g. "woodcutting"
      * @param {string} actionTypeHrid - e.g. "/action_types/woodcutting"
@@ -477,7 +502,7 @@ class LabyrinthClearRate {
      * skill level types (averaged).
      */
     _getCrateCombatLevelBonus() {
-        const crateBuffs = this.getCrateBuffs();
+        const crateBuffs = this.getCombatCrateBuffs();
         if (crateBuffs.length === 0) return 0;
 
         const skillLevelTypes = new Set([
@@ -728,9 +753,9 @@ class LabyrinthClearRate {
     findRecommendedThreshold(skillHrid, targetRate) {
         const effectiveLevel = this.getEffectiveLevel(skillHrid);
         const isEnhancing = skillHrid === '/skills/enhancing';
-        let low = 0;
+        let low = -300;
         let high = 300;
-        let bestThreshold = 0;
+        let bestThreshold = null;
 
         while (low <= high) {
             const mid = Math.floor((low + high) / 2);
@@ -757,9 +782,9 @@ class LabyrinthClearRate {
      */
     async findRecommendedThresholdCombat(monsterHrid, targetRate) {
         const effectiveCombatLevel = this.getPlayerEffectiveCombatLevel();
-        let low = 0;
+        let low = -300;
         let high = 300;
-        let bestThreshold = 0;
+        let bestThreshold = null;
 
         while (low <= high) {
             const mid = Math.floor((low + high) / 2);
@@ -844,7 +869,7 @@ class LabyrinthClearRate {
             if (!roomHrid) continue;
 
             const rec = this.recommendations.get(roomHrid);
-            if (!rec) continue;
+            if (!rec || rec.threshold === null) continue;
 
             const isSkill = roomHrid.startsWith('/skills/');
             const currentThreshold = isSkill ? this.getSkipThreshold(roomHrid) : this.getCombatSkipThreshold(roomHrid);
@@ -852,7 +877,7 @@ class LabyrinthClearRate {
             const badge = document.createElement('span');
             badge.className = RECOMMEND_CLASS;
             badge.style.cssText = 'font-size:0.7rem; margin-left:6px; white-space:nowrap; font-weight:bold;';
-            badge.textContent = `Rec: +${rec.threshold}`;
+            badge.textContent = `Rec: ${rec.threshold >= 0 ? '+' : ''}${rec.threshold}`;
 
             badge.title = `Recommended skip threshold for ≥${this._recommendTargetPct}% clear rate`;
 
