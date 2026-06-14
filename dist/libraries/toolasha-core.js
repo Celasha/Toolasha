@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.63.0
+ * Version: 2.64.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1470,6 +1470,17 @@
                         { value: 'worst-case', label: 'Worst-case per action (ceil per craft)' },
                     ],
                     help: 'Choose how missing materials accounts for Artisan Tea reductions when suggesting what to buy.',
+                },
+                networth_pricingMode: {
+                    id: 'networth_pricingMode',
+                    label: 'Net worth pricing mode',
+                    type: 'select',
+                    default: 'ask',
+                    options: [
+                        { value: 'ask', label: 'Ask price (patient sell value)' },
+                        { value: 'bid', label: 'Bid price (instant liquidation value)' },
+                    ],
+                    help: 'Ask shows what you could get by listing patiently. Bid shows what you could get by selling instantly.',
                 },
                 networth_highEnhancementUseCost: {
                     id: 'networth_highEnhancementUseCost',

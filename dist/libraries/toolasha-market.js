@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.63.0
+ * Version: 2.64.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -7359,10 +7359,6 @@ self.onmessage = function (e) {
                 return;
             }
 
-            if (!config.getSetting('market_showEstimatedListingAge')) {
-                return;
-            }
-
             this.isInitialized = true;
 
             // Load historical data from storage
@@ -7377,11 +7373,14 @@ self.onmessage = function (e) {
             // Setup WebSocket listeners to collect your listing IDs
             this.setupWebSocketListeners();
 
-            // Setup DOM observer for order book table
-            this.setupObserver();
+            // Display-only features: DOM observers for age columns
+            if (config.getSetting('market_showEstimatedListingAge')) {
+                // Setup DOM observer for order book table
+                this.setupObserver();
 
-            // Setup DOM observer for My Listings table (expired detection)
-            this.setupMyListingsObserver();
+                // Setup DOM observer for My Listings table (expired detection)
+                this.setupMyListingsObserver();
+            }
         }
 
         /**
@@ -7621,23 +7620,28 @@ self.onmessage = function (e) {
                     // Save to storage (debounced)
                     this.saveOrderBooksCache();
 
-                    // Clear processed flags to re-render with new data
-                    const containers = document.querySelectorAll('.mwi-estimated-age-set');
-                    containers.forEach((container) => {
-                        container.classList.remove('mwi-estimated-age-set');
-                    });
+                    // Re-render display elements only if the listing age display is enabled
+                    if (config.getSetting('market_showEstimatedListingAge')) {
+                        // Clear processed flags to re-render with new data
+                        const containers = document.querySelectorAll('.mwi-estimated-age-set');
+                        containers.forEach((container) => {
+                            container.classList.remove('mwi-estimated-age-set');
+                        });
 
-                    // Also clear listing price display flags so Top Order Age updates
-                    document.querySelectorAll('.mwi-listing-prices-set').forEach((table) => {
-                        table.classList.remove('mwi-listing-prices-set');
-                    });
+                        // Also clear listing price display flags so Top Order Age updates
+                        document.querySelectorAll('.mwi-listing-prices-set').forEach((table) => {
+                            table.classList.remove('mwi-listing-prices-set');
+                        });
 
-                    // Manually re-process any existing containers (handles race condition where
-                    // container appeared before WebSocket data arrived)
-                    const existingContainers = document.querySelectorAll('[class*="MarketplacePanel_orderBooksContainer"]');
-                    existingContainers.forEach((container) => {
-                        this.processOrderBook(container);
-                    });
+                        // Manually re-process any existing containers (handles race condition where
+                        // container appeared before WebSocket data arrived)
+                        const existingContainers = document.querySelectorAll(
+                            '[class*="MarketplacePanel_orderBooksContainer"]'
+                        );
+                        existingContainers.forEach((container) => {
+                            this.processOrderBook(container);
+                        });
+                    }
                 }
             };
 
@@ -16346,6 +16350,7 @@ self.onmessage = function (e) {
             name: loadout.name,
             actionTypeHrid: loadout.actionTypeHrid || '',
             isDefault: !!loadout.isDefault,
+            useExactEnhancement: loadout.useExactEnhancement ?? false,
             equipment,
             abilities,
             food,
@@ -16668,7 +16673,7 @@ self.onmessage = function (e) {
      * @param {string} itemHrid - Item HRID
      * @param {number} enhancementLevel - Enhancement level
      * @param {Map} priceCache - Optional price cache from getPricesBatch()
-     * @returns {number} Price per item (always uses ask price)
+     * @returns {number} Price per item (uses networth pricing mode setting)
      */
     function getMarketPrice(itemHrid, enhancementLevel, priceCache = null) {
         // Special handling for currencies
@@ -16676,6 +16681,9 @@ self.onmessage = function (e) {
         if (currencyValue !== null) {
             return currencyValue;
         }
+
+        // Determine which price field to use based on networth pricing mode
+        const pricingMode = config.getSettingValue('networth_pricingMode') || 'ask';
 
         let prices;
 
@@ -16687,13 +16695,13 @@ self.onmessage = function (e) {
             prices = marketData_js.getItemPrices(itemHrid, enhancementLevel);
         }
 
-        // Try ask price first
-        const ask = prices?.ask;
-        if (ask && ask > 0) {
-            return ask;
+        // Try selected pricing mode first
+        const price = prices?.[pricingMode];
+        if (price && price > 0) {
+            return price;
         }
 
-        // No valid ask price - try fallbacks (only for base items)
+        // No valid price - try fallbacks (only for base items)
         // Enhanced items should calculate via enhancement path, not crafting cost
         if (enhancementLevel === 0) {
             // Check if it's an openable container (crates, caches, chests)
@@ -16751,7 +16759,8 @@ self.onmessage = function (e) {
                 return null; // Don't include cowbells in net worth
             }
 
-            const bagPrice = marketData_js.getItemPrice('/items/bag_of_10_cowbells', { mode: 'ask' }) || 0;
+            const pricingMode = config.getSettingValue('networth_pricingMode') || 'ask';
+            const bagPrice = marketData_js.getItemPrice('/items/bag_of_10_cowbells', { mode: pricingMode }) || 0;
             if (bagPrice > 0) {
                 return bagPrice / 10;
             }
@@ -17016,8 +17025,10 @@ self.onmessage = function (e) {
                                   // Store ask and bid WITHOUT coalescing null to 0 (preserve null for "no data" vs "0 price")
                                   priceMap[key + '_ask'] = prices.ask;
                                   priceMap[key + '_bid'] = prices.bid;
-                                  // Also store ask at the base key for backward compatibility
-                                  priceMap[key] = prices.ask;
+                                  // Store selected pricing mode at the base key for worker item valuation
+                                  const networthMode = config.getSettingValue('networth_pricingMode') || 'ask';
+                                  const modePrice = prices[networthMode];
+                                  priceMap[key] = modePrice && modePrice > 0 ? modePrice : prices.ask;
                               } else {
                                   priceMap[key] = 0;
                               }
@@ -21282,6 +21293,7 @@ self.onmessage = function (e) {
             this.timerRegistry = timerRegistry_js.createTimerRegistry();
             this.pauseRegistry = null;
             this.priceUpdateHandler = null;
+            this.pricingModeHandler = null;
             this.itemsUpdateHandler = null;
             this.priceUpdateDebounceTimer = null;
             this.itemsUpdateDebounceTimer = null;
@@ -21352,6 +21364,15 @@ self.onmessage = function (e) {
             };
 
             marketAPI.on(this.priceUpdateHandler);
+
+            // Listen for pricing mode changes
+            this.pricingModeHandler = () => {
+                if (this.isActive && connectionState.isConnected()) {
+                    networthCache.clear();
+                    this.recalculate();
+                }
+            };
+            config.onSettingChange('networth_pricingMode', this.pricingModeHandler);
 
             // Listen for inventory changes
             this.itemsUpdateHandler = () => {
@@ -21445,6 +21466,11 @@ self.onmessage = function (e) {
             if (this.priceUpdateHandler) {
                 marketAPI.off(this.priceUpdateHandler);
                 this.priceUpdateHandler = null;
+            }
+
+            if (this.pricingModeHandler) {
+                config.offSettingChange('networth_pricingMode', this.pricingModeHandler);
+                this.pricingModeHandler = null;
             }
 
             if (this.itemsUpdateHandler) {
@@ -26235,7 +26261,7 @@ self.onmessage = function (e) {
                 newConfig = moveItem(this._config, sourceTabId, targetTabId, hrid);
             }
             this._config = newConfig;
-            await saveConfig(this._characterId, this._config);
+            await this._save();
             this._removeInjectedEls();
             this._applyLayout();
         }
@@ -26249,7 +26275,7 @@ self.onmessage = function (e) {
             if (!sourceTabId) return;
             const newConfig = removeItem(this._config, sourceTabId, hrid);
             this._config = newConfig;
-            await saveConfig(this._characterId, this._config);
+            await this._save();
             this._removeInjectedEls();
             this._applyLayout();
         }
@@ -26277,7 +26303,7 @@ self.onmessage = function (e) {
             if (fromIndex < toIndex) toIndex--;
             const newConfig = reorderItem(this._config, tabId, fromIndex, toIndex);
             this._config = newConfig;
-            await saveConfig(this._characterId, this._config);
+            await this._save();
             this._removeInjectedEls();
             this._applyLayout();
         }
@@ -26925,10 +26951,22 @@ self.onmessage = function (e) {
             const inventory = dataManager.characterItems || [];
             let anyChanged = false;
             const loadoutSnapshot = getLoadoutSnapshot();
+            const snapshots = loadoutSnapshot.snapshots || {};
 
             for (const baseHrid of relevantBases) {
                 // Cache may have been invalidated by a prior iteration's snapshot update
                 if (!this._boundBaseHrids) break;
+
+                // Only auto-upgrade if all source loadouts use "highest enhancement" mode
+                // (useExactEnhancement: false means the game auto-equips highest owned)
+                const loadoutNames = this._boundBaseLoadouts?.get(baseHrid);
+                if (loadoutNames) {
+                    const allUseHighest = [...loadoutNames].every((name) => {
+                        const snap = Object.values(snapshots).find((s) => s.name === name);
+                        return snap && !snap.useExactEnhancement;
+                    });
+                    if (!allUseHighest) continue;
+                }
 
                 // Find highest enhancement level of this item in current inventory
                 let highestOwned = -1;
@@ -26971,10 +27009,11 @@ self.onmessage = function (e) {
          */
         _rebuildBoundBaseHrids() {
             this._boundBaseHrids = new Map();
+            this._boundBaseLoadouts = new Map(); // baseHrid → Set<loadoutName>
             const walk = (tabs) => {
                 for (const tab of tabs) {
                     if (tab.loadoutBindings) {
-                        for (const items of Object.values(tab.loadoutBindings)) {
+                        for (const [loadoutName, items] of Object.entries(tab.loadoutBindings)) {
                             for (const hrid of items) {
                                 const base = getBaseHrid(hrid);
                                 const plusIdx = hrid.lastIndexOf('+');
@@ -26984,6 +27023,10 @@ self.onmessage = function (e) {
                                         : 0;
                                 const existing = this._boundBaseHrids.get(base) ?? -1;
                                 if (level > existing) this._boundBaseHrids.set(base, level);
+                                if (!this._boundBaseLoadouts.has(base)) {
+                                    this._boundBaseLoadouts.set(base, new Set());
+                                }
+                                this._boundBaseLoadouts.get(base).add(loadoutName);
                             }
                         }
                     }
@@ -27344,25 +27387,37 @@ self.onmessage = function (e) {
             }
 
             let open = false;
+            let outsideBound = false;
+            const outsideClick = (e) => {
+                if (!wrapper.contains(e.target)) {
+                    closePanel();
+                }
+            };
             const closePanel = () => {
                 open = false;
                 panel.style.display = 'none';
                 chevron.style.transform = '';
+                if (outsideBound) {
+                    document.removeEventListener('click', outsideClick);
+                    outsideBound = false;
+                }
             };
-            const outsideClick = () => closePanel();
-            document.addEventListener('click', outsideClick);
 
             toggle.addEventListener('click', (e) => {
                 e.stopPropagation();
                 e.preventDefault();
-                open = !open;
-                panel.style.display = open ? 'flex' : 'none';
-                chevron.style.transform = open ? 'rotate(180deg)' : '';
                 if (open) {
-                    // Defer adding the outside-click listener so this click doesn't immediately close it
-                    setTimeout(() => document.addEventListener('click', outsideClick), 0);
-                } else {
-                    document.removeEventListener('click', outsideClick);
+                    closePanel();
+                    return;
+                }
+                open = true;
+                panel.style.display = 'flex';
+                chevron.style.transform = 'rotate(180deg)';
+                if (!outsideBound) {
+                    setTimeout(() => {
+                        document.addEventListener('click', outsideClick);
+                        outsideBound = true;
+                    }, 0);
                 }
             });
 

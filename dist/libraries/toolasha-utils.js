@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 2.63.0
+ * Version: 2.64.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -641,6 +641,7 @@
             name: loadout.name,
             actionTypeHrid: loadout.actionTypeHrid || '',
             isDefault: !!loadout.isDefault,
+            useExactEnhancement: loadout.useExactEnhancement ?? false,
             equipment,
             abilities,
             food,
@@ -2637,6 +2638,9 @@
                         selectedPriceType = 'ask';
                 }
                 return selectedPriceType;
+            }
+            case 'networth': {
+                return config.getSettingValue('networth_pricingMode') || 'ask';
             }
             default: {
                 const warningKey = `context:${context}`;
