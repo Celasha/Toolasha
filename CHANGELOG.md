@@ -2,21 +2,19 @@
 
 ## [2.64.0](https://github.com/Celasha/Toolasha/compare/v2.63.0...v2.64.0) (2026-06-14)
 
-
 ### Features
 
-* add net worth pricing mode setting (ask/bid) ([4b0026e](https://github.com/Celasha/Toolasha/commit/4b0026e9c15f7195ccd7e09a41326db40c974057))
-
+- add net worth pricing mode setting (ask/bid) ([4b0026e](https://github.com/Celasha/Toolasha/commit/4b0026e9c15f7195ccd7e09a41326db40c974057))
 
 ### Bug Fixes
 
-* correct max produceable calculation for self-upgrade recipes ([9144a02](https://github.com/Celasha/Toolasha/commit/9144a020e7c686c2eb2d1edef96ca9d73837c8f7))
-* decouple queue length estimation from listing age display setting ([41d29f4](https://github.com/Celasha/Toolasha/commit/41d29f403cdabd0971ed06707215b3d0f3d89fd1))
-* labyrinth recommendations allow negative thresholds and exclude tea from combat level ([0ffa5d1](https://github.com/Celasha/Toolasha/commit/0ffa5d11f6ec37c1a4c408fa616f7e73652732e7))
-* persist custom tab drag/drop changes across page reload ([1d1ec72](https://github.com/Celasha/Toolasha/commit/1d1ec726748e63fcf7eb8f6ff37e0ce751a10e74))
-* prevent Add to Tab dropdown from leaking document click listeners ([2682ca1](https://github.com/Celasha/Toolasha/commit/2682ca15a38da2fb4f19c636f4c6f947bae891e7))
-* refresh production profit UI when drinks or equipment change ([e254edf](https://github.com/Celasha/Toolasha/commit/e254edf9983ecd94132b6a320a9d109cee741658))
-* respect "Use highest enhancement level" setting in custom tab auto-sync ([da843dd](https://github.com/Celasha/Toolasha/commit/da843dd6acbd5e60741f2aa654c2e4706eb6917c))
+- correct max produceable calculation for self-upgrade recipes ([9144a02](https://github.com/Celasha/Toolasha/commit/9144a020e7c686c2eb2d1edef96ca9d73837c8f7))
+- decouple queue length estimation from listing age display setting ([41d29f4](https://github.com/Celasha/Toolasha/commit/41d29f403cdabd0971ed06707215b3d0f3d89fd1))
+- labyrinth recommendations allow negative thresholds and exclude tea from combat level ([0ffa5d1](https://github.com/Celasha/Toolasha/commit/0ffa5d11f6ec37c1a4c408fa616f7e73652732e7))
+- persist custom tab drag/drop changes across page reload ([1d1ec72](https://github.com/Celasha/Toolasha/commit/1d1ec726748e63fcf7eb8f6ff37e0ce751a10e74))
+- prevent Add to Tab dropdown from leaking document click listeners ([2682ca1](https://github.com/Celasha/Toolasha/commit/2682ca15a38da2fb4f19c636f4c6f947bae891e7))
+- refresh production profit UI when drinks or equipment change ([e254edf](https://github.com/Celasha/Toolasha/commit/e254edf9983ecd94132b6a320a9d109cee741658))
+- respect "Use highest enhancement level" setting in custom tab auto-sync ([da843dd](https://github.com/Celasha/Toolasha/commit/da843dd6acbd5e60741f2aa654c2e4706eb6917c))
 
 ## [2.63.0](https://github.com/Celasha/Toolasha/compare/v2.62.14...v2.63.0) (2026-06-13)
 
