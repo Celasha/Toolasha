@@ -100,6 +100,7 @@ class CombatBattleCounter {
     }
 
     _onNewBattle(data) {
+        this.isLabyrinth = false;
         this.battleId = data.battleId;
         const actions = dataManager.getCurrentActions();
         const combatAction = actions.find((a) => a.actionHrid?.startsWith('/actions/combat/') && !a.isDone);
