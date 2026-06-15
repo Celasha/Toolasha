@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.64.3
+ * Version: 2.64.4
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -7371,22 +7371,28 @@ ${starCSS}
         const abilityDetailMap = gameData.abilityDetailMap || {};
 
         // Convert equipment: snapshot uses itemHrid, DTO keys by equipmentDetail.type.
-        // Cross-reference live data for accurate enhancement levels (loadouts with
-        // useExactEnhancement=false store 0 for most levels in the wearable hash).
-        const liveEquipment = dataManager.characterEquipment;
+        // When useExactEnhancement=false, the wearable hash may store 0 for enhancement.
+        // Resolve by finding the highest enhancement of each item across all owned inventory,
+        // matching how the game treats "highest owned" loadout mode.
+        const characterData = dataManager.characterData;
+        const maxEnhancementByItem = new Map();
+        for (const item of characterData?.characterItems || []) {
+            if (!item?.itemHrid || !(item.count > 0)) continue;
+            const level = item.enhancementLevel || 0;
+            const existing = maxEnhancementByItem.get(item.itemHrid);
+            if (existing === undefined || level > existing) {
+                maxEnhancementByItem.set(item.itemHrid, level);
+            }
+        }
+
         const newEquipment = {};
         for (const equip of snapshot.equipment || []) {
             const itemDetail = itemDetailMap[equip.itemHrid];
             const equipType = itemDetail?.equipmentDetail?.type;
             if (equipType) {
                 let enhancementLevel = equip.enhancementLevel || 0;
-                if (enhancementLevel === 0 && liveEquipment) {
-                    for (const [, liveItem] of liveEquipment) {
-                        if (liveItem.itemHrid === equip.itemHrid) {
-                            enhancementLevel = liveItem.enhancementLevel || 0;
-                            break;
-                        }
-                    }
+                if (enhancementLevel === 0) {
+                    enhancementLevel = maxEnhancementByItem.get(equip.itemHrid) || 0;
                 }
                 newEquipment[equipType] = {
                     hrid: equip.itemHrid,
@@ -7398,7 +7404,6 @@ ${starCSS}
 
         // Ability levels come from current character (not the snapshot)
         // Use characterAbilities (all learned) not combatUnit.combatAbilities (equipped only)
-        const characterData = dataManager.characterData;
         const currentAbilityLevels = {};
         for (const ability of characterData?.characterAbilities || []) {
             if (ability?.abilityHrid) {
