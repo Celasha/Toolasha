@@ -2,10 +2,9 @@
 
 ## [2.64.3](https://github.com/Celasha/Toolasha/compare/v2.64.2...v2.64.3) (2026-06-15)
 
-
 ### Bug Fixes
 
-* include gathering/gourmet buffs in labyrinth double progress chance ([99ef59e](https://github.com/Celasha/Toolasha/commit/99ef59e3b1bf85aec1bc4e3e5c378d443bba1b49))
+- include gathering/gourmet buffs in labyrinth double progress chance ([99ef59e](https://github.com/Celasha/Toolasha/commit/99ef59e3b1bf85aec1bc4e3e5c378d443bba1b49))
 
 ## [2.64.2](https://github.com/Celasha/Toolasha/compare/v2.64.1...v2.64.2) (2026-06-15)
 
