@@ -209,6 +209,76 @@ class LabyrinthClearRate {
     }
 
     /**
+     * Get the labyrinth loadout ID for a skill from characterSetting
+     */
+    getSkillingLoadoutId(skillHrid) {
+        const charSetting = dataManager.characterData?.characterSetting;
+        if (!charSetting) return 0;
+
+        const skillId = skillHrid.replace('/skills/', '');
+        const pascal = skillId.charAt(0).toUpperCase() + skillId.slice(1);
+        return Number(charSetting[`labyrinthLoadout${pascal}`]) || 0;
+    }
+
+    /**
+     * Compute equipment noncombat stat buffs from a loadout snapshot's equipment.
+     * Replicates the reference's buildLoadoutNoncombatStatTotals + buildSkillingEquipmentBuffsFromTotals.
+     * @param {number} loadoutId - Loadout ID
+     * @param {string} skillId - e.g. "milking"
+     * @returns {Array} Array of buff-like objects with typeHrid and flatBoost/ratioBoost
+     */
+    getLoadoutEquipmentBuffs(loadoutId, skillId) {
+        const snapshot = loadoutSnapshot.snapshots[loadoutId];
+        if (!snapshot?.equipment?.length) return [];
+
+        const gameData = dataManager.getInitClientData();
+        if (!gameData?.itemDetailMap) return [];
+
+        const enhTable = gameData.enhancementLevelTotalBonusMultiplierTable || {};
+        const toolSlot = `/item_locations/${skillId}_tool`;
+
+        const totals = {};
+        for (const equip of snapshot.equipment) {
+            if (!equip.itemHrid || !equip.itemLocationHrid) continue;
+
+            // Filter tool slots: only include the tool slot matching this skill
+            if (equip.itemLocationHrid.endsWith('_tool') && equip.itemLocationHrid !== toolSlot) {
+                continue;
+            }
+
+            const itemDetail = gameData.itemDetailMap[equip.itemHrid];
+            const equipDetail = itemDetail?.equipmentDetail;
+            if (!equipDetail) continue;
+
+            const baseStats = equipDetail.noncombatStats || {};
+            const enhStats = equipDetail.noncombatEnhancementBonuses || {};
+            const enhLevel = equip.enhancementLevel || 0;
+            const enhMultiplier = enhTable[enhLevel] ?? enhLevel;
+
+            for (const [key, value] of Object.entries(baseStats)) {
+                if (!Number.isFinite(value)) continue;
+                totals[key] = (totals[key] || 0) + value;
+            }
+            for (const [key, value] of Object.entries(enhStats)) {
+                if (!Number.isFinite(value)) continue;
+                totals[key] = (totals[key] || 0) + value * enhMultiplier;
+            }
+        }
+
+        // Convert totals to buff array matching the format expected by applyBuff
+        const buffs = [];
+        const actionSpeed = (totals[`${skillId}Speed`] || 0) + (totals.skillingSpeed || 0);
+        const efficiency = (totals[`${skillId}Efficiency`] || 0) + (totals.skillingEfficiency || 0);
+        const success = totals[`${skillId}Success`] || 0;
+
+        if (actionSpeed) buffs.push({ typeHrid: '/buff_types/action_speed', flatBoost: actionSpeed, ratioBoost: 0 });
+        if (efficiency) buffs.push({ typeHrid: '/buff_types/efficiency', flatBoost: efficiency, ratioBoost: 0 });
+        if (success) buffs.push({ typeHrid: `/buff_types/${skillId}_success`, flatBoost: 0, ratioBoost: success });
+
+        return buffs;
+    }
+
+    /**
      * Aggregate all buff sources into skilling metrics for a given skill
      * @param {string} skillId - e.g. "woodcutting"
      * @param {string} actionTypeHrid - e.g. "/action_types/woodcutting"
@@ -227,8 +297,12 @@ class LabyrinthClearRate {
         const skillLevelType = `/buff_types/${skillId}_level`;
         const skillSuccessType = `/buff_types/${skillId}_success`;
 
+        // Equipment buffs come from the labyrinth loadout, not currently worn gear
+        const loadoutId = this.getSkillingLoadoutId(`/skills/${skillId}`);
+        const loadoutEquipBuffs = loadoutId ? this.getLoadoutEquipmentBuffs(loadoutId, skillId) : null;
+
         const buffSources = [
-            charData.equipmentActionTypeBuffsMap?.[actionTypeHrid],
+            loadoutEquipBuffs || charData.equipmentActionTypeBuffsMap?.[actionTypeHrid],
             charData.communityActionTypeBuffsMap?.[actionTypeHrid],
             charData.houseActionTypeBuffsMap?.[actionTypeHrid],
             charData.achievementActionTypeBuffsMap?.[actionTypeHrid],
