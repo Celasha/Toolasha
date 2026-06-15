@@ -365,7 +365,7 @@ function registerFeatures() {
             module: Combat.combatSummary,
             async: false,
         },
-        { key: 'combatStats', name: 'Combat Stats', category: 'Combat', module: Combat.combatStats, async: true },
+        { key: 'combatStats', name: 'Combat Stats', category: 'Combat', module: Combat.combatStats, async: false },
         {
             key: 'labyrinthTracker',
             name: 'Labyrinth Tracker',
@@ -492,7 +492,7 @@ function registerFeatures() {
             customCheck: () =>
                 config.isFeatureEnabled('collectionFilters') || config.isFeatureEnabled('collectionFavorites'),
         },
-        { key: 'chatCommands', name: 'Chat Commands', category: 'Chat', module: UI.chatCommands, async: true },
+        { key: 'chatCommands', name: 'Chat Commands', category: 'Chat', module: UI.chatCommands, async: false },
         { key: 'mentionTracker', name: 'Mention Tracker', category: 'Chat', module: UI.mentionTracker, async: true },
         { key: 'popOutChat', name: 'Pop-Out Chat', category: 'Chat', module: UI.popOutChat, async: true },
         { key: 'chatBlockList', name: 'Chat Block List', category: 'Chat', module: UI.chatBlockList, async: false },
