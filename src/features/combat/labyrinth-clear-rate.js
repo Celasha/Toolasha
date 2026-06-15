@@ -270,10 +270,12 @@ class LabyrinthClearRate {
         const actionSpeed = (totals[`${skillId}Speed`] || 0) + (totals.skillingSpeed || 0);
         const efficiency = (totals[`${skillId}Efficiency`] || 0) + (totals.skillingEfficiency || 0);
         const success = totals[`${skillId}Success`] || 0;
+        const gathering = totals.gatheringQuantity || 0;
 
         if (actionSpeed) buffs.push({ typeHrid: '/buff_types/action_speed', flatBoost: actionSpeed, ratioBoost: 0 });
         if (efficiency) buffs.push({ typeHrid: '/buff_types/efficiency', flatBoost: efficiency, ratioBoost: 0 });
         if (success) buffs.push({ typeHrid: `/buff_types/${skillId}_success`, flatBoost: 0, ratioBoost: success });
+        if (gathering) buffs.push({ typeHrid: '/buff_types/gathering', flatBoost: gathering, ratioBoost: 0 });
 
         return buffs;
     }
@@ -290,6 +292,7 @@ class LabyrinthClearRate {
             actionSpeedBonus: 0,
             successBonus: 0,
             doubleProgressBonus: 0,
+            gatheringBonus: 0,
         };
         const charData = dataManager.characterData;
         if (!charData) return metrics;
@@ -315,7 +318,7 @@ class LabyrinthClearRate {
                 if (!buff?.typeHrid) continue;
                 const amount = (buff.flatBoost || 0) + (buff.ratioBoost || 0);
                 if (amount === 0) continue;
-                this.applyBuff(metrics, buff.typeHrid, amount, skillLevelType, skillSuccessType);
+                this.applyBuff(metrics, buff.typeHrid, amount, skillLevelType, skillSuccessType, skillId);
             }
         }
 
@@ -324,7 +327,7 @@ class LabyrinthClearRate {
             if (!buff?.typeHrid) continue;
             const amount = (buff.flatBoost || 0) + (buff.ratioBoost || 0);
             if (amount === 0) continue;
-            this.applyBuff(metrics, buff.typeHrid, amount, skillLevelType, skillSuccessType);
+            this.applyBuff(metrics, buff.typeHrid, amount, skillLevelType, skillSuccessType, skillId);
         }
 
         const upgrades = this.getLabyrinthUpgrades();
@@ -339,7 +342,7 @@ class LabyrinthClearRate {
     /**
      * Apply a single buff to metrics based on its type
      */
-    applyBuff(metrics, typeHrid, amount, skillLevelType, skillSuccessType) {
+    applyBuff(metrics, typeHrid, amount, skillLevelType, skillSuccessType, skillId) {
         if (typeHrid === skillLevelType) {
             metrics.skillLevelBonus += amount;
         } else if (typeHrid === '/buff_types/efficiency') {
@@ -350,6 +353,12 @@ class LabyrinthClearRate {
             metrics.doubleProgressBonus += amount;
         } else if (typeHrid === '/buff_types/success_rate' || typeHrid === skillSuccessType) {
             metrics.successBonus += amount;
+        } else if (
+            (typeHrid === '/buff_types/gathering' &&
+                (skillId === 'milking' || skillId === 'foraging' || skillId === 'woodcutting')) ||
+            (typeHrid === '/buff_types/gourmet' && (skillId === 'cooking' || skillId === 'brewing'))
+        ) {
+            metrics.gatheringBonus += amount;
         }
     }
 
@@ -369,7 +378,7 @@ class LabyrinthClearRate {
         const levelDelta = effectiveLevel - roomLevel;
         const levelBonus = levelDelta >= 0 ? levelDelta * 0.005 : levelDelta * 0.01;
         const successChance = Math.min(1, Math.max(0, 0.8 * (1 + levelBonus + metrics.successBonus)));
-        const doubleChance = Math.min(1, Math.max(0, metrics.doubleProgressBonus));
+        const doubleChance = Math.min(1, Math.max(0, metrics.doubleProgressBonus + (metrics.gatheringBonus || 0)));
 
         const workPower = effectiveLevel * (1 + metrics.efficiencyBonus);
         const progressPerSuccess = Math.max(0, Math.floor(workPower));
@@ -1453,7 +1462,7 @@ class LabyrinthClearRate {
         const levelDelta = effectiveLevel - roomLevel;
         const levelBonus = levelDelta >= 0 ? levelDelta * 0.005 : levelDelta * 0.01;
         const successChance = Math.min(1, Math.max(0, 0.8 * (1 + levelBonus + metrics.successBonus)));
-        const doubleChance = Math.min(1, Math.max(0, metrics.doubleProgressBonus));
+        const doubleChance = Math.min(1, Math.max(0, metrics.doubleProgressBonus + (metrics.gatheringBonus || 0)));
 
         const workPower = effectiveLevel * (1 + metrics.efficiencyBonus);
         const progressPerSuccess = Math.max(0, Math.floor(workPower));
