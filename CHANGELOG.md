@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.64.2](https://github.com/Celasha/Toolasha/compare/v2.64.1...v2.64.2) (2026-06-15)
+
+
+### Bug Fixes
+
+* use labyrinth loadout equipment for skilling clear rate ([a220eb9](https://github.com/Celasha/Toolasha/commit/a220eb998fbaa00f75dca567bff0461752685dcc))
+
+
+### Performance Improvements
+
+* make combatStats and chatCommands initialize non-blocking ([304b742](https://github.com/Celasha/Toolasha/commit/304b742e9935fafe1beef07055d825cca02eda22))
+
 ## [2.64.1](https://github.com/Celasha/Toolasha/compare/v2.64.0...v2.64.1) (2026-06-14)
 
 ### Bug Fixes
