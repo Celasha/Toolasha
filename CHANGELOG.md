@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.64.5](https://github.com/Celasha/Toolasha/compare/v2.64.4...v2.64.5) (2026-06-15)
+
+
+### Bug Fixes
+
+* restore click-to-view-details on comparison scenario rows ([f74420c](https://github.com/Celasha/Toolasha/commit/f74420ccf64eafdb9279903804d73040b4f75127))
+
 ## [2.64.4](https://github.com/Celasha/Toolasha/compare/v2.64.3...v2.64.4) (2026-06-15)
 
 ### Bug Fixes
