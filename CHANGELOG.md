@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.65.0](https://github.com/Celasha/Toolasha/compare/v2.64.5...v2.65.0) (2026-06-16)
+
+
+### Features
+
+* add max threads setting for combat simulator ([4f8105c](https://github.com/Celasha/Toolasha/commit/4f8105c5931103258a29a3badb597ad27d18630e))
+
+
+### Bug Fixes
+
+* clear labyrinth attempt flag when entering regular combat ([6722bd8](https://github.com/Celasha/Toolasha/commit/6722bd8ebdf912c891454e3026ae36c670185cad))
+* use handleChangeNavTarget for enhancement return navigation ([0e8e6b8](https://github.com/Celasha/Toolasha/commit/0e8e6b8d9918e3f24b4ab6458a618af0062ab635))
+
 ## [2.64.5](https://github.com/Celasha/Toolasha/compare/v2.64.4...v2.64.5) (2026-06-15)
 
 ### Bug Fixes
