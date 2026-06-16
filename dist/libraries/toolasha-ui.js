@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.64.5
+ * Version: 2.65.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -6232,6 +6232,16 @@ ${starCSS}
     let activeWorkers = [];
     let taskIdCounter = 0;
     let pendingRejects = []; // Track reject functions to abort on cancel
+    const MAX_WORKERS = 4;
+
+    /**
+     * @returns {number} Max worker count from setting, or hardware concurrency if 0/unset
+     */
+    function getMaxWorkers() {
+        const setting = config.getSetting('combatSim_maxThreads') || 0;
+        const cores = typeof navigator !== 'undefined' ? navigator.hardwareConcurrency || 4 : 4;
+        return setting > 0 ? Math.min(setting, cores) : Math.min(MAX_WORKERS, cores);
+    }
 
     /**
      * Get or create the worker Blob URL (created once, reused).
@@ -6473,6 +6483,9 @@ ${starCSS}
 
         // Cancel any previous run
         cancelSimulation();
+
+        // Determine worker count
+        getMaxWorkers();
         const workerCount =
             1;
 

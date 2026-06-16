@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.64.5
+ * Version: 2.65.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1833,6 +1833,15 @@
                     type: 'checkbox',
                     default: false,
                     help: 'Automatically run combat estimates using the default loadout when task cards appear',
+                },
+                combatSim_maxThreads: {
+                    id: 'combatSim_maxThreads',
+                    label: 'Combat Simulator: Max threads',
+                    type: 'number',
+                    default: 0,
+                    min: 0,
+                    max: 32,
+                    help: 'Maximum Web Worker threads for simulations (0 = auto, uses all available cores)',
                 },
                 combatStats: {
                     id: 'combatStats',

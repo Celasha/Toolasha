@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.64.5
+ * Version: 2.65.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -14775,12 +14775,12 @@
      */
     async function handleReturnToAction() {
         const game = getGameObject$1();
-        if (!game?.handleGoToAction) return;
+        if (!game) return;
 
         if (storedActionHrid) {
             game.handleGoToAction(storedActionHrid);
         } else if (storedEnhancementContext) {
-            game.handleGoToAction('/actions/enhancing');
+            game.handleChangeNavTarget('enhancing');
         } else {
             return;
         }

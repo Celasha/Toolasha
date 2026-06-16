@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.64.5
+ * Version: 2.65.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -7044,6 +7044,7 @@
         }
 
         _onNewBattle(data) {
+            this.isLabyrinth = false;
             this.battleId = data.battleId;
             const actions = dataManager.getCurrentActions();
             const combatAction = actions.find((a) => a.actionHrid?.startsWith('/actions/combat/') && !a.isDone);
@@ -8938,6 +8939,15 @@
     const MAX_WORKERS = 4;
 
     /**
+     * @returns {number} Max worker count from setting, or hardware concurrency if 0/unset
+     */
+    function getMaxWorkers() {
+        const setting = config.getSetting('combatSim_maxThreads') || 0;
+        const cores = typeof navigator !== 'undefined' ? navigator.hardwareConcurrency || 4 : 4;
+        return setting > 0 ? Math.min(setting, cores) : Math.min(MAX_WORKERS, cores);
+    }
+
+    /**
      * Get or create the worker Blob URL (created once, reused).
      * @returns {string}
      */
@@ -9179,8 +9189,7 @@
         cancelSimulation();
 
         // Determine worker count
-        const availableCores = typeof navigator !== 'undefined' ? navigator.hardwareConcurrency || 2 : 2;
-        const maxWorkers = Math.min(MAX_WORKERS, availableCores);
+        const maxWorkers = getMaxWorkers();
         const workerCount =
             hours >= MIN_HOURS_PER_WORKER * 2 ? Math.min(maxWorkers, Math.floor(hours / MIN_HOURS_PER_WORKER)) : 1;
 
@@ -13161,7 +13170,8 @@
         const simulationTimeLimit = hours * ONE_HOUR_NS;
 
         const availableCores = typeof navigator !== 'undefined' ? navigator.hardwareConcurrency || 4 : 4;
-        const maxWorkers = availableCores;
+        const maxThreadsSetting = config.getSetting('combatSim_maxThreads') || 0;
+        const maxWorkers = maxThreadsSetting > 0 ? Math.min(maxThreadsSetting, availableCores) : availableCores;
 
         return new Promise((resolve, reject) => {
             // Store reject so cancelAllZonesSimulation can unblock the promise
