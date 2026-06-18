@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.65.0
+ * Version: 2.66.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -21116,7 +21116,11 @@
             const simHours = (simResult.simulatedTime || 0) / (3600 * 1e9) || hours;
             const winRate = attempts > 0 ? ((encounters / attempts) * 100).toFixed(2) : '0.00';
 
-            const monsterName = monsterHrid.split('/').pop().replace(/_/g, ' ');
+            const monsterName = monsterHrid
+                .split('/')
+                .pop()
+                .replace(/_/g, ' ')
+                .replace(/\b\w/g, (c) => c.toUpperCase());
 
             container.innerHTML = `
             <div style="margin-bottom:12px;">
@@ -21142,7 +21146,13 @@
             if (!container) return;
 
             const totalElapsed = formatElapsed((Date.now() - simStartTime) / 1000);
-            const monsterName = monsterHrid.split('/').pop().replace(/_/g, ' ');
+            const monsterName = monsterHrid
+                .split('/')
+                .pop()
+                .replace(/_/g, ' ')
+                .replace(/\b\w/g, (c) => c.toUpperCase());
+            const effectiveCombatLevel = labyrinthClearRate.getPlayerEffectiveCombatLevel();
+            const recommendedSkip = maxResult.maxLevel - effectiveCombatLevel + 1;
 
             container.innerHTML = `
             <div style="margin-bottom:12px;">
@@ -21155,6 +21165,9 @@
                 <div style="font-size:12px; color:#888;">
                     Win Rate: <span style="color:#e0e0e0; font-weight:600;">${(maxResult.winRate * 100).toFixed(1)}%</span>
                     at level ${maxResult.maxLevel}
+                </div>
+                <div style="font-size:12px; color:#888; margin-top:4px;">
+                    Recommended skip: <span style="color:#e0e0e0; font-weight:600;">${recommendedSkip}</span>
                 </div>
                 <div style="color:#555; font-size:10px; margin-top:6px;">Completed in ${totalElapsed} (${maxResult.steps} steps)</div>
             </div>

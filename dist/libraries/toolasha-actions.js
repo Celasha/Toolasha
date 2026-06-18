@@ -1,11 +1,11 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.65.0
+ * Version: 2.66.0
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (dataManager, domObserver, config, enhancementConfig_js, enhancementCalculator_js, profitConstants_js, formatters_js, marketAPI, domObserverHelpers_js, bonusRevenueCalculator_js, marketData_js, efficiency_js, profitHelpers_js, profitCalculator, uiComponents_js, actionPanelHelper_js, webSocketHook, storage, dom_js, timerRegistry_js, actionCalculator_js, cleanupRegistry_js, teaParser_js, buffParser_js, equipmentParser_js, houseEfficiency_js, experienceParser_js, reactInput_js, experienceCalculator_js, materialCalculator_js, expectedValueCalculator, alchemyProfitCalculator) {
+(function (dataManager, domObserver, config, enhancementConfig_js, enhancementCalculator_js, profitConstants_js, formatters_js, marketAPI, domObserverHelpers_js, bonusRevenueCalculator_js, marketData_js, efficiency_js, profitHelpers_js, profitCalculator, uiComponents_js, actionPanelHelper_js, webSocketHook, storage, dom_js, timerRegistry_js, alchemyProfitCalculator, actionCalculator_js, cleanupRegistry_js, teaParser_js, buffParser_js, equipmentParser_js, houseEfficiency_js, experienceParser_js, reactInput_js, experienceCalculator_js, materialCalculator_js, expectedValueCalculator) {
     'use strict';
 
     /**
@@ -6402,6 +6402,7 @@
     class ActionTimeDisplay {
         constructor() {
             this.displayElement = null;
+            this.profitElement = null;
             this.isInitialized = false;
             this.updateTimer = null;
             this.unregisterQueueObserver = null;
@@ -6410,6 +6411,7 @@
             this.unregisterActionNameObserver = null;
             this.characterInitHandler = null; // Handler for character switch
             this.activeProfitCalculationId = null; // Track active profit calculation to prevent race conditions
+            this.activeBarProfitId = null;
             this.waitForPanelTimeout = null;
             this.retryUpdateTimeout = null;
             this.cleanupRegistry = cleanupRegistry_js.createCleanupRegistry();
@@ -6951,6 +6953,7 @@
 
             // Clear display element reference (already removed from DOM by game)
             this.displayElement = null;
+            this.profitElement = null;
 
             // Re-initialize action panel display for new character
             this.waitForActionPanel();
@@ -7036,11 +7039,27 @@
             // Insert after action name
             actionNameContainer.parentNode.insertBefore(this.displayElement, actionNameContainer.nextSibling);
 
+            // Create profit element (below time display)
+            this.profitElement = document.createElement('div');
+            this.profitElement.id = 'mwi-action-profit-display';
+            this.profitElement.style.cssText = `
+            font-size: 0.9em;
+            color: var(--text-color-secondary, ${config.COLOR_TEXT_SECONDARY});
+            line-height: 1.4;
+            text-align: left;
+            white-space: pre-wrap;
+        `;
+            this.displayElement.parentNode.insertBefore(this.profitElement, this.displayElement.nextSibling);
+
             this.cleanupRegistry.registerCleanup(() => {
                 if (this.displayElement && this.displayElement.parentNode) {
                     this.displayElement.parentNode.removeChild(this.displayElement);
                 }
                 this.displayElement = null;
+                if (this.profitElement && this.profitElement.parentNode) {
+                    this.profitElement.parentNode.removeChild(this.profitElement);
+                }
+                this.profitElement = null;
             });
         }
 
@@ -7090,6 +7109,7 @@
             // Check if no action is running ("Doing nothing...")
             if (actionNameText.includes('Doing nothing')) {
                 this.displayElement.innerHTML = '';
+                if (this.profitElement) this.profitElement.innerHTML = '';
                 this.clearAppendedStats(actionNameElement);
                 // Reconnect observer
                 this.reconnectActionNameObserver(actionNameElement);
@@ -7136,6 +7156,7 @@
             // Skip combat actions - no time display for combat
             if (actionDetails.type === '/action_types/combat') {
                 this.displayElement.innerHTML = '';
+                if (this.profitElement) this.profitElement.innerHTML = '';
                 this.clearAppendedStats(actionNameElement);
 
                 const combatCompact = config.getSetting('actionBar_compactWidth');
@@ -7192,6 +7213,7 @@
 
             // Handle enhancing actions with specialized display
             if (actionDetails.type === '/action_types/enhancing') {
+                if (this.profitElement) this.profitElement.innerHTML = '';
                 this.buildEnhancingDisplay(action, actionDetails, actionNameElement);
                 this.reconnectActionNameObserver(actionNameElement);
                 return;
@@ -7539,6 +7561,9 @@
             } else {
                 this.displayElement.innerHTML = '';
             }
+
+            // Line 3: Profit display (async, non-blocking)
+            this.updateActionBarProfit(action, remainingQueuedActions);
 
             // Reconnect observer to watch for game's updates
             this.reconnectActionNameObserver(actionNameElement);
@@ -8483,6 +8508,7 @@
                         if (actionTimeSeconds > 0 && !isEnhancing) {
                             actionsToCalculate.push({
                                 actionHrid: currentAction.actionHrid,
+                                primaryItemHash: currentAction.primaryItemHash || null,
                                 timeSeconds: actionTimeSeconds,
                                 count: count,
                                 baseActionsNeeded: baseActionsNeeded,
@@ -8627,6 +8653,7 @@
                     if (actionTimeSeconds > 0 && !isTrulyInfinite && !isEnhancing) {
                         actionsToCalculate.push({
                             actionHrid: actionObj.actionHrid,
+                            primaryItemHash: actionObj.primaryItemHash || null,
                             timeSeconds: actionTimeSeconds,
                             count: count,
                             baseActionsNeeded: baseActionsNeeded,
@@ -8859,11 +8886,20 @@
 
             // Get profit data (already has profitPerAction calculated)
             let profitData = null;
-            const gatheringProfit = await calculateGatheringProfit(action.actionHrid);
-            if (gatheringProfit) {
-                profitData = gatheringProfit;
-            } else if (actionDetails.outputItems?.[0]?.itemHrid) {
-                profitData = await profitCalculator.calculateProfit(actionDetails.outputItems[0].itemHrid);
+            let isAlchemy = false;
+
+            if (actionDetails.type === '/action_types/alchemy' && action.primaryItemHash) {
+                profitData = this.calculateAlchemyProfitForAction(action);
+                isAlchemy = !!profitData;
+            }
+
+            if (!profitData) {
+                const gatheringProfit = await calculateGatheringProfit(action.actionHrid);
+                if (gatheringProfit) {
+                    profitData = gatheringProfit;
+                } else if (actionDetails.outputItems?.[0]?.itemHrid) {
+                    profitData = await profitCalculator.calculateProfit(actionDetails.outputItems[0].itemHrid);
+                }
             }
 
             if (!profitData) {
@@ -8879,7 +8915,17 @@
                 return null;
             }
 
-            if (gatheringProfit) {
+            if (isAlchemy) {
+                const profitPerAction = profitData.profitPerHour / profitData.actionsPerHour;
+                const totalProfit = profitPerAction * actionsCount;
+                if (valueMode === 'estimated_value') {
+                    const revenuePerAction = (profitData.revenuePerHour || 0) / profitData.actionsPerHour;
+                    return revenuePerAction * actionsCount;
+                }
+                return totalProfit;
+            }
+
+            if (profitData.baseOutputs) {
                 const totals = profitHelpers_js.calculateGatheringActionTotalsFromBase({
                     actionsCount,
                     actionsPerHour: profitData.actionsPerHour,
@@ -8909,11 +8955,109 @@
         }
 
         /**
+         * Calculate alchemy profit for a queued action using the alchemy profit calculator.
+         * @param {Object} action - Action object with {actionHrid, primaryItemHash}
+         * @returns {Object|null} Profit data with profitPerHour and actionsPerHour, or null
+         */
+        calculateAlchemyProfitForAction(action) {
+            const { itemHrid, level: enhancementLevel } = this.parseItemHash(action.primaryItemHash);
+            if (!itemHrid) return null;
+
+            const actionHrid = action.actionHrid;
+
+            if (actionHrid === '/actions/alchemy/coinify') {
+                return alchemyProfitCalculator.calculateCoinifyProfit(itemHrid, enhancementLevel || 0, true);
+            } else if (actionHrid === '/actions/alchemy/transmute') {
+                return alchemyProfitCalculator.calculateTransmuteProfit(itemHrid, true);
+            } else if (actionHrid === '/actions/alchemy/decompose') {
+                return alchemyProfitCalculator.calculateDecomposeProfit(itemHrid, enhancementLevel || 0, true);
+            }
+
+            return null;
+        }
+
+        /**
+         * Calculate and display profit in the action bar for the current action.
+         * @param {Object} action - Current action object from dataManager
+         * @param {number} remainingActions - Remaining queued actions (Infinity if unlimited)
+         */
+        async updateActionBarProfit(action, remainingActions) {
+            if (!this.profitElement) return;
+            if (!config.getSetting('actionBar_showProfit')) {
+                this.profitElement.innerHTML = '';
+                return;
+            }
+
+            const calcId = Date.now() + Math.random();
+            this.activeBarProfitId = calcId;
+
+            try {
+                const actionHrid = action.actionHrid;
+                const actionDetails = dataManager.getActionDetails(actionHrid);
+                if (!actionDetails) {
+                    this.profitElement.innerHTML = '';
+                    return;
+                }
+
+                let profitData = null;
+
+                if (actionDetails.type === '/action_types/alchemy' && action.primaryItemHash) {
+                    profitData = this.calculateAlchemyProfitForAction(action);
+                }
+
+                if (!profitData) {
+                    const gatheringProfit = await calculateGatheringProfit(actionHrid);
+                    if (gatheringProfit) {
+                        profitData = gatheringProfit;
+                    } else if (actionDetails.outputItems?.[0]?.itemHrid) {
+                        profitData = await profitCalculator.calculateProfit(actionDetails.outputItems[0].itemHrid);
+                    }
+                }
+
+                if (this.activeBarProfitId !== calcId) return;
+
+                if (!profitData || typeof profitData.profitPerHour !== 'number') {
+                    this.profitElement.innerHTML = '';
+                    return;
+                }
+
+                const profitPerHour = profitData.profitPerHour;
+                const profitColor =
+                    profitPerHour >= 0
+                        ? config.getSettingValue('color_profit', '#4ade80')
+                        : config.getSettingValue('color_loss', '#f87171');
+                const sign = profitPerHour >= 0 ? '+' : '';
+
+                let html = `<span style="color:#888;">Profit:</span> <span style="color:${profitColor}; font-weight:600;">${sign}${this.formatLargeNumber(Math.abs(Math.round(profitPerHour)))}/hr</span>`;
+
+                if (isFinite(remainingActions) && remainingActions > 0 && profitData.actionsPerHour > 0) {
+                    const profitPerAction =
+                        profitPerHour / (profitData.actionsPerHour * (profitData.efficiencyMultiplier || 1));
+                    const remainingProfit = profitPerAction * remainingActions;
+                    const remColor =
+                        remainingProfit >= 0
+                            ? config.getSettingValue('color_profit', '#4ade80')
+                            : config.getSettingValue('color_loss', '#f87171');
+                    const remSign = remainingProfit >= 0 ? '+' : '';
+                    html += ` <span style="color:#888;">·</span> <span style="color:#888;">remaining</span> <span style="color:${remColor}; font-weight:600;">${remSign}${this.formatLargeNumber(Math.abs(Math.round(remainingProfit)))}</span>`;
+                }
+
+                if (this.activeBarProfitId !== calcId) return;
+                this.profitElement.innerHTML = html;
+            } catch {
+                if (this.activeBarProfitId === calcId) {
+                    this.profitElement.innerHTML = '';
+                }
+            }
+        }
+
+        /**
          * Disable the action time display (cleanup)
          */
         disable() {
             this.cleanupRegistry.cleanupAll();
             this.displayElement = null;
+            this.profitElement = null;
             this.updateTimer = null;
             this.unregisterQueueObserver = null;
             this.actionNameObserver = null;
@@ -8921,6 +9065,7 @@
             this.characterInitHandler = null;
             this.waitForPanelTimeout = null;
             this.activeProfitCalculationId = null;
+            this.activeBarProfitId = null;
             this.isInitialized = false;
         }
     }
@@ -23636,4 +23781,4 @@
 
     console.log('[Toolasha] Actions library loaded');
 
-})(Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.config, Toolasha.Utils.enhancementConfig, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.profitConstants, Toolasha.Utils.formatters, Toolasha.Core.marketAPI, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.marketData, Toolasha.Utils.efficiency, Toolasha.Utils.profitHelpers, Toolasha.Market.profitCalculator, Toolasha.Utils.uiComponents, Toolasha.Utils.actionPanelHelper, Toolasha.Core.webSocketHook, Toolasha.Core.storage, Toolasha.Utils.dom, Toolasha.Utils.timerRegistry, Toolasha.Utils.actionCalculator, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.teaParser, Toolasha.Utils.buffParser, Toolasha.Utils.equipmentParser, Toolasha.Utils.houseEfficiency, Toolasha.Utils.experienceParser, Toolasha.Utils.reactInput, Toolasha.Utils.experienceCalculator, Toolasha.Utils.materialCalculator, Toolasha.Market.expectedValueCalculator, Toolasha.Market.alchemyProfitCalculator);
+})(Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.config, Toolasha.Utils.enhancementConfig, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.profitConstants, Toolasha.Utils.formatters, Toolasha.Core.marketAPI, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.marketData, Toolasha.Utils.efficiency, Toolasha.Utils.profitHelpers, Toolasha.Market.profitCalculator, Toolasha.Utils.uiComponents, Toolasha.Utils.actionPanelHelper, Toolasha.Core.webSocketHook, Toolasha.Core.storage, Toolasha.Utils.dom, Toolasha.Utils.timerRegistry, Toolasha.Market.alchemyProfitCalculator, Toolasha.Utils.actionCalculator, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.teaParser, Toolasha.Utils.buffParser, Toolasha.Utils.equipmentParser, Toolasha.Utils.houseEfficiency, Toolasha.Utils.experienceParser, Toolasha.Utils.reactInput, Toolasha.Utils.experienceCalculator, Toolasha.Utils.materialCalculator, Toolasha.Market.expectedValueCalculator);

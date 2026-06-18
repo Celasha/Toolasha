@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.65.0
+ * Version: 2.66.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -263,25 +263,30 @@
         _debouncedSave(key, value, storeName) {
             const timerKey = `${storeName}:${key}`;
 
-            // Store pending write data
-            this.pendingWrites.set(timerKey, { value, storeName });
+            const existing = this.pendingWrites.get(timerKey);
+            const resolvers = existing?.resolvers || [];
 
-            // Clear existing timer for this key
+            this.pendingWrites.set(timerKey, { value, storeName, resolvers });
+
             if (this.saveDebounceTimers.has(timerKey)) {
                 clearTimeout(this.saveDebounceTimers.get(timerKey));
             }
 
-            // Return a promise that resolves when save completes
             return new Promise((resolve) => {
+                resolvers.push(resolve);
+
                 const timer = setTimeout(async () => {
                     const pending = this.pendingWrites.get(timerKey);
+                    this.pendingWrites.delete(timerKey);
+                    this.saveDebounceTimers.delete(timerKey);
+
+                    let success = false;
                     if (pending) {
-                        const success = await this._saveToIndexedDB(key, pending.value, pending.storeName);
-                        this.pendingWrites.delete(timerKey);
-                        this.saveDebounceTimers.delete(timerKey);
-                        resolve(success);
-                    } else {
-                        resolve(false);
+                        success = await this._saveToIndexedDB(key, pending.value, pending.storeName);
+                    }
+
+                    for (const r of pending?.resolvers || []) {
+                        r(success);
                     }
                 }, this.SAVE_DEBOUNCE_DELAY);
 
@@ -461,17 +466,19 @@
             }
             this.saveDebounceTimers.clear();
 
-            // Now execute all pending writes immediately
+            // Now execute all pending writes immediately and resolve their Promises
             const writes = Array.from(this.pendingWrites.entries());
-            for (const [timerKey, pending] of writes) {
-                // Extract actual key from timerKey (format: "storeName:key")
-                const colonIndex = timerKey.indexOf(':');
-                const storeName = timerKey.substring(0, colonIndex);
-                const key = timerKey.substring(colonIndex + 1); // Handle keys with colons
-
-                await this._saveToIndexedDB(key, pending.value, storeName);
-            }
             this.pendingWrites.clear();
+
+            for (const [timerKey, pending] of writes) {
+                const colonIndex = timerKey.indexOf(':');
+                const key = timerKey.substring(colonIndex + 1);
+
+                const success = await this._saveToIndexedDB(key, pending.value, pending.storeName);
+                for (const r of pending.resolvers || []) {
+                    r(success);
+                }
+            }
         }
 
         /**
@@ -484,6 +491,13 @@
                 }
             }
             this.saveDebounceTimers.clear();
+
+            // Resolve all pending Promises with false before clearing
+            for (const pending of this.pendingWrites.values()) {
+                for (const r of pending.resolvers || []) {
+                    r(false);
+                }
+            }
             this.pendingWrites.clear();
         }
 
@@ -688,6 +702,13 @@
                     type: 'checkbox',
                     default: true,
                     help: 'Shows estimated total time accounting for self-return recycling during transmute actions',
+                },
+                actionBar_showProfit: {
+                    id: 'actionBar_showProfit',
+                    label: 'Action bar: Show current action profit',
+                    type: 'checkbox',
+                    default: false,
+                    help: 'Displays profit/hr and remaining profit for the current action (gathering and production)',
                 },
                 actionPanel_liveCountdown: {
                     id: 'actionPanel_liveCountdown',
@@ -2423,13 +2444,6 @@
                     default: true,
                     help: 'Displays XP/hr rates, rankings, and a weekly chart on the Guild Overview, Members, and Guild Leaderboard tabs. Disable the standalone Guild XP/h userscript if using this.',
                 },
-                guildActivityCalculator: {
-                    id: 'guildActivityCalculator',
-                    label: 'Guild Activity Calculator',
-                    type: 'checkbox',
-                    default: true,
-                    help: 'Tracks guild activity sessions and shows projected stars/hr, tokens/hr, budget usage, and difficulty comparisons on the Guild panel.',
-                },
             },
         },
 
@@ -3000,20 +3014,27 @@
                 let imported = 0;
                 let skipped = 0;
 
+                const knownCharacters = new Set(await this.getKnownCharacters());
+                if (data[this.knownCharactersKey]) {
+                    for (const id of data[this.knownCharactersKey]) {
+                        knownCharacters.add(String(id));
+                    }
+                }
+
                 for (const [key, value] of Object.entries(data)) {
-                    // Check if this is a character-specific key (contains a character ID pattern)
-                    const charIdMatch = key.match(/_([0-9a-f]{24})$/i) || key.match(/_(\d{10,})$/);
+                    const charIdMatch =
+                        key.match(/_([0-9a-f]{24})$/i) ||
+                        key.match(/_(\d{10,})$/) ||
+                        this._matchKnownCharacterSuffix(key, knownCharacters);
 
                     if (charIdMatch) {
                         const keyCharId = charIdMatch[1];
-                        if (currentCharId && keyCharId !== currentCharId) {
-                            // Key belongs to a different character — skip
+                        if (currentCharId && keyCharId !== String(currentCharId)) {
                             skipped++;
                             continue;
                         }
                     }
 
-                    // Import global keys and current character's keys
                     await storage.setJSON(key, value, this.storageArea, true);
                     imported++;
                 }
@@ -3023,6 +3044,23 @@
                 console.error('[Settings Storage] Import failed:', error);
                 return null;
             }
+        }
+
+        /**
+         * Check if a key ends with a known character ID suffix
+         * @param {string} key - Storage key
+         * @param {Set<string>} knownIds - Set of known character ID strings
+         * @returns {Array|null} Match array with captured ID at index 1, or null
+         * @private
+         */
+        _matchKnownCharacterSuffix(key, knownIds) {
+            const lastUnderscore = key.lastIndexOf('_');
+            if (lastUnderscore === -1) return null;
+            const suffix = key.substring(lastUnderscore + 1);
+            if (knownIds.has(suffix)) {
+                return [key, suffix];
+            }
+            return null;
         }
     }
 
