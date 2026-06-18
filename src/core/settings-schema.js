@@ -134,6 +134,13 @@ export const settingsGroups = {
                 default: true,
                 help: 'Shows estimated total time accounting for self-return recycling during transmute actions',
             },
+            actionBar_showProfit: {
+                id: 'actionBar_showProfit',
+                label: 'Action bar: Show current action profit',
+                type: 'checkbox',
+                default: false,
+                help: 'Displays profit/hr and remaining profit for the current action (gathering and production)',
+            },
             actionPanel_liveCountdown: {
                 id: 'actionPanel_liveCountdown',
                 label: 'Action bar: Live countdown timer',

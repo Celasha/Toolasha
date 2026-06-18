@@ -55,6 +55,7 @@ function formatCompletionTime(completionTime, includeDate) {
 class ActionTimeDisplay {
     constructor() {
         this.displayElement = null;
+        this.profitElement = null;
         this.isInitialized = false;
         this.updateTimer = null;
         this.unregisterQueueObserver = null;
@@ -63,6 +64,7 @@ class ActionTimeDisplay {
         this.unregisterActionNameObserver = null;
         this.characterInitHandler = null; // Handler for character switch
         this.activeProfitCalculationId = null; // Track active profit calculation to prevent race conditions
+        this.activeBarProfitId = null;
         this.waitForPanelTimeout = null;
         this.retryUpdateTimeout = null;
         this.cleanupRegistry = createCleanupRegistry();
@@ -604,6 +606,7 @@ class ActionTimeDisplay {
 
         // Clear display element reference (already removed from DOM by game)
         this.displayElement = null;
+        this.profitElement = null;
 
         // Re-initialize action panel display for new character
         this.waitForActionPanel();
@@ -689,11 +692,27 @@ class ActionTimeDisplay {
         // Insert after action name
         actionNameContainer.parentNode.insertBefore(this.displayElement, actionNameContainer.nextSibling);
 
+        // Create profit element (below time display)
+        this.profitElement = document.createElement('div');
+        this.profitElement.id = 'mwi-action-profit-display';
+        this.profitElement.style.cssText = `
+            font-size: 0.9em;
+            color: var(--text-color-secondary, ${config.COLOR_TEXT_SECONDARY});
+            line-height: 1.4;
+            text-align: left;
+            white-space: pre-wrap;
+        `;
+        this.displayElement.parentNode.insertBefore(this.profitElement, this.displayElement.nextSibling);
+
         this.cleanupRegistry.registerCleanup(() => {
             if (this.displayElement && this.displayElement.parentNode) {
                 this.displayElement.parentNode.removeChild(this.displayElement);
             }
             this.displayElement = null;
+            if (this.profitElement && this.profitElement.parentNode) {
+                this.profitElement.parentNode.removeChild(this.profitElement);
+            }
+            this.profitElement = null;
         });
     }
 
@@ -743,6 +762,7 @@ class ActionTimeDisplay {
         // Check if no action is running ("Doing nothing...")
         if (actionNameText.includes('Doing nothing')) {
             this.displayElement.innerHTML = '';
+            if (this.profitElement) this.profitElement.innerHTML = '';
             this.clearAppendedStats(actionNameElement);
             // Reconnect observer
             this.reconnectActionNameObserver(actionNameElement);
@@ -789,6 +809,7 @@ class ActionTimeDisplay {
         // Skip combat actions - no time display for combat
         if (actionDetails.type === '/action_types/combat') {
             this.displayElement.innerHTML = '';
+            if (this.profitElement) this.profitElement.innerHTML = '';
             this.clearAppendedStats(actionNameElement);
 
             const combatCompact = config.getSetting('actionBar_compactWidth');
@@ -845,6 +866,7 @@ class ActionTimeDisplay {
 
         // Handle enhancing actions with specialized display
         if (actionDetails.type === '/action_types/enhancing') {
+            if (this.profitElement) this.profitElement.innerHTML = '';
             this.buildEnhancingDisplay(action, actionDetails, actionNameElement);
             this.reconnectActionNameObserver(actionNameElement);
             return;
@@ -1192,6 +1214,9 @@ class ActionTimeDisplay {
         } else {
             this.displayElement.innerHTML = '';
         }
+
+        // Line 3: Profit display (async, non-blocking)
+        this.updateActionBarProfit(action.actionHrid, remainingQueuedActions);
 
         // Reconnect observer to watch for game's updates
         this.reconnectActionNameObserver(actionNameElement);
@@ -2562,11 +2587,79 @@ class ActionTimeDisplay {
     }
 
     /**
+     * Calculate and display profit in the action bar for the current action.
+     * @param {string} actionHrid - Current action HRID
+     * @param {number} remainingActions - Remaining queued actions (Infinity if unlimited)
+     */
+    async updateActionBarProfit(actionHrid, remainingActions) {
+        if (!this.profitElement) return;
+        if (!config.getSetting('actionBar_showProfit')) {
+            this.profitElement.innerHTML = '';
+            return;
+        }
+
+        const calcId = Date.now() + Math.random();
+        this.activeBarProfitId = calcId;
+
+        try {
+            const actionDetails = dataManager.getActionDetails(actionHrid);
+            if (!actionDetails) {
+                this.profitElement.innerHTML = '';
+                return;
+            }
+
+            let profitData = null;
+            const gatheringProfit = await calculateGatheringProfit(actionHrid);
+            if (gatheringProfit) {
+                profitData = gatheringProfit;
+            } else if (actionDetails.outputItems?.[0]?.itemHrid) {
+                profitData = await profitCalculator.calculateProfit(actionDetails.outputItems[0].itemHrid);
+            }
+
+            if (this.activeBarProfitId !== calcId) return;
+
+            if (!profitData || typeof profitData.profitPerHour !== 'number') {
+                this.profitElement.innerHTML = '';
+                return;
+            }
+
+            const profitPerHour = profitData.profitPerHour;
+            const profitColor =
+                profitPerHour >= 0
+                    ? config.getSettingValue('color_profit', '#4ade80')
+                    : config.getSettingValue('color_loss', '#f87171');
+            const sign = profitPerHour >= 0 ? '+' : '';
+
+            let html = `<span style="color:#888;">Profit:</span> <span style="color:${profitColor}; font-weight:600;">${sign}${this.formatLargeNumber(Math.abs(Math.round(profitPerHour)))}/hr</span>`;
+
+            if (isFinite(remainingActions) && remainingActions > 0 && profitData.actionsPerHour > 0) {
+                const profitPerAction =
+                    profitPerHour / (profitData.actionsPerHour * (profitData.efficiencyMultiplier || 1));
+                const remainingProfit = profitPerAction * remainingActions;
+                const remColor =
+                    remainingProfit >= 0
+                        ? config.getSettingValue('color_profit', '#4ade80')
+                        : config.getSettingValue('color_loss', '#f87171');
+                const remSign = remainingProfit >= 0 ? '+' : '';
+                html += ` <span style="color:#888;">·</span> <span style="color:#888;">remaining</span> <span style="color:${remColor}; font-weight:600;">${remSign}${this.formatLargeNumber(Math.abs(Math.round(remainingProfit)))}</span>`;
+            }
+
+            if (this.activeBarProfitId !== calcId) return;
+            this.profitElement.innerHTML = html;
+        } catch {
+            if (this.activeBarProfitId === calcId) {
+                this.profitElement.innerHTML = '';
+            }
+        }
+    }
+
+    /**
      * Disable the action time display (cleanup)
      */
     disable() {
         this.cleanupRegistry.cleanupAll();
         this.displayElement = null;
+        this.profitElement = null;
         this.updateTimer = null;
         this.unregisterQueueObserver = null;
         this.actionNameObserver = null;
@@ -2574,6 +2667,7 @@ class ActionTimeDisplay {
         this.characterInitHandler = null;
         this.waitForPanelTimeout = null;
         this.activeProfitCalculationId = null;
+        this.activeBarProfitId = null;
         this.isInitialized = false;
     }
 }
