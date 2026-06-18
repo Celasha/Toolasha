@@ -253,25 +253,30 @@ class Storage {
     _debouncedSave(key, value, storeName) {
         const timerKey = `${storeName}:${key}`;
 
-        // Store pending write data
-        this.pendingWrites.set(timerKey, { value, storeName });
+        const existing = this.pendingWrites.get(timerKey);
+        const resolvers = existing?.resolvers || [];
 
-        // Clear existing timer for this key
+        this.pendingWrites.set(timerKey, { value, storeName, resolvers });
+
         if (this.saveDebounceTimers.has(timerKey)) {
             clearTimeout(this.saveDebounceTimers.get(timerKey));
         }
 
-        // Return a promise that resolves when save completes
         return new Promise((resolve) => {
+            resolvers.push(resolve);
+
             const timer = setTimeout(async () => {
                 const pending = this.pendingWrites.get(timerKey);
+                this.pendingWrites.delete(timerKey);
+                this.saveDebounceTimers.delete(timerKey);
+
+                let success = false;
                 if (pending) {
-                    const success = await this._saveToIndexedDB(key, pending.value, pending.storeName);
-                    this.pendingWrites.delete(timerKey);
-                    this.saveDebounceTimers.delete(timerKey);
-                    resolve(success);
-                } else {
-                    resolve(false);
+                    success = await this._saveToIndexedDB(key, pending.value, pending.storeName);
+                }
+
+                for (const r of pending?.resolvers || []) {
+                    r(success);
                 }
             }, this.SAVE_DEBOUNCE_DELAY);
 
@@ -451,17 +456,19 @@ class Storage {
         }
         this.saveDebounceTimers.clear();
 
-        // Now execute all pending writes immediately
+        // Now execute all pending writes immediately and resolve their Promises
         const writes = Array.from(this.pendingWrites.entries());
-        for (const [timerKey, pending] of writes) {
-            // Extract actual key from timerKey (format: "storeName:key")
-            const colonIndex = timerKey.indexOf(':');
-            const storeName = timerKey.substring(0, colonIndex);
-            const key = timerKey.substring(colonIndex + 1); // Handle keys with colons
-
-            await this._saveToIndexedDB(key, pending.value, storeName);
-        }
         this.pendingWrites.clear();
+
+        for (const [timerKey, pending] of writes) {
+            const colonIndex = timerKey.indexOf(':');
+            const key = timerKey.substring(colonIndex + 1);
+
+            const success = await this._saveToIndexedDB(key, pending.value, pending.storeName);
+            for (const r of pending.resolvers || []) {
+                r(success);
+            }
+        }
     }
 
     /**
@@ -474,6 +481,13 @@ class Storage {
             }
         }
         this.saveDebounceTimers.clear();
+
+        // Resolve all pending Promises with false before clearing
+        for (const pending of this.pendingWrites.values()) {
+            for (const r of pending.resolvers || []) {
+                r(false);
+            }
+        }
         this.pendingWrites.clear();
     }
 
