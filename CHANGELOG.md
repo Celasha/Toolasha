@@ -1,5 +1,27 @@
 # Changelog
 
+## [2.66.0](https://github.com/Celasha/Toolasha/compare/v2.65.0...v2.66.0) (2026-06-18)
+
+### Features
+
+- add current action profit display to action bar ([9f4a5a4](https://github.com/Celasha/Toolasha/commit/9f4a5a408619c8cda3e78391d0811df7e5910610))
+
+### Bug Fixes
+
+- add alchemy action profit to queue tooltip and action bar ([371c236](https://github.com/Celasha/Toolasha/commit/371c236f15584ae21316158ac16568b60429b83e))
+- capitalize monster names and show recommended skip in lab sim results ([3a0a689](https://github.com/Celasha/Toolasha/commit/3a0a689b70b8d2f9a86b0d2229731e5f17379a75))
+- clean up history buffers and observers when chat extender is disabled ([53f8ce5](https://github.com/Celasha/Toolasha/commit/53f8ce502491f6ebf0f21cc28af571d6ce21eb38))
+- include coin costs in enhancement XPH calculator metrics ([bdf146e](https://github.com/Celasha/Toolasha/commit/bdf146e5334d5f284c4ac46ab962fee2f1d35d4e))
+- recognize short numeric character IDs during settings import ([4659c45](https://github.com/Celasha/Toolasha/commit/4659c455c2fce56364d4911c126dda5341a80155))
+- resolve hanging Promises from debounced storage writes ([8ed8cc9](https://github.com/Celasha/Toolasha/commit/8ed8cc91996fc705eec24f665dd1a1ccb9e6b2cd))
+- sync pop-out chat channel list with visible game tabs ([f03fd2b](https://github.com/Celasha/Toolasha/commit/f03fd2bd0111025d9dc9524d1310c2d08fcc9044))
+- sync Settings UI disabled state and checkboxWithButton after All Off ([424bca0](https://github.com/Celasha/Toolasha/commit/424bca018f554ca1cd0cf75d9f5b365a2adf0e84))
+- use DOM observer for chat commands input attachment ([a7a120b](https://github.com/Celasha/Toolasha/commit/a7a120b84af9e25c3e027e91d9ca2cd5aeea90f0))
+
+### Miscellaneous Chores
+
+- remove guild activity calculator (pending game redesign) ([2250ef1](https://github.com/Celasha/Toolasha/commit/2250ef1b4bea777d4423f49342608830a060220c))
+
 ## [2.65.0](https://github.com/Celasha/Toolasha/compare/v2.64.5...v2.65.0) (2026-06-16)
 
 ### Features
