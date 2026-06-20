@@ -79,6 +79,14 @@ class CombatBattleCounter {
         const labyrinth = data.labyrinth;
         if (!labyrinth?.isActive) return;
 
+        // Cross-check: only trust labyrinth state if the player's current action is
+        // actually the labyrinth explore action. Stale labyrinth_updated messages
+        // can arrive shortly after exiting and otherwise stamp "Attempt #N" onto
+        // the next regular combat zone.
+        const actions = dataManager.getCurrentActions();
+        const activeLabAction = actions.find((a) => a.actionHrid === '/actions/labyrinth/explore' && !a.isDone);
+        if (!activeLabAction) return;
+
         let pathCoords;
         try {
             pathCoords = JSON.parse(labyrinth.pathData || '[]');
@@ -100,7 +108,10 @@ class CombatBattleCounter {
     }
 
     _onNewBattle(data) {
+        // A new battle implies we're not in a static labyrinth state — clear any
+        // lingering labyrinth attempt count so it can't leak into a render.
         this.isLabyrinth = false;
+        this.labyrinthAttempt = 0;
         this.battleId = data.battleId;
         const actions = dataManager.getCurrentActions();
         const combatAction = actions.find((a) => a.actionHrid?.startsWith('/actions/combat/') && !a.isDone);
@@ -121,6 +132,22 @@ class CombatBattleCounter {
         if (this.battleId === 0 && this.labyrinthAttempt === 0) {
             document.getElementById(COUNTER_ID)?.remove();
             return;
+        }
+
+        // Defensive: if state claims labyrinth but the current action isn't a
+        // labyrinth explore, clear the labyrinth flags and re-derive what to
+        // render from the remaining state.
+        if (this.isLabyrinth) {
+            const actions = dataManager.getCurrentActions();
+            const isCurrentlyLab = actions.some((a) => a.actionHrid === '/actions/labyrinth/explore' && !a.isDone);
+            if (!isCurrentlyLab) {
+                this.isLabyrinth = false;
+                this.labyrinthAttempt = 0;
+                if (this.battleId === 0) {
+                    document.getElementById(COUNTER_ID)?.remove();
+                    return;
+                }
+            }
         }
 
         const currentAction = document.querySelector(CURRENT_ACTION_SELECTOR);
