@@ -329,6 +329,10 @@ class ListingPriceDisplay {
         }));
         const priceCache = marketAPI.getPricesBatch(itemsToPrice);
 
+        // Build set of user's own listing IDs so we can exclude them when
+        // looking up the "top competing order" in the shared order book.
+        const ownListingIds = new Set(Object.values(this.allListings).map((l) => l.id));
+
         // Add table headers
         this.addTableHeaders(tableNode);
 
@@ -336,7 +340,7 @@ class ListingPriceDisplay {
         this.addDataToRows(tbody);
 
         // Add price displays to each row
-        this.addPriceDisplays(tbody, priceCache);
+        this.addPriceDisplays(tbody, priceCache, ownListingIds);
 
         // Check if we should mark as fully processed
         let fullyProcessed = true;
@@ -627,8 +631,9 @@ class ListingPriceDisplay {
      * Add price display cells to each row
      * @param {HTMLElement} tbody - Table body element
      * @param {Map} priceCache - Pre-fetched price cache
+     * @param {Set<number>} ownListingIds - User's own listing IDs (excluded from "top competing order")
      */
-    addPriceDisplays(tbody, priceCache) {
+    addPriceDisplays(tbody, priceCache, ownListingIds = new Set()) {
         for (const row of tbody.querySelectorAll('tr')) {
             // Skip if displays already added
             if (row.querySelector('.mwi-listing-price-cell')) {
@@ -659,13 +664,19 @@ class ListingPriceDisplay {
                     enhancementLevel,
                     isSell,
                     price,
-                    priceCache
+                    priceCache,
+                    ownListingIds
                 );
                 row.insertBefore(topOrderCell, insertBeforeCell);
 
                 // Create Top Order Age cell (if setting enabled)
                 if (config.getSetting('market_showTopOrderAge')) {
-                    const topOrderAgeCell = this.createTopOrderAgeCell(itemHrid, enhancementLevel, isSell);
+                    const topOrderAgeCell = this.createTopOrderAgeCell(
+                        itemHrid,
+                        enhancementLevel,
+                        isSell,
+                        ownListingIds
+                    );
                     row.insertBefore(topOrderAgeCell, row.children[insertIndex + 1]);
                 }
 
@@ -718,9 +729,10 @@ class ListingPriceDisplay {
      * @param {boolean} isSell - Is sell order
      * @param {number} price - Listing price
      * @param {Map} priceCache - Pre-fetched price cache (fallback)
+     * @param {Set<number>} ownListingIds - User's own listing IDs to exclude
      * @returns {HTMLElement} Table cell element
      */
-    createTopOrderPriceCell(itemHrid, enhancementLevel, isSell, price, priceCache) {
+    createTopOrderPriceCell(itemHrid, enhancementLevel, isSell, price, priceCache, ownListingIds = new Set()) {
         // PRIMARY: Get price from order book cache (same source as Top Order Age)
         let topOrderPrice = null;
         let lastUpdated = null;
@@ -739,7 +751,11 @@ class ListingPriceDisplay {
                     if (topOrders && topOrders.length > 0) {
                         // Asks are sorted ascending (lowest = best ask = index 0)
                         // Bids are sorted descending (highest = best bid = index 0)
-                        topOrderPrice = topOrders[0].price;
+                        // Skip over the user's own listings to find the top external order.
+                        const topCompeting = topOrders.find((o) => !ownListingIds.has(o.listingId));
+                        if (topCompeting) {
+                            topOrderPrice = topCompeting.price;
+                        }
                     }
                 }
             }
@@ -785,9 +801,10 @@ class ListingPriceDisplay {
      * @param {string} itemHrid - Item HRID
      * @param {number} enhancementLevel - Enhancement level
      * @param {boolean} isSell - Is sell order
+     * @param {Set<number>} ownListingIds - User's own listing IDs to exclude
      * @returns {HTMLElement} Table cell element
      */
-    createTopOrderAgeCell(itemHrid, enhancementLevel, isSell) {
+    createTopOrderAgeCell(itemHrid, enhancementLevel, isSell, ownListingIds = new Set()) {
         // Get order book data from estimatedListingAge module (shared cache)
         const cacheEntry = estimatedListingAge.orderBooksCache[itemHrid];
 
@@ -820,7 +837,14 @@ class ListingPriceDisplay {
             return createStyledCell('None', '#00FF00', { fontSize: '0.9em' }); // Green = you're the only one
         }
 
-        const topOrder = topOrders[0];
+        // Skip over the user's own listings to find the top external (competing) order
+        const topOrder = topOrders.find((o) => !ownListingIds.has(o.listingId));
+
+        if (!topOrder) {
+            // All orders on this side are the user's own
+            return createStyledCell('None', '#00FF00', { fontSize: '0.9em' });
+        }
+
         const topListingId = topOrder.listingId;
 
         // Estimate timestamp using existing logic
