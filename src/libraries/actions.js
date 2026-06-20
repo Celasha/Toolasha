@@ -16,6 +16,7 @@ import gatheringStats from '../features/actions/gathering-stats.js';
 import requiredMaterials from '../features/actions/required-materials.js';
 import missingMaterialsButton from '../features/actions/missing-materials-button.js';
 import budgetCalculator from '../features/actions/budget-calculator.js';
+import costSummary from '../features/actions/cost-summary.js';
 import craftingPlan from '../features/crafting-plan/index.js';
 import teaRecommendation from '../features/actions/tea-recommendation.js';
 import inventoryCountDisplay from '../features/actions/inventory-count-display.js';
@@ -44,6 +45,7 @@ toolashaRoot.Actions = {
     requiredMaterials,
     missingMaterialsButton,
     budgetCalculator,
+    costSummary,
     craftingPlan,
     alchemyProfitDisplay,
     alchemyBestItems,

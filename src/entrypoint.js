@@ -254,6 +254,13 @@ function registerFeatures() {
             async: false,
         },
         {
+            key: 'costSummary',
+            name: 'Cost Summary',
+            category: 'Actions',
+            module: Actions.costSummary,
+            async: false,
+        },
+        {
             key: 'craftingPlan',
             name: 'Crafting Plan',
             category: 'Actions',
