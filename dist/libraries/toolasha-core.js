@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.66.0
+ * Version: 2.67.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -926,6 +926,13 @@
                     type: 'checkbox',
                     default: true,
                     help: 'Adds a budget input below the Missing Mats button. Enter a gold budget (e.g. 50m) to calculate how many units you can produce by buying missing tradeable materials at ask price.',
+                },
+                actions_costSummary: {
+                    id: 'actions_costSummary',
+                    label: 'Action panel: Show cost summary',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Compact 4-line cost comparison for the selected produce quantity: direct recipe cost, missing direct mats, best crafting plan, and finished item market price.',
                 },
                 actionPanel_bestCraftingPlan: {
                     id: 'actionPanel_bestCraftingPlan',

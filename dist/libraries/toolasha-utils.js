@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 2.66.0
+ * Version: 2.67.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -759,6 +759,8 @@
         updateEnhancementLevel(itemHrid, newLevel) {
             let changed = false;
             for (const snapshot of Object.values(this.snapshots)) {
+                // Exact-mode snapshots intentionally hold a frozen level — never auto-update them.
+                if (snapshot.useExactEnhancement) continue;
                 for (const eq of snapshot.equipment || []) {
                     if (eq.itemHrid === itemHrid && eq.enhancementLevel !== newLevel) {
                         eq.enhancementLevel = newLevel;

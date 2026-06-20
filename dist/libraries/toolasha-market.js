@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.66.0
+ * Version: 2.67.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -7210,9 +7210,9 @@ self.onmessage = function (e) {
                 return itemCountMap;
             }
 
-            // Count inventory items (sum across all enhancement levels)
+            // Count inventory items only (sum across all enhancement levels)
             for (const item of inventory) {
-                if (!item.itemHrid) continue;
+                if (!item.itemHrid || item.itemLocationHrid !== '/item_locations/inventory') continue;
                 itemCountMap[item.itemHrid] = (itemCountMap[item.itemHrid] || 0) + (item.count || 0);
             }
 
@@ -7220,7 +7220,7 @@ self.onmessage = function (e) {
             if (includeEquipped) {
                 const equipment = dataManager.getEquipment();
                 if (equipment) {
-                    for (const slot of Object.values(equipment)) {
+                    for (const slot of equipment.values()) {
                         if (slot && slot.itemHrid) {
                             itemCountMap[slot.itemHrid] = (itemCountMap[slot.itemHrid] || 0) + 1;
                         }
@@ -8395,6 +8395,10 @@ self.onmessage = function (e) {
             this.cleanupRegistry = cleanupRegistry_js.createCleanupRegistry();
             this.activeRefreshes = new WeakSet(); // Track tables being refreshed (debouncing)
             this.tbodyObservers = new WeakMap(); // Track MutationObservers per tbody
+
+            // Sort state for "Progress" column header (sort by item name)
+            this.sortState = 'none'; // 'none' | 'asc' | 'desc'
+            this.originalRowOrder = []; // Stores original row order for reset
         }
 
         /**
@@ -8661,6 +8665,10 @@ self.onmessage = function (e) {
             }));
             const priceCache = marketAPI.getPricesBatch(itemsToPrice);
 
+            // Build set of user's own listing IDs so we can exclude them when
+            // looking up the "top competing order" in the shared order book.
+            const ownListingIds = new Set(Object.values(this.allListings).map((l) => l.id));
+
             // Add table headers
             this.addTableHeaders(tableNode);
 
@@ -8668,7 +8676,7 @@ self.onmessage = function (e) {
             this.addDataToRows(tbody);
 
             // Add price displays to each row
-            this.addPriceDisplays(tbody, priceCache);
+            this.addPriceDisplays(tbody, priceCache, ownListingIds);
 
             // Check if we should mark as fully processed
             let fullyProcessed = true;
@@ -8739,6 +8747,20 @@ self.onmessage = function (e) {
             thead.insertBefore(totalPriceHeader, thead.children[insertIndex++]);
             if (listedHeader) {
                 thead.insertBefore(listedHeader, thead.children[insertIndex++]);
+            }
+
+            // Make "Progress" header (index 2) clickable for sort-by-item-name
+            const progressHeader = thead.children[2];
+            if (progressHeader && !progressHeader.dataset.mwiSortable) {
+                progressHeader.dataset.mwiSortable = 'true';
+                progressHeader.style.cursor = 'pointer';
+                progressHeader.style.userSelect = 'none';
+                progressHeader.title = 'Click to sort by item name';
+                this.updateSortIndicator(progressHeader);
+                progressHeader.addEventListener('click', () => {
+                    this.cycleSortState(tableNode);
+                    this.updateSortIndicator(progressHeader);
+                });
             }
         }
 
@@ -8943,8 +8965,9 @@ self.onmessage = function (e) {
          * Add price display cells to each row
          * @param {HTMLElement} tbody - Table body element
          * @param {Map} priceCache - Pre-fetched price cache
+         * @param {Set<number>} ownListingIds - User's own listing IDs (excluded from "top competing order")
          */
-        addPriceDisplays(tbody, priceCache) {
+        addPriceDisplays(tbody, priceCache, ownListingIds = new Set()) {
             for (const row of tbody.querySelectorAll('tr')) {
                 // Skip if displays already added
                 if (row.querySelector('.mwi-listing-price-cell')) {
@@ -8975,13 +8998,19 @@ self.onmessage = function (e) {
                         enhancementLevel,
                         isSell,
                         price,
-                        priceCache
+                        priceCache,
+                        ownListingIds
                     );
                     row.insertBefore(topOrderCell, insertBeforeCell);
 
                     // Create Top Order Age cell (if setting enabled)
                     if (config.getSetting('market_showTopOrderAge')) {
-                        const topOrderAgeCell = this.createTopOrderAgeCell(itemHrid, enhancementLevel, isSell);
+                        const topOrderAgeCell = this.createTopOrderAgeCell(
+                            itemHrid,
+                            enhancementLevel,
+                            isSell,
+                            ownListingIds
+                        );
                         row.insertBefore(topOrderAgeCell, row.children[insertIndex + 1]);
                     }
 
@@ -9034,9 +9063,10 @@ self.onmessage = function (e) {
          * @param {boolean} isSell - Is sell order
          * @param {number} price - Listing price
          * @param {Map} priceCache - Pre-fetched price cache (fallback)
+         * @param {Set<number>} ownListingIds - User's own listing IDs to exclude
          * @returns {HTMLElement} Table cell element
          */
-        createTopOrderPriceCell(itemHrid, enhancementLevel, isSell, price, priceCache) {
+        createTopOrderPriceCell(itemHrid, enhancementLevel, isSell, price, priceCache, ownListingIds = new Set()) {
             // PRIMARY: Get price from order book cache (same source as Top Order Age)
             let topOrderPrice = null;
             let lastUpdated = null;
@@ -9055,7 +9085,11 @@ self.onmessage = function (e) {
                         if (topOrders && topOrders.length > 0) {
                             // Asks are sorted ascending (lowest = best ask = index 0)
                             // Bids are sorted descending (highest = best bid = index 0)
-                            topOrderPrice = topOrders[0].price;
+                            // Skip over the user's own listings to find the top external order.
+                            const topCompeting = topOrders.find((o) => !ownListingIds.has(o.listingId));
+                            if (topCompeting) {
+                                topOrderPrice = topCompeting.price;
+                            }
                         }
                     }
                 }
@@ -9101,9 +9135,10 @@ self.onmessage = function (e) {
          * @param {string} itemHrid - Item HRID
          * @param {number} enhancementLevel - Enhancement level
          * @param {boolean} isSell - Is sell order
+         * @param {Set<number>} ownListingIds - User's own listing IDs to exclude
          * @returns {HTMLElement} Table cell element
          */
-        createTopOrderAgeCell(itemHrid, enhancementLevel, isSell) {
+        createTopOrderAgeCell(itemHrid, enhancementLevel, isSell, ownListingIds = new Set()) {
             // Get order book data from estimatedListingAge module (shared cache)
             const cacheEntry = estimatedListingAge.orderBooksCache[itemHrid];
 
@@ -9136,7 +9171,14 @@ self.onmessage = function (e) {
                 return createStyledCell('None', '#00FF00', { fontSize: '0.9em' }); // Green = you're the only one
             }
 
-            const topOrder = topOrders[0];
+            // Skip over the user's own listings to find the top external (competing) order
+            const topOrder = topOrders.find((o) => !ownListingIds.has(o.listingId));
+
+            if (!topOrder) {
+                // All orders on this side are the user's own
+                return createStyledCell('None', '#00FF00', { fontSize: '0.9em' });
+            }
+
             const topListingId = topOrder.listingId;
 
             // Estimate timestamp using existing logic
@@ -9226,6 +9268,118 @@ self.onmessage = function (e) {
         }
 
         /**
+         * Update the sort indicator arrow on the Progress header
+         * @param {HTMLElement} header - The Progress <th> element
+         */
+        updateSortIndicator(header) {
+            const labels = { none: 'Progress', asc: 'Progress \u25B2', desc: 'Progress \u25BC', sortIndex: 'Progress #' };
+            header.textContent = labels[this.sortState];
+        }
+
+        /**
+         * Cycle sort state and reorder table rows
+         * @param {HTMLElement} tableNode - The listings table element
+         */
+        cycleSortState(tableNode) {
+            const tbody = tableNode.querySelector('tbody');
+            if (!tbody) return;
+
+            const rows = Array.from(tbody.querySelectorAll('tr'));
+            if (rows.length === 0) return;
+
+            // Store original order on first sort interaction
+            if (this.originalRowOrder.length === 0) {
+                this.originalRowOrder = rows.slice();
+            }
+
+            // Cycle: none → asc → desc → sortIndex → none
+            if (this.sortState === 'none') {
+                this.sortState = 'asc';
+            } else if (this.sortState === 'asc') {
+                this.sortState = 'desc';
+            } else if (this.sortState === 'desc') {
+                this.sortState = 'sortIndex';
+            } else {
+                this.sortState = 'none';
+            }
+
+            if (this.sortState === 'none') {
+                for (const row of this.originalRowOrder) {
+                    tbody.appendChild(row);
+                }
+                return;
+            }
+
+            const sortedRows = rows.slice().sort((a, b) => {
+                if (this.sortState === 'sortIndex') {
+                    return this.getItemSortIndex(a) - this.getItemSortIndex(b);
+                }
+                // Category + name sort
+                const catA = this.getItemCategory(a);
+                const catB = this.getItemCategory(b);
+                const catCmp = catA.localeCompare(catB);
+                if (catCmp !== 0) return this.sortState === 'asc' ? catCmp : -catCmp;
+                const nameA = this.getItemNameForRow(a);
+                const nameB = this.getItemNameForRow(b);
+                const nameCmp = nameA.localeCompare(nameB);
+                return this.sortState === 'asc' ? nameCmp : -nameCmp;
+            });
+
+            for (const row of sortedRows) {
+                tbody.appendChild(row);
+            }
+        }
+
+        /**
+         * Get item category for a row (for sorting)
+         * @param {HTMLElement} row - Table row element
+         * @returns {string} Category HRID
+         */
+        getItemCategory(row) {
+            const itemHrid = row.dataset.itemHrid;
+            if (itemHrid) {
+                const details = dataManager.getItemDetails(itemHrid);
+                if (details?.categoryHrid) return details.categoryHrid;
+            }
+            return '';
+        }
+
+        /**
+         * Get item sortIndex for a row
+         * @param {HTMLElement} row - Table row element
+         * @returns {number} Sort index (defaults to Infinity for unknowns)
+         */
+        getItemSortIndex(row) {
+            const itemHrid = row.dataset.itemHrid;
+            if (itemHrid) {
+                const details = dataManager.getItemDetails(itemHrid);
+                if (details?.sortIndex !== undefined) return details.sortIndex;
+            }
+            return Infinity;
+        }
+
+        /**
+         * Get display name for a row's item (for sorting)
+         * @param {HTMLElement} row - Table row element
+         * @returns {string} Item name (lowercase for consistent sorting)
+         */
+        getItemNameForRow(row) {
+            const itemHrid = row.dataset.itemHrid;
+            if (itemHrid) {
+                const details = dataManager.getItemDetails(itemHrid);
+                if (details?.name) return details.name.toLowerCase();
+            }
+            // Fallback: extract from SVG href
+            const use = row.querySelector('use');
+            if (use) {
+                const href = use.href?.baseVal || '';
+                const id = href.split('#')[1] || '';
+                return id.replace(/_/g, ' ');
+            }
+            return '';
+        }
+
+        /**
          * Clear all injected displays
          */
         clearDisplays() {
@@ -9234,6 +9388,8 @@ self.onmessage = function (e) {
             });
             document.querySelectorAll('.mwi-listing-price-header').forEach((el) => el.remove());
             document.querySelectorAll('.mwi-listing-price-cell').forEach((el) => el.remove());
+            this.sortState = 'none';
+            this.originalRowOrder = [];
         }
 
         /**
@@ -16468,6 +16624,8 @@ self.onmessage = function (e) {
         updateEnhancementLevel(itemHrid, newLevel) {
             let changed = false;
             for (const snapshot of Object.values(this.snapshots)) {
+                // Exact-mode snapshots intentionally hold a frozen level — never auto-update them.
+                if (snapshot.useExactEnhancement) continue;
                 for (const eq of snapshot.equipment || []) {
                     if (eq.itemHrid === itemHrid && eq.enhancementLevel !== newLevel) {
                         eq.enhancementLevel = newLevel;
@@ -17794,6 +17952,8 @@ self.onmessage = function (e) {
             this.currentCustomTo = null;
             this._deletePopup = null;
             this._deletePopupOutsideHandler = null;
+            this._deletePopupOutsideTimer = null;
+            this._outsideClickTimer = null;
         }
 
         /**
@@ -18289,7 +18449,12 @@ self.onmessage = function (e) {
                     this.closeModal();
                 }
             };
-            setTimeout(() => document.addEventListener('mousedown', this.outsideClickHandler), 0);
+            const queuedHandler = this.outsideClickHandler;
+            this._outsideClickTimer = setTimeout(() => {
+                this._outsideClickTimer = null;
+                if (this.outsideClickHandler !== queuedHandler) return;
+                document.addEventListener('mousedown', this.outsideClickHandler);
+            }, 0);
 
             // Render default view
             this.renderChart(this.activeRange);
@@ -18802,8 +18967,12 @@ self.onmessage = function (e) {
                     document.removeEventListener('mousedown', closeHandler);
                 }
             };
-            // Delay so the current click doesn't immediately close it
-            setTimeout(() => document.addEventListener('mousedown', closeHandler), 0);
+            // Delay so the current click doesn't immediately close it.
+            // Guard against race: if the popout is removed before the timer fires, skip attaching.
+            setTimeout(() => {
+                if (!document.body.contains(container)) return;
+                document.addEventListener('mousedown', closeHandler);
+            }, 0);
         }
 
         /**
@@ -19314,7 +19483,9 @@ self.onmessage = function (e) {
             });
 
             // Dismiss on outside click (defer to avoid catching the current click)
-            setTimeout(() => {
+            this._deletePopupOutsideTimer = setTimeout(() => {
+                this._deletePopupOutsideTimer = null;
+                if (!this._deletePopup) return;
                 this._deletePopupOutsideHandler = (e) => {
                     if (!popup.contains(e.target)) {
                         this._dismissDeletePopup();
@@ -19331,6 +19502,10 @@ self.onmessage = function (e) {
             if (this._deletePopup) {
                 this._deletePopup.remove();
                 this._deletePopup = null;
+            }
+            if (this._deletePopupOutsideTimer !== null) {
+                clearTimeout(this._deletePopupOutsideTimer);
+                this._deletePopupOutsideTimer = null;
             }
             if (this._deletePopupOutsideHandler) {
                 document.removeEventListener('click', this._deletePopupOutsideHandler);
@@ -19365,6 +19540,11 @@ self.onmessage = function (e) {
             if (this.outsideClickHandler) {
                 document.removeEventListener('mousedown', this.outsideClickHandler);
                 this.outsideClickHandler = null;
+            }
+
+            if (this._outsideClickTimer !== null) {
+                clearTimeout(this._outsideClickTimer);
+                this._outsideClickTimer = null;
             }
         }
     }
@@ -26261,9 +26441,11 @@ self.onmessage = function (e) {
                 newConfig = moveItem(this._config, sourceTabId, targetTabId, hrid);
             }
             this._config = newConfig;
-            await this._save();
             this._removeInjectedEls();
             this._applyLayout();
+            this._save().catch((error) => {
+                console.error('[CustomTabs] Failed to persist tile drop on tab:', error);
+            });
         }
 
         /**
@@ -26275,9 +26457,11 @@ self.onmessage = function (e) {
             if (!sourceTabId) return;
             const newConfig = removeItem(this._config, sourceTabId, hrid);
             this._config = newConfig;
-            await this._save();
             this._removeInjectedEls();
             this._applyLayout();
+            this._save().catch((error) => {
+                console.error('[CustomTabs] Failed to persist tile drop on unorganized:', error);
+            });
         }
 
         /**
@@ -26303,9 +26487,11 @@ self.onmessage = function (e) {
             if (fromIndex < toIndex) toIndex--;
             const newConfig = reorderItem(this._config, tabId, fromIndex, toIndex);
             this._config = newConfig;
-            await this._save();
             this._removeInjectedEls();
             this._applyLayout();
+            this._save().catch((error) => {
+                console.error('[CustomTabs] Failed to persist tile reorder:', error);
+            });
         }
 
         // -----------------------------------------------------------------------
@@ -26947,7 +27133,6 @@ self.onmessage = function (e) {
             }
             if (relevantBases.size === 0) return;
 
-            // For each relevant base HRID, find the highest enhancement currently owned
             const inventory = dataManager.characterItems || [];
             let anyChanged = false;
             const loadoutSnapshot = getLoadoutSnapshot();
@@ -26956,19 +27141,10 @@ self.onmessage = function (e) {
             for (const baseHrid of relevantBases) {
                 // Cache may have been invalidated by a prior iteration's snapshot update
                 if (!this._boundBaseHrids) break;
+                const loadoutLevels = this._boundBaseHrids.get(baseHrid);
+                if (!loadoutLevels) continue;
 
-                // Only auto-upgrade if all source loadouts use "highest enhancement" mode
-                // (useExactEnhancement: false means the game auto-equips highest owned)
-                const loadoutNames = this._boundBaseLoadouts?.get(baseHrid);
-                if (loadoutNames) {
-                    const allUseHighest = [...loadoutNames].every((name) => {
-                        const snap = Object.values(snapshots).find((s) => s.name === name);
-                        return snap && !snap.useExactEnhancement;
-                    });
-                    if (!allUseHighest) continue;
-                }
-
-                // Find highest enhancement level of this item in current inventory
+                // Find highest enhancement level of this item in current inventory (computed once per base)
                 let highestOwned = -1;
                 for (const item of inventory) {
                     if (item.itemHrid === baseHrid && item.count > 0) {
@@ -26980,21 +27156,29 @@ self.onmessage = function (e) {
                 // If player owns none, skip (don't remove — they might just be mid-trade)
                 if (highestOwned < 0) continue;
 
-                const currentLevel = this._boundBaseHrids.get(baseHrid);
-                if (highestOwned === currentLevel) continue;
+                // Process each loadout binding independently — exact-mode loadouts stay
+                // frozen, highest-mode loadouts update to the highest owned level.
+                for (const [loadoutName, currentLevel] of loadoutLevels) {
+                    const snap = Object.values(snapshots).find((s) => s.name === loadoutName);
+                    if (!snap || snap.useExactEnhancement) continue;
+                    if (highestOwned === currentLevel) continue;
 
-                // Level changed (up or down) — swap in bindings
-                const oldHrid = currentLevel > 0 ? `${baseHrid}+${currentLevel}` : baseHrid;
-                const newHrid = highestOwned > 0 ? `${baseHrid}+${highestOwned}` : baseHrid;
+                    const oldHrid = currentLevel > 0 ? `${baseHrid}+${currentLevel}` : baseHrid;
+                    const newHrid = highestOwned > 0 ? `${baseHrid}+${highestOwned}` : baseHrid;
 
-                this._walkAndSwapBinding(oldHrid, newHrid);
-                anyChanged = true;
+                    this._walkAndSwapBinding(oldHrid, newHrid, loadoutName);
+                    anyChanged = true;
 
-                // Also update the loadout snapshot
+                    // Update cached level for this specific loadout (cache may have been
+                    // nulled by the snapshot update listener below).
+                    if (this._boundBaseHrids) {
+                        this._boundBaseHrids.get(baseHrid)?.set(loadoutName, highestOwned);
+                    }
+                }
+
+                // Sync snapshot equipment levels — updateEnhancementLevel skips exact-mode
+                // snapshots internally, so it only touches highest-mode ones.
                 loadoutSnapshot.updateEnhancementLevel(baseHrid, highestOwned);
-
-                // Update the cached level (may have been nulled by the snapshot update listener)
-                if (this._boundBaseHrids) this._boundBaseHrids.set(baseHrid, highestOwned);
             }
 
             if (anyChanged) {
@@ -27004,12 +27188,13 @@ self.onmessage = function (e) {
         }
 
         /**
-         * Build a Map of baseHrid → highest enhancement level across all bindings.
-         * Cached and invalidated when bindings change.
+         * Build a Map of baseHrid → Map<loadoutName, currentLevel> across all bindings.
+         * Per-loadout granularity lets us update each binding independently based on
+         * its own snapshot's useExactEnhancement flag. Cached and invalidated when
+         * bindings change.
          */
         _rebuildBoundBaseHrids() {
-            this._boundBaseHrids = new Map();
-            this._boundBaseLoadouts = new Map(); // baseHrid → Set<loadoutName>
+            this._boundBaseHrids = new Map(); // baseHrid → Map<loadoutName, currentLevel>
             const walk = (tabs) => {
                 for (const tab of tabs) {
                     if (tab.loadoutBindings) {
@@ -27021,12 +27206,12 @@ self.onmessage = function (e) {
                                     plusIdx !== -1 && /^\d+$/.test(hrid.substring(plusIdx + 1))
                                         ? parseInt(hrid.substring(plusIdx + 1), 10)
                                         : 0;
-                                const existing = this._boundBaseHrids.get(base) ?? -1;
-                                if (level > existing) this._boundBaseHrids.set(base, level);
-                                if (!this._boundBaseLoadouts.has(base)) {
-                                    this._boundBaseLoadouts.set(base, new Set());
+                                if (!this._boundBaseHrids.has(base)) {
+                                    this._boundBaseHrids.set(base, new Map());
                                 }
-                                this._boundBaseLoadouts.get(base).add(loadoutName);
+                                const loadoutLevels = this._boundBaseHrids.get(base);
+                                const existing = loadoutLevels.get(loadoutName) ?? -1;
+                                if (level > existing) loadoutLevels.set(loadoutName, level);
                             }
                         }
                     }
@@ -27041,18 +27226,35 @@ self.onmessage = function (e) {
          * @param {string} oldHrid
          * @param {string} newHrid
          */
-        _walkAndSwapBinding(oldHrid, newHrid) {
+        /**
+         * Swap an old HRID for a new one in loadout bindings across all tabs.
+         * @param {string} oldHrid
+         * @param {string} newHrid
+         * @param {string|null} restrictToLoadoutName - When set, only swap inside
+         *   bindings for this loadout. tab.items is swapped only if no other
+         *   loadout on the same tab still references oldHrid.
+         */
+        _walkAndSwapBinding(oldHrid, newHrid, restrictToLoadoutName = null) {
             const walk = (tabs) => {
                 for (const tab of tabs) {
                     if (tab.loadoutBindings) {
-                        for (const [_name, items] of Object.entries(tab.loadoutBindings)) {
+                        let swappedInLoadout = false;
+                        let oldHridStillReferenced = false;
+                        for (const [name, items] of Object.entries(tab.loadoutBindings)) {
+                            if (restrictToLoadoutName && name !== restrictToLoadoutName) {
+                                if (items.includes(oldHrid)) oldHridStillReferenced = true;
+                                continue;
+                            }
                             const idx = items.indexOf(oldHrid);
                             if (idx !== -1) {
                                 items[idx] = newHrid;
-                                // Also swap in tab.items
-                                const itemIdx = tab.items.indexOf(oldHrid);
-                                if (itemIdx !== -1) tab.items[itemIdx] = newHrid;
+                                swappedInLoadout = true;
                             }
+                        }
+                        if (swappedInLoadout && !oldHridStillReferenced) {
+                            // Also swap in tab.items
+                            const itemIdx = tab.items.indexOf(oldHrid);
+                            if (itemIdx !== -1) tab.items[itemIdx] = newHrid;
                         }
                     }
                     if (tab.children.length > 0) walk(tab.children);
@@ -27388,6 +27590,7 @@ self.onmessage = function (e) {
 
             let open = false;
             let outsideBound = false;
+            let outsideTimer = null;
             const outsideClick = (e) => {
                 if (!wrapper.contains(e.target)) {
                     closePanel();
@@ -27397,6 +27600,10 @@ self.onmessage = function (e) {
                 open = false;
                 panel.style.display = 'none';
                 chevron.style.transform = '';
+                if (outsideTimer !== null) {
+                    clearTimeout(outsideTimer);
+                    outsideTimer = null;
+                }
                 if (outsideBound) {
                     document.removeEventListener('click', outsideClick);
                     outsideBound = false;
@@ -27413,8 +27620,10 @@ self.onmessage = function (e) {
                 open = true;
                 panel.style.display = 'flex';
                 chevron.style.transform = 'rotate(180deg)';
-                if (!outsideBound) {
-                    setTimeout(() => {
+                if (!outsideBound && outsideTimer === null) {
+                    outsideTimer = setTimeout(() => {
+                        outsideTimer = null;
+                        if (!open || outsideBound) return;
                         document.addEventListener('click', outsideClick);
                         outsideBound = true;
                     }, 0);

@@ -1,7 +1,7 @@
 /**
  * Toolasha Combat Library
  * Combat, abilities, and combat stats features
- * Version: 2.66.0
+ * Version: 2.67.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -946,6 +946,8 @@
         updateEnhancementLevel(itemHrid, newLevel) {
             let changed = false;
             for (const snapshot of Object.values(this.snapshots)) {
+                // Exact-mode snapshots intentionally hold a frozen level — never auto-update them.
+                if (snapshot.useExactEnhancement) continue;
                 for (const eq of snapshot.equipment || []) {
                     if (eq.itemHrid === itemHrid && eq.enhancementLevel !== newLevel) {
                         eq.enhancementLevel = newLevel;
@@ -8641,13 +8643,21 @@
                 const rewardDropTable = actionDetail?.combatZoneInfo?.dungeonInfo?.rewardDropTable;
 
                 if (rewardDropTable) {
+                    const baseChestCount = 5;
+                    const chestsPerCompletion = (baseChestCount / numberOfPlayers) * (1 + combatDropQuantity);
+
                     for (const drop of rewardDropTable) {
                         const baseRate = drop.dropRate + (drop.dropRatePerDifficultyTier ?? 0) * difficultyTier;
                         const adjustedRate = Math.min(1.0, Math.max(0, baseRate));
                         if (adjustedRate <= 0) continue;
 
                         const avgCount = (drop.minCount + drop.maxCount) / 2;
-                        const expected = simResult.dungeonsCompleted * adjustedRate * avgCount;
+                        let expected;
+                        if (adjustedRate >= 1.0) {
+                            expected = simResult.dungeonsCompleted * chestsPerCompletion * avgCount;
+                        } else {
+                            expected = simResult.dungeonsCompleted * adjustedRate * avgCount;
+                        }
 
                         totalDropMap.set(drop.itemHrid, (totalDropMap.get(drop.itemHrid) || 0) + expected);
                     }
