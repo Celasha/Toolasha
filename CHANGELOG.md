@@ -1,5 +1,26 @@
 # Changelog
 
+## [2.67.0](https://github.com/Celasha/Toolasha/compare/v2.66.0...v2.67.0) (2026-06-20)
+
+### Features
+
+- add cost summary block to production action panels ([655dfd2](https://github.com/Celasha/Toolasha/commit/655dfd2b2c3140db9efbebc1de8620505d00af59))
+- add sortable Progress column header to My Listings table ([3b1191e](https://github.com/Celasha/Toolasha/commit/3b1191ee06a15e3ef0987deeec51ff1b64b85a69))
+
+### Bug Fixes
+
+- apply correct dungeon chest quantity formula in combat sim ([3662b7c](https://github.com/Celasha/Toolasha/commit/3662b7c9052a0b7fb2c074a95c0f41333bcd724e))
+- apply Custom Tab drag-drop layout before debounced save ([cf80e06](https://github.com/Celasha/Toolasha/commit/cf80e064d42c611a8ff1c6f287e8718defb2fa95))
+- exclude own listings from Top Order Price/Age on My Listings ([445f2ba](https://github.com/Celasha/Toolasha/commit/445f2baee87866061e7ebe93cd95cc8e1c9f646e))
+- make Marketplace "Count equipped items" setting actually toggle ([1dab506](https://github.com/Celasha/Toolasha/commit/1dab50651af54a632d93a532b0ee53040b480c51))
+- prevent orphan outside-click listeners from deferred attachment race ([9500b1b](https://github.com/Celasha/Toolasha/commit/9500b1b5461af1fe429f8fc6d236ad09ebe1b303))
+- refresh action-bar profit when pricing mode changes ([4976742](https://github.com/Celasha/Toolasha/commit/4976742fa86d7baade06425c4e58050a1adaf1a5))
+- sync per-loadout Custom Tab binding independently of mixed exact mode ([36f07d1](https://github.com/Celasha/Toolasha/commit/36f07d1ced4b92d4a06489dffa84f20b02620b09))
+
+### Miscellaneous Chores
+
+- add Paradoxian to userscript header acknowledgements ([16378aa](https://github.com/Celasha/Toolasha/commit/16378aa3e35fbeca556636e1a7537c2e19ed2000))
+
 ## [2.66.0](https://github.com/Celasha/Toolasha/compare/v2.65.0...v2.66.0) (2026-06-18)
 
 ### Features
