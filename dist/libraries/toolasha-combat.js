@@ -7025,6 +7025,14 @@
             const labyrinth = data.labyrinth;
             if (!labyrinth?.isActive) return;
 
+            // Cross-check: only trust labyrinth state if the player's current action is
+            // actually the labyrinth explore action. Stale labyrinth_updated messages
+            // can arrive shortly after exiting and otherwise stamp "Attempt #N" onto
+            // the next regular combat zone.
+            const actions = dataManager.getCurrentActions();
+            const activeLabAction = actions.find((a) => a.actionHrid === '/actions/labyrinth/explore' && !a.isDone);
+            if (!activeLabAction) return;
+
             let pathCoords;
             try {
                 pathCoords = JSON.parse(labyrinth.pathData || '[]');
@@ -7046,7 +7054,10 @@
         }
 
         _onNewBattle(data) {
+            // A new battle implies we're not in a static labyrinth state — clear any
+            // lingering labyrinth attempt count so it can't leak into a render.
             this.isLabyrinth = false;
+            this.labyrinthAttempt = 0;
             this.battleId = data.battleId;
             const actions = dataManager.getCurrentActions();
             const combatAction = actions.find((a) => a.actionHrid?.startsWith('/actions/combat/') && !a.isDone);
@@ -7067,6 +7078,22 @@
             if (this.battleId === 0 && this.labyrinthAttempt === 0) {
                 document.getElementById(COUNTER_ID)?.remove();
                 return;
+            }
+
+            // Defensive: if state claims labyrinth but the current action isn't a
+            // labyrinth explore, clear the labyrinth flags and re-derive what to
+            // render from the remaining state.
+            if (this.isLabyrinth) {
+                const actions = dataManager.getCurrentActions();
+                const isCurrentlyLab = actions.some((a) => a.actionHrid === '/actions/labyrinth/explore' && !a.isDone);
+                if (!isCurrentlyLab) {
+                    this.isLabyrinth = false;
+                    this.labyrinthAttempt = 0;
+                    if (this.battleId === 0) {
+                        document.getElementById(COUNTER_ID)?.remove();
+                        return;
+                    }
+                }
             }
 
             const currentAction = document.querySelector(CURRENT_ACTION_SELECTOR);
@@ -14136,17 +14163,24 @@
     }
 
     /**
-     * Find the best off-hand item for a given combat style and level range.
-     * For melee/ranged: picks highest-level defensive off-hand.
-     * For magic: prefers off-hands with magic stats, falls back to defensive.
+     * Find candidate off-hand items for a given combat style and level range.
+     * Returns up to two options (deduped):
+     *  - Style-matched: highest-itemLevel off-hand whose offensive stats match the
+     *    weapon's damage style (e.g. Manticore Shield for ranged).
+     *  - Highest-itemLevel: the strongest off-hand by item level overall, regardless
+     *    of style fit (e.g. Knight's Aegis for any cross-slot upgrade).
      * @param {Object} gameData - Game data
      * @param {string} damageStyle - Primary damage style of the weapon
      * @param {number} maxItemLevel - Maximum item level to consider
-     * @returns {{hrid: string, itemLevel: number}|null}
+     * @returns {Array<{hrid: string, itemLevel: number}>}
      */
     function findBestOffHand(gameData, damageStyle, maxItemLevel) {
-        let best = null;
         const isMagic = damageStyle === 'magic';
+        const isRanged = damageStyle === 'ranged';
+        const isMelee = damageStyle === 'slash' || damageStyle === 'stab' || damageStyle === 'smash';
+
+        let styleMatched = null; // highest-itemLevel off-hand with style-matched stats
+        let highest = null; // highest-itemLevel off-hand overall (with magic-exclusion for non-magic)
 
         for (const [itemHrid, item] of Object.entries(gameData.itemDetailMap)) {
             const eq = item.equipmentDetail;
@@ -14156,26 +14190,45 @@
 
             const level = item.itemLevel || 0;
             const stats = eq.combatStats || {};
+            const hasMagicStats = (stats.magicDamage || 0) > 0 || (stats.magicAccuracy || 0) > 0;
 
+            // Build "highest overall" candidate (mirrors original behavior)
             if (isMagic) {
-                const hasMagicStats = (stats.magicDamage || 0) > 0 || (stats.magicAccuracy || 0) > 0;
-                if (!best) {
-                    best = { hrid: itemHrid, itemLevel: level, isMagic: hasMagicStats };
-                } else if (hasMagicStats && !best.isMagic) {
-                    best = { hrid: itemHrid, itemLevel: level, isMagic: true };
-                } else if (hasMagicStats === best.isMagic && level > best.itemLevel) {
-                    best = { hrid: itemHrid, itemLevel: level, isMagic: hasMagicStats };
+                if (!highest) {
+                    highest = { hrid: itemHrid, itemLevel: level, isMagic: hasMagicStats };
+                } else if (hasMagicStats && !highest.isMagic) {
+                    highest = { hrid: itemHrid, itemLevel: level, isMagic: true };
+                } else if (hasMagicStats === highest.isMagic && level > highest.itemLevel) {
+                    highest = { hrid: itemHrid, itemLevel: level, isMagic: hasMagicStats };
                 }
-            } else {
-                const hasMagicStats = (stats.magicDamage || 0) > 0;
-                if (hasMagicStats) continue;
-                if (!best || level > best.itemLevel) {
-                    best = { hrid: itemHrid, itemLevel: level };
-                }
+            } else if (!hasMagicStats && (!highest || level > highest.itemLevel)) {
+                // For non-magic, exclude off-hands with magic stats from "highest"
+                highest = { hrid: itemHrid, itemLevel: level };
+            }
+
+            // Build "style-matched" candidate — highest itemLevel among off-hands whose
+            // offensive stats match the weapon's damage style.
+            let styleMatch = false;
+            if (isMagic) {
+                styleMatch = hasMagicStats;
+            } else if (isRanged) {
+                styleMatch = (stats.rangedDamage || 0) > 0 || (stats.rangedAccuracy || 0) > 0;
+            } else if (isMelee) {
+                const meleeDmg = (stats.stabDamage || 0) + (stats.slashDamage || 0) + (stats.smashDamage || 0);
+                const meleeAcc = (stats.stabAccuracy || 0) + (stats.slashAccuracy || 0) + (stats.smashAccuracy || 0);
+                styleMatch = meleeDmg > 0 || meleeAcc > 0;
+            }
+            if (styleMatch && (!styleMatched || level > styleMatched.itemLevel)) {
+                styleMatched = { hrid: itemHrid, itemLevel: level };
             }
         }
 
-        return best ? { hrid: best.hrid, itemLevel: best.itemLevel } : null;
+        const out = [];
+        if (styleMatched) out.push({ hrid: styleMatched.hrid, itemLevel: styleMatched.itemLevel });
+        if (highest && (!styleMatched || highest.hrid !== styleMatched.hrid)) {
+            out.push({ hrid: highest.hrid, itemLevel: highest.itemLevel });
+        }
+        return out;
     }
 
     /**
@@ -14259,21 +14312,87 @@
                     // Offensive items: keep existing role-based tier progression
                     const slotKey = `${slot}|${role}`;
                     const slotItems = tierProgression[slotKey];
+                    const offensiveCurrentName = itemDetails?.name || currentHrid.split('/').pop();
+                    const offensiveCandidateHrids = new Set();
                     if (slotItems) {
                         const currentIdx = slotItems.findIndex((item) => item.hrid === currentHrid);
                         if (currentIdx >= 0 && currentIdx < slotItems.length - 1) {
                             const nextTier = slotItems[currentIdx + 1];
                             const nextName = nextTier.name || nextTier.hrid.split('/').pop();
-                            const currentName = gameData.itemDetailMap[currentHrid]?.name || currentHrid.split('/').pop();
                             candidates.push({
                                 slot,
                                 currentHrid,
                                 currentLevel,
                                 upgradeHrid: nextTier.hrid,
                                 upgradeLevel: currentLevel,
-                                description: `${currentName} → ${nextName} (+${currentLevel})`,
+                                description: `${offensiveCurrentName} → ${nextName} (+${currentLevel})`,
                                 type: 'tier',
                             });
+                            offensiveCandidateHrids.add(nextTier.hrid);
+
+                            // Also suggest the highest non-refined item in the same slot|role
+                            // when the player is already wearing high-tier gear (T60+). This
+                            // surfaces direct T95 jumps (e.g. Sighted → Marksman) that the
+                            // single-step progression would otherwise hide behind T75 stepping
+                            // stones.
+                            const currentItemLevel = itemDetails?.itemLevel || 0;
+                            if (currentItemLevel >= 60) {
+                                let highestNonRefined = null;
+                                for (let i = slotItems.length - 1; i >= 0; i--) {
+                                    if (!slotItems[i].hrid.endsWith('_refined')) {
+                                        highestNonRefined = slotItems[i];
+                                        break;
+                                    }
+                                }
+                                if (
+                                    highestNonRefined &&
+                                    highestNonRefined.hrid !== currentHrid &&
+                                    highestNonRefined.hrid !== nextTier.hrid &&
+                                    highestNonRefined.itemLevel > currentItemLevel
+                                ) {
+                                    const highestName = highestNonRefined.name || highestNonRefined.hrid.split('/').pop();
+                                    candidates.push({
+                                        slot,
+                                        currentHrid,
+                                        currentLevel,
+                                        upgradeHrid: highestNonRefined.hrid,
+                                        upgradeLevel: currentLevel,
+                                        description: `${offensiveCurrentName} → ${highestName} (+${currentLevel})`,
+                                        type: 'tier',
+                                    });
+                                    offensiveCandidateHrids.add(highestNonRefined.hrid);
+                                }
+                            }
+                        }
+                    }
+
+                    // Also walk the crafting-chain upgradeMap for offensive items so that
+                    // direct upgrade-action targets — most importantly the refined version
+                    // of the current weapon (e.g. Furious Spear → Furious Spear ★) — surface
+                    // even when the role-grouped progression would step sideways to a
+                    // different damage style first.
+                    const offensiveUpgrades = upgradeMap.get(currentHrid);
+                    if (offensiveUpgrades) {
+                        for (const upgradeHrid of offensiveUpgrades) {
+                            if (offensiveCandidateHrids.has(upgradeHrid)) continue;
+                            if (upgradeHrid === currentHrid) continue;
+                            const upgradeItem = gameData.itemDetailMap[upgradeHrid];
+                            if (!upgradeItem?.equipmentDetail) continue;
+                            if (upgradeItem.equipmentDetail.type !== slot) continue;
+                            const upgradeRole = getItemRole(upgradeItem.equipmentDetail?.combatStats);
+                            if (upgradeRole !== role) continue;
+
+                            const upgradeName = upgradeItem.name || upgradeHrid.split('/').pop();
+                            candidates.push({
+                                slot,
+                                currentHrid,
+                                currentLevel,
+                                upgradeHrid,
+                                upgradeLevel: currentLevel,
+                                description: `${offensiveCurrentName} → ${upgradeName} (+${currentLevel})`,
+                                type: 'tier',
+                            });
+                            offensiveCandidateHrids.add(upgradeHrid);
                         }
                     }
                 }
@@ -14304,29 +14423,33 @@
                         const style = getItemDamageStyle(eq.combatStats);
                         if (style !== damageStyle) continue;
 
-                        // Find best off-hand at this tier
-                        const bestOH = findBestOffHand(gameData, damageStyle, item.itemLevel || 999);
-                        if (!bestOH) continue;
+                        // Find candidate off-hands at this tier (may return 1 or 2 options:
+                        // style-matched and/or highest-itemLevel).
+                        const offHandCandidates = findBestOffHand(gameData, damageStyle, item.itemLevel || 999);
+                        if (!offHandCandidates.length) continue;
 
                         const mainName = item.name || itemHrid.split('/').pop();
-                        const ohItem = gameData.itemDetailMap[bestOH.hrid];
-                        const ohName = ohItem?.name || bestOH.hrid.split('/').pop();
                         const currentName = twoHandItem?.name || twoHandEquip.hrid.split('/').pop();
 
-                        candidates.push({
-                            slot: '/equipment_types/two_hand',
-                            currentHrid: twoHandEquip.hrid,
-                            currentLevel: enhLevel,
-                            upgradeHrid: itemHrid,
-                            upgradeLevel: enhLevel,
-                            addedSlots: {
-                                '/equipment_types/main_hand': { hrid: itemHrid, enhancementLevel: enhLevel },
-                                '/equipment_types/off_hand': { hrid: bestOH.hrid, enhancementLevel: enhLevel },
-                            },
-                            clearedSlots: ['/equipment_types/two_hand'],
-                            description: `${currentName} → ${mainName} + ${ohName} (+${enhLevel})`,
-                            type: 'cross_slot',
-                        });
+                        for (const bestOH of offHandCandidates) {
+                            const ohItem = gameData.itemDetailMap[bestOH.hrid];
+                            const ohName = ohItem?.name || bestOH.hrid.split('/').pop();
+
+                            candidates.push({
+                                slot: '/equipment_types/two_hand',
+                                currentHrid: twoHandEquip.hrid,
+                                currentLevel: enhLevel,
+                                upgradeHrid: itemHrid,
+                                upgradeLevel: enhLevel,
+                                addedSlots: {
+                                    '/equipment_types/main_hand': { hrid: itemHrid, enhancementLevel: enhLevel },
+                                    '/equipment_types/off_hand': { hrid: bestOH.hrid, enhancementLevel: enhLevel },
+                                },
+                                clearedSlots: ['/equipment_types/two_hand'],
+                                description: `${currentName} → ${mainName} + ${ohName} (+${enhLevel})`,
+                                type: 'cross_slot',
+                            });
+                        }
                     }
                 }
             } else if (mainHandEquip) {
