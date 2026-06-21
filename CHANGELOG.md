@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.67.2](https://github.com/Celasha/Toolasha/compare/v2.67.1...v2.67.2) (2026-06-21)
+
+### Miscellaneous Chores
+
+- format release notes ([38444c6](https://github.com/Celasha/Toolasha/commit/38444c65a6185dd42824b6388baa0ec41b7f284f))
+
 ## [2.67.1](https://github.com/Celasha/Toolasha/compare/v2.67.0...v2.67.1) (2026-06-21)
 
 ### Bug Fixes
