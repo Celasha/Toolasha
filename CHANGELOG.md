@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.67.3](https://github.com/Celasha/Toolasha/compare/v2.67.2...v2.67.3) (2026-06-21)
+
+### Performance Improvements
+
+- skip enhancement-cost badge calc when networth is disabled ([e95445f](https://github.com/Celasha/Toolasha/commit/e95445f6dfe19b5e9c3d0fac63bd0a0a74202bca))
+
+### Continuous Integration
+
+- run format workflow on bot pushes to release-please PRs ([eed699d](https://github.com/Celasha/Toolasha/commit/eed699dcbeece9c6bef6104e5c9748fa2816fc66))
+
 ## [2.67.2](https://github.com/Celasha/Toolasha/compare/v2.67.1...v2.67.2) (2026-06-21)
 
 ### Miscellaneous Chores
