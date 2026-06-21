@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.67.3
+ * Version: 2.67.4
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -22117,8 +22117,16 @@ self.onmessage = function (e) {
                         bidPrice = marketPrice.bid > 0 ? marketPrice.bid : 0;
                     }
 
-                    // For enhanced equipment, fill in missing prices with enhancement cost
-                    if (isEquipment && enhancementLevel > 0 && (askPrice === 0 || bidPrice === 0)) {
+                    // For enhanced equipment, fill in missing prices with enhancement cost.
+                    // Same gate as the primary high-enhancement branch above: this fallback
+                    // runs calculateEnhancementPath per item, which is the actual freeze
+                    // source for +20 inventories. Skip it when Net Worth is disabled.
+                    if (
+                        useHighEnhancementCost &&
+                        isEquipment &&
+                        enhancementLevel > 0 &&
+                        (askPrice === 0 || bidPrice === 0)
+                    ) {
                         // Check cache first
                         const cachedCost = networthCache.get(itemHrid, enhancementLevel);
                         let enhancementCost = cachedCost;
