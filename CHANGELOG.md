@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.67.1](https://github.com/Celasha/Toolasha/compare/v2.67.0...v2.67.1) (2026-06-21)
+
+
+### Bug Fixes
+
+* stop stale Attempt #N label from leaking into regular combat ([a85b867](https://github.com/Celasha/Toolasha/commit/a85b867cf0201e44cf065d3be5247443520581c8))
+* surface refined weapon as upgrade for offensive items ([4595d1c](https://github.com/Celasha/Toolasha/commit/4595d1cf79d154f935ae151884ad922be670c5e6))
+* surface T95 tier jumps and style-matched off-hands in upgrade advisor ([f31dbc1](https://github.com/Celasha/Toolasha/commit/f31dbc1f10f73d84b29e66f47343cde8d0d0d294))
+* wire combatStats setting to feature gate ([5f63226](https://github.com/Celasha/Toolasha/commit/5f63226220a71d02b8ce5bb1ac959eefa3c01939))
+
 ## [2.67.0](https://github.com/Celasha/Toolasha/compare/v2.66.0...v2.67.0) (2026-06-20)
 
 ### Features
