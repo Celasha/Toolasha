@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.67.2
+ * Version: 2.67.3
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -21962,8 +21962,13 @@ self.onmessage = function (e) {
             }
             const priceCache = marketAPI.getPricesBatch(itemsToPrice);
 
-            // Get settings for high enhancement cost mode
-            const useHighEnhancementCost = config.getSetting('networth_highEnhancementUseCost');
+            // Get settings for high enhancement cost mode. The expensive
+            // calculateEnhancementPath path only runs when the Net Worth feature
+            // is enabled — disabling that feature skips the per-item enhancement
+            // simulation that can take 100+ ms for each +20 piece and freeze the
+            // tab during init when the inventory has many high-enhancement items.
+            const useHighEnhancementCost =
+                config.getSetting('networth_highEnhancementUseCost') && config.isFeatureEnabled('networth');
             const minLevel = config.getSetting('networth_highEnhancementMinLevel') || 13;
 
             // Currency items to skip (actual currencies, not category)
