@@ -829,16 +829,17 @@ export const settingsGroups = {
         settings: {
             networth: {
                 id: 'networth',
-                label: 'Top right: Show current assets (net worth)',
+                label: 'Top right: Show gold count',
                 type: 'checkbox',
                 default: true,
-                help: 'Enhanced items valued by enhancement simulator',
+                help: 'Displays your current gold count next to Total Level in the page header',
             },
             invWorth: {
                 id: 'invWorth',
-                label: 'Below inventory: Show inventory summary',
+                label: 'Below inventory: Show net worth breakdown',
                 type: 'checkbox',
                 default: true,
+                help: 'Shows total net worth with a per-category breakdown (equipment, inventory, listings, houses, abilities) below the inventory panel',
             },
             invSort: {
                 id: 'invSort',
