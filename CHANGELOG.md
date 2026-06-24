@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.67.5](https://github.com/Celasha/Toolasha/compare/v2.67.4...v2.67.5) (2026-06-24)
+
+
+### Bug Fixes
+
+* restore year on guild Joined column ([ba2b5e1](https://github.com/Celasha/Toolasha/commit/ba2b5e172ebfde77b69c5cc81dd53b89698b810c))
+
+
+### Documentation
+
+* clarify networth setting labels to match actual behavior ([eb833aa](https://github.com/Celasha/Toolasha/commit/eb833aaaa3dddefc094b039396fa4e21aa41647e))
+
 ## [2.67.4](https://github.com/Celasha/Toolasha/compare/v2.67.3...v2.67.4) (2026-06-21)
 
 ### Performance Improvements
