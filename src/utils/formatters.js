@@ -499,7 +499,7 @@ export function formatLargeNumber(value, decimals) {
  * @returns {string}
  */
 export function formatDateTime(date, options = {}) {
-    const { includeDate = true, includeTime = true, includeSeconds = true } = options;
+    const { includeDate = true, includeTime = true, includeSeconds = true, includeYear = false } = options;
     const use24h = config.getSettingValue('market_listingTimeFormat', '24hour') === '24hour';
     const dateFormat = config.getSettingValue('market_listingDateFormat', 'MM-DD');
 
@@ -508,7 +508,9 @@ export function formatDateTime(date, options = {}) {
     if (includeDate) {
         const month = String(date.getMonth() + 1).padStart(2, '0');
         const day = String(date.getDate()).padStart(2, '0');
-        parts.push(dateFormat === 'DD-MM' ? `${day}-${month}` : `${month}-${day}`);
+        let datePart = dateFormat === 'DD-MM' ? `${day}-${month}` : `${month}-${day}`;
+        if (includeYear) datePart += `-${date.getFullYear()}`;
+        parts.push(datePart);
     }
 
     if (includeTime) {
