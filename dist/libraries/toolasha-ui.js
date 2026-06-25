@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.67.4
+ * Version: 2.67.5
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -33022,7 +33022,7 @@ ${starCSS}
                 name: 'Joined',
                 insertAfter: insertAfter + 1,
                 data: allStats.map((s) => s.joinTime),
-                format: (v) => (v ? formatters_js.formatDateTime(new Date(v), { includeTime: false }) : ''),
+                format: (v) => (v ? formatters_js.formatDateTime(new Date(v), { includeTime: false, includeYear: true }) : ''),
                 makeSortable: true,
                 sortId: 'joinTime',
                 sortData: allStats.map((s) => (s.joinTime ? +new Date(s.joinTime) : 0)),
