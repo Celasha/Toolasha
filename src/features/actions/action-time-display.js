@@ -332,7 +332,8 @@ class ActionTimeDisplay {
                 if (!hasInfinite && !result.isTrulyInfinite) {
                     const completionDate = new Date();
                     completionDate.setSeconds(completionDate.getSeconds() + accumulatedTime);
-                    timeText += ` Complete at ${formatCompletionTime(completionDate, false)}`;
+                    const isToday = completionDate.toDateString() === new Date().toDateString();
+                    timeText += ` Complete at ${formatCompletionTime(completionDate, !isToday)}`;
                 }
 
                 this.appendTimeToActionDiv(actionDiv, timeText);
@@ -2321,8 +2322,9 @@ class ActionTimeDisplay {
                 if (!hasInfinite && !isTrulyInfinite) {
                     const completionDate = new Date();
                     completionDate.setSeconds(completionDate.getSeconds() + accumulatedTime);
+                    const isToday = completionDate.toDateString() === new Date().toDateString();
 
-                    completionText = ` Complete at ${formatCompletionTime(completionDate, false)}`;
+                    completionText = ` Complete at ${formatCompletionTime(completionDate, !isToday)}`;
                 }
 
                 // Create time display element
