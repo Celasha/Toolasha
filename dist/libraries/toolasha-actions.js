@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.67.6
+ * Version: 2.67.7
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -7560,7 +7560,7 @@
                     const recycleClockTime = formatCompletionTime(recycleCompletion, !recycleIsToday);
                     recycleHtml = `<span style="color:#4dd0a0; margin-left:12px; font-size:11px;">Est. w/ recycle: ${recycleTimeStr} → ${recycleClockTime}</span>`;
                 }
-                this.displayElement.innerHTML = `<span style="display: inline-block; white-space: nowrap;"><span style="display: inline-block; margin-right: 0.25em;">⏱</span> ${matsLabel} ${timeStr} → ${clockTime}</span>${recycleHtml}`;
+                this.displayElement.innerHTML = `<span style="display: inline-flex; flex-wrap: nowrap; align-items: baseline; gap: 0.25em;"><span>⏱</span>${matsLabel} ${timeStr} → ${clockTime}</span>${recycleHtml}`;
             } else {
                 this.displayElement.innerHTML = '';
             }
@@ -7780,7 +7780,7 @@
 
                 const itemIconHtml = this.getItemIconHtml(limitingItemHrid);
                 const matsLabel = itemIconHtml ? `${itemIconHtml}:` : 'Mats:';
-                this.displayElement.innerHTML = `<span style="display: inline-block; white-space: nowrap;"><span style="display: inline-block; margin-right: 0.25em;">⏱</span> ${matsLabel} ${timeStr} → ${clockTime} (${formatters_js.formatWithSeparator(materialLimit)} actions)</span>`;
+                this.displayElement.innerHTML = `<span style="display: inline-flex; flex-wrap: nowrap; align-items: baseline; gap: 0.25em;"><span>⏱</span>${matsLabel} ${timeStr} → ${clockTime} (${formatters_js.formatWithSeparator(materialLimit)} actions)</span>`;
             } else {
                 this.displayElement.innerHTML = '';
             }
