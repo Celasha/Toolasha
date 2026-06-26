@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.67.6](https://github.com/Celasha/Toolasha/compare/v2.67.5...v2.67.6) (2026-06-26)
+
+
+### Bug Fixes
+
+* keep action-bar time/icon line together on narrow screens ([96eda6a](https://github.com/Celasha/Toolasha/commit/96eda6af4a1975e3d7143086a535cdd5042d292d))
+* use 2-digit year in formatDateTime to keep guild Joined column on one line ([ced1d5c](https://github.com/Celasha/Toolasha/commit/ced1d5c52ee50e502d3de60cd7878702f6bd4ae6))
+
 ## [2.67.5](https://github.com/Celasha/Toolasha/compare/v2.67.4...v2.67.5) (2026-06-24)
 
 ### Bug Fixes
