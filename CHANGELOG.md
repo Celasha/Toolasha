@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.67.7](https://github.com/Celasha/Toolasha/compare/v2.67.6...v2.67.7) (2026-06-26)
+
+### Bug Fixes
+
+- use inline-flex to force action-bar time line to one row ([e4b6260](https://github.com/Celasha/Toolasha/commit/e4b62603fe1bc58525065227f205f2faf7f836cb))
+
 ## [2.67.6](https://github.com/Celasha/Toolasha/compare/v2.67.5...v2.67.6) (2026-06-26)
 
 ### Bug Fixes
