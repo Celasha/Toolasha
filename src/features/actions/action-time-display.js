@@ -1212,7 +1212,7 @@ class ActionTimeDisplay {
                 const recycleClockTime = formatCompletionTime(recycleCompletion, !recycleIsToday);
                 recycleHtml = `<span style="color:#4dd0a0; margin-left:12px; font-size:11px;">Est. w/ recycle: ${recycleTimeStr} → ${recycleClockTime}</span>`;
             }
-            this.displayElement.innerHTML = `<span style="display: inline-block; margin-right: 0.25em;">⏱</span> ${matsLabel} ${timeStr} → ${clockTime}${recycleHtml}`;
+            this.displayElement.innerHTML = `<span style="display: inline-block; white-space: nowrap;"><span style="display: inline-block; margin-right: 0.25em;">⏱</span> ${matsLabel} ${timeStr} → ${clockTime}</span>${recycleHtml}`;
         } else {
             this.displayElement.innerHTML = '';
         }
@@ -1432,7 +1432,7 @@ class ActionTimeDisplay {
 
             const itemIconHtml = this.getItemIconHtml(limitingItemHrid);
             const matsLabel = itemIconHtml ? `${itemIconHtml}:` : 'Mats:';
-            this.displayElement.innerHTML = `<span style="display: inline-block; margin-right: 0.25em;">⏱</span> ${matsLabel} ${timeStr} → ${clockTime} (${formatWithSeparator(materialLimit)} actions)`;
+            this.displayElement.innerHTML = `<span style="display: inline-block; white-space: nowrap;"><span style="display: inline-block; margin-right: 0.25em;">⏱</span> ${matsLabel} ${timeStr} → ${clockTime} (${formatWithSeparator(materialLimit)} actions)</span>`;
         } else {
             this.displayElement.innerHTML = '';
         }
