@@ -1300,6 +1300,11 @@ class QuickInputButtons {
                     lines.push(`    • Achievement: +${xpData.breakdown.achievementWisdom.toFixed(2)}%`);
                 }
 
+                // MooPass wisdom
+                if (xpData.breakdown.mooPassWisdom > 0) {
+                    lines.push(`    • MooPass: +${xpData.breakdown.mooPassWisdom.toFixed(2)}%`);
+                }
+
                 // Personal buff (Scroll of Wisdom)
                 if (xpData.breakdown.personalWisdom > 0) {
                     const simSprite = dataManager.isBuffBeingSimulated(actionDetails.type, '/buff_types/wisdom')
