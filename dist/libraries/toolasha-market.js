@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.67.7
+ * Version: 2.68.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -24322,6 +24322,24 @@ self.onmessage = function (e) {
         return c;
     }
 
+    /**
+     * Set the open state on every tab in the tree (including nested children).
+     * @param {Object} config
+     * @param {boolean} open
+     * @returns {Object} new config
+     */
+    function setAllTabsOpen(config, open) {
+        const c = clone(config);
+        const walk = (tabs) => {
+            for (const tab of tabs) {
+                tab.open = open;
+                if (tab.children?.length) walk(tab.children);
+            }
+        };
+        walk(c.tabs);
+        return c;
+    }
+
     // ---------------------------------------------------------------------------
     // Read helpers
     // ---------------------------------------------------------------------------
@@ -25711,6 +25729,19 @@ self.onmessage = function (e) {
             actionsDiv.appendChild(addBtn);
             actionsDiv.appendChild(exportBtn);
             actionsDiv.appendChild(importBtn);
+
+            const expandBtn = document.createElement('button');
+            expandBtn.className = 'toolasha-ct-add-btn';
+            expandBtn.textContent = 'Expand All';
+            expandBtn.addEventListener('click', () => this._onSetAllTabsOpen(true));
+            actionsDiv.appendChild(expandBtn);
+
+            const collapseBtn = document.createElement('button');
+            collapseBtn.className = 'toolasha-ct-add-btn';
+            collapseBtn.textContent = 'Collapse All';
+            collapseBtn.addEventListener('click', () => this._onSetAllTabsOpen(false));
+            actionsDiv.appendChild(collapseBtn);
+
             this._actionBtnsEl = actionsDiv;
 
             const sortControls = document.querySelector('.mwi-inventory-sort-controls');
@@ -27453,6 +27484,15 @@ self.onmessage = function (e) {
             this._save();
             this._removeInjectedEls();
             this._applyLayout();
+        }
+
+        _onSetAllTabsOpen(open) {
+            this._config = setAllTabsOpen(this._config, open);
+            this._removeInjectedEls();
+            this._applyLayout();
+            this._save().catch((error) => {
+                console.error('[CustomTabs] Failed to persist expand/collapse all:', error);
+            });
         }
 
         _onReorderTab(draggedId, targetId) {

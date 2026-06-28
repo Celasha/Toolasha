@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.67.7
+ * Version: 2.68.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -6680,7 +6680,8 @@
                     if (!hasInfinite && !result.isTrulyInfinite) {
                         const completionDate = new Date();
                         completionDate.setSeconds(completionDate.getSeconds() + accumulatedTime);
-                        timeText += ` Complete at ${formatCompletionTime(completionDate, false)}`;
+                        const isToday = completionDate.toDateString() === new Date().toDateString();
+                        timeText += ` Complete at ${formatCompletionTime(completionDate, !isToday)}`;
                     }
 
                     this.appendTimeToActionDiv(actionDiv, timeText);
@@ -8669,8 +8670,9 @@
                     if (!hasInfinite && !isTrulyInfinite) {
                         const completionDate = new Date();
                         completionDate.setSeconds(completionDate.getSeconds() + accumulatedTime);
+                        const isToday = completionDate.toDateString() === new Date().toDateString();
 
-                        completionText = ` Complete at ${formatCompletionTime(completionDate, false)}`;
+                        completionText = ` Complete at ${formatCompletionTime(completionDate, !isToday)}`;
                     }
 
                     // Create time display element
@@ -10520,6 +10522,11 @@
                     // Achievement wisdom
                     if (xpData.breakdown.achievementWisdom > 0) {
                         lines.push(`    • Achievement: +${xpData.breakdown.achievementWisdom.toFixed(2)}%`);
+                    }
+
+                    // MooPass wisdom
+                    if (xpData.breakdown.mooPassWisdom > 0) {
+                        lines.push(`    • MooPass: +${xpData.breakdown.mooPassWisdom.toFixed(2)}%`);
                     }
 
                     // Personal buff (Scroll of Wisdom)
