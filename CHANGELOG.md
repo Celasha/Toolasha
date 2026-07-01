@@ -2,12 +2,11 @@
 
 ## [2.68.1](https://github.com/Celasha/Toolasha/compare/v2.68.0...v2.68.1) (2026-07-01)
 
-
 ### Bug Fixes
 
-* correct efficiency in level calculator and Total time display ([419c4c8](https://github.com/Celasha/Toolasha/commit/419c4c822ade9ec6c18db078373aa6eb6c245c5a))
-* keep guild Joined date on a single line ([860b373](https://github.com/Celasha/Toolasha/commit/860b3730dd21a7ac1aa8c142d7e8d02dca5395dc))
-* use saved loadout snapshot for XP, time, and material predictions ([1722782](https://github.com/Celasha/Toolasha/commit/17227821b0f0eac052ae513baecadc705bfc2f82))
+- correct efficiency in level calculator and Total time display ([419c4c8](https://github.com/Celasha/Toolasha/commit/419c4c822ade9ec6c18db078373aa6eb6c245c5a))
+- keep guild Joined date on a single line ([860b373](https://github.com/Celasha/Toolasha/commit/860b3730dd21a7ac1aa8c142d7e8d02dca5395dc))
+- use saved loadout snapshot for XP, time, and material predictions ([1722782](https://github.com/Celasha/Toolasha/commit/17227821b0f0eac052ae513baecadc705bfc2f82))
 
 ## [2.68.0](https://github.com/Celasha/Toolasha/compare/v2.67.7...v2.68.0) (2026-06-27)
 
