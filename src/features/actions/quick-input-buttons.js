@@ -17,21 +17,9 @@ import storage from '../../core/storage.js';
 import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
 import { calculateActionStats } from '../../utils/action-calculator.js';
-import {
-    parseEquipmentSpeedBonuses,
-    parseEquipmentEfficiencyBonuses,
-    debugEquipmentSpeedBonuses,
-} from '../../utils/equipment-parser.js';
-import {
-    parseArtisanBonus,
-    getDrinkConcentration,
-    parseActionLevelBonus,
-    parseTeaEfficiencyBreakdown,
-    parseTeaSkillLevelBonus,
-} from '../../utils/tea-parser.js';
+import { parseEquipmentSpeedBonuses, debugEquipmentSpeedBonuses } from '../../utils/equipment-parser.js';
+import { parseArtisanBonus, getDrinkConcentration } from '../../utils/tea-parser.js';
 import { formatPercentage, timeReadable, formatWithSeparator, formatKMB } from '../../utils/formatters.js';
-import { calculateHouseEfficiency } from '../../utils/house-efficiency.js';
-import { stackAdditive } from '../../utils/efficiency.js';
 import { calculateExperienceMultiplier } from '../../utils/experience-parser.js';
 import { setReactInputValue } from '../../utils/react-input.js';
 import { calculateExpPerHour, calculateMultiLevelProgress } from '../../utils/experience-calculator.js';
@@ -56,6 +44,50 @@ function scrollSpriteHtml(buffTypeHrid, size = 14) {
         `<svg width="${size}" height="${size}" style="vertical-align:middle;margin-right:3px">` +
         `<use href="${_qibSpriteUrl}#${itemSuffix}"></use></svg>`
     );
+}
+
+/**
+ * Compute wall-clock seconds for a queue, accounting for efficiency gains as levels are gained.
+ * Each level gained adds 1% efficiency (game mechanic: efficiency = effective_level − requirement).
+ * @param {number} queueCount - Number of queued actions
+ * @param {Object} levelContext - From _buildLevelContext: { currentLevel, currentXP, modifiedXP, levelExperienceTable }
+ * @param {number} baseEfficiency - Current efficiency percentage (e.g., 131.02)
+ * @param {number} actionTime - Seconds per time-consuming action
+ * @returns {number} Total wall-clock seconds
+ */
+function computeProgressiveQueueTime(queueCount, levelContext, baseEfficiency, actionTime) {
+    let remaining = queueCount;
+    let totalTime = 0;
+    let level = levelContext.currentLevel;
+    let xp = levelContext.currentXP;
+    let levelsGained = 0;
+    const { levelExperienceTable, modifiedXP } = levelContext;
+
+    while (remaining > 0) {
+        const effMult = 1 + (baseEfficiency + levelsGained) / 100;
+        const nextLevelXP = levelExperienceTable[level + 1];
+
+        if (!nextLevelXP) {
+            totalTime += (remaining / effMult) * actionTime;
+            break;
+        }
+
+        const xpToNextLevel = nextLevelXP - xp;
+        const queueActionsToLevel = xpToNextLevel / modifiedXP;
+
+        if (remaining <= queueActionsToLevel) {
+            totalTime += (remaining / effMult) * actionTime;
+            break;
+        }
+
+        totalTime += (queueActionsToLevel / effMult) * actionTime;
+        remaining -= queueActionsToLevel;
+        level++;
+        xp = nextLevelXP;
+        levelsGained++;
+    }
+
+    return totalTime;
 }
 
 /**
@@ -324,6 +356,7 @@ class QuickInputButtons {
                 gameData
             );
             const efficiencyMultiplier = 1 + totalEfficiency / 100;
+            let levelContext = null;
 
             // Find the container to insert after (same as original MWI Tools)
             const inputContainer = numberInput.parentNode.parentNode.parentNode;
@@ -347,6 +380,8 @@ class QuickInputButtons {
             let speedSection = null;
 
             if (hasNormalXP) {
+                levelContext = this._buildLevelContext(actionDetails, gameData);
+
                 const speedContent = document.createElement('div');
                 speedContent.style.cssText = `
                 color: var(--text-color-secondary, ${config.COLOR_TEXT_SECONDARY});
@@ -539,6 +574,11 @@ class QuickInputButtons {
                 margin-top: 4px;
             `;
 
+                const computeTotalSeconds = (queueCount) =>
+                    levelContext
+                        ? computeProgressiveQueueTime(queueCount, levelContext, totalEfficiency, actionTime)
+                        : Math.ceil(queueCount / efficiencyMultiplier) * actionTime;
+
                 const updateTotalTime = () => {
                     const inputValue = numberInput.value;
 
@@ -549,11 +589,7 @@ class QuickInputButtons {
 
                     const queueCount = parseInt(inputValue) || 0;
                     if (queueCount > 0) {
-                        // Input is number of ACTIONS to complete
-                        // With efficiency, queued actions complete more quickly
-                        // Calculate time-consuming actions needed
-                        const baseActionsNeeded = Math.ceil(queueCount / efficiencyMultiplier);
-                        const totalSeconds = baseActionsNeeded * actionTime;
+                        const totalSeconds = computeTotalSeconds(queueCount);
                         totalTimeLine.textContent = `Total time: ${timeReadable(totalSeconds)}`;
                     } else {
                         totalTimeLine.textContent = 'Total time: 0s';
@@ -630,8 +666,7 @@ class QuickInputButtons {
                         } else {
                             const queueCount = parseInt(inputValue) || 0;
                             if (queueCount > 0) {
-                                const baseActionsNeeded = Math.ceil(queueCount / efficiencyMultiplier);
-                                const totalSeconds = baseActionsNeeded * actionTime;
+                                const totalSeconds = computeTotalSeconds(queueCount);
                                 speedSummaryDiv.textContent = `${actionsPerHourWithEfficiency}/hr | Total time: ${timeReadable(totalSeconds)}`;
                             } else {
                                 speedSummaryDiv.textContent = `${actionsPerHourWithEfficiency}/hr | Total time: 0s`;
@@ -687,7 +722,9 @@ class QuickInputButtons {
                 actionDetails,
                 actionTime,
                 gameData,
-                numberInput
+                numberInput,
+                totalEfficiency,
+                levelContext
             );
 
             let queueContent = null;
@@ -1110,55 +1147,38 @@ class QuickInputButtons {
     }
 
     /**
-     * Get total efficiency percentage for current action
-     * @param {Object} actionDetails - Action details
-     * @param {Object} gameData - Game data
-     * @returns {number} Total efficiency percentage
+     * Build the level context object needed for level progress display and progressive time estimation.
+     * Returns null if the action has no XP gain, the player is at max level, or required data is missing.
+     * @param {Object} actionDetails
+     * @param {Object} gameData
+     * @returns {Object|null}
      */
-    getTotalEfficiency(actionDetails, gameData) {
-        const equipment = dataManager.getEquipment();
-        const skills = dataManager.getSkills();
-        const itemDetailMap = gameData?.itemDetailMap || {};
-
-        // Calculate all efficiency components (reuse existing logic)
-        const skillLevel = this.getSkillLevel(skills, actionDetails.type);
-        if (!actionDetails.levelRequirement) {
-            console.error(`[QuickInputButtons] Action has no levelRequirement: ${actionDetails.hrid}`);
+    _buildLevelContext(actionDetails, gameData) {
+        const experienceGain = actionDetails.experienceGain;
+        if (!experienceGain || !experienceGain.skillHrid || experienceGain.value <= 0) {
+            return null;
         }
-        const baseRequirement = actionDetails.levelRequirement?.level || 1;
 
-        const drinkConcentration = getDrinkConcentration(equipment, itemDetailMap);
-        const activeDrinks = dataManager.getActionDrinkSlots(actionDetails.type);
+        const skillHrid = experienceGain.skillHrid;
+        const skills = dataManager.getSkills();
+        if (!skills) return null;
 
-        const actionLevelBonus = parseActionLevelBonus(activeDrinks, itemDetailMap, drinkConcentration);
-        const effectiveRequirement = baseRequirement + Math.floor(actionLevelBonus);
+        const skill = skills.find((s) => s.skillHrid === skillHrid);
+        if (!skill) return null;
 
-        // Calculate tea skill level bonus (e.g., +8 Cheesesmithing from Ultra Cheesesmithing Tea)
-        const teaSkillLevelBonus = parseTeaSkillLevelBonus(
-            actionDetails.type,
-            activeDrinks,
-            itemDetailMap,
-            drinkConcentration
-        );
+        const levelExperienceTable = gameData?.levelExperienceTable;
+        if (!levelExperienceTable) return null;
 
-        // Apply tea skill level bonus to effective player level
-        const effectiveLevel = skillLevel + teaSkillLevelBonus;
-        const levelEfficiency = Math.max(0, effectiveLevel - effectiveRequirement);
-        const houseEfficiency = calculateHouseEfficiency(actionDetails.type);
-        const equipmentEfficiency = parseEquipmentEfficiencyBonuses(equipment, actionDetails.type, itemDetailMap);
+        const currentLevel = skill.level;
+        const currentXP = skill.experience || 0;
 
-        const teaBreakdown = parseTeaEfficiencyBreakdown(
-            actionDetails.type,
-            activeDrinks,
-            itemDetailMap,
-            drinkConcentration
-        );
-        const teaEfficiency = teaBreakdown.reduce((sum, tea) => sum + tea.efficiency, 0);
+        if (!levelExperienceTable[currentLevel + 1]) return null; // max level
 
-        const communityBuffLevel = dataManager.getCommunityBuffLevel('/community_buff_types/production_efficiency');
-        const communityEfficiency = communityBuffLevel ? (0.14 + (communityBuffLevel - 1) * 0.003) * 100 : 0;
+        const xpData = calculateExperienceMultiplier(skillHrid, actionDetails.type);
+        const baseXP = experienceGain.value;
+        const modifiedXP = baseXP * xpData.totalMultiplier;
 
-        return stackAdditive(levelEfficiency, houseEfficiency, equipmentEfficiency, teaEfficiency, communityEfficiency);
+        return { skillHrid, skill, currentLevel, currentXP, levelExperienceTable, xpData, baseXP, modifiedXP };
     }
 
     /**
@@ -1167,49 +1187,19 @@ class QuickInputButtons {
      * @param {number} actionTime - Time per action in seconds
      * @param {Object} gameData - Cached game data from dataManager
      * @param {HTMLInputElement} numberInput - Queue input element
+     * @param {number} totalEfficiency - Current efficiency percentage
+     * @param {Object|null} levelContext - Pre-computed from _buildLevelContext; null returns null
      * @returns {HTMLElement|null} Level progress section or null if not applicable
      */
-    createLevelProgressSection(actionDetails, actionTime, gameData, numberInput) {
+    createLevelProgressSection(actionDetails, actionTime, gameData, numberInput, totalEfficiency, levelContext) {
         try {
-            // Get XP information from action
-            const experienceGain = actionDetails.experienceGain;
-            if (!experienceGain || !experienceGain.skillHrid || experienceGain.value <= 0) {
-                return null; // No XP gain for this action
-            }
-
-            const skillHrid = experienceGain.skillHrid;
-            const xpPerAction = experienceGain.value;
-
-            // Get character skills
-            const skills = dataManager.getSkills();
-            if (!skills) {
+            if (!levelContext) {
                 return null;
             }
 
-            // Find the skill
-            const skill = skills.find((s) => s.skillHrid === skillHrid);
-            if (!skill) {
-                return null;
-            }
-
-            // Get level experience table
-            const levelExperienceTable = gameData?.levelExperienceTable;
-            if (!levelExperienceTable) {
-                return null;
-            }
-
-            // Current level and XP
-            const currentLevel = skill.level;
-            const currentXP = skill.experience || 0;
-
-            // XP needed for next level
+            const { currentLevel, currentXP, levelExperienceTable, xpData, baseXP, modifiedXP } = levelContext;
             const nextLevel = currentLevel + 1;
             const xpForNextLevel = levelExperienceTable[nextLevel];
-
-            if (!xpForNextLevel) {
-                // Max level reached
-                return null;
-            }
 
             // Calculate progress (XP gained this level / XP needed for this level)
             const xpForCurrentLevel = levelExperienceTable[currentLevel] || 0;
@@ -1218,25 +1208,14 @@ class QuickInputButtons {
             const progressPercent = (xpGainedThisLevel / xpNeededThisLevel) * 100;
             const xpNeeded = xpForNextLevel - currentXP;
 
-            // Calculate XP multipliers and breakdown (MUST happen before calculating actions/rates)
-            const xpData = calculateExperienceMultiplier(skillHrid, actionDetails.type);
-
-            // Calculate modified XP per action (base XP × multiplier)
-            const baseXP = xpPerAction;
-            const modifiedXP = xpPerAction * xpData.totalMultiplier;
-
             // Calculate actions and time needed (using modified XP)
             const actionsNeeded = Math.ceil(xpNeeded / modifiedXP);
-            const _timeNeeded = actionsNeeded * actionTime;
 
             // Calculate rates using shared utility (includes efficiency)
             const expData = calculateExpPerHour(actionDetails.hrid);
             const xpPerHour =
                 expData?.expPerHour || (actionsNeeded > 0 ? calculateActionsPerHour(actionTime) * modifiedXP : 0);
             const xpPerDay = xpPerHour * 24;
-
-            // Calculate daily level progress
-            const _dailyLevelProgress = xpPerDay / xpNeededThisLevel;
 
             // Create content
             const content = document.createElement('div');
@@ -1314,9 +1293,6 @@ class QuickInputButtons {
                 }
             }
 
-            // Get base efficiency for this action
-            const baseEfficiency = this.getTotalEfficiency(actionDetails, gameData);
-
             lines.push('');
 
             // Single level progress (always shown)
@@ -1324,7 +1300,7 @@ class QuickInputButtons {
                 currentLevel,
                 currentXP,
                 nextLevel,
-                baseEfficiency,
+                totalEfficiency,
                 actionTime,
                 modifiedXP,
                 levelExperienceTable
@@ -1391,7 +1367,7 @@ class QuickInputButtons {
                         currentLevel,
                         currentXP,
                         targetLevel,
-                        baseEfficiency,
+                        totalEfficiency,
                         actionTime,
                         modifiedXP,
                         levelExperienceTable
