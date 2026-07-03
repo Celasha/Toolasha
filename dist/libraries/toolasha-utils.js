@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 2.68.0
+ * Version: 2.68.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -876,6 +876,41 @@
     }
 
     const loadoutSnapshot = new LoadoutSnapshot();
+
+    /**
+     * Action context resolver
+     *
+     * Returns the equipment and active drinks to use when predicting an action's
+     * outcome (XP, time, profit, materials). When the loadoutSnapshot feature is
+     * enabled and a saved loadout matches the action type, that snapshot is used
+     * — so predictions reflect the gear the user would auto-equip rather than
+     * whatever happens to be on their character right now.
+     *
+     * Resolution priority (handled inside loadoutSnapshot._findSnapshot):
+     *   1. Skill-specific default loadout
+     *   2. All-skills default loadout
+     *   3. Skill-specific non-default
+     *   4. All-skills non-default
+     *   5. Fall back to currently-equipped gear / current drinks
+     *
+     * Equipment and drinks are resolved independently — it's valid to inherit the
+     * snapshot's equipment while no snapshot drinks exist, in which case the
+     * current drinks are used (and vice-versa).
+     */
+
+
+    /**
+     * @param {string} actionTypeHrid - e.g. "/action_types/cooking"
+     * @returns {{equipment: Map, drinks: Array}}
+     */
+    function resolveActionContext(actionTypeHrid) {
+        return {
+            equipment: loadoutSnapshot.getSnapshotForSkill(actionTypeHrid) ?? dataManager.getEquipment(),
+            drinks:
+                loadoutSnapshot.getSnapshotDrinksForSkill(actionTypeHrid) ??
+                dataManager.getActionDrinkSlots(actionTypeHrid),
+        };
+    }
 
     /**
      * Equipment Parser Utility
@@ -2229,13 +2264,10 @@
         const { isProduction = false, gameData = null, communityEfficiency = 0 } = options;
 
         const skills = dataManager.getSkills();
-        const equipment = loadoutSnapshot.getSnapshotForSkill(actionDetails.type) ?? dataManager.getEquipment();
+        const { equipment, drinks: drinkSlots } = resolveActionContext(actionDetails.type);
         const itemDetailMap = gameData?.itemDetailMap ?? dataManager.getInitClientData()?.itemDetailMap ?? {};
 
-        // Drink slots and concentration
-        const drinkSlots =
-            loadoutSnapshot.getSnapshotDrinksForSkill(actionDetails.type) ??
-            dataManager.getActionDrinkSlots(actionDetails.type);
+        // Drink concentration
         const drinkConcentration = getDrinkConcentration(equipment, itemDetailMap);
 
         // Action time (nanoseconds → seconds)
@@ -5563,15 +5595,12 @@ self.onmessage = function (e) {
      * @returns {Object} Experience data with breakdown
      */
     function calculateExperienceMultiplier(skillHrid, actionTypeHrid) {
-        const equipment = dataManager.getEquipment();
+        const { equipment, drinks: activeDrinks } = resolveActionContext(actionTypeHrid);
         const gameData = dataManager.getInitClientData();
         const itemDetailMap = gameData?.itemDetailMap || {};
 
         // Get drink concentration
         const drinkConcentration = equipment ? calculateDrinkConcentration(equipment, itemDetailMap) : 0;
-
-        // Get active drinks for this action type
-        const activeDrinks = dataManager.getActionDrinkSlots(actionTypeHrid);
 
         // Parse wisdom from all sources
         const equipmentWisdomData = parseEquipmentWisdom(equipment, itemDetailMap);
@@ -5791,8 +5820,8 @@ self.onmessage = function (e) {
             // Get drink concentration
             const drinkConcentration = getDrinkConcentration(equipment, itemDetailMap);
 
-            // Get active drinks for this action type
-            const activeDrinks = dataManager.getActionDrinkSlots(actionDetails.type);
+            // Get active drinks for this action type (loadout-snapshot aware)
+            const activeDrinks = resolveActionContext(actionDetails.type).drinks;
 
             // Calculate Action Level bonus from teas
             const actionLevelBonus = parseActionLevelBonus(activeDrinks, itemDetailMap, drinkConcentration);
@@ -6258,7 +6287,7 @@ self.onmessage = function (e) {
 
         // Get character data
         const skills = dataManager.getSkills();
-        const equipment = dataManager.getEquipment();
+        const { equipment } = resolveActionContext(actionDetails.type);
         const gameData = dataManager.getInitClientData();
 
         if (!gameData || !skills || !equipment) {
@@ -7962,13 +7991,12 @@ self.onmessage = function (e) {
                 return 0;
             }
 
-            // Get character data
-            const equipment = dataManager.getEquipment();
+            // Get character data (loadout-snapshot aware)
+            const { equipment, drinks: activeDrinks } = resolveActionContext(actionDetails.type);
             const itemDetailMap = gameData.itemDetailMap || {};
 
             // Calculate artisan bonus (material reduction from Artisan Tea)
             const drinkConcentration = getDrinkConcentration(equipment, itemDetailMap);
-            const activeDrinks = dataManager.getActionDrinkSlots(actionDetails.type);
             const artisanBonus = parseArtisanBonus(activeDrinks, itemDetailMap, drinkConcentration);
 
             return artisanBonus;

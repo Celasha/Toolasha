@@ -1,11 +1,11 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.68.0
+ * Version: 2.68.1
  * License: CC-BY-NC-SA-4.0
  */
 
-(function (dataManager, domObserver, config, enhancementConfig_js, enhancementCalculator_js, profitConstants_js, formatters_js, marketAPI, domObserverHelpers_js, bonusRevenueCalculator_js, marketData_js, efficiency_js, profitHelpers_js, profitCalculator, uiComponents_js, actionPanelHelper_js, webSocketHook, storage, dom_js, timerRegistry_js, alchemyProfitCalculator, actionCalculator_js, cleanupRegistry_js, teaParser_js, buffParser_js, equipmentParser_js, houseEfficiency_js, experienceParser_js, reactInput_js, experienceCalculator_js, materialCalculator_js, expectedValueCalculator) {
+(function (dataManager, domObserver, config, enhancementConfig_js, enhancementCalculator_js, profitConstants_js, formatters_js, marketAPI, domObserverHelpers_js, bonusRevenueCalculator_js, marketData_js, efficiency_js, profitHelpers_js, profitCalculator, uiComponents_js, actionPanelHelper_js, webSocketHook, storage, dom_js, timerRegistry_js, alchemyProfitCalculator, actionCalculator_js, cleanupRegistry_js, teaParser_js, buffParser_js, equipmentParser_js, experienceParser_js, reactInput_js, experienceCalculator_js, materialCalculator_js, expectedValueCalculator) {
     'use strict';
 
     /**
@@ -9283,6 +9283,50 @@
     }
 
     /**
+     * Compute wall-clock seconds for a queue, accounting for efficiency gains as levels are gained.
+     * Each level gained adds 1% efficiency (game mechanic: efficiency = effective_level − requirement).
+     * @param {number} queueCount - Number of queued actions
+     * @param {Object} levelContext - From _buildLevelContext: { currentLevel, currentXP, modifiedXP, levelExperienceTable }
+     * @param {number} baseEfficiency - Current efficiency percentage (e.g., 131.02)
+     * @param {number} actionTime - Seconds per time-consuming action
+     * @returns {number} Total wall-clock seconds
+     */
+    function computeProgressiveQueueTime(queueCount, levelContext, baseEfficiency, actionTime) {
+        let remaining = queueCount;
+        let totalTime = 0;
+        let level = levelContext.currentLevel;
+        let xp = levelContext.currentXP;
+        let levelsGained = 0;
+        const { levelExperienceTable, modifiedXP } = levelContext;
+
+        while (remaining > 0) {
+            const effMult = 1 + (baseEfficiency + levelsGained) / 100;
+            const nextLevelXP = levelExperienceTable[level + 1];
+
+            if (!nextLevelXP) {
+                totalTime += (remaining / effMult) * actionTime;
+                break;
+            }
+
+            const xpToNextLevel = nextLevelXP - xp;
+            const queueActionsToLevel = xpToNextLevel / modifiedXP;
+
+            if (remaining <= queueActionsToLevel) {
+                totalTime += (remaining / effMult) * actionTime;
+                break;
+            }
+
+            totalTime += (queueActionsToLevel / effMult) * actionTime;
+            remaining -= queueActionsToLevel;
+            level++;
+            xp = nextLevelXP;
+            levelsGained++;
+        }
+
+        return totalTime;
+    }
+
+    /**
      * QuickInputButtons class manages quick input button injection
      */
     class QuickInputButtons {
@@ -9548,6 +9592,7 @@
                     gameData
                 );
                 const efficiencyMultiplier = 1 + totalEfficiency / 100;
+                let levelContext = null;
 
                 // Find the container to insert after (same as original MWI Tools)
                 const inputContainer = numberInput.parentNode.parentNode.parentNode;
@@ -9571,6 +9616,8 @@
                 let speedSection = null;
 
                 if (hasNormalXP) {
+                    levelContext = this._buildLevelContext(actionDetails, gameData);
+
                     const speedContent = document.createElement('div');
                     speedContent.style.cssText = `
                 color: var(--text-color-secondary, ${config.COLOR_TEXT_SECONDARY});
@@ -9763,6 +9810,11 @@
                 margin-top: 4px;
             `;
 
+                    const computeTotalSeconds = (queueCount) =>
+                        levelContext
+                            ? computeProgressiveQueueTime(queueCount, levelContext, totalEfficiency, actionTime)
+                            : Math.ceil(queueCount / efficiencyMultiplier) * actionTime;
+
                     const updateTotalTime = () => {
                         const inputValue = numberInput.value;
 
@@ -9773,11 +9825,7 @@
 
                         const queueCount = parseInt(inputValue) || 0;
                         if (queueCount > 0) {
-                            // Input is number of ACTIONS to complete
-                            // With efficiency, queued actions complete more quickly
-                            // Calculate time-consuming actions needed
-                            const baseActionsNeeded = Math.ceil(queueCount / efficiencyMultiplier);
-                            const totalSeconds = baseActionsNeeded * actionTime;
+                            const totalSeconds = computeTotalSeconds(queueCount);
                             totalTimeLine.textContent = `Total time: ${formatters_js.timeReadable(totalSeconds)}`;
                         } else {
                             totalTimeLine.textContent = 'Total time: 0s';
@@ -9854,8 +9902,7 @@
                             } else {
                                 const queueCount = parseInt(inputValue) || 0;
                                 if (queueCount > 0) {
-                                    const baseActionsNeeded = Math.ceil(queueCount / efficiencyMultiplier);
-                                    const totalSeconds = baseActionsNeeded * actionTime;
+                                    const totalSeconds = computeTotalSeconds(queueCount);
                                     speedSummaryDiv.textContent = `${actionsPerHourWithEfficiency}/hr | Total time: ${formatters_js.timeReadable(totalSeconds)}`;
                                 } else {
                                     speedSummaryDiv.textContent = `${actionsPerHourWithEfficiency}/hr | Total time: 0s`;
@@ -9911,7 +9958,9 @@
                     actionDetails,
                     actionTime,
                     gameData,
-                    numberInput
+                    numberInput,
+                    totalEfficiency,
+                    levelContext
                 );
 
                 let queueContent = null;
@@ -10334,55 +10383,38 @@
         }
 
         /**
-         * Get total efficiency percentage for current action
-         * @param {Object} actionDetails - Action details
-         * @param {Object} gameData - Game data
-         * @returns {number} Total efficiency percentage
+         * Build the level context object needed for level progress display and progressive time estimation.
+         * Returns null if the action has no XP gain, the player is at max level, or required data is missing.
+         * @param {Object} actionDetails
+         * @param {Object} gameData
+         * @returns {Object|null}
          */
-        getTotalEfficiency(actionDetails, gameData) {
-            const equipment = dataManager.getEquipment();
-            const skills = dataManager.getSkills();
-            const itemDetailMap = gameData?.itemDetailMap || {};
-
-            // Calculate all efficiency components (reuse existing logic)
-            const skillLevel = this.getSkillLevel(skills, actionDetails.type);
-            if (!actionDetails.levelRequirement) {
-                console.error(`[QuickInputButtons] Action has no levelRequirement: ${actionDetails.hrid}`);
+        _buildLevelContext(actionDetails, gameData) {
+            const experienceGain = actionDetails.experienceGain;
+            if (!experienceGain || !experienceGain.skillHrid || experienceGain.value <= 0) {
+                return null;
             }
-            const baseRequirement = actionDetails.levelRequirement?.level || 1;
 
-            const drinkConcentration = teaParser_js.getDrinkConcentration(equipment, itemDetailMap);
-            const activeDrinks = dataManager.getActionDrinkSlots(actionDetails.type);
+            const skillHrid = experienceGain.skillHrid;
+            const skills = dataManager.getSkills();
+            if (!skills) return null;
 
-            const actionLevelBonus = teaParser_js.parseActionLevelBonus(activeDrinks, itemDetailMap, drinkConcentration);
-            const effectiveRequirement = baseRequirement + Math.floor(actionLevelBonus);
+            const skill = skills.find((s) => s.skillHrid === skillHrid);
+            if (!skill) return null;
 
-            // Calculate tea skill level bonus (e.g., +8 Cheesesmithing from Ultra Cheesesmithing Tea)
-            const teaSkillLevelBonus = teaParser_js.parseTeaSkillLevelBonus(
-                actionDetails.type,
-                activeDrinks,
-                itemDetailMap,
-                drinkConcentration
-            );
+            const levelExperienceTable = gameData?.levelExperienceTable;
+            if (!levelExperienceTable) return null;
 
-            // Apply tea skill level bonus to effective player level
-            const effectiveLevel = skillLevel + teaSkillLevelBonus;
-            const levelEfficiency = Math.max(0, effectiveLevel - effectiveRequirement);
-            const houseEfficiency = houseEfficiency_js.calculateHouseEfficiency(actionDetails.type);
-            const equipmentEfficiency = equipmentParser_js.parseEquipmentEfficiencyBonuses(equipment, actionDetails.type, itemDetailMap);
+            const currentLevel = skill.level;
+            const currentXP = skill.experience || 0;
 
-            const teaBreakdown = teaParser_js.parseTeaEfficiencyBreakdown(
-                actionDetails.type,
-                activeDrinks,
-                itemDetailMap,
-                drinkConcentration
-            );
-            const teaEfficiency = teaBreakdown.reduce((sum, tea) => sum + tea.efficiency, 0);
+            if (!levelExperienceTable[currentLevel + 1]) return null; // max level
 
-            const communityBuffLevel = dataManager.getCommunityBuffLevel('/community_buff_types/production_efficiency');
-            const communityEfficiency = communityBuffLevel ? (0.14 + (communityBuffLevel - 1) * 0.003) * 100 : 0;
+            const xpData = experienceParser_js.calculateExperienceMultiplier(skillHrid, actionDetails.type);
+            const baseXP = experienceGain.value;
+            const modifiedXP = baseXP * xpData.totalMultiplier;
 
-            return efficiency_js.stackAdditive(levelEfficiency, houseEfficiency, equipmentEfficiency, teaEfficiency, communityEfficiency);
+            return { skillHrid, skill, currentLevel, currentXP, levelExperienceTable, xpData, baseXP, modifiedXP };
         }
 
         /**
@@ -10391,49 +10423,19 @@
          * @param {number} actionTime - Time per action in seconds
          * @param {Object} gameData - Cached game data from dataManager
          * @param {HTMLInputElement} numberInput - Queue input element
+         * @param {number} totalEfficiency - Current efficiency percentage
+         * @param {Object|null} levelContext - Pre-computed from _buildLevelContext; null returns null
          * @returns {HTMLElement|null} Level progress section or null if not applicable
          */
-        createLevelProgressSection(actionDetails, actionTime, gameData, numberInput) {
+        createLevelProgressSection(actionDetails, actionTime, gameData, numberInput, totalEfficiency, levelContext) {
             try {
-                // Get XP information from action
-                const experienceGain = actionDetails.experienceGain;
-                if (!experienceGain || !experienceGain.skillHrid || experienceGain.value <= 0) {
-                    return null; // No XP gain for this action
-                }
-
-                const skillHrid = experienceGain.skillHrid;
-                const xpPerAction = experienceGain.value;
-
-                // Get character skills
-                const skills = dataManager.getSkills();
-                if (!skills) {
+                if (!levelContext) {
                     return null;
                 }
 
-                // Find the skill
-                const skill = skills.find((s) => s.skillHrid === skillHrid);
-                if (!skill) {
-                    return null;
-                }
-
-                // Get level experience table
-                const levelExperienceTable = gameData?.levelExperienceTable;
-                if (!levelExperienceTable) {
-                    return null;
-                }
-
-                // Current level and XP
-                const currentLevel = skill.level;
-                const currentXP = skill.experience || 0;
-
-                // XP needed for next level
+                const { currentLevel, currentXP, levelExperienceTable, xpData, baseXP, modifiedXP } = levelContext;
                 const nextLevel = currentLevel + 1;
                 const xpForNextLevel = levelExperienceTable[nextLevel];
-
-                if (!xpForNextLevel) {
-                    // Max level reached
-                    return null;
-                }
 
                 // Calculate progress (XP gained this level / XP needed for this level)
                 const xpForCurrentLevel = levelExperienceTable[currentLevel] || 0;
@@ -10442,25 +10444,14 @@
                 const progressPercent = (xpGainedThisLevel / xpNeededThisLevel) * 100;
                 const xpNeeded = xpForNextLevel - currentXP;
 
-                // Calculate XP multipliers and breakdown (MUST happen before calculating actions/rates)
-                const xpData = experienceParser_js.calculateExperienceMultiplier(skillHrid, actionDetails.type);
-
-                // Calculate modified XP per action (base XP × multiplier)
-                const baseXP = xpPerAction;
-                const modifiedXP = xpPerAction * xpData.totalMultiplier;
-
                 // Calculate actions and time needed (using modified XP)
                 const actionsNeeded = Math.ceil(xpNeeded / modifiedXP);
-                const _timeNeeded = actionsNeeded * actionTime;
 
                 // Calculate rates using shared utility (includes efficiency)
                 const expData = experienceCalculator_js.calculateExpPerHour(actionDetails.hrid);
                 const xpPerHour =
                     expData?.expPerHour || (actionsNeeded > 0 ? profitHelpers_js.calculateActionsPerHour(actionTime) * modifiedXP : 0);
                 const xpPerDay = xpPerHour * 24;
-
-                // Calculate daily level progress
-                const _dailyLevelProgress = xpPerDay / xpNeededThisLevel;
 
                 // Create content
                 const content = document.createElement('div');
@@ -10538,9 +10529,6 @@
                     }
                 }
 
-                // Get base efficiency for this action
-                const baseEfficiency = this.getTotalEfficiency(actionDetails, gameData);
-
                 lines.push('');
 
                 // Single level progress (always shown)
@@ -10548,7 +10536,7 @@
                     currentLevel,
                     currentXP,
                     nextLevel,
-                    baseEfficiency,
+                    totalEfficiency,
                     actionTime,
                     modifiedXP,
                     levelExperienceTable
@@ -10615,7 +10603,7 @@
                             currentLevel,
                             currentXP,
                             targetLevel,
-                            baseEfficiency,
+                            totalEfficiency,
                             actionTime,
                             modifiedXP,
                             levelExperienceTable
@@ -24033,4 +24021,4 @@
 
     console.log('[Toolasha] Actions library loaded');
 
-})(Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.config, Toolasha.Utils.enhancementConfig, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.profitConstants, Toolasha.Utils.formatters, Toolasha.Core.marketAPI, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.marketData, Toolasha.Utils.efficiency, Toolasha.Utils.profitHelpers, Toolasha.Market.profitCalculator, Toolasha.Utils.uiComponents, Toolasha.Utils.actionPanelHelper, Toolasha.Core.webSocketHook, Toolasha.Core.storage, Toolasha.Utils.dom, Toolasha.Utils.timerRegistry, Toolasha.Market.alchemyProfitCalculator, Toolasha.Utils.actionCalculator, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.teaParser, Toolasha.Utils.buffParser, Toolasha.Utils.equipmentParser, Toolasha.Utils.houseEfficiency, Toolasha.Utils.experienceParser, Toolasha.Utils.reactInput, Toolasha.Utils.experienceCalculator, Toolasha.Utils.materialCalculator, Toolasha.Market.expectedValueCalculator);
+})(Toolasha.Core.dataManager, Toolasha.Core.domObserver, Toolasha.Core.config, Toolasha.Utils.enhancementConfig, Toolasha.Utils.enhancementCalculator, Toolasha.Utils.profitConstants, Toolasha.Utils.formatters, Toolasha.Core.marketAPI, Toolasha.Utils.domObserverHelpers, Toolasha.Utils.bonusRevenueCalculator, Toolasha.Utils.marketData, Toolasha.Utils.efficiency, Toolasha.Utils.profitHelpers, Toolasha.Market.profitCalculator, Toolasha.Utils.uiComponents, Toolasha.Utils.actionPanelHelper, Toolasha.Core.webSocketHook, Toolasha.Core.storage, Toolasha.Utils.dom, Toolasha.Utils.timerRegistry, Toolasha.Market.alchemyProfitCalculator, Toolasha.Utils.actionCalculator, Toolasha.Utils.cleanupRegistry, Toolasha.Utils.teaParser, Toolasha.Utils.buffParser, Toolasha.Utils.equipmentParser, Toolasha.Utils.experienceParser, Toolasha.Utils.reactInput, Toolasha.Utils.experienceCalculator, Toolasha.Utils.materialCalculator, Toolasha.Market.expectedValueCalculator);
