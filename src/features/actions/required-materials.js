@@ -6,7 +6,7 @@
 import config from '../../core/config.js';
 import domObserver from '../../core/dom-observer.js';
 import { numberFormatter } from '../../utils/formatters.js';
-import { calculateMaterialRequirements } from '../../utils/material-calculator.js';
+import { calculateMaterialRequirements, isArtisanTeaOutOfStock } from '../../utils/material-calculator.js';
 import { findActionInput, attachInputListeners, performInitialUpdate } from '../../utils/action-panel-helper.js';
 import { getActionHridFromName } from '../../utils/game-lookups.js';
 
@@ -64,8 +64,8 @@ class RequiredMaterials {
     }
 
     updateRequiredMaterials(panel, amount) {
-        // Remove existing displays
-        const existingDisplays = panel.querySelectorAll('.mwi-required-materials');
+        // Remove existing displays and artisan warning
+        const existingDisplays = panel.querySelectorAll('.mwi-required-materials, .mwi-artisan-warning');
         existingDisplays.forEach((el) => el.remove());
 
         const numActions = parseInt(amount) || 0;
@@ -92,6 +92,15 @@ class RequiredMaterials {
         const requiresDiv = panel.querySelector('[class*="SkillActionDetail_itemRequirements"]');
         if (!requiresDiv) {
             return;
+        }
+
+        // Warn if artisan tea is slotted but out of stock
+        if (isArtisanTeaOutOfStock(actionHrid)) {
+            const warning = document.createElement('div');
+            warning.className = 'mwi-artisan-warning';
+            warning.style.cssText = 'color:#f0a830; font-size:11px; text-align:center; padding:3px 0 1px 0;';
+            warning.textContent = '⚠ Artisan Tea out of stock — full material amounts shown';
+            requiresDiv.insertAdjacentElement('afterend', warning);
         }
 
         // Process each material

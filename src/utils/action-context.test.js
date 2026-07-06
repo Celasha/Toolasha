@@ -8,6 +8,7 @@ vi.mock('../core/data-manager.js', () => ({
     default: {
         getEquipment: vi.fn(),
         getActionDrinkSlots: vi.fn(),
+        getInventory: vi.fn(),
     },
 }));
 
@@ -29,6 +30,11 @@ describe('resolveActionContext', () => {
         vi.clearAllMocks();
         dataManager.getEquipment.mockReturnValue(CURRENT_EQ);
         dataManager.getActionDrinkSlots.mockReturnValue(CURRENT_DRINKS);
+        // Inventory contains all test drinks so the stock filter passes them through
+        dataManager.getInventory.mockReturnValue([
+            { itemHrid: '/items/current_tea', count: 5 },
+            { itemHrid: '/items/snapshot_tea', count: 3 },
+        ]);
     });
 
     test('uses snapshot equipment and drinks when both exist', () => {
@@ -38,7 +44,7 @@ describe('resolveActionContext', () => {
         const result = resolveActionContext(TYPE);
 
         expect(result.equipment).toBe(SNAPSHOT_EQ);
-        expect(result.drinks).toBe(SNAPSHOT_DRINKS);
+        expect(result.drinks).toEqual(SNAPSHOT_DRINKS);
     });
 
     test('falls back to current equipment and drinks when no snapshot exists', () => {
@@ -48,7 +54,7 @@ describe('resolveActionContext', () => {
         const result = resolveActionContext(TYPE);
 
         expect(result.equipment).toBe(CURRENT_EQ);
-        expect(result.drinks).toBe(CURRENT_DRINKS);
+        expect(result.drinks).toEqual(CURRENT_DRINKS);
         expect(dataManager.getEquipment).toHaveBeenCalled();
         expect(dataManager.getActionDrinkSlots).toHaveBeenCalledWith(TYPE);
     });
@@ -60,7 +66,7 @@ describe('resolveActionContext', () => {
         const result = resolveActionContext(TYPE);
 
         expect(result.equipment).toBe(SNAPSHOT_EQ);
-        expect(result.drinks).toBe(CURRENT_DRINKS);
+        expect(result.drinks).toEqual(CURRENT_DRINKS);
     });
 
     test('falls back per-field when only drinks snapshot exists', () => {
@@ -70,7 +76,7 @@ describe('resolveActionContext', () => {
         const result = resolveActionContext(TYPE);
 
         expect(result.equipment).toBe(CURRENT_EQ);
-        expect(result.drinks).toBe(SNAPSHOT_DRINKS);
+        expect(result.drinks).toEqual(SNAPSHOT_DRINKS);
     });
 
     test('passes the action type through to both lookups', () => {
