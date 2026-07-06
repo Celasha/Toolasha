@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.69.2](https://github.com/Celasha/Toolasha/compare/v2.69.1...v2.69.2) (2026-07-06)
+
+### Bug Fixes
+
+- exclude out-of-stock drinks from artisan bonus calculations ([421f3db](https://github.com/Celasha/Toolasha/commit/421f3db9fc012ce639b0685549b6bf24442a824e))
+
 ## [2.69.1](https://github.com/Celasha/Toolasha/compare/v2.69.0...v2.69.1) (2026-07-06)
 
 ### Bug Fixes
