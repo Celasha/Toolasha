@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.69.0](https://github.com/Celasha/Toolasha/compare/v2.68.1...v2.69.0) (2026-07-06)
+
+
+### Features
+
+* add global reroll-at-cap protection to task reroll protection ([e0aef30](https://github.com/Celasha/Toolasha/commit/e0aef30b3a19437f60a4356e8b3cf188985f0eb7))
+
 ## [2.68.1](https://github.com/Celasha/Toolasha/compare/v2.68.0...v2.68.1) (2026-07-01)
 
 ### Bug Fixes
