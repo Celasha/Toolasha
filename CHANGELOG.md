@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.69.1](https://github.com/Celasha/Toolasha/compare/v2.69.0...v2.69.1) (2026-07-06)
+
+### Bug Fixes
+
+- add configurable thresholds to cap reroll protection ([1fb551c](https://github.com/Celasha/Toolasha/commit/1fb551c4478e4238eae13e1668f16a1c501a9343))
+
 ## [2.69.0](https://github.com/Celasha/Toolasha/compare/v2.68.1...v2.69.0) (2026-07-06)
 
 ### Features
