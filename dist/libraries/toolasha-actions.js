@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.69.1
+ * Version: 2.69.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -12779,8 +12779,8 @@
         }
 
         updateRequiredMaterials(panel, amount) {
-            // Remove existing displays
-            const existingDisplays = panel.querySelectorAll('.mwi-required-materials');
+            // Remove existing displays and artisan warning
+            const existingDisplays = panel.querySelectorAll('.mwi-required-materials, .mwi-artisan-warning');
             existingDisplays.forEach((el) => el.remove());
 
             const numActions = parseInt(amount) || 0;
@@ -12807,6 +12807,15 @@
             const requiresDiv = panel.querySelector('[class*="SkillActionDetail_itemRequirements"]');
             if (!requiresDiv) {
                 return;
+            }
+
+            // Warn if artisan tea is slotted but out of stock
+            if (materialCalculator_js.isArtisanTeaOutOfStock(actionHrid)) {
+                const warning = document.createElement('div');
+                warning.className = 'mwi-artisan-warning';
+                warning.style.cssText = 'color:#f0a830; font-size:11px; text-align:center; padding:3px 0 1px 0;';
+                warning.textContent = '⚠ Artisan Tea out of stock — full material amounts shown';
+                requiresDiv.insertAdjacentElement('afterend', warning);
             }
 
             // Process each material

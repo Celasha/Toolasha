@@ -1,7 +1,7 @@
 /**
  * Toolasha Utils Library
  * All utility modules
- * Version: 2.69.1
+ * Version: 2.69.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -904,11 +904,18 @@
      * @returns {{equipment: Map, drinks: Array}}
      */
     function resolveActionContext(actionTypeHrid) {
+        const rawDrinks =
+            loadoutSnapshot.getSnapshotDrinksForSkill(actionTypeHrid) ?? dataManager.getActionDrinkSlots(actionTypeHrid);
+
+        // Only include drinks that are actually in stock — slotted-but-empty teas give no buff
+        const inventory = dataManager.getInventory();
+        const drinks = (rawDrinks || []).filter(
+            (d) => d?.itemHrid && inventory.some((i) => i.itemHrid === d.itemHrid && (i.count || 0) > 0)
+        );
+
         return {
             equipment: loadoutSnapshot.getSnapshotForSkill(actionTypeHrid) ?? dataManager.getEquipment(),
-            drinks:
-                loadoutSnapshot.getSnapshotDrinksForSkill(actionTypeHrid) ??
-                dataManager.getActionDrinkSlots(actionTypeHrid),
+            drinks,
         };
     }
 
@@ -7991,18 +7998,48 @@ self.onmessage = function (e) {
                 return 0;
             }
 
-            // Get character data (loadout-snapshot aware)
             const { equipment, drinks: activeDrinks } = resolveActionContext(actionDetails.type);
             const itemDetailMap = gameData.itemDetailMap || {};
-
-            // Calculate artisan bonus (material reduction from Artisan Tea)
             const drinkConcentration = getDrinkConcentration(equipment, itemDetailMap);
-            const artisanBonus = parseArtisanBonus(activeDrinks, itemDetailMap, drinkConcentration);
 
-            return artisanBonus;
+            return parseArtisanBonus(activeDrinks, itemDetailMap, drinkConcentration);
         } catch (error) {
             console.error('[Material Calculator] Error calculating artisan bonus:', error);
             return 0;
+        }
+    }
+
+    /**
+     * Returns true if artisan tea is selected in a drink slot but has 0 quantity in inventory.
+     * Used to warn the user that material counts reflect no artisan reduction.
+     * @param {string} actionHrid
+     * @returns {boolean}
+     */
+    function isArtisanTeaOutOfStock(actionHrid) {
+        try {
+            const actionDetails = dataManager.getActionDetails(actionHrid);
+            if (!actionDetails) return false;
+
+            const gameData = dataManager.getInitClientData();
+            if (!gameData) return false;
+
+            const itemDetailMap = gameData.itemDetailMap || {};
+
+            // Raw slotted drinks (ignoring stock)
+            const rawDrinks = dataManager.getActionDrinkSlots(actionDetails.type);
+            if (!rawDrinks?.length) return false;
+
+            // In-stock drinks come from resolveActionContext (already filtered)
+            const { equipment, drinks: inStockDrinks } = resolveActionContext(actionDetails.type);
+            const drinkConcentration = getDrinkConcentration(equipment, itemDetailMap);
+
+            return (
+                parseArtisanBonus(rawDrinks, itemDetailMap, drinkConcentration) > 0 &&
+                parseArtisanBonus(inStockDrinks, itemDetailMap, drinkConcentration) === 0
+            );
+        } catch (error) {
+            console.error('[Material Calculator] Error checking artisan tea stock:', error);
+            return false;
         }
     }
 
@@ -8126,7 +8163,8 @@ self.onmessage = function (e) {
         calculateArtisanBonus: calculateArtisanBonus,
         calculateEnhancementMaterialRequirements: calculateEnhancementMaterialRequirements,
         calculateMaterialRequirements: calculateMaterialRequirements,
-        calculateQueuedMaterialsForAction: calculateQueuedMaterialsForAction
+        calculateQueuedMaterialsForAction: calculateQueuedMaterialsForAction,
+        isArtisanTeaOutOfStock: isArtisanTeaOutOfStock
     });
 
     /**

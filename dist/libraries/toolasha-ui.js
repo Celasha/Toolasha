@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.69.1
+ * Version: 2.69.2
  * License: CC-BY-NC-SA-4.0
  */
 
