@@ -920,6 +920,13 @@ export const settingsGroups = {
                 default: {},
                 help: 'Set custom buy/sell prices for specific items. Overrides marketplace prices in profit calculations.',
             },
+            drinkTimer_warningThreshold: {
+                id: 'drinkTimer_warningThreshold',
+                label: 'Drink timer: warning threshold (hours)',
+                type: 'number',
+                default: 24,
+                help: 'Show an amber warning on drink time displays when remaining supply falls below this many hours.',
+            },
             actions_artisanMaterialMode: {
                 id: 'actions_artisanMaterialMode',
                 label: 'Missing materials: Artisan requirement mode',

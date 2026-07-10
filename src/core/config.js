@@ -186,6 +186,14 @@ class Config {
                 settingKey: 'requiredMaterials',
             },
 
+            drinkTimer: {
+                enabled: true,
+                name: 'Drink Timer',
+                category: 'Actions',
+                description: 'Shows remaining drink supply time and queue coverage in skill panels',
+                settingKey: 'drinkTimer',
+            },
+
             // Combat Features
             abilityBookCalculator: {
                 enabled: true,

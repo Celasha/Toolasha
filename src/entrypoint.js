@@ -240,6 +240,13 @@ function registerFeatures() {
             async: false,
         },
         {
+            key: 'drinkTimer',
+            name: 'Drink Timer',
+            category: 'Actions',
+            module: Actions.drinkTimer,
+            async: false,
+        },
+        {
             key: 'missingMaterialsButton',
             name: 'Missing Materials Button',
             category: 'Actions',
