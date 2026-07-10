@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.70.0
+ * Version: 2.70.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -4855,12 +4855,12 @@ self.onmessage = function (e) {
             let totalDisplay = '';
             if (effectiveAmount > 1 && price.ask > 0) {
                 const amountLabel = ` ×${formatters_js.numberFormatter(effectiveAmount)}`;
+                const totalAsk = formatTooltipPrice(price.ask * effectiveAmount);
                 if (price.bid > 0) {
-                    const totalAsk = price.ask * effectiveAmount;
-                    const totalBid = price.bid * effectiveAmount;
-                    totalDisplay = ` (${formatTooltipPrice(totalAsk)} / ${formatTooltipPrice(totalBid)}${amountLabel})`;
+                    const totalBid = formatTooltipPrice(price.bid * effectiveAmount);
+                    totalDisplay = ` (${totalAsk} / ${totalBid}${amountLabel})`;
                 } else {
-                    totalDisplay = amountLabel;
+                    totalDisplay = ` (${totalAsk}${amountLabel})`;
                 }
             }
 
