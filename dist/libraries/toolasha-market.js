@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.69.2
+ * Version: 2.70.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -4850,14 +4850,18 @@ self.onmessage = function (e) {
             const askDisplay = price.ask > 0 ? formatTooltipPrice(price.ask) : '-';
             const bidDisplay = price.bid > 0 ? formatTooltipPrice(price.bid) : '-';
 
-            // Calculate totals (only if both prices valid and amount > 1)
+            // Calculate totals when at least ask exists and amount > 1
             const effectiveAmount = artisanAmount || amount;
             let totalDisplay = '';
-            if (effectiveAmount > 1 && price.ask > 0 && price.bid > 0) {
-                const totalAsk = price.ask * effectiveAmount;
-                const totalBid = price.bid * effectiveAmount;
-                const amountLabel = artisanAmount ? ` ×${formatters_js.numberFormatter(artisanAmount)}` : '';
-                totalDisplay = ` (${formatTooltipPrice(totalAsk)} / ${formatTooltipPrice(totalBid)}${amountLabel})`;
+            if (effectiveAmount > 1 && price.ask > 0) {
+                const amountLabel = ` ×${formatters_js.numberFormatter(effectiveAmount)}`;
+                if (price.bid > 0) {
+                    const totalAsk = price.ask * effectiveAmount;
+                    const totalBid = price.bid * effectiveAmount;
+                    totalDisplay = ` (${formatTooltipPrice(totalAsk)} / ${formatTooltipPrice(totalBid)}${amountLabel})`;
+                } else {
+                    totalDisplay = amountLabel;
+                }
             }
 
             // Format: "Price: 1,200 / 950" or "Price: 1,200 / -" or "Price: - / 950"

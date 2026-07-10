@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.69.2
+ * Version: 2.70.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1488,6 +1488,13 @@
                     type: 'customPriceOverrides',
                     default: {},
                     help: 'Set custom buy/sell prices for specific items. Overrides marketplace prices in profit calculations.',
+                },
+                drinkTimer_warningThreshold: {
+                    id: 'drinkTimer_warningThreshold',
+                    label: 'Drink timer: warning threshold (hours)',
+                    type: 'number',
+                    default: 24,
+                    help: 'Show an amber warning on drink time displays when remaining supply falls below this many hours.',
                 },
                 actions_artisanMaterialMode: {
                     id: 'actions_artisanMaterialMode',
@@ -5228,6 +5235,14 @@
                     category: 'Actions',
                     description: 'Shows total required and missing materials for production actions',
                     settingKey: 'requiredMaterials',
+                },
+
+                drinkTimer: {
+                    enabled: true,
+                    name: 'Drink Timer',
+                    category: 'Actions',
+                    description: 'Shows remaining drink supply time and queue coverage in skill panels',
+                    settingKey: 'drinkTimer',
                 },
 
                 // Combat Features

@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.69.2
+ * Version: 2.70.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -21739,6 +21739,293 @@
     const pinnedActionsPage = new PinnedActionsPage();
 
     /**
+     * Action context resolver
+     *
+     * Returns the equipment and active drinks to use when predicting an action's
+     * outcome (XP, time, profit, materials). When the loadoutSnapshot feature is
+     * enabled and a saved loadout matches the action type, that snapshot is used
+     * — so predictions reflect the gear the user would auto-equip rather than
+     * whatever happens to be on their character right now.
+     *
+     * Resolution priority (handled inside loadoutSnapshot._findSnapshot):
+     *   1. Skill-specific default loadout
+     *   2. All-skills default loadout
+     *   3. Skill-specific non-default
+     *   4. All-skills non-default
+     *   5. Fall back to currently-equipped gear / current drinks
+     *
+     * Equipment and drinks are resolved independently — it's valid to inherit the
+     * snapshot's equipment while no snapshot drinks exist, in which case the
+     * current drinks are used (and vice-versa).
+     */
+
+
+    /**
+     * @param {string} actionTypeHrid - e.g. "/action_types/cooking"
+     * @returns {{equipment: Map, drinks: Array}}
+     */
+    function resolveActionContext(actionTypeHrid) {
+        const rawDrinks =
+            loadoutSnapshot.getSnapshotDrinksForSkill(actionTypeHrid) ?? dataManager.getActionDrinkSlots(actionTypeHrid);
+
+        // Only include drinks that are actually in stock — slotted-but-empty teas give no buff
+        const inventory = dataManager.getInventory();
+        const drinks = (rawDrinks || []).filter(
+            (d) => d?.itemHrid && inventory.some((i) => i.itemHrid === d.itemHrid && (i.count || 0) > 0)
+        );
+
+        return {
+            equipment: loadoutSnapshot.getSnapshotForSkill(actionTypeHrid) ?? dataManager.getEquipment(),
+            drinks,
+        };
+    }
+
+    /**
+     * Drink Calculator Utility
+     * Calculates remaining drink time and queue coverage for non-combat skill panels.
+     *
+     * Total remaining time per drink =
+     *   currentActivationNs (from slot.duration) +
+     *   inventoryCount × buffDurationNs × (1 + concentration)
+     *
+     * slot.duration is the remaining nanoseconds on the current activation as reported
+     * by the server at last action completion. It is frozen while the skill is inactive
+     * and refreshes each action cycle while active — accurate enough for hour-scale estimates.
+     */
+
+
+    const FALLBACK_BUFF_DURATION_NS = 300_000_000_000; // 5 min in nanoseconds
+
+    /**
+     * Calculate remaining drink time (in seconds) for each slotted drink of an action type.
+     * Deduplicates slots if the same drink is slotted more than once.
+     *
+     * @param {string} actionTypeHrid - e.g. "/action_types/woodcutting"
+     * @returns {Array<{itemHrid: string, name: string, totalSeconds: number}>}
+     */
+    function calculateDrinkRemainingSeconds(actionTypeHrid) {
+        const gameData = dataManager.getInitClientData();
+        if (!gameData) return [];
+
+        const slots = dataManager.getActionDrinkSlots(actionTypeHrid);
+        if (!slots?.length) return [];
+
+        const inventory = dataManager.getInventory();
+        const { equipment } = resolveActionContext(actionTypeHrid);
+        const itemDetailMap = gameData.itemDetailMap || {};
+        const concentration = teaParser_js.getDrinkConcentration(equipment, itemDetailMap);
+
+        const results = [];
+        const seen = new Set();
+
+        for (const slot of slots) {
+            if (!slot?.itemHrid) continue;
+            if (seen.has(slot.itemHrid)) continue;
+            seen.add(slot.itemHrid);
+
+            const itemDetails = itemDetailMap[slot.itemHrid];
+            if (!itemDetails) continue;
+
+            const buffDurationNs = itemDetails.consumableDetail?.buffs?.[0]?.duration ?? FALLBACK_BUFF_DURATION_NS;
+            const effectiveDurationNs = buffDurationNs * (1 + concentration);
+
+            const inventoryCount = inventory
+                .filter((i) => i.itemHrid === slot.itemHrid)
+                .reduce((sum, i) => sum + (i.count || 0), 0);
+
+            const currentActivationNs = slot.isActive ? slot.duration || 0 : 0;
+            const totalNs = currentActivationNs + inventoryCount * effectiveDurationNs;
+
+            results.push({
+                itemHrid: slot.itemHrid,
+                name: itemDetails.name,
+                totalSeconds: totalNs / 1e9,
+            });
+        }
+
+        return results;
+    }
+
+    /**
+     * Calculate total remaining queue time in seconds for a given action type.
+     * Only counts finite queued actions (infinite queues are skipped).
+     *
+     * @param {string} actionTypeHrid - e.g. "/action_types/woodcutting"
+     * @returns {number} Total queue time in seconds, or 0 if no finite queue
+     */
+    function calculateQueueTimeSeconds(actionTypeHrid) {
+        const gameData = dataManager.getInitClientData();
+        if (!gameData) return 0;
+
+        const skills = dataManager.getSkills();
+        const { equipment } = resolveActionContext(actionTypeHrid);
+        if (!skills || !equipment) return 0;
+
+        const queuedActions = dataManager.getCurrentActions();
+        let totalSeconds = 0;
+
+        for (const queuedAction of queuedActions) {
+            if (!queuedAction.hasMaxCount) continue;
+
+            const actionDetails = dataManager.getActionDetails(queuedAction.actionHrid);
+            if (!actionDetails || actionDetails.type !== actionTypeHrid) continue;
+
+            const remaining = queuedAction.maxCount - queuedAction.currentCount;
+            if (remaining <= 0) continue;
+
+            const stats = actionCalculator_js.calculateActionStats(actionDetails, {
+                skills,
+                equipment,
+                itemDetailMap: gameData.itemDetailMap,
+                includeCommunityBuff: true,
+                includeBreakdown: false,
+            });
+            if (!stats) continue;
+
+            const effMultiplier = efficiency_js.calculateEfficiencyMultiplier(stats.totalEfficiency);
+            totalSeconds += (remaining / effMultiplier) * stats.actionTime;
+        }
+
+        return totalSeconds;
+    }
+
+    /**
+     * Drink Timer
+     * Displays remaining drink time per slot inside each non-combat skill panel's
+     * consumables section. Warns when any drink falls below the configured threshold
+     * and highlights if the queued actions will outlast available drink supply.
+     */
+
+
+    const SECONDS_PER_HOUR = 3600;
+
+    class DrinkTimer {
+        constructor() {
+            this.initialized = false;
+            this.observers = [];
+        }
+
+        initialize() {
+            if (this.initialized) return;
+
+            const unregister = domObserver.onClass(
+                'DrinkTimer',
+                'GatheringProductionSkillPanel_consumablesContainer',
+                (el) => this._updatePanel(el)
+            );
+            this.observers.push(unregister);
+
+            const onUpdate = () => this._updateAllPanels();
+            dataManager.on('consumables_updated', onUpdate);
+            dataManager.on('items_updated', onUpdate);
+            this.observers.push(() => {
+                dataManager.off('consumables_updated', onUpdate);
+                dataManager.off('items_updated', onUpdate);
+            });
+
+            this._updateAllPanels();
+            this.initialized = true;
+        }
+
+        _updateAllPanels() {
+            document.querySelectorAll('[class*="GatheringProductionSkillPanel_consumablesContainer"]').forEach((el) => {
+                this._updatePanel(el);
+            });
+        }
+
+        _updatePanel(consumablesContainer) {
+            consumablesContainer.querySelector('.mwi-drink-timer')?.remove();
+
+            const slotsEl = consumablesContainer.querySelector(
+                '[class*="ActionTypeConsumableSlots_actionTypeConsumableSlots"]'
+            );
+            if (!slotsEl) return;
+
+            const actionTypeHrid = this._getActionTypeHrid(slotsEl);
+            if (!actionTypeHrid || actionTypeHrid === '/action_types/combat') return;
+
+            const drinks = calculateDrinkRemainingSeconds(actionTypeHrid);
+            if (!drinks.length) return;
+
+            const thresholdSeconds = config.getSettingValue('drinkTimer_warningThreshold', 24) * SECONDS_PER_HOUR;
+            const queueSeconds = calculateQueueTimeSeconds(actionTypeHrid);
+
+            const wrapper = document.createElement('div');
+            wrapper.className = 'mwi-drink-timer';
+            wrapper.style.cssText = 'padding: 3px 8px 4px; font-size: 11px; line-height: 1.5;';
+
+            // Per-drink time row
+            const drinkParts = drinks.map(({ name, totalSeconds }) => {
+                const color =
+                    totalSeconds < SECONDS_PER_HOUR ? '#ef4444' : totalSeconds < thresholdSeconds ? '#f0a830' : '#9ca3af';
+                const prefix = totalSeconds < thresholdSeconds ? '⚠ ' : '';
+                return `<span style="color:${color};">${prefix}${name}: ${this._formatTime(totalSeconds)}</span>`;
+            });
+            const drinkRow = document.createElement('div');
+            drinkRow.innerHTML = drinkParts.join('<span style="color:#4b5563;"> · </span>');
+            wrapper.appendChild(drinkRow);
+
+            // Queue warning row
+            if (queueSeconds > 0) {
+                const minDrinkSeconds = Math.min(...drinks.map((d) => d.totalSeconds));
+                const shortfall = queueSeconds - minDrinkSeconds;
+                if (shortfall > 0) {
+                    const shortDrink = drinks.find((d) => d.totalSeconds === minDrinkSeconds);
+                    const queueRow = document.createElement('div');
+                    queueRow.style.color = '#f0a830';
+                    queueRow.textContent = `⚠ Queue (${this._formatTime(queueSeconds)}) outlasts ${shortDrink.name} by ${this._formatTime(shortfall)}`;
+                    wrapper.appendChild(queueRow);
+                }
+            }
+
+            slotsEl.insertAdjacentElement('afterend', wrapper);
+        }
+
+        /**
+         * Get actionTypeHrid from the ActionTypeConsumableSlots element via fiber.
+         * The prop lives one level up in the return fiber.
+         */
+        _getActionTypeHrid(slotsEl) {
+            const root = document.getElementById('root');
+            const rootFiber = root?._reactRootContainer?.current || root?._reactRootContainer?._internalRoot?.current;
+            if (!rootFiber) return null;
+
+            function walk(f, target) {
+                if (!f) return null;
+                if (f.stateNode === target) return f;
+                return walk(f.child, target) || walk(f.sibling, target);
+            }
+
+            const fiber = walk(rootFiber, slotsEl);
+            return fiber?.return?.memoizedProps?.actionTypeHrid ?? null;
+        }
+
+        _formatTime(seconds) {
+            if (seconds <= 0) return '0m';
+            const h = Math.floor(seconds / SECONDS_PER_HOUR);
+            const m = Math.floor((seconds % SECONDS_PER_HOUR) / 60);
+            if (h >= 48) return `${Math.round(seconds / 86400)}d`;
+            if (h > 0) return m > 0 ? `${h}h ${m}m` : `${h}h`;
+            return `${m}m`;
+        }
+
+        cleanup() {
+            this.observers.forEach((fn) => fn());
+            this.observers = [];
+            document.querySelectorAll('.mwi-drink-timer').forEach((el) => el.remove());
+            this.initialized = false;
+        }
+    }
+
+    const drinkTimer = new DrinkTimer();
+
+    var drinkTimer$1 = {
+        name: 'Drink Timer',
+        initialize: () => drinkTimer.initialize(),
+        cleanup: () => drinkTimer.cleanup(),
+    };
+
+    /**
      * Alchemy Profit Display Module
      * Displays profit calculator in alchemy action detail panel
      */
@@ -24026,6 +24313,7 @@
         teaRecommendation,
         inventoryCountDisplay: inventoryCountDisplay$1,
         pinnedActionsPage,
+        drinkTimer: drinkTimer$1,
     };
 
     console.log('[Toolasha] Actions library loaded');
