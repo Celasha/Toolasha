@@ -2,15 +2,13 @@
 
 ## [2.70.0](https://github.com/Celasha/Toolasha/compare/v2.69.2...v2.70.0) (2026-07-10)
 
-
 ### Features
 
-* add drink timer to skill panel consumables section ([08409f2](https://github.com/Celasha/Toolasha/commit/08409f2ce281a7a00ec7cfbd4fb1b612f392f6d3))
-
+- add drink timer to skill panel consumables section ([08409f2](https://github.com/Celasha/Toolasha/commit/08409f2ce281a7a00ec7cfbd4fb1b612f392f6d3))
 
 ### Bug Fixes
 
-* always show ×count in item tooltip price line ([17ed970](https://github.com/Celasha/Toolasha/commit/17ed9701e475ab6a6e481e726b8043a55d74928f))
+- always show ×count in item tooltip price line ([17ed970](https://github.com/Celasha/Toolasha/commit/17ed9701e475ab6a6e481e726b8043a55d74928f))
 
 ## [2.69.2](https://github.com/Celasha/Toolasha/compare/v2.69.1...v2.69.2) (2026-07-06)
 
