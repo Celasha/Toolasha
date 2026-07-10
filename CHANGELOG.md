@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.70.1](https://github.com/Celasha/Toolasha/compare/v2.70.0...v2.70.1) (2026-07-10)
+
+### Bug Fixes
+
+- show ask total in tooltip even when bid is missing ([b74a82c](https://github.com/Celasha/Toolasha/commit/b74a82c02ee1825759ad77e101eef08ceb066104))
+
 ## [2.70.0](https://github.com/Celasha/Toolasha/compare/v2.69.2...v2.70.0) (2026-07-10)
 
 ### Features
