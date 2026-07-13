@@ -280,6 +280,8 @@ class HouseCostDisplay {
             background: rgba(0, 0, 0, 0.3);
             border-radius: 8px;
             border: 1px solid ${config.SCRIPT_COLOR_SECONDARY};
+            min-height: 0;
+            overflow-y: auto;
         `;
 
         // Compact header with inline dropdown
