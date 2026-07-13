@@ -223,7 +223,10 @@ function makeColumnSortable(thEl, options) {
     thEl.style.cursor = 'pointer';
     thEl.insertAdjacentHTML('beforeend', sortIcon('none'));
 
-    thEl.addEventListener('click', () => {
+    thEl.addEventListener('click', (e) => {
+        // Stop React's delegated handler from re-sorting the column as a string
+        e.stopPropagation();
+        e.stopImmediatePropagation();
         const tbodyEl = tableEl.querySelector('tbody');
         if (!tbodyEl) return;
 
@@ -403,6 +406,39 @@ class GuildXPDisplay {
         });
 
         this.initialized = true;
+
+        // Intercept clicks on Weekly XP column before React's string sort fires.
+        // Uses document-level capturing so we run before React's delegated handler.
+        // Identifies the column by its stable CSS class (not textContent, which changes
+        // when the user switches between Status and Contributions tabs on the same DOM element).
+        this._weeklyXPSortDir = 'desc';
+        this._weeklyXPClickHandler = (e) => {
+            const th = e.target.closest('[class*="GuildPanel_weeklyExperience"]');
+            if (!th) return;
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+
+            const table = th.closest('table');
+            if (!table) return;
+            const thead = table.querySelector('thead tr');
+            if (!thead) return;
+            const colIdx = Array.from(thead.children).indexOf(th);
+            const tbody = table.querySelector('tbody');
+            if (!tbody || colIdx < 0) return;
+
+            this._weeklyXPSortDir = this._weeklyXPSortDir === 'desc' ? 'asc' : 'desc';
+            const dir = this._weeklyXPSortDir;
+
+            const rows = Array.from(tbody.children);
+            rows.sort((a, b) => {
+                const av = this._parseWeeklyXP(a.children[colIdx]?.textContent?.trim() || '');
+                const bv = this._parseWeeklyXP(b.children[colIdx]?.textContent?.trim() || '');
+                return dir === 'asc' ? av - bv : bv - av;
+            });
+            for (const row of rows) tbody.appendChild(row);
+        };
+        document.addEventListener('click', this._weeklyXPClickHandler, true);
+        this.unregisterObservers.push(() => document.removeEventListener('click', this._weeklyXPClickHandler, true));
     }
 
     // ─── Overview tab ────────────────────────────────────────────────────────
@@ -662,6 +698,9 @@ class GuildXPDisplay {
             });
         }
 
+        // Weekly XP numeric sort is handled by a document-level capturing interceptor
+        // in initialize() — see _weeklyXPClickHandler.
+
         // Highlight self-player row
         const selfName = dataManager.getCurrentCharacterName();
         if (selfName) {
@@ -698,6 +737,19 @@ class GuildXPDisplay {
     _refreshMembersIfVisible() {
         // Members tab re-renders fully on data change, so DOM observer will re-fire.
         // No explicit refresh needed.
+    }
+
+    /**
+     * Parse a Weekly XP cell value, handling K (thousands) and M (millions) suffixes.
+     * @param {string} raw
+     * @returns {number}
+     */
+    _parseWeeklyXP(raw) {
+        const m = raw.match(/^([\d,.]+)(K|M)?$/i);
+        if (!m) return 0;
+        const num = parseFloat(m[1].replace(/,/g, ''));
+        const mult = m[2]?.toUpperCase() === 'M' ? 1_000_000 : m[2]?.toUpperCase() === 'K' ? 1_000 : 1;
+        return num * mult;
     }
 
     // ─── Leaderboard tab ─────────────────────────────────────────────────────
