@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.70.2](https://github.com/Celasha/Toolasha/compare/v2.70.1...v2.70.2) (2026-07-13)
+
+### Bug Fixes
+
+- make action panel bottom section scrollable ([9708195](https://github.com/Celasha/Toolasha/commit/9708195dd489e0c008eec0f707a8837e2003abf2))
+- prevent Build button collapse when cumulative section is tall ([4f6b0a3](https://github.com/Celasha/Toolasha/commit/4f6b0a33e231650d09e998d2136cc98e11b6bfea))
+
 ## [2.70.1](https://github.com/Celasha/Toolasha/compare/v2.70.0...v2.70.1) (2026-07-10)
 
 ### Bug Fixes
