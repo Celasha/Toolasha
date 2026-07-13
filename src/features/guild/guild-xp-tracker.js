@@ -292,6 +292,9 @@ class GuildXPTracker {
                 gameMode: sharableData.gameMode,
                 joinTime: guildChar?.joinTime || null,
                 invitedBy: sharableMap[inviterId]?.name || null,
+                inactiveTime: sharableData.inactiveTime || null,
+                isOnline: sharableData.isOnline || false,
+                hideOnlineStatus: sharableData.hideOnlineStatus || false,
             };
         }
 
@@ -376,6 +379,9 @@ class GuildXPTracker {
                 gameMode: sharableData.gameMode,
                 joinTime: guildChar?.joinTime || null,
                 invitedBy: sharableMap[inviterId]?.name || null,
+                inactiveTime: sharableData.inactiveTime || null,
+                isOnline: sharableData.isOnline || false,
+                hideOnlineStatus: sharableData.hideOnlineStatus || false,
             };
         }
 

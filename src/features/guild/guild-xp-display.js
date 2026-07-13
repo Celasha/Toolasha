@@ -511,9 +511,44 @@ class GuildXPDisplay {
     // ─── Members tab ─────────────────────────────────────────────────────────
 
     _renderMembers(tableEl) {
-        // Skip if already rendered
+        // Skip if already injected
         if (tableEl.querySelector(`.${CSS_PREFIX}`)) return;
 
+        // Set up a tab-switch observer once per table element.
+        // React reuses the same DOM element across the Status/Contributions tabs,
+        // updating header text in place. We detect that by watching the thead for
+        // changes to game-owned headers, then re-inject our columns for the new view.
+        if (!tableEl._mwiTabObserver) {
+            const theadTrEl = tableEl.querySelector('thead tr');
+            if (theadTrEl) {
+                const getGameHeaders = () =>
+                    Array.from(theadTrEl.children)
+                        .filter((th) => !th.classList.contains(CSS_PREFIX))
+                        .map((th) => th.textContent.trim())
+                        .join('|');
+                let lastHeaders = getGameHeaders();
+
+                const obs = new MutationObserver(() => {
+                    const cur = getGameHeaders();
+                    if (cur === lastHeaders) return;
+                    lastHeaders = cur;
+                    tableEl.querySelectorAll(`.${CSS_PREFIX}`).forEach((el) => el.remove());
+                    setTimeout(() => {
+                        this._injectMembersColumns(tableEl);
+                        this._highlightMembersRows(tableEl);
+                    }, 50);
+                });
+                obs.observe(theadTrEl, { childList: true, subtree: true, characterData: true });
+                tableEl._mwiTabObserver = obs;
+                this.unregisterObservers.push(() => obs.disconnect());
+            }
+        }
+
+        this._injectMembersColumns(tableEl);
+        this._highlightMembersRows(tableEl);
+    }
+
+    _injectMembersColumns(tableEl) {
         const guildID = guildXPTracker.getOwnGuildID();
         if (!guildID) return;
 
@@ -553,6 +588,9 @@ class GuildXPDisplay {
                 gameMode: meta?.gameMode || 'standard',
                 joinTime: meta?.joinTime || null,
                 xp: xp || 0,
+                inactiveTime: meta?.inactiveTime || null,
+                isOnline: meta?.isOnline || false,
+                hideOnlineStatus: meta?.hideOnlineStatus || false,
             });
         }
 
@@ -565,9 +603,12 @@ class GuildXPDisplay {
         const theadTr = tableEl.querySelector('thead tr');
         if (!theadTr) return;
 
-        // Find Activity column index for inserting before it
+        // Find Activity column index — its presence indicates the Status tab.
+        // Only inject on the Contributions tab (no game Activity column).
         const activityIndex = Array.from(theadTr.children).findIndex((el) => el.textContent.trim() === 'Activity');
-        const insertAfter = activityIndex > 0 ? activityIndex - 1 : theadTr.children.length - 1;
+        if (activityIndex >= 0) return;
+
+        const insertAfter = theadTr.children.length - 1;
 
         const gameModes = { standard: 'MC', ironcow: 'IC', legacy_ironcow: 'LC' };
 
@@ -622,6 +663,37 @@ class GuildXPDisplay {
             makeSortable: true,
             sortId: 'lastDayXPH',
             sortData: allStats.map((s) => s.lastDayXPH),
+        });
+
+        // Activity column
+        addColumn(tableEl, {
+            name: 'Activity',
+            insertAfter: insertAfter + 4,
+            data: allStats.map((s) => ({
+                inactiveTime: s.inactiveTime,
+                isOnline: s.isOnline,
+                hide: s.hideOnlineStatus,
+            })),
+            format: (v) => {
+                if (v.hide) return '–';
+                if (v.isOnline) return '<span style="color:#4ade80; font-size:14px;" title="Online">●</span>';
+                if (!v.inactiveTime) return '–';
+                const ms = Date.now() - new Date(v.inactiveTime).getTime();
+                const days = Math.floor(ms / 86400000);
+                const hours = Math.floor(ms / 3600000);
+                const mins = Math.floor(ms / 60000);
+                if (days > 0) return `${days}d ago`;
+                if (hours > 0) return `${hours}h ago`;
+                return mins > 0 ? `${mins}m ago` : 'just now';
+            },
+            makeSortable: true,
+            sortId: 'activityTime',
+            sortData: allStats.map((s) => {
+                if (s.hideOnlineStatus) return Infinity;
+                if (s.isOnline) return 0;
+                if (!s.inactiveTime) return Infinity;
+                return Date.now() - new Date(s.inactiveTime).getTime();
+            }),
         });
 
         // Make existing columns sortable
@@ -700,6 +772,13 @@ class GuildXPDisplay {
 
         // Weekly XP numeric sort is handled by a document-level capturing interceptor
         // in initialize() — see _weeklyXPClickHandler.
+    }
+
+    _highlightMembersRows(tableEl) {
+        const tbodyEl = tableEl.querySelector('tbody');
+        if (!tbodyEl) return;
+        const rows = Array.from(tbodyEl.children);
+        const theadTr = tableEl.querySelector('thead tr');
 
         // Highlight self-player row
         const selfName = dataManager.getCurrentCharacterName();
@@ -712,11 +791,13 @@ class GuildXPDisplay {
             }
         }
 
-        // Highlight inactive players (orange for days inactive, red for 10d+)
+        // Highlight inactive players using whichever Activity column is present
+        // (game's on Status tab, or our injected one on Contributions tab)
+        const activityHeader =
+            theadTr && Array.from(theadTr.children).find((el) => el.textContent.trim() === 'Activity');
         if (activityHeader) {
             const actColIndex = Array.from(theadTr.children).indexOf(activityHeader);
             for (const row of rows) {
-                // Skip self-player row
                 if (selfName && row.children[0]?.textContent?.trim() === selfName) continue;
                 const cell = row.children[actColIndex];
                 if (!cell) continue;
@@ -724,11 +805,7 @@ class GuildXPDisplay {
                 const daysMatch = text.match(/(\d+)d\s*ago/);
                 if (daysMatch) {
                     const days = parseInt(daysMatch[1], 10);
-                    if (days >= 10) {
-                        row.style.backgroundColor = 'rgba(239, 68, 68, 0.15)';
-                    } else {
-                        row.style.backgroundColor = 'rgba(251, 146, 60, 0.12)';
-                    }
+                    row.style.backgroundColor = days >= 10 ? 'rgba(239, 68, 68, 0.15)' : 'rgba(251, 146, 60, 0.12)';
                 }
             }
         }
