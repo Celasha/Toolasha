@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.70.1
+ * Version: 2.70.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -10029,6 +10029,22 @@
                 if (levelProgressSection && !hideLevelProgress) {
                     lastInserted.insertAdjacentElement('afterend', levelProgressSection);
                 }
+
+                // Constrain action container height so it scrolls rather than overflowing off-screen
+                const actionContainer = inputContainer.parentElement;
+                const regularComponent = actionContainer?.closest('[class*="SkillActionDetail_regularComponent"]');
+                if (actionContainer && regularComponent) {
+                    const nameHeight =
+                        regularComponent.querySelector('[class*="SkillActionDetail_name"]')?.offsetHeight || 0;
+                    const contentHeight =
+                        regularComponent.querySelector('[class*="SkillActionDetail_content"]')?.clientHeight || 0;
+                    const available = Math.max(
+                        200,
+                        Math.floor(window.innerHeight * 0.96 - nameHeight - contentHeight - 16)
+                    );
+                    actionContainer.style.maxHeight = available + 'px';
+                    actionContainer.style.overflowY = 'auto';
+                }
             } catch (error) {
                 console.error('[Toolasha] Error injecting quick input buttons:', error);
             } finally {
@@ -10044,6 +10060,10 @@
             this.cleanupRegistry.cleanupAll();
             document.querySelectorAll('.mwi-collapsible-section').forEach((section) => section.remove());
             document.querySelectorAll('.mwi-quick-input-btn').forEach((button) => button.remove());
+            document.querySelectorAll('[class*="SkillActionDetail_actionContainer"]').forEach((el) => {
+                el.style.maxHeight = '';
+                el.style.overflowY = '';
+            });
             this.isInitialized = false;
         }
 

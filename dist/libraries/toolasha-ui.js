@@ -1,7 +1,7 @@
 /**
  * Toolasha UI Library
  * UI enhancements, tasks, skills, and misc features
- * Version: 2.70.1
+ * Version: 2.70.2
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -17329,6 +17329,8 @@ ${starCSS}
             background: rgba(0, 0, 0, 0.3);
             border-radius: 8px;
             border: 1px solid ${config.SCRIPT_COLOR_SECONDARY};
+            min-height: 0;
+            overflow-y: auto;
         `;
 
             // Compact header with inline dropdown
