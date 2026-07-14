@@ -1593,12 +1593,6 @@ export const settingsGroups = {
                 type: 'checkbox',
                 default: true,
             },
-            loadout_sortEnabled: {
-                id: 'loadout_sortEnabled',
-                label: 'Loadout panel: Enable drag-and-drop reordering',
-                type: 'checkbox',
-                default: true,
-            },
             loadoutSnapshot: {
                 id: 'loadoutSnapshot',
                 label: 'Loadout panel: Use saved loadout snapshots in profit calculations',

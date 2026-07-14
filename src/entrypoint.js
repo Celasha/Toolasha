@@ -409,13 +409,6 @@ function registerFeatures() {
             async: false,
         },
         {
-            key: 'loadoutSort',
-            name: 'Loadout Sort',
-            category: 'Combat',
-            module: Combat.loadoutSort,
-            async: false,
-        },
-        {
             key: 'loadoutSnapshot',
             name: 'Loadout Snapshots',
             category: 'Combat',

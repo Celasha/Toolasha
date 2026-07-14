@@ -8,7 +8,6 @@
 // Combat features
 import zoneIndices from '../features/combat/zone-indices.js';
 import loadoutEnhancementDisplay from '../features/combat/loadout-enhancement-display.js';
-import loadoutSort from '../features/combat/loadout-sort.js';
 import loadoutSnapshot from '../features/combat/loadout-snapshot.js';
 import scrollSimulator from '../features/combat/scroll-simulator.js';
 import scrollSimulatorUI from '../features/combat/scroll-simulator-ui.js';
@@ -48,7 +47,6 @@ if (typeof unsafeWindow !== 'undefined') {
 toolashaRoot.Combat = {
     zoneIndices,
     loadoutEnhancementDisplay,
-    loadoutSort,
     loadoutSnapshot,
     scrollSimulator,
     scrollSimulatorUI,

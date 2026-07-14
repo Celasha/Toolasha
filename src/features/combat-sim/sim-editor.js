@@ -11,7 +11,6 @@ import {
     applyLoadoutSnapshotToDTO,
 } from './combat-sim-adapter.js';
 import loadoutSnapshot from '../combat/loadout-snapshot.js';
-import { getLoadoutSortOrder } from '../combat/loadout-sort.js';
 
 const ACCENT = '#4a9eff';
 const ACCENT_BG = 'rgba(74, 158, 255, 0.12)';
@@ -40,7 +39,6 @@ export class SimEditor {
         this._missingMembers = [];
         this._editorInitialized = false;
         this._selectedLoadoutName = '';
-        this._loadoutSortOrder = null;
     }
 
     getEditedDTOs() {
@@ -89,7 +87,6 @@ export class SimEditor {
             this._activeEditPlayer = selfHrid;
             this._missingMembers = missingMembers;
             this._editorInitialized = true;
-            this._loadoutSortOrder = await getLoadoutSortOrder();
 
             this.renderEditor();
         } catch (error) {
@@ -298,15 +295,6 @@ export class SimEditor {
                 (s) => !s.actionTypeHrid || s.actionTypeHrid === '/action_types/combat'
             );
 
-            if (this._loadoutSortOrder?.length) {
-                filteredSnapshots.sort((a, b) => {
-                    const aIdx = this._loadoutSortOrder.findIndex((o) => o.name === a.name);
-                    const bIdx = this._loadoutSortOrder.findIndex((o) => o.name === b.name);
-                    const aPos = aIdx === -1 ? Infinity : aIdx;
-                    const bPos = bIdx === -1 ? Infinity : bIdx;
-                    return aPos - bPos;
-                });
-            }
             html += `<div style="display:flex; align-items:center; gap:6px; margin-bottom:8px;">`;
             if (filteredSnapshots.length > 0) {
                 html += `<label style="color:#888; font-size:11px; flex-shrink:0;">Loadout</label>`;
