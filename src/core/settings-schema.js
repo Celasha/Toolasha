@@ -1884,6 +1884,13 @@ export const settingsGroups = {
                 default: true,
                 help: 'Displays XP/hr rates, rankings, and a weekly chart on the Guild Overview, Members, and Guild Leaderboard tabs. Disable the standalone Guild XP/h userscript if using this.',
             },
+            guildTrialSignupDisplay: {
+                id: 'guildTrialSignupDisplay',
+                label: 'Guild Trials: Show unsigned members list',
+                type: 'checkbox',
+                default: true,
+                help: "Displays which guild members have not yet signed up for the current week's skilling and combat trials.",
+            },
         },
     },
 

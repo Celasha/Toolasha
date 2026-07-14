@@ -218,9 +218,10 @@ class GuildXPTracker {
         this.ownGuildName = null;
         this.ownGuildID = null;
         this.guildCreatedAt = null;
+        this.currentWeekStartAt = null;
         this.guildXPHistory = {}; // guildName → [{t, xp}]
         this.memberXPHistory = {}; // characterID → [{t, xp}]
-        this.memberMeta = {}; // characterID → {name, gameMode, joinTime, invitedBy}
+        this.memberMeta = {}; // characterID → {name, gameMode, joinTime, invitedBy, ...}
         this.playerXPHistory = {}; // playerName → [{t, xp}] (main leaderboard)
         this.unregisterHandlers = [];
     }
@@ -243,10 +244,13 @@ class GuildXPTracker {
         webSocketHook.on('guild_updated', this._boundOnGuildUpdated);
         webSocketHook.on('guild_characters_updated', this._boundOnMembersUpdated);
         webSocketHook.on('leaderboard_updated', this._boundOnLeaderboardUpdated);
+        this._boundOnTrialSignupUpdated = (data) => this._onTrialSignupUpdated(data);
+        webSocketHook.on('guild_trial_signup_updated', this._boundOnTrialSignupUpdated);
         this.unregisterHandlers.push(() => {
             webSocketHook.off('guild_updated', this._boundOnGuildUpdated);
             webSocketHook.off('guild_characters_updated', this._boundOnMembersUpdated);
             webSocketHook.off('leaderboard_updated', this._boundOnLeaderboardUpdated);
+            webSocketHook.off('guild_trial_signup_updated', this._boundOnTrialSignupUpdated);
         });
 
         // If character data already loaded, initialize immediately
@@ -272,6 +276,7 @@ class GuildXPTracker {
         const guildXP = guild.experience;
         this.ownGuildName = guildName;
         this.guildCreatedAt = guild.createdAt;
+        this.currentWeekStartAt = guild.currentWeekStartAt || null;
 
         // Extract guild ID and member metadata
         const guildCharacterMap = data.guildCharacterMap || {};
@@ -295,6 +300,9 @@ class GuildXPTracker {
                 inactiveTime: sharableData.inactiveTime || null,
                 isOnline: sharableData.isOnline || false,
                 hideOnlineStatus: sharableData.hideOnlineStatus || false,
+                signedUpSkillingTrialHrid: guildChar?.signedUpSkillingTrialHrid || '',
+                signedUpCombatTrialHrid: guildChar?.signedUpCombatTrialHrid || '',
+                signupWeekStartAt: guildChar?.signupWeekStartAt || null,
             };
         }
 
@@ -338,6 +346,7 @@ class GuildXPTracker {
         const name = guild.name;
         this.ownGuildName = name;
         this.guildCreatedAt = guild.createdAt;
+        this.currentWeekStartAt = guild.currentWeekStartAt || this.currentWeekStartAt;
 
         if (!this.guildXPHistory[name]) {
             this.guildXPHistory[name] = [];
@@ -382,6 +391,9 @@ class GuildXPTracker {
                 inactiveTime: sharableData.inactiveTime || null,
                 isOnline: sharableData.isOnline || false,
                 hideOnlineStatus: sharableData.hideOnlineStatus || false,
+                signedUpSkillingTrialHrid: guildChar?.signedUpSkillingTrialHrid || '',
+                signedUpCombatTrialHrid: guildChar?.signedUpCombatTrialHrid || '',
+                signupWeekStartAt: guildChar?.signupWeekStartAt || null,
             };
         }
 
@@ -397,6 +409,19 @@ class GuildXPTracker {
         if (this.ownGuildID) {
             storage.set(`memberXP_${this.ownGuildID}`, this.memberXPHistory, STORE_NAME);
         }
+    }
+
+    /**
+     * Handle guild_trial_signup_updated — update a single member's trial signup state.
+     * @param {Object} data - guild_trial_signup_updated message
+     */
+    _onTrialSignupUpdated(data) {
+        const charId = String(data.characterId);
+        const meta = this.memberMeta[charId];
+        if (!meta) return;
+        meta.signedUpSkillingTrialHrid = data.signedUpSkillingTrialHrid || '';
+        meta.signedUpCombatTrialHrid = data.signedUpCombatTrialHrid || '';
+        meta.signupWeekStartAt = data.signupWeekStartAt || null;
     }
 
     /**
@@ -493,6 +518,14 @@ class GuildXPTracker {
      */
     getGuildCreatedAt() {
         return this.guildCreatedAt;
+    }
+
+    /**
+     * Get the current guild trial week start timestamp.
+     * @returns {string|null}
+     */
+    getCurrentWeekStartAt() {
+        return this.currentWeekStartAt;
     }
 
     /**

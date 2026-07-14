@@ -388,20 +388,35 @@ class GuildXPDisplay {
         );
         this.unregisterObservers.push(unregLeaderboard);
 
+        const unregTrials = domObserver.onClass('GuildXPDisplay-Trials', 'GuildPanel_trialsContent', (el) =>
+            this._renderTrialSignups(el)
+        );
+        this.unregisterObservers.push(unregTrials);
+
         // Live refresh on data updates
         this._boundRefreshOverview = () => this._refreshOverviewIfVisible();
         this._boundRefreshMembers = () => this._refreshMembersIfVisible();
+        this._boundRefreshTrials = () => {
+            const el = document.querySelector('[class*="GuildPanel_trialsContent"]');
+            if (el) this._renderTrialSignups(el);
+        };
         this._boundRefreshLeaderboard = (_data) => {
             this._refreshLeaderboardIfVisible();
         };
 
         webSocketHook.on('guild_updated', this._boundRefreshOverview);
         webSocketHook.on('guild_characters_updated', this._boundRefreshMembers);
+        webSocketHook.on('guild_characters_updated', this._boundRefreshTrials);
+        webSocketHook.on('guild_updated', this._boundRefreshTrials);
+        webSocketHook.on('guild_trial_signup_updated', this._boundRefreshTrials);
         webSocketHook.on('leaderboard_updated', this._boundRefreshLeaderboard);
 
         this.unregisterObservers.push(() => {
             webSocketHook.off('guild_updated', this._boundRefreshOverview);
             webSocketHook.off('guild_characters_updated', this._boundRefreshMembers);
+            webSocketHook.off('guild_characters_updated', this._boundRefreshTrials);
+            webSocketHook.off('guild_updated', this._boundRefreshTrials);
+            webSocketHook.off('guild_trial_signup_updated', this._boundRefreshTrials);
             webSocketHook.off('leaderboard_updated', this._boundRefreshLeaderboard);
         });
 
@@ -814,6 +829,83 @@ class GuildXPDisplay {
     _refreshMembersIfVisible() {
         // Members tab re-renders fully on data change, so DOM observer will re-fire.
         // No explicit refresh needed.
+    }
+
+    // ─── Trials tab ──────────────────────────────────────────────────────────
+
+    _renderTrialSignups(trialsContentEl) {
+        if (!config.getSetting('guildTrialSignupDisplay', true)) return;
+
+        // Remove previous injection
+        trialsContentEl.querySelectorAll('.mwi-trial-signups').forEach((el) => el.remove());
+
+        const memberList = guildXPTracker.getMemberList();
+        if (!memberList.length) return;
+
+        const currentWeek = guildXPTracker.getCurrentWeekStartAt();
+        const unsignedSkilling = [];
+        const unsignedCombat = [];
+
+        for (const member of memberList) {
+            const meta = guildXPTracker.getMemberMeta(member.characterID);
+            if (!meta) continue;
+
+            const signedUpThisWeek = currentWeek && meta.signupWeekStartAt === currentWeek;
+
+            if (!signedUpThisWeek || !meta.signedUpSkillingTrialHrid) {
+                unsignedSkilling.push(meta.name);
+            }
+            if (!signedUpThisWeek || !meta.signedUpCombatTrialHrid) {
+                unsignedCombat.push(meta.name);
+            }
+        }
+
+        unsignedSkilling.sort((a, b) => a.localeCompare(b));
+        unsignedCombat.sort((a, b) => a.localeCompare(b));
+
+        const statusRow = trialsContentEl.querySelector('[class*="GuildPanel_eventStatusRow"]');
+        if (!statusRow) return;
+
+        const wrapper = document.createElement('div');
+        wrapper.className = 'mwi-trial-signups';
+        wrapper.style.cssText = `
+            margin: 8px 0 4px;
+            padding: 8px 12px;
+            background: rgba(0,0,0,0.25);
+            border-radius: 6px;
+            font-size: 12px;
+            line-height: 1.6;
+        `;
+
+        const makeList = (label, names) => {
+            const color = names.length === 0 ? '#4ade80' : '#f0a830';
+            const nameStr =
+                names.length === 0
+                    ? 'All signed up ✓'
+                    : names
+                          .map(
+                              (n) =>
+                                  `<span class="mwi-trial-name" data-name="${n}" style="cursor:pointer; text-decoration:underline dotted; color:${color};">${n}</span>`
+                          )
+                          .join('<span style="color:#6b7280;">, </span>');
+            return `<div><span style="color:#9ca3af;">${label} (${names.length} unsigned):</span> <span style="color:${color};">${nameStr}</span></div>`;
+        };
+
+        wrapper.innerHTML = makeList('Skilling', unsignedSkilling) + makeList('Combat', unsignedCombat);
+
+        statusRow.insertAdjacentElement('afterend', wrapper);
+
+        wrapper.querySelectorAll('.mwi-trial-name').forEach((el) => {
+            el.addEventListener('click', () => {
+                const name = el.dataset.name;
+                const chatInput = document.querySelector('[class*="Chat_chatInputContainer"] input');
+                if (!chatInput) return;
+                const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                setter.call(chatInput, `/w ${name} Why haven't you signed up for your trial(s) yet?!`);
+                chatInput.dispatchEvent(new Event('input', { bubbles: true }));
+                chatInput.focus();
+            });
+        });
     }
 
     /**
