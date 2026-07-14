@@ -619,97 +619,117 @@ class GuildXPDisplay {
         if (!theadTr) return;
 
         // Find Activity column index — its presence indicates the Status tab.
-        // Only inject on the Contributions tab (no game Activity column).
         const activityIndex = Array.from(theadTr.children).findIndex((el) => el.textContent.trim() === 'Activity');
-        if (activityIndex >= 0) return;
-
+        const isStatusTab = activityIndex >= 0;
         const insertAfter = theadTr.children.length - 1;
 
         const gameModes = { standard: 'MC', ironcow: 'IC', legacy_ironcow: 'LC' };
+        const showGameMode = config.getSetting('guildMembersShowGameMode', false);
+        const showJoined = config.getSetting('guildMembersShowJoined', true);
+        const showLastXPH = config.getSetting('guildMembersShowLastXPH', true);
+        const showLastDayXPH = config.getSetting('guildMembersShowLastDayXPH', true);
+        const showLastActive = config.getSetting('guildMembersShowLastActive', true);
+
+        // Joined column — Status tab only
+        if (isStatusTab) {
+            if (showJoined) {
+                addColumn(tableEl, {
+                    name: 'Joined',
+                    insertAfter,
+                    data: allStats.map((s) => s.joinTime),
+                    format: (v) =>
+                        v
+                            ? `<span style="white-space: nowrap;">${formatDateTime(new Date(v), { includeTime: false, includeYear: true })}</span>`
+                            : '',
+                    makeSortable: true,
+                    sortId: 'joinTime',
+                    sortData: allStats.map((s) => (s.joinTime ? +new Date(s.joinTime) : 0)),
+                });
+            }
+            return;
+        }
+
+        // Contributions tab columns
+        let colOffset = 0;
 
         // Game Mode column
-        addColumn(tableEl, {
-            name: 'Game Mode',
-            insertAfter,
-            data: allStats.map((s) => s.gameMode),
-            format: (v) => gameModes[v] || v || '',
-            makeSortable: true,
-            sortId: 'gameMode',
-            sortData: allStats.map((s) => s.gameMode || ''),
-        });
+        if (showGameMode) {
+            addColumn(tableEl, {
+                name: 'Game Mode',
+                insertAfter,
+                data: allStats.map((s) => s.gameMode),
+                format: (v) => gameModes[v] || v || '',
+                makeSortable: true,
+                sortId: 'gameMode',
+                sortData: allStats.map((s) => s.gameMode || ''),
+            });
+            colOffset++;
+        }
+        if (showLastXPH) {
+            addColumn(tableEl, {
+                name: 'Last XP/h',
+                insertAfter: insertAfter + colOffset,
+                data: allStats.map((s) => s.lastXPH),
+                format: (v, i) => {
+                    if (!v || v <= 0) return '';
+                    return `${fNum(v)} ${rankBadge(allStats[i].lastXPH_rank)}`;
+                },
+                makeSortable: true,
+                sortId: 'lastXPH',
+                sortData: allStats.map((s) => s.lastXPH),
+            });
+            colOffset++;
+        }
 
-        // Joined column
-        addColumn(tableEl, {
-            name: 'Joined',
-            insertAfter: insertAfter + 1,
-            data: allStats.map((s) => s.joinTime),
-            format: (v) =>
-                v
-                    ? `<span style="white-space: nowrap;">${formatDateTime(new Date(v), { includeTime: false, includeYear: true })}</span>`
-                    : '',
-            makeSortable: true,
-            sortId: 'joinTime',
-            sortData: allStats.map((s) => (s.joinTime ? +new Date(s.joinTime) : 0)),
-        });
+        // Last day XP/h column — Contributions tab
+        if (showLastDayXPH) {
+            addColumn(tableEl, {
+                name: 'Last day XP/h',
+                insertAfter: insertAfter + colOffset,
+                data: allStats.map((s) => s.lastDayXPH),
+                format: (v, i) => {
+                    if (!v || v <= 0) return '';
+                    return `${fNum(v)} ${rankBadge(allStats[i].lastDayXPH_rank)}`;
+                },
+                makeSortable: true,
+                sortId: 'lastDayXPH',
+                sortData: allStats.map((s) => s.lastDayXPH),
+            });
+            colOffset++;
+        }
 
-        // Last XP/h column
-        addColumn(tableEl, {
-            name: 'Last XP/h',
-            insertAfter: insertAfter + 2,
-            data: allStats.map((s) => s.lastXPH),
-            format: (v, i) => {
-                if (!v || v <= 0) return '';
-                return `${fNum(v)} ${rankBadge(allStats[i].lastXPH_rank)}`;
-            },
-            makeSortable: true,
-            sortId: 'lastXPH',
-            sortData: allStats.map((s) => s.lastXPH),
-        });
-
-        // Last day XP/h column
-        addColumn(tableEl, {
-            name: 'Last day XP/h',
-            insertAfter: insertAfter + 3,
-            data: allStats.map((s) => s.lastDayXPH),
-            format: (v, i) => {
-                if (!v || v <= 0) return '';
-                return `${fNum(v)} ${rankBadge(allStats[i].lastDayXPH_rank)}`;
-            },
-            makeSortable: true,
-            sortId: 'lastDayXPH',
-            sortData: allStats.map((s) => s.lastDayXPH),
-        });
-
-        // Activity column
-        addColumn(tableEl, {
-            name: 'Activity',
-            insertAfter: insertAfter + 4,
-            data: allStats.map((s) => ({
-                inactiveTime: s.inactiveTime,
-                isOnline: s.isOnline,
-                hide: s.hideOnlineStatus,
-            })),
-            format: (v) => {
-                if (v.hide) return '–';
-                if (v.isOnline) return '<span style="color:#4ade80; font-size:14px;" title="Online">●</span>';
-                if (!v.inactiveTime) return '–';
-                const ms = Date.now() - new Date(v.inactiveTime).getTime();
-                const days = Math.floor(ms / 86400000);
-                const hours = Math.floor(ms / 3600000);
-                const mins = Math.floor(ms / 60000);
-                if (days > 0) return `${days}d ago`;
-                if (hours > 0) return `${hours}h ago`;
-                return mins > 0 ? `${mins}m ago` : 'just now';
-            },
-            makeSortable: true,
-            sortId: 'activityTime',
-            sortData: allStats.map((s) => {
-                if (s.hideOnlineStatus) return Infinity;
-                if (s.isOnline) return 0;
-                if (!s.inactiveTime) return Infinity;
-                return Date.now() - new Date(s.inactiveTime).getTime();
-            }),
-        });
+        // Last Active column — Contributions tab
+        if (showLastActive) {
+            addColumn(tableEl, {
+                name: 'Last Active',
+                insertAfter: insertAfter + colOffset,
+                data: allStats.map((s) => ({
+                    inactiveTime: s.inactiveTime,
+                    isOnline: s.isOnline,
+                    hide: s.hideOnlineStatus,
+                })),
+                format: (v) => {
+                    if (v.hide) return '–';
+                    if (v.isOnline) return '<span style="color:#4ade80; font-size:14px;" title="Online">●</span>';
+                    if (!v.inactiveTime) return '–';
+                    const ms = Date.now() - new Date(v.inactiveTime).getTime();
+                    const days = Math.floor(ms / 86400000);
+                    const hours = Math.floor(ms / 3600000);
+                    const mins = Math.floor(ms / 60000);
+                    if (days > 0) return `${days}d ago`;
+                    if (hours > 0) return `${hours}h ago`;
+                    return mins > 0 ? `${mins}m ago` : 'just now';
+                },
+                makeSortable: true,
+                sortId: 'activityTime',
+                sortData: allStats.map((s) => {
+                    if (s.hideOnlineStatus) return Infinity;
+                    if (s.isOnline) return 0;
+                    if (!s.inactiveTime) return Infinity;
+                    return Date.now() - new Date(s.inactiveTime).getTime();
+                }),
+            });
+        }
 
         // Make existing columns sortable
         const nameHeader = theadTr.children[0];

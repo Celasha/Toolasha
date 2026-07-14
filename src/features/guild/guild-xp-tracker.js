@@ -218,6 +218,7 @@ class GuildXPTracker {
         this.ownGuildName = null;
         this.ownGuildID = null;
         this.guildCreatedAt = null;
+        this.guildType = null;
         this.currentWeekStartAt = null;
         this.guildXPHistory = {}; // guildName → [{t, xp}]
         this.memberXPHistory = {}; // characterID → [{t, xp}]
@@ -276,6 +277,7 @@ class GuildXPTracker {
         const guildXP = guild.experience;
         this.ownGuildName = guildName;
         this.guildCreatedAt = guild.createdAt;
+        this.guildType = guild.guildType || null;
         this.currentWeekStartAt = guild.currentWeekStartAt || null;
 
         // Extract guild ID and member metadata
@@ -346,6 +348,7 @@ class GuildXPTracker {
         const name = guild.name;
         this.ownGuildName = name;
         this.guildCreatedAt = guild.createdAt;
+        this.guildType = guild.guildType || this.guildType;
         this.currentWeekStartAt = guild.currentWeekStartAt || this.currentWeekStartAt;
 
         if (!this.guildXPHistory[name]) {
@@ -526,6 +529,14 @@ class GuildXPTracker {
      */
     getCurrentWeekStartAt() {
         return this.currentWeekStartAt;
+    }
+
+    /**
+     * Get the guild type ('standard', 'ironcow', etc.)
+     * @returns {string|null}
+     */
+    getGuildType() {
+        return this.guildType;
     }
 
     /**
