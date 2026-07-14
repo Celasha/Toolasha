@@ -1,5 +1,23 @@
 # Changelog
 
+## [2.71.0](https://github.com/Celasha/Toolasha/compare/v2.70.2...v2.71.0) (2026-07-14)
+
+
+### Features
+
+* show unsigned trial members list in guild Trials tab ([2fc01ce](https://github.com/Celasha/Toolasha/commit/2fc01ceb574df0fe311a3e6a13e283f4507e3dec))
+
+
+### Bug Fixes
+
+* add Activity column to guild Contributions tab ([7c70384](https://github.com/Celasha/Toolasha/commit/7c703843a88466bfeadb7321c72a274d29710539))
+* sort Weekly XP column numerically with K/M suffix support ([6687524](https://github.com/Celasha/Toolasha/commit/66875241f18e849289c65e47e2ef8906fe23cef7))
+
+
+### Miscellaneous Chores
+
+* remove loadoutSort feature superseded by native game drag-and-drop ([b44502c](https://github.com/Celasha/Toolasha/commit/b44502cff80e8a0d863ccb706f6249850f1607c6))
+
 ## [2.70.2](https://github.com/Celasha/Toolasha/compare/v2.70.1...v2.70.2) (2026-07-13)
 
 ### Bug Fixes
