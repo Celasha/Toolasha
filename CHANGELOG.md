@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.71.1](https://github.com/Celasha/Toolasha/compare/v2.71.0...v2.71.1) (2026-07-14)
+
+### Bug Fixes
+
+- unify action panel into a single scroll container ([1139933](https://github.com/Celasha/Toolasha/commit/1139933f0e218e21cfdd0180fc7228f1289ea21e))
+
 ## [2.71.0](https://github.com/Celasha/Toolasha/compare/v2.70.2...v2.71.0) (2026-07-14)
 
 ### Features
