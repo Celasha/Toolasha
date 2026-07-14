@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.70.2
+ * Version: 2.71.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -2162,12 +2162,6 @@
                     type: 'checkbox',
                     default: true,
                 },
-                loadout_sortEnabled: {
-                    id: 'loadout_sortEnabled',
-                    label: 'Loadout panel: Enable drag-and-drop reordering',
-                    type: 'checkbox',
-                    default: true,
-                },
                 loadoutSnapshot: {
                     id: 'loadoutSnapshot',
                     label: 'Loadout panel: Use saved loadout snapshots in profit calculations',
@@ -2458,6 +2452,13 @@
                     type: 'checkbox',
                     default: true,
                     help: 'Displays XP/hr rates, rankings, and a weekly chart on the Guild Overview, Members, and Guild Leaderboard tabs. Disable the standalone Guild XP/h userscript if using this.',
+                },
+                guildTrialSignupDisplay: {
+                    id: 'guildTrialSignupDisplay',
+                    label: 'Guild Trials: Show unsigned members list',
+                    type: 'checkbox',
+                    default: true,
+                    help: "Displays which guild members have not yet signed up for the current week's skilling and combat trials.",
                 },
             },
         },
