@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.71.0
+ * Version: 2.71.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -10030,20 +10030,24 @@
                     lastInserted.insertAdjacentElement('afterend', levelProgressSection);
                 }
 
-                // Constrain action container height so it scrolls rather than overflowing off-screen
+                // Merge top and bottom into a single scrolling unit.
+                // The game splits the panel into a scrollable top (SkillActionDetail_content)
+                // and a fixed bottom (SkillActionDetail_actionContainer). We unify them by:
+                // 1. Removing the top section's independent scroll
+                // 2. Removing our previous bottom-only scroll constraint
+                // 3. Constraining the parent (regularComponent) as the single scroll container
                 const actionContainer = inputContainer.parentElement;
                 const regularComponent = actionContainer?.closest('[class*="SkillActionDetail_regularComponent"]');
                 if (actionContainer && regularComponent) {
-                    const nameHeight =
-                        regularComponent.querySelector('[class*="SkillActionDetail_name"]')?.offsetHeight || 0;
-                    const contentHeight =
-                        regularComponent.querySelector('[class*="SkillActionDetail_content"]')?.clientHeight || 0;
-                    const available = Math.max(
-                        200,
-                        Math.floor(window.innerHeight * 0.96 - nameHeight - contentHeight - 16)
-                    );
-                    actionContainer.style.maxHeight = available + 'px';
-                    actionContainer.style.overflowY = 'auto';
+                    const contentEl = regularComponent.querySelector('[class*="SkillActionDetail_content"]');
+                    if (contentEl) {
+                        contentEl.style.overflow = 'visible';
+                    }
+                    actionContainer.style.maxHeight = '';
+                    actionContainer.style.overflowY = '';
+                    const maxH = Math.max(300, Math.floor(window.innerHeight * 0.96 - 20));
+                    regularComponent.style.maxHeight = maxH + 'px';
+                    regularComponent.style.overflowY = 'auto';
                 }
             } catch (error) {
                 console.error('[Toolasha] Error injecting quick input buttons:', error);
@@ -10060,9 +10064,11 @@
             this.cleanupRegistry.cleanupAll();
             document.querySelectorAll('.mwi-collapsible-section').forEach((section) => section.remove());
             document.querySelectorAll('.mwi-quick-input-btn').forEach((button) => button.remove());
-            document.querySelectorAll('[class*="SkillActionDetail_actionContainer"]').forEach((el) => {
+            document.querySelectorAll('[class*="SkillActionDetail_regularComponent"]').forEach((el) => {
                 el.style.maxHeight = '';
                 el.style.overflowY = '';
+                const content = el.querySelector('[class*="SkillActionDetail_content"]');
+                if (content) content.style.overflow = '';
             });
             this.isInitialized = false;
         }
