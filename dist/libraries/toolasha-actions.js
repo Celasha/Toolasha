@@ -1,7 +1,7 @@
 /**
  * Toolasha Actions Library
  * Production, gathering, and alchemy features
- * Version: 2.72.0
+ * Version: 2.72.1
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -11179,8 +11179,8 @@
             };
             config.onSettingChange('profitCalc_pricingMode', this.pricingModeHandler);
             config.onSettingChange('actionPanel_maxProduceable', () => this.updateAllCounts());
-            config.onSettingChange('actionPanel_showProfitPerHour', () => this.updateAllCounts());
-            config.onSettingChange('actionPanel_showExpPerHour', () => this.updateAllCounts());
+            config.onSettingChange('actionPanel_showProfitPerHour_production', () => this.updateAllCounts());
+            config.onSettingChange('actionPanel_showExpPerHour_production', () => this.updateAllCounts());
         }
 
         /**
@@ -11297,6 +11297,19 @@
 
                 this.scheduleStatsLayoutSync(actionPanel, display);
                 this.getResizeObserver().observe(display);
+            }
+
+            // Create pin icon only when the pinned page feature is enabled
+            if (!config.getSetting('actions_pinnedPage')) {
+                this.actionElements.set(actionPanel, {
+                    actionHrid,
+                    displayElement: display,
+                    pinElement: null,
+                });
+                if (display) {
+                    this.updateCount(actionPanel);
+                }
+                return;
             }
 
             // Create pin icon (for ALL actions - gathering and production)
@@ -11554,8 +11567,8 @@
             // can size each line immediately — avoids the multi-second flash of tiny
             // unsized text that occurred when sizing was deferred to addBestActionIndicators.
             const showMaxProduceable = config.getSetting('actionPanel_maxProduceable');
-            const showProfit = config.getSetting('actionPanel_showProfitPerHour');
-            const showExp = config.getSetting('actionPanel_showExpPerHour');
+            const showProfit = config.getSetting('actionPanel_showProfitPerHour_production');
+            const showExp = config.getSetting('actionPanel_showExpPerHour_production');
 
             let html = '';
 
@@ -12081,7 +12094,10 @@
                 return;
             }
 
-            if (!config.getSetting('actionPanel_showProfitPerHour') && !config.getSetting('actionPanel_showExpPerHour')) {
+            if (
+                !config.getSetting('actionPanel_showProfitPerHour_gathering') &&
+                !config.getSetting('actionPanel_showExpPerHour_gathering')
+            ) {
                 return;
             }
 
@@ -12119,8 +12135,8 @@
                 this.updateAllStats();
             };
             config.onSettingChange('profitCalc_pricingMode', this.pricingModeHandler);
-            config.onSettingChange('actionPanel_showProfitPerHour', () => this.updateAllStats());
-            config.onSettingChange('actionPanel_showExpPerHour', () => this.updateAllStats());
+            config.onSettingChange('actionPanel_showProfitPerHour_gathering', () => this.updateAllStats());
+            config.onSettingChange('actionPanel_showExpPerHour_gathering', () => this.updateAllStats());
         }
 
         /**
@@ -12509,8 +12525,8 @@
          */
         renderIndicators(actionPanel, data) {
             const { profitPerHour, expPerHour } = data;
-            const showProfit = config.getSetting('actionPanel_showProfitPerHour');
-            const showExp = config.getSetting('actionPanel_showExpPerHour');
+            const showProfit = config.getSetting('actionPanel_showProfitPerHour_gathering');
+            const showExp = config.getSetting('actionPanel_showExpPerHour_gathering');
             let html = '';
 
             if (showProfit && profitPerHour !== null) {
