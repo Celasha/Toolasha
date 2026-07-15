@@ -69,6 +69,7 @@ import xphCalculator from '../features/enhancement/xph-calculator.js';
 // Guild
 import guildXPTracker from '../features/guild/guild-xp-tracker.js';
 import guildXPDisplay from '../features/guild/guild-xp-display.js';
+import guildCreditValue from '../features/guild/guild-credit-value.js';
 
 // Notifications
 import emptyQueueNotification from '../features/notifications/empty-queue-notification.js';
@@ -129,6 +130,7 @@ toolashaRoot.UI = {
     xphCalculator,
     guildXPTracker,
     guildXPDisplay,
+    guildCreditValue,
     emptyQueueNotification,
     queueMonitor,
     pformancePanel,

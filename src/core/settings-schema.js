@@ -1926,6 +1926,13 @@ export const settingsGroups = {
                 default: true,
                 help: 'Shows online status or time since last activity (Contributions tab).',
             },
+            guildCreditValue: {
+                id: 'guildCreditValue',
+                label: 'Guild Shop: Show gold cost per credit table',
+                type: 'checkbox',
+                default: true,
+                help: 'Injects a cost-efficiency table into each guild credit exchange modal, sorted cheapest first using your profit pricing mode.',
+            },
         },
     },
 

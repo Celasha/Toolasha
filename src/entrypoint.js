@@ -661,6 +661,13 @@ function registerFeatures() {
             async: false,
         },
         {
+            key: 'guildCreditValue',
+            name: 'Guild Credit Value',
+            category: 'Guild',
+            module: UI.guildCreditValue,
+            async: false,
+        },
+        {
             key: 'emptyQueueNotification',
             name: 'Empty Queue Notification',
             category: 'Notifications',
