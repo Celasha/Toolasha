@@ -109,8 +109,8 @@ class MaxProduceable {
         };
         config.onSettingChange('profitCalc_pricingMode', this.pricingModeHandler);
         config.onSettingChange('actionPanel_maxProduceable', () => this.updateAllCounts());
-        config.onSettingChange('actionPanel_showProfitPerHour', () => this.updateAllCounts());
-        config.onSettingChange('actionPanel_showExpPerHour', () => this.updateAllCounts());
+        config.onSettingChange('actionPanel_showProfitPerHour_production', () => this.updateAllCounts());
+        config.onSettingChange('actionPanel_showExpPerHour_production', () => this.updateAllCounts());
     }
 
     /**
@@ -497,8 +497,8 @@ class MaxProduceable {
         // can size each line immediately — avoids the multi-second flash of tiny
         // unsized text that occurred when sizing was deferred to addBestActionIndicators.
         const showMaxProduceable = config.getSetting('actionPanel_maxProduceable');
-        const showProfit = config.getSetting('actionPanel_showProfitPerHour');
-        const showExp = config.getSetting('actionPanel_showExpPerHour');
+        const showProfit = config.getSetting('actionPanel_showProfitPerHour_production');
+        const showExp = config.getSetting('actionPanel_showExpPerHour_production');
 
         let html = '';
 

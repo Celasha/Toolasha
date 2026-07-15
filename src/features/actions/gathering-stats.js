@@ -40,7 +40,10 @@ class GatheringStats {
             return;
         }
 
-        if (!config.getSetting('actionPanel_showProfitPerHour') && !config.getSetting('actionPanel_showExpPerHour')) {
+        if (
+            !config.getSetting('actionPanel_showProfitPerHour_gathering') &&
+            !config.getSetting('actionPanel_showExpPerHour_gathering')
+        ) {
             return;
         }
 
@@ -78,8 +81,8 @@ class GatheringStats {
             this.updateAllStats();
         };
         config.onSettingChange('profitCalc_pricingMode', this.pricingModeHandler);
-        config.onSettingChange('actionPanel_showProfitPerHour', () => this.updateAllStats());
-        config.onSettingChange('actionPanel_showExpPerHour', () => this.updateAllStats());
+        config.onSettingChange('actionPanel_showProfitPerHour_gathering', () => this.updateAllStats());
+        config.onSettingChange('actionPanel_showExpPerHour_gathering', () => this.updateAllStats());
     }
 
     /**
@@ -468,8 +471,8 @@ class GatheringStats {
      */
     renderIndicators(actionPanel, data) {
         const { profitPerHour, expPerHour } = data;
-        const showProfit = config.getSetting('actionPanel_showProfitPerHour');
-        const showExp = config.getSetting('actionPanel_showExpPerHour');
+        const showProfit = config.getSetting('actionPanel_showProfitPerHour_gathering');
+        const showExp = config.getSetting('actionPanel_showExpPerHour_gathering');
         let html = '';
 
         if (showProfit && profitPerHour !== null) {

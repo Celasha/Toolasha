@@ -246,12 +246,19 @@ export const settingsGroups = {
                 default: true,
                 help: 'Displays how many items you can make based on current inventory',
             },
-            actionPanel_showProfitPerHour: {
-                id: 'actionPanel_showProfitPerHour',
-                label: 'Action page: Show profit/hr on tiles',
+            actionPanel_showProfitPerHour_gathering: {
+                id: 'actionPanel_showProfitPerHour_gathering',
+                label: 'Action page: Show profit/hr on gathering tiles',
                 type: 'checkbox',
                 default: true,
-                help: 'Displays profit/hr on each action tile in the action list page',
+                help: 'Displays profit/hr on gathering action tiles (Foraging, Woodcutting, etc.)',
+            },
+            actionPanel_showProfitPerHour_production: {
+                id: 'actionPanel_showProfitPerHour_production',
+                label: 'Action page: Show profit/hr on production tiles',
+                type: 'checkbox',
+                default: true,
+                help: 'Displays profit/hr on production action tiles (Crafting, Tailoring, etc.)',
             },
             actionPanel_showProfitDetail: {
                 id: 'actionPanel_showProfitDetail',
@@ -274,12 +281,19 @@ export const settingsGroups = {
                 default: true,
                 help: 'Displays speed breakdown, efficiency, and total time inside action panels',
             },
-            actionPanel_showExpPerHour: {
-                id: 'actionPanel_showExpPerHour',
-                label: 'Action page: Show exp/hr on tiles',
+            actionPanel_showExpPerHour_gathering: {
+                id: 'actionPanel_showExpPerHour_gathering',
+                label: 'Action page: Show exp/hr on gathering tiles',
                 type: 'checkbox',
                 default: true,
-                help: 'Displays exp/hr on each action tile in the action list page',
+                help: 'Displays exp/hr on gathering action tiles (Foraging, Woodcutting, etc.)',
+            },
+            actionPanel_showExpPerHour_production: {
+                id: 'actionPanel_showExpPerHour_production',
+                label: 'Action page: Show exp/hr on production tiles',
+                type: 'checkbox',
+                default: true,
+                help: 'Displays exp/hr on production action tiles (Crafting, Tailoring, etc.)',
             },
             actionPanel_hideNegativeProfit: {
                 id: 'actionPanel_hideNegativeProfit',

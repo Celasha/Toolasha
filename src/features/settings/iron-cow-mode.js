@@ -43,7 +43,8 @@ export const IRON_COW_SETTINGS = new Set([
     // Profit / pricing calculations
     'profitCalc_pricingMode',
     'profitCalc_pricingNaming',
-    'actionPanel_showProfitPerHour',
+    'actionPanel_showProfitPerHour_gathering',
+    'actionPanel_showProfitPerHour_production',
     'actionPanel_showProfitDetail',
     'actionPanel_foragingTotal',
     'actionPanel_hideNegativeProfit',
