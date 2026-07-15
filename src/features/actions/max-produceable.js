@@ -75,10 +75,6 @@ class MaxProduceable {
             return;
         }
 
-        if (!config.getSetting('actionPanel_maxProduceable')) {
-            return;
-        }
-
         this.isInitialized = true;
 
         // Initialize shared sort manager
