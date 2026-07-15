@@ -363,6 +363,7 @@ class GuildXPDisplay {
         this.initialized = false;
         this.unregisterObservers = [];
         this.timerRegistry = createTimerRegistry();
+        this._activityCellCache = {};
     }
 
     initialize() {
@@ -628,10 +629,46 @@ class GuildXPDisplay {
         const showJoined = config.getSetting('guildMembersShowJoined', true);
         const showLastXPH = config.getSetting('guildMembersShowLastXPH', true);
         const showLastDayXPH = config.getSetting('guildMembersShowLastDayXPH', true);
-        const showLastActive = config.getSetting('guildMembersShowLastActive', true);
+        const activityTab = config.getSettingValue('guildMembersActivityTab', 'contributions');
 
         // Joined column — Status tab only
         if (isStatusTab) {
+            // Snapshot the game's native Activity cell HTML for each member so we can
+            // replay it verbatim on the Contributions tab (sprites, "Xd ago" text, etc.)
+            const activityColIdx = activityIndex;
+            for (const row of rows) {
+                const name = row.children[0]?.textContent?.trim();
+                const cell = row.children[activityColIdx];
+                if (name && cell) {
+                    this._activityCellCache[name] = cell.innerHTML;
+                }
+            }
+
+            let styleEl = document.getElementById('mwi-guild-activity-hide');
+            if (!styleEl) {
+                styleEl = document.createElement('style');
+                styleEl.id = 'mwi-guild-activity-hide';
+                document.head.appendChild(styleEl);
+            }
+            if (activityTab === 'contributions') {
+                styleEl.textContent = `
+                    [class*="GuildPanel_activity"] { display: none !important; }`;
+            } else {
+                styleEl.textContent = '';
+            }
+
+            if (showGameMode) {
+                addColumn(tableEl, {
+                    name: 'Game Mode',
+                    insertAfter,
+                    data: allStats.map((s) => s.gameMode),
+                    format: (v) => gameModes[v] || v || '',
+                    makeSortable: true,
+                    sortId: 'gameMode',
+                    sortData: allStats.map((s) => s.gameMode || ''),
+                });
+            }
+
             if (showJoined) {
                 addColumn(tableEl, {
                     name: 'Joined',
@@ -652,19 +689,6 @@ class GuildXPDisplay {
         // Contributions tab columns
         let colOffset = 0;
 
-        // Game Mode column
-        if (showGameMode) {
-            addColumn(tableEl, {
-                name: 'Game Mode',
-                insertAfter,
-                data: allStats.map((s) => s.gameMode),
-                format: (v) => gameModes[v] || v || '',
-                makeSortable: true,
-                sortId: 'gameMode',
-                sortData: allStats.map((s) => s.gameMode || ''),
-            });
-            colOffset++;
-        }
         if (showLastXPH) {
             addColumn(tableEl, {
                 name: 'Last XP/h',
@@ -698,17 +722,20 @@ class GuildXPDisplay {
             colOffset++;
         }
 
-        // Last Active column — Contributions tab
-        if (showLastActive) {
+        // Activity column — Contributions tab (uses cached HTML from game's Status tab render)
+        if (activityTab !== 'status') {
             addColumn(tableEl, {
-                name: 'Last Active',
+                name: 'Activity',
                 insertAfter: insertAfter + colOffset,
                 data: allStats.map((s) => ({
+                    cached: this._activityCellCache[s.name] ?? null,
                     inactiveTime: s.inactiveTime,
                     isOnline: s.isOnline,
                     hide: s.hideOnlineStatus,
                 })),
                 format: (v) => {
+                    if (v.cached !== null) return v.cached;
+                    // Fallback: text-based when Status tab hasn't been visited this session
                     if (v.hide) return '–';
                     if (v.isOnline) return '<span style="color:#4ade80; font-size:14px;" title="Online">●</span>';
                     if (!v.inactiveTime) return '–';
@@ -1096,6 +1123,7 @@ class GuildXPDisplay {
         // Remove all injected elements
         document.querySelectorAll(`.${CSS_PREFIX}`).forEach((el) => el.remove());
         document.querySelectorAll(`.${CSS_PREFIX}__tooltip`).forEach((el) => el.remove());
+        document.getElementById('mwi-guild-activity-hide')?.remove();
 
         this.initialized = false;
     }

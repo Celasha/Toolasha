@@ -1891,12 +1891,24 @@ export const settingsGroups = {
                 default: true,
                 help: "Displays which guild members have not yet signed up for the current week's skilling and combat trials.",
             },
+            guildMembersActivityTab: {
+                id: 'guildMembersActivityTab',
+                label: 'Guild Members: Show Activity column on',
+                type: 'select',
+                default: 'contributions',
+                options: [
+                    { value: 'status', label: 'Status tab only (native)' },
+                    { value: 'contributions', label: 'Contributions tab only' },
+                    { value: 'both', label: 'Both tabs' },
+                ],
+                help: 'Controls where the Activity column appears. "Contributions tab only" hides the native column on Status and shows it on Contributions instead.',
+            },
             guildMembersShowGameMode: {
                 id: 'guildMembersShowGameMode',
                 label: 'Guild Members: Show Game Mode column',
                 type: 'checkbox',
                 default: false,
-                help: 'Shows the MC/IC/LC game mode column. Disable if all members play the same mode.',
+                help: 'Shows the MC/IC/LC game mode column (Status tab).',
             },
             guildMembersShowJoined: {
                 id: 'guildMembersShowJoined',
@@ -1918,13 +1930,6 @@ export const settingsGroups = {
                 type: 'checkbox',
                 default: true,
                 help: 'Shows 24-hour average XP/hr tracked by Toolasha (Contributions tab).',
-            },
-            guildMembersShowLastActive: {
-                id: 'guildMembersShowLastActive',
-                label: 'Guild Members: Show Last Active column',
-                type: 'checkbox',
-                default: true,
-                help: 'Shows online status or time since last activity (Contributions tab).',
             },
             guildCreditValue: {
                 id: 'guildCreditValue',
