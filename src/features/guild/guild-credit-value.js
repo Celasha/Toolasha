@@ -145,16 +145,38 @@ class GuildCreditValue {
 
         if (rows.length === 0) return;
 
-        // Sort by sell side cheapest first (null last)
-        rows.sort((a, b) => {
-            if (a.sellGPC === null && b.sellGPC === null) return 0;
-            if (a.sellGPC === null) return 1;
-            if (b.sellGPC === null) return -1;
-            return a.sellGPC - b.sellGPC;
-        });
-
         const exchangeBtn = modalEl.querySelector('button');
         if (!exchangeBtn) return;
+
+        let sortKey = 'ask';
+
+        const buildTbody = () => {
+            const sorted = [...rows].sort((a, b) => {
+                const aVal = sortKey === 'bid' ? a.buyGPC : a.sellGPC;
+                const bVal = sortKey === 'bid' ? b.buyGPC : b.sellGPC;
+                if (aVal === null && bVal === null) return 0;
+                if (aVal === null) return 1;
+                if (bVal === null) return -1;
+                return aVal - bVal;
+            });
+            const tbody = document.createElement('tbody');
+            sorted.forEach((row, i) => {
+                const isTop = i === 0;
+                const tr = document.createElement('tr');
+                tr.style.cssText = `border-bottom:1px solid rgba(255,255,255,0.05); color:${isTop ? '#4ade80' : '#e0e0e0'};`;
+                const rate = row.creditCount === 1 ? `${row.itemCount} → 1` : `${row.itemCount} → ${row.creditCount}`;
+                tr.innerHTML = `
+                    <td style="padding:4px 6px; text-align:left;">${row.name}</td>
+                    <td style="padding:4px 6px; text-align:center; color:#9ca3af;">${rate}</td>
+                    <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.sellPrice ? formatKMB(row.sellPrice) : '–'}</td>
+                    <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.buyPrice ? formatKMB(row.buyPrice) : '–'}</td>
+                    <td style="padding:4px 6px; text-align:right; ${sortKey === 'bid' ? 'color:#9ca3af;' : `font-weight:${isTop ? '700' : '400'};`}">${row.sellGPC ? formatKMB(row.sellGPC) : '–'}</td>
+                    <td style="padding:4px 6px; text-align:right; ${sortKey === 'ask' ? 'color:#9ca3af;' : `font-weight:${isTop ? '700' : '400'};`}">${row.buyGPC ? formatKMB(row.buyGPC) : '–'}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+            return tbody;
+        };
 
         const wrapper = document.createElement('div');
         wrapper.className = CSS_CLASS;
@@ -162,40 +184,60 @@ class GuildCreditValue {
 
         const hdr = document.createElement('div');
         hdr.style.cssText = 'font-size:11px; color:#9ca3af; margin-bottom:6px; text-align:center;';
-        hdr.textContent = 'Gold cost per credit — cheapest ask first';
+        hdr.textContent = 'Gold cost per credit — click to sort';
         wrapper.appendChild(hdr);
 
         const table = document.createElement('table');
         table.style.cssText = 'width:100%; border-collapse:collapse;';
-        table.innerHTML = `
-            <thead>
-                <tr style="color:#6b7280; font-size:11px; border-bottom:1px solid rgba(255,255,255,0.1);">
-                    <th style="text-align:left; padding:3px 6px; font-weight:500;">Item</th>
-                    <th style="text-align:center; padding:3px 6px; font-weight:500;">Rate</th>
-                    <th style="text-align:right; padding:3px 6px; font-weight:500;">Ask ea.</th>
-                    <th style="text-align:right; padding:3px 6px; font-weight:500;">Bid ea.</th>
-                    <th style="text-align:right; padding:3px 6px; font-weight:500;">Ask/credit</th>
-                    <th style="text-align:right; padding:3px 6px; font-weight:500;">Bid/credit</th>
-                </tr>
-            </thead>
-        `;
 
-        const tbody = document.createElement('tbody');
-        rows.forEach((row, i) => {
-            const tr = document.createElement('tr');
-            tr.style.cssText = `border-bottom:1px solid rgba(255,255,255,0.05); color:${i === 0 ? '#4ade80' : '#e0e0e0'};`;
-            const rate = row.creditCount === 1 ? `${row.itemCount} → 1` : `${row.itemCount} → ${row.creditCount}`;
-            tr.innerHTML = `
-                <td style="padding:4px 6px; text-align:left;">${row.name}</td>
-                <td style="padding:4px 6px; text-align:center; color:#9ca3af;">${rate}</td>
-                <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.sellPrice ? formatKMB(row.sellPrice) : '–'}</td>
-                <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.buyPrice ? formatKMB(row.buyPrice) : '–'}</td>
-                <td style="padding:4px 6px; text-align:right; font-weight:${i === 0 ? '700' : '400'};">${row.sellGPC ? formatKMB(row.sellGPC) : '–'}</td>
-                <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.buyGPC ? formatKMB(row.buyGPC) : '–'}</td>
-            `;
-            tbody.appendChild(tr);
+        const thead = document.createElement('thead');
+        const thRow = document.createElement('tr');
+        thRow.style.cssText = 'font-size:11px; border-bottom:1px solid rgba(255,255,255,0.1);';
+
+        [
+            { text: 'Item', align: 'left' },
+            { text: 'Rate', align: 'center' },
+            { text: 'Ask ea.', align: 'right' },
+            { text: 'Bid ea.', align: 'right' },
+        ].forEach(({ text, align }) => {
+            const th = document.createElement('th');
+            th.style.cssText = `text-align:${align}; padding:3px 6px; font-weight:500; color:#6b7280;`;
+            th.textContent = text;
+            thRow.appendChild(th);
         });
-        table.appendChild(tbody);
+
+        const askTh = document.createElement('th');
+        askTh.textContent = 'Ask/credit';
+        const bidTh = document.createElement('th');
+        bidTh.textContent = 'Bid/credit';
+        thRow.appendChild(askTh);
+        thRow.appendChild(bidTh);
+        thead.appendChild(thRow);
+        table.appendChild(thead);
+
+        const updateThStyles = () => {
+            const isAsk = sortKey === 'ask';
+            const active = 'font-weight:600; color:#e0e0e0; text-decoration:underline;';
+            const inactive = 'font-weight:500; color:#6b7280;';
+            askTh.style.cssText = `text-align:right; padding:3px 6px; cursor:pointer; ${isAsk ? active : inactive}`;
+            bidTh.style.cssText = `text-align:right; padding:3px 6px; cursor:pointer; ${!isAsk ? active : inactive}`;
+        };
+        updateThStyles();
+
+        let currentTbody = buildTbody();
+        table.appendChild(currentTbody);
+
+        const setSort = (key) => {
+            sortKey = key;
+            updateThStyles();
+            const newTbody = buildTbody();
+            table.replaceChild(newTbody, currentTbody);
+            currentTbody = newTbody;
+        };
+
+        askTh.addEventListener('click', () => setSort('ask'));
+        bidTh.addEventListener('click', () => setSort('bid'));
+
         wrapper.appendChild(table);
         exchangeBtn.insertAdjacentElement('afterend', wrapper);
     }
@@ -270,77 +312,128 @@ class GuildCreditValue {
 
         if (rows.length === 0) return;
 
+        let sortKey = 'ask';
+
+        const buildTbody = () => {
+            const tbody = document.createElement('tbody');
+            rows.forEach((row) => {
+                const tr = document.createElement('tr');
+                tr.style.cssText = 'border-bottom:1px solid rgba(255,255,255,0.05); color:#e0e0e0;';
+                tr.innerHTML = `
+                    <td style="padding:4px 6px; text-align:left;">${row.itemName}</td>
+                    <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.required.toLocaleString()}</td>
+                    <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.sellEach ? formatKMB(row.sellEach) : '–'}</td>
+                    <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.buyEach ? formatKMB(row.buyEach) : '–'}</td>
+                    <td style="padding:4px 6px; text-align:right;">${row.sellSub ? formatKMB(row.sellSub) : '–'}</td>
+                    <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.buySub ? formatKMB(row.buySub) : '–'}</td>
+                `;
+                tbody.appendChild(tr);
+
+                if (row.isCredit && row.creditHrid) {
+                    const options = [...(topConversions[row.creditHrid] || [])];
+                    options.sort((a, b) => {
+                        const aVal = sortKey === 'bid' ? a.bidGPC : a.askGPC;
+                        const bVal = sortKey === 'bid' ? b.bidGPC : b.askGPC;
+                        if (aVal === null && bVal === null) return 0;
+                        if (aVal === null) return 1;
+                        if (bVal === null) return -1;
+                        return aVal - bVal;
+                    });
+                    options.forEach((opt, idx) => {
+                        const qtyNeeded = Math.ceil(row.required / opt.creditCount) * opt.itemCount;
+                        const askTotal = opt.askPrice ? opt.askPrice * qtyNeeded : null;
+                        const bidTotal = opt.bidPrice ? opt.bidPrice * qtyNeeded : null;
+                        const isTop = idx === 0;
+                        const nameColor = isTop ? '#4ade80' : '#9ca3af';
+                        const rankPrefix = `↳ #${idx + 1}`;
+                        const subTr = document.createElement('tr');
+                        subTr.style.cssText = `border-bottom:1px solid rgba(255,255,255,0.03); font-size:11px;`;
+                        const askStyle = `color:${sortKey === 'bid' ? '#6b7280' : isTop ? '#4ade80' : '#9ca3af'}; font-weight:${sortKey === 'ask' && isTop ? '600' : '400'};`;
+                        const bidStyle = `color:${sortKey === 'ask' ? '#6b7280' : isTop ? '#4ade80' : '#9ca3af'}; font-weight:${sortKey === 'bid' && isTop ? '600' : '400'};`;
+                        subTr.innerHTML = `
+                            <td style="padding:2px 6px 2px 16px; text-align:left; color:${nameColor};">${rankPrefix} ${opt.name}</td>
+                            <td style="padding:2px 6px; text-align:right; color:${nameColor};">${qtyNeeded.toLocaleString()}</td>
+                            <td style="padding:2px 6px; text-align:right; color:#6b7280;">${opt.askPrice ? formatKMB(opt.askPrice) : '–'}</td>
+                            <td style="padding:2px 6px; text-align:right; color:#6b7280;">${opt.bidPrice ? formatKMB(opt.bidPrice) : '–'}</td>
+                            <td style="padding:2px 6px; text-align:right; ${askStyle}">${askTotal ? formatKMB(askTotal) : '–'}</td>
+                            <td style="padding:2px 6px; text-align:right; ${bidStyle}">${bidTotal ? formatKMB(bidTotal) : '–'}</td>
+                        `;
+                        tbody.appendChild(subTr);
+                    });
+                }
+            });
+
+            const totalRow = document.createElement('tr');
+            totalRow.style.cssText = 'border-top:1px solid rgba(255,255,255,0.2); color:#4ade80; font-weight:700;';
+            totalRow.innerHTML = `
+                <td style="padding:5px 6px;" colspan="4">Total</td>
+                <td style="padding:5px 6px; text-align:right;">${totalSell > 0 ? formatKMB(totalSell) : '–'}${!allSellPriced ? '*' : ''}</td>
+                <td style="padding:5px 6px; text-align:right;">${totalBuy > 0 ? formatKMB(totalBuy) : '–'}${!allBuyPriced ? '*' : ''}</td>
+            `;
+            tbody.appendChild(totalRow);
+            return tbody;
+        };
+
         const wrapper = document.createElement('div');
         wrapper.className = 'mwi-shrine-cost';
         wrapper.style.cssText = 'margin-top:12px; font-size:12px; width:100%;';
 
         const hdr = document.createElement('div');
         hdr.style.cssText = 'font-size:11px; color:#9ca3af; margin-bottom:6px; text-align:center;';
-        hdr.textContent = 'Gold cost of upgrade';
+        hdr.textContent = 'Gold cost of upgrade — click to sort';
         wrapper.appendChild(hdr);
 
         const table = document.createElement('table');
         table.style.cssText = 'width:100%; border-collapse:collapse;';
-        table.innerHTML = `
-            <thead>
-                <tr style="color:#6b7280; font-size:11px; border-bottom:1px solid rgba(255,255,255,0.1);">
-                    <th style="text-align:left; padding:3px 6px; font-weight:500;">Item</th>
-                    <th style="text-align:right; padding:3px 6px; font-weight:500;">Qty</th>
-                    <th style="text-align:right; padding:3px 6px; font-weight:500;">Ask ea.</th>
-                    <th style="text-align:right; padding:3px 6px; font-weight:500;">Bid ea.</th>
-                    <th style="text-align:right; padding:3px 6px; font-weight:500;">Ask cost</th>
-                    <th style="text-align:right; padding:3px 6px; font-weight:500;">Bid cost</th>
-                </tr>
-            </thead>
-        `;
 
-        const tbody = document.createElement('tbody');
-        rows.forEach((row) => {
-            const tr = document.createElement('tr');
-            tr.style.cssText = 'border-bottom:1px solid rgba(255,255,255,0.05); color:#e0e0e0;';
-            tr.innerHTML = `
-                <td style="padding:4px 6px; text-align:left;">${row.itemName}</td>
-                <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.required.toLocaleString()}</td>
-                <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.sellEach ? formatKMB(row.sellEach) : '–'}</td>
-                <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.buyEach ? formatKMB(row.buyEach) : '–'}</td>
-                <td style="padding:4px 6px; text-align:right;">${row.sellSub ? formatKMB(row.sellSub) : '–'}</td>
-                <td style="padding:4px 6px; text-align:right; color:#9ca3af;">${row.buySub ? formatKMB(row.buySub) : '–'}</td>
-            `;
-            tbody.appendChild(tr);
+        const thead = document.createElement('thead');
+        const thRow = document.createElement('tr');
+        thRow.style.cssText = 'font-size:11px; border-bottom:1px solid rgba(255,255,255,0.1);';
 
-            if (row.isCredit && row.creditHrid) {
-                const options = topConversions[row.creditHrid] || [];
-                options.forEach((opt, idx) => {
-                    const qtyNeeded = Math.ceil(row.required / opt.creditCount) * opt.itemCount;
-                    const askTotal = opt.askPrice ? opt.askPrice * qtyNeeded : null;
-                    const bidTotal = opt.bidPrice ? opt.bidPrice * qtyNeeded : null;
-                    const isTop = idx === 0;
-                    const nameColor = isTop ? '#4ade80' : '#9ca3af';
-                    const rankPrefix = `↳ #${idx + 1}`;
-                    const subTr = document.createElement('tr');
-                    subTr.style.cssText = `border-bottom:1px solid rgba(255,255,255,0.03); font-size:11px;`;
-                    subTr.innerHTML = `
-                        <td style="padding:2px 6px 2px 16px; text-align:left; color:${nameColor};">${rankPrefix} ${opt.name}</td>
-                        <td style="padding:2px 6px; text-align:right; color:${nameColor};">${qtyNeeded.toLocaleString()}</td>
-                        <td style="padding:2px 6px; text-align:right; color:#6b7280;">${opt.askPrice ? formatKMB(opt.askPrice) : '–'}</td>
-                        <td style="padding:2px 6px; text-align:right; color:#6b7280;">${opt.bidPrice ? formatKMB(opt.bidPrice) : '–'}</td>
-                        <td style="padding:2px 6px; text-align:right; color:${isTop ? '#4ade80' : '#9ca3af'}; font-weight:${isTop ? '600' : '400'};">${askTotal ? formatKMB(askTotal) : '–'}</td>
-                        <td style="padding:2px 6px; text-align:right; color:#6b7280;">${bidTotal ? formatKMB(bidTotal) : '–'}</td>
-                    `;
-                    tbody.appendChild(subTr);
-                });
-            }
+        [
+            { text: 'Item', align: 'left' },
+            { text: 'Qty', align: 'right' },
+            { text: 'Ask ea.', align: 'right' },
+            { text: 'Bid ea.', align: 'right' },
+        ].forEach(({ text, align }) => {
+            const th = document.createElement('th');
+            th.style.cssText = `text-align:${align}; padding:3px 6px; font-weight:500; color:#6b7280;`;
+            th.textContent = text;
+            thRow.appendChild(th);
         });
 
-        const totalRow = document.createElement('tr');
-        totalRow.style.cssText = 'border-top:1px solid rgba(255,255,255,0.2); color:#4ade80; font-weight:700;';
-        totalRow.innerHTML = `
-            <td style="padding:5px 6px;" colspan="4">Total</td>
-            <td style="padding:5px 6px; text-align:right;">${totalSell > 0 ? formatKMB(totalSell) : '–'}${!allSellPriced ? '*' : ''}</td>
-            <td style="padding:5px 6px; text-align:right;">${totalBuy > 0 ? formatKMB(totalBuy) : '–'}${!allBuyPriced ? '*' : ''}</td>
-        `;
-        tbody.appendChild(totalRow);
-        table.appendChild(tbody);
+        const askTh = document.createElement('th');
+        askTh.textContent = 'Ask cost';
+        const bidTh = document.createElement('th');
+        bidTh.textContent = 'Bid cost';
+        thRow.appendChild(askTh);
+        thRow.appendChild(bidTh);
+        thead.appendChild(thRow);
+        table.appendChild(thead);
+
+        const updateThStyles = () => {
+            const isAsk = sortKey === 'ask';
+            const active = 'font-weight:600; color:#e0e0e0; text-decoration:underline;';
+            const inactive = 'font-weight:500; color:#6b7280;';
+            askTh.style.cssText = `text-align:right; padding:3px 6px; cursor:pointer; ${isAsk ? active : inactive}`;
+            bidTh.style.cssText = `text-align:right; padding:3px 6px; cursor:pointer; ${!isAsk ? active : inactive}`;
+        };
+        updateThStyles();
+
+        let currentTbody = buildTbody();
+        table.appendChild(currentTbody);
+
+        const setSort = (key) => {
+            sortKey = key;
+            updateThStyles();
+            const newTbody = buildTbody();
+            table.replaceChild(newTbody, currentTbody);
+            currentTbody = newTbody;
+        };
+
+        askTh.addEventListener('click', () => setSort('ask'));
+        bidTh.addEventListener('click', () => setSort('bid'));
+
         wrapper.appendChild(table);
 
         if (!allSellPriced || !allBuyPriced) {
