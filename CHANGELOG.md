@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.72.1](https://github.com/Celasha/Toolasha/compare/v2.72.0...v2.72.1) (2026-07-15)
+
+
+### Bug Fixes
+
+* hide pin icons on tiles when pinned actions page is disabled ([d238dc9](https://github.com/Celasha/Toolasha/commit/d238dc9728cf32eb98c66d40a87932d8c7fc29a9))
+* relocate Activity column and correct per-tab placement ([209577e](https://github.com/Celasha/Toolasha/commit/209577e215924f00789ce03518322c00524a1522))
+
+
+### Code Refactoring
+
+* reorganize settings into 25 focused groups ([3117c91](https://github.com/Celasha/Toolasha/commit/3117c910ed6ea70071da9ba49716763413ffba73))
+* split profit/hr and exp/hr tile settings by action type ([6b6d533](https://github.com/Celasha/Toolasha/commit/6b6d533d203822fa16245bbb42568dc5ed1273df))
+
 ## [2.72.0](https://github.com/Celasha/Toolasha/compare/v2.71.1...v2.72.0) (2026-07-15)
 
 ### Features
