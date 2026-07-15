@@ -429,7 +429,7 @@ class Config {
             return;
         }
 
-        settingsStorage.setCharacterId(characterId);
+        settingsStorage.setCharacterId(characterId, dataManager.getCurrentCharacterName());
 
         const previousMap = this.settingsMap;
 
@@ -640,35 +640,31 @@ class Config {
      * Sync current settings to all other characters
      * @returns {Promise<{success: boolean, count: number, error?: string}>} Result object
      */
-    async syncSettingsToAllCharacters() {
+    async syncSettingsToAllCharacters(targetIds) {
         try {
-            // Ensure character ID is set
             const characterId = dataManager.getCurrentCharacterId();
             if (!characterId) {
-                return {
-                    success: false,
-                    count: 0,
-                    error: 'No character ID available',
-                };
+                return { success: false, count: 0, error: 'No character ID available' };
             }
-
-            // Set character ID in settings storage
-            settingsStorage.setCharacterId(characterId);
-
-            // Sync settings to all other characters
-            const syncedCount = await settingsStorage.syncSettingsToAllCharacters(this.settingsMap);
-
-            return {
-                success: true,
-                count: syncedCount,
-            };
+            settingsStorage.setCharacterId(characterId, dataManager.getCurrentCharacterName());
+            const syncedCount = await settingsStorage.syncSettingsToAllCharacters(this.settingsMap, targetIds);
+            return { success: true, count: syncedCount };
         } catch (error) {
             console.error('[Config] Failed to sync settings:', error);
-            return {
-                success: false,
-                count: 0,
-                error: error.message,
-            };
+            return { success: false, count: 0, error: error.message };
+        }
+    }
+
+    /**
+     * Get list of known characters as [{id, name}] objects.
+     * @returns {Promise<Array<{id: string, name: string}>>}
+     */
+    async getKnownCharacters() {
+        try {
+            return await settingsStorage.getKnownCharacters();
+        } catch (error) {
+            console.error('[Config] Failed to get known characters:', error);
+            return [];
         }
     }
 

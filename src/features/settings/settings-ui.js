@@ -1236,32 +1236,79 @@ class SettingsUI {
      * Handle sync settings to all characters
      */
     async handleSync() {
-        // Get character count to show in confirmation
-        const characterCount = await this.config.getKnownCharacterCount();
+        const knownCharacters = await this.config.getKnownCharacters();
+        const currentId = String(dataManager.getCurrentCharacterId() || '');
+        const others = knownCharacters.filter((c) => c.id !== currentId);
 
-        // If only 1 character (current), no need to sync
-        if (characterCount <= 1) {
+        if (others.length === 0) {
             alert('You only have one character. Settings are already saved for this character.');
             return;
         }
 
-        // Confirm action
-        const otherCharacters = characterCount - 1;
-        const message = `This will copy your current settings to ${otherCharacters} other character${otherCharacters > 1 ? 's' : ''}. Their existing settings will be overwritten.\n\nContinue?`;
+        // Build a small modal with checkboxes for each character
+        const overlay = document.createElement('div');
+        overlay.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:99999;display:flex;align-items:center;justify-content:center;`;
 
-        if (!confirm(message)) {
-            return;
-        }
+        const dialog = document.createElement('div');
+        dialog.style.cssText = `background:#1a1a2e;border:1px solid rgba(74,158,255,0.5);border-radius:10px;padding:20px;min-width:280px;font-family:'Segoe UI',sans-serif;color:#e0e0e0;`;
 
-        // Perform sync
-        const result = await this.config.syncSettingsToAllCharacters();
+        const title = document.createElement('div');
+        title.style.cssText = `font-size:14px;font-weight:700;color:#4a9eff;margin-bottom:12px;`;
+        title.textContent = 'Copy Settings To';
+        dialog.appendChild(title);
 
-        // Show result
-        if (result.success) {
-            alert(`Settings successfully copied to ${result.count} character${result.count > 1 ? 's' : ''}!`);
-        } else {
-            alert(`Failed to sync settings: ${result.error || 'Unknown error'}`);
-        }
+        const checkboxes = others.map((char) => {
+            const row = document.createElement('label');
+            row.style.cssText = `display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer;`;
+            const cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.checked = true;
+            cb.value = char.id;
+            const nameSpan = document.createElement('span');
+            nameSpan.textContent = char.name !== char.id ? char.name : `Character ${char.id}`;
+            row.appendChild(cb);
+            row.appendChild(nameSpan);
+            dialog.appendChild(row);
+            return cb;
+        });
+
+        const btnRow = document.createElement('div');
+        btnRow.style.cssText = `display:flex;gap:8px;margin-top:16px;justify-content:flex-end;`;
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.textContent = 'Cancel';
+        cancelBtn.style.cssText = `padding:6px 14px;border:1px solid #555;background:transparent;color:#aaa;border-radius:4px;cursor:pointer;`;
+
+        const copyBtn = document.createElement('button');
+        copyBtn.textContent = 'Copy Settings';
+        copyBtn.style.cssText = `padding:6px 14px;background:#4a9eff;border:none;color:#fff;border-radius:4px;cursor:pointer;font-weight:600;`;
+
+        btnRow.appendChild(cancelBtn);
+        btnRow.appendChild(copyBtn);
+        dialog.appendChild(btnRow);
+        overlay.appendChild(dialog);
+        document.body.appendChild(overlay);
+
+        const close = () => overlay.remove();
+        cancelBtn.addEventListener('click', close);
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) close();
+        });
+
+        copyBtn.addEventListener('click', async () => {
+            const selected = checkboxes.filter((cb) => cb.checked).map((cb) => cb.value);
+            if (selected.length === 0) {
+                close();
+                return;
+            }
+            close();
+            const result = await this.config.syncSettingsToAllCharacters(selected);
+            if (result.success) {
+                alert(`Settings copied to ${result.count} character${result.count !== 1 ? 's' : ''}!`);
+            } else {
+                alert(`Failed to copy settings: ${result.error || 'Unknown error'}`);
+            }
+        });
     }
 
     /**

@@ -10,17 +10,20 @@ class SettingsStorage {
     constructor() {
         this.storageKey = 'script_settingsMap'; // Legacy global key (used as template)
         this.storageArea = 'settings';
-        this.currentCharacterId = null; // Current character ID (set after login)
-        this.knownCharactersKey = 'known_character_ids'; // List of character IDs
+        this.currentCharacterId = null;
+        this.currentCharacterName = null;
+        this.knownCharactersKey = 'known_character_ids';
     }
 
     /**
-     * Set the current character ID
-     * Must be called after character_initialized event
-     * @param {string} characterId - Character ID
+     * Set the current character ID and name.
+     * Must be called after character_initialized event.
+     * @param {string} characterId
+     * @param {string} [characterName]
      */
-    setCharacterId(characterId) {
+    setCharacterId(characterId, characterName) {
         this.currentCharacterId = characterId;
+        if (characterName) this.currentCharacterName = characterName;
     }
 
     /**
@@ -55,7 +58,7 @@ class SettingsStorage {
             }
 
             // Add character to known characters list
-            await this.addToKnownCharacters(this.currentCharacterId);
+            await this.addToKnownCharacters(this.currentCharacterId, this.currentCharacterName);
         }
 
         const settings = {};
@@ -168,43 +171,68 @@ class SettingsStorage {
     }
 
     /**
-     * Add character to known characters list
-     * @param {string} characterId - Character ID
+     * Add character to known characters list, storing name alongside ID.
+     * Migrates old flat-array format ([id, id]) to object format ([{id, name}]).
+     * @param {string} characterId
+     * @param {string} characterName
      * @returns {Promise<void>}
      */
-    async addToKnownCharacters(characterId) {
-        const knownCharacters = await storage.getJSON(this.knownCharactersKey, this.storageArea, []);
-        if (!knownCharacters.includes(characterId)) {
-            knownCharacters.push(characterId);
-            await storage.setJSON(this.knownCharactersKey, knownCharacters, this.storageArea, true);
+    async addToKnownCharacters(characterId, characterName) {
+        const raw = await storage.getJSON(this.knownCharactersKey, this.storageArea, []);
+        const list = this._normalizeKnownCharacters(raw);
+        const existing = list.find((c) => c.id === characterId);
+        if (existing) {
+            if (characterName && existing.name !== characterName) {
+                existing.name = characterName;
+                await storage.setJSON(this.knownCharactersKey, list, this.storageArea, true);
+            }
+        } else {
+            list.push({ id: characterId, name: characterName || characterId });
+            await storage.setJSON(this.knownCharactersKey, list, this.storageArea, true);
         }
     }
 
     /**
-     * Get list of known character IDs
-     * @returns {Promise<Array<string>>} Character IDs
+     * Normalise stored known-characters to [{id, name}] regardless of legacy format.
+     * @param {Array} raw
+     * @returns {Array<{id: string, name: string}>}
+     * @private
      */
-    async getKnownCharacters() {
-        return await storage.getJSON(this.knownCharactersKey, this.storageArea, []);
+    _normalizeKnownCharacters(raw) {
+        if (!Array.isArray(raw)) return [];
+        return raw.map((entry) =>
+            typeof entry === 'object' && entry !== null
+                ? { id: String(entry.id), name: entry.name || String(entry.id) }
+                : { id: String(entry), name: String(entry) }
+        );
     }
 
     /**
-     * Sync current settings to all other characters
+     * Get list of known characters as [{id, name}] objects.
+     * @returns {Promise<Array<{id: string, name: string}>>}
+     */
+    async getKnownCharacters() {
+        const raw = await storage.getJSON(this.knownCharactersKey, this.storageArea, []);
+        return this._normalizeKnownCharacters(raw);
+    }
+
+    /**
+     * Sync current settings to a specified subset of characters.
      * @param {Object} settings - Current settings to copy
+     * @param {string[]} targetIds - IDs to sync to (omit to sync to all others)
      * @returns {Promise<number>} Number of characters synced
      */
-    async syncSettingsToAllCharacters(settings) {
+    async syncSettingsToAllCharacters(settings, targetIds) {
         const knownCharacters = await this.getKnownCharacters();
         let syncedCount = 0;
 
-        for (const characterId of knownCharacters) {
-            // Skip current character (already has these settings)
-            if (characterId === this.currentCharacterId) {
-                continue;
-            }
+        const targets = targetIds
+            ? knownCharacters.filter((c) => targetIds.includes(c.id))
+            : knownCharacters.filter((c) => c.id !== this.currentCharacterId);
 
-            // Write settings to this character's key
-            const characterKey = `${this.storageKey}_${characterId}`;
+        for (const character of targets) {
+            if (character.id === this.currentCharacterId) continue;
+            const characterKey = `${this.storageKey}_${character.id}`;
             await storage.setJSON(characterKey, settings, this.storageArea, true);
             syncedCount++;
         }
