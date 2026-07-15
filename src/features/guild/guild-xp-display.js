@@ -870,6 +870,9 @@ class GuildXPDisplay {
             const meta = guildXPTracker.getMemberMeta(member.characterID);
             if (!meta) continue;
 
+            // Members who joined after this week's reset are ineligible until next week
+            if (currentWeek && meta.joinTime && new Date(meta.joinTime) >= new Date(currentWeek)) continue;
+
             const signedUpThisWeek = currentWeek && meta.signupWeekStartAt === currentWeek;
 
             if (!signedUpThisWeek || !meta.signedUpSkillingTrialHrid) {
