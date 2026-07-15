@@ -149,6 +149,13 @@ function registerFeatures() {
             module: Market.milkywayMarketLink,
             async: false,
         },
+        {
+            key: 'sellQueue',
+            name: 'Sell Queue',
+            category: 'Market',
+            module: Market.sellQueue,
+            async: false,
+        },
         { key: 'networth', name: 'Net Worth', category: 'Economy', module: Market.networthFeature, async: false },
         {
             key: 'inventoryBadgeManager',

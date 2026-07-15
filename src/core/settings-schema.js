@@ -902,6 +902,13 @@ export const settingsGroups = {
         title: 'Marketplace',
         icon: '🏪',
         settings: {
+            sellQueue: {
+                id: 'sellQueue',
+                label: 'Sell Queue (Shift+RightClick inventory items)',
+                type: 'checkbox',
+                default: true,
+                help: 'Shift+RightClick an inventory item to open the marketplace and create a tab for it. Tabs close automatically when the item sells out.',
+            },
             networkAlert: {
                 id: 'networkAlert',
                 label: 'Show alert when market price data cannot be fetched',
