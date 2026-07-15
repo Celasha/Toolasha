@@ -229,6 +229,19 @@ class MaxProduceable {
             this.getResizeObserver().observe(display);
         }
 
+        // Create pin icon only when the pinned page feature is enabled
+        if (!config.getSetting('actions_pinnedPage')) {
+            this.actionElements.set(actionPanel, {
+                actionHrid,
+                displayElement: display,
+                pinElement: null,
+            });
+            if (display) {
+                this.updateCount(actionPanel);
+            }
+            return;
+        }
+
         // Create pin icon (for ALL actions - gathering and production)
         const pinIcon = document.createElement('div');
         pinIcon.className = 'mwi-action-pin';

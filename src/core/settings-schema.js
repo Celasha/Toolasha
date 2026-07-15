@@ -430,10 +430,10 @@ export const settingsGroups = {
             },
             actions_pinnedPage: {
                 id: 'actions_pinnedPage',
-                label: 'Pinned actions page in navigation bar',
+                label: 'Pinned actions: Enable pinned actions page and pin icons',
                 type: 'checkbox',
                 default: true,
-                help: 'Adds a Pinned button to the left nav bar that shows all pinned actions in one list with skill, level, profit/hr, and XP/hr.',
+                help: 'Adds a Pinned button to the left nav bar showing all pinned actions, and shows pin icons on action tiles.',
             },
         },
     },
