@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.72.2](https://github.com/Celasha/Toolasha/compare/v2.72.1...v2.72.2) (2026-07-15)
+
+### Bug Fixes
+
+- add clickable ask/bid column sorting to guild credit modals ([739f516](https://github.com/Celasha/Toolasha/commit/739f516a1516129fb99dcd2ec70ee3f8ef023ac4))
+- show top-3 conversion options in shrine upgrade cost table ([17eb9f4](https://github.com/Celasha/Toolasha/commit/17eb9f4705270581507085af8c334938b100e98a))
+
 ## [2.72.1](https://github.com/Celasha/Toolasha/compare/v2.72.0...v2.72.1) (2026-07-15)
 
 ### Bug Fixes
