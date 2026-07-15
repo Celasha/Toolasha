@@ -1,5 +1,21 @@
 # Changelog
 
+## [2.72.0](https://github.com/Celasha/Toolasha/compare/v2.71.1...v2.72.0) (2026-07-15)
+
+
+### Features
+
+* add gold cost per credit table to guild credit exchange modals ([5af726c](https://github.com/Celasha/Toolasha/commit/5af726c4217ed0a5bef51119abe68caf8f92ea66))
+* add per-character selector to Copy Settings button ([507501b](https://github.com/Celasha/Toolasha/commit/507501b14163781703be0fd73bb170fc2fc43841))
+* add per-column toggles and tab routing for guild Members columns ([7841384](https://github.com/Celasha/Toolasha/commit/78413843607b00404a4f2f3ff5c8a743c68ef12a))
+* add shrine upgrade cost table and ask/bid columns to guild credit modals ([501cc92](https://github.com/Celasha/Toolasha/commit/501cc92a0d94aa6258ae6357c200b1ac14c64d8e))
+
+
+### Bug Fixes
+
+* always initialize max-produceable feature regardless of setting ([a4c0198](https://github.com/Celasha/Toolasha/commit/a4c0198cce5bfddb875c436109c0212c1150d5fd))
+* exclude new members from unsigned trial list until next reset ([d128583](https://github.com/Celasha/Toolasha/commit/d12858389805c8aaa66c0377e8fc5a47e38b3f9c))
+
 ## [2.71.1](https://github.com/Celasha/Toolasha/compare/v2.71.0...v2.71.1) (2026-07-14)
 
 ### Bug Fixes
