@@ -1,7 +1,7 @@
 /**
  * Toolasha Core Library
  * Core infrastructure and API clients
- * Version: 2.72.2
+ * Version: 2.73.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -1471,6 +1471,13 @@
             title: 'Marketplace',
             icon: '🏪',
             settings: {
+                sellQueue: {
+                    id: 'sellQueue',
+                    label: 'Sell Queue (Shift+RightClick inventory items)',
+                    type: 'checkbox',
+                    default: true,
+                    help: 'Shift+RightClick an inventory item to open the marketplace and create a tab for it. Tabs close automatically when the item sells out.',
+                },
                 networkAlert: {
                     id: 'networkAlert',
                     label: 'Show alert when market price data cannot be fetched',

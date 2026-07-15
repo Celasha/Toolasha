@@ -1,7 +1,7 @@
 /**
  * Toolasha Market Library
  * Market, inventory, and economy features
- * Version: 2.72.2
+ * Version: 2.73.0
  * License: CC-BY-NC-SA-4.0
  */
 
@@ -14496,6 +14496,128 @@ self.onmessage = function (e) {
 
 
     /**
+     * Create a custom material tab for the marketplace
+     * @param {Object} material - Material data object
+     * @param {string} material.itemHrid - Item HRID
+     * @param {string} material.itemName - Display name for the item
+     * @param {number} material.missing - Amount missing (0 if sufficient)
+     * @param {number} [material.queued=0] - Amount reserved by queue
+     * @param {boolean} material.isTradeable - Whether item can be traded
+     * @param {HTMLElement} referenceTab - Tab element to clone structure from
+     * @param {Function} onClickCallback - Callback when tab is clicked, receives (e, material)
+     * @returns {HTMLElement} Created tab element
+     */
+    function createMaterialTab(material, referenceTab, onClickCallback) {
+        // Clone reference tab structure
+        const tab = referenceTab.cloneNode(true);
+
+        // Mark as custom tab for later identification
+        tab.setAttribute('data-mwi-custom-tab', 'true');
+        tab.setAttribute('data-item-hrid', material.itemHrid);
+        tab.setAttribute('data-missing-quantity', material.missing.toString());
+
+        // Color coding:
+        // - Red: Missing materials (missing > 0)
+        // - Green: Sufficient materials (missing = 0)
+        // - Gray: Not tradeable
+        let statusColor;
+        let statusText;
+
+        if (material.missing > 0) {
+            statusColor = '#ef4444'; // Red - missing materials
+            // Show queued amount if any materials are reserved by queue
+            const queuedText = material.queued > 0 ? ` (${formatters_js.formatWithSeparator(material.queued)} Q'd)` : '';
+            statusText = `Missing: ${formatters_js.formatWithSeparator(material.missing)}${queuedText}`;
+        } else {
+            statusColor = '#4ade80'; // Green - sufficient materials
+            statusText = `Sufficient (${formatters_js.formatWithSeparator(material.required)})`;
+        }
+
+        // Update text content
+        const badgeSpan = tab.querySelector('[class*="TabsComponent_badge"]');
+        if (badgeSpan) {
+            // Title case: capitalize first letter of each word
+            const titleCaseName = material.itemName
+                .split(' ')
+                .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+                .join(' ');
+
+            badgeSpan.innerHTML = `
+            <div style="text-align: center;">
+                <div>${titleCaseName}</div>
+                <div style="font-size: 0.75em; color: ${statusColor};">
+                    ${statusText}
+                </div>
+            </div>
+        `;
+        }
+
+        // Remove selected state
+        tab.classList.remove('Mui-selected');
+        tab.setAttribute('aria-selected', 'false');
+        tab.setAttribute('tabindex', '-1');
+
+        // Add click handler
+        tab.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+
+            // Call the provided callback
+            if (onClickCallback) {
+                onClickCallback(e, material);
+            }
+        });
+
+        return tab;
+    }
+
+    /**
+     * Remove all custom material tabs from the marketplace
+     */
+    function removeMaterialTabs() {
+        const customTabs = document.querySelectorAll('[data-mwi-custom-tab="true"]');
+        customTabs.forEach((tab) => tab.remove());
+    }
+
+    /**
+     * Setup marketplace cleanup observer
+     * Watches for marketplace panel removal and calls cleanup callback
+     * @param {Function} onCleanup - Callback when marketplace closes, receives no args
+     * @param {Array} tabsArray - Array reference to track tabs (will be checked for length)
+     * @returns {Function} Unregister function to stop observing
+     */
+    function setupMarketplaceCleanupObserver(onCleanup, tabsArray) {
+        let pollInterval = null;
+
+        function poll() {
+            if (!tabsArray || tabsArray.length === 0) return;
+
+            // If custom tabs were removed from DOM, clean up
+            const hasCustomTabsInDOM = tabsArray.some((tab) => document.body.contains(tab));
+            if (!hasCustomTabsInDOM) {
+                if (onCleanup) onCleanup();
+                return;
+            }
+
+            // If marketplace panel is hidden (navigated away), clean up
+            const marketplacePanel = document.querySelector('.MarketplacePanel_marketplacePanel__21b7o');
+            const subPanelContainer = marketplacePanel?.closest('.MainPanel_subPanelContainer__1i-H9');
+            if (subPanelContainer && getComputedStyle(subPanelContainer).display === 'none') {
+                if (onCleanup) onCleanup();
+            }
+        }
+
+        pollInterval = setInterval(poll, 1000);
+
+        return () => {
+            if (pollInterval) {
+                clearInterval(pollInterval);
+                pollInterval = null;
+            }
+        };
+    }
+
+    /**
      * Get game object via React fiber
      * @returns {Object|null} Game component instance
      */
@@ -15318,6 +15440,334 @@ self.onmessage = function (e) {
 
     // Auto-initialize (always enabled feature)
     marketplaceShortcuts.initialize();
+
+    /**
+     * Sell Queue
+     * Shift+RightClick inventory items to queue them for selling.
+     * Creates marketplace tabs for each queued item; tabs auto-close when item count hits 0.
+     */
+
+
+    const timerRegistry = timerRegistry_js.createTimerRegistry();
+
+    /** @type {Array<{itemHrid: string, itemName: string}>} */
+    const queue = [];
+
+    /** @type {HTMLElement[]} */
+    const currentTabs = [];
+
+    let cleanupObserver = null;
+    let inventoryUpdateHandler = null;
+    let currentItemHrid = null;
+    let tooltipObserverUnregister = null;
+    let contextMenuHandler = null;
+    let isActive = false;
+
+    /**
+     * Get total inventory count for an item hrid.
+     * @param {string} itemHrid
+     * @returns {number}
+     */
+    function getInventoryCount(itemHrid) {
+        const inventory = dataManager.getInventory();
+        if (!inventory) return 0;
+        return inventory
+            .filter((i) => i.itemHrid === itemHrid && i.itemLocationHrid === '/item_locations/inventory')
+            .reduce((sum, i) => sum + (i.count || 0), 0);
+    }
+
+    /**
+     * Navigate to the marketplace by clicking its navbar button.
+     * @returns {Promise<boolean>}
+     */
+    async function openMarketplacePage() {
+        const navButtons = document.querySelectorAll('.NavigationBar_nav__3uuUl');
+        const marketplaceButton = Array.from(navButtons).find((nav) =>
+            nav.querySelector('svg[aria-label="navigationBar.marketplace"]')
+        );
+        if (!marketplaceButton) return false;
+        marketplaceButton.click();
+        return await waitForMarketplace();
+    }
+
+    /**
+     * Wait for the marketplace tabs container to appear.
+     * @returns {Promise<boolean>}
+     */
+    async function waitForMarketplace() {
+        for (let i = 0; i < 50; i++) {
+            const tabsContainer = document.querySelector('.MuiTabs-flexContainer[role="tablist"]');
+            if (tabsContainer) {
+                const hasMarket = Array.from(tabsContainer.children).some((btn) =>
+                    btn.textContent.includes('Market Listings')
+                );
+                if (hasMarket) return true;
+            }
+            await new Promise((resolve) => {
+                timerRegistry.registerTimeout(setTimeout(resolve, 100));
+            });
+        }
+        return false;
+    }
+
+    /**
+     * Inject tabs for all queued items into the marketplace tab strip.
+     */
+    function injectTabs() {
+        const tabsContainer = document.querySelector('.MuiTabs-flexContainer[role="tablist"]');
+        if (!tabsContainer) return;
+
+        removeMaterialTabs();
+        currentTabs.length = 0;
+
+        const referenceTab = Array.from(tabsContainer.children).find((btn) => btn.textContent.includes('My Listings'));
+        if (!referenceTab) return;
+
+        tabsContainer.style.flexWrap = 'wrap';
+
+        for (const entry of queue) {
+            const count = getInventoryCount(entry.itemHrid);
+            const material = {
+                itemHrid: entry.itemHrid,
+                itemName: entry.itemName,
+                missing: 0,
+                required: count,
+                isTradeable: true,
+            };
+
+            const tab = createMaterialTab(material, referenceTab, (_e, mat) => {
+                navigateToMarketplace(mat.itemHrid, 0);
+            });
+
+            const badgeSpan = tab.querySelector('[class*="TabsComponent_badge"]');
+            if (badgeSpan) {
+                badgeSpan.innerHTML = buildBadgeHtml(entry.itemName, count);
+            }
+
+            tabsContainer.appendChild(tab);
+            currentTabs.push(tab);
+        }
+    }
+
+    /**
+     * Build badge HTML for a queued item tab.
+     * @param {string} itemName
+     * @param {number} count
+     * @returns {string}
+     */
+    function buildBadgeHtml(itemName, count) {
+        const titleCase = itemName
+            .split(' ')
+            .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+            .join(' ');
+        const color = count > 0 ? '#4ade80' : '#6b7280';
+        const sub = count > 0 ? `In bag: ${count.toLocaleString()}` : 'Sold out';
+        return `<div style="text-align:center;"><div>${titleCase}</div><div style="font-size:0.75em;color:${color};">${sub}</div></div>`;
+    }
+
+    /**
+     * Update tab badges and remove tabs for items that have sold out.
+     */
+    function updateTabsOnInventoryChange() {
+        if (currentTabs.length === 0) return;
+
+        const toRemove = [];
+
+        currentTabs.forEach((tab) => {
+            const itemHrid = tab.getAttribute('data-item-hrid');
+            const entry = queue.find((e) => e.itemHrid === itemHrid);
+            if (!entry) return;
+
+            const count = getInventoryCount(entry.itemHrid);
+            const badgeSpan = tab.querySelector('[class*="TabsComponent_badge"]');
+            if (badgeSpan) {
+                badgeSpan.innerHTML = buildBadgeHtml(entry.itemName, count);
+            }
+
+            if (count === 0) {
+                toRemove.push(itemHrid);
+            }
+        });
+
+        for (const hrid of toRemove) {
+            const idx = queue.findIndex((e) => e.itemHrid === hrid);
+            if (idx !== -1) queue.splice(idx, 1);
+
+            const tabIdx = currentTabs.findIndex((t) => t.getAttribute('data-item-hrid') === hrid);
+            if (tabIdx !== -1) {
+                currentTabs[tabIdx].remove();
+                currentTabs.splice(tabIdx, 1);
+            }
+        }
+    }
+
+    /**
+     * Set up WebSocket listener to update tabs when inventory changes.
+     */
+    function setupInventoryListener() {
+        if (inventoryUpdateHandler) {
+            webSocketHook.off('*', inventoryUpdateHandler);
+        }
+        inventoryUpdateHandler = (data) => {
+            if (
+                data.type?.includes('item') ||
+                data.type?.includes('inventory') ||
+                data.type?.includes('market') ||
+                data.inventory ||
+                data.characterItems
+            ) {
+                updateTabsOnInventoryChange();
+            }
+        };
+        webSocketHook.on('*', inventoryUpdateHandler);
+    }
+
+    /**
+     * Handle cleanup when user leaves the marketplace.
+     */
+    function handleMarketplaceCleanup() {
+        removeMaterialTabs();
+        currentTabs.length = 0;
+        queue.length = 0;
+        if (inventoryUpdateHandler) {
+            webSocketHook.off('*', inventoryUpdateHandler);
+            inventoryUpdateHandler = null;
+        }
+    }
+
+    /**
+     * Add an item to the queue and inject/update tabs.
+     * @param {string} itemHrid
+     * @param {string} itemName
+     */
+    async function addToQueue(itemHrid, itemName) {
+        if (queue.some((e) => e.itemHrid === itemHrid)) return;
+
+        const count = getInventoryCount(itemHrid);
+        if (count === 0) return;
+
+        const isFirstItem = queue.length === 0;
+        queue.push({ itemHrid, itemName });
+
+        if (isFirstItem) {
+            const tabsContainer = document.querySelector('.MuiTabs-flexContainer[role="tablist"]');
+            const alreadyInMarket =
+                tabsContainer &&
+                Array.from(tabsContainer.children).some((btn) => btn.textContent.includes('Market Listings'));
+
+            if (!alreadyInMarket) {
+                const success = await openMarketplacePage();
+                if (!success) {
+                    queue.length = 0;
+                    return;
+                }
+                await new Promise((resolve) => {
+                    timerRegistry.registerTimeout(setTimeout(resolve, 200));
+                });
+            }
+
+            cleanupObserver = setupMarketplaceCleanupObserver(handleMarketplaceCleanup, currentTabs);
+            setupInventoryListener();
+        }
+
+        injectTabs();
+        navigateToMarketplace(itemHrid, 0);
+    }
+
+    /**
+     * Track the hovered item HRID via tooltip observer (same strategy as alt-click-navigation).
+     * @param {HTMLElement} tooltipElement
+     */
+    function handleTooltipAppear(tooltipElement) {
+        currentItemHrid = null;
+        try {
+            const itemLink = tooltipElement.querySelector('a[href*="/items/"]');
+            if (itemLink) {
+                const match = itemLink.getAttribute('href').match(/\/items\/(.+?)(?:\/|$)/);
+                if (match) {
+                    currentItemHrid = `/items/${match[1]}`;
+                    return;
+                }
+            }
+            const svgUse = tooltipElement.querySelector('use[href*="items_sprite"]');
+            if (svgUse) {
+                const match = svgUse.getAttribute('href').match(/#(.+)$/);
+                if (match) {
+                    currentItemHrid = `/items/${match[1]}`;
+                    return;
+                }
+            }
+            const nameEl = tooltipElement.querySelector(
+                '[class*="ItemTooltipText_name"] span, .ItemTooltipText_name__2JAHA span'
+            );
+            if (nameEl) {
+                const itemName = nameEl.textContent.trim();
+                currentItemHrid = `/items/${itemName.toLowerCase().replace(/\s+/g, '_')}`;
+            }
+        } catch (error) {
+            console.error('[SellQueue] Error parsing tooltip:', error);
+        }
+    }
+
+    function initialize() {
+        if (isActive) return;
+        if (!config.getSetting('sellQueue')) return;
+
+        tooltipObserverUnregister = domObserver.onClass('SellQueue-Tooltip', 'MuiTooltip-popper', (el) =>
+            handleTooltipAppear(el)
+        );
+
+        contextMenuHandler = (event) => {
+            if (!event.shiftKey) return;
+
+            const inventoryEl = event.target.closest('[class*="Inventory_items"], [class*="Inventory_inventory"]');
+            if (!inventoryEl) return;
+            if (!currentItemHrid) return;
+
+            event.preventDefault();
+            event.stopPropagation();
+
+            const gameData = dataManager.getInitClientData();
+            const itemDetails = gameData?.itemDetailMap?.[currentItemHrid];
+            if (!itemDetails) return;
+            if (!itemDetails.isTradable) return;
+
+            addToQueue(currentItemHrid, itemDetails.name);
+        };
+
+        document.addEventListener('contextmenu', contextMenuHandler, true);
+        isActive = true;
+    }
+
+    function cleanup() {
+        if (contextMenuHandler) {
+            document.removeEventListener('contextmenu', contextMenuHandler, true);
+            contextMenuHandler = null;
+        }
+        if (tooltipObserverUnregister) {
+            tooltipObserverUnregister();
+            tooltipObserverUnregister = null;
+        }
+        if (cleanupObserver) {
+            cleanupObserver();
+            cleanupObserver = null;
+        }
+        handleMarketplaceCleanup();
+        timerRegistry.clearAll();
+        currentItemHrid = null;
+        isActive = false;
+    }
+
+    config.onSettingChange('sellQueue', (value) => {
+        if (value) initialize();
+        else cleanup();
+    });
+
+    var sellQueue = {
+        name: 'Sell Queue',
+        initialize,
+        cleanup,
+    };
 
     /**
      * MilkyWay Market Link
@@ -27792,6 +28242,7 @@ self.onmessage = function (e) {
         inventoryCategoryTotals,
         customTabsFeature: customTabsFeature$1,
         marketplaceShortcuts,
+        sellQueue,
         milkywayMarketLink,
     };
 
