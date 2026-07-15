@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.73.0](https://github.com/Celasha/Toolasha/compare/v2.72.2...v2.73.0) (2026-07-15)
+
+
+### Features
+
+* add Sell Queue — Shift+RightClick inventory items to sell ([c38aa7b](https://github.com/Celasha/Toolasha/commit/c38aa7b8ae918e6c070184e758f0cca9503d4afd))
+
 ## [2.72.2](https://github.com/Celasha/Toolasha/compare/v2.72.1...v2.72.2) (2026-07-15)
 
 ### Bug Fixes
